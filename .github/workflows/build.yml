@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      HAS_BASEROM: ${{ secrets.BASEROM_URL != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +40,13 @@ jobs:
         env:
           BASEROM_URL: ${{ secrets.BASEROM_URL }}
           BASEROM_AUTH: ${{ secrets.BASEROM_AUTH }}
-        if: env.BASEROM_URL != ''
-        run: curl -fsSL ${BASEROM_AUTH:+-H "Authorization: $BASEROM_AUTH"} -o baserom.gba "$BASEROM_URL"
+        if: env.HAS_BASEROM == 'true'
+        run: |
+          if [ -n "$BASEROM_AUTH" ]; then
+            curl -fsSL -H "Authorization: $BASEROM_AUTH" -o baserom.gba "$BASEROM_URL"
+          else
+            curl -fsSL -o baserom.gba "$BASEROM_URL"
+          fi
 
       - name: Build the ROM and compare
         if: hashFiles('baserom.gba') != ''
