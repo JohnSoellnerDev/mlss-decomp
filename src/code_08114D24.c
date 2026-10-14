@@ -1,0 +1,468 @@
+#include "global.h"
+
+struct Obj;
+
+struct Sprite
+{
+    u8 filler0[0x0C];
+    u16 unkC;
+    u8 filler0E[0x04];
+    u8 mode;
+    u8 filler13[0x0D];
+    u8 unk20;
+};
+
+struct Scene
+{
+    u8 filler0[0x34];
+    struct Owner *entry;
+    struct Obj *main;
+    u8 filler3C[0x18];
+    void (*cb54)(struct Obj *);
+    u8 filler58[0x04];
+    void (*cb5C)(struct Obj *);
+    u8 filler60[0x1E];
+    u8 unk7E;
+    u8 unk7F;
+    u8 filler80[0x24];
+    s32 copyA4;
+    s32 copyA8;
+    s32 copyAC;
+    u8 filler[0x28];
+    s32 x;
+    s32 y;
+    s32 z;
+    u8 fillerE4[0x08];
+    u16 slot;
+    u8 fillerEE[0x08];
+    s16 unkF6;
+    u8 fillerF8[0x1B];
+    u8 mode;
+};
+
+struct WorldEntry
+{
+    u8 filler0[0x54];
+    void (*cb54)(struct Obj *);
+    u8 filler58[0x25];
+    u8 level7D;
+};
+
+struct Owner
+{
+    u8 filler0[0x28];
+    struct Scene *target;
+    u8 filler2C[0x49];
+    u8 level;
+    u8 filler76[0x32];
+    u32 unkA8;
+};
+
+struct KindBits
+{
+    u8 low : 5;
+    u8 kind : 3;
+};
+
+struct SpriteBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 unk3 : 5;
+};
+
+struct World
+{
+    u8 filler0[0x0C];
+    u8 flags;
+    u8 filler0D[0x4B];
+    struct Scene *scene;
+    u8 filler5C[0x04];
+    u8 *linkA;
+    u8 *linkB;
+    u8 filler68[0x18];
+    u32 entries[0x20];
+};
+
+struct Obj
+{
+    u8 filler0[0x08];
+    struct Sprite *sprite;
+    u8 filler0C[0x04];
+    s32 dispX;
+    s32 dispY;
+    s32 dispZ;
+    s16 pixX;
+    s16 pixY;
+    s16 pixZ;
+    u8 filler22[0x06];
+    struct Scene *scene;
+    struct Owner *owner;
+    struct Obj *chain;
+    u8 filler34[0x04];
+    s32 posX;
+    s32 posY;
+    s32 posZ;
+    u8 filler44[0x08];
+    void (*callback)(struct Obj *);
+    void (*cb50)(struct Obj *);
+    void (*cb54)(struct Obj *);
+    void (*cb58)(struct Obj *);
+    void (*cb5C)(struct Obj *);
+    void (*cb60)(struct Obj *);
+    u8 filler64[0x11];
+    u8 level;
+    u8 filler76[0x02];
+    u8 kind;
+    u8 filler79[0x03];
+    s16 stepY;
+    u8 filler7E[0x06];
+    s32 keyX;
+    s32 keyY;
+    u8 filler8C[0x06];
+    u16 unk92;
+    u8 filler94[0x04];
+    s32 unk98;
+    s32 unk9C;
+    s32 unkA0;
+    s32 unkA4;
+    u32 phase;
+    s16 timer;
+    s16 slot;
+    s16 unkB0;
+    s16 unkB2;
+    u8 fillerB4[0x04];
+    u16 timerLong;
+};
+
+extern struct World *gUnk_03000FD8;
+extern const u32 gSlotMotion[];
+extern const u16 gModeStartX[];
+extern const u16 gModeStartY[];
+extern const u16 gUnk_08202218[];
+
+void sprite_set_action(struct Obj *obj, u32 action, u32 a2, u32 a3);
+void set_slot_value(u32 id, s32 value);
+void sound_stop_song(u32 song);
+u8 step_motion(struct Obj *obj);
+void obj_release(struct Obj *obj);
+u32 lookup_link_slot(struct Obj *obj, struct Obj *other);
+void obj_set_scene_state(struct Obj *obj);
+void obj_timer_anim_6(struct Obj *obj);
+void obj_begin_wait(struct Obj *obj);
+void obj_scene_move_or_stop(struct Obj *obj);
+void effect_spawn_at(u32 effect, s32 x, s32 y, s32 h, struct Obj *obj);
+void effect_from_table_obj(struct Obj *obj, u32 code);
+void place_targets(struct Obj *obj, s32 x, s32 y, s32 z, s32 extra);
+void set_motion_start(struct Obj *obj, u32 value);
+void set_step_and_offsets(struct Obj *obj, u32 value, u32 step);
+void obj_list_remove(struct Obj *obj);
+void obj_list_push_default(struct Obj *obj);
+struct Obj *obj_spawn_linked(struct Obj *owner, u32 kind, u32 flags);
+void obj_stop_anim_clear_cb(struct Obj *obj);
+void obj_start_anim1_timer(struct Obj *obj);
+void obj_stop_anim(struct Obj *obj);
+void obj_setup_motion_from_scene(struct Obj *obj);
+void obj_query_contact_step(struct Obj *obj);
+void screen_helpers_obj_show_at(struct Obj *obj);
+void partner_link_update(struct Owner *owner, struct Obj *obj, u32 flags);
+void obj_clear_when_unflagged(struct Obj *obj);
+s32 resolve_contact_action(struct Obj *actor, struct Obj *target, u32 a, u32 b, u32 kind);
+
+void callback_noop_idle(struct Obj *obj);
+void obj_anim_slot_15_16(struct Obj *obj);
+void obj_timer_countdown_anim17(struct Obj *obj);
+void obj_timer_show(struct Obj *obj);
+void obj_remove_target(struct Obj *obj);
+void obj_begin_effect(struct Obj *obj);
+void obj_wait_then_callback(struct Obj *obj);
+void obj_wait_target_anim6(struct Obj *obj);
+void obj_close_if_free(struct Obj *obj);
+void obj_begin_when_free(struct Obj *obj);
+void obj_reset_when_free(struct Obj *obj);
+void obj_spawn_child(struct Obj *obj);
+void obj_spawn_effect_part(struct Obj *obj);
+void obj_circle_step(struct Obj *obj);
+void obj_partner_step(struct Obj *obj);
+void obj_select_callback(struct Obj *obj);
+void world_links_release(struct Obj *obj);
+void obj_step_path(struct Obj *obj);
+void obj_place_target_a(struct Obj *obj);
+void obj_place_target_b(struct Obj *obj);
+u32 obj_claim_partner(struct Obj *obj, struct Obj *partner);
+u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner);
+
+void obj_release_when_motion_done(struct Obj *obj);
+
+void obj_place_target_a(struct Obj *obj)
+{
+    struct Scene *scene;
+    s32 slot;
+    s32 none;
+    u32 flags;
+
+    slot = *(s16 *)&obj->scene->slot;
+    none = -1;
+    flags = 0x204D;
+    if (slot == none)
+    {
+        flags -= 0x4D;
+    }
+    sprite_set_action(obj, 0xC, flags, 0);
+    obj->sprite->unk20 = 0xF0;
+    scene = obj->scene;
+    place_targets(obj, scene->x / 0x100 - 0xC, scene->y / 0x100, scene->z / 0x100, 0x100);
+    set_step_and_offsets(obj, 0x800, 0x50);
+    obj->callback = obj_close_if_free;
+}
+
+void obj_place_target_b(struct Obj *obj)
+{
+    struct Scene *scene;
+    s32 slot;
+    s32 none;
+    u32 flags;
+
+    slot = *(s16 *)&obj->scene->slot;
+    none = -1;
+    flags = 0x204D;
+    if (slot == none)
+    {
+        flags -= 0x4D;
+    }
+    sprite_set_action(obj, 0xC, flags, 0);
+    obj->sprite->unk20 = 0xF0;
+    scene = obj->scene;
+    place_targets(obj, scene->x / 0x100, scene->y / 0x100, scene->z / 0x100, 0x100);
+    set_step_and_offsets(obj, 0x800, 0x50);
+    obj->callback = obj_begin_when_free;
+}
+
+void obj_remove_target(struct Obj *obj)
+{
+    struct Obj *link = obj->chain->chain;
+
+    place_targets(link, link->pixX, link->pixY, link->pixZ, 0x100);
+    set_motion_start(link, 0x400);
+    sprite_set_action(link, 7, 0, 0);
+    obj_list_remove(link);
+    obj->callback = obj_reset_when_free;
+}
+
+void obj_wait_target_anim6(struct Obj *obj)
+{
+    struct Obj *target = obj->chain->chain;
+
+    if (target->sprite->mode & 8)
+    {
+        sprite_set_action(target, 6, 0, 0);
+        ((struct SpriteBits *)&target->sprite->mode)->mode = 1;
+        obj->callback = obj_wait_then_callback;
+    }
+}
+
+void link_state_clear_idle(struct Obj *obj)
+{
+    obj->scene->mode = 0;
+    obj->cb50 = callback_noop_idle;
+    obj->callback = callback_noop_idle;
+}
+
+void obj_move_to_scene_target(struct Obj *obj)
+{
+    struct Scene *scene;
+
+    obj->callback = obj_select_callback;
+    obj = obj->chain->chain;
+    scene = obj->owner->target;
+    obj_list_push_default(obj);
+    obj->cb58 = (void (*)(struct Obj *))obj_claim_partner;
+    obj->cb60 = (void (*)(struct Obj *))obj_link_to_partner;
+    place_targets(obj, scene->x / 0x100 + 0x1C, scene->y / 0x100 + 1, scene->z / 0x100 + 0x18, 0x100);
+    set_motion_start(obj, 0x400);
+    set_slot_value(0xD5, -1);
+}
+
+void callback_noop_idle(struct Obj *obj)
+{
+}
+
+void world_links_idle_step(struct Obj *obj)
+{
+    struct Obj *a;
+    struct Obj *b;
+
+    a = (struct Obj *)(gUnk_03000FD8->linkA + 8);
+    if (a->scene->mode != 0)
+    {
+        return;
+    }
+    b = (struct Obj *)(gUnk_03000FD8->linkB + 8);
+    if (b->scene->mode != 0)
+    {
+        return;
+    }
+    a->callback = a->cb50;
+    b->callback = b->cb50;
+    a->cb50 = NULL;
+    b->cb50 = NULL;
+    obj->callback = (((a->callback != NULL) && (a->callback != callback_noop_idle)) ||
+                     ((b->callback != NULL) && (b->callback != callback_noop_idle)))
+                        ? world_links_idle_step
+                        : world_links_release;
+}
+
+u32 sprite_state_step_c(struct Obj *obj)
+{
+    obj->callback = obj_begin_effect;
+    return 1;
+}
+
+u32 obj_attach_to_scene(struct Obj *obj)
+{
+    struct Owner *owner;
+    struct Scene *scene;
+
+    if (obj->unk9C != 0)
+    {
+        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+    }
+    else
+    {
+        owner = obj->owner;
+    }
+    obj->owner = owner;
+    obj->callback = callback_noop_idle;
+    scene = gUnk_03000FD8->scene;
+    scene->mode = 2;
+    scene->entry = obj->owner;
+    scene->copyA4 = obj->unk9C;
+    scene->copyA8 = obj->unkA0;
+    scene->copyAC = obj->unkA4;
+    scene->cb54 = screen_helpers_obj_show_at;
+    return 1;
+}
+
+u32 scene_attach_mode1(struct Obj *obj)
+{
+    struct Owner *owner;
+    struct Scene *scene;
+
+    if (obj->unk9C != 0)
+    {
+        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+    }
+    else
+    {
+        owner = obj->owner;
+    }
+    obj->owner = owner;
+    obj->callback = callback_noop_idle;
+    scene = gUnk_03000FD8->scene;
+    scene->mode = 1;
+    scene->entry = obj->owner;
+    scene->copyA4 = obj->unk9C;
+    scene->copyA8 = obj->unkA0;
+    scene->copyAC = obj->unkA4;
+    scene->cb54 = screen_helpers_obj_show_at;
+    return 1;
+}
+
+u32 scene_attach_mode3(struct Obj *obj)
+{
+    struct Owner *owner;
+    struct Scene *scene;
+
+    if (obj->unk9C != 0)
+    {
+        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+    }
+    else
+    {
+        owner = obj->owner;
+    }
+    obj->owner = owner;
+    obj->callback = callback_noop_idle;
+    scene = gUnk_03000FD8->scene;
+    scene->mode = 3;
+    scene->entry = obj->owner;
+    scene->copyA4 = obj->unk9C;
+    scene->copyA8 = obj->unkA0;
+    scene->copyAC = obj->unkA4;
+    scene->cb54 = screen_helpers_obj_show_at;
+    return 1;
+}
+
+void obj_timer_show(struct Obj *obj)
+{
+    u16 t;
+    s32 v;
+
+    t = obj->timer;
+    v = t - 1;
+    obj->timer = v;
+    if ((u16)v == 0)
+    {
+        place_targets(obj, -0x20, obj->posY / 0x100, obj->posZ / 0x100, 0x100);
+        set_motion_start(obj, gSlotMotion[obj->slot]);
+        obj_list_push_default(obj);
+        obj->cb58 = obj_step_path;
+        obj->cb60 = obj_partner_step;
+        obj->callback = obj_release_when_motion_done;
+        set_slot_value(0x10C, -1);
+    }
+}
+
+void obj_close_if_free(struct Obj *obj)
+{
+    u8 done = step_motion(obj);
+
+    if (done == 0)
+    {
+        ((u8 *)gUnk_03000FD8)[0xC] |= 0x80;
+        sprite_set_action(obj, -1, -1, 0);
+        obj->sprite->unk20 = 0x10;
+        obj->callback = NULL;
+    }
+}
+
+void obj_begin_when_free(struct Obj *obj)
+{
+    u32 done = step_motion(obj);
+    struct Owner *owner;
+
+    if (done == 0)
+    {
+        owner = obj->owner;
+        obj->callback = obj_clear_when_unflagged;
+        obj->sprite->unk20 = 0x10;
+        partner_link_update(owner, obj, 0xFF);
+        if (obj->scene->unkF6 == 0)
+        {
+            owner->target->cb54 = obj_remove_target;
+            owner->target->mode = 1;
+        }
+        owner->unkA8 = done;
+    }
+}
+
+void obj_reset_when_free(struct Obj *obj)
+{
+    u8 done = step_motion(obj->chain->chain);
+
+    if (done == 0)
+    {
+        obj->scene->mode = done;
+        obj->cb50 = callback_noop_idle;
+        obj->callback = callback_noop_idle;
+    }
+}
+
+void obj_wait_then_callback(struct Obj *obj)
+{
+    if (obj->chain->chain->sprite->mode & 8)
+    {
+        obj->unkA0 -= 1;
+        obj->callback = (obj->unkA0 != 0) ? obj_begin_wait : obj_remove_target;
+    }
+}
