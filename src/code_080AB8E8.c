@@ -151,6 +151,8 @@ void set_motion_speed_aux(struct HeroBody *body, u32 speed, u32 aux);
 void set_motion_offsets(struct HeroBody *body, u32 offsets);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
+s32 resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, u32 cb);
+void obj_slot_update(struct HeroBody *obj);
 
 void hero_a_active_copy_pos_fx(struct HeroBody *body);
 void hero_a_step_16_b_idle_alt(struct HeroBody *body);
@@ -172,7 +174,67 @@ void hero_b_pose_anim(struct HeroBody *body);
 void noop_state_080acec0(struct HeroBody *body);
 void hero_b_on_object(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080AB8E8/hero_a_link_to_partner_fx.s", void hero_a_link_to_partner_fx(struct HeroBody *body))
+void hero_a_link_to_partner_fx(struct HeroBody *body)
+{
+    struct World *world = gUnk_03000FD8;
+    struct HeroBody *body_a = &world->heroA->body;
+    struct HeroBody *body_b = &world->heroB->body;
+    struct HeroBody *partner = body->partner;
+    s32 scale;
+    s32 result;
+
+    step_motion(body_a);
+    scale = body_b->sprite->scale;
+    if ((s16)body_b->sprite->scale <= 0xFF)
+    {
+        body_b->sprite->scale = scale + 0x10;
+        if ((s16)body_b->sprite->scale > 0x100)
+            body_b->sprite->scale = 0x100;
+    }
+    if ((body_a->flags & 0x20) != 0)
+    {
+        set_slot_value(0x63, -1);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 0xC, 0x2030, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 0, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        ((struct HeroCcBits *)&body_a->cc)->low = 0;
+        body_a->scale = 0x100;
+        result = resolve_contact_action(body_a, partner, 0, 0, 0x040A1688);
+        body_a->count++;
+        if (result == 1)
+        {
+            obj_slot_update(body_a);
+            return;
+        }
+        if (partner->data->flagsF6 > 0 || (partner->data->flags111 & 2) != 0)
+        {
+            s32 x;
+            s32 y;
+            s32 z;
+            u32 id;
+
+            x = (partner->targetX / 0x100) + partner->ofsX;
+            y = (partner->targetY / 0x100) + partner->ofsY;
+            z = (partner->targetZ / 0x100) + partner->ofsZ;
+            id = 0x70B;
+            effect_spawn_at(id, x, y, z, partner);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 8);
+            body_a->progress = 0;
+            ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+        }
+        body->state = hero_a_active_set_targets;
+    }
+}
 
 void hero_a_active_set_targets(struct HeroBody *body)
 {
