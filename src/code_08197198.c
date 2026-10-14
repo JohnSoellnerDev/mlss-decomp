@@ -13,7 +13,9 @@ struct ObjRecord
     u8 filler0[4];
     u16 unk4;
     u16 unk6;
-    u8 filler8[0x34 - 8];
+    u8 filler8[4];
+    u16 unkC;
+    u8 filler10[0x34 - 0x10];
     u32 model;
 };
 
@@ -51,17 +53,17 @@ void oam_list_rows_b(u32 model, u32 h);
 void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
 void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
-void obj_point1_diff(void);
-void obj_point1_pm20(void);
+void obj_point1_diff(struct Point1Obj *obj);
+void obj_point1_pm20(struct Point1Obj *obj);
 void obj_point1_decay31_2f58(void);
 void obj_point1_decay31_3064(void);
 void obj_point1_decay45_5e00(void);
 void obj_point1_decay67_5f1c(void);
 void obj_point1_decay_5ba4(void);
 void obj_point1_div3_6260(void);
-void obj_point1_half(void);
+void obj_point1_half(struct Point1Obj *obj);
 void obj_point1_half_637c(void);
-void obj_point1_mp20(void);
+void obj_point1_mp20(struct Point1Obj *obj);
 void obj_point1_rem140(void);
 void obj_point1_rem140_3404(void);
 void obj_point1_rem168_3644(void);
@@ -90,11 +92,11 @@ void obj_point1_sum_6150(void);
 void obj_point1_sum_6494(void);
 void obj_point1_sum_65a4(void);
 void obj_point1_sum_66b4(void);
-void obj_point1_sum_a(void);
-void obj_point1_sum_b(void);
-void obj_point1_sum_c(void);
-void obj_point1_turn_a(void);
-void obj_point1_turn_b(void);
+void obj_point1_sum_a(struct Point1Obj *obj);
+void obj_point1_sum_b(struct Point1Obj *obj);
+void obj_point1_sum_c(struct Point1Obj *obj);
+void obj_point1_turn_a(struct Point1Obj *obj);
+void obj_point1_turn_b(struct Point1Obj *obj);
 void obj_point1_turn_m4_6900(void);
 void obj_point1_turn_p2_67c4(void);
 void obj_point1_zoom23_acc_5cd0(void);
@@ -236,23 +238,763 @@ extern u8 gZoomModel8Tilt22Params08506df8[];
 extern u8 gZoomModel8Tilt45Params08506db0[];
 extern u8 gZoomModel8Tilt45Params08506db8[];
 
-ASM_FUNC("asm/code_08197198/obj_point1_pm20.s", void obj_point1_pm20(void))
+void obj_point1_pm20(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
 
-ASM_FUNC("asm/code_08197198/obj_point1_mp20.s", void obj_point1_mp20(void))
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase + 0x20;
+    rec->unk6 = phase + 0x20 - 0x40;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
 
-ASM_FUNC("asm/code_08197198/obj_point1_half.s", void obj_point1_half(void))
+void obj_point1_mp20(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
 
-ASM_FUNC("asm/code_08197198/obj_point1_turn_a.s", void obj_point1_turn_a(void))
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase - 0x20;
+    rec->unk6 = phase - 0x20 + 0x40;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
 
-ASM_FUNC("asm/code_08197198/obj_point1_turn_b.s", void obj_point1_turn_b(void))
+void obj_point1_half(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    s32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
 
-ASM_FUNC("asm/code_08197198/obj_point1_sum_a.s", void obj_point1_sum_a(void))
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase / 2;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
 
-ASM_FUNC("asm/code_08197198/obj_point1_sum_b.s", void obj_point1_sum_b(void))
+void obj_point1_turn_a(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    s32 phase;
+    u32 spin;
+    s32 v;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
 
-ASM_FUNC("asm/code_08197198/obj_point1_sum_c.s", void obj_point1_sum_c(void))
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    spin = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase / 3;
+    if (obj->flags & 0x80) {
+        v = (-spin) << 8;
+    } else {
+        v = spin << 8;
+    }
+    rec->unkC = v;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = phase;
+    *words = spin;
+}
 
-ASM_FUNC("asm/code_08197198/obj_point1_diff.s", void obj_point1_diff(void))
+void obj_point1_turn_b(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    s32 phase;
+    u32 spin;
+    s32 v;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    spin = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase / 3;
+    if (obj->flags & 0x80) {
+        v = (-spin) << 8;
+    } else {
+        v = spin << 8;
+    }
+    rec->unkC = v;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = phase;
+    *words = spin;
+}
+
+void obj_point1_sum_a(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
+
+void obj_point1_sum_b(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
+
+void obj_point1_sum_c(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase += zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
+
+void obj_point1_diff(struct Point1Obj *obj)
+{
+    struct Point1Local l;
+    u32 *words;
+    u32 zoom;
+    u32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase -= zoom;
+    rec->unk4 = phase;
+    rec->unk6 = phase;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
 
 void spawn_cb_08197a90(u32 p0, u32 p1, u32 p2, u32 flags)
 {

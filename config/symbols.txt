@@ -7523,12 +7523,12 @@
 081DBB6C _call_via_ip thumb size=4
 081DBB70 _call_via_sp thumb size=4
 081DBB74 _call_via_lr thumb size=4
-081DBB78 sdiv thumb
-081DBC0C sub_081DBC0C thumb
-081DBC10 smod thumb
+081DBB78 __divsi3 thumb
+081DBC0C __div0 thumb
+081DBC10 __modsi3 thumb
 081DBCE0 sub_081DBCE0 thumb
-081DBCE8 udiv thumb
-081DBD60 umod thumb
+081DBCE8 __udivsi3 thumb
+081DBD60 __umodsi3 thumb
 081DBE20 f64_pack thumb
 081DBF68 f64_unpack thumb
 081DC040 soft_add_records thumb
