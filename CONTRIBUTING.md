@@ -67,6 +67,12 @@ function start, calls show the relocation (the called symbol). A worked example 
   your C puts it straight into r5: write `obj->field` at every use instead of keeping a
   pointer variable; GCC then shares the address itself. `ldrsh`/`ldrsb` mean the field is
   signed (`s16`/`s8`).
+- Clearing or setting bits of a byte keeps the full int constant in the original
+  (`ldrb; movs r0, #9; rsbs r0, r0, #0; ands r0, r2; strb` = and with -9). A plain
+  `p->flags &= ~8` on a `u8` gets the constant narrowed and does not match. Write a bit-field
+  assignment (`((struct FlagBits *)&p->flags)->bit3 = 0;`) or work on an int temporary
+  (`int b = p->flags; b = -0x41 & b; b = -0x21 & b; p->flags = b;` keeps two separate masks).
+  Examples: src/code_08092784.c, src/code_08090F84.c.
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
