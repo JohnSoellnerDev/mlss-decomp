@@ -312,7 +312,57 @@ void hold_decay_hold_idle_b(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08094038/hold_decay_orbit_step_b.s", void hold_decay_orbit_step_b(struct Actor *obj))
+void hold_decay_orbit_step_b(struct Actor *obj)
+{
+    struct Actor *child;
+    u32 idx;
+    s32 h;
+    const s16 *table;
+
+    if (obj->action & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct ActionBits *)child)->mode = 1;
+    child->angle += child->angleSpeed;
+    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    table = gCosineTable;
+    child->x = obj->baseX + (table[idx & 0xFF] / 64) * 24;
+    h = obj->baseH + 0x1A00;
+    child->h = h + (gSineTable[idx & 0xFF] / 64) * 24;
+    if (obj->pose->dir & 0x40)
+        child->angleSpeed += 0x998;
+    else
+        child->angleSpeed -= 0x998;
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2054, 1);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2054, 2);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2054, 3);
+    if (obj->step == 7)
+        sprite_set_action(obj, 2, 0x2054, 4);
+    if (obj->step == 8)
+        sprite_set_action(obj, 2, 0x2054, 5);
+    if (obj->step == 9)
+    {
+        ((struct ActionBits *)child)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct PoseMode *)obj->pose)->mode = 0;
+        ((struct PoseMode *)obj->pose)->hold = 0;
+        obj->step = 0;
+        obj->state = step_end_action_23;
+        if (obj->data != NULL)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 1;
+    }
+    else
+    {
+        ((struct PoseMode *)obj->pose)->hold = 1;
+        obj->step++;
+    }
+}
 
 void step_end_action_23(struct Actor *obj)
 {
