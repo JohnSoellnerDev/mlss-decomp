@@ -18,7 +18,9 @@ extern u8 iwram_math_08199424[];
 #define MEM_ROUTINE(type, name) ((type)(gMemRoutines + ((u32)name - (u32)iwram_fill)))
 #define MATH_ROUTINE(type, name) ((type)(gMathRoutines + ((u32)name - (u32)iwram_sqrt)))
 
-// 320 entries: sine over 256 steps, the last 64 repeat the start so that cos(x) = gSineTable[x + 64]
+// Sine and cosine over 256 steps (1.0 = 0x1000). The two tables overlap in ROM (the cosine
+// table starts 64 entries into the sine table) but the code always uses them by name.
 extern const s16 gSineTable[];
+extern const s16 gCosineTable[];
 
 #endif // GUARD_RAM_ROUTINES_H

@@ -51,8 +51,8 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Calls through a function pointer go through `bl _call_via_rN`.
 - Routines copied to IWRAM are called as `base + (routine - block start)` with three literal
   pool words (`gMathRoutines`, `iwram_div`, `iwram_sqrt`): use `MATH_ROUTINE(type, iwram_div)` /
-  `MEM_ROUTINE(type, iwram_copy)` from `include/ram_routines.h`. The sine table is `gSineTable`
-  (cosine = `gSineTable[x + 64]`).
+  `MEM_ROUTINE(type, iwram_copy)` from `include/ram_routines.h`. The sine and cosine tables are
+  `gSineTable` and `gCosineTable` (two symbols, two literal pool words).
 - `bl __divsi3` / `__modsi3` / `__udivsi3` / `__umodsi3` are plain `/` and `%` in C (signed or
   unsigned operands); division by a power of two is inlined (`asrs` with a rounding fix-up).
 - `switch` becomes `cmp rX, #N; bhi default; lsls; ldr table; adds; ldr; mov pc` followed by a

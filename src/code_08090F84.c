@@ -687,7 +687,57 @@ void random_jump_orbit_hold_a(struct Actor *obj)
     obj->step = obj->step + 1;
 }
 
-ASM_FUNC("asm/code_08090F84/random_jump_orbit_circle_a.s", void random_jump_orbit_circle_a(struct Actor *obj))
+void random_jump_orbit_circle_a(struct Actor *obj)
+{
+    struct Actor *child;
+    u32 idx;
+    s32 h;
+    const s16 *table;
+
+    if (obj->flags76 & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct ActionBits *)&child->flags76)->mode = 1;
+    child->angle += child->angleSpeed;
+    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    table = gCosineTable;
+    child->posX = obj->baseX + (table[idx & 0xFF] / 64) * 22;
+    h = obj->baseH + 0x1600;
+    child->h = h + (gSineTable[idx & 0xFF] / 64) * 22;
+    if (obj->pose->turn & 0x40)
+        child->angleSpeed += 0xC00;
+    else
+        child->angleSpeed -= 0xC00;
+    if (obj->step == 2)
+        sprite_set_action(obj, 2, 0x2025, 1);
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2025, 2);
+    if (obj->step == 4)
+        sprite_set_action(obj, 2, 0x2025, 3);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2025, 4);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2025, 5);
+    if (obj->step == 7)
+    {
+        ((struct ActionBits *)&child->flags76)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        obj->pose->hold = 0;
+        obj->pose->mode = 0;
+        obj->step = 0;
+        obj->state = random_jump_orbit_end_a;
+        if (obj->data != NULL)
+            ((struct ActorData *)obj->data)->lock = 1;
+    }
+    else
+    {
+        obj->pose->hold = 1;
+        obj->step++;
+    }
+}
 
 void random_jump_spawn_orbit_child_b(struct Actor *obj)
 {
@@ -855,7 +905,57 @@ void random_jump_orbit_hold_b(struct Actor *obj)
     obj->step = obj->step + 1;
 }
 
-ASM_FUNC("asm/code_08090F84/random_jump_orbit_circle_b.s", void random_jump_orbit_circle_b(struct Actor *obj))
+void random_jump_orbit_circle_b(struct Actor *obj)
+{
+    struct Actor *child;
+    u32 idx;
+    s32 h;
+    const s16 *table;
+
+    if (obj->flags76 & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct ActionBits *)&child->flags76)->mode = 1;
+    child->angle += child->angleSpeed;
+    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    table = gCosineTable;
+    child->posX = obj->baseX + (table[idx & 0xFF] / 64) * 24;
+    h = obj->baseH + 0x1A00;
+    child->h = h + (gSineTable[idx & 0xFF] / 64) * 24;
+    if (obj->pose->turn & 0x40)
+        child->angleSpeed += 0x998;
+    else
+        child->angleSpeed -= 0x998;
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2054, 1);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2054, 2);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2054, 3);
+    if (obj->step == 7)
+        sprite_set_action(obj, 2, 0x2054, 4);
+    if (obj->step == 8)
+        sprite_set_action(obj, 2, 0x2054, 5);
+    if (obj->step == 9)
+    {
+        ((struct ActionBits *)&child->flags76)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        obj->pose->mode = 0;
+        obj->pose->hold = 0;
+        obj->step = 0;
+        obj->state = random_jump_orbit_end_b;
+        if (obj->data != NULL)
+            ((struct ActorData *)obj->data)->lock = 1;
+    }
+    else
+    {
+        obj->pose->hold = 1;
+        obj->step++;
+    }
+}
 
 void random_jump_orbit_end_b(struct Actor *obj)
 {

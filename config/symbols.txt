@@ -7000,7 +7000,8 @@
 081992F4 iwram_sqrt data size=10C
 08199400 iwram_div data size=24
 08199424 iwram_math_08199424 data size=1B4
-081995D8 gSineTable data size=280
+081995D8 gSineTable data size=80
+08199658 gCosineTable data size=200
 08199858 iwram_overlay data size=C98
 0819A4F0 thunk_set_r0_91_jump thumb size=208
 0819A6F8 track_run thumb
