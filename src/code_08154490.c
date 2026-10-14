@@ -1,0 +1,391 @@
+#include "global.h"
+
+struct Char {
+    u8 filler0[4];
+    u32 unk04;
+    u8 filler8[0xC];
+    u16 unk14;
+};
+
+struct CharSpeedS {
+    u8 filler0[0x14];
+    s16 unk14;
+};
+
+struct GameState {
+    u8 filler0[0x1C98];
+    struct Char *charA;
+};
+
+extern struct GameState *gUnk_03001018;
+
+struct Sprite {
+    u16 unk00;
+    u16 unk02;
+};
+
+struct DigitObj {
+    struct Sprite *unk00;
+    struct Sprite *unk04;
+    struct Sprite *unk08;
+    u32 unk0C;
+    u32 unk10;
+    u32 unk14;
+    u32 unk18;
+    u32 unk1C;
+    u32 unk20;
+    u32 unk24;
+    u32 unk28;
+    u32 unk2C;
+    u32 unk30;
+    u32 unk34;
+};
+
+struct TrackObj {
+    u8 filler0[4];
+    u32 unk04;
+    u8 filler8[0xC];
+    u16 unk14;
+    u8 filler16[0x22];
+    s16 unk38;
+};
+
+struct SubObj {
+    u16 unk00;
+    u16 unk02;
+    u8 filler04[0xA];
+    u16 unkE;
+    u8 filler10;
+    u8 unk11;
+    u8 unk12;
+    u8 filler13[0xC];
+    u8 unk1F;
+};
+
+struct E080Obj {
+    struct SubObj *unk00;
+    u8 filler04[0x2C];
+    const void *unk30;
+    struct SubObj *unk34;
+    u16 unk38;
+};
+
+extern const u8 gTransitionClassE080[];
+struct SubObj *obj_get_sprite(void *obj);
+
+struct FlagBit5 {
+    u8 low : 5;
+    u8 bit5 : 1;
+    u8 high : 2;
+};
+
+struct SubFlagBits {
+    u8 f0 : 2;
+    u8 f2 : 2;
+    u8 f4 : 2;
+    u8 f6 : 2;
+};
+
+struct E380Obj {
+    u8 filler0[0x24];
+    u8 unk24;
+    u8 filler25[7];
+    u8 unk2C;
+    u8 unk2D;
+    u8 filler2E[2];
+    const void *unk30;
+    u32 unk34;
+    struct SubObj *unk38;
+    u16 unk3C;
+    u16 unk3E;
+    u8 unk40;
+    u8 unk41;
+};
+
+extern const u8 gClassE380[];
+u32 mt19937_next(void);
+s32 sub_081DE850(s32 n, u32 seed);
+void obj_init_from_record(void *obj, u32 arg);
+void obj_create_sprite(void *obj, u32 zero);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+
+void obj_update_digits(struct DigitObj *obj);
+void set_slot_value(u32 slot, s32 value);
+void sprite_update_cd0(void *sprite);
+void release_obj_131c(struct Sprite *sprite);
+void obj_set_sprite_kind(void *obj, u32 kind);
+void obj_release_sprite(void *obj);
+u32 view_coord(u32 a, s32 b);
+u32 hitboxes_overlap(void *a, void *b);
+void obj_add_value(void *a, s32 b);
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e1e0.s", void obj_behavior_e1e0(void))
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e1a0.s", void obj_behavior_e1a0(void))
+
+struct E0E0Table {
+    u8 filler0[0x10];
+    s16 unk10;
+    u8 filler12[2];
+    void (*unk14)(void *, u32, u32, u32, u32);
+    u8 filler18[0x18];
+    s16 unk30;
+    u8 filler32[2];
+    void (*unk34)(void *);
+    s16 unk38;
+    u8 filler3A[2];
+    void (*unk3C)(void *);
+};
+
+struct E0E0Char {
+    u8 filler0[4];
+    s32 unk04;
+    u8 filler08[0x1C];
+    u8 unk24;
+    u8 filler25[0xB];
+    struct E0E0Table *unk30;
+};
+
+struct CharPos {
+    u8 filler0[4];
+    s32 unk04;
+    u8 filler08[0xC];
+    u16 unk14;
+};
+
+struct E160Obj {
+    struct SubObj *unk00;
+    s32 unk04;
+    s32 unk08;
+    u8 filler0C[8];
+    s16 unk14;
+    u8 filler16[2];
+    u16 unk18;
+    u8 filler1A[2];
+    u16 unk1C;
+    u8 filler1E[2];
+    u16 unk20;
+    u8 filler22[2];
+    u8 unk24;
+    u8 filler25;
+    u8 unk26;
+    u8 filler27[9];
+    struct E0E0Table *unk30;
+};
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e160.s", void obj_behavior_e160(void))
+
+
+struct E380Obj *obj_init_e380(struct E380Obj *obj, u32 initArg, u16 kind)
+{
+    obj_init_from_record(obj, initArg);
+    obj->unk30 = gClassE380;
+    obj->unk3C = kind;
+    obj->unk34 = 0;
+    obj->unk24 = 0;
+    obj->unk40 = 0;
+    obj->unk41 = 0;
+    obj->unk38 = 0;
+    obj->unk3E = sub_081DE850(0xFF, mt19937_next());
+    obj_create_sprite(obj, 0);
+    obj->unk38 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    obj_load_record(obj->unk38, 0x27, -1, 0, 0);
+    obj->unk38->unkE = obj->unk2C;
+    ((struct SubFlagBits *)&obj->unk38->unk1F)->f0 = obj->unk2D;
+    ((struct SubFlagBits *)&obj->unk38->unk1F)->f2 = obj->unk2D;
+    ((struct SubFlagBits *)&obj->unk38->unk1F)->f4 = obj->unk2D;
+    ((struct SubFlagBits *)&obj->unk38->unk1F)->f6 = obj->unk2D;
+    return obj;
+}
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e360.s", void obj_behavior_e360(void))
+
+struct ModeBits {
+    s8 mode : 5;
+};
+
+extern const u8 gClassE100[];
+extern u8 gUnk_03001010;
+
+ASM_FUNC("asm/code_08154490/obj_init_e100.s", void obj_init_e100(void))
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e0e0.s", void obj_behavior_e0e0(void))
+
+ASM_FUNC("asm/code_08154490/obj_init_e080.s", void obj_init_e080(void))
+
+struct E060Obj {
+    struct SubObj *unk00;
+    s32 unk04;
+    s32 unk08;
+    u8 filler0C[8];
+    s16 unk14;
+    u8 filler16[2];
+    u16 unk18;
+    u8 filler1A[2];
+    u16 unk1C;
+    u8 filler1E[2];
+    u16 unk20;
+    u8 filler22[2];
+    u8 unk24;
+    u8 filler25[0xB];
+    struct E0E0Table *unk30;
+    struct SubObj *unk34;
+    u16 unk38;
+};
+
+extern const s16 gCosineTable[];
+extern u8 gUnk_03001014[];
+
+ASM_FUNC("asm/code_08154490/obj_behavior_e060.s", void obj_behavior_e060(void))
+
+ASM_FUNC("asm/code_08154490/obj_behavior_dfe0.s", void obj_behavior_dfe0(void))
+
+ASM_FUNC("asm/code_08154490/obj_state_load_step.s", void obj_state_load_step(void))
+
+ASM_FUNC("asm/code_08154490/obj_track_char_a.s", void obj_track_char_a(void))
+
+ASM_FUNC("asm/code_08154490/obj_create_digits.s", void obj_create_digits(void))
+
+
+void obj_shake_or_countdown(struct DigitObj *obj)
+{
+    if (obj->unk20 != 1) {
+        if ((s32)obj->unk20 <= 1)
+            return;
+        if (obj->unk20 == 2)
+            goto state2;
+        return;
+    }
+    obj->unk24 -= 1;
+    if ((s32)obj->unk24 <= 0) {
+        obj->unk20 = 0;
+    } else {
+        obj->unk28 = 4 - obj->unk28;
+        {
+            s32 t = obj->unk00->unk00 - 2;
+            obj->unk00->unk00 = obj->unk28 + t;
+        }
+        {
+            s32 t = obj->unk04->unk00 - 2;
+            obj->unk04->unk00 = obj->unk28 + t;
+        }
+        {
+            s32 t = obj->unk08->unk00 - 2;
+            obj->unk08->unk00 = obj->unk28 + t;
+        }
+    }
+    return;
+state2:
+    obj->unk24 -= 1;
+    if ((s32)obj->unk24 <= 0) {
+        obj->unk34 = 0;
+        obj->unk30 = 0;
+        obj->unk20 = 0;
+        obj_update_digits(obj);
+    } else {
+        obj->unk34 -= 1;
+        if ((s32)obj->unk34 < 0) {
+            obj->unk30 = 0xA - obj->unk30;
+            obj->unk34 = 5;
+            obj_update_digits(obj);
+        }
+        obj->unk2C += 1;
+    }
+}
+
+struct FallObj {
+    u16 unk00;
+    u8 filler02[2];
+    struct Sprite *unk04;
+    u16 unk08;
+    u8 filler0A[2];
+    u32 unk0C;
+    u8 filler10[4];
+    u32 unk14;
+    u8 filler18[4];
+    u32 unk1C;
+};
+
+
+u32 obj_anim_fall_step(struct FallObj *obj)
+{
+    s32 state = (s16)obj->unk08;
+
+    if (state != 1) {
+        if (state <= 1)
+            return 0;
+        if (state == 2)
+            goto state2;
+        if (state == 3)
+            goto state3;
+        return 0;
+    }
+    obj->unk14 -= obj->unk1C;
+    obj->unk0C += obj->unk14;
+    obj->unk04->unk00 = (s32)obj->unk0C >> 8;
+    if ((s32)obj->unk14 >= 0)
+        return 0;
+    obj->unk00 = 0;
+    obj->unk08 += 1;
+state2:
+    obj->unk00 += 1;
+    if ((s16)obj->unk00 > 0x3B) {
+        set_slot_value(0x4B, -1);
+        obj->unk00 = 0;
+        obj->unk08 += 1;
+        return 3;
+    }
+    return 0;
+state3:
+    obj->unk14 += obj->unk1C;
+    obj->unk0C += obj->unk14;
+    obj->unk04->unk00 = (s32)obj->unk0C >> 8;
+    if ((s32)obj->unk0C <= 0xEFFF)
+        return 0;
+    release_obj_131c(obj->unk04);
+    obj->unk04 = 0;
+    return 2;
+}
+
+struct RecObj {
+    u8 filler0[4];
+    struct Sprite *unk04;
+    u16 unk08;
+    u8 filler0A[2];
+    u32 unk0C;
+    u32 unk10;
+};
+
+extern u8 gUnk_0300034C[];
+
+void obj_create_sprite_record(struct RecObj *obj)
+{
+    obj->unk04 = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
+    switch (gUnk_0300034C[0x8C0]) {
+    case 0:
+        obj_load_record(obj->unk04, 0x1C, -1, 0, 0);
+        break;
+    case 1:
+        obj_load_record(obj->unk04, 0x1D, -1, 0, 0);
+        break;
+    case 2:
+        obj_load_record(obj->unk04, 0x1E, -1, 0, 0);
+        break;
+    case 3:
+        obj_load_record(obj->unk04, 0x1F, -1, 0, 0);
+        break;
+    case 4:
+        obj_load_record(obj->unk04, 0x20, -1, 0, 0);
+        break;
+    default:
+        obj_load_record(obj->unk04, 0x1B, -1, 0, 0);
+        break;
+    }
+    sprite_update_cd0(obj->unk04);
+    obj->unk04->unk00 = (s32)obj->unk0C >> 8;
+    obj->unk04->unk02 = (s32)obj->unk10 >> 8;
+    obj->unk08 = 1;
+}
+
+ASM_FUNC("asm/code_08154490/transition_setup_scene.s", void transition_setup_scene(void))
