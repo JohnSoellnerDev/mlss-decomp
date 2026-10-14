@@ -49,6 +49,9 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Bit fields: `lsls r2, r2, #10; lsrs r2, r2, #20` reads 12 bits starting at bit 10 of a u32
   (`u32 a : 10; u32 b : 12;` – GCC lays them out from bit 0 upwards).
 - Calls through a function pointer go through `bl _call_via_rN`.
+- `bl __floatsidf` / `__adddf3` / `__muldf3` / `__fixdfsi` … are `double` arithmetic in C
+  (`(s32)(x * 1.5)`), `__lshrdi3` / `__muldi3` are 64-bit (`long long`) shifts and multiplies.
+  agbcc keeps doubles high word first, like the original.
 - Routines copied to IWRAM are called as `base + (routine - block start)` with three literal
   pool words (`gMathRoutines`, `iwram_div`, `iwram_sqrt`): use `MATH_ROUTINE(type, iwram_div)` /
   `MEM_ROUTINE(type, iwram_copy)` from `include/ram_routines.h`. The sine and cosine tables are
