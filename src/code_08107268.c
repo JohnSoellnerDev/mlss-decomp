@@ -319,7 +319,21 @@ void state_clear_menu_flag_and_end(struct Owner *owner)
 
 ASM_FUNC("asm/code_08107268/state_menu_scroll_stop.s", void state_menu_scroll_stop(struct Owner *owner))
 
-ASM_FUNC("asm/code_08107268/state_menu_scroll_begin.s", void state_menu_scroll_begin(struct Owner *owner))
+void state_menu_scroll_begin(struct Owner *owner)
+{
+    s32 timer = owner->timer;
+
+    if (timer != 0)
+    {
+        gUnk_03000FD8->scene->scroll++;
+        owner->timer--;
+    }
+    else
+    {
+        owner->scrollStep = timer;
+        owner->state = state_menu_scroll_stop;
+    }
+}
 
 ASM_FUNC("asm/code_08107268/state_menu_clear_vram.s", void state_menu_clear_vram(void))
 
@@ -925,7 +939,20 @@ void state_scroll_clamp_then_finish(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_wait_then_clear.s", void state_wait_then_clear(struct Owner *owner))
+void state_wait_then_clear(struct Owner *owner)
+{
+    s32 timer = owner->timer;
+
+    if (timer != 0)
+    {
+        owner->timer--;
+    }
+    else
+    {
+        display_pause();
+        owner->state = NULL;
+    }
+}
 
 ASM_FUNC("asm/code_08107268/update_world_objects.s", void update_world_objects(void))
 

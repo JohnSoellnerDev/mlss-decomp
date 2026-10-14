@@ -73,6 +73,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   assignment (`((struct FlagBits *)&p->flags)->bit3 = 0;`) or work on an int temporary
   (`int b = p->flags; b = -0x41 & b; b = -0x21 & b; p->flags = b;` keeps two separate masks).
   Examples: src/code_08092784.c, src/code_08090F84.c.
+- A halfword/byte field is tested sign-extended (`ldrsh rX` + `cmp`) and later re-read with
+  `ldrh`/`ldrb` for an update, but your C loads the `ldrh` first: read the field into an `s32`
+  local (`s32 t = obj->timer; if (t != 0) obj->timer--;`). An `s16` local or a direct
+  `if (obj->timer)` keeps the narrow value and reuses it.
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
