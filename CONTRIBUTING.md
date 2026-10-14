@@ -52,6 +52,10 @@ function start, calls show the relocation (the called symbol). A worked example 
 - `switch` becomes `cmp rX, #N; bhi default; lsls; ldr table; adds; ldr; mov pc` followed by a
   `.4byte .Lcase…` table.
 - Return a value only when callers use `r0` after the call.
+- A loop counter that only counts down (`add rX, #-1` / `subs`, `cmp rX, #0`, `bge`) and is not
+  used in the body is usually a counting-up `for (i = 0; i < N; i++)` that GCC reversed. Its
+  start value N-1 can even be copied from another register that happens to hold the same
+  constant (`mov r9, r10`).
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
