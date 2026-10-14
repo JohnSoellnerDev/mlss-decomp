@@ -2,11 +2,14 @@
 """Generate build.ninja, the linker script and objdiff.json from config/.
 
     python3 configure.py && ninja            # mlss.gba, checked against config/rom.sha1
-    ninja report                             # build/report.json for decomp.dev (no ROM needed)
+    ninja report                             # build/report.json for decomp.dev
 
 Layout of the ROM (config/units.txt): code units in ROM order, data in between. A code unit
 is built from src/UNIT.c when that file exists, otherwise from the original assembly in
 asm/UNIT/*.s (one file per function). Data still comes from baserom.gba (.incbin).
+
+asm/ is not in the repository: it is disassembled from baserom.gba here whenever
+config/symbols.txt, config/units.txt or tools/disasm.py changed (tools/unitbuild.py).
 
 Objects per code unit:
   build/expected/UNIT.o  all functions from asm/UNIT/ (the target objdiff compares against)
@@ -21,7 +24,7 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from symbols import binutil, load_symbols, load_units  # noqa: E402
-from unitbuild import expected_source  # noqa: E402
+from unitbuild import ASM_INPUTS, expected_source, generate_asm  # noqa: E402
 
 ROM_START, ROM_SIZE = 0x08000000, 0x01000000
 AGBCC_FLAGS = "-mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm"
@@ -36,6 +39,7 @@ def main():
     syms = load_symbols(os.path.join(ROOT, "config/symbols.txt"))
     units = load_units(os.path.join(ROOT, "config/units.txt"))
     os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
+    generate_asm()
 
     # ROM segments: code units and the data between them
     segs, pos = [], ROM_START
@@ -109,7 +113,7 @@ def main():
           "  description = check $in", "",
           "rule report", "  command = tools/objdiff-cli report generate -o $out",
           "  description = objdiff report", ""]
-    config_files = ["config/units.txt", "config/symbols.txt", "configure.py", "tools/symbols.py"]
+    config_files = sorted(set(ASM_INPUTS) | {"configure.py", "tools/unitbuild.py"})
     src_dirs = sorted({os.path.dirname(os.path.join("src", u[2] + ".c")) for u in units})
     n += [f"build build.ninja: configure | {' '.join(config_files)} " + " ".join(d for d in src_dirs if os.path.isdir(os.path.join(ROOT, d))), ""]
 

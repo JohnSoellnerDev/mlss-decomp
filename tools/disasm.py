@@ -2,7 +2,12 @@
 """Disassemble functions of the MLSS ROM into GNU as source, one file per function.
 
     tools/disasm.py [--rom baserom.gba] [--symbols config/symbols.txt] FUNC...   (names or addresses)
-    tools/disasm.py --all [--start ADDR --end ADDR] --out DIR
+    tools/disasm.py --write [UNIT...]      asm/UNIT/FUNC.s for these units (all without names)
+
+asm/ is not in the repository: configure.py runs `--write` whenever config/ or this file
+changed, so asm/ always follows config/symbols.txt and config/units.txt (edits in asm/ get
+overwritten). Files only change when their text does; files of functions that no longer
+exist are removed.
 
 Every function runs from its entry to the next symbol in config/symbols.txt. Inside that
 range the code is followed recursively (branches, jump tables); words loaded with
@@ -11,9 +16,9 @@ is a known function or data address (see `symbolize`). Bytes behind the last rea
 instruction/pool word that are not alignment padding are reported as data ("tail"), so the
 caller can give them their own data symbol.
 
-The output is checked by tools/verify_asm.py (assembles everything and compares with the
-ROM); instructions that GNU as encodes differently are written as raw `.2byte`/`.4byte`.
-Needs capstone (`.venv`, see README).
+Instructions that GNU as encodes differently are written as raw `.2byte`/`.4byte`
+(`tools/bin/ninja expected` checks the result against the ROM).
+Needs capstone (tools/setup.sh puts it into tools/pylib).
 """
 import argparse
 import os
@@ -22,6 +27,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pylib"))
 import capstone
 from capstone import arm as csarm
 
@@ -464,13 +470,12 @@ def unit_functions(syms, unit):
     return [syms[a] for a in sorted(syms) if start <= a < end and syms[a].is_func]
 
 
-def write_units(dis, units, which, force, outroot):
+def write_units(dis, units, which, outroot):
     import tempfile
     w = Writer(dis, [(s, e) for s, e, _ in units])
     todo = [u for u in units if not which or u[2] in which]
     funcs = []
     for u in todo:
-        prev_end = u[0]
         for s in unit_functions(dis.syms, u):
             f = dis.analyze(s, limit=min(dis.next_symbol(s.addr), u[1]))
             funcs.append((u, f))
@@ -480,17 +485,30 @@ def write_units(dis, units, which, force, outroot):
     with tempfile.TemporaryDirectory() as tmp:
         w.check_encodings(items, tmp)
     print(f"{len(funcs)} functions, {len(w.raw_texts)} instruction texts kept as raw bytes", file=sys.stderr)
-    written = 0
+    written, wanted = 0, set()
     for u, f in funcs:
         d = os.path.join(outroot, u[2])
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f.sym.name + ".s")
-        if os.path.exists(path) and not force:
-            continue
+        wanted.add(os.path.normpath(path))
+        text = "\n".join(w.body(f)) + "\n"
+        if os.path.exists(path) and open(path).read() == text:
+            continue  # unchanged: keep the mtime, so ninja does not rebuild the unit
         with open(path, "w") as fh:
-            fh.write("\n".join(w.body(f)) + "\n")
+            fh.write(text)
         written += 1
-    print(f"wrote {written} files", file=sys.stderr)
+    # files of functions that were renamed, merged or moved to another unit
+    removed = 0
+    for top in ([os.path.join(outroot, u[2]) for u in todo] if which else [outroot]):
+        for dp, _, files in os.walk(top, topdown=False):
+            for fn in files:
+                p = os.path.normpath(os.path.join(dp, fn))
+                if fn.endswith(".s") and p not in wanted:
+                    os.remove(p)
+                    removed += 1
+            if dp != outroot and not os.listdir(dp):
+                os.rmdir(dp)
+    print(f"wrote {written} files, removed {removed}", file=sys.stderr)
 
 
 def main():
@@ -500,7 +518,6 @@ def main():
     ap.add_argument("--units", default=os.path.join(ROOT, "config/units.txt"))
     ap.add_argument("--write", nargs="*", metavar="UNIT",
                     help="write asm/UNIT/FUNC.s for these units (all without names)")
-    ap.add_argument("--force", action="store_true", help="overwrite existing asm files")
     ap.add_argument("--out", default=os.path.join(ROOT, "asm"))
     ap.add_argument("funcs", nargs="*", help="print these functions (names or addresses)")
     args = ap.parse_args()
@@ -509,7 +526,7 @@ def main():
     dis = Disassembler(rom, syms)
     units = load_units(args.units) if os.path.exists(args.units) else []
     if args.write is not None:
-        write_units(dis, units, set(args.write), args.force, args.out)
+        write_units(dis, units, set(args.write), args.out)
         return
     byname = {s.name: s for s in syms.values()}
     w = Writer(dis, [(s, e) for s, e, _ in units])

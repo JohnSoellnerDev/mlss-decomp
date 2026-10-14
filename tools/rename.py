@@ -11,6 +11,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from symbols import load_symbols, load_units, write_symbols  # noqa: E402
+from unitbuild import asm_is_current, mark_asm_current  # noqa: E402
 
 
 def main(old, new):
@@ -25,6 +26,7 @@ def main(old, new):
         sys.exit(f"{new} exists already (0x{byname[new].addr:08X})")
     sym = byname[old]
     sym.name = new
+    asm_current = asm_is_current()
     write_symbols(path, syms)
     if sym.is_func:
         unit = next((u[2] for u in load_units(os.path.join(ROOT, "config/units.txt")) if u[0] <= sym.addr < u[1]), None)
@@ -45,6 +47,8 @@ def main(old, new):
                 if text2 != text:
                     open(p, "w").write(text2)
                     changed += 1
+    if asm_current:
+        mark_asm_current()  # asm/ is renamed in place: what configure.py would generate now
     subprocess.run([sys.executable, os.path.join(ROOT, "configure.py")], check=True)
     print(f"{old} -> {new} (0x{sym.addr:08X}), {changed} files changed")
 

@@ -3,6 +3,10 @@
 *.sav
 *.bin
 
+# The original assembly is generated from the ROM by configure.py: never commit it
+/asm/*
+!/asm/macros.inc
+
 # Build output and generated files
 build/
 build.ninja
@@ -20,3 +24,4 @@ __pycache__/
 .claude/
 tools/binutils/
 tools/bin/
+tools/pylib/

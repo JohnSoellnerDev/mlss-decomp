@@ -1,7 +1,8 @@
 # Builds the decompilation and uploads the progress report that decomp.dev reads
-# (artifact A88P_report on pushes to main). The report needs no ROM: it compares the C
-# against the original assembly in asm/. With the optional secret BASEROM_URL (and
-# BASEROM_AUTH, an Authorization header value) the full ROM is built and checked as well.
+# (artifact A88P_report on pushes to main). Neither the ROM nor the game's code is in the
+# repository: the job downloads the ROM from a private location given by the secrets
+# BASEROM_URL and BASEROM_AUTH (an Authorization header value), and configure.py generates
+# the original assembly (asm/) from it.
 name: Build
 
 on:
@@ -12,10 +13,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    env:
-      HAS_BASEROM: ${{ secrets.BASEROM_URL != '' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: No game files in the repository
+        run: |
+          bad=$(git ls-files | grep -vx 'asm/macros.inc' | grep -E '^asm/|\.(gba|sav|bin)$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::ROM files or original assembly are tracked by git:"
+            echo "$bad" | head -20
+            exit 1
+          fi
 
       - name: Restore toolchain
         uses: actions/cache@v4
@@ -25,31 +33,32 @@ jobs:
             tools/binutils
             tools/bin
             tools/objdiff-cli
+            tools/pylib
           key: toolchain-${{ hashFiles('tools/setup.sh') }}
 
       - name: Install toolchain
         run: JOBS=4 tools/setup.sh
 
-      - name: Configure
-        run: python3 configure.py
-
-      - name: Assemble the original code and compile the C
-        run: tools/bin/ninja objects
-
       - name: Fetch baserom
         env:
           BASEROM_URL: ${{ secrets.BASEROM_URL }}
           BASEROM_AUTH: ${{ secrets.BASEROM_AUTH }}
-        if: env.HAS_BASEROM == 'true'
         run: |
+          if [ -z "$BASEROM_URL" ]; then
+            echo "::error::The secret BASEROM_URL is not set: the build needs the original ROM."
+            exit 1
+          fi
           if [ -n "$BASEROM_AUTH" ]; then
             curl -fsSL -H "Authorization: $BASEROM_AUTH" -o baserom.gba "$BASEROM_URL"
           else
             curl -fsSL -o baserom.gba "$BASEROM_URL"
           fi
+          sha1sum -c --quiet config/rom.sha1
+
+      - name: Configure (generates asm/ from the ROM)
+        run: python3 configure.py
 
       - name: Build the ROM and compare
-        if: hashFiles('baserom.gba') != ''
         run: tools/bin/ninja rom expected
 
       - name: Progress report

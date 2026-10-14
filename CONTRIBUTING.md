@@ -7,14 +7,16 @@ compiled function is identical.
 
 ## Ground rules
 
-1. **No game data in the repository.** Never commit the ROM, extracted graphics/music/text,
-   binary blobs or hex dumps of data. Code (C, the original assembly in `asm/`), headers, tools
-   and configuration only.
+1. **Nothing of the game in the repository.** Never commit the ROM, extracted
+   graphics/music/text, binary blobs, hex dumps of data or the original assembly. `asm/` is
+   generated from your ROM by `configure.py` and ignored by git (only `asm/macros.inc` is
+   tracked); the server rejects pushes that contain any of it. C, headers, tools and
+   configuration only.
 2. **The ROM stays identical.** After every change `tools/bin/ninja` has to print
-   `mlss.gba: OK (fa2314c2…)`. If you touched anything in `asm/`, `tools/bin/ninja expected`
+   `mlss.gba: OK (fa2314c2…)`. If you changed anything in `config/`, `tools/bin/ninja expected`
    has to be OK as well.
 3. Keep changes focused: your unit's `src/` file, headers you need (add to them,
-   do not reorganise), and symbol references in the `asm/` files of the functions you work on.
+   do not reorganise), and the `config/symbols.txt` entries your functions need.
 
 ## One function, start to finish
 
@@ -32,9 +34,10 @@ function start, calls show the relocation (the called symbol). A worked example 
 
 ## Reading the original
 
-- `asm/UNIT/FUNC.s`: Thumb in unified syntax. Labels `.L0805085C` carry the address. Literal
-  pool words (`.4byte`) are written as symbols where the value is a function, ROM data
-  (`gUnk_08…` or a named table) or RAM (`gUnk_02…`/`gUnk_03…`), otherwise as numbers.
+- `asm/UNIT/FUNC.s` (generated, see above): Thumb in unified syntax. Labels `.L0805085C` carry
+  the address. Literal pool words (`.4byte`) are written as symbols where the value is a
+  function, ROM data (`gUnk_08…` or a named table) or RAM (`gUnk_02…`/`gUnk_03…`), otherwise
+  as numbers.
 - `config/symbols.txt` maps names to addresses; `grep -rn "bl FUNC$" asm/` finds the callers.
 
 ## Writing C that matches (agbcc / GCC 2.95 habits)
@@ -126,10 +129,12 @@ function start, calls show the relocation (the called symbol). A worked example 
 - RAM variables are not defined in C yet: declare them `extern`; the linker puts every symbol
   from `config/symbols.txt` that no object defines at its address. ROM data is still taken from
   the ROM: declare it `extern const` (e.g. `extern const u8 gUnk_0812345C[];`).
-- The asm is the reference objdiff compares against. When your C refers to data through a
+- The asm is the reference objdiff compares against, and it is written from
+  `config/symbols.txt`: edits in `asm/` are overwritten. When your C refers to data through a
   different symbol than the asm (asm `.4byte gUnk_0300240C`, C `&gScene.unk200` → `gScene+0x200`),
-  change the symbol text in the asm (never the bytes) so both agree, then check
-  `tools/bin/ninja expected` is still OK.
+  change the symbols instead: give the struct its size (`03002200 gScene ram size=…`) and
+  remove the symbol in between; pool words inside a sized symbol are written as `NAME+0xOFF`.
+  Then `python3 configure.py` (rewrites `asm/`) and check `tools/bin/ninja expected` is OK.
 - Shared structs and prototypes go into headers in `include/` (one per subsystem, e.g.
   `include/scene.h`); things only one unit uses can stay in its `.c` file.
 
@@ -153,12 +158,12 @@ Do not change `config/units.txt` or move functions between units unless that is 
 
 | Tool | Purpose |
 |---|---|
-| `tools/setup.sh` | Installs agbcc, binutils, ninja and objdiff-cli into `tools/` |
-| `configure.py` | Writes `build.ninja`, linker scripts, `objdiff.json` (runs again by itself when `config/` changes) |
+| `tools/setup.sh` | Installs agbcc, binutils, ninja, objdiff-cli and capstone (for the disassembler) into `tools/` |
+| `configure.py` | Generates `asm/` from `baserom.gba` and writes `build.ninja`, linker scripts, `objdiff.json` (runs again by itself when `config/` changes) |
 | `tools/new_c_unit.py UNIT` | Creates `src/UNIT.c` with every function as `ASM_FUNC` |
 | `tools/asmdiff.py FUNC` | Your C against the original, instruction by instruction |
 | `tools/rename.py OLD NEW` | Renames a symbol everywhere |
 | `tools/split_unit.py UNIT ADDR…` | Splits a unit (and its C file) at function addresses; `--auto MIN` cuts out runs of finished functions |
 | `tools/check_rom.py ROM` | SHA-1 check; on a mismatch names the first misplaced function and the first differing byte |
 | `tools/progress.py` | Summary of `build/report.json` |
-| `tools/disasm.py` | Produced `asm/` from the ROM (needs `.venv` with capstone). Only for re-splitting functions; it does not overwrite edited files without `--force` |
+| `tools/disasm.py` | The disassembler behind `asm/` (`configure.py` runs it); `tools/disasm.py FUNC` prints one function |

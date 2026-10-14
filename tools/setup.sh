@@ -5,7 +5,8 @@
 #   tools/binutils/   GNU binutils for arm-none-eabi, statically linked
 #   tools/bin/ninja   ninja
 #   tools/objdiff-cli objdiff (diffs and the decomp.dev progress report)
-# Needs: a host C compiler, make, curl, git, xz, unzip. Takes a few minutes (binutils).
+#   tools/pylib/      capstone for Python (tools/disasm.py, which generates asm/ from the ROM)
+# Needs: a host C compiler, make, curl, git, xz, unzip, sha256sum. Takes a few minutes (binutils).
 #
 #     tools/setup.sh            # everything that is missing
 #     JOBS=8 tools/setup.sh
@@ -19,6 +20,8 @@ NINJA_VERSION=1.12.1
 OBJDIFF_VERSION=v3.8.2
 AGBCC_REPO=https://github.com/pret/agbcc.git
 AGBCC_COMMIT=da598c1
+CAPSTONE_WHEEL=https://files.pythonhosted.org/packages/15/3e/3a4f45dd4eda6fc8051f76bf3ed50ead6040d827000371211fbaaf057625/capstone-5.0.7-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+CAPSTONE_SHA256=b809a9654844ce0d35099121a851ddd2ab2689df1ff6687037babcedcaae6391
 mkdir -p "$WORK" tools/bin
 trap 'rm -rf "$WORK"' EXIT
 
@@ -47,6 +50,13 @@ if [ ! -x tools/objdiff-cli ]; then
     echo "== objdiff-cli $OBJDIFF_VERSION"
     curl -fsSL -o tools/objdiff-cli "https://github.com/encounter/objdiff/releases/download/$OBJDIFF_VERSION/objdiff-cli-linux-x86_64"
     chmod +x tools/objdiff-cli
+fi
+
+if [ ! -d tools/pylib/capstone ]; then
+    echo "== capstone"
+    curl -fsSL -o "$WORK/capstone.whl" "$CAPSTONE_WHEEL"
+    echo "$CAPSTONE_SHA256  $WORK/capstone.whl" | sha256sum -c --quiet
+    unzip -q -o "$WORK/capstone.whl" -d tools/pylib  # pure Python + its own libcapstone.so
 fi
 
 if [ ! -x tools/agbcc/bin/agbcc ]; then

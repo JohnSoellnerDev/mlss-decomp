@@ -1,5 +1,7 @@
 """Building single units in a private directory (used by asmdiff.py and check_unit.py, so that
-several people or agents can check their work at the same time without touching build/)."""
+several people or agents can check their work at the same time without touching build/), and
+generating asm/ from the ROM (used by configure.py)."""
+import hashlib
 import os
 import subprocess
 import sys
@@ -7,6 +9,43 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from symbols import binutil, load_symbols, load_units  # noqa: E402
+
+# asm/ is written from these and baserom.gba; asm/.stamp holds their hash
+ASM_INPUTS = ["config/symbols.txt", "config/units.txt", "config/rom.sha1", "tools/disasm.py", "tools/symbols.py"]
+ASM_STAMP = os.path.join(ROOT, "asm/.stamp")
+
+
+def asm_key():
+    h = hashlib.sha1()
+    for p in ASM_INPUTS:
+        h.update(open(os.path.join(ROOT, p), "rb").read())
+    return h.hexdigest()
+
+
+def asm_is_current():
+    return os.path.exists(ASM_STAMP) and open(ASM_STAMP).read().strip() == asm_key()
+
+
+def mark_asm_current():
+    with open(ASM_STAMP, "w") as f:
+        f.write(asm_key() + "\n")
+
+
+def generate_asm():
+    """asm/UNIT/FUNC.s, the original assembly of every function, disassembled from baserom.gba.
+    The game's code is not in the repository; this runs when config/ changed (about a minute)."""
+    if asm_is_current():
+        return
+    rom = os.path.join(ROOT, "baserom.gba")
+    if not os.path.exists(rom):
+        sys.exit("baserom.gba is missing: asm/ (the original assembly) is generated from your copy of "
+                 "the game, see README.md")
+    want = open(os.path.join(ROOT, "config/rom.sha1")).read().split()[0]
+    if hashlib.sha1(open(rom, "rb").read()).hexdigest() != want:
+        sys.exit(f"baserom.gba is not the expected ROM (SHA-1 {want}), see README.md")
+    print("generating asm/ from baserom.gba", file=sys.stderr)
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools/disasm.py"), "--write"], cwd=ROOT, check=True)
+    mark_asm_current()
 
 
 def expected_source(name, funcs):
