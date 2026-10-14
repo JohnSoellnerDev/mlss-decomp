@@ -163,6 +163,7 @@ s32 __fixdfsi(u64 a);
 void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 void hero_b_node_input_step_67a8(struct HeroBody *body);
+void hero_b_spawn_node_66c8(struct HeroBody *body);
 void step_motion(struct HeroBody *body);
 void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
 void hero_pair_place_b_then_a(struct HeroBody *body);
@@ -363,7 +364,88 @@ s32 hero_pair_start_pose_done(struct HeroBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_080A4F38/hero_a_go_to_partner_random.s", void hero_a_go_to_partner_random(struct HeroBody *body))
+void hero_a_go_to_partner_random(struct HeroBody *body)
+{
+    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *partner = body->partner;
+    s32 tx;
+    s32 ty;
+    s32 x;
+    s32 y;
+    struct HeroSprite *sprite;
+    s16 *span;
+    s32 mirror;
+
+    if ((body->data->flags & 0x400) != 0)
+    {
+        struct HeroSprite *sprite;
+        s32 n;
+        double f;
+
+        n = sub_081DE850(4, mt19937_next());
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 0.4) * 256.0;
+        body->frame = (s32)f;
+        n = sub_081DE850(4, mt19937_next());
+        sprite = body->sprite;
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 0.4) * 16.0;
+        sprite->frame = (s32)f;
+    }
+    if ((body->data->flags & 0x800) != 0)
+    {
+        struct HeroSprite *sprite;
+        s32 n;
+        double f;
+
+        n = sub_081DE850(4, mt19937_next());
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 1.5) * 256.0;
+        body->frame = (s32)f;
+        n = sub_081DE850(4, mt19937_next());
+        sprite = body->sprite;
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 1.5) * 16.0;
+        sprite->frame = (s32)f;
+    }
+    set_slot_value(0x3F, -1);
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        tx = partner->targetX;
+        if (tx < 0)
+            tx += 0xFF;
+        x = (tx >> 8) + partner->ofsX - 0x20;
+        ty = partner->targetY;
+        if (ty < 0)
+            ty += 0xFF;
+        y = (ty >> 8) + partner->ofsY;
+        place_targets(a, x, y, 0, -1);
+        set_motion_start(a, 0x300);
+    }
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        if (a->data->pose == -1)
+            sprite_set_action(a, 0, 0x2002, 0);
+        else
+            sprite_set_action(a, 0, 0x204F, 0);
+        sprite = a->sprite;
+        mirror = 0;
+        span = &a->spanA;
+        if (!(span[0] < span[1]))
+            mirror = 1;
+        ((struct HeroMirrorBits *)&sprite->mirrorFlags)->mirror = mirror;
+        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+    }
+    body->state = hero_a_spawn_node;
+}
 
 void hero_a_spawn_node(struct HeroBody *body)
 {
@@ -787,7 +869,88 @@ s32 hero_pair_pose_start_63d0(struct HeroBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_080A4F38/hero_b_pose_to_partner_rand_6464.s", void hero_b_pose_to_partner_rand_6464(struct HeroBody *body))
+void hero_b_pose_to_partner_rand_6464(struct HeroBody *body)
+{
+    struct HeroBody *a = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *partner = body->partner;
+    s32 tx;
+    s32 ty;
+    s32 x;
+    s32 y;
+    struct HeroSprite *sprite;
+    s16 *span;
+    s32 mirror;
+
+    if ((body->data->flags & 0x400) != 0)
+    {
+        struct HeroSprite *sprite;
+        s32 n;
+        double f;
+
+        n = sub_081DE850(4, mt19937_next());
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 0.4) * 256.0;
+        body->frame = (s32)f;
+        n = sub_081DE850(4, mt19937_next());
+        sprite = body->sprite;
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 0.4) * 16.0;
+        sprite->frame = (s32)f;
+    }
+    if ((body->data->flags & 0x800) != 0)
+    {
+        struct HeroSprite *sprite;
+        s32 n;
+        double f;
+
+        n = sub_081DE850(4, mt19937_next());
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 1.5) * 256.0;
+        body->frame = (s32)f;
+        n = sub_081DE850(4, mt19937_next());
+        sprite = body->sprite;
+        f = n;
+        if (n < 0)
+            f += 4294967296.0;
+        f = (f * 0.1 + 1.5) * 16.0;
+        sprite->frame = (s32)f;
+    }
+    set_slot_value(0x3F, -1);
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        tx = partner->targetX;
+        if (tx < 0)
+            tx += 0xFF;
+        x = (tx >> 8) + partner->ofsX - 0x20;
+        ty = partner->targetY;
+        if (ty < 0)
+            ty += 0xFF;
+        y = (ty >> 8) + partner->ofsY;
+        place_targets(a, x, y, 0, -1);
+        set_motion_start(a, 0x300);
+    }
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        if (a->data->pose == -1)
+            sprite_set_action(a, 0, 0x2002, 0);
+        else
+            sprite_set_action(a, 0, 0x204F, 0);
+        sprite = a->sprite;
+        mirror = 0;
+        span = &a->spanA;
+        if (!(span[0] < span[1]))
+            mirror = 1;
+        ((struct HeroMirrorBits *)&sprite->mirrorFlags)->mirror = mirror;
+        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+    }
+    body->state = hero_b_spawn_node_66c8;
+}
 
 void hero_b_spawn_node_66c8(struct HeroBody *body)
 {

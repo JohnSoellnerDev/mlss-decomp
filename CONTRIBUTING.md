@@ -83,6 +83,9 @@ function start, calls show the relocation (the called symbol). A worked example 
 - A multiply by a constant that sits in the destination register (`movs r0, #0xD0; muls r0, r1`)
   is usually indexing an array of structs (`&gWork->entries[i]` with a 0xD0-byte struct), not
   `base + i * 0xD0` written by hand.
+- Fixed-point conversions inside call arguments: write `f(x / 0x100, …)` directly; separate
+  `if (x < 0) x += 0xFF; x >>= 8;` statements change the order of the stack-argument stores.
+- `movs r0, #0x41; rsbs r0, r0, #0` is the constant `~0x40` (clears bit 6 only).
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
