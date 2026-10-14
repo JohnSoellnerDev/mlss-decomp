@@ -70,6 +70,8 @@ function start, calls show the relocation (the called symbol). A worked example 
   your C puts it straight into r5: write `obj->field` at every use instead of keeping a
   pointer variable; GCC then shares the address itself. `ldrsh`/`ldrsb` mean the field is
   signed (`s16`/`s8`).
+- Reading a bit field through a struct pointer compiles to a word `ldr`; when the original
+  uses `ldrb` + `lsls`/`lsrs`, read the byte and shift (`((u32)x << 25) >> 31`).
 - Clearing or setting bits of a byte keeps the full int constant in the original
   (`ldrb; movs r0, #9; rsbs r0, r0, #0; ands r0, r2; strb` = and with -9). A plain
   `p->flags &= ~8` on a `u8` gets the constant narrowed and does not match. Write a bit-field
