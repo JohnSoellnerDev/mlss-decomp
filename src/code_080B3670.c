@@ -132,8 +132,8 @@ void body_set_target_offset(struct HeroBody *body);
 void body_step_reset_pose(struct HeroBody *body);
 void hero_a_start_anim_2032(struct HeroBody *body);
 void hero_b_steps(struct HeroBody *body);
-void sub_080B397C(struct HeroBody *body);
-void sub_080B3988(struct HeroBody *body);
+void hero_b_set_take_target_state(struct HeroBody *body);
+void hero_b_set_fall_timers(struct HeroBody *body);
 void hero_b_enter_side(struct HeroBody *body);
 void hero_a_stop_anim(struct HeroBody *body);
 void hero_pair_end_when_idle(struct HeroBody *body);
@@ -196,12 +196,12 @@ void hero_b_steps(struct HeroBody *body)
     body->state = hero_pair_place_b_beside_a;
 }
 
-void sub_080B397C(struct HeroBody *body)
+void hero_b_set_take_target_state(struct HeroBody *body)
 {
     body->state = hero_b_take_target_pose;
 }
 
-void sub_080B3988(struct HeroBody *body)
+void hero_b_set_fall_timers(struct HeroBody *body)
 {
     struct World *world = gUnk_03000FD8;
     struct HeroBody *body_b = &world->heroB->body;

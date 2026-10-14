@@ -115,7 +115,7 @@ void obj_spawn_child_by_slot(struct ActorObj *obj);
 extern u32 gUnk_03000E3C;
 u32 effect_from_table_obj(struct ActorObj *obj, u32 id);
 
-u32 unknown_part_steps_0806bccc(struct ActorObj *obj);
+u32 actor_start_action2_then_move_high(struct ActorObj *obj);
 u32 actor_init_side_mode(struct ActorObj *obj);
 u32 actor_default_speed(struct ActorObj *obj);
 void actor_action2_then_move_high(struct ActorObj *obj);
@@ -145,9 +145,9 @@ void actor_countdown_release_partners(struct ActorObj *obj);
 void actor_release_when_free_b(struct ActorObj *obj);
 void actor_wait_index_then_timer(struct ActorObj *obj);
 void actor_idle_when_pose_active(struct ActorObj *obj);
-u32 unknown_part_steps_0806ca2a(struct ActorObj *obj);
-u32 sub_0806CA40(struct ActorObj *obj);
-u32 sub_0806CA54(struct ActorObj *obj);
+u32 actor_set_home_side1(struct ActorObj *obj);
+u32 actor_set_home_side0(struct ActorObj *obj);
+u32 actor_start_action2_then_action3(struct ActorObj *obj);
 void actor_set_home_and_motion(struct ActorObj *obj);
 void actor_action2_then_action3(struct ActorObj *obj);
 void actor_action3_spawn_effect(struct ActorObj *obj);
@@ -439,21 +439,21 @@ void actor_idle_when_pose_active(struct ActorObj *obj)
     }
 }
 
-u32 unknown_part_steps_0806ca2a(struct ActorObj *obj)
+u32 actor_set_home_side1(struct ActorObj *obj)
 {
     obj->paramA8 = 1;
     obj->state = actor_set_home_and_motion;
     return 1;
 }
 
-u32 sub_0806CA40(struct ActorObj *obj)
+u32 actor_set_home_side0(struct ActorObj *obj)
 {
     obj->paramA8 = 0;
     obj->state = actor_set_home_and_motion;
     return 1;
 }
 
-u32 sub_0806CA54(struct ActorObj *obj)
+u32 actor_start_action2_then_action3(struct ActorObj *obj)
 {
     obj->state = actor_action2_then_action3;
     return 1;

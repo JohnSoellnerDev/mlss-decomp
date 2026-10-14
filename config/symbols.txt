@@ -56,7 +56,7 @@
 03000388 gUnk_03000388 ram
 030003CC gUnk_030003CC ram
 03000BD4 gUnk_03000BD4 ram
-03000C0C gUnk_03000C0C ram
+03000C0C gSysLang ram
 03000C24 gUnk_03000C24 ram
 03000C28 gUnk_03000C28 ram
 03000C6C gUnk_03000C6C ram
@@ -152,10 +152,10 @@
 03000FC4 gUnk_03000FC4 ram
 03000FC8 gUnk_03000FC8 ram
 03000FCC gUnk_03000FCC ram
-03000FD0 gUnk_03000FD0 ram
+03000FD0 gEffectState ram
 03000FD4 gUnk_03000FD4 ram
 03000FD8 gUnk_03000FD8 ram
-03000FDC gUnk_03000FDC ram
+03000FDC gWorkBuf ram
 03000FE0 gUnk_03000FE0 ram
 03000FE4 gUnk_03000FE4 ram
 03000FE8 gUnk_03000FE8 ram
@@ -1063,8 +1063,8 @@
 0805FD44 obj_set_sprite_offsets thumb
 0805FD90 map_obj_settle thumb
 0805FDE4 unknown_part_steps_0805fde4 thumb
-0805FDF8 sub_0805FDF8 thumb
-0805FE0C sub_0805FE0C thumb
+0805FDF8 map_obj_wait_mode1 thumb
+0805FE0C map_obj_wait_mode0 thumb
 0805FE20 map_obj_settle_count thumb
 0805FE40 map_obj_wait_action2 thumb
 0805FE74 map_obj_place_at_base thumb
@@ -1081,7 +1081,7 @@
 08060598 obj_advance_x_until_param thumb
 080605F4 obj_pose_active_action5_then_spawn thumb
 08060620 unknown_part_steps_08060620 thumb
-08060664 sub_08060664 thumb
+08060664 obj_setup_owner_target_drift thumb
 080606B0 obj_move_and_cull thumb
 08060730 obj_index_zero_reset_x thumb
 0806076C obj_pose_active_callback_clear_link thumb
@@ -1097,8 +1097,8 @@
 08060B60 obj_index_zero_setup_action4 thumb
 08060B9C obj_query_link_slot_wait thumb
 08060BD8 unknown_part_steps_08060bd8 thumb
-08060BEC sub_08060BEC thumb
-08060C00 sub_08060C00 thumb
+08060BEC pose_steps_obj_wait_mode1 thumb
+08060C00 pose_steps_obj_wait_mode0 thumb
 08060C14 obj_pos_x_dec_then_cull thumb
 08060C40 obj_pose_active_action0c_timer8 thumb
 08060C74 obj_pose_active_action8 thumb
@@ -1504,7 +1504,7 @@
 0806BC0C actor_drift_left_release thumb
 0806BC3C actor_action8_if_no_child thumb
 0806BC60 actor_timed_effect_then_child thumb
-0806BCCC unknown_part_steps_0806bccc thumb
+0806BCCC actor_start_action2_then_move_high thumb
 0806BCD8 actor_init_side_mode thumb
 0806BD24 actor_default_speed thumb
 0806BD48 actor_action2_then_move_high thumb
@@ -1534,9 +1534,9 @@
 0806C9CC actor_release_when_free_b thumb
 0806C9E4 actor_wait_index_then_timer thumb
 0806CA04 actor_idle_when_pose_active thumb
-0806CA2C unknown_part_steps_0806ca2a thumb
-0806CA40 sub_0806CA40 thumb
-0806CA54 sub_0806CA54 thumb
+0806CA2C actor_set_home_side1 thumb
+0806CA40 actor_set_home_side0 thumb
+0806CA54 actor_start_action2_then_action3 thumb
 0806CA60 actor_set_home_and_motion thumb
 0806CAD0 actor_action2_then_action3 thumb
 0806CAEC actor_action3_spawn_effect thumb
@@ -1831,9 +1831,9 @@
 080766D8 place_then_wait_slide_a thumb
 08076738 lookup_slot_place_finish thumb
 08076788 stop_when_pose_active_d thumb
-080767B0 unknown_part_steps_080767ae thumb
+080767B0 step_to_anim_0a thumb
 080767BC set_counter_by_owner_slot thumb
-08076800 unknown_part_steps_08076800 thumb
+08076800 step_to_anim_0e thumb
 0807680C sub_0807680C thumb
 08076820 sub_08076820 thumb
 08076834 sub_08076834 thumb
@@ -2202,7 +2202,7 @@
 08087BC8 release_object_data thumb
 08087BF4 motion_timed thumb
 08087C68 obj_stop_step thumb
-08087C7C sub_08087C7C thumb
+08087C7C noop_state_08087c7c thumb
 08087C80 process_record_ring thumb
 08087CF0 set_targets_from_record thumb
 08087D48 wait_for_index thumb
@@ -2213,18 +2213,18 @@
 08087E1C search_frame_pairs thumb
 08087E58 candidate_for_slot thumb
 08087E8C active_candidate thumb
-08087EC4 unknown_code_08087ec2 thumb
-08087EFC sub_08087EFC thumb
-08087F1C sub_08087F1C thumb
-08087F24 sub_08087F24 thumb
-08087F4C sub_08087F4C thumb
-08087F64 sub_08087F64 thumb
+08087EC4 height_from_frame_scale thumb
+08087EFC copy_pos_to_active_candidate thumb
+08087F1C set_progress thumb
+08087F24 tick_progress thumb
+08087F4C progress_is_zero thumb
+08087F64 set_speed_from_delta thumb
 08087FCC sub_08087FCC thumb
 08087FFC advance_height thumb
 08088038 parabola_height thumb
 080880B4 clamp_reflect_offsets thumb
 08088138 distance_step thumb
-08088180 unknown_code_08088180 thumb
+08088180 distance_step_for_height thumb
 080881A4 move_step thumb
 08088280 step_vector thumb
 0808831C mark_candidate_pair thumb
@@ -2347,10 +2347,10 @@
 0808C660 part_landing_step thumb
 0808C6F0 pose_update_if_visible_a thumb
 0808C70C wait_then_set_action thumb
-0808C778 unknown_part_steps_0808c778 thumb
-0808C78C sub_0808C78C thumb
-0808C7A0 sub_0808C7A0 thumb
-0808C7B4 sub_0808C7B4 thumb
+0808C778 part_step_wait_mode_3 thumb
+0808C78C part_step_wait_mode_2 thumb
+0808C7A0 part_step_wait_mode_1 thumb
+0808C7B4 part_step_wait_mode_0 thumb
 0808C7C8 sub_0808C7C8 thumb
 0808C7F8 start_action5_if_idle thumb
 0808C828 part_step_arm_timed_motion_art2_v12 thumb
@@ -2802,7 +2802,7 @@
 0809B79C hide_and_reset_slot thumb
 0809B7F0 random_timers_init thumb
 0809B854 part_step_start_anim_mode2 thumb
-0809B86C sub_0809B86C thumb
+0809B86C clear_state thumb
 0809B874 start_anim_mode2 thumb
 0809B8A4 start_anim_mode3 thumb
 0809B8E4 start_anim4_fx thumb
@@ -2863,9 +2863,9 @@
 0809D19C check_child_gone thumb
 0809D1BC place_beside_partner thumb
 0809D218 clear_state_if_sprite_active thumb
-0809D230 unknown_part_steps_0809d230 thumb
-0809D23C sub_0809D23C thumb
-0809D254 sub_0809D254 thumb
+0809D230 enter_start_pose_2 thumb
+0809D23C enter_place_beside_partner thumb
+0809D254 enter_stop_after_index_bump thumb
 0809D260 start_pose_4 thumb
 0809D2A8 start_pose_2 thumb
 0809D2D8 stop_after_index_bump thumb
@@ -3142,8 +3142,8 @@
 080B38E8 body_step_reset_pose thumb
 080B3914 hero_a_start_anim_2032 thumb
 080B3970 hero_b_steps thumb
-080B397C sub_080B397C thumb
-080B3988 sub_080B3988 thumb
+080B397C hero_b_set_take_target_state thumb
+080B3988 hero_b_set_fall_timers thumb
 080B39AC hero_b_enter_side thumb
 080B3A2C hero_a_stop_anim thumb
 080B3A98 hero_pair_end_when_idle thumb
@@ -3592,8 +3592,8 @@
 080DC4C0 obj_wait_index_release_11a thumb
 080DC4E0 obj_wait_index_action3_timer thumb
 080DC510 sprite_state_chain_a thumb
-080DC51C sub_080DC51C thumb
-080DC528 sub_080DC528 thumb
+080DC51C sprite_state_chain_b thumb
+080DC528 sprite_state_random_chain_a thumb
 080DC554 obj_wait_index_pose_toggle thumb
 080DC58C obj_wait_free_then_begin_drop thumb
 080DC5A8 obj_wait_free_then_action2_slot thumb
@@ -3613,9 +3613,9 @@
 080DCBF4 obj_unlink_part thumb
 080DCC0C obj_pose_active_release_move thumb
 080DCC84 actor_return_to_base_steps thumb
-080DCC9C sub_080DCC9C thumb
+080DCC9C sprite_state_chain_c thumb
 080DCCA8 sub_080DCCA8 thumb
-080DCCB4 sub_080DCCB4 thumb
+080DCCB4 sprite_state_random_chain_b thumb
 080DCCE0 obj_wait_free_then_move_d thumb
 080DCCFC obj_wait_index_pose_update thumb
 080DCD14 obj_wait_free_then_cd90 thumb
@@ -3625,7 +3625,7 @@
 080DCE38 obj_wait_index_action3_pose thumb
 080DCE74 move_states_obj_timer_action8 thumb
 080DCEA4 obj_pose_active_action4 thumb
-080DCEE0 unknown_thumb_080dcee0 thumb
+080DCEE0 obj_screen_cull_step thumb
 080DCF58 obj_drop_land_stop thumb
 080DD000 obj_drop_clamp_to_limit thumb
 080DD090 move_states_obj_pose_active_spawn_child thumb
@@ -4622,7 +4622,7 @@
 08110AC4 wait_move_then_action_15 thumb
 08110B04 wait_move_then_place_base_b thumb
 08110B74 sprite_state_pair_a thumb
-08110B80 sub_08110B80 thumb
+08110B80 sprite_state_pair_d thumb
 08110B8C end_action_clear thumb
 08110BB4 wait_progress_then_action_11 thumb
 08110C04 start_progress_30_then_wait thumb
@@ -4648,7 +4648,7 @@
 0811167C mark_chain_then_state thumb
 081116B8 end_action_clear_b thumb
 081116E0 sprite_state_pair_b thumb
-081116EC sub_081116EC thumb
+081116EC sprite_state_pair_e thumb
 081116F8 hero_marker_begin thumb
 08111740 countdown_anim_18 thumb
 08111764 hero_marker_reset thumb
@@ -4705,8 +4705,8 @@
 08113120 callback_return_0 thumb
 08113124 obj_start_scene_move thumb
 08113184 sprite_state_pair_c thumb
-081131A0 sub_081131A0 thumb
-081131B4 sub_081131B4 thumb
+081131A0 obj_start_stored_xy thumb
+081131B4 obj_start_anim9 thumb
 081131C0 obj_timer_anim5 thumb
 08113208 obj_anim_stop_timer_up thumb
 08113240 obj_place_fixed_a thumb
@@ -4743,8 +4743,8 @@
 08114084 obj_phase_wait_idle thumb
 081140F4 obj_anim_mode5_timer3 thumb
 0811413C sprite_state_chain_f thumb
-08114158 sub_08114158 thumb
-08114174 sub_08114174 thumb
+08114158 sprite_state_scene_mode4 thumb
+08114174 sprite_state_scene_mode0 thumb
 08114190 obj_anim_slot_15_16 thumb
 081141C8 obj_timer_countdown_anim17 thumb
 08114218 obj_setup_world_links thumb
@@ -4804,7 +4804,7 @@
 081171F8 obj_draw_tile_rows thumb
 0811733C sub_0811733C thumb
 08117380 sub_08117380 thumb
-08117390 sub_08117390 thumb
+08117390 sub_obj_running thumb
 081173C4 menu_entry_mark_1 thumb
 081173F0 menu_entry_mark_2 thumb
 0811741C menu_obj_free thumb
@@ -5284,15 +5284,15 @@
 0813CC68 vec2_length thumb
 0813CC90 vec3_cross_0813cc90 thumb
 0813CCC4 sub_0813CCC4 thumb
-0813CCE4 sub_0813CCE4 thumb
+0813CCE4 vec2_dot thumb
 0813CCF8 sub_0813CCF8 thumb
-0813CD0C sub_0813CD0C thumb
-0813CD1C sub_0813CD1C thumb
-0813CD3C sub_0813CD3C thumb
-0813CD54 sub_0813CD54 thumb
-0813CD74 sub_0813CD74 thumb
-0813CD8C sub_0813CD8C thumb
-0813CD94 sub_0813CD94 thumb
+0813CD0C vec2_scale thumb
+0813CD1C vec3_sub thumb
+0813CD3C vec2_sub thumb
+0813CD54 vec3_add thumb
+0813CD74 vec2_add thumb
+0813CD8C vec3_store thumb
+0813CD94 vec2_store thumb
 0813CD9C active_hit_state thumb
 0813CE3C pick_active_target thumb
 0813CFC8 step_toward thumb
@@ -11668,11 +11668,11 @@
 08506694 gSpawnStartZoomQuarterSpin81804 data size=C
 085066A0 gSpawnStartZoomTiltRise81a5c data size=C
 085066AC gSpawnStartJumpZoomTurnPoints1cb8 data size=14
-085066C0 gUnk_085066C0 data
-085066C8 gUnk_085066C8 data
-085066CC gUnk_085066CC data
-085066D0 gUnk_085066D0 data
-085066D4 gUnk_085066D4 data
+085066C0 gSpawnStartRiseTurnPoints1f4c data
+085066C8 gSpawnStartGrowSpinPoints2180 data
+085066CC gSpawnStartGrowSpinPoints2428 data
+085066D0 gSpawnStartGrowSpinPoints26d0 data
+085066D4 gSpawnStartGrowSpinPoints2980 data
 085066D8 gSpawnStartSpringTurnPoints2c50 data size=C
 085066E4 gSpawnStartSpringTurnPoints2eb8 data size=C
 085066F0 gSpawnStartSpringTurnPoints3120 data size=C
@@ -11680,7 +11680,7 @@
 08506708 gSpawnStartSpringTurnPoints35f0 data size=C
 08506714 gSpawnStartScrollPoint3858 data size=8
 0850671C gSpawnStartScrollBouncePoint3978 data size=10
-0850672C gUnk_0850672C data
+0850672C gSpawnStartGrowTurnPoints3ac0 data
 08506738 gSpawnStartDampedZoomTurnPoints3d24 data size=10
 08506748 gSpawnStartBouncePoint3fb0 data size=C
 08506754 gSpawnStartBouncePoint40dc data size=C
@@ -11740,7 +11740,7 @@
 08506A70 gStartObjZoomSpin69a84 data size=10
 08506A80 gStartObjZoomSpin69cc8 data size=10
 08506A90 gStartObjSpinZoom59f20 data size=14
-08506AA4 gUnk_08506AA4 data
+08506AA4 gSpawnStartGrowSpinPointA1d4 data
 08506AAC gStartObjSpinModel5 data size=14
 08506AC0 gStartObjFallPoint data size=10
 08506AD0 gStartObjFallPointB data size=10
@@ -16190,7 +16190,7 @@
 089F8FFC gUiLevelupBannerEs data size=2D2
 089F92D0 gUiGameoverTextMultilang data size=6D9
 089F99AC gUiXBoxesAndPuffs089f99ac data size=AD
-089F9A5C gUnk_089F9A5C data size=B0
+089F9A5C gMapTable data size=B0
 089F9B0C gUnk_089F9B0C data size=584
 089FA090 gUnk_089FA090 data size=4F1
 089FA584 gUnk_089FA584 data size=227

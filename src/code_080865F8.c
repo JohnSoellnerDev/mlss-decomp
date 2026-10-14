@@ -130,7 +130,7 @@ void task_release_obj(struct Actor *obj);
 void noop_state_080883dc(struct Actor *obj);
 void obj_step_velocity(struct Actor *obj);
 void set_targets_from_record(struct Actor *obj);
-void sub_08087C7C(struct Actor *obj);
+void noop_state_08087c7c(struct Actor *obj);
 void obj_stop_step(struct Actor *obj);
 void obj_list_remove(struct Actor *obj);
 void set_cur_flags_both(s32 flags);
@@ -179,7 +179,7 @@ s32 obj_stop(struct Actor *obj)
     busy = owner->status111 & 2;
     if (busy != 0)
         return 0;
-    obj->state = sub_08087C7C;
+    obj->state = noop_state_08087c7c;
     obj->index = busy;
     task_create_list_4c(obj_stop_step, owner);
     {
@@ -409,7 +409,7 @@ void obj_stop_step(struct Actor *obj)
     obj->routine4 = place_part_sprite;
 }
 
-void sub_08087C7C(struct Actor *obj)
+void noop_state_08087c7c(struct Actor *obj)
 {
 }
 

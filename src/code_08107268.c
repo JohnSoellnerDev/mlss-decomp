@@ -163,7 +163,7 @@ struct Work
 };
 
 extern struct World *gUnk_03000FD8;
-extern struct Work *gUnk_03000FDC;
+extern struct Work *gWorkBuf;
 extern const u16 gEffectCodeTable[];
 
 void update_slot_markers(void);
@@ -220,7 +220,7 @@ extern u16 gUnk_0200000C;
 extern u16 gUnk_0200001C;
 extern u16 gUnk_0200001E;
 extern const u16 gGlyphIndexTable[];
-extern const u32 gUnk_089F9A5C[];
+extern const u32 gMapTable[];
 void *spawn_obj_by_id(s32 id, u32 a, u32 b, u32 c);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void state_heroes_walk_to_end(struct Owner *owner);
@@ -235,7 +235,7 @@ void change_item_count(u32 a, s32 b);
 void set_cur_flags(u32 flags);
 s32 number_right_edge(s32 a, s32 b);
 void draw_digits_c0_p11(s32 a, s32 b, s32 c, s32 d);
-u8 sub_08117390(void *menu);
+u8 sub_obj_running(void *menu);
 struct Cand *active_candidate(void *target);
 void draw_sprite_block(u32 a, u32 b, u32 c, u32 d, u32 e);
 void state_wait_menu_ready(struct Owner *owner);
@@ -731,7 +731,7 @@ void state_free_saved_list(struct Owner *owner)
     obj_release_node(((struct SavedList *)*slot)->unk4);
     ((struct SavedList *)*slot)->unk4 = 0;
     *slot = 0;
-    owner->state = gUnk_03000FDC->savedState;
+    owner->state = gWorkBuf->savedState;
 }
 
 void state_menu_open_active(struct Owner *owner)
@@ -777,7 +777,7 @@ void state_call_active_callback(struct Owner *owner)
     }
     else
     {
-        owner->state = gUnk_03000FDC->savedState;
+        owner->state = gWorkBuf->savedState;
         owner->state(owner);
     }
 }
@@ -788,7 +788,7 @@ void state_call_saved_if_flag(struct Owner *owner)
 
     if ((*flags & 0x20) == 0)
     {
-        owner->state = gUnk_03000FDC->savedState;
+        owner->state = gWorkBuf->savedState;
         owner->state(owner);
     }
 }
@@ -833,7 +833,7 @@ void state_restore_saved_when_flag(struct Owner *owner)
     }
     else
     {
-        owner->state = gUnk_03000FDC->savedState;
+        owner->state = gWorkBuf->savedState;
     }
 }
 
@@ -863,7 +863,7 @@ void state_select_by_status(struct Owner *owner)
 
 void state_wait_result_then_close(struct Owner *owner)
 {
-    if (sub_08117390(gUnk_03000FD8->menu248) != 1)
+    if (sub_obj_running(gUnk_03000FD8->menu248) != 1)
     {
         void *target = owner->target;
         struct Cand *cand;

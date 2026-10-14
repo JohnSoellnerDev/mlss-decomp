@@ -155,8 +155,8 @@ void phase_wait_idle(struct ActorObj *obj);
 s32 lookup_part_b_then_prep(struct ActorObj *obj);
 void keep_index_then_wait(struct ActorObj *obj);
 
-s32 unknown_part_steps_080767ae(struct ActorObj *obj);
-s32 unknown_part_steps_08076800(struct ActorObj *obj);
+s32 step_to_anim_0a(struct ActorObj *obj);
+s32 step_to_anim_0e(struct ActorObj *obj);
 s32 sub_0807680C(struct ActorObj *obj);
 s32 sub_08076820(struct ActorObj *obj);
 s32 sub_08076834(struct ActorObj *obj);
@@ -800,7 +800,7 @@ void stop_when_pose_active_d(struct ActorObj *obj)
     }
 }
 
-s32 unknown_part_steps_080767ae(struct ActorObj *obj)
+s32 step_to_anim_0a(struct ActorObj *obj)
 {
     obj->state = set_anim_0a_notify_af;
     return 1;
@@ -824,7 +824,7 @@ s32 set_counter_by_owner_slot(struct ActorObj *obj)
     return 1;
 }
 
-s32 unknown_part_steps_08076800(struct ActorObj *obj)
+s32 step_to_anim_0e(struct ActorObj *obj)
 {
     obj->state = set_anim_0e_next;
     return 1;

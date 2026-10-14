@@ -120,7 +120,7 @@ void unpack_stream_values(void *src, s32 *block, s32 *a, s32 *b, s32 *c);
 typedef u32 (*KindHandler)(struct ObjList *list, void *slot);
 extern const u32 gKindHandlerTable[];
 
-extern u8 *gUnk_03000FD0;
+extern u8 *gEffectState;
 extern u8 *gUnk_03000FC0;
 extern u8 gUnk_03000DD0[];
 extern const u8 gLayer3Table[];
@@ -179,7 +179,7 @@ ASM_FUNC("asm/code_080F0C04/set_flag_a0_2.s", void set_flag_a0_2(void *a, void *
 
 u32 dispatch_kind_handler(struct OwnerObj *owner, u32 value, u32 *dst, u32 *block)
 {
-    u32 *slot = (u32 *)(gUnk_03000FD0 + 0x480);
+    u32 *slot = (u32 *)(gEffectState + 0x480);
     KindHandler *table;
     u32 result;
     if (value != 0)
@@ -196,7 +196,7 @@ u32 clear_effect_bit_54a(void *unused0, void *unused1, void *unused2, u32 *block
     u32 flag = *block++;
     if (flag == 0)
     {
-        u16 *flags = (u16 *)((u8 *)gUnk_03000FD0 + 0x54A);
+        u16 *flags = (u16 *)((u8 *)gEffectState + 0x54A);
         u32 mask = 1 << *block;
         *flags &= ~mask;
     }
@@ -543,7 +543,7 @@ ASM_FUNC("asm/code_080F0C04/effect_idle_copy_word.s", void effect_idle_copy_word
 
 u32 effect_flag_55f_set(void)
 {
-    u8 *flags = gUnk_03000FD0 + 0x55F;
+    u8 *flags = gEffectState + 0x55F;
     u32 v = *flags;
     v = (v & -0x61) | 0x20;
     *flags = v;
@@ -900,7 +900,7 @@ u32 copy_word(void *unused, u32 *dst, u32 *src)
 
 u32 cmd_copy_if_equal(void *unused0, u32 *dst, u32 *block)
 {
-    u32 cur = *(u16 *)((u8 *)gUnk_03000FD0 + 0x54C);
+    u32 cur = *(u16 *)((u8 *)gEffectState + 0x54C);
     u32 expect = *block++;
     if (cur == expect)
         *dst = *block;
@@ -916,16 +916,16 @@ u32 cmd_set_var_from_flag(void *unused0, u8 *dst, s32 *block, u32 value)
     switch (kind)
     {
     case 0:
-        p = gUnk_03000FD0;
+        p = gEffectState;
         break;
     case 1:
-        p = gUnk_03000FD0 + 0x1F8;
+        p = gEffectState + 0x1F8;
         break;
     case 2:
-        p = gUnk_03000FD0 + 0xA8;
+        p = gEffectState + 0xA8;
         break;
     case 3:
-        p = gUnk_03000FD0 + 0x150;
+        p = gEffectState + 0x150;
         break;
     }
     target = dst + 0x18;
@@ -941,16 +941,16 @@ u32 cmd_copy_if_flag(struct OwnerObj *owner, u32 *dst, s32 *block)
     switch (kind)
     {
     case 0:
-        base = gUnk_03000FD0;
+        base = gEffectState;
         break;
     case 1:
-        base = gUnk_03000FD0 + 0x1F8;
+        base = gEffectState + 0x1F8;
         break;
     case 2:
-        base = gUnk_03000FD0 + 0xA8;
+        base = gEffectState + 0xA8;
         break;
     case 3:
-        base = gUnk_03000FD0 + 0x150;
+        base = gEffectState + 0x150;
         break;
     }
     if (*(u16 *)(base + 0xA0) & 1)

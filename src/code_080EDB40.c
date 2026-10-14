@@ -143,7 +143,7 @@ ASM_FUNC("asm/code_080EDB40/command_on_list_entry.s", void command_on_list_entry
 
 ASM_FUNC("asm/code_080EDB40/set_obj_flags_cmd.s", void set_obj_flags_cmd(void))
 
-extern u8 *gUnk_03000FD0;
+extern u8 *gEffectState;
 void set_flag_f8_40(void *host);
 void camera_track_entity(void *list, u32 field, u32 zero);
 

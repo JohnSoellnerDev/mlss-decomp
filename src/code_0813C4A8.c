@@ -267,7 +267,7 @@ s32 sub_0813CCC4(s32 *a, s32 *b)
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-s32 sub_0813CCE4(s32 *a, s32 *b)
+s32 vec2_dot(s32 *a, s32 *b)
 {
     return a[0] * b[0] + a[1] * b[1];
 }
@@ -279,46 +279,46 @@ void sub_0813CCF8(s32 *src, s32 k, s32 *dst)
     dst[2] = src[2] * k;
 }
 
-void sub_0813CD0C(s32 *src, s32 k, s32 *dst)
+void vec2_scale(s32 *src, s32 k, s32 *dst)
 {
     dst[0] = src[0] * k;
     dst[1] = src[1] * k;
 }
 
-void sub_0813CD1C(s32 *a, s32 *b, s32 *out)
+void vec3_sub(s32 *a, s32 *b, s32 *out)
 {
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
     out[2] = a[2] - b[2];
 }
 
-void sub_0813CD3C(s32 *a, s32 *b, s32 *out)
+void vec2_sub(s32 *a, s32 *b, s32 *out)
 {
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
 }
 
-void sub_0813CD54(s32 *a, s32 *b, s32 *out)
+void vec3_add(s32 *a, s32 *b, s32 *out)
 {
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
     out[2] = a[2] + b[2];
 }
 
-void sub_0813CD74(s32 *a, s32 *b, s32 *out)
+void vec2_add(s32 *a, s32 *b, s32 *out)
 {
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
 }
 
-void sub_0813CD8C(s32 a, s32 b, s32 c, s32 *out)
+void vec3_store(s32 a, s32 b, s32 c, s32 *out)
 {
     out[0] = a;
     out[1] = b;
     out[2] = c;
 }
 
-void sub_0813CD94(s32 a, s32 b, s32 *out)
+void vec2_store(s32 a, s32 b, s32 *out)
 {
     out[0] = a;
     out[1] = b;

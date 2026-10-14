@@ -176,10 +176,10 @@ s32 enter_arm_timed_motion_art2_v5_b(struct Actor *obj);
 s32 enter_arm_timed_motion_art7_v3(struct Actor *obj);
 s32 enter_arm_timed_motion_art2_v3(struct Actor *obj);
 s32 part_step_start_move_to_owner(struct Actor *obj);
-s32 unknown_part_steps_0808c778(struct Actor *obj);
-s32 sub_0808C78C(struct Actor *obj);
-s32 sub_0808C7A0(struct Actor *obj);
-s32 sub_0808C7B4(struct Actor *obj);
+s32 part_step_wait_mode_3(struct Actor *obj);
+s32 part_step_wait_mode_2(struct Actor *obj);
+s32 part_step_wait_mode_1(struct Actor *obj);
+s32 part_step_wait_mode_0(struct Actor *obj);
 s32 part_step_move_to_owner_base_3000(struct Actor *obj);
 void arrive_when_timer_done(struct Actor *obj);
 void pose_update_if_visible_a(struct Actor *obj);
@@ -309,23 +309,23 @@ void wait_then_set_action(struct Actor *obj)
     }
 }
 
-s32 unknown_part_steps_0808c778(struct Actor *obj)
+s32 part_step_wait_mode_3(struct Actor *obj)
 {
     obj->state = (void (*)(struct Actor *))arm_wait_by_mode;
     obj->mode = 3;
     return 1;
 }
 
-s32 sub_0808C78C(struct Actor *obj)
+s32 part_step_wait_mode_2(struct Actor *obj)
 {
     obj->state = (void (*)(struct Actor *))arm_wait_by_mode;
     obj->mode = 2;
     return 1;
 }
 
-ASM_FUNC("asm/code_0808C6F0/sub_0808C7A0.s", s32 sub_0808C7A0(struct Actor *obj))
+ASM_FUNC("asm/code_0808C6F0/part_step_wait_mode_1.s", s32 part_step_wait_mode_1(struct Actor *obj))
 
-s32 sub_0808C7B4(struct Actor *obj)
+s32 part_step_wait_mode_0(struct Actor *obj)
 {
     obj->state = (void (*)(struct Actor *))arm_wait_by_mode;
     obj->mode = 0;

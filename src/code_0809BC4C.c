@@ -845,13 +845,13 @@ void clear_state_if_sprite_active(struct ActorBody *body)
     }
 }
 
-u32 unknown_part_steps_0809d230(struct ActorBody *body)
+u32 enter_start_pose_2(struct ActorBody *body)
 {
     body->state = start_pose_2;
     return 1;
 }
 
-u32 sub_0809D23C(struct ActorBody *body)
+u32 enter_place_beside_partner(struct ActorBody *body)
 {
     body->unk50 = 0;
     body->state = place_beside_partner;
@@ -859,7 +859,7 @@ u32 sub_0809D23C(struct ActorBody *body)
     return 1;
 }
 
-void sub_0809D254(struct ActorBody *body)
+void enter_stop_after_index_bump(struct ActorBody *body)
 {
     body->unk54 = stop_after_index_bump;
 }

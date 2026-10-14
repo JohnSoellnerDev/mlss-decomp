@@ -142,8 +142,8 @@ void obj_await_part_done(struct ActorObj *obj);
 void obj_wait_index_release_11a(struct ActorObj *obj);
 void obj_wait_index_action3_timer(struct ActorObj *obj);
 u32 sprite_state_chain_a(struct ActorObj *obj);
-u32 sub_080DC51C(struct ActorObj *obj);
-u32 sub_080DC528(struct ActorObj *obj);
+u32 sprite_state_chain_b(struct ActorObj *obj);
+u32 sprite_state_random_chain_a(struct ActorObj *obj);
 void obj_wait_index_pose_toggle(struct ActorObj *obj);
 void obj_wait_free_then_begin_drop(struct ActorObj *obj);
 void obj_wait_free_then_action2_slot(struct ActorObj *obj);
@@ -162,9 +162,9 @@ void obj_wait_index_go_idle(struct ActorObj *obj);
 u32 obj_unlink_part(struct ActorObj *obj, u32 a, u32 b);
 void obj_pose_active_release_move(struct ActorObj *obj);
 void actor_return_to_base_steps(struct ActorObj *obj);
-u32 sub_080DCC9C(struct ActorObj *obj);
+u32 sprite_state_chain_c(struct ActorObj *obj);
 u32 sub_080DCCA8(struct ActorObj *obj);
-u32 sub_080DCCB4(struct ActorObj *obj);
+u32 sprite_state_random_chain_b(struct ActorObj *obj);
 void obj_wait_free_then_move_d(struct ActorObj *obj);
 void obj_wait_index_pose_update(struct ActorObj *obj);
 void obj_wait_free_then_cd90(struct ActorObj *obj);
@@ -174,7 +174,7 @@ void obj_wait_index_action7(struct ActorObj *obj);
 void obj_wait_index_action3_pose(struct ActorObj *obj);
 void move_states_obj_timer_action8(struct ActorObj *obj);
 void obj_pose_active_action4(struct ActorObj *obj);
-void unknown_thumb_080dcee0(struct ActorObj *obj);
+void obj_screen_cull_step(struct ActorObj *obj);
 void obj_drop_land_stop(struct ActorObj *obj);
 void obj_drop_clamp_to_limit(struct ActorObj *obj);
 
@@ -672,13 +672,13 @@ u32 sprite_state_chain_a(struct ActorObj *obj)
     return 1;
 }
 
-u32 sub_080DC51C(struct ActorObj *obj)
+u32 sprite_state_chain_b(struct ActorObj *obj)
 {
     obj->state = obj_wait_free_then_action2_slot;
     return 1;
 }
 
-u32 sub_080DC528(struct ActorObj *obj)
+u32 sprite_state_random_chain_a(struct ActorObj *obj)
 {
     u32 r = mt19937_next();
 

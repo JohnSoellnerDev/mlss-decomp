@@ -194,7 +194,7 @@ struct Rec *active_candidate(struct Rec *obj)
     return NULL;
 }
 
-s32 unknown_code_08087ec2(struct Actor *obj)
+s32 height_from_frame_scale(struct Actor *obj)
 {
     s32 v = obj->data->frame->k6;
 
@@ -213,7 +213,7 @@ s32 unknown_code_08087ec2(struct Actor *obj)
     return v;
 }
 
-void sub_08087EFC(struct Actor *obj)
+void copy_pos_to_active_candidate(struct Actor *obj)
 {
     struct RecPos *p = (struct RecPos *)((u8 *)active_candidate(obj->data) + 8);
 
@@ -222,21 +222,21 @@ void sub_08087EFC(struct Actor *obj)
     p->h = obj->h;
 }
 
-void sub_08087F1C(struct Actor *obj, s32 value)
+void set_progress(struct Actor *obj, s32 value)
 {
     obj->progress = value;
 }
 
-ASM_FUNC("asm/code_08087E1C/sub_08087F24.s", u32 sub_08087F24(struct Actor *obj))
+ASM_FUNC("asm/code_08087E1C/tick_progress.s", u32 tick_progress(struct Actor *obj))
 
-u32 sub_08087F4C(struct Actor *obj)
+u32 progress_is_zero(struct Actor *obj)
 {
     if (obj->progress != 0)
         return 0;
     return 1;
 }
 
-ASM_FUNC("asm/code_08087E1C/sub_08087F64.s", void sub_08087F64(struct Actor *obj, s32 value))
+ASM_FUNC("asm/code_08087E1C/set_speed_from_delta.s", void set_speed_from_delta(struct Actor *obj, s32 value))
 
 void sub_08087FCC(struct Actor *obj, s32 divisor)
 {
@@ -355,7 +355,7 @@ s32 distance_step(s32 x, s32 y, s32 z)
     return MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(q, y << 1);
 }
 
-s32 unknown_code_08088180(struct Actor *obj)
+s32 distance_step_for_height(struct Actor *obj)
 {
     return distance_step(obj->dh, obj->offsetA, obj->heightLimit - obj->baseH);
 }

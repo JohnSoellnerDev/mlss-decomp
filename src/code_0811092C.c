@@ -287,7 +287,7 @@ u32 sprite_state_pair_a(struct ActionObj *obj)
     return 1;
 }
 
-u32 sub_08110B80(struct ActionObj *obj)
+u32 sprite_state_pair_d(struct ActionObj *obj)
 {
     obj->state = start_action_2_then_wait_b;
     return 1;
@@ -754,7 +754,7 @@ u32 sprite_state_pair_b(struct ActionObj *obj)
     return 1;
 }
 
-u32 sub_081116EC(struct ActionObj *obj)
+u32 sprite_state_pair_e(struct ActionObj *obj)
 {
     obj->state = hero_marker_reset;
     return 1;

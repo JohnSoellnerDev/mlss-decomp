@@ -134,7 +134,7 @@ struct World
 extern struct World *gUnk_03000FD8;
 extern u16 gUnk_0300034C[];
 extern u8 *gUnk_03000FF4;
-extern u8 *gUnk_03000FDC;
+extern u8 *gWorkBuf;
 
 void state_create_result_entries(struct Owner *owner);
 void state_fx_step_counter(struct Owner *owner);
@@ -251,7 +251,7 @@ void state_show_hero_panel(struct Owner *owner)
     {
         s32 heroIdx = owner->posX;
         u8 *hero = gUnk_03000FF4 + heroIdx * 0x3C;
-        u8 *effect = gUnk_03000FDC;
+        u8 *effect = gWorkBuf;
         u8 *digits = effect + 0x8E34;
         u8 heroCtx = hero[0x30];
 

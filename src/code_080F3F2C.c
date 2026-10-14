@@ -42,7 +42,7 @@ struct Owner
 };
 
 extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FDC;
+extern u8 *gWorkBuf;
 
 void slot_set_value(struct Owner *owner, u32 idx, s32 value, u32 flag);
 void slot_set_vec(u32 idx, s32 x, s32 y, s32 z, u32 flag);

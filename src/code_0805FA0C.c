@@ -190,14 +190,14 @@ s32 unknown_part_steps_0805fde4(struct ActorObj *obj)
     return 1;
 }
 
-s32 sub_0805FDF8(struct ActorObj *obj)
+s32 map_obj_wait_mode1(struct ActorObj *obj)
 {
     obj->param9C = 1;
     obj->state = map_obj_wait_action2;
     return 1;
 }
 
-s32 sub_0805FE0C(struct ActorObj *obj)
+s32 map_obj_wait_mode0(struct ActorObj *obj)
 {
     obj->param9C = 0;
     obj->state = map_obj_wait_action2;
@@ -433,7 +433,7 @@ s32 unknown_part_steps_08060620(struct ActorObj *obj)
     return 1;
 }
 
-s32 sub_08060664(struct ActorObj *obj)
+s32 obj_setup_owner_target_drift(struct ActorObj *obj)
 {
     obj->dx = 0x100;
     obj->targetX = obj->owner->part->targetX;
@@ -587,14 +587,14 @@ s32 unknown_part_steps_08060bd8(struct ActorObj *obj)
     return 1;
 }
 
-s32 sub_08060BEC(struct ActorObj *obj)
+s32 pose_steps_obj_wait_mode1(struct ActorObj *obj)
 {
     obj->param9C = 1;
     obj->state = pose_steps_obj_wait_ready_action2_b;
     return 1;
 }
 
-s32 sub_08060C00(struct ActorObj *obj)
+s32 pose_steps_obj_wait_mode0(struct ActorObj *obj)
 {
     obj->param9C = 0;
     obj->state = pose_steps_obj_wait_ready_action2_b;

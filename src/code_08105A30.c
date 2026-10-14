@@ -130,7 +130,7 @@ extern struct World *gUnk_03000FD8;
 extern u8 *gUnk_03000FF4;
 extern u8 gUnk_0300034C[];
 extern u16 gGlyphIndexTable[];
-extern u32 gUnk_089F9A5C[];
+extern u32 gMapTable[];
 
 extern const u8 gClaimKindTable[];
 extern const u32 gLangTextA[];
@@ -145,9 +145,9 @@ void *spawn_kind_sprite(void *buf, u32 kind, void *table, u32 a, u32 b, void *c,
 void menu_init_clear(void);
 void state_menu_clear_vram(struct Owner *owner);
 extern u8 gSceneTable0820218c[];
-extern u8 *gUnk_03000FDC;
+extern u8 *gWorkBuf;
 u8 is_state_busy(void);
-u8 sub_08117390(void *menu);
+u8 sub_obj_running(void *menu);
 u32 to_bcd(u8 value);
 void state_build_hero_sprites(struct Owner *owner);
 void menu_entry_refresh(void *menu, u32 idx, u32 zero);
@@ -522,7 +522,7 @@ void state_menu_alloc_scene(struct Owner *owner)
         }
         fig = world->fig80[figIdx];
         pose = (struct Pos38 *)((u8 *)fig + 8);
-        work = gUnk_03000FDC;
+        work = gWorkBuf;
         vx = pose->x;
         if (vx < 0)
         {
@@ -541,7 +541,7 @@ void state_menu_alloc_scene(struct Owner *owner)
         *(s16 *)(work + 0x8E14) = 0xF0;
         buf = heap_alloc2(0x44, 0, gSceneTable0820218c, 0);
         world->scene = spawn_kind_sprite(buf, 7, gSceneTable0820218c, 0xF, 0x168,
-                                         gUnk_03000FDC + 0x8E10, signedTimer, 0x37, menu_init_clear);
+                                         gWorkBuf + 0x8E10, signedTimer, 0x37, menu_init_clear);
         owner->state = state_menu_clear_vram;
     }
 }

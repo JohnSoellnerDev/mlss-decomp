@@ -292,14 +292,14 @@ u32 sprite_state_chain_f(struct Obj *obj)
     return 1;
 }
 
-u32 sub_08114158(struct Obj *obj)
+u32 sprite_state_scene_mode4(struct Obj *obj)
 {
     obj->callback = obj_set_scene_state;
     obj->scene->mode = 4;
     return 1;
 }
 
-u32 sub_08114174(struct Obj *obj)
+u32 sprite_state_scene_mode0(struct Obj *obj)
 {
     obj->callback = obj_set_scene_state;
     obj->scene->mode = 0;

@@ -178,7 +178,7 @@ void hero_b_place_from_a(struct HeroBody *body);
 void hero_b_step_end_d354(struct HeroBody *body);
 void hero_b_enter_side(struct HeroBody *body);
 void hero_b_join_partner(struct HeroBody *body);
-void sub_080B3988(struct HeroBody *body);
+void hero_b_set_fall_timers(struct HeroBody *body);
 void step_motion(struct HeroBody *body);
 void enter_finish_rebuild(struct HeroBody *body);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 z, struct HeroBody *owner);
@@ -286,7 +286,7 @@ void hero_b_join_partner(struct HeroBody *body)
                     ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
                 }
                 ((struct HeroMirrorBits *)&body_b->sprite->mirror)->flip = 1;
-                body->state = sub_080B3988;
+                body->state = hero_b_set_fall_timers;
             }
         }
     }

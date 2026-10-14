@@ -200,13 +200,13 @@ extern const u8 gStartObjZoomSpin69a84[];
 extern const u8 gStartObjZoomSpin69cc8[];
 extern const u8 gStartObjZoomTiltModel292b4[];
 extern const u8 gStartObjZoomTiltModel2948c[];
-extern const u8 gUnk_085066C0[];
-extern const u8 gUnk_085066C8[];
-extern const u8 gUnk_085066CC[];
-extern const u8 gUnk_085066D0[];
-extern const u8 gUnk_085066D4[];
-extern const u8 gUnk_0850672C[];
-extern const u8 gUnk_08506AA4[];
+extern const u8 gSpawnStartRiseTurnPoints1f4c[];
+extern const u8 gSpawnStartGrowSpinPoints2180[];
+extern const u8 gSpawnStartGrowSpinPoints2428[];
+extern const u8 gSpawnStartGrowSpinPoints26d0[];
+extern const u8 gSpawnStartGrowSpinPoints2980[];
+extern const u8 gSpawnStartGrowTurnPoints3ac0[];
+extern const u8 gSpawnStartGrowSpinPointA1d4[];
 
 void spawn_tbl_6b1c(u32 x, u32 y, u32 z, u32 flag)
 {
@@ -289,7 +289,7 @@ void spawn_tbl_6aac(u32 x, u32 y, u32 z, u32 flag)
 void spawn_tbl_6aa4(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0x15, obj_grow_spin_point_a1d4, 0x4040, 0, 0, 1, flag, flag,
-                 gUnk_08506AA4, 2);
+                 gSpawnStartGrowSpinPointA1d4, 2);
 }
 
 void spawn_tbl_6a90(u32 x, u32 y, u32 z, u32 flag)
@@ -649,7 +649,7 @@ void spawn_tbl_6738(u32 x, u32 y, u32 z, u32 flag)
 void spawn_tbl_672c(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0xB5, obj_grow_turn_points_3ac0, 0x416C, 0, 0, 3, flag, flag,
-                 gUnk_0850672C, 3);
+                 gSpawnStartGrowTurnPoints3ac0, 3);
 }
 
 void spawn_tbl_671c(u32 x, u32 y, u32 z, u32 flag)
@@ -697,31 +697,31 @@ void spawn_tbl_66d8(u32 x, u32 y, u32 z, u32 flag)
 void spawn_tbl_66d4(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0xF1, obj_grow_spin_points_2980, 0x4165, 0, 0, 8, flag, flag,
-                 gUnk_085066D4, 1);
+                 gSpawnStartGrowSpinPoints2980, 1);
 }
 
 void spawn_tbl_66d0(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0xF1, obj_grow_spin_points_26d0, 0x415F, 0, 0, 8, flag, flag,
-                 gUnk_085066D0, 1);
+                 gSpawnStartGrowSpinPoints26d0, 1);
 }
 
 void spawn_tbl_66cc(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0xF1, obj_grow_spin_points_2428, 0x415F, 0, 0, 8, flag, flag,
-                 gUnk_085066CC, 1);
+                 gSpawnStartGrowSpinPoints2428, 1);
 }
 
 void spawn_tbl_66c8(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0xF1, obj_grow_spin_points_2180, 0x415E, 0, 0, 0xA, flag, flag,
-                 gUnk_085066C8, 1);
+                 gSpawnStartGrowSpinPoints2180, 1);
 }
 
 void spawn_tbl_66c0(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0x3D, obj_rise_turn_points_1f4c, 0x4165, 0, 0, 2, flag, flag,
-                 gUnk_085066C0, 2);
+                 gSpawnStartRiseTurnPoints1f4c, 2);
 }
 
 void spawn_tbl_66ac(u32 x, u32 y, u32 z, u32 flag)

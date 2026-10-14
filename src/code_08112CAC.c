@@ -180,8 +180,8 @@ u32 obj_link_or_cancel(struct SceneObj *obj);
 u32 callback_return_0(struct SceneObj *obj);
 void obj_start_scene_move(struct SceneObj *obj);
 u32 sprite_state_pair_c(struct SceneObj *obj);
-u32 sub_081131A0(struct SceneObj *obj);
-u32 sub_081131B4(struct SceneObj *obj);
+u32 obj_start_stored_xy(struct SceneObj *obj);
+u32 obj_start_anim9(struct SceneObj *obj);
 void obj_timer_anim5(struct SceneObj *obj);
 void obj_anim_stop_timer_up(struct SceneObj *obj);
 void obj_place_fixed_a(struct SceneObj *obj);
@@ -403,7 +403,7 @@ u32 sprite_state_pair_c(struct SceneObj *obj)
 }
 
 
-u32 sub_081131A0(struct SceneObj *obj)
+u32 obj_start_stored_xy(struct SceneObj *obj)
 {
     obj->state = obj_place_stored_xy;
     obj->stepY = 0x100;
@@ -411,7 +411,7 @@ u32 sub_081131A0(struct SceneObj *obj)
 }
 
 
-u32 sub_081131B4(struct SceneObj *obj)
+u32 obj_start_anim9(struct SceneObj *obj)
 {
     obj->state = obj_anim9_slot_value;
     return 1;

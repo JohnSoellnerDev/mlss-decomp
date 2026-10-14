@@ -173,7 +173,7 @@ struct SubStartCmd
 };
 
 extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FDC;
+extern u8 *gWorkBuf;
 
 u8 is_state_busy(void);
 void pool_slot_init(u32 a, u32 b);
@@ -187,7 +187,7 @@ void release_slot_objects(void);
 void task_slot_write(struct Owner *cur, u32 kind, u32 entry);
 void obj_detach_active(void *obj);
 void state_hero_menu_plain(void);
-u8 sub_08117390(void *menu);
+u8 sub_obj_running(void *menu);
 u8 world_entry_ready(void);
 
 ASM_FUNC("asm/code_080F7100/refresh_slot_view.s", void refresh_slot_view(void))
@@ -440,7 +440,7 @@ u32 cmd_mode_switch(void *unused0, void *unused1, u32 *cmd)
 
 u32 world_state_copy(void *unused0, struct CopyNode *node)
 {
-    if (sub_08117390(gUnk_03000FD8->ptr248) != 0 || world_entry_ready() != 0
+    if (sub_obj_running(gUnk_03000FD8->ptr248) != 0 || world_entry_ready() != 0
         || (gUnk_03000FD8->flags2BF & 0x20) != 0 || gUnk_03000FD8->word2F0 != 0)
     {
         node->unk0 = node->unk14;

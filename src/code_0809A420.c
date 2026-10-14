@@ -130,7 +130,7 @@ struct ModelCtx
 };
 
 extern struct ModelCtx *gUnk_03000D74;
-extern u8 *gUnk_03000FDC;
+extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
 
 struct Hero;
@@ -217,7 +217,7 @@ void follow_focus_then_pose(struct HeroBody *body);
 void hide_and_reset_slot(struct HeroBody *body);
 void random_timers_init(struct HeroBody *body);
 u32 part_step_start_anim_mode2(struct HeroBody *body);
-void sub_0809B86C(struct HeroBody *body);
+void clear_state(struct HeroBody *body);
 void start_anim_mode2(struct HeroBody *body);
 void start_anim_mode3(struct HeroBody *body);
 void start_anim4_fx(struct HeroBody *body);
@@ -554,7 +554,7 @@ void update_pair_link(struct HeroBody *body)
     if (body->flags & 0x20)
     {
         partner_link_update(partner, body, 0xFF);
-        body->state = sub_0809B86C;
+        body->state = clear_state;
     }
 }
 
@@ -602,7 +602,7 @@ u32 part_step_start_anim_mode2(struct HeroBody *body)
     return 1;
 }
 
-void sub_0809B86C(struct HeroBody *body)
+void clear_state(struct HeroBody *body)
 {
     body->state = 0;
 }
