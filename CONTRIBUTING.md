@@ -86,7 +86,8 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
-- No inline assembly, `register` variables, or `asm("")` tricks to force a match.
+- No inline assembly, `register` variables, `asm("")` tricks, `volatile` or dummy variables that
+  only exist to force a match (e.g. an unused array to grow the stack frame).
 - If the C does the same thing but does not match after real effort, keep it as
   `NONMATCH("asm/UNIT/FUNC.s", decl) { … } END_NONMATCH` (the ROM keeps the original assembly,
   the progress report counts the C as partly matching) and say so in your pull request.
