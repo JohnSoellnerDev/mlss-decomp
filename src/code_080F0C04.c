@@ -29,6 +29,29 @@ struct ObjCmd
     u16 value;
 };
 
+struct TaskNode
+{
+    u8 filler0[0x18];
+    void *desc;
+};
+
+struct TaskDesc
+{
+    u32 unk0;
+    u32 unk4;
+    u16 offset8;
+    u16 unkA;
+    void *callback;
+};
+
+extern const struct TaskDesc gTaskDescA;
+extern const struct TaskDesc gDefaultTaskDesc;
+extern void *gUnk_03000FD4;
+
+void task_remove(void *node, u32 mode);
+void task_insert(void *node, u32 kind, u32 data);
+void heap_free_b(void *p);
+
 void call_9a20_pair(struct ObjList *list, u32 mode);
 void process_obj_item_list(struct ObjList *list);
 void obj_request_entry(void *obj, u32 request);
@@ -82,6 +105,17 @@ void pair_start_state_27(struct ObjList *list);
 void pair_start_state_2a(struct ObjList *list);
 u32 sub_0803C4B4(struct ObjList *list);
 u32 sub_0803C47C(struct ObjList *list);
+void shift_sub_pair_frames(struct ObjList *list);
+void reset_sub_pair(struct ObjList *list);
+void clear_sub_pair(struct ObjList *list);
+void probe_sub_pair_target(struct ObjList *list, u32 level);
+void apply_test_level(struct ObjList *list);
+void advance_sub_a_state(struct ObjList *list);
+void set_sub_pair_state_b2(struct ObjList *list);
+void pair_set_mode(struct ObjList *list, u32 mode, u32 flag);
+u32 direction_octant(void *root, s32 x0, s32 y0, s32 x1, s32 y1);
+void set_half_23e(void *obj, s16 v);
+void unpack_stream_values(void *src, s32 *block, s32 *a, s32 *b, s32 *c);
 
 typedef u32 (*KindHandler)(struct ObjList *list, void *slot);
 extern const u32 gKindHandlerTable[];
@@ -93,9 +127,53 @@ extern const u8 gLayer3Table[];
 
 ASM_FUNC("asm/code_080F0C04/step_status_1f8.s", void step_status_1f8(void))
 
-ASM_FUNC("asm/code_080F0C04/task_slot_release.s", void task_slot_release(void))
+void task_slot_release(u8 *slot, u32 flags)
+{
+    struct TaskNode *node = *(struct TaskNode **)slot;
+    node->desc = (void *)&gTaskDescA;
+    if (flags == 0)
+    {
+        struct TaskDesc copy = gTaskDescA;
+        u16 *off;
+        u8 *base;
+        node->desc = &copy;
+        off = (u16 *)&copy;
+        base = (u8 *)node - 4;
+        off[4] = (u16)(slot - base + gTaskDescA.offset8);
+    }
+    if (flags & 2)
+    {
+        (*(struct TaskNode **)slot)->desc = (void *)&gDefaultTaskDesc;
+        task_remove(*(struct TaskNode **)slot, 0);
+    }
+    if (flags & 1)
+        heap_free_b(slot);
+}
 
-ASM_FUNC("asm/code_080F0C04/task_slot_attach.s", void task_slot_attach(void))
+void *task_slot_attach(u8 *slot, u32 attach, u32 kind, u32 data)
+{
+    u8 kind_byte = kind;
+    if (attach != 0)
+    {
+        struct TaskNode *node = (struct TaskNode *)(slot + 4);
+        *(struct TaskNode **)slot = node;
+        task_insert(node, kind_byte, data);
+        node->desc = (void *)&gDefaultTaskDesc;
+    }
+    (*(struct TaskNode **)slot)->desc = (void *)&gTaskDescA;
+    if (attach == 0)
+    {
+        struct TaskDesc copy = gTaskDescA;
+        u16 *off;
+        u8 *base;
+        (*(struct TaskNode **)slot)->desc = &copy;
+        off = (u16 *)&copy;
+        base = (u8 *)*(struct TaskNode **)slot - 4;
+        off[4] = (u16)(slot - base + gTaskDescA.offset8);
+    }
+    gUnk_03000FD4 = slot;
+    return slot;
+}
 
 ASM_FUNC("asm/code_080F0C04/set_flag_a0_2.s", void set_flag_a0_2(void *a, void *b, u8 *p, u32 c))
 
@@ -127,7 +205,13 @@ u32 clear_effect_bit_54a(void *unused0, void *unused1, void *unused2, u32 *block
 
 ASM_FUNC("asm/code_080F0C04/setup_effect_record.s", void setup_effect_record(void))
 
-ASM_FUNC("asm/code_080F0C04/set_var_from_halfwords.s", void set_var_from_halfwords(void))
+u32 set_var_from_halfwords(struct OwnerObj *owner, u8 *dst, s16 *args, u32 value)
+{
+    u8 *target = dst + 0x18;
+    u8 *vars = gUnk_03000FC0 + 0x38C;
+    set_var(value, target, vars, 0, args[0], *(u16 *)((u8 *)owner->list + 0x11E));
+    return 1;
+}
 
 u32 set_var_from_point(struct OwnerObj *owner, u8 *dst, s32 *pt, u32 value)
 {
@@ -146,7 +230,38 @@ u32 set_var_from_point(struct OwnerObj *owner, u8 *dst, s32 *pt, u32 value)
     return 1;
 }
 
-ASM_FUNC("asm/code_080F0C04/cmd_set_var_direction.s", void cmd_set_var_direction(void))
+struct ObjPos
+{
+    u8 filler0[0xC];
+    s32 x;
+    s32 y;
+};
+
+struct VarDirCmd
+{
+    s16 var;
+    u16 unk2;
+    u32 flag;
+    u32 from;
+    u32 to;
+};
+
+u32 cmd_set_var_direction(struct OwnerObj *owner, u8 *dst, struct VarDirCmd *cmd, u32 var_mid)
+{
+    struct ObjPos *from = (struct ObjPos *)owner->list->entries[cmd->from];
+    struct ObjPos *to = (struct ObjPos *)owner->list->entries[cmd->to];
+    u32 dir;
+    u8 *target;
+    u8 *vars;
+    if (cmd->flag == 0)
+    {
+        dir = (u8)direction_octant((u8 *)owner + 0x1C, from->x, from->y, to->x, to->y);
+    }
+    target = dst + 0x18;
+    vars = gUnk_03000FC0 + 0x38C;
+    set_var(var_mid, target, vars, 0, cmd->var, dir);
+    return 1;
+}
 
 u32 process_list_if_idle(struct OwnerObj *owner, void *unused, u32 *flag_ref)
 {
@@ -211,7 +326,38 @@ u32 obj_mode_notify(struct OwnerObj *owner, void *unused, u32 *cmd)
     return 1;
 }
 
-ASM_FUNC("asm/code_080F0C04/obj_list_command.s", void obj_list_command(void))
+u32 obj_list_command(struct OwnerObj *owner, void *unused, u32 *cmd)
+{
+    u32 mode = *cmd;
+    switch (mode)
+    {
+    case 5:
+        shift_sub_pair_frames(owner->list);
+        break;
+    case 6:
+        reset_sub_pair(owner->list);
+        break;
+    case 7:
+        clear_sub_pair(owner->list);
+        break;
+    case 8:
+        probe_sub_pair_target(owner->list, 1);
+        break;
+    case 9:
+        apply_test_level(owner->list);
+        break;
+    case 10:
+        advance_sub_a_state(owner->list);
+        break;
+    case 11:
+        set_sub_pair_state_b2(owner->list);
+        break;
+    default:
+        pair_set_mode(owner->list, mode, 0);
+        break;
+    }
+    return 1;
+}
 
 u32 obj_mode_dispatch(struct OwnerObj *owner, u32 *dst, s32 *cmd)
 {
@@ -373,7 +519,25 @@ ASM_FUNC("asm/code_080F0C04/obj_display_command.s", void obj_display_command(voi
 
 ASM_FUNC("asm/code_080F0C04/obj_set_bit2_f9.s", void obj_set_bit2_f9(void))
 
-ASM_FUNC("asm/code_080F0C04/set_flag_from_row.s", void set_flag_from_row(void))
+u32 set_flag_from_row(void *unused0, void *unused1, s32 *block)
+{
+    const u8 *table = gLayer3Table;
+    u8 *entry;
+    u8 *row;
+    u32 index;
+    u32 h;
+    u32 value;
+    entry = (u8 *)table + (gUnk_03000DD0[0xA] << 3);
+    index = block[0];
+    row = *(u8 **)entry;
+    h = *(u16 *)(row + index * 20 + 0x10);
+    h = h << 17;
+    h = h >> 1;
+    value = h + (0xE4 << 19);
+    value = value >> 16;
+    set_flag(0, 0, value, *((u8 *)block + 4));
+    return 1;
+}
 
 ASM_FUNC("asm/code_080F0C04/effect_idle_copy_word.s", void effect_idle_copy_word(void))
 
@@ -513,7 +677,34 @@ u32 place_object_track(struct OwnerObj *owner, void *obj, void *unused2, s32 *bl
     return 0;
 }
 
-ASM_FUNC("asm/code_080F0C04/place_object_scaled.s", void place_object_scaled(void))
+u32 place_object_scaled(struct OwnerObj *owner, u8 *obj, void *unused2, s32 *block)
+{
+    s32 flags = block[0];
+    s32 match;
+    if (flags != 0)
+    {
+        s32 x = block[1] << 4;
+        block[1] = x;
+        block[2] <<= 4;
+        block[3] <<= 4;
+        if ((flags & 0xF) == 0)
+        {
+            block[1] = x + 8;
+            block[2] = (block[2] >> 4 << 4) + 8;
+        }
+    }
+    obj_set_or_add_pos(obj, block[1] << 8, block[2] << 8, block[3] << 8, block[5], block[6]);
+    match = 0;
+    if (*((u8 *)owner->list + 0xF8) & 0x40)
+    {
+        u32 field = ((u32)*(u16 *)((u8 *)owner->list + 0xFA) << 22) >> 27;
+        if (field == *(obj + 0x54))
+            match = 1;
+    }
+    if (match & block[5])
+        camera_track_entity(owner->list, *(obj + 0x54), 0);
+    return 0;
+}
 
 u32 probe_object_entry_plain(struct OwnerObj *owner, void *dst, void *third, s32 *block)
 {
@@ -535,9 +726,56 @@ u32 probe_object_entry_plain(struct OwnerObj *owner, void *dst, void *third, s32
     return result;
 }
 
-ASM_FUNC("asm/code_080F0C04/unpack_and_set_flags.s", void unpack_and_set_flags(void))
+u32 unpack_and_set_flags(struct OwnerObj *owner, void *obj, void *third, s32 *block)
+{
+    s32 v0;
+    s32 v1;
+    s32 v2;
+    s32 flags;
+    unpack_stream_values((u8 *)owner + 0x1C, block, &v0, &v1, &v2);
+    block += 3;
+    flags = *block++;
+    if ((flags & 3) == 1)
+    {
+        s32 x = *block;
+        *block = (x & 0x40) ? ((x & 0xF) << 4) : (x << 8);
+        if (*block != 0)
+            set_half_23e(obj, (s16)*block);
+    }
+    contacts_obj_start_move(obj, flags & 3, 1, v0, v1, v2, ((u16 *)block)[0]);
+    set_flag_a0_2(owner, obj, third, 0);
+    return 0;
+}
 
-ASM_FUNC("asm/code_080F0C04/scale_and_probe_block.s", void scale_and_probe_block(void))
+u32 scale_and_probe_block(struct OwnerObj *owner, void *dst, void *third, s32 *block)
+{
+    u32 hit;
+    u32 result;
+    if (block[0] != 0)
+    {
+        block[2] <<= 4;
+        block[3] <<= 4;
+        block[4] <<= 4;
+    }
+    if (((block[1] >> 1) & 3) == 1)
+    {
+        s32 x = block[5];
+        block[5] = (x & 0x40) ? ((x & 0xF) << 4) : (x << 8);
+        if (block[5] != 0)
+            set_half_23e(dst, (s16)block[5]);
+    }
+    hit = contacts_obj_start_move(dst, (block[1] >> 1) & 3, block[1] & 1, block[2], block[3], block[4], ((u16 *)block)[10]);
+    if ((u8)hit == 0)
+    {
+        result = 1;
+    }
+    else
+    {
+        set_flag_a0_2(owner, dst, third, 0);
+        result = 0;
+    }
+    return result;
+}
 
 u32 obj_entry_command(struct OwnerObj *owner, void *unused, u32 *block)
 {

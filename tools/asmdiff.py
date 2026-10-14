@@ -37,11 +37,18 @@ def disasm(obj, func):
         # branch targets relative to the function start
         body = re.sub(r"^(\S+ (?:\S+ )?b[a-z.]*) ([0-9a-f]+)\s*$",
                       lambda b: f"{b.group(1)} +0x{int(b.group(2), 16) - start:x}", body)
+        # relocations against the section (local labels, jump tables): relative to the function
+        body = re.sub(r"(\.text)\+0x([0-9a-f]+)", lambda r: f"{r.group(1)}+<func+0x{int(r.group(2), 16) - start:x}>", body)
         lines.append(f"{off - start:5x}: {body}")
     # a call with a relocation: the encoded offset is a placeholder, the relocation says where
     for i in range(len(lines) - 1):
         if "R_ARM_" in lines[i + 1] and lines[i + 1].split(":")[0] == lines[i].split(":")[0]:
             lines[i] = re.sub(r" \+0x-?[0-9a-f]+$", "", lines[i])
+            # a word relative to the section (local label, jump table): the addend sits in the
+            # word itself and depends on where the function is in the object
+            if re.search(r"R_ARM_ABS32\s+\.text$", lines[i + 1]):
+                lines[i] = re.sub(r"[0-9a-f]{8} \.word 0x([0-9a-f]+)$",
+                                  lambda w: f".word <func+0x{int(w.group(1), 16) - start:x}>", lines[i])
     return lines
 
 

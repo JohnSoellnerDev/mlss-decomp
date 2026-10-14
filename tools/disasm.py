@@ -308,8 +308,11 @@ class Writer:
     def in_code(self, a):
         return any(s <= a < e for s, e in self.code_ranges)
 
-    def symbolize(self, w):
-        """Text for a pool word with value w: function, data symbol (+offset) or number."""
+    def symbolize(self, w, f=None):
+        """Text for a pool word with value w: label inside the function, function, data symbol
+        (+offset) or number."""
+        if f is not None and f.addr <= w < f.end and w in f.labels:
+            return lab(w)
         s = self.syms.get(w & ~1)
         if s is not None and s.is_func and self.in_code(s.addr) and (s.kind == "thumb") == bool(w & 1):
             return s.name
@@ -431,7 +434,7 @@ class Writer:
                     out.append(f"\t{text}")
                 a += insn.size
             elif a in f.pool:
-                out.append(f"\t.4byte {self.symbolize(dis.u32(a))}")
+                out.append(f"\t.4byte {self.symbolize(dis.u32(a), f)}")
                 a += 4
             elif a in f.jt:
                 w = f.jt[a]
