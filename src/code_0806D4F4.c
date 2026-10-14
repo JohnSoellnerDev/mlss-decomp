@@ -71,6 +71,22 @@ struct ActorObj
     s16 dh;
 };
 
+struct ActorModeBits
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 high : 1;
+};
+
+struct ActorFlagBits
+{
+    u8 bit0 : 1;
+    u8 low : 2;
+    u8 bit3 : 1;
+    u8 high : 4;
+};
+
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
 void obj_list_push_default(struct ActorObj *obj);
@@ -131,7 +147,39 @@ struct ActorCands
 
 extern struct ActorCands *gUnk_03000FD8;
 
-ASM_FUNC("asm/code_0806D4F4/obj_timer_exit_left.s", void obj_timer_exit_left(struct ActorObj *obj))
+void obj_timer_exit_left(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        u16 *timer;
+        s32 left;
+
+        left = --obj->timer << 16;
+        timer = &obj->timer;
+        if (left <= 0)
+        {
+            sprite_set_action(obj, 5, 0, 0);
+            set_slot_value(0xD2, -1);
+            obj->handler68 = on_arrive;
+            ((struct ActorModeBits *)&obj->mode)->bit6 = 0;
+            ((struct ActorModeBits *)&obj->mode)->bit5 = 0;
+            obj_list_push_default(obj);
+            obj->handler58 = (void (*)(struct ActorObj *))obj_lookup_part_to_drift;
+            if (obj->dx != 0)
+            {
+                obj->targetX = (obj->baseX - 0x5000) / 0x100;
+            }
+            else
+            {
+                obj->targetX = (obj->baseX - 0x3000) / 0x100;
+            }
+            obj->targetY = 0x12;
+            obj->phase = 0;
+            *timer = 10;
+            obj->state = obj_wave_drift;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_0806D4F4/obj_wave_drift.s", void obj_wave_drift(struct ActorObj *obj))
 
@@ -419,7 +467,24 @@ u32 obj_random_side_init_b(struct ActorObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_0806D4F4/obj_timer_action5_setup.s", void obj_timer_action5_setup(struct ActorObj *obj))
+void obj_timer_action5_setup(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        obj->timer--;
+        if ((s16)obj->timer <= 0)
+        {
+            set_slot_value(0xD2, -1);
+            sprite_set_action(obj, 5, 0, 0);
+            obj->handler68 = on_arrive;
+            ((struct ActorModeBits *)&obj->mode)->bit6 = 0;
+            ((struct ActorModeBits *)&obj->mode)->bit5 = 0;
+            obj_list_push_default(obj);
+            obj->handler58 = (void (*)(struct ActorObj *))obj_lookup_part_pick_state;
+            obj->state = obj_start_motion_timer;
+        }
+    }
+}
 
 void obj_action2_then_fall_d70c(struct ActorObj *obj)
 {
@@ -742,7 +807,50 @@ void obj_timer_drift_left_exit(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806D4F4/obj_aim_at_owner.s", void obj_aim_at_owner(struct ActorObj *obj))
+void obj_aim_at_owner(struct ActorObj *obj)
+{
+    s16 *dxp;
+    u8 *dirp;
+    s32 *phase;
+    s32 *p9c;
+    s32 deltaX;
+    s32 deltaY;
+    s32 ratio;
+    s32 half;
+    s32 time;
+    s32 shifted;
+
+    dxp = &obj->dx;
+    shifted = (u8)*dxp;
+    dirp = &obj->dir;
+    shifted = shifted << 5;
+    *dirp = (*dirp & 0x1F) | shifted;
+    ((struct ActorFlagBits *)&obj->flags)->bit0 = 0;
+    obj_list_remove(obj);
+    phase = &obj->phase;
+    p9c = &obj->param9C;
+    *phase = *p9c;
+    obj->targetX = obj->owner->part->targetX;
+    obj->targetY = obj->owner->part->targetY;
+    obj->dx = obj->owner->posX / 0x100;
+    obj->dy = obj->owner->posY / 0x100;
+    obj->dh = obj->owner->posH / 0x100;
+    deltaX = obj->targetX - (obj->dx << 8);
+    deltaY = obj->targetY - (obj->dy << 8);
+    ratio = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY) / 0x380;
+    half = ratio / 2;
+    time = 0x3000 / (half * half);
+    if (time == 1)
+    {
+        time = 2;
+    }
+    *p9c = -time;
+    obj->paramA0 = ratio;
+    obj->paramA4 = deltaX;
+    obj->side = deltaY;
+    obj->timer = 0;
+    obj->state = obj_arc_land;
+}
 
 ASM_FUNC("asm/code_0806D4F4/obj_arc_land.s", void obj_arc_land(struct ActorObj *obj))
 
