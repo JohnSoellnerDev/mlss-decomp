@@ -17,6 +17,7 @@ Needs capstone (`.venv`, see README).
 """
 import argparse
 import os
+import re
 import struct
 import sys
 
@@ -353,6 +354,9 @@ class Writer:
                                           csarm.ARM_INS_STM, csarm.ARM_INS_STMDB):
             return None  # other pc-relative forms
         text = f"{mn} {op}" if op else mn
+        m = re.fullmatch(r"add (r\d), sp, \1", text) if f.thumb else None
+        if m:
+            text = f"add {m.group(1)}, sp"  # GNU as does not take the three-operand form
         enc = bytes(insn.bytes)
         if (f.thumb, text, enc) in self.raw_texts:
             return None
