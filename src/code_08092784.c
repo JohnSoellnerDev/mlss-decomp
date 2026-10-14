@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct PoseBits
 {
@@ -9,10 +10,13 @@ struct PoseBits
 
 struct Pose
 {
-    u8 filler0[0x12];
+    u8 filler0[0x11];
+    u8 turn;
     u8 flags;
     u8 filler13[0x0D];
     u8 result;
+    u8 filler21[0x02];
+    u8 count;
 };
 
 struct ObjFlagBits
@@ -41,13 +45,17 @@ struct Data
     u8 lock;
     u8 fillerLock[0x02];
     u32 slotValue;
+    u8 filler118[0x15];
+    u8 kind;
 };
 
 struct Obj
 {
     u8 filler0[0x08];
     struct Pose *pose;
-    u8 filler0C[0x0C];
+    u8 filler0C[0x04];
+    s32 x;
+    u8 filler14[0x04];
     s32 h;
     u8 filler1C[0x0C];
     struct Data *data;
@@ -85,7 +93,7 @@ struct Obj
 };
 
 extern u8 *gUnk_03000FF4;
-extern u32 (*gMathRoutines)(u32);
+extern u8 *gUnk_03000FD8;
 extern u8 gAnim278[];
 extern u8 gAnim374[];
 extern u8 gAnim284[];
@@ -146,6 +154,9 @@ void hold_release_c(struct Obj *obj);
 void hold_decay_hold_idle_a(struct Obj *obj);
 void hold_decay_orbit_step_a(struct Obj *obj);
 void hold_decay_spawn_orbit_child(struct Obj *obj);
+void hold_decay_end_action_if_busy(struct Obj *obj);
+void hold_decay_timer_start_orbit_a(struct Obj *obj);
+void step_end_action_19(struct Obj *obj);
 
 void hold_orbit_arc_land_e(struct Obj *obj)
 {
@@ -214,7 +225,7 @@ s32 hold_orbit_random_pause_jump_a(struct Obj *obj)
         next = charge_release_start_jump_arc_b;
     }
     obj->state = next;
-    ram = gMathRoutines;
+    ram = (u32 (*)(u32))gMathRoutines;
     q = ram(0x006E1E40);
     obj->dh = (q - 0x58) / 2;
     return 1;
@@ -251,7 +262,7 @@ s32 hold_orbit_random_pause_jump_b(struct Obj *obj)
         next = charge_release_start_jump_arc_a;
     }
     obj->state = next;
-    ram = gMathRoutines;
+    ram = (u32 (*)(u32))gMathRoutines;
     q = ram(0x005A1440);
     obj->dh = (q - 0x48) / 2;
     return 1;
@@ -356,11 +367,149 @@ void hold_charge_a(struct Obj *obj)
     obj->step++;
 }
 
-ASM_FUNC("asm/code_08092784/charge_release_hold_release_a.s", void charge_release_hold_release_a(struct Obj *obj))
+void charge_release_hold_release_a(struct Obj *obj)
+{
+    u32 action;
 
-ASM_FUNC("asm/code_08092784/charge_release_hold_idle_a.s", void charge_release_hold_idle_a(struct Obj *obj))
+    obj->state = charge_release_hold_release_a;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step < 0)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 8);
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = charge_release_end_action_if_busy;
+        return;
+    }
+    if (obj->step <= 3)
+    {
+        if (obj->pose->count != 0)
+            sprite_set_action(obj, 0, 0x2025, 0);
+    }
+    else if (obj->step <= 7)
+    {
+        if (obj->pose->count > 1)
+            sprite_set_action(obj, 0, 0x2025, 1);
+    }
+    else if (obj->step <= 11)
+    {
+        if (obj->pose->count > 2)
+            sprite_set_action(obj, 0, 0x2025, 2);
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step -= 2;
+}
 
-ASM_FUNC("asm/code_08092784/charge_release_orbit_circle_a.s", void charge_release_orbit_circle_a(struct Obj *obj))
+void charge_release_hold_idle_a(struct Obj *obj)
+{
+    u32 action;
+    u32 keys;
+
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    keys = gUnk_0300034C.held & obj->buttons;
+    if (keys == 0)
+    {
+        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        sprite_set_action(obj, 6, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->state = charge_release_timer_start_orbit_a;
+        obj->step = keys;
+        return;
+    }
+    if (obj->step > 0x31)
+    {
+        if (obj->data->kind == 0x1E)
+        {
+            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            {
+                sprite_set_action(obj, 4, 0, 0);
+                ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+                obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 8);
+            }
+            else
+            {
+                obj->step = 0x32;
+                return;
+            }
+        }
+        else
+        {
+            sprite_set_action(obj, 5, 0, 0);
+            ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        }
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = charge_release_end_action_if_busy;
+    }
+    else
+    {
+        if (obj->step > 0x18)
+            ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->step++;
+    }
+}
+
+void charge_release_orbit_circle_a(struct Obj *obj)
+{
+    struct Obj *child;
+    u32 index;
+    s32 h;
+    const s16 *table;
+
+    if (obj->action & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct PoseBits *)&child->action)->mode = 1;
+    child->angle += child->velocity;
+    index = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(child->angle, 0x168);
+    table = gCosineTable;
+    child->x = obj->baseX + (table[index & 0xFF] / 64) * 0x16;
+    h = obj->baseH + 0x1600;
+    child->h = h + (gSineTable[index & 0xFF] / 64) * 0x16;
+    if ((obj->pose->turn & 0x40) != 0)
+        child->velocity += 0xC00;
+    else
+        child->velocity -= 0xC00;
+    if (obj->step == 2)
+        sprite_set_action(obj, 2, 0x2025, 1);
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2025, 2);
+    if (obj->step == 4)
+        sprite_set_action(obj, 2, 0x2025, 3);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2025, 4);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2025, 5);
+    if (obj->step == 7)
+    {
+        ((struct PoseBits *)&child->action)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->step = 0;
+        obj->state = step_end_action_b;
+        if (obj->data != 0)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 1;
+    }
+    else
+    {
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+        obj->step++;
+    }
+}
 
 void charge_release_spawn_orbit_child_a(struct Obj *obj)
 {
@@ -413,13 +562,188 @@ void charge_release_spawn_orbit_child_a(struct Obj *obj)
     charge_release_hold_step_a(obj);
 }
 
-ASM_FUNC("asm/code_08092784/charge_release_hold_step_a.s", void charge_release_hold_step_a(struct Obj *obj))
+void charge_release_hold_step_a(struct Obj *obj)
+{
+    u32 action;
 
-ASM_FUNC("asm/code_08092784/hold_release_b.s", void hold_release_b(struct Obj *obj))
+    obj->state = charge_release_hold_step_a;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step == 0)
+        sprite_set_action(obj, 0, 0x2054, 0);
+    if (obj->step == 3)
+        sprite_set_action(obj, 0, 0x2054, 1);
+    if (obj->step == 6)
+        sprite_set_action(obj, 0, 0x2054, 2);
+    if (obj->step == 9)
+        sprite_set_action(obj, 0, 0x2054, 3);
+    if (obj->step != 0xC)
+    {
+        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        {
+            obj->step *= 3;
+            obj->state = hold_release_b;
+            return;
+        }
+    }
+    else
+    {
+        sprite_set_action(obj, 1, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->step = action;
+        obj->state = charge_release_hold_idle_b;
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step++;
+}
 
-ASM_FUNC("asm/code_08092784/charge_release_hold_idle_b.s", void charge_release_hold_idle_b(struct Obj *obj))
+void hold_release_b(struct Obj *obj)
+{
+    u32 action;
 
-ASM_FUNC("asm/code_08092784/charge_release_orbit_circle_b.s", void charge_release_orbit_circle_b(struct Obj *obj))
+    obj->state = hold_release_b;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step < 0)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 0xC);
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = charge_release_end_action_if_busy;
+        return;
+    }
+    if (obj->step <= 8)
+    {
+        if (obj->pose->count != 0)
+            sprite_set_action(obj, 0, 0x2054, 0);
+    }
+    else if (obj->step <= 0x11)
+    {
+        if (obj->pose->count > 1)
+            sprite_set_action(obj, 0, 0x2054, 1);
+    }
+    else if (obj->step <= 0x1A)
+    {
+        if (obj->pose->count > 2)
+            sprite_set_action(obj, 0, 0x2054, 2);
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step -= 3;
+}
+
+void charge_release_hold_idle_b(struct Obj *obj)
+{
+    u32 action;
+    u32 keys;
+
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    keys = gUnk_0300034C.held & obj->buttons;
+    if (keys == 0)
+    {
+        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        sprite_set_action(obj, 6, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->state = charge_release_timer_start_orbit_b;
+        obj->step = keys;
+        return;
+    }
+    if (obj->step > 0x2C)
+    {
+        if (obj->data->kind == 0x1E)
+        {
+            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            {
+                sprite_set_action(obj, 4, 0, 0);
+                ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+                obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 0xC);
+            }
+            else
+            {
+                obj->step = 0x2D;
+                return;
+            }
+        }
+        else
+        {
+            sprite_set_action(obj, 5, 0, 0);
+            ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        }
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = charge_release_end_action_if_busy;
+    }
+    else
+    {
+        if (obj->step > 0x1D)
+            ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->step++;
+    }
+}
+
+void charge_release_orbit_circle_b(struct Obj *obj)
+{
+    struct Obj *child;
+    const s16 *table;
+    u32 index;
+    s32 h;
+
+    if (obj->action & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct PoseBits *)&child->action)->mode = 1;
+    child->angle += child->velocity;
+    index = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(child->angle, 0x168);
+    table = gCosineTable;
+    child->x = obj->baseX + (table[index & 0xFF] / 64) * 0x18;
+    h = obj->baseH + 0x1A00;
+    child->h = h + (gSineTable[index & 0xFF] / 64) * 0x18;
+    if ((obj->pose->turn & 0x40) != 0)
+        child->velocity += 0x998;
+    else
+        child->velocity -= 0x998;
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2054, 1);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2054, 2);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2054, 3);
+    if (obj->step == 7)
+        sprite_set_action(obj, 2, 0x2054, 4);
+    if (obj->step == 8)
+        sprite_set_action(obj, 2, 0x2054, 5);
+    if (obj->step == 9)
+    {
+        ((struct PoseBits *)&child->action)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->step = 0;
+        obj->state = step_end_action_a;
+        if (obj->data != 0)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 1;
+    }
+    else
+    {
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+        obj->step++;
+    }
+}
 
 void step_end_action_a(struct Obj *obj)
 {
@@ -776,13 +1100,188 @@ void charge_release_spawn_orbit_child_c(struct Obj *obj)
     hold_charge_b(obj);
 }
 
-ASM_FUNC("asm/code_08092784/hold_charge_b.s", void hold_charge_b(struct Obj *obj))
+void hold_charge_b(struct Obj *obj)
+{
+    u32 action;
 
-ASM_FUNC("asm/code_08092784/hold_release_c.s", void hold_release_c(struct Obj *obj))
+    obj->state = hold_charge_b;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step == 0)
+        sprite_set_action(obj, 0, 0x2025, 0);
+    if (obj->step == 2)
+        sprite_set_action(obj, 0, 0x2025, 1);
+    if (obj->step == 4)
+        sprite_set_action(obj, 0, 0x2025, 2);
+    if (obj->step == 6)
+        sprite_set_action(obj, 0, 0x2025, 3);
+    if (obj->step != 8)
+    {
+        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        {
+            obj->step *= 2;
+            obj->state = hold_release_c;
+            return;
+        }
+    }
+    else
+    {
+        sprite_set_action(obj, 1, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->step = action;
+        obj->state = hold_decay_hold_idle_a;
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step++;
+}
 
-ASM_FUNC("asm/code_08092784/hold_decay_hold_idle_a.s", void hold_decay_hold_idle_a(struct Obj *obj))
+void hold_release_c(struct Obj *obj)
+{
+    u32 action;
 
-ASM_FUNC("asm/code_08092784/hold_decay_orbit_step_a.s", void hold_decay_orbit_step_a(struct Obj *obj))
+    obj->state = hold_release_c;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step < 0)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 8);
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = hold_decay_end_action_if_busy;
+        return;
+    }
+    if (obj->step <= 3)
+    {
+        if (obj->pose->count != 0)
+            sprite_set_action(obj, 0, 0x2025, 0);
+    }
+    else if (obj->step <= 7)
+    {
+        if (obj->pose->count > 1)
+            sprite_set_action(obj, 0, 0x2025, 1);
+    }
+    else if (obj->step <= 11)
+    {
+        if (obj->pose->count > 2)
+            sprite_set_action(obj, 0, 0x2025, 2);
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step -= 2;
+}
+
+void hold_decay_hold_idle_a(struct Obj *obj)
+{
+    u32 action;
+    u32 keys;
+
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    keys = gUnk_0300034C.held & obj->buttons;
+    if (keys == 0)
+    {
+        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        sprite_set_action(obj, 6, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->state = hold_decay_timer_start_orbit_a;
+        obj->step = keys;
+        return;
+    }
+    if (obj->step > 0x31)
+    {
+        if (obj->data->kind == 0x1E)
+        {
+            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            {
+                sprite_set_action(obj, 4, 0, 0);
+                ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+                obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 8);
+            }
+            else
+            {
+                obj->step = 0x32;
+                return;
+            }
+        }
+        else
+        {
+            sprite_set_action(obj, 5, 0, 0);
+            ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        }
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->state = hold_decay_end_action_if_busy;
+    }
+    else
+    {
+        if (obj->step > 0x18)
+            ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        obj->step++;
+    }
+}
+
+void hold_decay_orbit_step_a(struct Obj *obj)
+{
+    struct Obj *child;
+    const s16 *table;
+    u32 index;
+    s32 h;
+
+    if (obj->action & 0x38)
+    {
+        end_action(obj);
+        return;
+    }
+    child = obj->child;
+    ((struct PoseBits *)&child->action)->mode = 1;
+    child->angle += child->velocity;
+    index = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(child->angle, 0x168);
+    table = gCosineTable;
+    child->x = obj->baseX + (table[index & 0xFF] / 64) * 0x16;
+    h = obj->baseH + 0x1600;
+    child->h = h + (gSineTable[index & 0xFF] / 64) * 0x16;
+    if ((obj->pose->turn & 0x40) != 0)
+        child->velocity += 0xC00;
+    else
+        child->velocity -= 0xC00;
+    if (obj->step == 2)
+        sprite_set_action(obj, 2, 0x2025, 1);
+    if (obj->step == 3)
+        sprite_set_action(obj, 2, 0x2025, 2);
+    if (obj->step == 4)
+        sprite_set_action(obj, 2, 0x2025, 3);
+    if (obj->step == 5)
+        sprite_set_action(obj, 2, 0x2025, 4);
+    if (obj->step == 6)
+        sprite_set_action(obj, 2, 0x2025, 5);
+    if (obj->step == 7)
+    {
+        ((struct PoseBits *)&child->action)->mode = 3;
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 0;
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->step = 0;
+        obj->state = step_end_action_19;
+        if (obj->data != 0)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 1;
+    }
+    else
+    {
+        ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+        obj->step++;
+    }
+}
 
 void hold_decay_spawn_orbit_child(struct Obj *obj)
 {
