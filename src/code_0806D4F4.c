@@ -71,6 +71,22 @@ struct ActorObj
     s16 dh;
 };
 
+struct ActorModeBits
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 high : 1;
+};
+
+struct ActorFlagBits
+{
+    u8 bit0 : 1;
+    u8 low : 2;
+    u8 bit3 : 1;
+    u8 high : 4;
+};
+
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
 void obj_list_push_default(struct ActorObj *obj);
@@ -135,21 +151,18 @@ void obj_timer_exit_left(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
     {
-        obj->timer--;
-        if ((s16)obj->timer <= 0)
-        {
-            u16 *timer = &obj->timer;
-            u8 *mode;
-            int bits;
+        u16 *timer;
+        s32 left;
 
+        left = --obj->timer << 16;
+        timer = &obj->timer;
+        if (left <= 0)
+        {
             sprite_set_action(obj, 5, 0, 0);
             set_slot_value(0xD2, -1);
             obj->handler68 = on_arrive;
-            mode = &obj->mode;
-            bits = *mode;
-            bits = -0x41 & bits;
-            bits = -0x21 & bits;
-            *mode = bits;
+            ((struct ActorModeBits *)&obj->mode)->bit6 = 0;
+            ((struct ActorModeBits *)&obj->mode)->bit5 = 0;
             obj_list_push_default(obj);
             obj->handler58 = (void (*)(struct ActorObj *))obj_lookup_part_to_drift;
             if (obj->dx != 0)
@@ -461,15 +474,11 @@ void obj_timer_action5_setup(struct ActorObj *obj)
         obj->timer--;
         if ((s16)obj->timer <= 0)
         {
-            u32 bits;
-
             set_slot_value(0xD2, -1);
             sprite_set_action(obj, 5, 0, 0);
             obj->handler68 = on_arrive;
-            bits = obj->mode;
-            bits = -0x41 & bits;
-            bits = -0x21 & bits;
-            obj->mode = bits;
+            ((struct ActorModeBits *)&obj->mode)->bit6 = 0;
+            ((struct ActorModeBits *)&obj->mode)->bit5 = 0;
             obj_list_push_default(obj);
             obj->handler58 = (void (*)(struct ActorObj *))obj_lookup_part_pick_state;
             obj->state = obj_start_motion_timer;
@@ -759,33 +768,30 @@ void obj_pose_release_partner(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
     {
-        int bits;
         s32 action;
 
         obj_detach_active(obj->kind->pose);
-        bits = obj->kind->flags;
-        bits = -9 & bits;
-        obj->kind->flags = bits;
+        ((struct ActorFlagBits *)&obj->kind->flags)->bit3 = 0;
         if (obj->paramA0 == 0)
         {
-            if (obj->param9C == 0)
+            if (obj->param9C != 0)
             {
-                action = 0x4126;
+                action = 0x4128;
             }
             else
             {
-                action = 0x4128;
+                action = 0x4126;
             }
         }
         else
         {
-            if (obj->param9C == 0)
+            if (obj->param9C != 0)
             {
-                action = 0x4127;
+                action = 0x4129;
             }
             else
             {
-                action = 0x4129;
+                action = 0x4127;
             }
         }
         sprite_set_action(obj, 0, action, 0);
@@ -794,9 +800,7 @@ void obj_pose_release_partner(struct ActorObj *obj)
         obj->dh = 0;
         obj->phase = 0x300;
         obj->dx = obj->dir >> 5;
-        bits = obj->flags;
-        bits = -2 & bits;
-        obj->flags = bits;
+        ((struct ActorFlagBits *)&obj->flags)->bit0 = 0;
         obj->dir = (obj->dir & 0x1F) | 0x60;
         obj_list_push_default(obj);
         obj->handler58 = obj_owner_callback_step;

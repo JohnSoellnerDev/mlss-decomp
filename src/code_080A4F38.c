@@ -20,11 +20,13 @@ struct HeroNode
     u16 y;
     u8 filler4[0x0E - 0x04];
     u16 z;
+    u8 filler10[0x12 - 0x10];
+    u8 flags;
 };
 
 struct KeyState
 {
-    u8 filler0[0x3C];
+    u8 filler0[0x3E];
     u16 held;
 };
 
@@ -98,7 +100,7 @@ struct HeroBody
     u8 flags;
     u16 rate;
     u16 frame;
-    u16 progress;
+    s16 progress;
     u8 filler80[0x84 - 0x80];
     s16 spanA;
     s16 spanB;
@@ -164,6 +166,7 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 void hero_b_node_input_step_67a8(struct HeroBody *body);
 void hero_b_spawn_node_66c8(struct HeroBody *body);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void step_motion(struct HeroBody *body);
 void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
 void hero_pair_place_b_then_a(struct HeroBody *body);
@@ -475,7 +478,109 @@ void hero_a_spawn_node(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080A4F38/hero_a_node_step_with_input.s", void hero_a_node_step_with_input(struct HeroBody *body))
 
-ASM_FUNC("asm/code_080A4F38/hero_a_node_step_with_input_b.s", void hero_a_node_step_with_input_b(void))
+void hero_a_node_step_with_input_b(struct HeroBody *body)
+{
+    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct HeroBody *a = &hero->body;
+    struct HeroNode *node;
+    struct World *world;
+    u16 a->timer;
+    s32 step_one = 0x4000;
+    s32 wants;
+    s32 limit;
+    s32 low;
+    s32 high;
+    s32 moving;
+    s32 mode;
+    s32 m;
+
+    state_stack_advance_progress(a);
+    node = a->node;
+    sprite_entry_update(node);
+    node->x = a->sprite->unk0 + 0x14;
+    node->y = a->sprite->unk2 - 0xE;
+    node->z = a->sprite->unkE - 1;
+    if (hero->body.progress < step_one)
+        ((struct HeroFlagBits *)&a->flags)->active = 0;
+    if ((a->timer >> 12) == 0)
+    {
+        wants = 0;
+        if (hero->body.progress >= 0)
+        {
+            if (a->step <= step_one)
+                wants = 1;
+        }
+        if (wants)
+        {
+            if (gUnk_0300034C.held & 1)
+                a->timer = (a->timer & 0xFFF) | 0x2000;
+        }
+        if ((a->timer >> 12) == 0)
+        {
+            limit = step_one;
+            if (limit > 0x7FFF)
+                limit = 0x7FFF;
+            wants = 0;
+            if (a->step <= limit)
+            {
+                if (a->progress >= limit)
+                    wants = 1;
+            }
+            if (wants)
+            {
+                world = gUnk_03000FD8;
+                m = world->mode;
+                world->mode = (-0x31 & m) | (((((u32)m << 26) >> 30) | 1) << 4);
+                a->timer = (a->timer & 0xFFF) | 0x1000;
+            }
+            else if (a->progress <= step_one)
+            {
+                if ((gUnk_0300034C.held & 1) != 0 || (gUnk_0300034C.held & 3) != 0)
+                {
+                    world = gUnk_03000FD8;
+                    m = world->mode;
+                    world->mode = (-0x31 & m) | (((((u32)m << 26) >> 30) | 1) << 4);
+                    if ((((u32)gUnk_03000FD8->mode << 28) >> 30) & -2)
+                        goto after_timer;
+                    a->timer = (a->timer & 0xFFF) | 0x1000;
+                }
+            }
+        }
+    }
+after_timer:
+    mode = a->timer >> 12;
+    if (mode != 0)
+    {
+        low = 0;
+        if (low > step_one)
+            low = step_one;
+        high = step_one;
+        if (high > 0x7FFF)
+            high = 0x7FFF;
+        if (high < low)
+            low = high;
+        moving = 0;
+        if (a->progress >= low)
+        {
+            if (a->step <= high)
+                moving = 1;
+        }
+        if (moving)
+        {
+            if (mode > 1)
+            {
+                void (*next)(struct HeroBody *) = hero_a_drop_node_5f18;
+
+                a->timer &= 0xFFF;
+                body->state = next;
+                next(body);
+                return;
+            }
+        }
+    }
+    if ((a->flags & 0x20) != 0)
+        body->state = hero_a_release_node;
+}
 
 void hero_a_release_node(struct HeroBody *body)
 {
