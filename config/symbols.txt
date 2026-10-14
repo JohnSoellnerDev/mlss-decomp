@@ -176,8 +176,8 @@
 03001028 gUnk_03001028 ram
 0300102C gUnk_0300102C ram
 03001030 gUnk_03001030 ram
-03001034 gUnk_03001034 ram
-03001038 gUnk_03001038 ram
+03001034 gMemRoutines ram
+03001038 gMathRoutines ram
 03001040 gUnk_03001040 ram
 03001070 gUnk_03001070 ram
 03001074 gUnk_03001074 ram
@@ -6995,7 +6995,13 @@
 08199120 spawn_cb_0818ebf4 thumb
 08199160 spawn_cb_0818ead4 thumb
 0819919C table_085213b8 thumb
-081991AC gRomRamRoutines data size=1344
+081991AC iwram_fill data size=7C
+08199228 iwram_copy data size=CC
+081992F4 iwram_sqrt data size=10C
+08199400 iwram_div data size=24
+08199424 iwram_math_08199424 data size=1B4
+081995D8 gSineTable data size=280
+08199858 iwram_overlay data size=C98
 0819A4F0 thunk_set_r0_91_jump thumb size=208
 0819A6F8 track_run thumb
 0819A95C track_command thumb
