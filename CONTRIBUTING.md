@@ -77,6 +77,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   `ldrh`/`ldrb` for an update, but your C loads the `ldrh` first: read the field into an `s32`
   local (`s32 t = obj->timer; if (t != 0) obj->timer--;`). An `s16` local or a direct
   `if (obj->timer)` keeps the narrow value and reuses it.
+- A multiply by a constant that sits in the destination register (`movs r0, #0xD0; muls r0, r1`)
+  is usually indexing an array of structs (`&gWork->entries[i]` with a 0xD0-byte struct), not
+  `base + i * 0xD0` written by hand.
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
