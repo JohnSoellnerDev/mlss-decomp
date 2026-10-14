@@ -666,11 +666,3 @@ void obj_point1_zoom_step31_ead4(struct Point1Obj *obj)
     *words++ = zoom;
     *words = step;
 }
-
-ASM_FUNC("asm/code_0818DAF8/obj_zoom_model5_turn_rem6_ebf4.s", void obj_zoom_model5_turn_rem6_ebf4(void))
-
-ASM_FUNC("asm/code_0818DAF8/obj_zoom_model2_flat_ee48.s", void obj_zoom_model2_flat_ee48(void))
-
-ASM_FUNC("asm/code_0818DAF8/obj_zoom_model6_turn_rem6_f07c.s", void obj_zoom_model6_turn_rem6_f07c(void))
-
-ASM_FUNC("asm/code_0818DAF8/obj_zoom_model4_turn45_f2d0.s", void obj_zoom_model4_turn45_f2d0(void))

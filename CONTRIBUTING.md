@@ -125,8 +125,9 @@ function start, calls show the relocation (the called symbol). A worked example 
 `config/units.txt` cuts the code into units of about 6 KB named after their start address,
 because the original source files are not known yet. When it becomes clear where an original
 file starts and ends (functions sharing static helpers and data, a subsystem's beginning), the
-unit gets split and renamed. Do not change `config/units.txt` or move functions between units
-unless that is your task.
+unit gets split and renamed. Until then, a long run of finished functions inside a unit is cut
+out as its own unit (`tools/split_unit.py UNIT --auto 0x400`), so that it counts as complete.
+Do not change `config/units.txt` or move functions between units unless that is your task.
 
 ## Before you finish
 
@@ -144,6 +145,7 @@ unless that is your task.
 | `tools/new_c_unit.py UNIT` | Creates `src/UNIT.c` with every function as `ASM_FUNC` |
 | `tools/asmdiff.py FUNC` | Your C against the original, instruction by instruction |
 | `tools/rename.py OLD NEW` | Renames a symbol everywhere |
+| `tools/split_unit.py UNIT ADDR…` | Splits a unit (and its C file) at function addresses; `--auto MIN` cuts out runs of finished functions |
 | `tools/check_rom.py ROM` | SHA-1 check; on a mismatch names the first misplaced function and the first differing byte |
 | `tools/progress.py` | Summary of `build/report.json` |
 | `tools/disasm.py` | Produced `asm/` from the ROM (needs `.venv` with capstone). Only for re-splitting functions; it does not overwrite edited files without `--force` |
