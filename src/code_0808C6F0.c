@@ -247,6 +247,37 @@ void orbit_slots_orbit_step_c(struct Actor *obj);
 void orbit_slots_orbit_step_d(struct Actor *obj);
 s32 dispatch_slot_by_flags(struct Actor *obj);
 
+// flags76: action mode and kind
+struct ActBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 kind : 3;
+    u8 unk6 : 2;
+};
+
+// Shared epilogue of an action: unlock the data slot, drop the child, reset the pose and
+// return to action 0. Inlined into its callers (the argument order of the call differs from
+// a plain call).
+static inline void actor_end_action(struct Actor *obj)
+{
+    if (((struct ActBits *)&obj->flags76)->mode == 1)
+    {
+        if (obj->data != NULL)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 0;
+        if (obj->child != NULL)
+        {
+            obj_release(obj->child);
+            obj->child = NULL;
+        }
+        ((struct PoseDirBits *)&obj->pose->dir)->turn = 0;
+        ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
+        obj->pose->result = 0x10;
+        sprite_set_action(obj, 0, -1, 0);
+        obj->state = NULL;
+    }
+}
+
 void pose_update_if_visible_a(struct Actor *obj)
 {
     if (obj->pose->flags & 8)
@@ -800,9 +831,19 @@ ASM_FUNC("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume
 
 ASM_FUNC("asm/code_0808C6F0/setup_slot_by_flags.s", s32 setup_slot_by_flags(struct Actor *obj))
 
-ASM_FUNC("asm/code_0808C6F0/poll_action_end.s", s32 poll_action_end(struct Actor *obj))
+s32 poll_action_end(struct Actor *obj)
+{
+    if (((struct ActBits *)&obj->flags76)->kind == 0)
+        return 0;
+    actor_end_action(obj);
+    return 1;
+}
 
-ASM_FUNC("asm/code_0808C6F0/end_action_if_done.s", void end_action_if_done(struct Actor *obj))
+void end_action_if_done(struct Actor *obj)
+{
+    if (poll_action_end(obj) == 0 && (obj->pose->flags & 8))
+        actor_end_action(obj);
+}
 
 ASM_FUNC("asm/code_0808C6F0/orbit_slots_spawn_orbit_child.s", void orbit_slots_spawn_orbit_child(struct Actor *obj))
 
@@ -898,7 +939,13 @@ void hold_then_orbit(struct Actor *obj)
 
 ASM_FUNC("asm/code_0808C6F0/orbit_position_a.s", void orbit_position_a(struct Actor *obj))
 
-ASM_FUNC("asm/code_0808C6F0/finish_orbit.s", void finish_orbit(struct Actor *obj))
+void finish_orbit(struct Actor *obj)
+{
+    if (obj->data != NULL)
+        ((struct DataLockBits *)&obj->data->lock)->locked = 0;
+    if (poll_action_end(obj) == 0 && (s16)obj->timer++ > 23)
+        actor_end_action(obj);
+}
 
 ASM_FUNC("asm/code_0808C6F0/orbit_slots_spawn_orbit_child_b.s", void orbit_slots_spawn_orbit_child_b(struct Actor *obj))
 

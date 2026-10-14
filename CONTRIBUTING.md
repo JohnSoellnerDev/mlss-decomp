@@ -97,6 +97,16 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
+- Flag tests on one byte (`ldrb r1; movs r0, #0x38; ands r0, r1; …; movs r0, #6; ands r0, r1;
+  cmp r0, #2`) where the constant register receives the result are bit-field compares:
+  `bits->kind == 0`, `bits->mode == 1` through a bit-field struct over the byte
+  (`u8 unk0 : 1; u8 mode : 2; u8 kind : 3;`). A `u8 f` local with `(f & 6) == 2` reuses f's
+  register instead (`ands r1, r0`).
+- Call arguments are normally loaded in order, except that GCC computes an "expensive" constant
+  such as `-1` (`movs r2, #1; rsbs r2, r2, #0`) first. When the original loads `-1` in its
+  argument position, the call sits in an inlined helper: a `static inline` function that the
+  callers use (example `actor_end_action` in src/code_0808C6F0.c). Repeated identical blocks in
+  several functions are a hint for such helpers.
 - No inline assembly, `register` variables, `asm("")` tricks, `volatile` or dummy variables that
   only exist to force a match (e.g. an unused array to grow the stack frame).
 - If the C does the same thing but does not match after real effort, keep it as
