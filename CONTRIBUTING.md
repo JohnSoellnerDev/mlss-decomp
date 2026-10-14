@@ -107,8 +107,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   argument position, the call sits in an inlined helper: a `static inline` function that the
   callers use (example `actor_end_action` in src/code_0808C6F0.c). Repeated identical blocks in
   several functions are a hint for such helpers.
+- A stack frame with an area nothing in the function touches (`sub sp, #0x10` and no access to
+  those bytes) is an unused local array or struct in the original: GCC 2.95 reserves space for
+  arrays and structs even when they are never used. Declare it (`s32 unused[4];`).
 - No inline assembly, `register` variables, `asm("")` tricks, `volatile` or dummy variables that
-  only exist to force a match (e.g. an unused array to grow the stack frame).
+  only exist to force a register choice or instruction order.
 - If the C does the same thing but does not match after real effort, keep it as
   `NONMATCH("asm/UNIT/FUNC.s", decl) { … } END_NONMATCH` (the ROM keeps the original assembly,
   the progress report counts the C as partly matching) and say so in your pull request.

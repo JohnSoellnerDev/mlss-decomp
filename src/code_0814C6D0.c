@@ -122,6 +122,7 @@ void fall_landing_pick_1d8(void);
 s32 find_active_entry(struct Enemy *owner, u8 *idx);
 void enemy_seek_partner_axis(void);
 void enemy_seek_partner_axis_alt(void);
+u8 entry_box_check(struct Enemy *parent, struct Enemy *obj);
 void start_axis_wander(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void start_axis_wander_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_state(struct Enemy *parent, struct Enemy *obj, u32 *slot);
@@ -158,7 +159,23 @@ void advance_and_step_z(struct Enemy *parent, struct Enemy *obj, u32 *slot)
     }
 }
 
-ASM_FUNC("asm/code_0814C6D0/fall_landing.s", void fall_landing(void))
+void fall_landing(struct Enemy *parent, struct Enemy *obj, u32 *slot)
+{
+    s32 unused[4];
+
+    if (obj->cell->unk12 & 8)
+        ((struct BitsMode *)&obj->unk214)->low = 0;
+    obj->dz -= obj->unk2DC;
+    if (obj->unk24 & 0x18000)
+    {
+        if (entry_box_check(parent, obj))
+            *slot = (u32)enemy_seek_partner_axis_alt;
+        else
+            *slot = (u32)start_axis_wander;
+    }
+    else if (obj->posZ + obj->dz <= obj->unk2D4)
+        *slot = (u32)fall_landing_state;
+}
 
 void walk_step_z(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
