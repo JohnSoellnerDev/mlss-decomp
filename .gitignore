@@ -1,0 +1,22 @@
+# The game itself never goes into this repository: bring your own ROM (see README).
+*.gba
+*.sav
+*.bin
+
+# Build output and generated files
+build/
+build.ninja
+.ninja_*
+objdiff.json
+report.json
+
+# Toolchain installed by tools/setup.sh
+tools/agbcc/
+tools/objdiff-cli
+.venv/
+
+__pycache__/
+*.pyc
+.claude/
+tools/binutils/
+tools/bin/

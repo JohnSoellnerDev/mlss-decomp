@@ -1,0 +1,57 @@
+# Builds the decompilation and uploads the progress report that decomp.dev reads
+# (artifact A88P_report on pushes to main). The report needs no ROM: it compares the C
+# against the original assembly in asm/. With the optional secret BASEROM_URL (and
+# BASEROM_AUTH, an Authorization header value) the full ROM is built and checked as well.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/agbcc
+            tools/binutils
+            tools/bin
+            tools/objdiff-cli
+          key: toolchain-${{ hashFiles('tools/setup.sh') }}
+
+      - name: Install toolchain
+        run: JOBS=4 tools/setup.sh
+
+      - name: Configure
+        run: python3 configure.py
+
+      - name: Assemble the original code and compile the C
+        run: tools/bin/ninja objects
+
+      - name: Fetch baserom
+        env:
+          BASEROM_URL: ${{ secrets.BASEROM_URL }}
+          BASEROM_AUTH: ${{ secrets.BASEROM_AUTH }}
+        if: env.BASEROM_URL != ''
+        run: curl -fsSL ${BASEROM_AUTH:+-H "Authorization: $BASEROM_AUTH"} -o baserom.gba "$BASEROM_URL"
+
+      - name: Build the ROM and compare
+        if: hashFiles('baserom.gba') != ''
+        run: tools/bin/ninja rom expected
+
+      - name: Progress report
+        run: |
+          tools/bin/ninja report
+          python3 tools/progress.py
+
+      - name: Upload progress report
+        uses: actions/upload-artifact@v4
+        with:
+          name: A88P_report
+          path: build/report.json
