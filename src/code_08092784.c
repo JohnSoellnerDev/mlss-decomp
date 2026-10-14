@@ -79,7 +79,7 @@ struct Obj
     u32 angle;
     s32 velocity;
     u32 buttons;
-    u16 step;
+    s16 step;
     u8 fillerAE[0x04];
     u16 dh;
 };
@@ -308,7 +308,53 @@ void hold_orbit_spawn_orbit_child_b(struct Obj *obj)
     hold_charge_a(obj);
 }
 
-ASM_FUNC("asm/code_08092784/hold_charge_a.s", void hold_charge_a(struct Obj *obj))
+struct PoseFlagBits
+{
+    u8 bit0 : 1;
+    u8 mode : 2;
+    u8 bit3 : 1;
+    u8 busy : 1;
+    u8 rest : 3;
+};
+
+void hold_charge_a(struct Obj *obj)
+{
+    u32 action;
+
+    obj->state = hold_charge_a;
+    action = obj->action & 0x38;
+    if (action != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if (obj->step == 0)
+        sprite_set_action(obj, 0, 0x2025, 0);
+    if (obj->step == 2)
+        sprite_set_action(obj, 0, 0x2025, 1);
+    if (obj->step == 4)
+        sprite_set_action(obj, 0, 0x2025, 2);
+    if (obj->step == 6)
+        sprite_set_action(obj, 0, 0x2025, 3);
+    if (obj->step != 8)
+    {
+        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        {
+            obj->step *= 2;
+            obj->state = charge_release_hold_release_a;
+            return;
+        }
+    }
+    else
+    {
+        sprite_set_action(obj, 1, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        obj->step = action;
+        obj->state = charge_release_hold_idle_a;
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->busy = 1;
+    obj->step++;
+}
 
 ASM_FUNC("asm/code_08092784/charge_release_hold_release_a.s", void charge_release_hold_release_a(struct Obj *obj))
 

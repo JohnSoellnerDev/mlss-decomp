@@ -62,6 +62,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   used in the body is usually a counting-up `for (i = 0; i < N; i++)` that GCC reversed. Its
   start value N-1 can even be copied from another register that happens to hold the same
   constant (`mov r9, r10`).
+- The original computes a field address into r0 and copies it into a callee-saved register
+  only after the first load (`adds r0, r4, #0; adds r0, #0xAC; ldrsh …; adds r5, r0, #0`), but
+  your C puts it straight into r5: write `obj->field` at every use instead of keeping a
+  pointer variable; GCC then shares the address itself. `ldrsh`/`ldrsb` mean the field is
+  signed (`s16`/`s8`).
 - Register or instruction order differs? Try: reordering independent statements, adding or
   removing a temporary variable, signed vs. unsigned types, `if`/`else` arrangement,
   `for` vs. `while` vs. `do {} while`, splitting or merging expressions, `!x` vs. `x == 0`.
