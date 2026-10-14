@@ -19,8 +19,8 @@ compiled function is identical.
 ## One function, start to finish
 
 ```sh
-python3 tools/new_c_unit.py code_080503E0      # once per unit: src/code_080503E0.c with all ASM_FUNC lines
-# replace the function's ASM_FUNC line in src/code_080503E0.c with C
+python3 tools/new_c_unit.py code_080502DC      # once per unit: src/code_080502DC.c with all ASM_FUNC lines
+# replace the function's ASM_FUNC line in src/code_080502DC.c with C
 python3 tools/asmdiff.py obj_update_child     # repeat until it prints MATCH
 tools/bin/ninja                               # mlss.gba: OK
 ```
@@ -28,7 +28,7 @@ tools/bin/ninja                               # mlss.gba: OK
 `asmdiff.py` compiles your C (without the ASM_FUNC functions) and the original, and prints a
 diff of the function's instructions (`-` original, `+` yours); offsets are relative to the
 function start, calls show the relocation (the called symbol). A worked example is
-`obj_update_child` in `src/code_080503E0.c`.
+`obj_update_child` in `src/code_080502DC.c`.
 
 ## Reading the original
 
@@ -79,7 +79,7 @@ function start, calls show the relocation (the called symbol). A worked example 
 
 ## Units
 
-`config/units.txt` cuts the code into units of about 32 KB named after their start address,
+`config/units.txt` cuts the code into units of about 6 KB named after their start address,
 because the original source files are not known yet. When it becomes clear where an original
 file starts and ends (functions sharing static helpers and data, a subsystem's beginning), the
 unit gets split and renamed. Do not change `config/units.txt` or move functions between units

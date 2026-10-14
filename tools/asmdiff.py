@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Compare a decompiled function with the original: disassembly of build/report/UNIT.o (your
-C) against build/expected/UNIT.o (the original), line by line.
+"""Compare a decompiled function with the original: the function from your C (src/UNIT.c,
+compiled without the ASM_FUNC functions) against the original assembly, line by line.
 
-    tools/asmdiff.py FUNC            # builds both objects with ninja first
+    tools/asmdiff.py FUNC
 
 Prints MATCH when code and relocations are identical, otherwise a unified diff (- original,
-+ yours). Offsets are relative to the function start.
++ yours). Offsets are relative to the function start. Builds in a private temporary
+directory, so it can run while others build.
 """
 import difflib
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-from symbols import binutil, load_symbols, load_units  # noqa: E402
+from symbols import binutil  # noqa: E402
+from unitbuild import Project  # noqa: E402
 
 
 def disasm(obj, func):
@@ -43,21 +46,15 @@ def disasm(obj, func):
 
 
 def main(func):
-    syms = load_symbols(os.path.join(ROOT, "config/symbols.txt"))
-    sym = next((s for s in syms.values() if s.name == func), None)
-    if sym is None:
-        sys.exit(f"{func} is not in config/symbols.txt")
-    unit = next(u[2] for u in load_units(os.path.join(ROOT, "config/units.txt")) if u[0] <= sym.addr < u[1])
-    if not os.path.exists(os.path.join(ROOT, "src", unit + ".c")):
-        sys.exit(f"src/{unit}.c does not exist yet (tools/new_c_unit.py {unit})")
-    exp, mine = f"build/expected/{unit}.o", f"build/report/{unit}.o"
-    ninja = os.path.join(ROOT, "tools/bin/ninja")
-    r = subprocess.run([ninja if os.path.exists(ninja) else "ninja", exp, mine], cwd=ROOT)
-    if r.returncode:
-        sys.exit(r.returncode)
-    a, b = disasm(exp, func), disasm(mine, func)
+    p = Project()
+    sym = p.func(func)
+    unit = p.unit_of(sym.addr)
+    with tempfile.TemporaryDirectory(prefix="asmdiff-") as tmp:
+        exp = p.build_expected(unit, tmp)
+        mine = p.build_c(unit, tmp, report=True)
+        a, b = disasm(exp, func), disasm(mine, func)
     if not b:
-        sys.exit(f"{func} is not in {mine} (still ASM_FUNC?)")
+        sys.exit(f"{func} is not in your C yet (still ASM_FUNC in src/{unit[2]}.c?)")
     if a == b:
         print(f"MATCH {func} ({len(a)} lines)")
         return 0

@@ -40,7 +40,7 @@ OK), `tools/bin/ninja report` writes the progress report `build/report.json` (ne
 | `tools/` | Toolchain setup, compiler wrapper, ROM check, `asmdiff.py`, `rename.py`, `new_c_unit.py`, the disassembler that produced `asm/`. |
 
 The units are named after their start address (`code_08017A00`) for now: the game's real source
-files are not known yet, so the code is cut into pieces of about 32 KB. When the original file
+files are not known yet, so the code is cut into pieces of about 6 KB. When the original file
 boundaries are found, units get split and renamed.
 
 ## Contributing

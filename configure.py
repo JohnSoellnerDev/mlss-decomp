@@ -21,6 +21,7 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from symbols import binutil, load_symbols, load_units  # noqa: E402
+from unitbuild import expected_source  # noqa: E402
 
 ROM_START, ROM_SIZE = 0x08000000, 0x01000000
 AGBCC_FLAGS = "-mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm"
@@ -63,16 +64,7 @@ def main():
 
     # expected objects: the original assembly of each function
     for start, end, name in units:
-        lines = ['\t.include "asm/macros.inc"', "\t.syntax unified", "\t.text"]
-        for s in funcs[name]:
-            if s.kind == "arm":
-                start_macro = "arm_func_start"
-            else:
-                start_macro = "thumb_func_start" if s.addr % 4 == 0 else "non_word_aligned_thumb_func_start"
-            lines += [f"\t{start_macro} {s.name}", f'\t.include "asm/{name}/{s.name}.s"',
-                      f"\tfunc_end {s.name}", ""]
-        lines.append("\t.align 2, 0")
-        write_if_changed(gen("expected", name + ".s"), "\n".join(lines) + "\n")
+        write_if_changed(gen("expected", name + ".s"), expected_source(name, funcs[name]))
 
     # linker script: every segment at its original address; symbols that no object defines
     # (RAM, data inside incbin blobs, functions inside data) are given as absolute addresses
@@ -166,9 +158,13 @@ def main():
     for start, end, name in units:
         unit = {"name": name, "target_path": f"build/expected/{name}.o",
                 "metadata": {"progress_categories": [category(name)], "auto_generated": False}}
-        if os.path.exists(os.path.join(ROOT, "src", name + ".c")):
+        src = os.path.join(ROOT, "src", name + ".c")
+        if os.path.exists(src):
             unit["base_path"] = f"build/report/{name}.o"
             unit["metadata"]["source_path"] = f"src/{name}.c"
+            # complete ("fully linked" on decomp.dev): the unit is C only, no original assembly left
+            text = open(src).read()
+            unit["metadata"]["complete"] = not any(k in text for k in ("ASM_FUNC(", "NONMATCH(", ".include"))
         cfg["units"].append(unit)
     write_if_changed(os.path.join(ROOT, "objdiff.json"), json.dumps(cfg, indent=2) + "\n")
 
