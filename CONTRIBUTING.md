@@ -78,9 +78,11 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Clearing or setting bits of a byte keeps the full int constant in the original
   (`ldrb; movs r0, #9; rsbs r0, r0, #0; ands r0, r2; strb` = and with -9). A plain
   `p->flags &= ~8` on a `u8` gets the constant narrowed and does not match. Write a bit-field
-  assignment (`((struct FlagBits *)&p->flags)->bit3 = 0;`) or work on an int temporary
-  (`int b = p->flags; b = -0x41 & b; b = -0x21 & b; p->flags = b;` keeps two separate masks).
-  Examples: src/code_08092784.c, src/code_08090F84.c.
+  assignment: `((struct FlagBits *)&p->flags)->bit3 = 0;`, and for `(x & -7) | 2` (bits 1-2 set to
+  01) `((struct ModeBits *)&p->flags)->mode = 1;`. This is the first thing to try: an int
+  temporary (`int b = p->flags; b = -7 & b; b |= 2; p->flags = b;`) usually loads the byte into
+  the other register. Only two masks in a row on one byte sometimes need the int temporary
+  (`b = -0x41 & b; b = -0x21 & b;`). Examples: src/code_080A048C.c, src/code_08092784.c.
 - A halfword/byte field is tested sign-extended (`ldrsh rX` + `cmp`) and later re-read with
   `ldrh`/`ldrb` for an update, but your C loads the `ldrh` first: read the field into an `s32`
   local (`s32 t = obj->timer; if (t != 0) obj->timer--;`). An `s16` local or a direct
