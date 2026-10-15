@@ -1,5 +1,18 @@
 #include "global.h"
 
+struct ChooseBit0
+{
+    u8 b0 : 1;
+    u8 rest : 7;
+};
+
+struct ChooseBit4
+{
+    u8 lo : 4;
+    u8 b4 : 1;
+    u8 rest : 3;
+};
+
 struct WorldObj
 {
     struct WorldObj *next;
@@ -301,12 +314,11 @@ speed_done:
     load_table_entries(gEffectCodeTable[owner->index]);
 }
 
-NONMATCH("asm/code_08100FFC/state_choose_hero.s", void state_choose_hero(struct StateOwner *owner))
+void state_choose_hero(struct StateOwner *owner)
 {
     struct World *world;
     struct WorldObj *fig1;
     struct WorldObj *fig2;
-    s32 flags;
     u32 hero;
 
     owner->state = (u32)state_choose_hero;
@@ -341,9 +353,7 @@ NONMATCH("asm/code_08100FFC/state_choose_hero.s", void state_choose_hero(struct 
             else
             {
                 world = gUnk_03000FD8;
-                flags = world->flags0B;
-                flags &= -2;
-                world->flags0B = flags;
+                ((struct ChooseBit0 *)&world->flags0B)->b0 = 0;
             }
             clear_cur_flags(8);
             set_cur_flags_pending(0x80);
@@ -355,11 +365,8 @@ NONMATCH("asm/code_08100FFC/state_choose_hero.s", void state_choose_hero(struct 
         }
     }
     world = gUnk_03000FD8;
-    flags = world->flags0C;
-    flags &= -0x11;
-    world->flags0C = flags;
+    ((struct ChooseBit4 *)&world->flags0C)->b4 = 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08100FFC/state_check_slots.s", void state_check_slots(void))
 
