@@ -5,7 +5,13 @@ release (`A88P`, English/French/German/Spanish/Italian). The C code here compile
 same compiler the game was built with (agbcc, from Nintendo's GBA SDK), to a ROM that is
 byte-for-byte identical to the original.
 
-![Progress: share of the code that is matched, and a map of all code units](docs/progress.svg)
+![Code](https://git.johnsoellner.me/swoopy/mlss/raw/branch/progress/badge-code.svg) ![Functions](https://git.johnsoellner.me/swoopy/mlss/raw/branch/progress/badge-functions.svg) ![Complete units](https://git.johnsoellner.me/swoopy/mlss/raw/branch/progress/badge-complete.svg)
+
+![Progress map: every code unit as a block the size of its code](https://git.johnsoellner.me/swoopy/mlss/raw/branch/progress/progress.svg)
+
+Every block is one code unit, its area the size of its code: green units are complete C,
+blue ones are partly matched (the brighter, the more), dark gray ones are not started. The
+picture is redrawn by CI after every push.
 
 This repository contains **nothing of the game**: no ROM, no graphics, music or text, and none of
 its code. The original assembly that the C is compared against is generated from your own copy
@@ -54,7 +60,8 @@ check that the ROM is still identical.
 
 Progress is measured with [objdiff](https://github.com/encounter/objdiff):
 `tools/bin/ninja report` writes `build/report.json`, `tools/progress.py` summarises it and
-`tools/progress_svg.py` draws the picture at the top of this page.
+`tools/progress_svg.py` draws the picture and badges at the top of this page (the Gitea
+workflow `.gitea/workflows/progress.yml` publishes them on the `progress` branch).
 
 ## Use of AI
 

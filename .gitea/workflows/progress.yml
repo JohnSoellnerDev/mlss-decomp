@@ -1,0 +1,68 @@
+# Builds the decompilation on the Gitea runner, checks the ROM, and publishes the progress
+# pictures for the README (tools/progress_svg.py) on the `progress` branch, which only ever
+# holds the latest pictures. The ROM comes from a private repository (secrets BASEROM_URL and
+# BASEROM_AUTH, an Authorization header value); configure.py generates asm/ from it.
+name: Progress
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: progress
+  cancel-in-progress: true
+
+jobs:
+  progress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dependencies
+        run: |
+          if ! command -v make >/dev/null || ! command -v xz >/dev/null || ! command -v unzip >/dev/null; then
+            apt-get update -qq && apt-get install -y -qq build-essential xz-utils unzip
+          fi
+
+      - name: Restore toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/agbcc
+            tools/binutils
+            tools/bin
+            tools/objdiff-cli
+            tools/pylib
+          key: toolchain-${{ hashFiles('tools/setup.sh') }}
+
+      - name: Install toolchain
+        run: JOBS=2 nice tools/setup.sh
+
+      - name: Fetch baserom
+        env:
+          BASEROM_URL: ${{ secrets.BASEROM_URL }}
+          BASEROM_AUTH: ${{ secrets.BASEROM_AUTH }}
+        run: |
+          curl -fsSL -H "Authorization: $BASEROM_AUTH" -o baserom.gba "$BASEROM_URL"
+          sha1sum -c --quiet config/rom.sha1
+
+      - name: Build, compare and report
+        run: |
+          nice python3 configure.py
+          nice tools/bin/ninja -j2 rom expected report
+          python3 tools/progress.py
+
+      - name: Draw the progress pictures
+        run: python3 tools/progress_svg.py build/report.json build/progress
+
+      - name: Publish on the progress branch
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          cd build/progress
+          git init -q -b progress
+          git add .
+          git -c user.name=swoopy -c user.email=112830912+JohnSoellnerDev@users.noreply.github.com \
+            commit -q -m "Progress at ${GITHUB_SHA::7}"
+          git push -q -f "${GITHUB_SERVER_URL%%://*}://ci:${TOKEN}@${GITHUB_SERVER_URL#*://}/${GITHUB_REPOSITORY}.git" progress
