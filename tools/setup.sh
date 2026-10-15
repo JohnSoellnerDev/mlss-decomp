@@ -4,7 +4,7 @@
 #   tools/agbcc/      agbcc, the GCC 2.95 based compiler of Nintendo's GBA SDK (pret/agbcc)
 #   tools/binutils/   GNU binutils for arm-none-eabi, statically linked
 #   tools/bin/ninja   ninja
-#   tools/objdiff-cli objdiff (diffs and the decomp.dev progress report)
+#   tools/objdiff-cli objdiff (diffs and the progress report)
 #   tools/pylib/      capstone for Python (tools/disasm.py, which generates asm/ from the ROM)
 # Needs: a host C compiler, make, curl, git, xz, unzip, sha256sum. Takes a few minutes (binutils).
 #

@@ -2,7 +2,7 @@
 """Generate build.ninja, the linker script and objdiff.json from config/.
 
     python3 configure.py && ninja            # mlss.gba, checked against config/rom.sha1
-    ninja report                             # build/report.json for decomp.dev
+    ninja report                             # build/report.json (progress)
 
 Layout of the ROM (config/units.txt): code units in ROM order, data in between. A code unit
 is built from src/UNIT.c when that file exists, otherwise from the original assembly in
@@ -166,7 +166,7 @@ def main():
         if os.path.exists(src):
             unit["base_path"] = f"build/report/{name}.o"
             unit["metadata"]["source_path"] = f"src/{name}.c"
-            # complete ("fully linked" on decomp.dev): the unit is C only, no original assembly left
+            # complete: the unit is C only, no original assembly left
             text = open(src).read()
             unit["metadata"]["complete"] = not any(k in text for k in ("ASM_FUNC(", "NONMATCH(", ".include"))
         cfg["units"].append(unit)

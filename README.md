@@ -5,6 +5,8 @@ release (`A88P`, English/French/German/Spanish/Italian). The C code here compile
 same compiler the game was built with (agbcc, from Nintendo's GBA SDK), to a ROM that is
 byte-for-byte identical to the original.
 
+![Progress: share of the code that is matched, and a map of all code units](docs/progress.svg)
+
 This repository contains **nothing of the game**: no ROM, no graphics, music or text, and none of
 its code. The original assembly that the C is compared against is generated from your own copy
 of the game when you configure the build.
@@ -50,10 +52,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow:
 pick a function in `asm/`, write C in `src/` until `tools/asmdiff.py FUNC` says `MATCH`, then
 check that the ROM is still identical.
 
-Progress is reported with [objdiff](https://github.com/encounter/objdiff) to
-[decomp.dev](https://decomp.dev).
+Progress is measured with [objdiff](https://github.com/encounter/objdiff):
+`tools/bin/ninja report` writes `build/report.json`, `tools/progress.py` summarises it and
+`tools/progress_svg.py` draws the picture at the top of this page.
+
+## Use of AI
+
+Most of the C code in this repository was written with the help of AI models (Claude, by
+Anthropic), working function by function under a human who coordinates the work and reviews
+what goes in. The rule for what counts as decompiled does not change with that: a function is
+only done when the compiled C is byte-for-byte identical to the original, which the build checks
+for the whole ROM. Names, comments and struct layouts are educated guesses and can be wrong;
+corrections are welcome.
 
 ## Thanks
 
 [pret](https://github.com/pret) for agbcc and the conventions this project follows, encounter
-for objdiff and decomp.dev.
+for objdiff.

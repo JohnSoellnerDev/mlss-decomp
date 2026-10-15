@@ -1,6 +1,5 @@
-# Builds the decompilation and uploads the progress report that decomp.dev reads
-# (artifact A88P_report on pushes to main). Neither the ROM nor the game's code is in the
-# repository: the job downloads the ROM from a private location given by the secrets
+# Builds the decompilation, checks that the ROM is identical and uploads the objdiff progress
+# report (artifact A88P_report). Neither the ROM nor the game's code is in the repository: the job downloads the ROM from a private location given by the secrets
 # BASEROM_URL and BASEROM_AUTH (an Authorization header value), and configure.py generates
 # the original assembly (asm/) from it.
 name: Build

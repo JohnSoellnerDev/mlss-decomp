@@ -166,4 +166,5 @@ Do not change `config/units.txt` or move functions between units unless that is 
 | `tools/split_unit.py UNIT ADDR…` | Splits a unit (and its C file) at function addresses; `--auto MIN` cuts out runs of finished functions |
 | `tools/check_rom.py ROM` | SHA-1 check; on a mismatch names the first misplaced function and the first differing byte |
 | `tools/progress.py` | Summary of `build/report.json` |
+| `tools/progress_svg.py` | Draws `docs/progress.svg` (the README picture) from `build/report.json` |
 | `tools/disasm.py` | The disassembler behind `asm/` (`configure.py` runs it); `tools/disasm.py FUNC` prints one function |
