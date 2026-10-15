@@ -67,6 +67,28 @@ struct ActorObj
     s16 dh;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+// The spawned child takes over two flag bits of its parent (kind is set by the caller).
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
 extern u32 gUnk_03000E3C;
 
 void obj_release(struct ActorObj *obj);
@@ -131,6 +153,8 @@ void on_arrive(struct ActorObj *obj);
 void jump_obj_pose_active_clear_state(struct ActorObj *obj);
 u32 obj_pair_link_state(struct ActorObj *obj);
 u32 actor_lookup_or_remove(struct ActorObj *obj, u32 slot);
+void obj_slide_x_finish(struct ActorObj *obj);
+void actor_action8_if_no_child(struct ActorObj *obj);
 
 ASM_FUNC("asm/code_0806B254/obj_spawn_part_child.s", void obj_spawn_part_child(struct ActorObj *obj))
 
@@ -143,7 +167,39 @@ void jump_obj_pose_active_clear_state(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806B254/unknown_code_0806b3ba.s", void unknown_code_0806b3ba(void))
+void unknown_code_0806b3ba(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if ((s16)--obj->timer <= 0)
+    {
+        effect_spawn_at(0xDB2, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
+        obj->timer = 10;
+    }
+    if (obj->index == 0)
+    {
+        sprite_set_action(obj, 0, 0, 0);
+        if (obj->paramA0 != 0)
+        {
+            child = obj_spawn(obj->part, 0x408A, 1, obj->baseY / 256 + 2, obj->baseH / 256,
+                              ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 4;
+            obj_child_flags(obj, child);
+            child->handler68 = on_arrive;
+            child->unk6C = obj->unk6C;
+            child->owner = obj->owner;
+            child->targetX = obj->baseX;
+            child->tag = obj->tag;
+            child->state = obj_slide_x_finish;
+            obj->state = actor_action8_if_no_child;
+        }
+        else
+        {
+            obj->state = 0;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_slot(void))
 

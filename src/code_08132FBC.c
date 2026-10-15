@@ -43,7 +43,8 @@ struct Part
     u32 link6C;
     u8 filler70[0x74 - 0x70];
     u8 kind74;
-    u8 filler75[0x77 - 0x75];
+    u8 filler75[0x76 - 0x75];
+    u8 flags76;
     u8 flags77;
     u8 flags78;
     u8 flags79;
@@ -105,6 +106,34 @@ struct StatusObj
     void *ptr2BC;
     void *ptr2C0;
 };
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct Flags76Bits
+{
+    u8 low7 : 7;
+    u8 bit7 : 1;
+};
+
+// The spawned child takes over two flag bits of its parent.
+static inline void part_child_flags(struct Part *obj, struct Part *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
 
 extern u8 gClassStatusChild[];
 extern u8 gClassStatusObj[];
@@ -276,9 +305,74 @@ void motion_end(struct Part *obj)
     }
 }
 
-ASM_FUNC("asm/code_08132FBC/part_launch_a.s", void part_launch_a(struct Part *obj))
+void part_launch_a(struct Part *obj)
+{
+    struct Part *child;
+    struct Part *link;
 
-ASM_FUNC("asm/code_08132FBC/part_launch_b.s", void part_launch_b(struct Part *obj))
+    if (obj->sprite->flags12 & 8)
+    {
+        sprite_set_action(obj, 7, 0, 0);
+        set_slot_value(0x85, -1);
+        effect_spawn_at(0x2177, obj->baseA / 256, obj->baseB / 256 + 2, obj->baseH / 256, obj);
+        child = obj_spawn(obj->owner, 0x4103, obj->baseA / 256 - 0x11, obj->baseB / 256 + 5,
+                          obj->baseH / 256 + 0x17, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        part_child_flags(obj, child);
+        child->callback68 = on_arrive;
+        child->link6C = obj->link6C;
+        link = obj->link;
+        child->link = link;
+        ((struct Flags76Bits *)&link->flags76)->bit7 = 0;
+        obj_list_push_default(child);
+        child->handler5C = 0;
+        child->handler60 = 0;
+        child->handler64 = 0;
+        child->kind74 = 3;
+        child->velA = child->baseA / 256;
+        child->velB = child->baseB / 256;
+        child->velH = child->baseH / 256;
+        child->targetA = obj->link->owner->unkD8 - ((child->velA - 4) << 8);
+        child->targetB = obj->link->owner->unkDC - (child->velB << 8);
+        child->targetH = 0x600 - ((s16)child->velH << 8);
+        child->state = part_flight_a;
+        obj->state = part_rest_idle_b;
+    }
+}
+
+void part_launch_b(struct Part *obj)
+{
+    struct Part *child;
+
+    if (obj->sprite->flags12 & 8)
+    {
+        sprite_set_action(obj, 0xB, 0, 0);
+        set_slot_value(0x62, -1);
+        effect_spawn_at(0x217F, obj->baseA / 256, obj->baseB / 256 + 2, obj->baseH / 256, obj);
+        child = obj_spawn(obj->owner, 0x4104, obj->baseA / 256 - 0x18, obj->baseB / 256 + 5,
+                          obj->baseH / 256 + 0x1D, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        part_child_flags(obj, child);
+        child->callback68 = on_arrive;
+        child->link6C = obj->link6C;
+        child->link = obj->link;
+        obj_list_push_default(child);
+        child->handler5C = 0;
+        child->handler60 = 0;
+        child->handler64 = 0;
+        child->kind74 = 3;
+        child->velA = child->baseA / 256;
+        child->velB = child->baseB / 256;
+        child->velH = child->baseH / 256;
+        child->targetA = obj->link->owner->unkD8 - (child->velA << 8);
+        child->targetB = obj->link->owner->unkDC - (child->velB << 8);
+        child->targetH = 0x600 - ((s16)child->velH << 8);
+        child->state = part_flight_b;
+        obj->state = part_stop;
+    }
+}
 
 void part_flight_a(struct Part *obj)
 {
@@ -474,7 +568,40 @@ void part_anim_wait(struct Part *obj)
     }
 }
 
-ASM_FUNC("asm/code_08132FBC/part_launch_c.s", void part_launch_c(struct Part *obj))
+void part_launch_c(struct Part *obj)
+{
+    struct Part *child;
+
+    if (obj->sprite->flags12 & 8)
+    {
+        if (obj->flag9C == 0)
+            sprite_set_action(obj, 6, 0, 0);
+        else
+            sprite_set_action(obj, 9, 0, 0);
+        child = obj_spawn(obj->owner, 0x4135, obj->baseA / 256 - 0x20, obj->baseB / 256 + 5,
+                          obj->baseH / 256 + 0x14, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        part_child_flags(obj, child);
+        child->callback68 = on_arrive;
+        child->link6C = obj->link6C;
+        child->link = obj->link;
+        obj_list_push_default(child);
+        child->handler5C = (void *)part_check_contact;
+        child->handler60 = (void *)part_check_contact;
+        child->kind74 = obj->kind74;
+        child->timer = 0;
+        child->flag9C = obj->flag9C;
+        child->limA0 = obj->limA0;
+        child->limA4 = obj->baseA + 0xFFFFE000;
+        child->countA8 = obj->baseB + 0x500;
+        child->targetA = obj->link->owner->unkD8;
+        child->targetB = obj->link->owner->unkDC;
+        child->state = part_track;
+        child->velA = 0x280;
+        obj->state = part_owner_idle_b;
+    }
+}
 
 ASM_FUNC("asm/code_08132FBC/part_track.s", void part_track(struct Part *obj))
 

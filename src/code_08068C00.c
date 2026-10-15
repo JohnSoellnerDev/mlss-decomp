@@ -44,6 +44,21 @@ struct ActorFlags79Bits
     u8 high : 2;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
 struct ActorObj
 {
     u8 filler0[0x08];
@@ -92,6 +107,13 @@ struct ActorObj
     s16 dy;
     s16 dh;
 };
+
+// The spawned child takes over two flag bits of its parent.
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
 
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
@@ -246,7 +268,49 @@ void obj_timer_wave_state(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08068C00/actor_start_pair.s", void actor_start_pair(struct ActorObj *obj))
+void actor_start_pair(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        if (obj->paramA8 == 0)
+        {
+            sprite_set_action(obj, 5, 0, 0);
+            effect_spawn_at(0x1C73, obj->baseX / 256, obj->baseY / 256 + 2, obj->baseH / 256, obj);
+            child = obj_spawn(obj->part, 0x412C, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
+                              obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 1;
+            obj_child_flags(obj, child);
+            child->callback = on_arrive;
+            child->link = obj->link;
+            child->owner = obj->owner;
+            child->byte74 = obj->byte74;
+            obj_list_push_default(child);
+            child->state = sprite_slide_left;
+            set_slot_value(0x85, -1);
+        }
+        else
+        {
+            sprite_set_action(obj, 8, 0, 0);
+            effect_spawn_at(0x1C7A, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
+            child = obj_spawn(obj->part, 0x412D, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
+                              obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 1;
+            obj_child_flags(obj, child);
+            child->callback = on_arrive;
+            child->link = obj->link;
+            child->owner = obj->owner;
+            child->byte74 = obj->byte74;
+            obj_list_push_default(child);
+            child->state = sprite_drop_left;
+            set_slot_value(0x86, -1);
+        }
+        obj->state = actor_wait_child_then_move;
+    }
+}
 
 void sprite_drop_left(struct ActorObj *obj)
 {

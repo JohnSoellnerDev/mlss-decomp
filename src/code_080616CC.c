@@ -49,7 +49,7 @@ struct ActorObj
     s32 (*handler58)(struct ActorObj *, u32);
     s32 (*handler5C)(struct ActorObj *);
     s32 (*handler60)(struct ActorObj *);
-    u8 filler64[0x68 - 0x64];
+    void *handler64;
     void (*handler68)(struct ActorObj *);
     s32 link;
     u8 filler70[0x74 - 0x70];
@@ -77,6 +77,30 @@ struct ActorObj
     s16 dh;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+// The spawned child takes over two flag bits of its parent (kind is set by the caller).
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 kind, s32 x, s32 y, s32 h, u32 a, u32 b);
+void on_arrive(struct ActorObj *obj);
 void obj_release(struct ActorObj *obj);
 void wait_for_index(struct ActorObj *obj);
 u32 partner_link_update(struct ActorObj *obj, u32 partner, u32 mode);
@@ -373,7 +397,29 @@ ASM_FUNC("asm/code_080616CC/obj_spawn_child_sprite.s", void obj_spawn_child_spri
 
 ASM_FUNC("asm/code_080616CC/obj_spawn_child_glide.s", void obj_spawn_child_glide(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080616CC/obj_spawn_child_when_none.s", void obj_spawn_child_when_none(struct ActorObj *obj))
+void obj_spawn_child_when_none(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    struct ActorObj *oldChild;
+
+    oldChild = obj->child;
+    if (oldChild == 0)
+    {
+        set_slot_value(0xAE, -1);
+        effect_spawn_at(0xC95, obj->param9C, obj->paramA0 + 2, obj->baseH / 256, obj);
+        child = obj_spawn(obj->part, 0x4011, obj->param9C, obj->paramA0, obj->baseH,
+                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        sprite_set_action(child, 0xC, 0, 0);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->dir)->kind = 1;
+        obj_child_flags(obj, child);
+        child->handler68 = on_arrive;
+        child->owner = obj->owner;
+        child->link = (s32)oldChild;
+        obj->timer = 1;
+        obj->state = wait_for_index;
+    }
+}
 
 ASM_FUNC("asm/code_080616CC/obj_update_jump_arc.s", void obj_update_jump_arc(void))
 
