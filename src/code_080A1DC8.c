@@ -119,6 +119,8 @@ extern struct World *gUnk_03000FD8;
 void sprite_set_action(struct Body *body, u32 action, s32 arg, u32 extra);
 void hero_b_advance_and_place(struct Body *body);
 void set_slot_value(u32 id, s32 value);
+void effect_spawn_at(u32 id, s32 x, s32 y, s32 z, struct Body *owner);
+void enter_finish_rebuild(struct Body *body);
 void obj_slot_update(struct Body *body);
 void set_motion_offsets(struct Body *body, u32 a);
 s32 resolve_contact_action(struct Body *a, struct Body *b, u32 c, u32 d, u32 e);
@@ -323,7 +325,75 @@ void enter_body_speed_z_step(struct Body *body)
 }
 
 ASM_FUNC("asm/code_080A1DC8/hero_pair_setup_pose.s", void hero_pair_setup_pose(void))
-ASM_FUNC("asm/code_080A1DC8/hero_b_place_with_effect.s", void hero_b_place_with_effect(void))
+void hero_b_place_with_effect(struct Body *body)
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    struct BodyData *data;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s16 *span;
+
+    hero = gUnk_03000FD8->heroB;
+    hbody = &hero->body;
+    if (body->data->flags & 0x400)
+    {
+        body->speed = 0x199;
+        body->sprite->frame = 0x19;
+    }
+    if (body->data->flags & 0x800)
+    {
+        body->speed = 0x66;
+        body->sprite->frame = 6;
+    }
+    px = hbody->x;
+    if (px < 0)
+        px += 0xff;
+    px >>= 8;
+    py = hbody->y;
+    if (py < 0)
+        py += 0xff;
+    py >>= 8;
+    pz = hbody->z;
+    if (pz < 0)
+        pz += 0xff;
+    pz >>= 8;
+    effect_spawn_at(1, px, py, pz, hbody);
+    if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+    {
+        data = hbody->data;
+        t = data->targetX;
+        if (t < 0)
+            t += 0xff;
+        px = (t >> 8) + 0x23;
+        t = data->targetY;
+        if (t < 0)
+            t += 0xff;
+        py = t >> 8;
+        t = data->targetZ;
+        if (t < 0)
+            t += 0xff;
+        pz = t >> 8;
+        place_targets(hbody, px, py, pz, -1);
+        set_motion_start(hbody, 0x200);
+    }
+    if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+    {
+        if (hbody->data->pose == -1)
+        {
+            sprite_set_action(hbody, 0, 0x2002, 0);
+        }
+        else
+        {
+            sprite_set_action(hbody, 0, 0x204F, 0);
+        }
+        ((struct SpriteMirrorByte *)&hbody->sprite->unk11)->mirror = (span = &hbody->spanA)[0] >= span[1];
+        ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 0;
+    }
+    body->state = (u32)hero_b_begin_step_rate2;
+}
 void hero_b_begin_step_rate2(struct Body *body)
 {
     struct Hero *hero;
@@ -425,7 +495,99 @@ void hero_b_advance_and_place(struct Body *body)
 }
 
 ASM_FUNC("asm/code_080A1DC8/hero_b_step_end_fx.s", void hero_b_step_end_fx(struct Body *body))
-ASM_FUNC("asm/code_080A1DC8/hero_pair_place_both_finish_t399.s", void hero_pair_place_both_finish_t399(void))
+void hero_pair_place_both_finish_t399(void)
+{
+    struct Hero *heroA;
+    struct Hero *heroB;
+    struct Body *bodyA;
+    struct Body *bodyB;
+    struct BodyData *data;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s16 *span;
+
+    heroA = gUnk_03000FD8->heroA;
+    bodyA = &heroA->body;
+    heroB = gUnk_03000FD8->heroB;
+    bodyB = &heroB->body;
+    if (bodyB->sprite->flags & 8)
+    {
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            data = bodyA->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetZ;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyA, px, py, pz, -1);
+            set_motion_start(bodyA, 0x399);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            if (bodyA->data->pose == -1)
+            {
+                sprite_set_action(bodyA, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyA, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorByte *)&bodyA->sprite->unk11)->mirror = (span = &bodyA->spanA)[0] >= span[1];
+            ((struct SpriteModeByte *)&bodyA->sprite->flags)->mode = 0;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            bodyA->state = 0;
+            enter_finish_rebuild(bodyA);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            data = bodyB->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetZ;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyB, px, py, pz, -1);
+            set_motion_start(bodyB, 0x399);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            if (bodyB->data->pose == -1)
+            {
+                sprite_set_action(bodyB, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyB, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorByte *)&bodyB->sprite->unk11)->mirror = (span = &bodyB->spanA)[0] >= span[1];
+            ((struct SpriteModeByte *)&bodyB->sprite->flags)->mode = 0;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            bodyB->state = 0;
+            enter_finish_rebuild(bodyB);
+        }
+    }
+}
 
 void hero_b_link_when_ready(struct Body *body)
 {

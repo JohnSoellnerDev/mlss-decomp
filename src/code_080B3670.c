@@ -157,7 +157,98 @@ void hero_b_advance_anim(struct HeroBody *body);
 void hero_b_stop_anim(struct HeroBody *body);
 void hero_b_place_beside_partner(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080B3670/hero_pair_finish.s", void hero_pair_finish(struct HeroBody *body))
+void hero_pair_finish(struct HeroBody *body)
+{
+    struct HeroBody *bodyA;
+    struct Hero *heroB;
+    struct HeroBody *bodyB;
+    struct HeroData *data;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s16 *span;
+
+    bodyA = &gUnk_03000FD8->heroA->body;
+    heroB = gUnk_03000FD8->heroB;
+    bodyB = &heroB->body;
+    if (bodyB->sprite->flags & 8)
+    {
+        set_slot_value(0x53, -1);
+        if ((heroB->body.mode & 6) == 2 || (heroB->body.mode & 6) == 4)
+        {
+            data = bodyB->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyB, px, py, pz, -1);
+            set_motion_start(bodyB, 0x400);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            if (bodyB->data->pose == -1)
+            {
+                sprite_set_action(bodyB, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyB, 0, 0x204F, 0);
+            }
+            ((struct HeroMirrorBits *)&bodyB->sprite->mirrorFlags)->mirror = (span = &bodyB->spanA)[0] >= span[1];
+            ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 0;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            bodyB->state = 0;
+            enter_finish_rebuild(bodyB);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            data = bodyA->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyA, px, py, pz, -1);
+            set_motion_start(bodyA, 0x400);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            if (bodyA->data->pose == -1)
+            {
+                sprite_set_action(bodyA, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyA, 0, 0x204F, 0);
+            }
+            ((struct HeroMirrorBits *)&bodyA->sprite->mirrorFlags)->mirror = (span = &bodyA->spanA)[0] >= span[1];
+            ((struct HeroSpriteBits *)&bodyA->sprite->flags)->mode = 0;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            bodyA->state = 0;
+            enter_finish_rebuild(bodyA);
+        }
+    }
+}
 
 ASM_FUNC("asm/code_080B3670/body_set_target_offset.s", void body_set_target_offset(struct HeroBody *body))
 

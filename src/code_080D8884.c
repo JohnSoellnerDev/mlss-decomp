@@ -246,7 +246,99 @@ void hero_b_follow_child_pos_then_next(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/hero_pair_active_finish_both.s", void hero_pair_active_finish_both(struct ActorObj *obj))
+void hero_pair_active_finish_both(struct ActorObj *obj)
+{
+    struct Hero *heroA;
+    struct ActorObj *bodyA;
+    struct ActorObj *bodyB;
+    struct ActorPart *part;
+    s16 *span;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+
+    heroA = gUnk_03000FD8->heroA;
+    bodyA = &heroA->body;
+    bodyB = &gUnk_03000FD8->heroB->body;
+    if (bodyB->pose->flags12 & 8)
+    {
+        obj_release(bodyB->child);
+        set_slot_value(0x53, -1);
+        if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
+        {
+            part = bodyA->part;
+            t = part->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = part->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = part->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyA, px, py, pz, -1);
+            set_motion_start(bodyA, 0x400);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            if (bodyA->part->slot == -1)
+            {
+                sprite_set_action(bodyA, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyA, 0, 0x204F, 0);
+            }
+            ((struct Unk11Bits *)&bodyA->pose->unk11)->b6 = (span = (s16 *)&bodyA->targetX)[0] >= span[1];
+            ((struct PoseBits *)&bodyA->pose->flags12)->mode = 0;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            bodyA->state = 0;
+            enter_finish_rebuild(bodyA);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            part = bodyB->part;
+            t = part->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = part->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = part->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyB, px, py, pz, -1);
+            set_motion_start(bodyB, 0x400);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            if (bodyB->part->slot == -1)
+            {
+                sprite_set_action(bodyB, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyB, 0, 0x204F, 0);
+            }
+            ((struct Unk11Bits *)&bodyB->pose->unk11)->b6 = (span = (s16 *)&bodyB->targetX)[0] >= span[1];
+            ((struct PoseBits *)&bodyB->pose->flags12)->mode = 0;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            bodyB->state = 0;
+            enter_finish_rebuild(bodyB);
+        }
+    }
+}
 
 ASM_FUNC("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj *obj))
 
@@ -340,7 +432,98 @@ void hero_b_flagged_a(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/heroes_step.s", void heroes_step(struct ActorObj *obj))
+void heroes_step(struct ActorObj *obj)
+{
+    struct Hero *heroA;
+    struct ActorObj *bodyA;
+    struct ActorObj *bodyB;
+    struct ActorPart *part;
+    s16 *span;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+
+    heroA = gUnk_03000FD8->heroA;
+    bodyA = &heroA->body;
+    bodyB = &gUnk_03000FD8->heroB->body;
+    if (bodyB->pose->flags12 & 8)
+    {
+        set_slot_value(0x53, -1);
+        if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
+        {
+            part = bodyA->part;
+            t = part->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = part->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = part->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyA, px, py, pz, -1);
+            set_motion_start(bodyA, 0x400);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            if (bodyA->part->slot == -1)
+            {
+                sprite_set_action(bodyA, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyA, 0, 0x204F, 0);
+            }
+            ((struct Unk11Bits *)&bodyA->pose->unk11)->b6 = (span = (s16 *)&bodyA->targetX)[0] >= span[1];
+            ((struct PoseBits *)&bodyA->pose->flags12)->mode = 0;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            bodyA->state = 0;
+            enter_finish_rebuild(bodyA);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            part = bodyB->part;
+            t = part->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = part->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = part->targetH;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyB, px, py, pz, -1);
+            set_motion_start(bodyB, 0x400);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            if (bodyB->part->slot == -1)
+            {
+                sprite_set_action(bodyB, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyB, 0, 0x204F, 0);
+            }
+            ((struct Unk11Bits *)&bodyB->pose->unk11)->b6 = (span = (s16 *)&bodyB->targetX)[0] >= span[1];
+            ((struct PoseBits *)&bodyB->pose->flags12)->mode = 0;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            bodyB->state = 0;
+            enter_finish_rebuild(bodyB);
+        }
+    }
+}
 
 ASM_FUNC("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj *obj))
 
