@@ -156,7 +156,37 @@ u32 actor_lookup_or_remove(struct ActorObj *obj, u32 slot);
 void obj_slide_x_finish(struct ActorObj *obj);
 void actor_action8_if_no_child(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_0806B254/obj_spawn_part_child.s", void obj_spawn_part_child(struct ActorObj *obj))
+void obj_spawn_part_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    s16 counted;
+
+    counted = ++obj->timer;
+    if (counted == 0x1E)
+        set_slot_value(0x125, -1);
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 6, 0, 0);
+        effect_spawn_at(0xD7A, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
+        child = obj_spawn(obj->part, 0x408A, obj->baseX / 256 - 0x11, obj->baseY / 256 + 2,
+                          obj->baseH / 256, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 4;
+        child->param9C = obj->param9C;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = 0;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler58 = (void (*)(struct ActorObj *))obj_pair_link_state;
+        child->handler60 = (void (*)(struct ActorObj *))actor_lookup_or_remove;
+        child->tag = obj->tag;
+        child->state = actor_drift_left_release;
+        set_slot_value(0x58, -1);
+        obj->state = jump_obj_pose_active_clear_state;
+    }
+}
 
 void jump_obj_pose_active_clear_state(struct ActorObj *obj)
 {

@@ -57,6 +57,12 @@ struct Sprite
     u8 unk1F;
 };
 
+struct Lo2Bits
+{
+    u8 lo2 : 2;
+    u8 rest : 6;
+};
+
 struct Triple
 {
     s32 x;
@@ -326,7 +332,14 @@ void obj_copy_mode_fields(struct Obj *obj)
     obj->unk58 = obj->unk56;
 }
 
-ASM_FUNC("asm/code_08164468/obj_create_sprite_14.s", void obj_create_sprite_14(struct Obj *obj, u32 a, u32 b, u32 c, s32 anim, u32 prio))
+void obj_create_sprite_14(struct Obj *obj, u32 a, u32 b, u32 c, s32 anim, u32 prio)
+{
+    obj->unk14 = create_obj_de4(a, b, c, -1, -1, -1, -1);
+    obj_load_record(obj->unk14, anim, -1, 0, 0);
+    sprite_update_cd0(obj->unk14);
+    ((struct Lo2Bits *)&((struct Sprite *)obj->unk14)->unk1F)->lo2 = prio & 3;
+    ((struct Sprite *)obj->unk14)->unkE = 0xFFFF;
+}
 
 ASM_FUNC("asm/code_08164468/obj_create_sprite_10.s", void obj_create_sprite_10(void))
 

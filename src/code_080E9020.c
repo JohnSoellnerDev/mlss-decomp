@@ -432,6 +432,54 @@ void alloc_flag_block(void)
 
 ASM_FUNC("asm/code_080E9020/draw_text_item.s", void draw_text_item(void))
 
-ASM_FUNC("asm/code_080E9020/apply_obj_mode.s", void apply_obj_mode(void))
+struct ObjFlags28
+{
+    u8 filler0[0x28];
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 field : 4;
+    u8 rest : 2;
+};
+
+extern u8 *gUnk_03000D44;
+
+void anim_set_gfx(u8 *obj, u32 half, u32 field);
+void set_flags_2_3(u8 *p);
+void set_flag_2_2(u8 *p);
+
+u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
+{
+    switch (*modePtr)
+    {
+    case 0:
+        ((struct ObjFlags28 *)gUnk_03000D44)->bit0 = 0;
+        {
+            u32 lo = ((u32)((u8 *)gUnk_03000D44)[0x28] << 31) >> 31;
+            u32 hi = ((u32)((u8 *)gUnk_03000D44)[0x28] << 30) >> 31;
+            if ((hi | lo) == 0)
+                set_flag_2_2(gUnk_03000D44);
+        }
+        break;
+    case 1:
+        ((struct ObjFlags28 *)gUnk_03000D44)->bit0 = 1;
+        anim_set_gfx(gUnk_03000D44, *(u16 *)(gUnk_03000D44 + 0x20), ((struct ObjFlags28 *)gUnk_03000D44)->field);
+        set_flags_2_3(gUnk_03000D44);
+        break;
+    case 2:
+        ((struct ObjFlags28 *)gUnk_03000D44)->bit1 = 0;
+        set_flags_2_3(gUnk_03000D44);
+        break;
+    case 3:
+        ((struct ObjFlags28 *)gUnk_03000D44)->bit1 = 1;
+        {
+            u32 lo = ((u32)((u8 *)gUnk_03000D44)[0x28] << 31) >> 31;
+            u32 hi = ((u32)((u8 *)gUnk_03000D44)[0x28] << 30) >> 31;
+            if ((hi | lo) == 0)
+                set_flag_2_2(gUnk_03000D44);
+        }
+        break;
+    }
+    return 1;
+}
 
 ASM_FUNC("asm/code_080E9020/update_obj_counters.s", void update_obj_counters(void))

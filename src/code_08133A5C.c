@@ -213,4 +213,26 @@ void part_refresh_tiles(struct Part *obj);
 void part_spawn_timed(struct Part *obj);
 void part_update_nodes(struct Part *obj);
 
-ASM_FUNC("asm/code_08133A5C/part_sink.s", void part_sink(struct Part *obj))
+struct Flags11Bits
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+void part_sink(struct Part *obj)
+{
+    obj->sprite->anim += 0x1000;
+    obj->velH += obj->stepH;
+    obj->posA += obj->velA;
+    obj->posB += obj->velB;
+    obj->height += (s16)obj->velH;
+    if (obj->posA <= obj->owner->baseH + 0x1700)
+    {
+        set_slot_value(0xAE, -1);
+        sprite_set_action((u8 *)obj->owner + 8, 0xD, 0, 0);
+        ((struct Flags11Bits *)((u8 *)obj->owner->posA + 0x11))->bit6 = 0;
+        obj->owner->ownerState = part_rest_idle;
+        obj_release(obj);
+    }
+}

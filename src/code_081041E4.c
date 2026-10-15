@@ -291,4 +291,44 @@ ASM_FUNC("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step
 
 ASM_FUNC("asm/code_081041E4/state_add_points_to_hero.s", void state_add_points_to_hero(void))
 
-ASM_FUNC("asm/code_081041E4/state_entry_countdown.s", void state_entry_countdown(struct Owner *owner))
+struct SpriteFlags12
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 lo4 : 1;
+    u8 bit4 : 1;
+    u8 hi : 3;
+};
+
+static inline void fig_sprite_action(struct Figure *fig, u32 action)
+{
+    sprite_set_action((struct Owner *)((u8 *)fig + 8), 6, action, 0);
+}
+
+void state_entry_countdown(struct Owner *owner)
+{
+    struct Figure *fig;
+
+    if (owner->timer <= 0x2B)
+    {
+        if (owner->timer == 0x20)
+            set_slot_value(0x79, -1);
+        owner->timer++;
+    }
+    else
+    {
+        sound_stop_song(0x79);
+        fig = owner->fig;
+        if (fig != 0 && (fig->ctrl & 6) == 2)
+        {
+            if (fig->anim == -1)
+                fig_sprite_action(fig, 0x2003);
+            else
+                fig_sprite_action(fig, 0x2050);
+            ((struct SpriteFlags12 *)&fig->link->flags)->bit4 = 0;
+            ((struct SpriteFlags12 *)&fig->link->flags)->mode = 0;
+        }
+        ((struct SpriteFlags12 *)&fig->link->flags)->mode = 1;
+        owner->state = state_wait_obj_active;
+    }
+}

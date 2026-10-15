@@ -536,7 +536,52 @@ void hero_a_advance_and_place(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struct Body *body))
+NONMATCH("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struct Body *body))
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    s32 motionX;
+    s32 reached;
+    s32 ratio;
+    s32 mode;
+    s32 motionY;
+
+    hero = gUnk_03000FD8->heroA;
+    hbody = &hero->body;
+    step_motion(hbody);
+    motionX = hbody->motionX;
+    motionY = hbody->motionY;
+    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(motionY << 14, motionX);
+    if (hbody->stepLen <= ratio && hbody->progress >= ratio)
+        reached = 1;
+    else
+        reached = 0;
+    if (reached != 0)
+    {
+        mode = hbody->mode & 6;
+        if (mode == 2 || mode == 4)
+        {
+            if (hbody->data->pose == -1)
+                sprite_set_action(hbody, 6, 0x2000, 0);
+            else
+                sprite_set_action(hbody, 6, 0x204D, 0);
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+    }
+    if (hbody->flags & 0x20)
+    {
+        set_slot_value(0x2E, -1);
+        mode = hbody->mode & 6;
+        if (mode == 2 || mode == 4)
+        {
+            sprite_set_action(hbody, 0, 0x2004, 0);
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        effect_spawn_at(0x33, hbody->x / 0x100, hbody->y / 0x100, hbody->z / 0x100, hbody);
+        body->state = (u32)hero_pair_place_finish_t3cc;
+    }
+}
+END_NONMATCH
 
 void hero_pair_place_finish_t3cc(struct Body *body)
 {

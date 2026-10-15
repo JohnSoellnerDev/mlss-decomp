@@ -134,7 +134,60 @@ ASM_FUNC("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos
 
 ASM_FUNC("asm/code_08162C68/obj_set_anim_from_offset.s", void obj_set_anim_from_offset(struct BigObj *obj))
 
-ASM_FUNC("asm/code_08162C68/obj_update_frame_flags.s", void obj_update_frame_flags(void))
+struct SpriteBits11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct SpriteBits12
+{
+    u8 lo4 : 4;
+    u8 bit4 : 1;
+    u8 hi : 3;
+};
+
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+
+void obj_set_anim_from_offset(struct BigObj *obj);
+
+NONMATCH("asm/code_08162C68/obj_update_frame_flags.s", void obj_update_frame_flags(struct BigObj *obj))
+{
+    u8 *frameTable;
+    u8 *animBase;
+    s32 mode;
+    u8 frame;
+    u32 mirror;
+    u32 record;
+
+    frameTable = (u8 *)obj->unk64;
+    if (frameTable == 0)
+        goto done;
+    animBase = (u8 *)obj->unk68;
+    if (animBase == 0)
+        goto done;
+    if (obj->unk56 == obj->unk58 && obj->unk52 == obj->unk54)
+        goto done;
+    mode = obj->unk56;
+    if (mode < 0)
+        goto done;
+    if (mode > 3 && mode != 5)
+        goto done;
+    frame = animBase[obj->unk52];
+    mirror = frame >> 7;
+    record = (frame & 0x7F) + frameTable[mode];
+    obj_load_record((void *)obj->unk10, record, 0, 0, 0);
+    ((struct SpriteBits11 *)((u8 *)obj->unk10 + 0x11))->bit6 = mirror;
+    if (obj->unk56 != 0)
+        goto done;
+    ((struct SpriteBits12 *)((u8 *)obj->unk10 + 0x12))->bit4 = 1;
+
+done:
+    if (obj->unk14 != 0)
+        obj_set_anim_from_offset(obj);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08162C68/obj_script_step.s", void obj_script_step(void))
 

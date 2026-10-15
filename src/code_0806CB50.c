@@ -210,7 +210,73 @@ void actor_spawn_effect_set_cmd(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806CB50/actor_spawn_lift_child.s", void actor_spawn_lift_child(struct ActorObj *obj))
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct NodeModeBits
+{
+    u8 low : 1;
+    u8 mode : 2;
+    u8 high : 5;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+void actor_spawn_lift_child(struct ActorObj *obj)
+{
+    struct ActorWorld *world;
+    u8 *nodeA;
+    u8 *nodeB;
+    struct ActorObj *child;
+    void (*next)(struct ActorObj *);
+
+    if (obj->pose->flags & 8)
+    {
+        world = gUnk_03000FD8;
+        nodeA = world->partners[6];
+        nodeB = world->partners[7];
+        if (!(((struct NodeModeBits *)(nodeB + 0x7E))->mode == 1 || ((struct NodeModeBits *)(nodeA + 0x7E))->mode == 1))
+        {
+            sprite_set_action(obj, 0, 0, 0);
+            next = 0;
+        }
+        else
+        {
+            sprite_set_action(obj, 0x16, 0, 0);
+            effect_spawn_at(0x1DF0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
+            child = obj_spawn(obj->part, 0x4101, obj->baseX / 256 - 0x1A, obj->baseY / 256 + 2,
+                              obj->baseH / 256 + 0xB, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 2;
+            ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+            ((struct ObjFlags77 *)child)->bit5 = 0;
+            child->handler68 = on_arrive;
+            child->unk6C = obj->unk6C;
+            child->owner = obj->owner;
+            child->tag = obj->tag;
+            obj_list_push_default(child);
+            child->handler58 = (void (*)(struct ActorObj *))actor_link_and_release;
+            child->handler60 = (void (*)(struct ActorObj *))actor_vanish_if_slot_missing;
+            child->state = actor_random_partner_link;
+            child->param9C = obj->paramA0;
+            sprite_set_action(child, 1, 0, 0);
+            child->dh = 0;
+            set_slot_value(0x12B, -1);
+            next = actor_countdown_then_timer;
+        }
+        obj->state = next;
+    }
+}
 
 ASM_FUNC("asm/code_0806CB50/actor_random_partner_link.s", void actor_random_partner_link(struct ActorObj *obj))
 

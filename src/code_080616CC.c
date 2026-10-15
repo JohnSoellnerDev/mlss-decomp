@@ -195,7 +195,34 @@ ASM_FUNC("asm/code_080616CC/obj_begin_move_to_owner.s", void obj_begin_move_to_o
 
 ASM_FUNC("asm/code_080616CC/obj_begin_drop_to_base.s", void obj_begin_drop_to_base(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080616CC/obj_begin_move_to_params.s", void obj_begin_move_to_params(struct ActorObj *obj))
+struct PoseBit11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+void obj_begin_move_to_params(struct ActorObj *obj)
+{
+    s32 idx = obj->index;
+    s32 f;
+
+    if (idx == 0)
+    {
+        obj->targetX = obj->param9C << 8;
+        obj->targetY = obj->paramA0 << 8;
+        obj->targetH = obj->paramA4 << 8;
+        f = obj->flags;
+        f |= 0x20;
+        obj->flags = f;
+        obj->motionSpeed = 0x300;
+        obj->motionStart = idx;
+        start_motion(obj);
+        sprite_set_action(obj, 6, 0, 0);
+        ((struct PoseBit11 *)&obj->pose->unk11)->bit6 = 0;
+        obj->state = obj_wait_action7;
+    }
+}
 
 u32 obj_unlink_reset(struct ActorObj *obj, u32 a, u32 b)
 {

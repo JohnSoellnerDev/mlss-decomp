@@ -502,7 +502,28 @@ void set_world_mode_byte(u8 value)
     gUnk_03000FD8->flags0B = flags | 0x40;
 }
 
-ASM_FUNC("asm/code_08107268/state_sprite_park.s", void state_sprite_park(void))
+NONMATCH("asm/code_08107268/state_sprite_park.s", void state_sprite_park(struct Owner *owner))
+{
+    u16 timer = owner->timer;
+    struct Sprite *sprite = owner->sprite;
+    s32 flags;
+
+    if (owner->timer > 0)
+    {
+        owner->timer = timer - 1;
+    }
+    else
+    {
+        flags = sprite->flags & ~0x10;
+        sprite->x = 0x78;
+        sprite->y = 0x40;
+        flags &= ~6;
+        flags |= 2;
+        sprite->flags = flags;
+        owner->state = 0;
+    }
+}
+END_NONMATCH
 
 void state_wait_obj_active(struct Owner *owner)
 {
