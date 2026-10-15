@@ -13,6 +13,13 @@ struct ChooseBit4
     u8 rest : 3;
 };
 
+struct ChainBit5
+{
+    u8 lo : 5;
+    u8 b5 : 1;
+    u8 rest : 2;
+};
+
 struct WorldObj
 {
     struct WorldObj *next;
@@ -163,13 +170,12 @@ extern const u16 gEffectCodeTable[];
 
 ASM_FUNC("asm/code_08100FFC/state_hero_menu_marker.s", void state_hero_menu_marker(void))
 
-NONMATCH("asm/code_08100FFC/process_object_chain.s", u32 process_object_chain(void))
+u32 process_object_chain(void)
 {
     struct World *world;
     struct WorldObj *obj;
     u32 modes;
     u32 shifted;
-    s32 flags;
 
     modes = 0;
     obj = gUnk_03000FD8->chain;
@@ -205,9 +211,7 @@ NONMATCH("asm/code_08100FFC/process_object_chain.s", u32 process_object_chain(vo
                         {
                             obj->sprite8[0x20] = 0x10;
                         }
-                        flags = obj->flags79;
-                        flags = -0x21 & flags;
-                        obj->flags79 = flags;
+                        ((struct ChainBit5 *)&obj->flags79)->b5 = 0;
                         *(u16 *)&obj->unk7A = 0;
                         *(u16 *)&obj->ctrl7E = 0;
                         obj->handle80 = 0;
@@ -247,7 +251,6 @@ NONMATCH("asm/code_08100FFC/process_object_chain.s", u32 process_object_chain(vo
     world->unk9 = (world->unk9 & 0xF) | shifted;
     return modes;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08100FFC/world_mode_step.s", void world_mode_step(void))
 
