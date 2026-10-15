@@ -122,6 +122,12 @@ function start, calls show the relocation (the called symbol). A worked example 
   `((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;` with
   `struct ObjFlags77 { u8 filler0[0x77]; u8 lo5 : 5; u8 bit5 : 1; u8 bit6 : 1; u8 bit7 : 1; };`
   (example `obj_child_flags` in src/code_08065718.c).
+- A bit set from a comparison (`ldr r3, [body, #8]; movs r2, #0; adds r0, body, #0x84;
+  ldrsh r1, [r0, r6=0]; ldrsh r0, [r0, r6=2]; cmp; blt; movs r2, #1; lsls r2, r2, #6; …merge`):
+  assign the comparison straight to the bit field and take the address of the compared pair
+  inside the comparison, so it is computed after the `movs r2, #0`:
+  `bits->mirror = (span = &body->spanA)[0] >= span[1];` (example `hero_a_go_to_partner` in
+  src/code_080A1DC8.c). A `mirror` variable or a separate pointer statement moves code around.
 - A stack frame with an area nothing in the function touches (`sub sp, #0x10` and no access to
   those bytes) is an unused local array or struct in the original: GCC 2.95 reserves space for
   arrays and structs even when they are never used. Declare it (`s32 unused[4];`).

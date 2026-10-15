@@ -597,4 +597,57 @@ void enter_body_fall_with_speed(struct Body *body)
 }
 
 ASM_FUNC("asm/code_080A1DC8/hero_pair_start.s", void hero_pair_start(void))
-ASM_FUNC("asm/code_080A1DC8/hero_a_go_to_partner.s", void hero_a_go_to_partner(void))
+void hero_a_go_to_partner(struct Body *body)
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    struct Body *partner;
+    s32 t;
+    s32 x;
+    s32 y;
+    s32 mask;
+    s16 *span;
+
+    hero = gUnk_03000FD8->heroA;
+    hbody = &hero->body;
+    partner = body->partner;
+    if (body->data->flags & 0x400)
+    {
+        body->speed = 0xCC;
+        body->sprite->frame = 0xC;
+    }
+    if (body->data->flags & 0x800)
+    {
+        body->speed = 0x199;
+        body->sprite->frame = 0x19;
+    }
+    set_slot_value(0x3F, -1);
+    if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+    {
+        t = partner->targetX;
+        if (t < 0)
+            t += 0xff;
+        x = (t >> 8) + partner->ofsX - 0x20;
+        y = partner->targetY;
+        if (y < 0)
+            y += 0xff;
+        y >>= 8;
+        y += partner->ofsY;
+        place_targets(hbody, x, y, 0, -1);
+        set_motion_start(hbody, 0x300);
+    }
+    if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+    {
+        if (hbody->data->pose == -1)
+        {
+            sprite_set_action(hbody, 0, 0x2002, 0);
+        }
+        else
+        {
+            sprite_set_action(hbody, 0, 0x204F, 0);
+        }
+        ((struct SpriteMirrorByte *)&hbody->sprite->unk11)->mirror = (span = &hbody->spanA)[0] >= span[1];
+        ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 0;
+    }
+    body->state = (u32)hero_a_begin_step;
+}
