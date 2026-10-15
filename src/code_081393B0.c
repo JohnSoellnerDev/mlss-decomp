@@ -88,7 +88,10 @@ struct Enemy
     s32 unk18;
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
-    u8 filler25[0x100 - 0x25];
+    u8 filler25[0x34 - 0x25];
+    s32 prevX;
+    s32 prevY;
+    u8 filler3C[0x100 - 0x3C];
     u16 wanderDist[4];
     u16 unk108[4];
     u8 filler110[0x128 - 0x110];
@@ -110,7 +113,10 @@ struct Enemy
     s16 *box;
     s16 vecX;
     s16 vecY;
-    u8 filler1BC[0x1D0 - 0x1BC];
+    u8 filler1BC[0x1BE - 0x1BC];
+    s16 hopValue;
+    u32 hopDist;
+    u8 filler1C4[0x1D0 - 0x1C4];
     u16 index;
     u16 unk1D2;
     u16 unk1D4;
@@ -140,7 +146,9 @@ struct Enemy
     s16 vy;
     u8 filler246[0x248 - 0x246];
     s32 accel;
-    u8 filler24C[0x258 - 0x24C];
+    u32 hopZ0;
+    u8 filler250[0x254 - 0x250];
+    u32 hopSpeed0;
     s32 jumpVz;
     s32 jumpFrames;
     u8 filler260[0x294 - 0x260];
@@ -148,7 +156,14 @@ struct Enemy
     u8 filler298[0x2B5 - 0x298];
     u8 unk2B5;
     u8 unk2B6;
-    u8 filler2B7[0x2F4 - 0x2B7];
+    u8 filler2B7[0x2BC - 0x2B7];
+    s32 orbitCenX;
+    s32 orbitCenY;
+    u8 filler2C4[0x2C8 - 0x2C4];
+    s32 orbitCenZ;
+    s32 orbitRadX;
+    s32 orbitRadY;
+    u8 filler2D4[0x2F4 - 0x2D4];
     u32 unk2F4;
     s16 unk2F8;
     u8 filler2FA[0x344 - 0x2FA];
@@ -226,6 +241,9 @@ void setup_offset_target_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void move_handler_timed_settle(void *ctx, struct Enemy *obj, EnemyFn *out);
 void setup_random_offset_short(void *ctx, struct Enemy *obj, EnemyFn *out);
 void obj_state_run_hop_phase(void *ctx, struct Enemy *obj);
+void obj_link_sprites(void);
+u16 angle_of_vector16(s32 x, s32 y);
+void obj_set_stage(struct Enemy *ent, u32 stage);
 void call_start_linked_state(void *ctx, struct Enemy *obj);
 void enter_run_state_a311(void *ctx, struct Enemy *obj);
 void enter_state_a6cd(void *ctx, struct Enemy *obj);
@@ -241,7 +259,20 @@ void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset);
 void load_hop_entry(struct Enemy *ent, s16 index);
 
-ASM_FUNC("asm/code_081393B0/obj_hop_landing_step.s", void obj_hop_landing_step(struct Enemy *obj))
+void obj_hop_landing_step(struct Enemy *obj)
+{
+    if (obj->jumpFrames != -1)
+    {
+        obj->jumpFrames++;
+        obj->unk18 = div_scaled_fixed(obj->jumpFrames, obj->hopDist, obj->hopValue, obj->hopSpeed0) + obj->hopZ0 - obj->posZ;
+        if (obj->unk18 <= 0)
+        {
+            obj->unk18 = 0;
+            obj->jumpFrames = -1;
+            ((struct Flags8 *)&obj->unk2B5)->bit3 = 0;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_081393B0/obj_orbit_circle_step.s", void obj_orbit_circle_step(struct Enemy *obj))
 
@@ -361,13 +392,37 @@ void tick_body_timer(void *ctx, struct Enemy *ent, EnemyFn *out)
 
 ASM_FUNC("asm/code_081393B0/update_hop_phase.s", void update_hop_phase(struct Enemy *obj))
 
-ASM_FUNC("asm/code_081393B0/obj_jump_arc_step.s", void obj_jump_arc_step(struct Enemy *obj))
+void obj_jump_arc_step(struct Enemy *obj)
+{
+    s32 flags;
+
+    if (obj->jumpFrames != -1)
+    {
+        obj->unk18 += obj->jumpVz;
+        obj->jumpVz -= obj->accel;
+        obj->jumpFrames++;
+        if (obj->unk18 <= 0)
+        {
+            obj->unk18 = 0;
+            obj->jumpFrames = -1;
+            ((struct Flags8 *)&obj->unk2B5)->bit3 = 0;
+        }
+    }
+}
 
 void stub_nop_0813A064(void)
 {
 }
 
-ASM_FUNC("asm/code_081393B0/start_linked_state.s", void start_linked_state(struct Owner *owner, struct Enemy *obj))
+void start_linked_state(struct Owner *owner, struct Enemy *obj)
+{
+    owner_entry(owner, ((struct HitBox *)((u8 *)obj + 0x100))->linkIndex);
+    obj_set_state(obj, 1);
+    obj_sync_sub_slot(obj, 0);
+    obj_set_cell_coord(obj, (((u32)obj->unk24 << 29) >> 30) + 4, 0);
+    flags_obj_set_mode(obj, 0x10);
+    obj->unk198 = obj_link_sprites;
+}
 
 void set_flags_1d6_copy(void *ctx, struct Enemy *ent, EnemyFn *out)
 {
@@ -401,7 +456,19 @@ void move_step_handler(void *ctx, struct Enemy *ent, EnemyFn *out)
     }
 }
 
-ASM_FUNC("asm/code_081393B0/obj_state_run_advance.s", void obj_state_run_advance(void *ctx, struct Enemy *ent))
+void obj_state_run_advance(void *ctx, struct Enemy *ent)
+{
+    EnemyFn *slot = &ent->unk1A0[0];
+    EnemyFn fn = slot[0];
+    u8 flags;
+
+    fn(ctx, ent, slot);
+    flags = ent->unk1D6;
+    if ((flags & 2) == 0 && (flags << 31) != 0)
+    {
+        ent->unk198 = ent->unk19C;
+    }
+}
 
 void enter_run_state(void *ctx, struct Enemy *ent)
 {
@@ -426,7 +493,24 @@ void setup_random_offset_state(void *ctx, struct Enemy *ent, EnemyFn *out)
     *out = move_handler_timed_settle;
 }
 
-ASM_FUNC("asm/code_081393B0/enter_idle_hop_state.s", void enter_idle_hop_state(void *ctx, struct Enemy *ent))
+void enter_idle_hop_state(void *ctx, struct Enemy *ent)
+{
+    EnemyFn *slot;
+    EnemyFn fn;
+
+    load_record_fields(ent, 0);
+    load_hit_box(ent, 0);
+    ent->unk198 = obj_state_run_hop_phase;
+    slot = &ent->unk1A0[0];
+    ent->unk1A0[0] = setup_random_offset_state;
+    ent->unk1A0[1] = setup_random_offset_state;
+    fn = slot[0];
+    fn(ctx, ent, slot);
+    if (ent->unk2F8 != 0)
+    {
+        update_hop_phase(ent);
+    }
+}
 
 void restart_run_state(void *ctx, struct Enemy *ent)
 {
@@ -464,7 +548,29 @@ void setup_owner_offset_state(void *ctx, struct Enemy *ent, EnemyFn *out)
     *out = move_handler_timed_settle;
 }
 
-ASM_FUNC("asm/code_081393B0/update_facing_from_motion.s", void update_facing_from_motion(void *ctx, struct Enemy *obj))
+void update_facing_from_motion(void *ctx, struct Enemy *obj)
+{
+    s32 dx;
+    s32 dy;
+    u32 stage;
+
+    obj_orbit_circle_step(obj);
+    dx = obj->posX - obj->prevX;
+    dy = obj->posY - obj->prevY;
+    if ((dx | dy) != 0)
+    {
+        stage = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+    }
+    else
+    {
+        stage = 0xFFFF;
+    }
+    if (stage != (((u32)obj->unk24 << 29) >> 29))
+    {
+        obj_set_stage(obj, (u8)stage);
+    }
+    obj->vx = 1;
+}
 
 ASM_FUNC("asm/code_081393B0/move_handler_random_wait.s", void move_handler_random_wait(void *ctx, struct Enemy *obj, EnemyFn *out))
 
@@ -477,7 +583,17 @@ void start_random_move_wait(void *ctx, struct Enemy *ent, EnemyFn *out)
     *out = move_handler_random_wait;
 }
 
-ASM_FUNC("asm/code_081393B0/obj_state_run_hop_landing.s", void obj_state_run_hop_landing(void *ctx, struct Enemy *ent))
+void obj_state_run_hop_landing(void *ctx, struct Enemy *ent)
+{
+    EnemyFn *slot = &ent->unk1A0[0];
+    EnemyFn fn = slot[0];
+
+    fn(ctx, ent, slot);
+    if (ent->unk2B5 & 8)
+    {
+        obj_hop_landing_step(ent);
+    }
+}
 
 void obj_callback_apply_and_run(void *ctx, struct Enemy *ent, EnemyFn *slot)
 {
@@ -518,7 +634,17 @@ void setup_random_offset_short(void *ctx, struct Enemy *obj, EnemyFn *out)
     *out = move_handler_timed_settle;
 }
 
-ASM_FUNC("asm/code_081393B0/obj_state_run_hop_phase.s", void obj_state_run_hop_phase(void *ctx, struct Enemy *ent))
+void obj_state_run_hop_phase(void *ctx, struct Enemy *ent)
+{
+    EnemyFn *slot = &ent->unk1A0[0];
+    EnemyFn fn = slot[0];
+
+    fn(ctx, ent, slot);
+    if (ent->unk2F8 != 0)
+    {
+        update_hop_phase(ent);
+    }
+}
 
 void call_start_linked_state(void *ctx, struct Enemy *ent)
 {
