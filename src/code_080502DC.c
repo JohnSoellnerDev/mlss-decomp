@@ -131,6 +131,20 @@ struct FramePos
     u16 y;
 };
 
+struct Lo4Bits
+{
+    u8 lo2 : 2;
+    u8 b23 : 2;
+    u8 rest : 4;
+};
+
+struct Mid8Bits
+{
+    u16 b0 : 1;
+    u16 mid : 8;
+    u16 rest : 7;
+};
+
 struct Mode3
 {
     u8 mode : 3;
@@ -447,7 +461,7 @@ ASM_FUNC("asm/code_080502DC/obj_commit_sprite.s", void obj_commit_sprite(void))
 
 ASM_FUNC("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(void))
 
-NONMATCH("asm/code_080502DC/obj_clear_mask_if_timer.s", void obj_clear_mask_if_timer(u8 *obj))
+void obj_clear_mask_if_timer(u8 *obj)
 {
     struct ObjTimer *o;
     int f;
@@ -456,12 +470,9 @@ NONMATCH("asm/code_080502DC/obj_clear_mask_if_timer.s", void obj_clear_mask_if_t
     if (o->timer340 != 0)
     {
         o->unk23B = 0;
-        f = 0xFFFFFE01;
-        f = f & o->unk33E;
-        o->unk33E = f;
+        ((struct Mid8Bits *)&o->unk33E)->mid = 0;
     }
 }
-END_NONMATCH
 
 void script_init_obj_refresh_sprite(u8 *obj)
 {
@@ -488,19 +499,16 @@ void script_init_obj_sync_sprite_pos(u8 *obj)
     }
 }
 
-NONMATCH("asm/code_080502DC/script_init_obj_setup_sprite.s", void script_init_obj_setup_sprite(u8 *obj, u32 a, u32 b, u32 d))
+void script_init_obj_setup_sprite(u8 *obj, u32 a, u32 b, u32 d)
 {
     struct SpriteObj *sprite;
     int f;
 
     obj_create_sub(obj, a, b, d);
     sprite = ((struct MainObj *)obj)->sprite;
-    f = -13;
-    f = f & sprite->flags1F;
-    f = f & -4;
-    sprite->flags1F = f;
+    ((struct Lo4Bits *)&sprite->flags1F)->b23 = 0;
+    ((struct Lo4Bits *)&sprite->flags1F)->lo2 = 0;
 }
-END_NONMATCH
 
 void stub_nop_080514BE(void)
 {
