@@ -67,7 +67,14 @@ function start, calls show the relocation (the called symbol). A worked example 
 - A loop counter that only counts down (`add rX, #-1` / `subs`, `cmp rX, #0`, `bge`) and is not
   used in the body is usually a counting-up `for (i = 0; i < N; i++)` that GCC reversed. Its
   start value N-1 can even be copied from another register that happens to hold the same
-  constant (`mov r9, r10`).
+  constant (`mov r9, r10`). When the start value is loaded from a stack slot that also holds a
+  flag (`movs r0, #0; str r0, [sp, #0x1c]`, a call, then `ldr r0, [sp, #0x1c]; mov sl, r0`
+  before the loop), the flag is a plain local that did not get a register (`u32 saved;`, not a
+  struct field) and the loop is `for (count = 0; count < 1; count++)`: the reversed loop takes
+  its start value from the flag (example `obj_bounce_point_3fb0` in src/code_08182EB8.c).
+- A signed division by 256 (`cmp; bge; adds #0xFF; asrs #8`) whose temporary takes a
+  callee-saved register in your C: write `x / 0x100` in the expression instead of
+  `t = x; if (t < 0) t += 0xFF; t >>= 8;`.
 - The original computes a field address into r0 and copies it into a callee-saved register
   only after the first load (`adds r0, r4, #0; adds r0, #0xAC; ldrsh …; adds r5, r0, #0`), but
   your C puts it straight into r5: write `obj->field` at every use instead of keeping a
