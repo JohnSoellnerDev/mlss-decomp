@@ -614,7 +614,28 @@ void setup_random_offset_settle(void *ctx, struct Enemy *obj, EnemyFn *out)
     *out = obj_pick_next_state;
 }
 
-ASM_FUNC("asm/code_081393B0/move_handler_timed_callback.s", void move_handler_timed_callback(void *ctx, struct Enemy *obj, EnemyFn *out))
+void move_handler_timed_callback(void *ctx, struct Enemy *obj, EnemyFn *out)
+{
+    if ((u8)advance_move_step(ctx, obj) == 1)
+    {
+        obj_move_interp(obj);
+    }
+    else
+    {
+        obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+        if (obj->unk1D2 != 0)
+        {
+            out[0] = tick_store;
+            obj->unk1AC = out[1];
+        }
+        else
+        {
+            out[0] = out[1];
+            ((struct Flags8 *)&obj->unk1D6)->bit1 = 0;
+            ((struct Flags8 *)&obj->unk1D6)->bit0 = 1;
+        }
+    }
+}
 
 void setup_offset_target_state(void *ctx, struct Enemy *ent, EnemyFn *out)
 {
@@ -624,7 +645,28 @@ void setup_offset_target_state(void *ctx, struct Enemy *ent, EnemyFn *out)
     *out = move_handler_timed_callback;
 }
 
-ASM_FUNC("asm/code_081393B0/move_handler_timed_settle.s", void move_handler_timed_settle(void *ctx, struct Enemy *obj, EnemyFn *out))
+void move_handler_timed_settle(void *ctx, struct Enemy *obj, EnemyFn *out)
+{
+    if ((u8)advance_move_step(ctx, obj) == 1)
+    {
+        obj_step_toward_target_08138FDC(obj);
+    }
+    else
+    {
+        obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+        if (obj->unk1D2 != 0)
+        {
+            out[0] = tick_store;
+            obj->unk1AC = out[1];
+        }
+        else
+        {
+            out[0] = out[1];
+            ((struct Flags8 *)&obj->unk1D6)->bit1 = 0;
+            ((struct Flags8 *)&obj->unk1D6)->bit0 = 1;
+        }
+    }
+}
 
 void setup_random_offset_short(void *ctx, struct Enemy *obj, EnemyFn *out)
 {

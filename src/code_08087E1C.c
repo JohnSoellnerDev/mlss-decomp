@@ -45,6 +45,13 @@ struct PoseFlagsBits
     u8 unk3 : 5;
 };
 
+struct PoseFlags12Bit4
+{
+    u8 lo4 : 4;
+    u8 bit4 : 1;
+    u8 hi3 : 3;
+};
+
 struct PoseFlags11Bits
 {
     u8 unk0 : 6;
@@ -422,7 +429,17 @@ void mark_candidate_pair(struct Actor *obj)
     obj->unk4 = (u32)arbitrate_candidates;
 }
 
-ASM_FUNC("asm/code_08087E1C/finish_step_and_place.s", void finish_step_and_place(struct Actor *obj))
+void finish_step_and_place(struct Actor *obj)
+{
+    if ((u8)step_motion(obj) == 0)
+    {
+        set_slot_value(0x2E, -1);
+        ((struct PoseFlags12Bit4 *)&obj->pose->flags12)->bit4 = 0;
+        effect_spawn_at(0x33, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        ((struct PoseFlagsBits *)&obj->pose->flags12)->mode = 1;
+        obj->state = obj_finish_placement;
+    }
+}
 
 void noop_state_080883dc(struct Actor *obj)
 {
@@ -486,7 +503,36 @@ void start_rebuild(struct Actor *obj)
 
 ASM_FUNC("asm/code_08087E1C/step_motion.s", u32 step_motion(struct Actor *obj))
 
-ASM_FUNC("asm/code_08087E1C/step_motion_checked.s", u32 step_motion_checked(struct Actor *obj))
+u32 step_motion_checked(struct Actor *obj)
+{
+    s32 p;
+    s32 h;
+
+    p = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
+    obj->timer = obj->progress;
+    obj->progress = p;
+    if (p <= 0x3FFF)
+    {
+        obj->x = ((obj->targetX >> 16) * p + (s16)obj->targetX * (0x4000 - p)) / 0x40;
+        obj->y = ((obj->targetY >> 16) * p + (s16)obj->targetY * (0x4000 - p)) / 0x40;
+        obj->h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+        return 1;
+    }
+    obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
+    obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
+    h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+    obj->h = h;
+    if (h < 0)
+    {
+        obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
+        obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
+        obj->h = 0;
+        ((struct FlagsBits *)&obj->flags)->rebuild = 1;
+        return 0;
+    }
+    ((struct FlagsBits *)&obj->flags)->rebuild = 0;
+    return 1;
+}
 
 ASM_FUNC("asm/code_08087E1C/step_motion_scaled.s", u32 step_motion_scaled(struct Actor *obj))
 

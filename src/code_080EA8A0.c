@@ -225,7 +225,36 @@ void reset_obj_params_b(void *ctx, struct ScriptObj *obj, u32 a, u32 b, u16 s5, 
     set_obj_params_b(ctx, obj, a, b, s5, s6);
 }
 
-ASM_FUNC("asm/code_080EA8A0/flags_vars_set_obj_state.s", void flags_vars_set_obj_state(void))
+struct Flags11Bit6
+{
+    u8 lo6 : 6;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
+
+struct SpriteModeBits
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+};
+
+NONMATCH("asm/code_080EA8A0/flags_vars_set_obj_state.s", u8 flags_vars_set_obj_state(void *ctx, struct ScriptObj *obj, struct FlagRec *sub, u8 value, u8 bit))
+{
+    ((struct Flags11Bit6 *)&sub->unk11)->b6 = (((u32)sub->unk11 << 25) >> 31) ^ bit;
+    if (value != 0)
+    {
+        obj->word9C = value;
+        obj->halfA0 |= 0x20;
+        ((struct SpriteModeBits *)&sub->unk12)->mode = 1;
+    }
+    else
+    {
+        ((struct SpriteModeBits *)&sub->unk12)->mode = 0;
+    }
+    return value == 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080EA8A0/direction_octant.s", void direction_octant(void))
 
@@ -446,7 +475,21 @@ ASM_FUNC("asm/code_080EA8A0/set_var_from_key_group.s", u32 set_var_from_key_grou
 
 ASM_FUNC("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
 
-ASM_FUNC("asm/code_080EA8A0/set_key_mode_bits.s", u32 set_key_mode_bits(void *ctx, void *unused, u8 *src))
+struct KeyModeBits
+{
+    u8 lo2 : 2;
+    u8 f2 : 2;
+    u8 hi4 : 4;
+};
+
+NONMATCH("asm/code_080EA8A0/set_key_mode_bits.s", u32 set_key_mode_bits(void *ctx, void *unused, u8 *src))
+{
+    u8 *sys = (u8 *)&gUnk_0300034C;
+
+    ((struct KeyModeBits *)(sys + 0x79))->f2 = *src & 3;
+    return 1;
+}
+END_NONMATCH
 
 u32 set_shadow_bits(void *ctx, void *unused, u32 *src)
 {
@@ -843,7 +886,42 @@ u32 reset_cursor(void *ctx, struct ScriptObj *obj)
 
 ASM_FUNC("asm/code_080EA8A0/update_owner_objects.s", void update_owner_objects(void))
 
-ASM_FUNC("asm/code_080EA8A0/update_obj_sub_state.s", void update_obj_sub_state(void))
+struct ObjSubState
+{
+    u8 filler0[0x214];
+    u8 unk214;
+    u8 filler215[0x294 - 0x215];
+    struct FlagRec *sub;
+};
+
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+
+void obj_apply_state_b(void *obj);
+
+void update_obj_sub_state(void *ctx, struct ObjSubState *obj, struct ScriptObj *other)
+{
+    if ((obj->sub->unk12 & 6) != 2)
+        ((struct SpriteModeBits *)&obj->sub->unk12)->mode = 1;
+    if (obj->sub->unk12 & 8)
+    {
+        if (--other->word9C == 0)
+        {
+            if (other->halfA0 & 0x200)
+            {
+                ((struct Lo3Bits *)&obj->unk214)->lo3 = 0;
+                other->halfA0 &= 0xFDDF;
+                return;
+            }
+            obj_apply_state_b(obj);
+            other->halfA0 ^= 0x20;
+        }
+        ((struct SpriteModeBits *)&obj->sub->unk12)->mode = 0;
+    }
+}
 
 ASM_FUNC("asm/code_080EA8A0/set_obj_mode.s", void set_obj_mode(void))
 

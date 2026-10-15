@@ -191,7 +191,44 @@ void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
 s32 obj_last_x(void *obj);
 s32 obj_last_y(void *obj);
 
-ASM_FUNC("asm/code_080BC734/hero_a_z_cross_link_fx.s", void hero_a_z_cross_link_fx(void))
+void hero_a_z_cross_link_fx(struct HeroBody *body)
+{
+    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct HeroBody *a = &heroA->body;
+    struct HeroBody *partner = body->partner;
+    s32 zz;
+    s32 x;
+    s32 y;
+    s32 v;
+
+    step_motion_scaled(a);
+    zz = partner->targetZ + ((s32)partner->ofsZ << 8) - 0x400;
+    if ((a->z - zz) * (a->targetZ - zz) < 0)
+    {
+        ((struct HeroCcBits *)&heroA->body.cc)->low = 0;
+        heroA->body.scale = 0x100;
+        resolve_contact_action(a, partner, 0, 0, 0x0403228A);
+        a->count++;
+        if (partner->data->unkF6 > 0 || (partner->data->flags111 & 2))
+        {
+            x = partner->targetX / 0x100 + partner->ofsX;
+            y = partner->targetY / 0x100 + partner->ofsY;
+            effect_spawn_at(0x6E3, x, y, 0x14, partner);
+        }
+    }
+    if (a->flags & 0x20)
+    {
+        set_slot_value(0x2E, -1);
+        effect_spawn_at(0x1E, a->x / 0x100, a->y / 0x100 + 2, a->z / 0x100, a);
+        v = a->mode & 6;
+        if (v == 2 || v == 4)
+        {
+            sprite_set_action(a, 5, 0x2033, 0);
+            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+        }
+        body->state = hero_a_wait_visible_anim_33;
+    }
+}
 
 void hero_pair_place_finish_a_sprite(void)
 {
@@ -296,7 +333,23 @@ void hero_pair_place_finish_a_sprite(void)
     }
 }
 
-ASM_FUNC("asm/code_080BC734/hero_b_fx_anim_reset.s", void hero_b_fx_anim_reset(void))
+void hero_b_fx_anim_reset(struct HeroBody *body)
+{
+    struct HeroBody *part = &gUnk_03000FD8->heroB->body;
+    u32 v;
+
+    set_slot_value(0x62, -1);
+    effect_spawn_at(0x5DF, part->x / 0x100, part->y / 0x100, part->z / 0x100, part);
+    v = part->mode & 6;
+    if (v == 2 || v == 4)
+    {
+        sprite_set_action(part, 3, 0x2062, 0);
+        ((struct HeroSpriteBits *)&part->sprite->flags)->mode = 1;
+    }
+    part->unk74 = 0;
+    part->unk75 = 0;
+    body->state = hero_b_active_place_action;
+}
 
 void hero_b_active_place_action(struct HeroBody *body)
 {

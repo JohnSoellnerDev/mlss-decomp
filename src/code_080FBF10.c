@@ -30,6 +30,30 @@ struct SceneSlot
     s8 index;
 };
 
+struct Flags79Bits
+{
+    u8 lo2 : 2;
+    u8 mid2 : 2;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
+struct TaskOwner
+{
+    u8 filler0[0x14];
+    u8 *list;
+    void *type;
+};
+
+extern u8 *gWorkBuf;
+extern const u8 gTypeB[];
+extern const u8 gTaskPickTable[];
+extern const u8 gEffectIndexTable[];
+extern u8 gUnk_0300034C[];
+void task_insert(void *node, u8 kind, void *data);
+void mt19937_seed(u32 state, u32 seed);
+
 u32 point_in_box(s16 *bounds, struct SceneObj *obj, s32 zMaxIn, s32 zMinIn);
 
 extern u8 *gUnk_03000FD8;
@@ -38,6 +62,30 @@ void vcount_store(u8 *out);
 void run_task_list(u8 *list);
 void refresh_sprite_display(u8 mode);
 void world_main_frame(void);
+void world_init(void);
+void load_vram_tiles(void *p);
+void set_text_ptrs(u32 value);
+void set_cur_flags_both(u32 value);
+void world_objects_tick(void);
+void release_timer_tiles(void);
+void set_irq_callback(u32 kind, void *cb);
+void obj_release(void *obj);
+void free_task_state(void *state, u32 kind);
+void destroy_map_obj(void *obj, u32 kind);
+void menu_obj_free(void *obj, u32 kind);
+void restore_display(void *obj, u32 kind);
+void reset_obj_hook(void *obj, u32 kind);
+void heap_free(void *p);
+void run_pending_obj_callbacks(void);
+void set_flags_2_3(void *p);
+void task_remove(void *node, u32 kind);
+extern u16 gUnk_02000010[];
+struct FlagBit6
+{
+    u8 lo6 : 6;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
 void owner_release(u8 *owner, u32 mode);
 u32 world_entry_ready(void);
 void set_slot_target(u32 idx, u32 value, u32 mode);
@@ -535,9 +583,102 @@ ASM_FUNC("asm/code_080FBF10/load_save_slot.s", void load_save_slot(void))
 
 ASM_FUNC("asm/code_080FBF10/store_save_slot.s", void store_save_slot(void))
 
-ASM_FUNC("asm/code_080FBF10/effect_start.s", void effect_start(void))
+struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *handle)
+{
+    u8 *sys;
+    u8 *flags;
+    u8 value;
 
-ASM_FUNC("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 mode))
+    task_insert(owner, kind, (void *)arg);
+    owner->type = (void *)gTypeB;
+    gWorkBuf = handle;
+    sys = gUnk_0300034C;
+    mt19937_seed(*(u32 *)(sys + 0x8D0), *(u32 *)(sys + 0x1C));
+    *(u16 *)(sys + 0x78) |= 0x3FF;
+    flags = sys + 0x79;
+    ((struct Flags79Bits *)flags)->mid2 = 0;
+    ((struct Flags79Bits *)flags)->bit4 = 0;
+    ((struct Flags79Bits *)flags)->bit5 = 0;
+    sys[0x44] = 10;
+    sys[0x45] = 8;
+    gUnk_03000FE0 = world_init;
+    if ((s8)handle[2] <= 0)
+    {
+        {
+            const u8 *table = gTaskPickTable;
+
+            value = (table + (*(u16 *)handle << 5))[3];
+        }
+        handle[2] = value;
+        if ((s8)value <= 0)
+        {
+            value = gEffectIndexTable[*(u16 *)(owner->list + 0x124)];
+            handle[2] = value;
+        }
+    }
+    return owner;
+}
+
+NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 mode))
+{
+    u16 *p;
+    u8 *list;
+    u8 *world;
+    u8 *sys;
+
+    ((struct TaskOwner *)owner)->type = (void *)gTypeB;
+    sys = gUnk_0300034C;
+    sys[0x44] = 10;
+    sys[0x45] = 2;
+    if (gUnk_03000FD8 != NULL)
+    {
+        release_timer_tiles();
+        world = gUnk_03000FD8;
+        set_irq_callback(2, *(void **)(world + 0x25C));
+        world = gUnk_03000FD8;
+        list = *(u8 **)(world + 0x78);
+        if (list != NULL)
+        {
+            do
+            {
+                obj_release(list);
+                list = *(u8 **)list;
+            } while (list != NULL);
+        }
+        if (*(void **)(gUnk_03000FD8 + 0x244) != NULL)
+            free_task_state(*(void **)(gUnk_03000FD8 + 0x244), 3);
+        if (*(void **)(gUnk_03000FD8 + 0x24C) != NULL)
+            destroy_map_obj(*(void **)(gUnk_03000FD8 + 0x24C), 3);
+        if (*(void **)(gUnk_03000FD8 + 0x248) != NULL)
+            menu_obj_free(*(void **)(gUnk_03000FD8 + 0x248), 3);
+        if (*(void **)(gUnk_03000FD8 + 0x250) != NULL)
+            restore_display(*(void **)(gUnk_03000FD8 + 0x250), 3);
+        if (*(void **)(gUnk_03000FD8 + 0x2F0) != NULL)
+            reset_obj_hook(*(void **)(gUnk_03000FD8 + 0x2F0), 3);
+        p = gUnk_02000010;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        *p++ = 0;
+        heap_free(gUnk_03000FD8);
+        gUnk_03000FD8 = NULL;
+        run_pending_obj_callbacks();
+    }
+    if (gWorkBuf != NULL)
+    {
+        heap_free(gWorkBuf);
+        gWorkBuf = NULL;
+    }
+    set_flags_2_3(((struct TaskOwner *)owner)->list);
+    sys = gUnk_0300034C;
+    ((struct FlagBit6 *)(sys + 0x79))->b6 = 0;
+    task_remove(owner, mode);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080FBF10/world_init.s", void world_init(void))
 

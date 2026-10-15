@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Sprite
 {
@@ -40,6 +41,20 @@ struct BodyData
     u8 unk10E[0x113 - 0x10E];
     u8 unk113;
     u32 unk114;
+};
+
+struct SpriteModeBits
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+};
+
+struct FlagBit5
+{
+    u8 low : 5;
+    u8 bit5 : 1;
+    u8 high : 2;
 };
 
 struct Body
@@ -135,11 +150,11 @@ extern void set_motion_offsets(struct Body *body, s32 value);
 extern void move_step(s16 *x, s16 *y, s16 *z, s32 dx, s32 dy, s32 dz, s32 speed);
 extern void state_stack_advance_progress(struct Body *body);
 extern void spawn_effect_child(struct Body *body);
-extern void anim7_when_shown(void);
+extern void anim7_when_shown(struct Body *body);
 extern void setup_group_motion(struct Body *body);
 extern struct Body *obj_spawn_linked(struct Body *parent, s32 kind, s32 zero);
 extern void end_anim_when_active_b(void);
-extern void anim4_with_effect_rate(void);
+extern void anim4_with_effect_rate(struct Body *body);
 extern void arrange_group_on_ellipse(void);
 extern void companion_jump_land_step_toward_partner(void);
 extern void place_chain_nodes(void);
@@ -147,7 +162,23 @@ extern void *sprite_node_take(void);
 extern void *sprite_node_alloc(s32 x, s32 y, s32 z);
 extern void start_timed_motion_if_free(struct Body *body);
 
-ASM_FUNC("asm/code_0809F588/anim4_with_effect_rate.s", void anim4_with_effect_rate(void))
+void anim4_with_effect_rate(struct Body *body)
+{
+    if (body->sprite->flags & 8)
+    {
+        set_slot_value(0x116, -1);
+        sprite_set_action(body, 4, 0, 0);
+        ((struct SpriteModeBits *)&body->sprite->flags)->mode = 0;
+        if (body->data->unkF6 != 0)
+        {
+            body->unk7A = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x3C);
+            body->unk7E = 0;
+            ((struct FlagBit5 *)&body->flags)->bit5 = 0;
+        }
+        body->unkA8 = 0;
+        body->state = advance_and_fx_when_ready;
+    }
+}
 
 void advance_and_fx_when_ready(struct Body *body)
 {
@@ -281,7 +312,15 @@ s32 link_partner_effect_remove(struct Body *body)
     return result;
 }
 
-ASM_FUNC("asm/code_0809F588/anim7_when_shown.s", void anim7_when_shown(void))
+void anim7_when_shown(struct Body *body)
+{
+    if (body->sprite->flags & 8)
+    {
+        sprite_set_action(body, 7, 0, 0);
+        ((struct SpriteModeBits *)&body->sprite->flags)->mode = 0;
+        body->state = 0;
+    }
+}
 
 s32 enter_anim_by_sprite_key(struct Body *body)
 {

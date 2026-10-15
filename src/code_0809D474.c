@@ -406,7 +406,39 @@ void spawn_pending_child(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809D474/timed_child_effects.s", void timed_child_effects(struct ActorBody *body))
+void timed_child_effects(struct ActorBody *body)
+{
+    s32 wait;
+
+    if (body->tick > 0)
+    {
+        body->tick--;
+        if (body->tick == 0)
+        {
+            body->tick = 0x14;
+            effect_spawn_at(0x227F, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+        }
+    }
+    wait = body->wait + 1;
+    body->wait = wait;
+    if ((s16)wait > 0x31)
+    {
+        body->wait = 0;
+        if (body->child->sprite->kind != 0)
+        {
+            sprite_set_action(body->child, body->child->sprite->kind - 1, 0, 0);
+            set_slot_value(0x10A, -1);
+        }
+        else
+        {
+            obj_detach_active(body->child->sprite);
+            effect_spawn_at(0x2291, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+            sprite_set_action(body, 9, 0, 0);
+            ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 0;
+            body->state = spawn_twelve_parts;
+        }
+    }
+}
 
 void spawn_twelve_parts(struct ActorBody *body)
 {
@@ -471,7 +503,21 @@ void spawn_twelve_parts(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809D474/pose_offset_place.s", void pose_offset_place(struct ActorBody *body))
+void pose_offset_place(struct ActorBody *body)
+{
+    place_targets(body, body->targetX / 0x100, body->targetY / 0x100,
+                  (body->partner->data->poseOfs == -1) ? 0x22 : 0x26, 0x100);
+    set_motion_start(body, 0x300);
+    set_slot_value(0xA3, -1);
+    obj_list_push_default(body);
+    body->unk58 = (BodyFunc)tick_timer_or_remove;
+    ((struct UnkFlagBits *)&body->unk77)->bit6 = 0;
+    ((struct UnkFlagBits *)&body->unk77)->bit5 = 0;
+    body->vspeed = body->height;
+    sprite_set_action(body, 0, 0, 0);
+    ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 0;
+    body->state = focus_follow_fall_step;
+}
 
 void focus_follow_fall_step(struct ActorBody *body)
 {
