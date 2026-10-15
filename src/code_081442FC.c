@@ -92,6 +92,7 @@ struct WalkScratch
     u8 idx;
 };
 
+
 struct Enemy
 {
     u8 filler0[0xC];
@@ -124,11 +125,16 @@ struct Enemy
     u8 unk210;
     u8 filler211[0x214 - 0x211];
     u8 unk214;
-    u8 filler215[0x239 - 0x215];
+    u8 filler215[0x216 - 0x215];
+    u8 unk216;
+    u8 filler217[0x239 - 0x217];
     u8 unk239;
     u8 filler23A[0x23E - 0x23A];
     u16 unk23E;
-    u8 filler240[0x248 - 0x240];
+    u8 filler240[0x242 - 0x240];
+    u16 unk242;
+    u16 unk244;
+    u8 filler246[0x248 - 0x246];
     s32 unk248;
     u8 filler24C[0x294 - 0x24C];
     struct Sprite *sprite;
@@ -170,6 +176,12 @@ u8 advance_move_step(struct Owner *owner, struct Enemy *ent);
 void obj_start_move_quarter(struct Enemy *ent, u32 zero, s32 x, s32 y);
 void enemy_contact_engage(struct Owner *owner, struct Enemy *ent);
 void enemy_start_move(struct Owner *owner, struct Enemy *ent, u32 *state_out);
+struct Partner *owner_entry(struct Owner *owner, u16 index);
+void obj_start_move_zero_anchor(struct Enemy *obj, u32 one, u32 a, u32 b);
+void obj_drift_with_cap_step(struct Enemy *ent);
+void enemy_setup_wait_b(struct Owner *owner, struct Enemy *ent);
+void enemy_after_contact(void);
+extern const u8 gFrameAttrTable[];
 void reset_record_fields(struct Enemy *ent);
 void obj_set_sprite_link(struct Enemy *ent, u32 zero);
 void obj_set_active(struct Enemy *ent, u32 zero);
@@ -187,7 +199,50 @@ void enemy_idle_runner(void);
 u8 point_in_box(s16 *box, void *entry, s32 a, s32 b);
 u8 boxes_overlap_oriented(s16 *box, struct Enemy *ent, void *entry, s32 zAbove, s32 zBelow);
 
-ASM_FUNC("asm/code_081442FC/enemy_start_random_move.s", void enemy_start_random_move(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+void enemy_start_random_move(struct Owner *owner, struct Enemy *ent, u32 *state_out)
+{
+    struct Sprite **spr = &ent->sprite;
+
+    if (((*spr)->flags12 & 8) != 0)
+    {
+        u8 *table = (u8 *)ent + 0x100;
+        struct SensorBox *sensor = ent->sensor;
+        struct Sprite *s;
+        u32 roll;
+        u32 off;
+        u8 *kinds;
+        u16 kind;
+
+        ((struct Mode3 *)&ent->unk214)->mode = 3;
+        roll = sub_081DE850(4, mt19937_next());
+        s = *spr;
+        off = (u16)roll << 1;
+        kinds = (u8 *)ent + 0x108;
+        kind = *(u16 *)(kinds + off);
+        ent->unk239 = kind;
+        s->unk20 = kind;
+        ent->unk23E = *(u16 *)(table + off);
+        ((struct Flags8 *)&ent->unk20C)->bit5 = 1;
+        ((struct Flags8 *)&ent->unk20C)->bit7 = 1;
+        ((struct Flags8 *)&ent->unk20C)->bit6 = 1;
+        ((struct Flags8 *)&ent->unk210)->bit4 = 1;
+        {
+            s32 sx = sensor->unk18;
+            ent->unk1B8 = sx << 4;
+        }
+        {
+            s32 sy = sensor->unk1A;
+            ent->unk1BA = sy << 4;
+        }
+        {
+            s32 sz = sensor->unk1C;
+            ent->unk1BC = sz << 4;
+        }
+        obj_start_move_quarter(ent, 1, ent->unk1B8 << 8, ent->unk1BA << 8);
+        obj_move_interp(ent);
+        *state_out = (u32)enemy_check_flags;
+    }
+}
 
 ASM_FUNC("asm/code_081442FC/enemy_wait_spot_owner.s", void enemy_wait_spot_owner(struct Owner *owner, struct Enemy *ent))
 
@@ -348,6 +403,53 @@ ASM_FUNC("asm/code_081442FC/enemy_idle_update.s", void enemy_idle_update(void))
 
 ASM_FUNC("asm/code_081442FC/enemy_timer_step.s", void enemy_timer_step(void))
 
-ASM_FUNC("asm/code_081442FC/enemy_body_contact.s", void enemy_body_contact(void))
+NONMATCH("asm/code_081442FC/enemy_body_contact.s", void enemy_body_contact(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+{
+    struct Enemy *body = ent->body;
+    s32 kind;
+    u32 lim_a;
+    u32 lim_b;
+
+    owner_entry(owner, 0xFF);
+    if ((body->unk20C & 1) == 0)
+    {
+        *state_out = 0;
+        return;
+    }
+    if (probe_body_hit(owner, body, body->posX, body->posY, body->unk14 + body->unk18, 1, 0) != 0)
+    {
+        obj_set_sprite_link(body, 0);
+        obj_set_active(body, 0);
+        ((struct Mode3 *)&ent->unk214)->mode = 3;
+        ent->unk198 = (void *)enemy_setup_wait_b;
+        *state_out = 1;
+        return;
+    }
+    kind = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
+    switch (kind)
+    {
+    case 0:
+        lim_a = 0;
+        lim_b = 0x80000000;
+        break;
+    case 1:
+        lim_a = 0x03FFFFFF;
+        lim_b = 0;
+        break;
+    case 2:
+        lim_a = 0;
+        lim_b = 0x03FFFFFF;
+        break;
+    case 3:
+        lim_a = 0x80000000;
+        lim_b = 0;
+        break;
+    }
+    ((struct Flags8 *)&body->unk20D)->bit3 = 1;
+    obj_start_move_zero_anchor(body, 1, lim_a, lim_b);
+    obj_drift_with_cap_step(body);
+    *state_out = (u32)enemy_after_contact;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081442FC/enemy_push_by_mode.s", void enemy_push_by_mode(void))

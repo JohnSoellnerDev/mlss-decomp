@@ -94,6 +94,14 @@ void run_handler_1a0(s32 arg, u8 *obj);
 void run_handler_1a0_b(s32 arg, u8 *obj);
 void entity_mode_49_noop(void);
 void box_hit_state_d4a5(void);
+u8 advance_move_step(struct Owner *owner, struct Actor *ent);
+void obj_step_toward_target_08138FDC(struct Actor *obj);
+void tick_store(void);
+void obj_state_run_advance(void);
+void child_box_state(void);
+void place_child_by_stage(void);
+u32 mt19937_next(void);
+s32 sub_081DE850(s32 range, u32 seed);
 void active_hit_state(void);
 void box_hit_state_d4ed(void);
 void setup_mode4_with_cell(s32 arg, struct Actor *obj, s32 *slot);
@@ -105,7 +113,7 @@ void start_state_c189(s32 arg, struct Actor *obj);
 void start_state_d385(s32 arg, struct Actor *obj);
 void start_state_d405(s32 arg, struct Actor *obj);
 void obj_random_offset(struct Actor *obj, u16 dir);
-void random_step_pick(void);
+void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out);
 u32 obj_pick_dir_toward_owner(s32 arg, struct Actor *obj);
 void obj_start_move_to_target(struct Actor *obj, s32 a, s32 vx, s32 vy);
 void obj_try_start_jump(struct Actor *obj);
@@ -395,7 +403,60 @@ void run_handler_1a0_b(s32 arg, u8 *obj)
     handler(arg, obj, slot);
 }
 
-ASM_FUNC("asm/code_0813C4A8/random_step_pick.s", void random_step_pick(void))
+void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    s32 flag = 0;
+
+    if (advance_move_step(owner, ent) == 1)
+    {
+        obj_step_toward_target_08138FDC(ent);
+    }
+    else
+    {
+        s32 t = 0;
+
+        if (*(s32 *)((u8 *)ent + 0x25C) + 1 == 0)
+        {
+            t = 1;
+        }
+        flag = t;
+    }
+    if ((*((u8 *)ent + 0x2B5) & 8) != 0)
+    {
+        obj_jump_arc_step(ent);
+    }
+    else
+    {
+        s32 t = 0;
+
+        if (*(s32 *)((u8 *)ent + 0x25C) + 1 == 0)
+        {
+            t = 1;
+        }
+        flag = t;
+    }
+    if (flag != 0)
+    {
+        u32 idx = sub_081DE850(4, mt19937_next());
+        u32 off = idx << 1;
+        u8 *slot = (u8 *)ent + 0x128;
+        u16 value = *(u16 *)(slot + off);
+
+        *(u16 *)((u8 *)ent + 0x1D2) = value;
+        ((struct Flags1D6Bits *)&ent->flags1D6)->bit0 = 1;
+        ((struct Flags1D6Bits *)&ent->flags1D6)->bit1 = 0;
+        if (*(u16 *)((u8 *)ent + 0x1D2) != 0)
+        {
+            ((struct ModeBits *)&ent->mode)->mode = 0;
+            out[0] = (u32)tick_store;
+            *(u32 *)((u8 *)ent + 0x1AC) = out[1];
+        }
+        else
+        {
+            out[0] = out[1];
+        }
+    }
+}
 
 ASM_FUNC("asm/code_0813C4A8/box_hit_state_d4a5.s", void box_hit_state_d4a5(void))
 
@@ -497,5 +558,4 @@ ASM_FUNC("asm/code_0813C4A8/timer_overlap_state_b.s", void timer_overlap_state_b
 ASM_FUNC("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(void))
 
 ASM_FUNC("asm/code_0813C4A8/timer_overlap_state_c.s", void timer_overlap_state_c(void))
-
 ASM_FUNC("asm/code_0813C4A8/place_child_by_stage.s", void place_child_by_stage(void))

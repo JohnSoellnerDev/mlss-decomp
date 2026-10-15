@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct AnimPose
 {
@@ -154,6 +155,7 @@ struct AnimTask *task_create_list_40(void (*entry)(struct AnimTask *));
 void state_hero_marker_end_quiet(struct AnimTask *owner);
 void state_hero_marker_begin(struct AnimTask *owner);
 void state_figure_end(struct AnimTask *owner);
+void state_figure_move(struct AnimTask *owner);
 void state_figure_limit(struct AnimTask *owner);
 void state_wait_ready(struct AnimTask *owner);
 void task_wait_control(struct AnimTask *owner);
@@ -196,7 +198,41 @@ void state_hero_marker_end(struct AnimTask *owner)
     }
 }
 
-ASM_FUNC("asm/code_08109714/state_hero_marker_begin.s", void state_hero_marker_begin(struct AnimTask *owner))
+NONMATCH("asm/code_08109714/state_hero_marker_begin.s", void state_hero_marker_begin(struct AnimTask *owner))
+{
+    struct AnimObj *obj = owner->obj;
+
+    if ((obj->ctrl & 6) == 2)
+    {
+        struct AnimPic *pic = &obj->pic;
+        s32 index;
+        s32 none;
+        u32 action;
+        u32 slot;
+
+        index = obj->index;
+        none = -1;
+        action = 0x2057;
+        if (index == none)
+        {
+            action -= 0x2F;
+        }
+        sprite_set_action(pic, 2, action, 0);
+        owner->state = state_hero_marker_end;
+        slot = 0xF5;
+        if (obj->index == none)
+        {
+            slot += 0x52;
+        }
+        set_slot_value(slot, -1);
+    }
+    else
+    {
+        ((struct AnimFlags *)&obj->flags)->bit5 = 0;
+        owner->state = 0;
+    }
+}
+END_NONMATCH
 
 void state_hero_marker_end_quiet(struct AnimTask *owner)
 {
@@ -385,7 +421,32 @@ ASM_FUNC("asm/code_08109714/figure_select_action.s", void figure_select_action(v
 
 ASM_FUNC("asm/code_08109714/state_figure_wait.s", void state_figure_wait(struct AnimTask *owner))
 
-ASM_FUNC("asm/code_08109714/state_figure_begin.s", void state_figure_begin(void))
+void state_figure_begin(struct AnimTask *owner)
+{
+    struct AnimObj *obj = owner->obj;
+    u32 (*math)(u32);
+
+    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    if (obj->unk4C != 0)
+    {
+        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        owner->state = 0;
+        return;
+    }
+    set_slot_value(0x2B, -1);
+    math = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt);
+    obj->stepB2 = ((s32)math(0xB37D29) - 0xB3) / 2;
+    if (obj == (struct AnimObj *)(gUnk_03000FD8->active + 8))
+    {
+        sprite_set_action(obj, (*(gUnk_03000FD8->active + 0x7F) & 8) ? 5 : 0xA, 0, 0);
+    }
+    else
+    {
+        sprite_set_action(obj, 5, 0, 0);
+    }
+    ((struct AnimPoseFlags *)&obj->pic.sprite->flags)->mode = 1;
+    owner->state = state_figure_move;
+}
 
 void state_figure_move(struct AnimTask *owner)
 {
@@ -440,6 +501,35 @@ void state_figure_limit(struct AnimTask *owner)
     owner->state = state_figure_end;
 }
 
-ASM_FUNC("asm/code_08109714/state_figure_end.s", void state_figure_end(struct AnimTask *owner))
+void state_figure_end(struct AnimTask *owner)
+{
+    struct AnimObj *obj = owner->obj;
+
+    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    if (obj->unk4C != 0)
+    {
+        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        owner->state = 0;
+        return;
+    }
+    if (obj == (struct AnimObj *)(gUnk_03000FD8->active + 8))
+    {
+        u32 flagBits = (u32)*(gUnk_03000FD8->active + 0x7F) >> 3;
+        u32 action = 1;
+
+        action &= ~flagBits;
+        sprite_set_action(obj, action, 0, 0);
+    }
+    else
+    {
+        if ((obj->pic.sprite->flags & 8) == 0)
+        {
+            return;
+        }
+        sprite_set_action(obj, 0, 0, 0);
+    }
+    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+    owner->state = 0;
+}
 
 ASM_FUNC("asm/code_08109714/status_slots_setup.s", void status_slots_setup(void))

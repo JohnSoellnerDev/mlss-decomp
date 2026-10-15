@@ -490,7 +490,40 @@ void state_heroes_anim_stop(struct Owner *owner)
 
 ASM_FUNC("asm/code_08105A30/state_menu_build.s", void state_menu_build(void))
 
-ASM_FUNC("asm/code_08105A30/state_menu_slide_in.s", void state_menu_slide_in(struct Owner *owner))
+NONMATCH("asm/code_08105A30/state_menu_slide_in.s", void state_menu_slide_in(struct Owner *owner))
+{
+    u16 timer = owner->timer;
+    s32 signedTimer = owner->timer;
+
+    if (signedTimer != 0)
+    {
+        owner->timer = timer - 1;
+    }
+    else
+    {
+        struct Sprite *menu = gUnk_03000FD8->menu368;
+        s32 ny;
+        s32 flags;
+        s32 mask;
+
+        ny = *(u16 *)&menu->y + 0x10;
+        *(u16 *)&menu->y = ny;
+        if ((s16)ny > 0x5F)
+        {
+            menu->y = 0x60;
+            flags = menu->flags;
+            mask = -0x11;
+            mask &= flags;
+            mask &= -7;
+            mask |= 2;
+            menu->flags = mask;
+            owner->timer = 0x60;
+            owner->state = state_menu_alloc_scene;
+            set_slot_value(0x8B, -1);
+        }
+    }
+}
+END_NONMATCH
 
 void state_menu_alloc_scene(struct Owner *owner)
 {

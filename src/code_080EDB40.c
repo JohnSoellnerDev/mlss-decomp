@@ -149,7 +149,49 @@ void camera_track_entity(void *list, u32 field, u32 zero);
 
 ASM_FUNC("asm/code_080EDB40/set_host_flags.s", void set_host_flags(void))
 
-ASM_FUNC("asm/code_080EDB40/reset_host_entry.s", void reset_host_entry(void))
+struct SubFlags
+{
+    u8 bit0 : 1;
+    u8 mid : 2;
+    u8 rest : 5;
+};
+
+struct Flags8
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct OwnerObj *owner, void *unused, u32 *args))
+{
+    u32 idx = args[0];
+    struct ObjList *list = owner->list;
+    struct Entity *entry = *(struct Entity **)((u8 *)list + 0x28 + (idx << 2));
+
+    obj_set_state(entry, 0);
+    obj_load_record(entry->sub294, entry->sub294->unk21, args[1], 0, 0);
+    ((struct Flags8 *)&entry->unk214)->bit7 = 0;
+    ((struct Flags8 *)&entry->unk215)->bit1 = 0;
+    ((struct SubFlags *)&entry->sub294->unk12)->mid = 0;
+    {
+        s32 flags = entry->sub294->unk11;
+        s32 bit = ((u32)flags << 25) >> 31;
+
+        bit ^= args[2];
+        bit &= 1;
+        bit <<= 6;
+        flags = (-0x41 & flags) | bit;
+        entry->sub294->unk11 = flags;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 set_obj_via_ptr(struct OwnerObj *owner, struct Entity *obj, struct Record *dst, struct ObjArgs *args)
 {
