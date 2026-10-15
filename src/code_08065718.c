@@ -178,7 +178,63 @@ u32 obj_lookup_slot_then_state_bc0(struct ActorObj *obj);
 void obj_move_place_cull(struct ActorObj *obj);
 void obj_no_sprite_idle(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08065718/obj_timer_spawn_child_a.s", void obj_timer_spawn_child_a(struct ActorObj *obj))
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 kind, s32 x, s32 y, s32 h, u32 a, u32 b);
+void obj_list_push_default(struct ActorObj *obj);
+void on_arrive(struct ActorObj *obj);
+void obj_no_sprite_idle_b(struct ActorObj *obj);
+
+struct PoseBits6
+{
+    u8 low : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+} __attribute__((packed));
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+// The spawned child takes over the kind and two flag bits of its parent.
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child, u32 kind)
+{
+    ((struct Flags78Bits *)&child->flags78)->kind = kind >> 5;
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
+void obj_timer_spawn_child_a(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if ((s16)--obj->timer > 0)
+        return;
+    sprite_set_action(obj, 4, 0, 0);
+    child = obj_spawn(obj->part, 0x40DC, obj->owner->part->targetX / 256 + 0x30, obj->owner->part->targetY / 256,
+                      obj->baseH / 256 + 0x48, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+    obj->child = child;
+    obj_child_flags(obj, child, 0x40);
+    child->handler68 = on_arrive;
+    child->unk6C = obj->unk6C;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+    child->handler60 = (void (*)(struct ActorObj *))obj_lookup_slot_then_state_bc0;
+    child->targetX = child->baseX;
+    child->targetH = child->baseH;
+    child->state = obj_move_place_cull;
+    set_slot_value(0x10F, -1);
+    obj->state = obj_no_sprite_idle_b;
+}
 
 ASM_FUNC("asm/code_08065718/obj_timer_spawn_child_b.s", void obj_timer_spawn_child_b(struct ActorObj *obj))
 

@@ -115,6 +115,13 @@ function start, calls show the relocation (the called symbol). A worked example 
   (GCC reuses the 1 still in r0): the original sets the bit in an inlined helper,
   `static inline void set_bit6(u8 *spr, u32 v) { ((struct Bits *)(spr + 0x11))->b6 = v; }`
   (example in src/code_080FA598.c).
+- Copying a bit from one object to another (`ldrb` of the source byte, `lsls #25; lsrs #31`,
+  then the destination address, `ands` with 1, `lsls #6`, merge): the bit fields have to sit at
+  their real offset in a struct over the whole object, not in a struct cast onto the byte, or
+  GCC computes the destination address first. Write
+  `((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;` with
+  `struct ObjFlags77 { u8 filler0[0x77]; u8 lo5 : 5; u8 bit5 : 1; u8 bit6 : 1; u8 bit7 : 1; };`
+  (example `obj_child_flags` in src/code_08065718.c).
 - A stack frame with an area nothing in the function touches (`sub sp, #0x10` and no access to
   those bytes) is an unused local array or struct in the original: GCC 2.95 reserves space for
   arrays and structs even when they are never used. Declare it (`s32 unused[4];`).
