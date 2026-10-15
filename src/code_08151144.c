@@ -1,5 +1,56 @@
 #include "global.h"
 
+struct Bit4Bits
+{
+    u8 low4 : 4;
+    u8 bit4 : 1;
+    u8 rest : 3;
+};
+
+struct Bit2Bits
+{
+    u8 low2 : 2;
+    u8 bit2 : 1;
+    u8 rest : 5;
+};
+
+struct Bit5Bits
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 rest : 2;
+};
+
+struct Cell
+{
+    u8 filler0[0x2C];
+    s16 v2C;
+};
+
+struct SceneState
+{
+    u8 filler0[0x14];
+    s32 x14;
+    void *sceneTable;
+    u8 filler1C[0x1CB4 - 0x1C];
+    void *iris;
+    u8 filler1CB8[0x1F30 - 0x1CB8];
+    void *gameTask;
+};
+
+struct Bit3Bits
+{
+    u8 low3 : 3;
+    u8 bit3 : 1;
+    u8 rest : 4;
+};
+
+struct Lo3Bits
+{
+    u8 low3 : 3;
+    u8 rest : 5;
+};
+
 struct Obj
 {
     void *rows;
@@ -7,8 +58,7 @@ struct Obj
     s32 posY;
     s32 x;
     s32 y;
-    u16 unk14;
-    u8 filler16[0x18 - 0x16];
+    s32 z;
     union
     {
         u16 vy;
@@ -18,8 +68,8 @@ struct Obj
     u8 filler1E[0x20 - 0x1E];
     u16 unk20;
     u8 filler22[0x24 - 0x22];
-    u16 unk24;
-    u8 filler26[0x28 - 0x26];
+    u8 unk24;
+    u8 filler25[0x28 - 0x25];
     union
     {
         void *sub28;
@@ -40,24 +90,35 @@ struct Obj
     s32 value;
     s32 steps;
     s32 unk40;
-    u8 filler44[0x198 - 0x44];
+    u8 filler44[0x100 - 0x44];
+    u16 tbl[0x18];
+    u8 filler130[0x198 - 0x130];
     void *handlerA;
     u8 filler19C[0x1A0 - 0x19C];
     void *handlerB;
     void *handlerC;
-    u8 filler1A8[0x1BE - 0x1A8];
+    u8 filler1A8[0x1B0 - 0x1A8];
+    void *record;
+    u8 filler1B4[0x1BE - 0x1B4];
     s16 kind;
     u8 filler1C0[0x1D0 - 0x1C0];
     u16 entryIndex;
     u16 timerB;
-    u8 filler1D4[0x200 - 0x1D4];
+    u8 filler1D4[0x1DC - 0x1D4];
+    s32 homeX;
+    s32 homeY;
+    s32 homeZ;
+    s32 homeDZ;
+    u8 filler1EC[0x200 - 0x1EC];
     s32 tgtA;
     u8 filler204[0x20D - 0x204];
     u8 flags20D;
     u8 filler20E[0x212 - 0x20E];
     u16 seq;
     u8 flags214;
-    u8 filler215[0x242 - 0x215];
+    u8 filler215;
+    u8 unk216;
+    u8 filler217[0x242 - 0x217];
     s16 speedX;
     s16 speedY;
     u8 filler246[0x248 - 0x246];
@@ -68,7 +129,9 @@ struct Obj
     u8 unk2B4;
     u8 filler2B5[0x2C8 - 0x2B5];
     s32 jumpInit;
-    u8 filler2CC[0x344 - 0x2CC];
+    u8 filler2CC[0x33E - 0x2CC];
+    u8 flags33E;
+    u8 filler33F[0x344 - 0x33F];
     void *linked;
 };
 
@@ -78,6 +141,10 @@ void write_var(u16 id, u16 value);
 void run_pending_obj_callbacks(void);
 extern u8 *gUnk_03000FC0;
 void obj_set_active(struct Obj *obj, u32 on);
+u32 mt19937_next(void);
+u32 sub_081DE850(u32 range, u32 rnd);
+void obj_set_cell_coord(struct Obj *obj, s32 cell, u32 zero);
+extern const u8 gFrameAttrTable[];
 void obj_set_sprite_link(struct Obj *obj, u32 link);
 void obj_build_iris_rows(struct Obj *obj, s32 *pos);
 void obj_set_flag_08(struct Obj *obj, s32 on);
@@ -94,12 +161,53 @@ void zone_timer_step(void *parent, struct Obj *obj, void **slot);
 void zone_start_move(void *parent, struct Obj *obj, void **slot);
 u8 obj_target_in_reach(struct Obj *obj, s32 target);
 void obj_apply_speed_xy(s32 unused, struct Obj *obj);
+void load_anim_tables_plain(struct Obj *obj);
+void obj_set_motion_a_08046AA4(void *obj, u32 a, u32 b, u32 c, u32 d);
+void obj_advance_axes(void *obj);
+void obj_clear_flags_2b5_30(void *obj);
+void run_state_handler(void);
+void zone_entry_handler(void);
+void obj_load_record(void *spr, u32 record, u32 loadFlags, u32 arg3, u32 arg4);
+void follow_entry_axis(void);
+void spawn_random_offset(void *obj, u32 flag);
+void zone_pick_handler(void);
+void spawn_small_handler(s32 unused0, s32 unused1, void **slot);
+void spawn_big_handler(s32 unused0, s32 unused1, void **slot);
+void obj_free_tiles(void *p, u32 n);
+void set_irq_callback(u32 id, void *cb);
+void slot_reset(u32 value);
+void dma_cancel_request(void *src);
+void heap_free(void *p);
+void task_remove(void *task, u32 id);
+void set_flags_2_3(u32 value);
+void scene_release_objects(struct SceneState *state);
+extern const u8 gSceneTable08cdde80[];
+extern u16 gUnk_02000004;
+extern u8 gUnk_0300034C[];
+extern u8 *gUnk_03001014;
+extern u16 gUnk_02000000;
 
 ASM_FUNC("asm/code_08151144/obj_halt.s", void obj_halt(struct Obj *obj, u8 flag))
 
 ASM_FUNC("asm/code_08151144/edge_facing_ok.s", void edge_facing_ok(void))
 
-ASM_FUNC("asm/code_08151144/obj_random_cell.s", void obj_random_cell(struct Obj *obj, s32 zero))
+void obj_random_cell(struct Obj *obj, s32 zero)
+{
+    u8 kind;
+    u16 *tbl;
+    u8 *cell;
+    u16 start;
+    s32 idx;
+
+    kind = (u8)zero;
+    tbl = obj->tbl;
+    idx = sub_081DE850(4, mt19937_next());
+    cell = (u8 *)obj->cell294;
+    start = tbl[idx + 4];
+    cell[0x20] = start;
+    ((struct Lo3Bits *)&obj->flags214)->low3 = 1;
+    obj_set_cell_coord(obj, kind + gFrameAttrTable[((((u32)obj->unk216 << 28) >> 30) << 4) + (((u32)obj->unk24 << 29) >> 29) + 8], 0);
+}
 
 void zone_target_check(struct Obj *parent, struct Obj *obj, void **slot)
 {
@@ -115,7 +223,22 @@ void zone_target_check(struct Obj *parent, struct Obj *obj, void **slot)
     }
 }
 
-ASM_FUNC("asm/code_08151144/obj_reset_home.s", void obj_reset_home(void))
+void obj_reset_home(void *parent, struct Obj *obj)
+{
+    ((struct Bit4Bits *)&obj->flags33E)->bit4 = 0;
+    load_anim_tables_plain(obj);
+    obj_set_motion_a_08046AA4(obj, 2, 0, 0x10, 1);
+    obj_advance_axes(obj);
+    obj_clear_flags_2b5_30(obj);
+    obj_set_sprite_link(obj, 0);
+    obj->homeX = obj->x;
+    obj->homeY = obj->y;
+    obj->homeZ = obj->z;
+    obj->homeDZ = obj->field18.dz;
+    obj->entryIndex = ((u16 *)obj->record)[0x18 / 2];
+    obj->handlerA = (void *)run_state_handler;
+    obj->handlerB = (void *)zone_entry_handler;
+}
 
 void obj_deactivate(struct Obj *obj)
 {
@@ -123,7 +246,23 @@ void obj_deactivate(struct Obj *obj)
     obj_set_sprite_link(obj, 0);
 }
 
-ASM_FUNC("asm/code_08151144/obj_load_kind_record.s", void obj_load_kind_record(s32 unused, struct Obj *obj, void **slot))
+void obj_load_kind_record(s32 unused, struct Obj *obj, void **slot)
+{
+    s32 kind;
+
+    kind = obj->kind;
+    switch (kind)
+    {
+    case 0:
+        obj_load_record(obj->cell294, 6, -1, 0, kind);
+        break;
+    case 1:
+        obj_load_record(obj->cell294, 7, -1, 0, 0);
+        break;
+    }
+    ((struct Lo3Bits *)&obj->flags214)->low3 = 1;
+    slot[0] = follow_entry_axis;
+}
 
 ASM_FUNC("asm/code_08151144/obj_roll_spawn.s", void obj_roll_spawn(void))
 
@@ -165,7 +304,18 @@ void spawn_big_handler(s32 unused0, s32 unused1, void **slot)
 
 ASM_FUNC("asm/code_08151144/zone_pick_handler.s", void zone_pick_handler(void))
 
-ASM_FUNC("asm/code_08151144/obj_jump_step.s", void obj_jump_step(s32 unused, struct Obj *obj, void **slot))
+void obj_jump_step(s32 unused, struct Obj *obj, void **slot)
+{
+    obj->field18.dz -= obj->jumpCount;
+    if (obj->field18.dz <= 0)
+    {
+        obj->field18.dz = 0;
+        ((struct Bit3Bits *)&obj->flags20D)->bit3 = 0;
+        slot[0] = (void *)obj_air_step;
+    }
+    else
+        obj->jumpCount += 0x20;
+}
 
 void obj_apply_speed_xy(s32 unused, struct Obj *obj)
 {

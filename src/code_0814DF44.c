@@ -40,6 +40,22 @@ struct StateBits
     u8 high5 : 5;
 };
 
+struct Behavior
+{
+    u8 filler0[0x178];
+    u16 index178;
+    u8 filler17A[0x184 - 0x17A];
+    s32 homeX;
+    s32 homeY;
+};
+
+struct MirrorBits
+{
+    u8 low6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct SpriteFlagBits
 {
     u8 bit0 : 1;
@@ -56,7 +72,9 @@ struct CompanionObj
     s32 y;
     s32 z;
     s32 dz;
-    u8 filler1C[0x28 - 0x1C];
+    u8 filler1C[0x24 - 0x1C];
+    u8 facing;
+    u8 filler25[0x28 - 0x25];
     struct CompanionObj *entries[2];
     u8 filler30[0x100 - 0x30];
     s16 tbl[0x18];
@@ -79,14 +97,19 @@ struct CompanionObj
     u8 filler1D7[0x1DC - 0x1D7];
     s32 homeX;
     s32 homeY;
-    u8 filler1E4[0x20C - 0x1E4];
+    u8 filler1E4[0x208 - 0x1E4];
+    u8 flags208;
+    u8 filler209[0x20C - 0x209];
     u8 flags20C;
     u8 flags20D;
     u8 flags20E;
     u8 flags20F;
     u8 filler210[0x214 - 0x210];
     u8 state;
-    u8 filler215[0x272 - 0x215];
+    u8 filler215[0x242 - 0x215];
+    s16 vx;
+    s16 vy;
+    u8 filler246[0x272 - 0x246];
     u16 size272;
     u16 size274;
     u16 size276;
@@ -106,6 +129,13 @@ struct CompanionObj
 
 u32 mt19937_next(void);
 u32 sub_081DE850(u32 range, u32 rnd);
+u32 angle_of_vector16(s32 dx, s32 dy);
+void obj_set_cell_coord(struct CompanionObj *obj, u32 cell, u32 zero);
+void ai_set_facing_from_velocity(struct CompanionObj *owner, struct CompanionObj *obj);
+void ai_set_box_for_state(void *parent, struct CompanionObj *obj, u32 *slot);
+u32 obj_inside_area(struct CompanionObj *obj);
+void step_xy_or_handler(void *parent, struct CompanionObj *obj, u32 *slot);
+void start_move_to(struct CompanionObj *obj, s32 x, s32 y, s32 speed, u8 zero);
 u32 point_in_box(void *box, struct CompanionObj *obj, u32 limit, u32 zero);
 void obj_box_to_stack(void *box, struct CompanionObj *obj, u32 extent, u32 zero);
 u8 step_pos_xy_plain(struct CompanionObj *obj);
@@ -120,6 +150,11 @@ void face_entry(void);
 void random_cell_walk(void);
 void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u32 *slot);
 void ai_choose_move_target(void);
+void load_anim_tables(struct CompanionObj *obj);
+void init_size_and_pose(struct CompanionObj *obj);
+void companion_chase_tick(void);
+void tick_store(void);
+void obj_roll_spawn(void);
 void ai_hold_at_home(void);
 void run_e93c_then_handler(void *parent, struct CompanionObj *obj, u32 *slot);
 u32 cpu_set(void *src, void *dst, u32 control);
@@ -235,7 +270,64 @@ ASM_FUNC("asm/code_0814DF44/ai_choose_move_target.s", void ai_choose_move_target
 
 ASM_FUNC("asm/code_0814DF44/ai_move_or_return.s", void ai_move_or_return(void))
 
-ASM_FUNC("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(void))
+NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot))
+{
+    u16 *tbl;
+    u8 idx;
+    u8 *ip;
+    u32 pick;
+    struct CompanionObj *target;
+    s32 dx;
+    s32 dy;
+    u32 dir;
+    u8 f;
+    s32 mask;
+    u32 cell;
+    u32 ang;
+    u32 roll;
+    u32 angle;
+
+    ai_set_facing_from_velocity(owner, obj);
+    tbl = (u16 *)obj->tbl;
+    ip = &idx;
+    if (find_active_entry(owner, ip) == 0)
+        pick = ((u32)owner->flags208 << 30) >> 31;
+    else
+        pick = idx;
+    *ip = pick;
+    target = (struct CompanionObj *)((u32 *)owner)[idx + 10];
+    dx = target->x - obj->x;
+    dy = target->y - obj->y;
+    if ((dx | dy) != 0)
+    {
+        ang = angle_of_vector16(dx, dy);
+        dir = (((s32)((u16)ang + 0x1000)) >> 13) & 7;
+    }
+    else
+        dir = -1;
+    mask = -8;
+    dir &= 7;
+    f = (obj->facing & mask) | dir;
+    obj->facing = f;
+    cell = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)f << 29) >> 29, 2);
+    obj_set_cell_coord(obj, cell, 0);
+    obj->state = (obj->state & mask) | 1;
+    ((struct SpriteFlagBits *)&obj->sprite->flags)->mode = 1;
+    roll = sub_081DE850(4, mt19937_next());
+    obj->sprite->anim = tbl[roll + 20];
+    dx = target->x - obj->x;
+    dy = target->y - obj->y;
+    if ((dx | dy) != 0)
+    {
+        ang = angle_of_vector16(dx, dy);
+        angle = ((u32)(u16)ang + 0x10) >> 8;
+    }
+    else
+        angle = 0xFF;
+    obj->angle = angle;
+    *slot = (u32)ai_set_box_for_state;
+}
+END_NONMATCH
 
 void ai_set_box_for_state(void *parent, struct CompanionObj *obj, u32 *slot)
 {
@@ -306,7 +398,56 @@ void obj_load_anim_table(struct CompanionObj *obj)
     tbl[23] = p[0];
 }
 
-ASM_FUNC("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_from_velocity(void))
+NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_from_velocity(struct CompanionObj *owner, struct CompanionObj *obj))
+{
+    s16 *tbl;
+    u8 idx;
+    u8 *ip;
+    u32 pick;
+    struct CompanionObj *target;
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    u32 f;
+    u32 cell;
+    u32 ang;
+    u32 roll;
+    u32 angle;
+
+    tbl = obj->tbl;
+    ip = &idx;
+    if (find_active_entry(owner, ip) == 0)
+        pick = ((u32)owner->flags208 << 30) >> 31;
+    else
+        pick = idx;
+    *ip = pick;
+    target = (struct CompanionObj *)((u32 *)owner)[idx + 10];
+    ((struct StateBits *)&obj->state)->low3 = 1;
+    if (((u16)obj->vx | (u16)obj->vy) != 0)
+    {
+        ang = angle_of_vector16(obj->vx, obj->vy);
+        dir = (((s32)((u16)ang + 0x1000)) >> 13) & 7;
+    }
+    else
+        dir = -1;
+    f = ((u32)obj->facing & -8) | (dir & 7);
+    obj->facing = f;
+    cell = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)f << 29) >> 29, 2);
+    obj_set_cell_coord(obj, cell, 0);
+    roll = sub_081DE850(4, mt19937_next());
+    obj->sprite->anim = tbl[roll + 20];
+    dx = target->x - obj->x;
+    dy = target->y - obj->y;
+    if ((dx | dy) != 0)
+    {
+        ang = angle_of_vector16(dx, dy);
+        angle = ((u32)(u16)ang + 0x10) >> 8;
+    }
+    else
+        angle = 0xFF;
+    obj->angle = angle;
+}
+END_NONMATCH
 
 void ai_reload_sprite_mirrored(void *parent, struct CompanionObj *obj)
 {
@@ -321,8 +462,34 @@ void ai_reload_sprite_mirrored(void *parent, struct CompanionObj *obj)
     (*sprp)->anim = -(*sprp)->anim;
 }
 
-ASM_FUNC("asm/code_0814DF44/ai_set_anim_by_mode.s", void ai_set_anim_by_mode(void))
+void ai_set_anim_by_mode(struct CompanionObj *obj, u8 mode)
+{
+    u16 *tbl;
+    u32 roll;
 
+    tbl = (u16 *)obj->tbl;
+    obj_load_record(obj->sprite, 9, -1, 0, 0);
+    sprite_step_e6a0(obj->sprite);
+    ((struct StateBits *)&obj->state)->low3 = 4;
+    ((struct SpriteFlagBits *)&obj->sprite->flags)->mode = 0;
+    switch (mode)
+    {
+    case 0:
+        roll = sub_081DE850(4, mt19937_next());
+        obj->sprite->anim = tbl[roll + 8];
+        break;
+    case 1:
+        roll = sub_081DE850(2, mt19937_next());
+        obj->sprite->anim = tbl[roll + 12];
+        break;
+    case 2:
+        obj_load_record(obj->sprite, 9, -1, 0, 0);
+        sprite_step_e6a0(obj->sprite);
+        roll = sub_081DE850(2, mt19937_next());
+        obj->sprite->anim = tbl[roll + 18];
+        break;
+    }
+}
 void ai_wander_random(void *parent, struct CompanionObj *obj, u32 *slot)
 {
     if ((sub_081DE850(100, mt19937_next()) & 1) != 0)

@@ -28,6 +28,27 @@ struct PoseDirBits
     u8 unk0_7 : 1;
 };
 
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
+struct Flags77Bits
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct SlotEntry
+{
+    u8 filler0[0x2C];
+    u16 v2C;
+    u8 filler2E[0x3C - 0x2E];
+};
+
 struct DataLockBits
 {
     u8 unk0 : 2;
@@ -594,7 +615,25 @@ void reset_index_and_act2(struct Actor *obj)
     obj->state = release_then_move;
 }
 
-ASM_FUNC("asm/code_0808C6F0/move_to_owner_base_3000.s", void move_to_owner_base_3000(struct Actor *obj))
+void move_to_owner_base_3000(struct Actor *obj)
+{
+    struct Actor *owner;
+    u8 *fp;
+
+    owner = obj->owner;
+    obj->targetX = owner->baseX + 0x3000;
+    obj->targetY = owner->baseY;
+    obj->targetH = owner->baseH;
+    fp = &obj->flags79;
+    *fp |= 0x20;
+    obj->unk7C = 0x200;
+    obj->unk7A = 0;
+    start_motion(obj);
+    sprite_set_action(obj, 2, 0, 0);
+    set_slot_value(0x81, -1);
+    ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+    obj->state = begin_motion_wait_a;
+}
 
 void arm_timed_motion_art7_v3(struct Actor *obj)
 {
@@ -775,7 +814,26 @@ void wait_then_act4_b(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808C6F0/start_move_to_owner_b.s", void start_move_to_owner_b(struct Actor *obj))
+void start_move_to_owner_b(struct Actor *obj)
+{
+    struct Actor *owner;
+    u8 *fp;
+
+    owner = obj->owner;
+    obj->targetX = owner->baseX;
+    obj->targetY = owner->baseY;
+    obj->targetH = obj->baseH;
+    fp = &obj->flags79;
+    *fp |= 0x20;
+    obj->unk7C = 0x200;
+    obj->unk7A = 0;
+    start_motion(obj);
+    obj->timer = 0xA;
+    sprite_set_action(obj, 4, 0, 0);
+    ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+    set_slot_value(0xD5, -1);
+    obj->state = release_then_move;
+}
 
 void wait_then_act9(struct Actor *obj)
 {
@@ -829,7 +887,38 @@ ASM_FUNC("asm/code_0808C6F0/try_park_in_slot.s", s32 try_park_in_slot(struct Act
 
 ASM_FUNC("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume(struct Actor *obj))
 
-ASM_FUNC("asm/code_0808C6F0/setup_slot_by_flags.s", s32 setup_slot_by_flags(struct Actor *obj))
+
+
+NONMATCH("asm/code_0808C6F0/setup_slot_by_flags.s", s32 setup_slot_by_flags(struct Actor *obj))
+{
+    if ((gUnk_03000FD8[0xC] & 0x80) != 0)
+    {
+        if ((obj->data->unk11E & 0x400) != 0)
+            return charge_release_setup_slot_state(obj);
+        if ((obj->data->unk11E & 0x800) != 0)
+            return hold_decay_setup_slot_state(obj);
+        return random_jump_setup_slot_spawn(obj);
+    }
+    if ((obj->data->unk11E & 0x400) != 0)
+        return jump_orbit_setup_slot_spawn(obj);
+    if ((obj->data->unk11E & 0x800) != 0)
+        return list_slot_start(obj);
+    ((struct Flags77Bits *)&obj->flags77)->bit6 = 0;
+    ((struct Flags77Bits *)&obj->flags77)->bit5 = 0;
+    {
+        u32 *sv;
+        struct SlotEntry *tbl;
+
+        sv = &obj->data->slotValue;
+        tbl = (struct SlotEntry *)gUnk_03000FF4;
+        *sv = tbl[~obj->data->slot].v2C;
+    }
+    obj->state = dispatch_slot_spawn_ext;
+    obj->callback = end_action;
+    return 1;
+}
+END_NONMATCH
+
 
 s32 poll_action_end(struct Actor *obj)
 {
@@ -886,7 +975,44 @@ void orbit_slots_orbit_step_a(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808C6F0/orbit_slots_orbit_step_b.s", void orbit_slots_orbit_step_b(struct Actor *obj))
+void orbit_slots_orbit_step_b(struct Actor *obj)
+{
+    s32 step;
+    u32 q;
+
+    obj->state = orbit_slots_orbit_step_b;
+    if (poll_action_end(obj) != 0)
+        return;
+    step = (s16)obj->timer;
+    if (step < 0)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        q = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 8);
+        obj->pose->result = q;
+        ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
+        obj->state = end_action_if_done;
+        return;
+    }
+    if (step <= 3)
+    {
+        if (obj->pose->count != 0)
+            sprite_set_action(obj, 0, 0x2025, 0);
+    }
+    else if (step <= 7)
+    {
+        if (obj->pose->count > 1)
+            sprite_set_action(obj, 0, 0x2025, 1);
+    }
+    else if (step <= 11)
+    {
+        if (obj->pose->count > 2)
+            sprite_set_action(obj, 0, 0x2025, 2);
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->hold = 1;
+    obj->timer -= 2;
+}
+
 
 void hold_then_orbit(struct Actor *obj)
 {
@@ -988,4 +1114,40 @@ void orbit_slots_orbit_step_c(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808C6F0/orbit_slots_orbit_step_d.s", void orbit_slots_orbit_step_d(struct Actor *obj))
+void orbit_slots_orbit_step_d(struct Actor *obj)
+{
+    s32 step;
+    u32 q;
+
+    obj->state = orbit_slots_orbit_step_d;
+    if (poll_action_end(obj) != 0)
+        return;
+    step = (s16)obj->timer;
+    if (step < 0)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+        q = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 0xC);
+        obj->pose->result = q;
+        ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
+        obj->state = end_action_if_done;
+        return;
+    }
+    if (step <= 8)
+    {
+        if (obj->pose->count != 0)
+            sprite_set_action(obj, 0, 0x2054, 0);
+    }
+    else if (step <= 17)
+    {
+        if (obj->pose->count > 1)
+            sprite_set_action(obj, 0, 0x2054, 1);
+    }
+    else if (step <= 26)
+    {
+        if (obj->pose->count > 2)
+            sprite_set_action(obj, 0, 0x2054, 2);
+    }
+    ((struct PoseFlagBits *)&obj->pose->flags)->hold = 1;
+    obj->timer -= 3;
+}
