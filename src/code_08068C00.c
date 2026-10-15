@@ -437,5 +437,3 @@ void actor_setup_part_wait(struct ActorObj *obj)
         obj->state = 0;
     }
 }
-
-ASM_FUNC("asm/code_08068C00/actor_begin_action_c_or_f.s", void actor_begin_action_c_or_f(struct ActorObj *obj))
