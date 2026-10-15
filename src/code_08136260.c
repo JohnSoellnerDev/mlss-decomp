@@ -18,13 +18,16 @@ struct Mat4
 
 struct TaskObj
 {
-    u8 filler0[0x18];
+    u8 filler0[0x14];
+    void *owner14;
     const void *cb18;
 };
 
+struct T3dF;
+
 struct T3dNode
 {
-    u8 filler0[4];
+    struct T3dNode *prev0;
     struct T3dNode *child4;
     struct T3dNode *child8;
 };
@@ -48,10 +51,59 @@ struct T3dC
     struct Mat4 unk58;
 };
 
+struct Fade
+{
+    u8 filler0[0x18];
+    const void *cb18;
+    u8 unk1C;
+    u8 filler1D[7];
+    struct TaskObj *unk24;
+    u8 unk28;
+    u8 filler29;
+    u16 unk2A;
+    u16 unk2C;
+    u16 unk2E;
+};
+
+struct T3dF
+{
+    s32 unk0;
+    s32 unk4;
+    s32 count8;
+    struct T3dNode *root;
+    u8 filler10[0x10];
+    struct Vec3 unk20;
+    struct Vec3 unk34;
+    struct Mat4 unk48;
+    struct Mat4 unk8C;
+    s32 unkD0;
+    void *unkD4;
+    s32 unkD8;
+    void *unkDC;
+};
+
+struct T3dModel
+{
+    struct T3dC *unk0;
+    struct T3dL *unk4;
+    s32 unk8;
+    struct T3dNode *unkC;
+    struct Mat4 unk10;
+};
+
+extern u16 gUnk_02000050[];
+extern u16 gUnk_02000054;
+extern u16 gUnk_0300034C[];
+void fade_end(struct Fade *obj);
 extern const u8 gAppearCallback10Class[];
 extern const u8 gAppearCallback40Class[];
 extern const u8 gFadeClass[];
 extern const u8 gTaskRemoveClass[];
+extern const u8 gHeapTagHdrw[];
+extern const u8 gHeapTagHasd[];
+extern const u8 gHeapTagT3dc[];
+extern const u8 gHeapTagT3dl[];
+extern const u8 gHeapTagT3df[];
 
 void heap_free_a(void *p);
 void heap_free_b(void *p);
@@ -66,28 +118,191 @@ void sub_08136D48(struct Mat4 *m);
 void sub_08137278(struct Vec3 *v);
 void vec3_copy(struct Vec3 *dst, struct Vec3 *src);
 void tree_walk_children(struct T3dNode *node);
+void t3d_node_free(struct T3dNode *node, u32 flags);
+struct T3dF *t3d_f_init(struct T3dF *f);
+void t3d_node_update(struct T3dNode *node, struct Mat4 *m);
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 
 ASM_FUNC("asm/code_08136260/mat4_apply_translate.s", void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z))
 
-ASM_FUNC("asm/code_08136260/t3d_f_init.s", void t3d_f_init(void))
+struct T3dF *t3d_f_init(struct T3dF *f)
+{
+    struct Vec3 *v = (struct Vec3 *)&f->root;
+    struct Vec3 *v2;
+    struct Vec3 *v3;
+    struct Mat4 *m;
 
-ASM_FUNC("asm/code_08136260/t3d_node_free.s", void t3d_node_free(void))
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v2 = &f->unk20;
+    v2->cb10 = gAppearCallback10Class;
+    sub_08137278(v2);
+    v3 = &f->unk34;
+    v3->cb10 = gAppearCallback10Class;
+    sub_08137278(v3);
+    m = &f->unk48;
+    m->cb40 = gAppearCallback40Class;
+    sub_08136D48(m);
+    m = &f->unk8C;
+    m->cb40 = gAppearCallback40Class;
+    sub_08136D48(m);
+    f->unk0 = 0;
+    f->unk4 = 0;
+    f->count8 = 0;
+    f->root = 0;
+    v->y = 0;
+    v->z = 0;
+    v2->x = 0;
+    v2->y = 0;
+    v2->z = 0;
+    v3->x = 0;
+    v3->y = 0;
+    v3->z = 0;
+    f->unkD4 = 0;
+    f->unkDC = 0;
+    f->unkD0 = 0;
+    f->unkD8 = 0;
+    return f;
+}
 
+ASM_FUNC("asm/code_08136260/t3d_node_free.s", void t3d_node_free(struct T3dNode *node, u32 flags))
 ASM_FUNC("asm/code_08136260/t3d_load_nodes.s", void t3d_load_nodes(void))
 
-ASM_FUNC("asm/code_08136260/t3d_node_update.s", void t3d_node_update(void))
+ASM_FUNC("asm/code_08136260/t3d_node_update.s", void t3d_node_update(struct T3dNode *node, struct Mat4 *m))
 
-ASM_FUNC("asm/code_08136260/t3d_model_new.s", void t3d_model_new(void))
-
-ASM_FUNC("asm/code_08136260/t3d_model_free.s", void t3d_model_free(void))
-
-ASM_FUNC("asm/code_08136260/t3d_model_update.s", void t3d_model_update(void))
-
-struct T3dF
+struct T3dModel *t3d_model_new(struct T3dModel *m)
 {
-    u8 filler0[0xC];
-    struct T3dNode *root;
-};
+    struct Mat4 *mm = &m->unk10;
+    struct T3dC *c;
+    struct T3dL *l;
+    struct Vec3 *v;
+    struct Mat4 *cm;
+    struct Mat4 *lm;
+
+    mm->cb40 = gAppearCallback40Class;
+    sub_08136D48(mm);
+    c = heap_alloc2(0x9C, 1, gHeapTagT3dc, 0);
+    v = &c->unk8;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v = &c->unk1C;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v = &c->unk30;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v = &c->unk44;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    cm = &c->unk58;
+    cm->cb40 = gAppearCallback40Class;
+    sub_08136D48(cm);
+    m->unk0 = c;
+    l = heap_alloc2(0x84, 1, gHeapTagT3dl, 0);
+    v = &l->unk4;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v = &l->unk18;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    v = &l->unk2C;
+    v->cb10 = gAppearCallback10Class;
+    sub_08137278(v);
+    lm = &l->unk40;
+    lm->cb40 = gAppearCallback40Class;
+    sub_08136D48(lm);
+    m->unk4 = l;
+    m->unk8 = 0;
+    m->unkC = (struct T3dNode *)t3d_f_init(heap_alloc2(0xE0, 1, gHeapTagT3df, 0));
+    return m;
+}
+void t3d_model_free(struct T3dModel *m, u32 flags)
+{
+    struct T3dC *c = m->unk0;
+    struct T3dL *l;
+
+    if (c != 0)
+    {
+        struct Mat4 *cm = &c->unk58;
+
+        cm->cb40 = gAppearCallback40Class;
+        c->unk44.cb10 = gAppearCallback10Class;
+        c->unk30.cb10 = gAppearCallback10Class;
+        c->unk1C.cb10 = gAppearCallback10Class;
+        c->unk8.cb10 = gAppearCallback10Class;
+        heap_free_b(c);
+        m->unk0 = 0;
+    }
+    l = m->unk4;
+    if (l != 0)
+    {
+        struct Mat4 *lm = &l->unk40;
+
+        lm->cb40 = gAppearCallback40Class;
+        l->unk2C.cb10 = gAppearCallback10Class;
+        l->unk18.cb10 = gAppearCallback10Class;
+        l->unk4.cb10 = gAppearCallback10Class;
+        heap_free_b(l);
+        m->unk4 = 0;
+    }
+    if (m->unkC != 0)
+    {
+        t3d_node_free(m->unkC, 3);
+        m->unk8 = 0;
+        m->unkC = 0;
+    }
+    m->unk10.cb40 = gAppearCallback40Class;
+    if (flags & 1)
+        heap_free_b(m);
+}
+
+void t3d_model_update(struct T3dModel *m)
+{
+    struct Mat4 tmp;
+    struct Mat4 *cm;
+
+    tmp.cb40 = gAppearCallback40Class;
+    sub_08136D48(&tmp);
+    tmp.m[0] = 0x100;
+    tmp.m[1] = 0;
+    tmp.m[2] = 0;
+    tmp.m[3] = 0;
+    tmp.m[4] = 0;
+    tmp.m[5] = 0x100;
+    tmp.m[6] = 0;
+    tmp.m[7] = 0;
+    tmp.m[8] = 0;
+    tmp.m[9] = 0;
+    tmp.m[10] = 0x100;
+    tmp.m[11] = 0;
+    tmp.m[12] = 0;
+    tmp.m[13] = 0;
+    tmp.m[14] = 0;
+    tmp.m[15] = 0x100;
+    if (m->unk0 != 0)
+    {
+        cm = &m->unk0->unk58;
+        tmp.m[0] = cm->m[0];
+        tmp.m[1] = cm->m[1];
+        tmp.m[2] = cm->m[2];
+        tmp.m[3] = cm->m[3];
+        tmp.m[4] = cm->m[4];
+        tmp.m[5] = cm->m[5];
+        tmp.m[6] = cm->m[6];
+        tmp.m[7] = cm->m[7];
+        tmp.m[8] = cm->m[8];
+        tmp.m[9] = cm->m[9];
+        tmp.m[10] = cm->m[10];
+        tmp.m[11] = cm->m[11];
+        tmp.m[12] = cm->m[12];
+        tmp.m[13] = cm->m[13];
+        tmp.m[14] = cm->m[14];
+        tmp.m[15] = cm->m[15];
+    }
+    if (m->unkC != 0)
+        t3d_node_update(m->unkC, &tmp);
+    tmp.cb40 = gAppearCallback40Class;
+}
 
 void t3d_f_walk(struct T3dF *f)
 {
@@ -102,7 +317,38 @@ void t3d_f_walk(struct T3dF *f)
     }
 }
 
-ASM_FUNC("asm/code_08136260/sub_08136BF4.s", void sub_08136BF4(void))
+void sub_08136BF4(struct T3dF *f, struct T3dNode *node)
+{
+    struct T3dNode *head = f->root;
+
+    if (head == 0)
+    {
+        f->root = node;
+        node->prev0 = head;
+    }
+    else
+    {
+        struct T3dNode *cur = head->child8;
+
+        if (cur == 0)
+        {
+            head->child8 = node;
+            f->root->child8->prev0 = f->root;
+        }
+        else
+        {
+            if (cur->child4 != 0)
+            {
+                do
+                    cur = cur->child4;
+                while (cur->child4 != 0);
+            }
+            cur->child4 = node;
+            node->prev0 = cur->prev0;
+        }
+    }
+    f->count8++;
+}
 
 void sub_08136C38(void)
 {
@@ -314,20 +560,77 @@ struct Mat4 *mat4_new_identity(struct Mat4 *m)
     return m;
 }
 
-ASM_FUNC("asm/code_08136260/vec3_xform_to.s", void vec3_xform_to(void))
+struct Vec3 *vec3_xform_to(struct Vec3 *dst, struct Vec3 *v, struct Mat4 *m)
+{
+    struct Vec3 tmp;
 
-ASM_FUNC("asm/code_08136260/vec3_xform_inplace.s", void vec3_xform_inplace(void))
+    tmp.cb10 = gAppearCallback10Class;
+    sub_08137278(&tmp);
+    tmp.x = v->x * m->m[0] + v->y * m->m[4] + v->z * m->m[8] + m->m[12];
+    tmp.y = v->x * m->m[1] + v->y * m->m[5] + v->z * m->m[9] + m->m[13];
+    tmp.z = v->x * m->m[2] + v->y * m->m[6] + v->z * m->m[10] + m->m[14];
+    dst->cb10 = gAppearCallback10Class;
+    vec3_copy(dst, &tmp);
+    tmp.cb10 = gAppearCallback10Class;
+    return dst;
+}
 
-ASM_FUNC("asm/code_08136260/vec3_normalize_q24.s", void vec3_normalize_q24(void))
+struct Vec3 *vec3_xform_inplace(struct Vec3 *v, struct Mat4 *m)
+{
+    struct Vec3 tmp;
+
+    vec3_xform_to(&tmp, v, m);
+    v->x = tmp.x;
+    v->y = tmp.y;
+    v->z = tmp.z;
+    tmp.cb10 = gAppearCallback10Class;
+    return v;
+}
+
+void vec3_normalize_q24(struct Vec3 *v)
+{
+    s32 inv = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x10000, MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(v->x * v->x + v->y * v->y + v->z * v->z));
+
+    v->x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->x * inv, 0x100);
+    v->y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->y * inv, 0x100);
+    v->z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->z * inv, 0x100);
+}
 
 s32 vec3_length(struct Vec3 *v)
 {
     return MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(v->x * v->x + v->y * v->y + v->z * v->z);
 }
 
-ASM_FUNC("asm/code_08136260/vec3_cross_self.s", void vec3_cross_self(void))
+void mem_copy_fast(void *dst, void *src, u32 len);
 
-ASM_FUNC("asm/code_08136260/vec3_cross_2.s", void vec3_cross_2(void))
+static inline struct Vec3 *vec3_cross_store(struct Vec3 *dst, struct Vec3 *a, struct Vec3 *b)
+{
+    struct Vec3 tmp;
+    s32 x = a->y * b->z - a->z * b->y;
+    s32 y = a->z * b->x - a->x * b->z;
+    s32 z = a->x * b->y - a->y * b->x;
+
+    tmp.cb10 = gAppearCallback10Class;
+    tmp.x = x;
+    tmp.y = y;
+    tmp.z = z;
+    mem_copy_fast(&tmp, &tmp, sizeof(tmp));
+    dst->x = tmp.x;
+    dst->y = tmp.y;
+    dst->z = tmp.z;
+    tmp.cb10 = gAppearCallback10Class;
+    return dst;
+}
+
+struct Vec3 *vec3_cross_self(struct Vec3 *a, struct Vec3 *b)
+{
+    return vec3_cross_store(a, a, b);
+}
+
+struct Vec3 *vec3_cross_2(struct Vec3 *dst, struct Vec3 *a, struct Vec3 *b)
+{
+    return vec3_cross_store(dst, a, b);
+}
 
 s32 vec3_dot(struct Vec3 *a, struct Vec3 *b)
 {
@@ -341,7 +644,13 @@ void sub_08137278(struct Vec3 *v)
     v->z = 0;
 }
 
-ASM_FUNC("asm/code_08136260/sub_08137284.s", void sub_08137284(void))
+struct Vec3 *sub_08137284(struct Vec3 *v, s32 s)
+{
+    v->x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->x * s, 0x100);
+    v->y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->y * s, 0x100);
+    v->z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->z * s, 0x100);
+    return v;
+}
 
 struct Vec3 *vec3_scale(struct Vec3 *dst, struct Vec3 *src, s32 s)
 {
@@ -356,9 +665,23 @@ struct Vec3 *vec3_scale(struct Vec3 *dst, struct Vec3 *src, s32 s)
     return dst;
 }
 
-ASM_FUNC("asm/code_08136260/vec3_cross_self_2.s", void vec3_cross_self_2(void))
+struct Vec3 *vec3_cross_self_2(struct Vec3 *a, struct Vec3 *b)
+{
+    return vec3_cross_store(a, a, b);
+}
 
-ASM_FUNC("asm/code_08136260/vec3_cross.s", void vec3_cross(void))
+struct Vec3 *vec3_cross(struct Vec3 *dst, struct Vec3 *a, struct Vec3 *b)
+{
+    s32 x = a->y * b->z - a->z * b->y;
+    s32 y = a->z * b->x - a->x * b->z;
+    s32 z = a->x * b->y - a->y * b->x;
+
+    dst->cb10 = gAppearCallback10Class;
+    dst->x = x;
+    dst->y = y;
+    dst->z = z;
+    return dst;
+}
 
 struct Vec3 *vec3_neg_to(struct Vec3 *dst, struct Vec3 *src)
 {
@@ -462,14 +785,14 @@ void obj_callback_18_task_remove(struct TaskObj *obj, u32 task)
     task_remove(obj, task);
 }
 
-struct TaskObj *obj_callback_18_task_insert(struct TaskObj *obj, u8 kind)
+struct TaskObj *obj_callback_18_task_insert(struct TaskObj *obj, u8 kind, const void *tag)
 {
     task_insert(obj, kind);
     obj->cb18 = gTaskRemoveClass;
     return obj;
 }
 
-ASM_FUNC("asm/code_08136260/fade_end.s", void fade_end(void))
+ASM_FUNC("asm/code_08136260/fade_end.s", void fade_end(struct Fade *obj))
 
 void obj_callback_18_remove_de60(struct TaskObj *obj, u32 task)
 {
