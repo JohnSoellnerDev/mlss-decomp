@@ -380,7 +380,63 @@ void hero_a_child_wait_active(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080D0374/hero_pair_place_both_finish_a_idle.s", void hero_pair_place_both_finish_a_idle(struct HeroBody *body))
+void hero_pair_place_both_finish_a_idle(struct HeroBody *body)
+{
+    struct Hero *hero_b;
+    struct HeroBody *body_a;
+    struct HeroBody *body_b;
+    struct HeroData *data;
+    s16 *span;
+
+    body_a = &gUnk_03000FD8->heroA->body;
+    hero_b = gUnk_03000FD8->heroB;
+    body_b = &hero_b->body;
+    if ((body_a->sprite->flags & 8) == 0)
+        return;
+    if (body_a->child != 0)
+        return;
+    set_slot_value(0x53, -1);
+    if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+    {
+        data = body_b->data;
+        place_targets(body_b, data->targetX / 0x100, data->targetY / 0x100, data->targetH / 0x100, -1);
+        set_motion_start(body_b, 0x400);
+    }
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        if (body_b->data->poseIndex == -1)
+            sprite_set_action(body_b, 0, 0x2002, 0);
+        else
+            sprite_set_action(body_b, 0, 0x204F, 0);
+        ((struct HeroMirrorBits *)&body_b->sprite->mirror)->flip = (span = &body_b->spanA)[0] >= span[1];
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+    }
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        body_b->state = 0;
+        enter_finish_rebuild(body_b);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        data = body_a->data;
+        place_targets(body_a, data->targetX / 0x100, data->targetY / 0x100, data->targetH / 0x100, -1);
+        set_motion_start(body_a, 0x400);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        if (body_a->data->poseIndex == -1)
+            sprite_set_action(body_a, 0, 0x2002, 0);
+        else
+            sprite_set_action(body_a, 0, 0x204F, 0);
+        ((struct HeroMirrorBits *)&body_a->sprite->mirror)->flip = (span = &body_a->spanA)[0] >= span[1];
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        body_a->state = 0;
+        enter_finish_rebuild(body_a);
+    }
+}
 
 void hero_a_child_link_partner_fx(struct HeroBody *body);
 
