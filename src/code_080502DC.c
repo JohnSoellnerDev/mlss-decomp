@@ -425,7 +425,16 @@ void obj_update_child(struct ChildObj *obj)
     }
 }
 
-NONMATCH("asm/code_080502DC/obj_teardown.s", void obj_teardown(u8 *obj, u32 flags))
+static inline void obj_base_teardown(u8 *obj, u32 flags)
+{
+    ((struct ChildObj *)obj)->vtable = (struct ObjVtable *)gObjBaseClass;
+    if (flags & 1)
+    {
+        heap_free_b(obj);
+    }
+}
+
+void obj_teardown(u8 *obj, u32 flags)
 {
     struct ChildObj *child;
     struct ObjVtable *vt;
@@ -437,13 +446,8 @@ NONMATCH("asm/code_080502DC/obj_teardown.s", void obj_teardown(u8 *obj, u32 flag
         vt = child->vtable;
         vt->slot8.fn((u8 *)child + vt->slot8.offset, 3);
     }
-    ((struct ChildObj *)obj)->vtable = (struct ObjVtable *)gObjBaseClass;
-    if (flags & 1)
-    {
-        heap_free_b(obj);
-    }
+    obj_base_teardown(obj, flags);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080502DC/obj_init_state.s", void obj_init_state(void))
 
