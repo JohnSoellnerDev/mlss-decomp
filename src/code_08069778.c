@@ -44,6 +44,22 @@ struct ActorFlags79Bits
     u8 high : 2;
 };
 
+struct PoseBits6
+{
+    u8 low : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+} __attribute__((packed));
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct ActorObj
 {
     u8 filler0[0x08];
@@ -435,7 +451,41 @@ void actor_wait_ready_show_sprite(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08069778/actor_spawn_child_4072.s", void actor_spawn_child_4072(struct ActorObj *obj))
+void actor_spawn_child_4072(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        if (obj->param9C == 1)
+        {
+            sprite_set_action(obj, 4, 0x2000, 0);
+        }
+        else
+        {
+            sprite_set_action(obj, 4, 0x204D, 0);
+        }
+        child = obj_spawn(obj->part, 0x4072, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100,
+                          ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = child;
+        ((struct ActorFlags79Bits *)&child->flags79)->bit0 = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = 0;
+        child->callback = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        child->byte74 = obj->byte74;
+        ((struct ActorFlags79Bits *)&child->flags79)->bit3 = 0;
+        obj_list_push_default(child);
+        child->handler58 = 0;
+        child->handler60 = (void (*)(struct ActorObj *))obj_find_slot;
+        child->state = 0;
+        child->param9C = 0;
+        obj->targetX = 3;
+        obj->targetY = obj->param9C;
+        obj->state = actor_aim_and_count;
+    }
+}
 
 void actor_aim_and_count(struct ActorObj *obj)
 {

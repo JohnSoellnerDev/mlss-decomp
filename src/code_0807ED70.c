@@ -112,6 +112,9 @@ void partner_link_update(void);
 void lookup_part(void);
 void lookup_link_slot(void);
 void sprite_set_action(void *obj, u32 a, u32 b, u32 c);
+void place_targets(struct SpriteObj *obj, s32 col, s32 row, s32 z, s32 extra);
+void set_step_and_offsets(struct SpriteObj *obj, s32 a, s32 b);
+void obj_start_anim(struct SpriteObj *obj);
 s32 number_right_edge(u32 tiles);
 void oam_write_tiles(u32 tiles, s32 x, s32 y, u32 prio, u32 right);
 void setup_obj_10bc(void *obj, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
@@ -273,7 +276,14 @@ void obj_list_push_default(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807ED70/obj_start_pose.s", void obj_start_pose(void))
+void obj_start_pose(struct SpriteObj *obj)
+{
+    sprite_set_action(obj, 0xB, *(s16 *)((u8 *)obj->ring + 0xEC) == -1 ? 0x2039 : 0x2068, 0);
+    ((struct Bits12 *)&obj->record->flags12)->mid2 = 1;
+    place_targets(obj, obj->posX / 0x100 - 0x18, obj->posY / 0x100 + 6, 0, 0x100);
+    set_step_and_offsets(obj, 0x400, 0x10);
+    obj->stateFn = (void *)obj_start_anim;
+}
 
 void obj_update_pose(struct Task *task)
 {

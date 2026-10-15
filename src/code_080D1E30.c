@@ -150,13 +150,55 @@ void enter_finish_rebuild(struct Body *body);
 void set_motion_start(struct Body *body, u32 speed);
 void set_motion_speed_aux(struct Body *obj, u32 value, s32 aux);
 s32 find_frame_entry(struct Body *obj, s32 index);
+void hero_a_place_at_child_target(void);
+void hero_a_step_window_20e8(void);
 void body_link_partner_fx_slot55(struct Body *body);
 void body_link_partner_fx_slot9d(struct Body *body);
 void body_finish_object(struct Body *body);
 void hero_a_step_window_20e8(void);
 s32 resolve_contact_action(struct Body *a, struct Body *b, u32 c, u32 d, u32 e);
 
-ASM_FUNC("asm/code_080D1E30/hero_a_place_at_b_target.s", void hero_a_place_at_b_target(void))
+void hero_a_place_at_b_target(struct Body *body)
+{
+    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct Body *body_a = &heroA->body;
+    struct Body *body_b = &gUnk_03000FD8->heroB->body;
+    s32 arc;
+
+    set_slot_value(0x2B, -1);
+    if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
+    {
+        if (body_a->data->pose == -1)
+        {
+            sprite_set_action(body_a, 5, 0x2000, 0);
+        }
+        else
+        {
+            sprite_set_action(body_a, 5, 0x204D, 0);
+        }
+        ((struct SpriteModeByte *)&body_a->sprite->flags)->mode = 1;
+    }
+    ((struct SpriteMirrorByte *)&body_a->sprite->unk11)->mirror = 1;
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        place_targets(body_a, body_b->targetX / 0x100 + body_b->ofsX, body_b->targetY / 0x100 + body_b->ofsY,
+                      body_b->targetZ / 0x100 + body_b->ofsZ - 0x14, -1);
+        if (body_b == (struct Body *)((u8 *)body_b->data + 8))
+        {
+            arc = body_b->ofsZ;
+        }
+        else
+        {
+            find_frame_entry(body_b, 0);
+            arc = body_b->unk47;
+        }
+        arc += body_b->targetZ / 0x100;
+        arc += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(4, arc * arc / 0x40 + 2);
+        body_a->arc = arc;
+        set_motion_offsets(body_a, 0x500);
+    }
+    body->state = (u32)hero_a_place_at_child_target;
+}
 
 ASM_FUNC("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_at_child_target(void))
 

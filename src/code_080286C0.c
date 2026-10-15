@@ -72,18 +72,30 @@ struct SceneObj
     u8 flags20B;
     u8 filler20C[0x246 - 0x20C];
     u8 mode246;
-    u8 filler247[0x27E - 0x247];
+    u8 filler247[0x27A - 0x247];
+    u16 unk27A;
+    u16 unk27C;
     s16 camX;
     s16 camY;
-    u8 filler282[0x2AC - 0x282];
+    u8 filler282[0x286 - 0x282];
+    u16 unk286;
+    u16 unk288;
+    u8 filler28A[0x2AC - 0x28A];
     u16 saved2AC;
     u8 filler2AE[0x2B4 - 0x2AE];
     u16 half2B4;
-    u8 filler2B6[0x2F8 - 0x2B6];
+    u8 filler2B6[0x2EC - 0x2B6];
+    u16 unk2EC;
+    u16 unk2EE;
+    u8 filler2F0[0x2F2 - 0x2F0];
+    u16 unk2F2;
+    u16 unk2F4;
+    u8 filler2F6[0x2F8 - 0x2F6];
     u16 unk2F8;
     u16 unk2FA;
     u16 unk2FC;
-    u8 filler2FE[0x304 - 0x2FE];
+    u8 unk2FE;
+    u8 filler2FF[0x304 - 0x2FF];
     void *resource;
     u8 filler308[0x314 - 0x308];
     void *child;
@@ -220,13 +232,59 @@ u32 lookup_or_alloc_13b4(u32 a, u16 id, s32 b, u32 c);
 void unlink_d54(void *e);
 void heap_free_b(void *p);
 void sub_0811733C(void *child, u32 value);
+u32 arc_tan2(s32 x, s32 y);
 void create_menu_object(s32 a, u32 b);
 
 ASM_FUNC("asm/code_080286C0/camera_update.s", void camera_update(void))
 
 ASM_FUNC("asm/code_080286C0/apply_anim_state.s", void apply_anim_state(void))
 
-ASM_FUNC("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set_move_target(void))
+NONMATCH("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx, s32 ty, u32 speed))
+{
+    u16 spd = speed;
+
+    if (rel == 1)
+    {
+        tx += (s16)obj->unk27A;
+        ty += (s16)obj->unk27C;
+    }
+    if (tx < 0)
+    {
+        tx = 0;
+    }
+    else if (tx > obj->unk286 - 0xF0)
+    {
+        tx = obj->unk286 - 0xF0;
+    }
+    if (ty < 0)
+    {
+        ty = 0;
+    }
+    else if (ty > obj->unk288 - 0xA0)
+    {
+        ty = obj->unk288 - 0xA0;
+    }
+    obj->unk2EC = obj->unk27A;
+    obj->unk2EE = obj->unk27C;
+    obj->unk2F2 = tx;
+    obj->unk2F4 = ty;
+    if (mode == 1)
+    {
+        s32 dx = (s16)obj->unk2F2 - (s16)obj->unk2EC;
+        s32 dy = (s16)obj->unk2F4 - (s16)obj->unk2EE;
+        s32 dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
+
+        obj->unk2FC = (u16)(((dist << 8) / (s16)spd) + 1);
+    }
+    else
+    {
+        obj->unk2FC = spd;
+    }
+    obj->unk2FA = 0;
+    obj->unk2FE = arc_tan2((s16)(obj->unk2EE - obj->unk2F4), (s16)(obj->unk2F2 - obj->unk2EC)) >> 8;
+    ((struct PendingBits *)&obj->pending)->low2 = mode;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080286C0/sprites_obj_step_move.s", void sprites_obj_step_move(void))
 

@@ -68,7 +68,9 @@ struct StreamObj
 
 struct World
 {
-    u8 filler0[0xD];
+    u8 filler0[0xB];
+    u8 flags0B;
+    u8 filler0C;
     u8 flags;
     u8 filler0E[0x24C - 0xE];
     u32 item24C;
@@ -120,7 +122,45 @@ void dma_win0_from_buffer(void);
 
 ASM_FUNC("asm/code_080E0814/unknown_thumb_080e0814.s", void unknown_thumb_080e0814(void))
 
-ASM_FUNC("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(void))
+struct WorldBit5
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
+NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 mode))
+{
+    u16 m = mode;
+    struct World *world = gUnk_03000FD8;
+    u32 saved = world->saved260;
+    u8 *base;
+
+    if (saved == 0)
+    {
+        world->tile26C = gUnk_02000050;
+        world->tile26E = gUnk_0200004A;
+        base = gUnk_0300034C;
+        world->saved260 = *(u32 *)(base + 0x8C4);
+        gUnk_02000050 = 0x3744;
+        gUnk_0200004A = 0x3F3B;
+        gUnk_02000040 = saved;
+        set_irq_callback(2, reset_display_step);
+        ((void (*)(u32, u8 *, u32))gMemRoutines)(0, gWorkBuf + 0x3EF0, 4);
+        *(u32 *)0x06007FFC = 0xEEEEEEEE;
+        *(u32 *)0x06007FF8 = 0xEEEEEEEE;
+        *(u32 *)0x06007FF4 = 0xEEEEEEEE;
+        *(u32 *)0x06007FF0 = 0xEEEEEEEE;
+        *(u32 *)0x06007FEC = 0xEEEEEEEE;
+        *(u32 *)0x06007FE8 = 0xEEEEEEEE;
+        *(u32 *)0x06007FE4 = 0xEEEEEEEE;
+        *(u32 *)0x06007FE0 = 0xEEEEEEEE;
+        gUnk_0200025C = m;
+        *(u16 *)(base + 2) |= 0x4000;
+        ((struct WorldBit5 *)&gUnk_03000FD8->flags0B)->bit5 = 0;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E0814/leave_special_mode.s", void leave_special_mode(void))
 

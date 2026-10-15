@@ -213,7 +213,44 @@ u32 obj_lookup_slot(struct ActorObj *obj, u32 a, u32 b);
 u32 obj_lookup_part(struct ActorObj *obj, u32 a, u32 b);
 void obj_handoff_b(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_080D8884/hero_b_partner_place_height.s", void hero_b_partner_place_height(void))
+void hero_b_partner_place_height(struct ActorObj *obj)
+{
+    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *partner = obj->owner;
+    u32 mode;
+
+    state_stack_advance_progress(body);
+    if (partner->partner != 0 && (partner->baseH << 6) < body->offsetC5 * body->progress)
+    {
+        if ((partner->mode & 6) == 2 || (partner->mode & 6) == 4)
+        {
+            partner->state = hero_b_link_a;
+        }
+    }
+    if (body->flags79 & 0x20)
+    {
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+        {
+            place_targets(body, partner->baseX / 0x100 + partner->offsetC3 - 0x18,
+                          partner->baseY / 0x100 + partner->offsetC4, 0, -1);
+            body->unk92 = 0x20;
+            set_motion_offsets(body, 0x600);
+        }
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+        {
+            sprite_set_action(body, 0x13, 0x2066, 0);
+            ((struct PoseBits *)&body->pose->flags12)->mode = 1;
+        }
+        if (body->child != 0)
+        {
+            sprite_set_action(body->child, 0x13, 0x2095, 0);
+            ((struct PoseBits *)&body->child->pose->flags12)->mode = 0;
+        }
+        obj->state = hero_b_follow_child_pos_then_next;
+    }
+}
 
 void hero_b_follow_child_pos_then_next(struct ActorObj *obj)
 {
@@ -583,7 +620,24 @@ void hero_b_copy_pos(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/hero_b_end_a.s", void hero_b_end_a(void))
+void hero_b_end_a(struct ActorObj *obj)
+{
+    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    u32 mode;
+
+    step_motion(body);
+    if (body->flags79 & 0x20)
+    {
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+        {
+            sprite_set_action(body, 0, -1, 0);
+            ((struct Unk11Bits *)&body->pose->unk11)->b6 = 0;
+            ((struct PoseBits *)&body->pose->flags12)->mode = 0;
+        }
+        obj->state = hero_b_step16_when_a_free;
+    }
+}
 
 void obj_move_clamp_a(struct ActorObj *obj)
 {

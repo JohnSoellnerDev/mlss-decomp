@@ -175,6 +175,7 @@ void hero_a_place_pose_finish_3(struct HeroBody *body);
 void hero_a_join_partner_next(struct HeroBody *body);
 void hero_a_height_decay_next(struct HeroBody *body);
 void hero_a_random_jitter_rate_next(struct HeroBody *body);
+void hero_b_step_place_pose_finish(struct HeroBody *body);
 void hero_wait_then_hand_over(struct HeroBody *body);
 void hero_a_timer_step_080be698(struct HeroBody *body);
 void hero_a_step_wait_f5c8(struct HeroBody *body);
@@ -451,7 +452,35 @@ void hero_a_effect_link_rate_next(struct HeroBody *body)
     body->state = hero_a_height_decay_next;
 }
 
-ASM_FUNC("asm/code_080BE0A0/hero_a_height_decay_next.s", void hero_a_height_decay_next(struct HeroBody *body))
+void hero_a_height_decay_next(struct HeroBody *body)
+{
+    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    s32 remain;
+    s32 newZ;
+
+    state_stack_advance_progress(body_a);
+    remain = 0x4000 - body_a->progress;
+    if (remain >= 0 && body_a->posZ != 0)
+    {
+        newZ = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(body_a->posZ * remain, remain + body_a->rate);
+    }
+    else
+    {
+        newZ = 0;
+    }
+    body_a->posZ = newZ;
+    if (body_a->flags & 0x20)
+    {
+        set_slot_value(0x7D, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 1, 0x2062, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+        body->state = hero_a_random_jitter_rate_next;
+    }
+}
 
 ASM_FUNC("asm/code_080BE0A0/hero_a_random_jitter_rate_next.s", void hero_a_random_jitter_rate_next(struct HeroBody *body))
 

@@ -17,6 +17,13 @@ struct ObjCore
     u8 unk12;
 };
 
+struct ObjBit5
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
 struct Sprite
 {
     u16 unk00;
@@ -131,6 +138,18 @@ extern const u8 gTransitionClassDf60[];
 extern const u8 gSceneDisplayClass[];
 void task_insert(void *node, u8 kind);
 void heap_free_b(void *p);
+void slot_reset(u32 id);
+void set_irq_callback(u32 kind, void *cb);
+void scene_free_objects(struct SceneObj *obj);
+void obj_release_children_4(void *sub, u32 mode);
+void task_remove(void *node, u32 kind);
+void heap_free(void *p);
+void set_flags_2_3(u32 v);
+void obj_run_callbacks(void);
+void obj_free_tiles(void *p, u32 n);
+extern u16 gUnk_02000004;
+extern void *gUnk_0300101C;
+extern const u8 gClassE420[];
 void obj_reset_e400(void *obj);
 void cam_build_line_table(struct CamObj *cam, struct Pair *arg);
 void cam_pan_by_keys(struct CamObj *cam);
@@ -360,7 +379,13 @@ void obj_copy_pair(struct SceneObj *obj, struct Pair *pair)
     obj->unk10 = b;
 }
 
-ASM_FUNC("asm/code_081599D8/obj_clear_state_flags.s", void obj_clear_state_flags(void))
+void obj_clear_state_flags(struct SceneObj *obj)
+{
+    obj->core->unk0C = 0;
+    ((struct ObjBit5 *)&obj->core->unk12)->bit5 = 0;
+    obj->unk36 &= 0xFFFE;
+    obj->unk14 = 0;
+}
 
 void obj_clear_offset_14(struct SceneObj *obj)
 {
@@ -759,4 +784,43 @@ ASM_FUNC("asm/code_081599D8/obj_overlap_box.s", void obj_overlap_box(void))
 
 ASM_FUNC("asm/code_081599D8/transition_scene_init.s", void transition_scene_init(void))
 
-ASM_FUNC("asm/code_081599D8/transition_exit.s", void transition_exit(void))
+void transition_exit(struct SceneObj *obj, u32 task)
+{
+    void *sub;
+    struct CamObj *cam;
+
+    *(u32 *)&obj->unk18 = (u32)gClassE420;
+    slot_reset(0);
+    set_irq_callback(2, 0);
+    REG_IME = 0;
+    gUnk_02000004 &= 0xFFEF;
+    REG_IE &= 0xFFFD;
+    REG_IF |= 2;
+    REG_IME = 1;
+    set_irq_callback(4, 0);
+    scene_free_objects(obj);
+    sub = *(void **)((u8 *)obj + 0x1CB8);
+    if (sub != 0)
+    {
+        obj_release_children_4(sub, 3);
+    }
+    sub = *(void **)((u8 *)obj + 0x1EA4);
+    if (sub != 0)
+    {
+        task_remove(sub, 3);
+    }
+    cam = *(struct CamObj **)((u8 *)obj + 0x1CBC);
+    if (cam != 0)
+    {
+        cam_free(cam, 3);
+    }
+    heap_free(gUnk_0300101C);
+    gUnk_0300034C.unk02 = 0xFFFF;
+    ((struct ObjBit5 *)((u8 *)&gUnk_0300034C + 0x888))->bit5 = 0;
+    set_flags_2_3(*(u32 *)((u8 *)obj + 0x14));
+    obj_run_callbacks();
+    obj_free_tiles((u8 *)obj + 0x1064, 2);
+    obj_free_tiles((u8 *)obj + 0x840, 2);
+    obj_free_tiles((u8 *)obj + 0x1C, 2);
+    task_remove(obj, task);
+}

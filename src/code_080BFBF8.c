@@ -300,7 +300,35 @@ void hero_b_visible_place(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080BFBF8/link_partner_and_hero_b.s", void link_partner_and_hero_b(struct HeroBody *body))
+void link_partner_and_hero_b(struct HeroBody *body)
+{
+    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *partner = body->partner;
+
+    partner->link = 1;
+    if (partner->targetZ == 0)
+    {
+        if ((partner->mode & 6) == 2 || (partner->mode & 6) == 4)
+        {
+            partner->state = hero_a_join_partner_next;
+        }
+    }
+    effect_spawn_at(0x5DF, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        sprite_set_action(body_b, 4, 0x2062, 0);
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+    }
+    body_b->unk74 = 0;
+    body_b->unk75 = 0;
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 8);
+        body_b->progress = 0;
+        ((struct HeroFlagBits *)&body_b->flags)->active = 0;
+    }
+    body->state = hero_b_follow_partner;
+}
 
 ASM_FUNC("asm/code_080BFBF8/hero_b_follow_partner.s", void hero_b_follow_partner(struct HeroBody *body))
 
