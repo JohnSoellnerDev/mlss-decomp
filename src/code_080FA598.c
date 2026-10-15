@@ -68,6 +68,27 @@ void tween_move_to(struct ObjList *list, u32 index, u32 flags, u32 one, u32 v1, 
 void release_obj_131c(u32 handle);
 u32 claim_table_slot(u32 table, u32 a, u32 b, u32 c, s32 d, s32 e, u32 f);
 void update_slot_bounds(u32 table, u32 index);
+
+struct SprBits11
+{
+    u8 lo : 6;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
+
+struct SprBits12
+{
+    u8 lo : 4;
+    u8 b4 : 1;
+    u8 hi : 3;
+};
+
+// Sets the mirror bit (bit 6 of the sprite byte at +0x11).
+static inline void spr_set_b6(u8 *spr, u32 flag)
+{
+    ((struct SprBits11 *)(spr + 0x11))->b6 = flag;
+}
+
 void set_tween_anim(struct ObjList *list, u32 a, u32 b, u32 c);
 void slot_load_object(struct Owner *owner, u32 index);
 void slot_store_object(struct Owner *owner, u32 index);
@@ -91,7 +112,19 @@ ASM_FUNC("asm/code_080FA598/cmd_slot_op.s", void cmd_slot_op(void))
 
 ASM_FUNC("asm/code_080FA598/cmd_slot_field.s", void cmd_slot_field(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_place_object.s", void cmd_place_object(void))
+u8 cmd_place_object(struct Owner *owner, u32 a2, u32 *args)
+{
+    u8 *spr;
+
+    slot_load_object(owner, (u8)args[0]);
+    ensure_tween_sprite(owner->list, (u8)args[0], args[1]);
+    set_tween_anim(owner->list, (u8)args[0], args[2], 0);
+    slot_store_object(owner, (u8)args[0]);
+    spr = owner->list->slots[args[0]].obj;
+    ((struct SprBits12 *)(spr + 0x12))->b4 = 0;
+    spr_set_b6(spr, args[3]);
+    return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, spr, (u8)args[4], 0);
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_start_move_list.s", void cmd_start_move_list(void))
 

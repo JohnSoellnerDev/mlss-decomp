@@ -110,6 +110,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   argument position, the call sits in an inlined helper: a `static inline` function that the
   callers use (example `actor_end_action` in src/code_0808C6F0.c). Repeated identical blocks in
   several functions are a hint for such helpers.
+- A one-bit field set from a value (`movs r0, #1; ands r1, r0; lsls r1, r1, #6`, then
+  `movs r0, #0x41; rsbs r0, r0, #0` for the mask) where your C gets `subs r0, #0x42` instead
+  (GCC reuses the 1 still in r0): the original sets the bit in an inlined helper,
+  `static inline void set_bit6(u8 *spr, u32 v) { ((struct Bits *)(spr + 0x11))->b6 = v; }`
+  (example in src/code_080FA598.c).
 - A stack frame with an area nothing in the function touches (`sub sp, #0x10` and no access to
   those bytes) is an unused local array or struct in the original: GCC 2.95 reserves space for
   arrays and structs even when they are never used. Declare it (`s32 unused[4];`).
