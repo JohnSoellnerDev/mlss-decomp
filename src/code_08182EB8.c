@@ -57,10 +57,188 @@ ASM_FUNC("asm/code_08182EB8/obj_spring_turn_points_3388.s", void obj_spring_turn
 ASM_FUNC("asm/code_08182EB8/obj_spring_turn_points_35f0.s", void obj_spring_turn_points_35f0(void))
 
 
-ASM_FUNC("asm/code_08182EB8/obj_scroll_point_3858.s", void obj_scroll_point_3858(void))
+void obj_scroll_point_3858(struct PtObj *obj)
+{
+    struct { s32 x; s32 y; s32 z; u32 model; } l;
+    s32 *pt;
+    s32 offset;
+    s32 counter;
+    struct PtRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 left;
+    s32 x;
+    s32 pos;
+    s32 t;
+
+    pt = (s32 *)obj->data;
+    offset = *pt++;
+    counter = *pt++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (left = 0; left < 1; left++) {
+        x = *pt++;
+        l.x = x;
+        l.y = *pt++;
+        l.z = *pt++;
+        l.x = x + offset;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = l.x;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = l.x;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    offset += 0x300;
+    counter += 8;
+    rec->unk4 = counter;
+    rec->unk6 = counter;
+    pt = (s32 *)obj->data;
+    *pt++ = offset;
+    *pt = counter;
+}
 
 
-ASM_FUNC("asm/code_08182EB8/obj_scroll_bounce_point_3978.s", void obj_scroll_bounce_point_3978(void))
+void obj_scroll_bounce_point_3978(struct PtObj *obj)
+{
+    struct { s32 x; s32 y; s32 z; u32 model; } l;
+    s32 *pt;
+    s32 offset;
+    s32 height;
+    s32 speed;
+    s32 counter;
+    struct PtRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 left;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 x;
+    s32 y;
+    s32 pos;
+    s32 t;
+
+    pt = (s32 *)obj->data;
+    offset = *pt++;
+    height = *pt++;
+    speed = *pt++;
+    counter = *pt++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (left = 0; left < 1; left++) {
+        x = *pt++;
+        l.x = x;
+        y = *pt++;
+        l.y = y;
+        l.z = *pt++;
+        l.x = x + offset;
+        l.y = y + height;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = l.x;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = l.x;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    offset += 0x200;
+    height += speed;
+    speed += 0x80;
+    if (height > 0) {
+        speed = -0x600;
+    }
+    counter += 4;
+    rec->unk4 = counter;
+    rec->unk6 = counter;
+    pt = (s32 *)obj->data;
+    *pt++ = offset;
+    *pt++ = height;
+    *pt++ = speed;
+    *pt = counter;
+}
 
 
 ASM_FUNC("asm/code_08182EB8/obj_grow_turn_points_3ac0.s", void obj_grow_turn_points_3ac0(void))
