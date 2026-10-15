@@ -403,7 +403,7 @@ ASM_FUNC("asm/code_081442FC/enemy_idle_update.s", void enemy_idle_update(void))
 
 ASM_FUNC("asm/code_081442FC/enemy_timer_step.s", void enemy_timer_step(void))
 
-NONMATCH("asm/code_081442FC/enemy_body_contact.s", void enemy_body_contact(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+void enemy_body_contact(struct Owner *owner, struct Enemy *ent, u32 *state_out)
 {
     struct Enemy *body = ent->body;
     s32 kind;
@@ -422,7 +422,7 @@ NONMATCH("asm/code_081442FC/enemy_body_contact.s", void enemy_body_contact(struc
         obj_set_active(body, 0);
         ((struct Mode3 *)&ent->unk214)->mode = 3;
         ent->unk198 = (void *)enemy_setup_wait_b;
-        *state_out = 1;
+        *state_out = 0;
         return;
     }
     kind = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
@@ -450,6 +450,5 @@ NONMATCH("asm/code_081442FC/enemy_body_contact.s", void enemy_body_contact(struc
     obj_drift_with_cap_step(body);
     *state_out = (u32)enemy_after_contact;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081442FC/enemy_push_by_mode.s", void enemy_push_by_mode(void))
