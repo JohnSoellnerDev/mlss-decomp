@@ -125,6 +125,12 @@ struct WinObj
     u8 *frame3C;
 };
 
+struct FramePos
+{
+    u16 x;
+    u16 y;
+};
+
 struct Mode3
 {
     u8 mode : 3;
@@ -596,13 +602,13 @@ ASM_FUNC("asm/code_080502DC/window_create.s", void window_create(void))
 
 ASM_FUNC("asm/code_080502DC/window_state_step.s", void window_state_step(void))
 
-NONMATCH("asm/code_080502DC/scene_update_sprites.s", void scene_update_sprites(u8 *obj))
+void scene_update_sprites(u8 *obj)
 {
     struct WinObj *w;
 
     w = (struct WinObj *)obj;
-    *(u16 *)w->frame3C = w->unk26 - w->unk1C;
-    ((u16 *)w->frame3C)[1] = w->unk28 - w->unk1E;
+    ((struct FramePos *)w->frame3C)->x = w->unk26 - w->unk1C;
+    ((struct FramePos *)w->frame3C)->y = w->unk28 - w->unk1E;
     if (w->unk1E == 0)
     {
         obj_release_slots(w->sub2C);
@@ -636,7 +642,6 @@ NONMATCH("asm/code_080502DC/scene_update_sprites.s", void scene_update_sprites(u
         sprite_update_cd0(w->sub38);
     }
 }
-END_NONMATCH
 
 void obj_emit_oam(void)
 {
