@@ -7003,7 +7003,12 @@
 081995D8 gSineTable data size=80
 08199658 gCosineTable data size=200
 08199858 iwram_overlay data size=C98
-0819A4F0 thunk_set_r0_91_jump thumb size=208
+0819A4F0 thunk_set_r0_91_jump thumb
+0819A4F8 mem_routines_init thumb
+0819A544 vcount_store thumb
+0819A554 atan2_angle thumb
+0819A56C math_routines_init thumb
+0819A5C0 driver_tables_init thumb
 0819A6F8 track_run thumb
 0819A95C track_command thumb
 0819AAFC track_scan thumb
@@ -7018,7 +7023,10 @@
 0819B2D8 pitch_table_lookup thumb
 0819B310 gPitchTable data size=34
 0819B344 gPitchSelectTable data size=80
-0819B3C4 sound_voices_mix thumb size=3A4
+0819B3C4 sound_voices_mix thumb
+0819B510 sound_driver_init thumb
+0819B6A6 sound_dma_flip thumb
+0819B6D4 sound_buffer_kick thumb
 0819B768 lfo_vol_clear_phase thumb
 0819B77C lfo_vol_step thumb
 0819B7C0 lfo_vol_value thumb
@@ -7577,6 +7585,7 @@
 081DD4C4 sub_081DD4C4 thumb
 081DD4DC sub_081DD4DC thumb
 081DD508 sub_081DD508 thumb
+081DD510 call_global_handler thumb
 081DD520 strcmp_words_select thumb
 081DD534 stub_nop_081DD534 thumb
 081DD538 alloc_node18 thumb

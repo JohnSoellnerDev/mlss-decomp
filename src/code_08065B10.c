@@ -23,7 +23,9 @@ struct ActorPart
     s32 targetH;
     u8 filler1[0xEC - 0xE4];
     s16 slot;
-    u8 filler2[0x11E - 0xEE];
+    u8 filler2[0xF6 - 0xEE];
+    s16 unkF6;
+    u8 filler3[0x11E - 0xF8];
     u16 unk11E;
 };
 
@@ -129,6 +131,17 @@ void obj_timer_dispatch_10_11(struct ActorObj *obj);
 void obj_timer_spawn_child_b(struct ActorObj *obj);
 void start_motion(struct ActorObj *obj);
 void resolve_contact_action(struct ActorObj *a, struct ActorObj *b, s32 c, s32 d, u32 e);
+void obj_active_action_6_or_a(struct ActorObj *obj);
+void obj_track_child_timer(struct ActorObj *obj);
+void obj_respawn_child_6(struct ActorObj *obj);
+void obj_respawn_child_7_move(struct ActorObj *obj);
+void obj_wait_slots_action(struct ActorObj *obj);
+void obj_index_wait_finish_child(struct ActorObj *obj);
+void obj_track_child_then_finish(struct ActorObj *obj);
+u32 obj_link_lookup_action1(struct ActorObj *obj);
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void on_arrive(struct ActorObj *obj);
+void obj_stop(struct ActorObj *obj);
 
 void obj_no_sprite_idle_b(struct ActorObj *obj)
 {
@@ -215,21 +228,199 @@ void obj_active_place_wait(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08065B10/obj_active_move_to_owner.s", void obj_active_move_to_owner(struct ActorObj *obj))
+void obj_active_move_to_owner(struct ActorObj *obj)
+{
+    u8 *flags;
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+        obj->targetX = obj->owner->part->targetX + 0x1800;
+        obj->targetY = obj->owner->part->targetY;
+        obj->targetH = obj->baseH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x200;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = glide_obj_index_wait_action4;
+        set_slot_value(0x81, -1);
+    }
+}
 
-ASM_FUNC("asm/code_08065B10/obj_active_spawn_child_5.s", void obj_active_spawn_child_5(struct ActorObj *obj))
+void obj_active_spawn_child_5(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    u8 *fp;
+    u8 flags;
 
-ASM_FUNC("asm/code_08065B10/obj_respawn_child_6.s", void obj_respawn_child_6(struct ActorObj *obj))
+    if ((obj->pose->flags & 8) != 0)
+    {
+        set_slot_value(0x116, -1);
+        obj->param9C = 0;
+        sprite_set_action(obj, 5, 0, 0);
+        child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
+                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        fp = &child->flags;
+        flags = *fp;
+        flags |= 1;
+        flags |= 8;
+        *fp = flags;
+        obj->pose->cmd20 = obj->paramA4;
+        obj_list_push_default(obj);
+        obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
+        obj->state = obj_respawn_child_6;
+    }
+}
 
-ASM_FUNC("asm/code_08065B10/obj_respawn_child_7_move.s", void obj_respawn_child_7_move(struct ActorObj *obj))
+void obj_respawn_child_6(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    u8 *fp;
+    u8 flags;
+
+    if (obj->param9C == 1)
+    {
+        obj_list_push_default(obj);
+        obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
+        obj->param9C++;
+    }
+    if ((obj->pose->flags & 8) != 0)
+    {
+        obj_release(obj->child);
+        obj->param9C |= 0x10;
+        sprite_set_action(obj, 6, 0, 0);
+        child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
+                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        fp = &child->flags;
+        flags = *fp;
+        flags |= 1;
+        flags |= 8;
+        *fp = flags;
+        obj->state = obj_respawn_child_7_move;
+    }
+}
+
+void obj_respawn_child_7_move(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    u8 *fp;
+    u8 flags;
+    u8 *flagsp;
+
+    if (obj->param9C == 0x11)
+    {
+        obj_list_push_default(obj);
+        obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
+        obj->param9C++;
+    }
+    if ((obj->pose->flags & 8) != 0)
+    {
+        obj_release(obj->child);
+        obj_list_remove(obj);
+        sprite_set_action(obj, 7, 0, 0);
+        obj->pose->cmd20 = 0x10;
+        child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
+                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        fp = &child->flags;
+        flags = *fp;
+        flags |= 1;
+        flags |= 8;
+        *fp = flags;
+        obj->targetX = obj->owner->part->targetX + 0x3000;
+        obj->targetY = obj->owner->part->targetY;
+        obj->targetH = obj->baseH;
+        flagsp = &obj->flags;
+        *flagsp |= 0x20;
+        obj->motionSpeed = 0x200;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = obj_index_wait_finish_child;
+    }
+}
 
 ASM_FUNC("asm/code_08065B10/obj_spawn_linked_child.s", void obj_spawn_linked_child(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_08065B10/obj_timer_next_action.s", void obj_timer_next_action(struct ActorObj *obj))
+void obj_timer_next_action(struct ActorObj *obj)
+{
+    s32 mode;
 
-ASM_FUNC("asm/code_08065B10/obj_lift_step_finish.s", void obj_lift_step_finish(struct ActorObj *obj))
+    obj->timer--;
+    if ((s16)obj->timer <= 0)
+    {
+        mode = obj->param9C & 0xF0;
+        switch (mode)
+        {
+        case 0:
+            if ((obj->param9C & 0xF) == 0)
+            {
+                sprite_set_action(obj, 5, 0, 0);
+                obj->param9C++;
+                obj->state = obj_respawn_child_6;
+            }
+            else
+            {
+                sprite_set_action(obj, 0xC, 0, 0);
+                obj->state = wait_for_index;
+            }
+            break;
+        case 0x10:
+            if ((obj->param9C & 0xF) == 0)
+            {
+                sprite_set_action(obj, 6, 0, 0);
+                obj->param9C++;
+                obj->state = obj_respawn_child_7_move;
+            }
+            else
+            {
+                sprite_set_action(obj, 0xC, 0, 0);
+                obj->state = wait_for_index;
+            }
+            break;
+        default:
+            sprite_set_action(obj, 0xC, 0, 0);
+            obj->pose->cmd20 = 0x10;
+            obj->state = wait_for_index;
+            break;
+        }
+    }
+}
 
-ASM_FUNC("asm/code_08065B10/obj_active_move_to_owner_action_d.s", void obj_active_move_to_owner_action_d(struct ActorObj *obj))
+void obj_lift_step_finish(struct ActorObj *obj)
+{
+    s32 d;
+
+    obj->posX = obj->paramA4 * (s16)obj->timer / obj->paramA0 + ((s32)obj->dx << 8);
+    d = (s16)obj->timer - obj->paramA0 / 2;
+    obj->posH = (d * d) * obj->param9C + 0x3000 + ((s32)obj->dh << 8);
+    obj->timer++;
+    if (obj->posH <= 0x800)
+    {
+        effect_spawn_at(0x113D, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        obj_release(obj);
+    }
+}
+
+void obj_active_move_to_owner_action_d(struct ActorObj *obj)
+{
+    u8 *flags;
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xD, 0, 0);
+        obj->targetX = obj->owner->part->targetX + 0x3000;
+        obj->targetY = obj->owner->part->targetY;
+        obj->targetH = obj->baseH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x180;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = obj_index_wait_slot_then_state;
+        set_slot_value(0x81, -1);
+    }
+}
 
 void obj_index_wait_slot_then_state(struct ActorObj *obj)
 {
@@ -395,7 +586,19 @@ void obj_active_spawn_part_sprite(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08065B10/obj_motion_to_owner_800.s", void obj_motion_to_owner_800(struct ActorObj *obj))
+void obj_motion_to_owner_800(struct ActorObj *obj)
+{
+    u8 *flags;
+    obj->targetX = obj->owner->part->targetX + 0x800;
+    obj->targetY = obj->owner->part->targetY;
+    obj->targetH = obj->baseH;
+    flags = &obj->flags;
+    *flags |= 0x20;
+    obj->motionSpeed = 0x200;
+    obj->motionStart = 0;
+    start_motion(obj);
+    obj->state = obj_init_timer_14;
+}
 
 void obj_timer_dispatch_10_11(struct ActorObj *obj)
 {
@@ -476,13 +679,94 @@ void obj_no_child_action_c(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08065B10/obj_active_motion_14c.s", void obj_active_motion_14c(struct ActorObj *obj))
+void obj_active_motion_14c(struct ActorObj *obj)
+{
+    u8 *flags;
+
+    if (obj->pose->flags & 8)
+    {
+        if (obj->param9C == 0)
+        {
+            sprite_set_action(obj, 3, 0, 0);
+        }
+        else
+        {
+            sprite_set_action(obj, 4, 0, 0);
+        }
+        obj->targetX = obj->owner->part->targetX + 0x4000;
+        obj->targetY = 0x6800;
+        obj->targetH = obj->baseH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x14C;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = obj_wait_slots_action;
+        if (obj->paramA0 == 0)
+        {
+            set_slot_value(0x129, -1);
+        }
+        else
+        {
+            set_slot_value(0x12A, -1);
+        }
+    }
+}
 
 ASM_FUNC("asm/code_08065B10/obj_spawn_pair_child.s", void obj_spawn_pair_child(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_08065B10/obj_motion_init_600.s", void obj_motion_init_600(struct ActorObj *obj))
+void obj_motion_init_600(struct ActorObj *obj)
+{
+    u8 *flags;
 
-ASM_FUNC("asm/code_08065B10/obj_child_timer_finish.s", void obj_child_timer_finish(struct ActorObj *obj))
+    obj->dx = obj->baseX / 0x100;
+    obj->dy = obj->baseY / 0x100;
+    obj->dh = obj->baseH / 0x100;
+    obj->targetX = obj->owner->part->targetX;
+    obj->targetY = obj->owner->part->targetY + 2;
+    obj->targetH = obj->owner->part->targetH + 0x1000;
+    flags = &obj->flags;
+    *flags |= 0x20;
+    obj->motionSpeed = 0x600;
+    obj->motionStart = 0;
+    start_motion(obj);
+    obj_set_target_xyh(obj->child, obj->posX, obj->posY, obj->posH);
+    obj->state = obj_track_child_timer;
+}
+
+void obj_child_timer_finish(struct ActorObj *obj)
+{
+    struct ActorObj *node;
+    u8 *flags;
+
+    obj_set_target_xyh(obj->child, obj->posX, obj->posY, obj->posH);
+    obj->timer--;
+    if ((s16)obj->timer <= 0)
+    {
+        node = (struct ActorObj *)((u8 *)obj->part + 8);
+        node->handler68 = on_arrive;
+        node->link = obj->link;
+        obj->link = 0;
+        if (node->part->unkF6 == 0)
+        {
+            obj_stop(node);
+            obj_release(obj->child);
+            obj_release(obj);
+        }
+        else
+        {
+            obj->targetX = obj->dx << 8;
+            obj->targetY = obj->dy << 8;
+            obj->targetH = obj->dh << 8;
+            flags = &obj->flags;
+            *flags |= 0x20;
+            obj->motionSpeed = 0x600;
+            obj->motionStart = 0;
+            start_motion(obj);
+            obj->state = obj_track_child_then_finish;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_08065B10/obj_fan_out_children.s", void obj_fan_out_children(struct ActorObj *obj))
 
@@ -555,7 +839,37 @@ void obj_owner_slot_action(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08065B10/obj_wait_slots_action.s", void obj_wait_slots_action(struct ActorObj *obj))
+void obj_wait_slots_action(struct ActorObj *obj)
+{
+    if (obj->index == 0)
+    {
+        if (obj->paramA0 == 0)
+        {
+            sound_stop_song(0x129);
+        }
+        else
+        {
+            sound_stop_song(0x12A);
+        }
+        if (obj->param9C == 0)
+        {
+            sprite_set_action(obj, 5, 0, 0);
+        }
+        else
+        {
+            sprite_set_action(obj, 9, 0, 0);
+        }
+        obj->state = obj_active_action_6_or_a;
+        if (obj->paramA0 == 0)
+        {
+            set_slot_value(0x123, -1);
+        }
+        else
+        {
+            set_slot_value(0x124, -1);
+        }
+    }
+}
 
 s32 obj_check_owner_slot_a0_1(struct ActorObj *obj)
 {
@@ -592,7 +906,23 @@ void part_hook_next(struct ActorObj *obj)
     obj->handler54 = obj_spawn_effect_child;
 }
 
-ASM_FUNC("asm/code_08065B10/obj_active_motion_14c_b.s", void obj_active_motion_14c_b(struct ActorObj *obj))
+void obj_active_motion_14c_b(struct ActorObj *obj)
+{
+    u8 *flags;
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xD, 0, 0);
+        obj->targetX = obj->dx << 8;
+        obj->targetY = obj->dy << 8;
+        obj->targetH = obj->baseH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x14C;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = obj_index_wait_idle_action0;
+    }
+}
 
 void obj_active_action_6_or_a(struct ActorObj *obj)
 {
@@ -625,7 +955,22 @@ void obj_idle_check_motion(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08065B10/obj_spawn_effect_child.s", void obj_spawn_effect_child(struct ActorObj *obj))
+void obj_spawn_effect_child(struct ActorObj *obj)
+{
+    struct ActorObj *child = obj_spawn_linked(obj, 0x4095, 0);
+    u8 *fp;
+    s32 flags;
+    s32 count;
+    fp = &child->flags;
+    flags = *fp;
+    flags |= 1;
+    flags |= 8;
+    *fp = flags;
+    count = obj->byte75;
+    child->byte75 = count - 2;
+    sprite_set_action(obj, 0, 0, 0);
+    obj->state = 0;
+}
 
 void obj_index_wait_idle_action0(struct ActorObj *obj)
 {
