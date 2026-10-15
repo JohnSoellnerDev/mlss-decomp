@@ -133,7 +133,89 @@ void obj_point1_decay_5ba4(struct Point1Obj *obj)
     *words = phase;
 }
 
-ASM_FUNC("asm/code_0819595C/obj_point1_zoom23_acc_5cd0.s", void obj_point1_zoom23_acc_5cd0(void))
+NONMATCH("asm/code_0819595C/obj_point1_zoom23_acc_5cd0.s", void obj_point1_zoom23_acc_5cd0(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    u32 *words;
+    s32 zoom;
+    s32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p2;
+    u32 *pslot;
+    s32 *p1;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gUnk_03000D74->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gUnk_03000D74->model = l.model;
+    }
+    phase = zoom + phase;
+    zoom = 2 * zoom / 3;
+    rec->unk4 = phase;
+    rec->unk6 = phase / 3;
+    words = obj->data;
+    *words++ = zoom;
+    *words = phase;
+}
+END_NONMATCH
 
 void obj_point1_decay45_5e00(struct Point1Obj *obj)
 {
