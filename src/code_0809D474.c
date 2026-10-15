@@ -214,13 +214,13 @@ void pose_update_b(struct ActorBody *body)
     }
 }
 
-s32 unknown_code_0809daca(struct ActorBody *body)
+s32 enter_start_anim4_fx_b(struct ActorBody *body)
 {
     body->state = start_anim4_fx_b;
     return 1;
 }
 
-void sub_0809DAD8(struct ActorBody *body)
+void set_sub_state_spawn_child(struct ActorBody *body)
 {
     body->subState = spawn_child_and_stop;
 }

@@ -231,19 +231,19 @@ u32 obj_start_move_if_zero_b(struct ActorObj *obj, u32 slot)
     return result;
 }
 
-u32 unknown_part_steps_080db29c(struct ActorObj *obj)
+u32 obj_to_start_timed_motion_4(struct ActorObj *obj)
 {
     obj->state = obj_start_timed_motion_4;
     return 1;
 }
 
-u32 sub_080DB2A8(struct ActorObj *obj)
+u32 obj_to_start_timed_motion_2(struct ActorObj *obj)
 {
     obj->state = obj_start_timed_motion_2;
     return 1;
 }
 
-u32 sub_080DB2B4(struct ActorObj *obj)
+u32 obj_random_timed_motion_pick(struct ActorObj *obj)
 {
     if (sub_081DE850(1, mt19937_next()) != 0)
     {
@@ -394,19 +394,19 @@ void obj_index_prep_a_motion_part_b(struct ActorObj *obj)
     }
 }
 
-u32 unknown_part_steps_080db728(struct ActorObj *obj)
+u32 obj_to_wait_ready_notify_8d(struct ActorObj *obj)
 {
     obj->state = obj_wait_ready_notify_8d_then_state;
     return 1;
 }
 
-u32 sub_080DB734(struct ActorObj *obj)
+u32 obj_to_wait_ready_notify_8d_b(struct ActorObj *obj)
 {
     obj->state = obj_wait_ready_notify_8d_then_state_b;
     return 1;
 }
 
-u32 sub_080DB740(struct ActorObj *obj)
+u32 obj_random_notify_pick(struct ActorObj *obj)
 {
     if (sub_081DE850(1, mt19937_next()) != 0)
     {

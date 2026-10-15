@@ -249,13 +249,13 @@ u32 obj_start_move_if_zero(struct ActorObj *obj, u32 slot)
     return result;
 }
 
-u32 unknown_code_080da274(struct ActorObj *obj)
+u32 obj_to_wait_ready_then_anim(struct ActorObj *obj)
 {
     obj->state = obj_wait_ready_then_anim;
     return 1;
 }
 
-u32 sub_080DA280(struct ActorObj *obj)
+u32 obj_to_wait_ready_then_anim_b(struct ActorObj *obj)
 {
     obj->state = obj_wait_ready_then_anim_b;
     return 1;

@@ -141,7 +141,7 @@ u32 box_contains_fixed(struct Box6 *box, struct Obj *a, struct Obj *b)
     return 1;
 }
 
-u32 sub_0813BF40(struct Obj *a, struct Obj *b)
+u32 distance_xyz(struct Obj *a, struct Obj *b)
 {
     s32 dx = a->x - b->x;
     s32 dy = a->y - b->y;
@@ -237,7 +237,7 @@ u32 accum_step_check(struct Obj *obj)
     return moving;
 }
 
-void sub_0813C260(struct Obj *obj, s32 zVel, s32 zRest)
+void set_z_motion(struct Obj *obj, s32 zVel, s32 zRest)
 {
     obj->zVel = zVel;
     obj->zRest = zRest;

@@ -749,7 +749,7 @@ s32 unknown_code_0808320c(void)
     return 1;
 }
 
-s32 sub_08083210(u32 key)
+s32 list_remove_key(u32 key)
 {
     struct ListEntry *entry;
     struct ListEntry *head = gUnk_03000FD8->list1F4;
@@ -867,7 +867,7 @@ void sync_obj_impulse(struct MapObj *obj)
 
 ASM_FUNC("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(void))
 
-void unknown_code_08083430(u8 *camera, s32 *a, s32 *b)
+void offset_pair_by_camera(u8 *camera, s32 *a, s32 *b)
 {
     *a += *(s16 *)(camera + 0x774);
     *b += *(s16 *)(camera + 0x776);
@@ -893,7 +893,7 @@ void offset_three_words(u8 *camera, s32 *a, s32 *b, s32 *d)
     *d = 0x1F0 - bOld;
 }
 
-void unknown_code_080834d8(u8 *camera, u16 *out, s32 x, s32 y, s32 z)
+void write_entry_offsets_fixed(u8 *camera, u16 *out, s32 x, s32 y, s32 z)
 {
     out[0] = x - *(u16 *)(camera + 0x774);
     out[1] = y - *(u16 *)(camera + 0x776);

@@ -17,7 +17,7 @@ struct GameState {
     struct Char *charA;
 };
 
-extern struct GameState *gUnk_03001018;
+extern struct GameState *gGamePtr;
 
 struct Sprite {
     u16 unk00;
@@ -206,7 +206,7 @@ struct ModeBits {
 };
 
 extern const u8 gClassE100[];
-extern u8 gUnk_03001010;
+extern u8 gGameMode;
 
 ASM_FUNC("asm/code_08154490/obj_init_e100.s", void obj_init_e100(void))
 

@@ -267,12 +267,12 @@ void unknown_thumb_080f962c(struct OwnerObj *obj, u32 mask)
     *(u32 *)(obj->state + 0x1798) |= mask;
 }
 
-void sub_080F964C(struct OwnerObj *obj, u32 mask)
+void owner_clear_flags_1788(struct OwnerObj *obj, u32 mask)
 {
     *(u32 *)(obj->state + 0x1788) &= ~mask;
 }
 
-void sub_080F9660(struct OwnerObj *obj, u32 mask)
+void owner_set_flags_1788(struct OwnerObj *obj, u32 mask)
 {
     *(u32 *)(obj->state + 0x1788) |= mask;
 }
@@ -288,7 +288,7 @@ void reset_root_params(struct OwnerObj *obj, u32 a)
 
 ASM_FUNC("asm/code_080F8900/unknown_thumb_080f970e.s", void unknown_thumb_080f970e(struct SlotTable *table, u8 idx))
 
-u32 sub_080F9738(struct SlotTable *table, u8 idx)
+u32 slot_countdown_step(struct SlotTable *table, u8 idx)
 {
     u32 off = (u32)idx << 4;
     u32 n;
@@ -319,7 +319,7 @@ u32 sub_080F9738(struct SlotTable *table, u8 idx)
     return 0;
 }
 
-void sub_080F9778(struct SlotTable *table, u8 idx)
+void slot_detach_entry(struct SlotTable *table, u8 idx)
 {
     struct SlotEntry *entry = (struct SlotEntry *)(table->entries + ((u32)idx << 4));
 
@@ -327,7 +327,7 @@ void sub_080F9778(struct SlotTable *table, u8 idx)
     entry->flag0F = 0;
 }
 
-void sub_080F9794(struct HeapOwner *obj, u32 flags)
+void heap_free_owner(struct HeapOwner *obj, u32 flags)
 {
     heap_free(obj->block);
     if (flags & 1)

@@ -163,7 +163,7 @@ extern struct KeyState gUnk_0300034C;
 extern u8 gUnk_02000048[];
 extern u8 gUnk_02000050[];
 extern u8 *gUnk_03001014;
-extern struct GameVars *gUnk_03001018;
+extern struct GameVars *gGamePtr;
 void scene_teardown(struct GameVars *game, s32 mode);
 void dma3_copy_tilemap(void *obj);
 extern const struct SceneStateEntry gSceneStateTable_083CCAC0[];
@@ -373,11 +373,11 @@ void obj_set_char_offset(struct SceneObj *obj)
 
     if (obj->unk25 == 0)
     {
-        offset = gSceneStateTable_083CCAC0[gUnk_03001018->unk1F20].unk1C;
+        offset = gSceneStateTable_083CCAC0[gGamePtr->unk1F20].unk1C;
     }
     else
     {
-        offset = gSceneStateTable_083CCAC0[gUnk_03001018->unk1F20].unk1C - 0x64;
+        offset = gSceneStateTable_083CCAC0[gGamePtr->unk1F20].unk1C - 0x64;
     }
     obj->unk14 = offset;
     obj->unk24 = 2;
@@ -553,11 +553,11 @@ ASM_FUNC("asm/code_081599D8/irq_hblank_line.s", void irq_hblank_line(void))
 void irq_copy_tilemaps(void)
 {
     *(u16 *)0x04000040 = *(u16 *)(gUnk_03001014 + 4);
-    dma3_copy_tilemap((u8 *)gUnk_03001018 + 0x1C);
-    dma3_copy_tilemap((u8 *)gUnk_03001018 + 0x840);
-    if ((gUnk_03001018->unk1CC4 & 4) != 0)
+    dma3_copy_tilemap((u8 *)gGamePtr + 0x1C);
+    dma3_copy_tilemap((u8 *)gGamePtr + 0x840);
+    if ((gGamePtr->unk1CC4 & 4) != 0)
     {
-        dma3_copy_tilemap((u8 *)gUnk_03001018 + 0x1064);
+        dma3_copy_tilemap((u8 *)gGamePtr + 0x1064);
     }
     gUnk_0300034C.unk02 |= 0x7FFF;
 }

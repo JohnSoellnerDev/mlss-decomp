@@ -287,14 +287,14 @@ void obj_wait_30_when_index_zero(struct ActorObj *obj)
 }
 
 
-u32 unknown_part_steps_0806f028(struct ActorObj *obj)
+u32 obj_step_move_to_part_x(struct ActorObj *obj)
 {
     obj->state = obj_move_to_part_x_offset;
     return 1;
 }
 
 
-u32 sub_0806F034(struct ActorObj *obj)
+u32 obj_step_start_move_right(struct ActorObj *obj)
 {
     obj->state = obj_start_move_right;
     return 1;
@@ -341,7 +341,7 @@ void part_hook_next_pair(struct ActorObj *obj)
 }
 
 
-void sub_0806F0B4(struct ActorObj *obj)
+void part_hook_spawn_4113(struct ActorObj *obj)
 {
     obj->handler54 = obj_spawn_child_4113;
 }

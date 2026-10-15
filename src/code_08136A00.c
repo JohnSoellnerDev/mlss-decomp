@@ -114,8 +114,8 @@ void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_rotate_yxz(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_rotate_zxy(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_scale(struct Mat4 *m, s32 x, s32 y, s32 z);
-void sub_08136D48(struct Mat4 *m);
-void sub_08137278(struct Vec3 *v);
+void mat4_set_identity(struct Mat4 *m);
+void vec3_zero(struct Vec3 *v);
 void vec3_copy(struct Vec3 *dst, struct Vec3 *src);
 void tree_walk_children(struct T3dNode *node);
 void t3d_node_free(struct T3dNode *node, u32 flags);
@@ -133,37 +133,37 @@ struct T3dModel *t3d_model_new(struct T3dModel *m)
     struct Mat4 *lm;
 
     mm->cb40 = gAppearCallback40Class;
-    sub_08136D48(mm);
+    mat4_set_identity(mm);
     c = heap_alloc2(0x9C, 1, gHeapTagT3dc, 0);
     v = &c->unk8;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &c->unk1C;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &c->unk30;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &c->unk44;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     cm = &c->unk58;
     cm->cb40 = gAppearCallback40Class;
-    sub_08136D48(cm);
+    mat4_set_identity(cm);
     m->unk0 = c;
     l = heap_alloc2(0x84, 1, gHeapTagT3dl, 0);
     v = &l->unk4;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &l->unk18;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &l->unk2C;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     lm = &l->unk40;
     lm->cb40 = gAppearCallback40Class;
-    sub_08136D48(lm);
+    mat4_set_identity(lm);
     m->unk4 = l;
     m->unk8 = 0;
     m->unkC = (struct T3dNode *)t3d_f_init(heap_alloc2(0xE0, 1, gHeapTagT3df, 0));
@@ -215,7 +215,7 @@ void t3d_model_update(struct T3dModel *m)
     struct Mat4 *cm;
 
     tmp.cb40 = gAppearCallback40Class;
-    sub_08136D48(&tmp);
+    mat4_set_identity(&tmp);
     tmp.m[0] = 0x100;
     tmp.m[1] = 0;
     tmp.m[2] = 0;
@@ -270,7 +270,7 @@ void t3d_f_walk(struct T3dF *f)
     }
 }
 
-void sub_08136BF4(struct T3dF *f, struct T3dNode *node)
+void t3d_f_append_node(struct T3dF *f, struct T3dNode *node)
 {
     struct T3dNode *head = f->root;
 
@@ -307,7 +307,7 @@ void sub_08136C38(void)
 {
 }
 
-void sub_08136C3C(struct T3dL *obj, u32 flags)
+void t3d_l_release(struct T3dL *obj, u32 flags)
 {
     struct Mat4 *m = &obj->unk40;
 
@@ -324,18 +324,18 @@ struct T3dL *t3d_l_init(struct T3dL *obj)
     struct Vec3 *v = &obj->unk4;
 
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &obj->unk18;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &obj->unk2C;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     {
         struct Mat4 *m = &obj->unk40;
 
         m->cb40 = gAppearCallback40Class;
-        sub_08136D48(m);
+        mat4_set_identity(m);
     }
     return obj;
 }
@@ -344,7 +344,7 @@ void t3d_c_free(void)
 {
 }
 
-void sub_08136CB0(struct T3dC *obj, u32 flags)
+void t3d_c_release(struct T3dC *obj, u32 flags)
 {
     struct Mat4 *m = &obj->unk58;
 
@@ -362,21 +362,21 @@ struct T3dC *t3d_c_init(struct T3dC *obj)
     struct Vec3 *v = &obj->unk8;
 
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &obj->unk1C;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &obj->unk30;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     v = &obj->unk44;
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     {
         struct Mat4 *m = &obj->unk58;
 
         m->cb40 = gAppearCallback40Class;
-        sub_08136D48(m);
+        mat4_set_identity(m);
     }
     return obj;
 }
@@ -389,7 +389,7 @@ void tree_walk_children(struct T3dNode *node)
         tree_walk_children(node->child8);
 }
 
-void sub_08136D48(struct Mat4 *m)
+void mat4_set_identity(struct Mat4 *m)
 {
     m->m[0] = 0x100;
     m->m[1] = 0;
@@ -409,27 +409,27 @@ void sub_08136D48(struct Mat4 *m)
     m->m[15] = 0x100;
 }
 
-void sub_08136D70(struct Mat4 *m, struct Vec3 *v)
+void mat4_translate_v(struct Mat4 *m, struct Vec3 *v)
 {
     mat4_apply_translate(m, v->x, v->y, v->z);
 }
 
-void sub_08136D84(struct Mat4 *m, struct Vec3 *v)
+void mat4_rotate_yxz_v(struct Mat4 *m, struct Vec3 *v)
 {
     mat4_apply_rotate_yxz(m, v->x, v->y, v->z);
 }
 
-void sub_08136D98(struct Mat4 *m, struct Vec3 *v)
+void mat4_rotate_zxy_v(struct Mat4 *m, struct Vec3 *v)
 {
     mat4_apply_rotate_zxy(m, v->x, v->y, v->z);
 }
 
-void sub_08136DAC(struct Mat4 *m, struct Vec3 *v)
+void mat4_scale_v(struct Mat4 *m, struct Vec3 *v)
 {
     mat4_apply_scale(m, v->x, v->y, v->z);
 }
 
-struct Mat4 *sub_08136DC0(struct Mat4 *dst, struct Mat4 *src)
+struct Mat4 *mat4_mul_inplace(struct Mat4 *dst, struct Mat4 *src)
 {
     struct Mat4 tmp;
 

@@ -61,9 +61,9 @@ void release_block(void *node);
 
 ASM_FUNC("asm/code_08020798/iwram_routine_03006c53.s", void iwram_routine_03006c53(void))
 
-ASM_FUNC("asm/code_08020798/sub_080207BC.s", void sub_080207BC(void))
+ASM_FUNC("asm/code_08020798/sort_node_list.s", void sort_node_list(void))
 
-ASM_FUNC("asm/code_08020798/sub_080207FC.s", void sub_080207FC(void))
+ASM_FUNC("asm/code_08020798/init_node_flags.s", void init_node_flags(void))
 
 ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(void))
 

@@ -357,7 +357,7 @@ u32 pos_in_view_box(struct EffectObj *obj, struct EffectObj *other)
     return 1;
 }
 
-void *sub_08161FAC(struct EffectObj *obj, u8 kind, void *data)
+void *obj_add_task(struct EffectObj *obj, u8 kind, void *data)
 {
     task_insert(obj, kind, data);
     obj->unk18 = (s32)gFrameUpdateClass;
@@ -391,13 +391,13 @@ void obj_effect_child_method(struct EffectObj *obj)
     obj->unk20 = obj->unk18;
 }
 
-void sub_0816209C(struct EffectObj *obj)
+void obj_advance_pos(struct EffectObj *obj)
 {
     obj->unk14 += obj->unk24;
     obj->unk18 += obj->unk28 + obj->unk10;
 }
 
-void sub_081620B4(struct EffectObj *obj, u32 *src)
+void obj_set_pos_pair(struct EffectObj *obj, u32 *src)
 {
     obj->unk14 = obj->unk1C = src[0];
     obj->unk18 = obj->unk20 = src[1];

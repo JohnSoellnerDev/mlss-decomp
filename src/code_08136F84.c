@@ -114,8 +114,8 @@ void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_rotate_yxz(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_rotate_zxy(struct Mat4 *m, s32 x, s32 y, s32 z);
 void mat4_apply_scale(struct Mat4 *m, s32 x, s32 y, s32 z);
-void sub_08136D48(struct Mat4 *m);
-void sub_08137278(struct Vec3 *v);
+void mat4_set_identity(struct Mat4 *m);
+void vec3_zero(struct Vec3 *v);
 void vec3_copy(struct Vec3 *dst, struct Vec3 *src);
 void tree_walk_children(struct T3dNode *node);
 void t3d_node_free(struct T3dNode *node, u32 flags);
@@ -147,7 +147,7 @@ void mat4_clone(struct Mat4 *dst, struct Mat4 *src)
 struct Mat4 *mat4_new_identity(struct Mat4 *m)
 {
     m->cb40 = gAppearCallback40Class;
-    sub_08136D48(m);
+    mat4_set_identity(m);
     return m;
 }
 
@@ -156,7 +156,7 @@ struct Vec3 *vec3_xform_to(struct Vec3 *dst, struct Vec3 *v, struct Mat4 *m)
     struct Vec3 tmp;
 
     tmp.cb10 = gAppearCallback10Class;
-    sub_08137278(&tmp);
+    vec3_zero(&tmp);
     tmp.x = v->x * m->m[0] + v->y * m->m[4] + v->z * m->m[8] + m->m[12];
     tmp.y = v->x * m->m[1] + v->y * m->m[5] + v->z * m->m[9] + m->m[13];
     tmp.z = v->x * m->m[2] + v->y * m->m[6] + v->z * m->m[10] + m->m[14];
@@ -228,14 +228,14 @@ s32 vec3_dot(struct Vec3 *a, struct Vec3 *b)
     return a->x * b->x + a->y * b->y + a->z * b->z;
 }
 
-void sub_08137278(struct Vec3 *v)
+void vec3_zero(struct Vec3 *v)
 {
     v->x = 0;
     v->y = 0;
     v->z = 0;
 }
 
-struct Vec3 *sub_08137284(struct Vec3 *v, s32 s)
+struct Vec3 *vec3_scale_q8(struct Vec3 *v, s32 s)
 {
     v->x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->x * s, 0x100);
     v->y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->y * s, 0x100);
@@ -294,7 +294,7 @@ void vec3_sub_self(struct Vec3 *a, struct Vec3 *b)
     a->z -= b->z;
 }
 
-struct Vec3 *sub_08137424(struct Vec3 *dst, struct Vec3 *a, struct Vec3 *b)
+struct Vec3 *vec3_sub_to(struct Vec3 *dst, struct Vec3 *a, struct Vec3 *b)
 {
     s32 x = a->x - b->x;
     s32 y = a->y - b->y;
@@ -360,6 +360,6 @@ struct Vec3 *vec3_init(struct Vec3 *v, s32 x, s32 y, s32 z)
 struct Vec3 *vec3_init_zero(struct Vec3 *v)
 {
     v->cb10 = gAppearCallback10Class;
-    sub_08137278(v);
+    vec3_zero(v);
     return v;
 }

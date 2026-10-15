@@ -364,7 +364,7 @@ void anim_ensure_pose(struct AnimObj *obj)
     }
 }
 
-void unknown_thumb_08109c36(struct AnimObj *obj, u32 mask)
+void anim_clear_flag_bits(struct AnimObj *obj, u32 mask)
 {
     if (mask & 0xC)
     {

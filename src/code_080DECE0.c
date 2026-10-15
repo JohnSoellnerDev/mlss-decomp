@@ -288,25 +288,25 @@ s32 sprite_state_chain_e(struct ActorObj *obj)
     return 1;
 }
 
-s32 sub_080DF410(struct ActorObj *obj)
+s32 obj_enter_load_code_entry(struct ActorObj *obj)
 {
     obj->state = obj_load_code_entry_then_wait;
     return 1;
 }
 
-s32 sub_080DF41C(struct ActorObj *obj)
+s32 obj_enter_select_code_entry_world(struct ActorObj *obj)
 {
     obj->state = obj_select_code_entry_world;
     return 1;
 }
 
-s32 sub_080DF428(struct ActorObj *obj)
+s32 obj_enter_wait_not_busy_then_e321(struct ActorObj *obj)
 {
     obj->state = obj_wait_not_busy_then_e321;
     return 1;
 }
 
-s32 sub_080DF434(struct ActorObj *obj)
+s32 obj_random_next_state(struct ActorObj *obj)
 {
     u32 pick = sub_081DE850(4, mt19937_next());
 

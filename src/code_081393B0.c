@@ -212,7 +212,7 @@ void load_record_words_128(struct Enemy *obj, s16 index);
 void obj_pick_random_entry(struct Enemy *obj);
 void tick_fire_indirect(void);
 void sub_08139F08(void);
-void sub_08139F0C(void *ctx, struct Enemy *ent, EnemyFn *out);
+void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out);
 void tick_body_timer(void *ctx, struct Enemy *ent, EnemyFn *out);
 void update_hop_phase(struct Enemy *obj);
 void obj_jump_arc_step(struct Enemy *obj);
@@ -374,7 +374,7 @@ void sub_08139F08(void)
 {
 }
 
-ASM_FUNC("asm/code_081393B0/sub_08139F0C.s", void sub_08139F0C(void *ctx, struct Enemy *ent, EnemyFn *out))
+ASM_FUNC("asm/code_081393B0/body_timer_tick.s", void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out))
 
 void tick_body_timer(void *ctx, struct Enemy *ent, EnemyFn *out)
 {

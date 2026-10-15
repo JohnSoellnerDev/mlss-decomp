@@ -149,7 +149,7 @@ extern const u8 gClassE380[];
 extern const u8 gTransitionClassDea0[];
 extern const u8 gTransitionClassDf00[];
 extern const u8 gHeapTagObjInitBuf[];
-extern u8 gUnk_03001010;
+extern u8 gGameMode;
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 s32 effect_init_sprites_b(void *p);
 s32 effect_init_sprites(void *p);
@@ -177,7 +177,7 @@ void obj_release_child_free_c(void *p, u32 mode);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void obj_init_from_record(struct TransObj *obj, u32 arg);
 
-extern u8 *gUnk_03001018;
+extern u8 *gGamePtr;
 extern s16 *gUnk_03001014;
 void win_draw_text(void *target, u32 arg, s32 dx, u32 y, u32 flag);
 
@@ -218,7 +218,7 @@ struct TransObj *obj_init_alloc(struct TransObj *obj)
     obj->unk14.word = 0;
     obj->unk08.word = 0;
     obj->unk0C = 0;
-    level = ((s32)((u32)gUnk_03001010 << 27)) >> 27;
+    level = ((s32)((u32)gGameMode << 27)) >> 27;
     if (level <= 5)
     {
         buf = heap_alloc2(0x34, 1, gHeapTagObjInitBuf, 0);
@@ -235,7 +235,7 @@ struct TransObj *obj_init_alloc(struct TransObj *obj)
 void obj_update_scroll(struct TransObj *obj, u32 arg)
 {
     struct ScrollSub *sub = obj->unk4C;
-    u8 *game = gUnk_03001018;
+    u8 *game = gGamePtr;
     s32 *camX = (s32 *)(game + 0x1CB8);
     s32 subX = sub->unk04;
     s32 dx = (subX - *camX) >> 8;
@@ -266,7 +266,7 @@ struct TransObj *obj_init_find_type13(struct TransObj *obj)
     obj->unk1C.word = 0;
     obj->klass30 = 0;
     obj->unk38.word = 0;
-    game = gUnk_03001018;
+    game = gGamePtr;
     i = 0;
     block = (u32 *)(game + 0x1898);
     for (; i <= 0xFF; block += 4, i += 4)
@@ -453,7 +453,7 @@ s32 obj_byte24_is_zero(struct TransObj *obj)
 
 void obj_init_timed_state(struct TransObj *obj)
 {
-    obj->unk18.half = -*(u16 *)(gUnk_03001018 + 0x1F1C);
+    obj->unk18.half = -*(u16 *)(gGamePtr + 0x1F1C);
     obj_load_record((void *)obj->unk00.word, 2, 0, 0, 0);
     obj->unk34.pair.unk36 = 0xA;
     obj->unk24.byte = 2;
@@ -690,13 +690,13 @@ s32 obj_phase_update(struct TransObj *obj)
 
 phase_one:
     count = 0;
-    other = *(struct TransObj **)(gUnk_03001018 + 0x1C98);
+    other = *(struct TransObj **)(gGamePtr + 0x1C98);
     if (obj->unk04 - other->unk04 < 0)
     {
         count = 1;
         other->unk24.byte = 6;
     }
-    other = *(struct TransObj **)(gUnk_03001018 + 0x1C9C);
+    other = *(struct TransObj **)(gGamePtr + 0x1C9C);
     if (obj->unk04 - other->unk04 < 0)
     {
         count += 1;

@@ -206,7 +206,7 @@ u32 cmd_list_toggle(struct Owner *owner, u32 unused, u32 *data)
 
 u32 stub_return_0(struct ObjList *list);
 
-u32 unknown_thumb_080faf3a(struct Owner *owner, u32 *cmd)
+u32 cmd_set_mode2_or_latch(struct Owner *owner, u32 *cmd)
 {
     if ((u8)stub_return_0(owner->list) != 1)
     {
@@ -489,7 +489,7 @@ void clear_slot_marks(struct Owner *owner)
     clear_command_records(owner);
 }
 
-void unknown_thumb_080fb7b4(struct Owner *owner)
+void owner_reset_commands(struct Owner *owner)
 {
     clear_command_records(owner);
     owner_reset(owner);
@@ -501,7 +501,7 @@ void begin_state_mode(struct Owner *owner, u32 arg)
     owner->state->mode9A1 = 2;
 }
 
-void unknown_thumb_080fb7f8(struct Owner *owner)
+void owner_clear_entries(struct Owner *owner)
 {
     clear_slot_rect(owner->entry, 4);
     copy_map_rects(owner->entry, 0x10);

@@ -305,19 +305,19 @@ u32 obj_lookup_part_then_check(struct ActorObj *obj, u32 a, u32 b)
     return result;
 }
 
-u32 unknown_code_080da692(struct ActorObj *obj)
+u32 obj_to_action2_notify_then_state(struct ActorObj *obj)
 {
     obj->state = obj_action2_notify_then_state;
     return 1;
 }
 
-u32 sub_080DA6A0(struct ActorObj *obj)
+u32 obj_to_clear_timer_action2_notify(struct ActorObj *obj)
 {
     obj->state = obj_clear_timer_action2_notify;
     return 1;
 }
 
-u32 sub_080DA6AC(struct ActorObj *obj)
+u32 obj_random_action2_or_clear(struct ActorObj *obj)
 {
     obj->state = obj_clear_timer_action2_notify;
     if (sub_081DE850(2, mt19937_next()) != 0)

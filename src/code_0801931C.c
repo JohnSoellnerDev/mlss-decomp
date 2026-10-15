@@ -260,12 +260,12 @@ s16 recip_fixed16(s16 x)
     return n / x;
 }
 
-s16 sub_080197A4(s16 a, s16 b)
+s16 fixed_div_8_8(s16 a, s16 b)
 {
     return ((s32)a << 8) / b;
 }
 
-ASM_FUNC("asm/code_0801931C/sub_080197BC.s", void sub_080197BC(void))
+ASM_FUNC("asm/code_0801931C/fixed_mul_8_8.s", void fixed_mul_8_8(void))
 
 u32 decimal_digits(s32 x)
 {
