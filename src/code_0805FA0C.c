@@ -75,6 +75,48 @@ struct ActorObj
     s16 dh;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct Flags79Bit0
+{
+    u8 bit0 : 1;
+    u8 unk1 : 7;
+};
+
+struct PoseBits6
+{
+    u8 low : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+} __attribute__((packed));
+
+// The child takes over bits 5 and 6 of the parent's flag byte at +0x77.
+static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
+// The spawned child takes over the kind and two flag bits of its parent.
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child, u32 kind)
+{
+    ((struct Flags78Bits *)&child->dir)->kind = kind >> 5;
+    copy_flags77_bits(obj, child);
+}
+
 s32 is_state_busy(void);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
@@ -135,6 +177,10 @@ s32 obj_place_sprite_1118_and_finish(struct ActorObj *obj, u32 a);
 void map_obj_spawn_child(struct ActorObj *obj);
 void obj_timer_down_action7_then_idle(struct ActorObj *obj);
 void obj_arc_step_timer(struct ActorObj *obj);
+void obj_drift_fast(struct ActorObj *obj);
+void obj_drift_slow(struct ActorObj *obj);
+s32 obj_query_part_settle(struct ActorObj *obj);
+void obj_pose_active_action5_then_spawn(struct ActorObj *obj);
 
 ASM_FUNC("asm/code_0805FA0C/map_obj_drift_x.s", void map_obj_drift_x(void))
 
@@ -262,9 +308,73 @@ void map_obj_place_owner_sprite(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805FA0C/map_obj_spawn_child.s", void map_obj_spawn_child(struct ActorObj *obj))
+void map_obj_spawn_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
 
-ASM_FUNC("asm/code_0805FA0C/pose_steps_obj_pose_active_spawn_child.s", void pose_steps_obj_pose_active_spawn_child(struct ActorObj *obj))
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        effect_spawn_at(0xE64, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        child = obj_spawn(obj->part, 0x4132, obj->baseX / 0x100 - 0x20, obj->baseY / 0x100 + 2,
+                          obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = child;
+        obj_child_flags(obj, child, 0x40);
+        child->handler68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler5C = (s32 (*)(struct ActorObj *))obj_query_part_settle;
+        child->handler60 = (s32 (*)(struct ActorObj *))obj_query_part_settle;
+        child->byte74 = obj->byte74;
+        child->timer = 0;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->baseX - 0x2000;
+        child->paramA8 = obj->baseY;
+        child->targetX = obj->owner->part->targetX;
+        child->targetY = obj->owner->part->targetY;
+        if (obj->dy == 0)
+        {
+            child->state = obj_drift_fast;
+            child->dx = 0x40;
+        }
+        else
+        {
+            child->state = obj_drift_slow;
+            child->dx = 2;
+        }
+        set_slot_value(0x85, -1);
+        obj->state = obj_pose_active_action5_then_spawn;
+    }
+}
+
+void pose_steps_obj_pose_active_spawn_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 6, 0, 0);
+        obj->dh = 1;
+        obj_list_push_default(obj);
+        obj->handler5C = (s32 (*)(struct ActorObj *))obj_query_part_start_motion;
+        obj->handler60 = (s32 (*)(struct ActorObj *))obj_query_part_start_motion;
+        ((struct ObjFlags77 *)obj)->bit5 = 1;
+        child = obj_spawn(obj->part, 0x4131, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100,
+                          ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        ((struct Flags79Bit0 *)&child->flags)->bit0 = 1;
+        copy_flags77_bits(obj, child);
+        child->handler68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        child->byte74 = obj->byte74;
+        child->state = obj_part_ba_zero_finish;
+        obj->timer = 0;
+        set_slot_value(0x86, -1);
+        obj->state = obj_slide_step_then_wrap;
+    }
+}
 
 void obj_slide_step_then_wrap(struct ActorObj *obj)
 {
@@ -487,7 +597,30 @@ void obj_wait_ready_action2_external(struct ActorObj *obj)
 
 ASM_FUNC("asm/code_0805FA0C/obj_pose_active_choose_motion.s", void obj_pose_active_choose_motion(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_0805FA0C/obj_pose_active_spawn_child_b.s", void obj_pose_active_spawn_child_b(struct ActorObj *obj))
+void obj_pose_active_spawn_child_b(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xB, 0, 0);
+        child = obj_spawn(obj->part, 0x410E, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 8, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = child;
+        ((struct Flags79Bit0 *)&child->flags)->bit0 = 1;
+        copy_flags77_bits(obj, child);
+        child->state = obj_pose_active_action1_timer8;
+        child->handler68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler58 = obj_place_sprite_1118_and_finish;
+        child->handler5C = obj_query_part_place_and_finish;
+        child->byte74 = obj->byte74;
+        set_slot_value(0x114, -1);
+        obj->state = obj_pose_active_aim_part_action3;
+    }
+}
 
 s32 obj_query_part_place_and_finish(struct ActorObj *obj)
 {

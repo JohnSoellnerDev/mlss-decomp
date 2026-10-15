@@ -93,6 +93,41 @@ struct ActorObj
     s16 dh;
 };
 
+struct PoseBits6
+{
+    u8 low : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+} __attribute__((packed));
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags79Bit0
+{
+    u8 bit0 : 1;
+    u8 unk1 : 7;
+};
+
+// The spawned child takes over flag bits 5 and 6 of its parent.
+static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
 void sound_stop_song(u32 song);
@@ -266,7 +301,39 @@ void actor_side_action_when_active(struct ActorObj *obj)
 
 ASM_FUNC("asm/code_0806BCCC/actor_side_action_timer8_child.s", void actor_side_action_timer8_child(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_0806BCCC/actor_spawn_motion_child.s", void actor_spawn_motion_child(struct ActorObj *obj))
+void actor_spawn_motion_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        set_slot_value(0x86, -1);
+        effect_spawn_at(0x1C07, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        child = obj_spawn(obj->part, 0x40D3, obj->baseX / 0x100, obj->baseY / 0x100 + 2,
+                          obj->baseH / 0x100 + 0x20, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 6;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler58 = (void (*)(struct ActorObj *))actor_unlink_partners_and_release;
+        child->handler60 = (void (*)(struct ActorObj *))actor_wait_for_slot;
+        child->targetX = obj->owner->part->targetX;
+        child->targetY = obj->owner->part->targetY;
+        child->targetH = obj->owner->part->targetH + 0x8000;
+        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
+        child->motionSpeed = 0x400;
+        child->motionStart = 0;
+        start_motion(child);
+        child->tag = obj->tag;
+        child->state = actor_wait_index_then_timer;
+        obj->state = actor_idle_when_pose_active;
+    }
+}
 
 ASM_FUNC("asm/code_0806BCCC/actor_retarget_to_owner_part.s", void actor_retarget_to_owner_part(struct ActorObj *obj))
 
@@ -332,6 +399,30 @@ void actor_effect_then_wait_index(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806BCCC/actor_spawn_counted_child.s", void actor_spawn_counted_child(struct ActorObj *obj))
+void actor_spawn_counted_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        if ((s16)--obj->timer <= 0)
+        {
+            if (obj->paramA8 == 0)
+                sprite_set_action(obj, 7, 0, 0);
+            else
+                sprite_set_action(obj, 0xF, 0, 0);
+            child = obj_spawn(obj->part, 0x40D0, obj->baseX / 0x100, obj->baseY / 0x100,
+                              obj->baseH / 0x100, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+            obj->child = child;
+            ((struct Flags79Bit0 *)&child->flags79)->bit0 = 1;
+            copy_flags77_bits(obj, child);
+            child->handler68 = on_arrive;
+            child->unk6C = obj->unk6C;
+            child->owner = obj->owner;
+            child->counter = obj->counter + 1;
+            obj->state = actor_action8_or_10_timer;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_0806BCCC/actor_finish_with_child_effect.s", void actor_finish_with_child_effect(struct ActorObj *obj))

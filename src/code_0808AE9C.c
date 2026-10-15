@@ -20,10 +20,22 @@ struct Part
     s32 h;
 };
 
+// The template record starts 8 bytes into the data record and has the layout of an actor.
+struct Template
+{
+    u8 filler0[0x2C];
+    struct Actor *owner;
+    u8 filler30[0x6C - 0x30];
+    const u8 *anim;
+};
+
 struct Data
 {
     u8 filler0[0x7F];
-    u8 flags7F;
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
     u8 filler80[0x8C - 0x80];
     s32 spawnX;
     s32 spawnY;
@@ -45,6 +57,19 @@ struct Flags79Bits
     u8 unk0 : 5;
     u8 rebuild : 1;
     u8 unk6 : 2;
+};
+
+struct Flags79Bit0
+{
+    u8 bit0 : 1;
+    u8 unk1 : 7;
+};
+
+struct ActionBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 unk3 : 5;
 };
 
 struct Counter
@@ -127,6 +152,28 @@ struct Actor
     u16 dh;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+// A spawned part takes over bits 5 and 6 of the template flags.
+static inline void copy_template_flags(struct Actor *part, struct Data *data)
+{
+    ((struct ObjFlags77 *)part)->bit6 = data->bit6;
+    ((struct ObjFlags77 *)part)->bit5 = data->bit5;
+}
+
 void start_motion(struct Actor *obj);
 void sub_0808C7C8(struct Actor *obj);
 void set_slot_value(u32 id, s32 value);
@@ -140,6 +187,8 @@ s32 travel_aim_at_target(struct Actor *obj);
 struct Actor *obj_spawn(struct Data *data, u32 kind, s32 x, s32 y, s32 h, s32 a, s32 b);
 void obj_list_push_arg(struct Actor *obj, u32 arg);
 void wait_then_remove_part(struct Actor *obj);
+void settle_aim_then_finish(struct Actor *obj);
+void settle_aim_then_remove(struct Actor *obj);
 void pose_update_if_visible_e(struct Actor *obj);
 void place_effect_and_remove(struct Actor *obj);
 void pose_update_if_visible_b(struct Actor *obj);
@@ -157,21 +206,119 @@ ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite_b.s", void spawn_child_4068_
 
 ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite_c.s", void spawn_child_4068_sprite_c(void))
 
-ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite_d.s", void spawn_child_4068_sprite_d(void))
+void spawn_child_4068_sprite_d(struct Actor *obj)
+{
+    struct Actor *child;
+    struct Actor *owner;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    if (obj->pose->visible)
+    {
+        sprite_set_action(obj, 9, 0, 0);
+        obj->state = pose_update_if_visible_b;
+        set_slot_value(0x85, -1);
+        x = obj->x / 0x100;
+        y = obj->y / 0x100;
+        h = obj->h / 0x100;
+        owner = obj->owner;
+        child = obj_spawn(obj->data, 0x4068, x - 0xA, y, h + 0x16, 1, 1);
+        effect_spawn_at(0xC59, x, y, h, obj);
+        obj->child = child;
+        child->listSlot = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        child->timer = obj->timer;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->buttons = obj->buttons;
+        child->step = 0;
+        child->targetX = owner->data->x + (obj->timer << 8);
+        child->targetY = owner->data->y + (obj->paramA0 << 8);
+        child->targetH = owner->data->h + (obj->paramA4 << 8);
+        ((struct Flags79Bits *)&child->flags79)->rebuild = 1;
+        child->motionSpeed = 0x300;
+        child->motionStart = 0;
+        start_motion(child);
+        child->anim = obj->anim;
+        obj_list_push_arg(child, 0);
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = place_effect_and_remove;
+    }
+}
 
 ASM_FUNC("asm/code_0808AE9C/travel_aim_at_target.s", s32 travel_aim_at_target(struct Actor *obj))
 
 ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_traveler.s", void wait_then_spawn_traveler(void))
 
-ASM_FUNC("asm/code_0808AE9C/travel_then_spawn_home.s", void travel_then_spawn_home(void))
+void travel_then_spawn_home(struct Actor *obj)
+{
+    struct Data *data;
+    struct Template *tpl;
+    struct Actor *part;
+    s32 length;
+    u16 *progress;
 
-ASM_FUNC("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_finish(void))
+    progress = &obj->dx;
+    *progress = (obj->timer << 7) + *progress;
+    length = travel_aim_at_target(obj);
+    if (((s16)*progress << 1) >= length)
+    {
+        data = obj->data;
+        tpl = (struct Template *)((u8 *)data + 8);
+        part = obj_spawn(data, 0x4066, data->spawnX / 0x100, data->spawnY / 0x100, data->spawnH / 0x100, 0, 1);
+        sprite_set_action(part, 1, 0, 0);
+        part->listSlot = 0xFF;
+        ((struct Flags79Bit0 *)&part->flags79)->bit0 = 1;
+        ((struct ActionBits *)&part->action)->mode = 3;
+        part->owner = tpl->owner;
+        part->anim = tpl->anim;
+        obj_list_push_arg(part, 0);
+        copy_template_flags(part, data);
+        part->pose->mode = 0;
+        part->state = wait_then_remove_part;
+        part->step = 6;
+        obj->child = part;
+        obj->step = 0x10;
+        obj->state = settle_aim_then_finish;
+    }
+}
+
+ASM_FUNC("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_finish(struct Actor *obj))
 
 ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_walker.s", void wait_then_spawn_walker(void))
 
-ASM_FUNC("asm/code_0808AE9C/walk_then_spawn_home.s", void walk_then_spawn_home(void))
+void walk_then_spawn_home(struct Actor *obj)
+{
+    struct Data *data;
+    struct Template *tpl;
+    struct Actor *part;
+    s32 length;
 
-ASM_FUNC("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remove(void))
+    obj->dx += 0x300;
+    length = travel_aim_at_target(obj);
+    if (((s16)obj->dx << 1) < length)
+        return;
+    data = obj->data;
+    tpl = (struct Template *)((u8 *)data + 8);
+    part = obj_spawn(data, 0x4066, data->spawnX / 0x100, data->spawnY / 0x100, data->spawnH / 0x100, 0, 1);
+    sprite_set_action(part, 1, 0, 0);
+    part->pose->mode = 0;
+    part->listSlot = 0xFF;
+    part->owner = tpl->owner;
+    ((struct Flags79Bit0 *)&part->flags79)->bit0 = 1;
+    part->anim = tpl->anim;
+    obj_list_push_arg(part, 0);
+    copy_template_flags(part, data);
+    part->step = 0x3C;
+    part->state = wait_then_start_motion;
+    obj->child = part;
+    obj->step = 0;
+    obj->state = settle_aim_then_remove;
+}
+
+ASM_FUNC("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remove(struct Actor *obj))
 
 void wait_then_start_motion(struct Actor *obj)
 {

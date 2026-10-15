@@ -236,7 +236,25 @@ void obj_timer_spawn_child_a(struct ActorObj *obj)
     obj->state = obj_no_sprite_idle_b;
 }
 
-ASM_FUNC("asm/code_08065718/obj_timer_spawn_child_b.s", void obj_timer_spawn_child_b(struct ActorObj *obj))
+void obj_timer_spawn_child_b(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if ((s16)--obj->timer > 0)
+        return;
+    child = obj_spawn(obj->part, 0x40DD, obj->owner->part->targetX / 256, obj->owner->part->targetY / 256 + 2,
+                      obj->baseH / 256, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+    obj->child = child;
+    obj_child_flags(obj, child, 0x20);
+    child->handler68 = on_arrive;
+    child->unk6C = obj->unk6C;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+    child->timer = 8;
+    child->state = obj_timer_spawn_effect_place;
+    set_slot_value(0x8C, -1);
+    obj->state = obj_no_sprite_idle;
+}
 
 void obj_timer_spawn_effect_place(struct ActorObj *obj)
 {
