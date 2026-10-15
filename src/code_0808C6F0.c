@@ -889,7 +889,7 @@ ASM_FUNC("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume
 
 
 
-NONMATCH("asm/code_0808C6F0/setup_slot_by_flags.s", s32 setup_slot_by_flags(struct Actor *obj))
+s32 setup_slot_by_flags(struct Actor *obj)
 {
     if ((gUnk_03000FD8[0xC] & 0x80) != 0)
     {
@@ -911,13 +911,13 @@ NONMATCH("asm/code_0808C6F0/setup_slot_by_flags.s", s32 setup_slot_by_flags(stru
 
         sv = &obj->data->slotValue;
         tbl = (struct SlotEntry *)gUnk_03000FF4;
-        *sv = tbl[~obj->data->slot].v2C;
+        tbl += ~obj->data->slot;
+        *sv = tbl->v2C;
     }
     obj->state = dispatch_slot_spawn_ext;
     obj->callback = end_action;
     return 1;
 }
-END_NONMATCH
 
 
 s32 poll_action_end(struct Actor *obj)
