@@ -103,6 +103,13 @@ struct PoseBits6
     u8 high : 1;
 } __attribute__((packed));
 
+struct Flags79Bit5
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 high2 : 2;
+};
+
 // The child takes over bits 5 and 6 of the parent's flag byte at +0x77.
 static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *child)
 {
@@ -182,7 +189,25 @@ void obj_drift_slow(struct ActorObj *obj);
 s32 obj_query_part_settle(struct ActorObj *obj);
 void obj_pose_active_action5_then_spawn(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08060504/obj_query_part_start_motion.s", s32 obj_query_part_start_motion(struct ActorObj *obj))
+s32 obj_query_part_start_motion(struct ActorObj *obj)
+{
+    s32 found;
+
+    found = query_contact(obj);
+    if (found != 0)
+        return found;
+    obj_list_remove(obj);
+    ((struct PoseBits6 *)&obj->pose->unk11)->bit6 = 0;
+    obj->targetX = obj->param9C;
+    obj->targetY = obj->paramA0;
+    ((struct Flags79Bit5 *)&obj->flags)->bit5 = 1;
+    obj->motionSpeed = 0x300;
+    obj->motionStart = found;
+    start_motion(obj);
+    sprite_set_action(obj, 7, 0, 0);
+    obj->state = obj_index_zero_reset_x;
+    return 0;
+}
 
 void obj_part_ba_zero_finish(struct ActorObj *obj)
 {

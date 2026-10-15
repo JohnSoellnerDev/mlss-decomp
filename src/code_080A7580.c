@@ -198,6 +198,44 @@ void hero_a_active_anims_pair(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080A7580/hero_a_sprite_place_at_b.s", void hero_a_sprite_place_at_b(struct HeroBody *body))
+void hero_a_sprite_place_at_b(struct HeroBody *body)
+{
+    struct Hero *hero_a;
+    struct Hero *hero_b;
+    struct HeroBody *body_a;
+    struct HeroBody *body_b;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    hero_a = gUnk_03000FD8->heroA;
+    body_a = &hero_a->body;
+    hero_b = gUnk_03000FD8->heroB;
+    body_b = &hero_b->body;
+    if ((body_a->sprite->flags & 8) != 0)
+    {
+        set_slot_value(0x2B, -1);
+        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        {
+            x = body_b->targetX / 0x100 + body_b->ofsX;
+            y = body_b->targetY / 0x100 + body_b->ofsY;
+            z = body_b->targetZ / 0x100 + body_b->ofsZ - 0xC;
+            place_targets(body_a, x, y, z, -1);
+            {
+                u16 h = 0x2F;
+                hero_a->body.height = h;
+            }
+            set_motion_offsets(body_a, 0x466);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 0xE, 0x2030, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        body_a->unk9C = 0;
+        body_a->timer = body_a->timer & 0xFFF;
+        body->state = hero_a_step_wait_press;
+    }
+}
 
 ASM_FUNC("asm/code_080A7580/hero_a_step_wait_press.s", void hero_a_step_wait_press(struct HeroBody *body))

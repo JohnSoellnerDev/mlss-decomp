@@ -184,4 +184,37 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08076B74/spawn_child_8031.s", void spawn_child_8031(struct ActorObj *obj))
+NONMATCH("asm/code_08076B74/spawn_child_8031.s", void spawn_child_8031(struct ActorObj *obj))
+{
+    struct ActorPart *part;
+    struct ActorObj *child;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    if ((obj->pose->flags & 8) != 0)
+    {
+        sprite_set_action(obj, 5, 0, 0);
+        part = obj->part;
+        x = part->targetX / 0x100;
+        y = part->targetY / 0x100;
+        h = part->targetH / 0x100;
+        child = obj_spawn(part, 0x8031, x, y, h + 0x40, 0, 1);
+        sprite_set_action(child, obj->paramA0, 0, 0);
+        child->child = obj->child;
+        obj->child = child;
+        ((struct ActorFlags79 *)&child->flags79)->bit0 = 1;
+        ((struct ActorFlags77 *)&child->flags77)->bit6 = 0;
+        ((struct ActorFlags77 *)&child->flags77)->bit5 = 0;
+        child->callback = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        child->wait = obj->paramA0;
+        child->timer = 0x3C;
+        child->state = step_timer_anim_then_remove;
+        obj->paramA4 = 1;
+        obj->state = step_countdown_place_then_wait;
+        obj->paramA8 = 10;
+    }
+}
+END_NONMATCH

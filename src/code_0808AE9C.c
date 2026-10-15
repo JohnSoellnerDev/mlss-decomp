@@ -342,7 +342,31 @@ void wait_then_start_motion(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(void))
+NONMATCH("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(struct Actor *obj))
+{
+    u16 wait;
+
+    set_slot_value(0xAF, -1);
+    switch (obj->mode)
+    {
+    case 1:
+        sprite_set_action(obj, 7, 0, 0);
+        break;
+    case 0:
+    case 2:
+        sprite_set_action(obj, 3, 0, 0);
+        break;
+    case 3:
+        sprite_set_action(obj, 7, 0, 0);
+        break;
+    }
+    obj->pose->mode = 0;
+    if (obj->mode == 0 || obj->mode == 1 || obj->mode == 2 || obj->mode == 3)
+        wait = 0x18;
+    obj->step = wait;
+    obj->state = wait_then_set_action;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(void))
 
