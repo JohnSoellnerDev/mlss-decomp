@@ -2,7 +2,8 @@
 
 struct OwnerState
 {
-    u8 filler0[0x9A0];
+    u8 filler0[0x888];
+    u32 handles[0x46];
     u8 cur9A0;
     u8 mode9A1;
     u8 busy9A2;
@@ -76,6 +77,12 @@ struct SprBits11
     u8 b7 : 1;
 };
 
+struct FlagBit0
+{
+    u8 b0 : 1;
+    u8 rest : 7;
+};
+
 struct SprBits12
 {
     u8 lo : 4;
@@ -102,6 +109,11 @@ void release_obj_slots(struct ObjList *list);
 void update_sprite_obj(struct ObjList *list);
 u32 restore_obj_word0(u8 *obj, u32 arg);
 void reset_obj_params_b(u8 *obj, u8 *state, u32 arg, u32 zero, u32 one, u32 ff);
+u32 record_advance(struct Owner *owner, u8 *rec);
+u32 record_dispatch(struct Owner *owner, u8 *rec, u32 *buf);
+void decode_stream_run(u8 *rec, u32 *buf, u8 *block, u8 *p3, u8 *p4, u32 advanced);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
 
 ASM_FUNC("asm/code_080FA598/cmd_set_value.s", void cmd_set_value(void))
@@ -110,7 +122,46 @@ ASM_FUNC("asm/code_080FA598/cmd_slot_value_by_kind.s", void cmd_slot_value_by_ki
 
 ASM_FUNC("asm/code_080FA598/cmd_slot_op.s", void cmd_slot_op(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_slot_field.s", void cmd_slot_field(void))
+u32 cmd_slot_field(struct Owner *owner, u32 unused, u32 *data)
+{
+    u8 index = *data++;
+    u32 kind = *data++;
+
+    switch (kind)
+    {
+    case 0:
+    {
+        u32 value = *data;
+
+        if (value & 0x40)
+            owner->list->slots[index].scale = (value & 0xF) << 4;
+        else
+            owner->list->slots[index].scale = value << 8;
+        break;
+    }
+    case 1:
+    {
+        u32 value = *data;
+
+        if (value & 0x40)
+        {
+            u8 *obj = owner->list->slots[index].obj;
+            u32 low = value & 0xF;
+
+            obj[0x20] = low;
+        }
+        else
+        {
+            u8 *obj = owner->list->slots[index].obj;
+            u32 high = value << 4;
+
+            obj[0x20] = high;
+        }
+        break;
+    }
+    }
+    return 1;
+}
 
 u8 cmd_place_object(struct Owner *owner, u32 a2, u32 *args)
 {
@@ -202,21 +253,93 @@ u32 cmd_latch_when_free(struct Owner *owner, u32 *cmd)
 
 ASM_FUNC("asm/code_080FA598/cmd_push_handle.s", void cmd_push_handle(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_set_object_flags_list.s", void cmd_set_object_flags_list(void))
+u32 cmd_set_object_flags_list(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    set_tween_anim(owner->list, (u8)cmd[0], owner->list->slots[cmd[0]].obj[0x24], cmd[1]);
+    spr_set_b6(owner->list->slots[cmd[0]].obj, cmd[2]);
+    owner->list->slots[cmd[0]].obj[0x12] |= 0x10;
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_set_obj_flags_list2.s", void cmd_set_obj_flags_list2(void))
+u32 cmd_set_obj_flags_list2(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    set_tween_anim(owner->list, (u8)cmd[0], cmd[1], cmd[2]);
+    spr_set_b6(owner->list->slots[cmd[0]].obj, cmd[3]);
+    owner->list->slots[cmd[0]].obj[0x12] |= 0x10;
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_obj_op_ae49.s", void cmd_obj_op_ae49(void))
+u8 cmd_obj_op_ae49(struct Owner *owner, u32 a2, u32 *cmd)
+{
+    u8 *obj;
 
-ASM_FUNC("asm/code_080FA598/cmd_place_slot_flags.s", void cmd_place_slot_flags(void))
+    set_tween_anim(owner->list, (u8)cmd[0], cmd[1], 0);
+    obj = owner->list->slots[cmd[0]].obj;
+    spr_set_b6(obj, cmd[2]);
+    ((struct SprBits12 *)(obj + 0x12))->b4 = 0;
+    return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, obj, (u8)cmd[3], 0);
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_set_pos_for_current.s", void cmd_set_pos_for_current(void))
+u32 cmd_place_slot_flags(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    slot_load_object(owner, (u8)cmd[0]);
+    ensure_tween_sprite(owner->list, (u8)cmd[0], cmd[1]);
+    set_tween_anim(owner->list, (u8)cmd[0], cmd[2], cmd[3]);
+    slot_store_object(owner, (u8)cmd[0]);
+    spr_set_b6(owner->list->slots[cmd[0]].obj, cmd[4]);
+    owner->list->slots[cmd[0]].obj[0x12] |= 0x10;
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_object_op_cur.s", void cmd_object_op_cur(void))
+u32 cmd_set_pos_for_current(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    u8 index = owner->state->cur9A0 - 1;
 
-ASM_FUNC("asm/code_080FA598/cmd_place_obj_sync.s", void cmd_place_obj_sync(void))
+    set_tween_anim(owner->list, index, cmd[0], cmd[1]);
+    spr_set_b6(owner->list->slots[index].obj, cmd[2]);
+    owner->list->slots[index].obj[0x12] |= 0x10;
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_place_obj_flags3.s", void cmd_place_obj_flags3(void))
+u8 cmd_object_op_cur(struct Owner *owner, u32 a2, u32 *cmd)
+{
+    u8 index = owner->state->cur9A0 - 1;
+    u8 *obj;
+
+    set_tween_anim(owner->list, index, cmd[0], 0);
+    obj = owner->list->slots[index].obj;
+    ((struct SprBits12 *)(obj + 0x12))->b4 = 0;
+    spr_set_b6(obj, cmd[1]);
+    return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, obj, (u8)cmd[2], 0);
+}
+
+u32 cmd_place_obj_sync(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    u8 index = owner->state->cur9A0 - 1;
+
+    slot_load_object(owner, index);
+    ensure_tween_sprite(owner->list, index, cmd[0]);
+    set_tween_anim(owner->list, index, cmd[1], cmd[2]);
+    slot_store_object(owner, index);
+    spr_set_b6(owner->list->slots[index].obj, cmd[3]);
+    owner->list->slots[index].obj[0x12] |= 0x10;
+    return 1;
+}
+
+u8 cmd_place_obj_flags3(struct Owner *owner, u32 a2, u32 *cmd)
+{
+    u8 index = owner->state->cur9A0 - 1;
+    u8 *obj;
+
+    slot_load_object(owner, index);
+    ensure_tween_sprite(owner->list, index, cmd[0]);
+    set_tween_anim(owner->list, index, cmd[1], 0);
+    slot_store_object(owner, index);
+    obj = owner->list->slots[index].obj;
+    ((struct SprBits12 *)(obj + 0x12))->b4 = 0;
+    spr_set_b6(obj, cmd[2]);
+    return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, obj, (u8)cmd[3], 0);
+}
 
 u32 cmd_obj_setup_global(struct Owner *owner, u32 unused, u32 *cmd)
 {
@@ -272,9 +395,45 @@ u32 cmd_find_record(struct Owner *owner, u32 *cmd, u32 *key_ptr, u8 key)
 
 ASM_FUNC("asm/code_080FA598/cmd_set_next_flag4.s", void cmd_set_next_flag4(void))
 
-ASM_FUNC("asm/code_080FA598/run_record.s", void run_record(void))
+// Runs the record while bit 0 of its flags (+0xA0) is set.
+u32 run_record(struct Owner *owner, u8 *rec)
+{
+    u32 buf[13];
+    u32 advanced;
 
-ASM_FUNC("asm/code_080FA598/owner_release_handles.s", void owner_release_handles(struct Owner *owner))
+    if (((rec[0xA0] ^ 1) & 1) != 0)
+        return 0;
+    while ((advanced = (u8)record_advance(owner, rec)) == 0)
+    {
+        decode_stream_run(rec, buf, gUnk_03000FC0, (u8 *)owner->state + 0x908,
+                          (u8 *)owner->state + 0x99C, advanced);
+        if ((u8)record_dispatch(owner, rec, buf) == 0)
+            break;
+    }
+    return 1;
+}
+
+void owner_release_handles(struct Owner *owner)
+{
+    s16 remaining = owner->state->busy9A2 >> 1;
+    u32 *slot = owner->state->handles;
+
+    if (remaining != 0)
+    {
+        do
+        {
+            if (*slot != 0)
+            {
+                release_obj_131c(*slot);
+                *slot = 0;
+            }
+            remaining--;
+            slot++;
+        } while (remaining > 0);
+    }
+    owner->state->busy9A2 = owner->state->busy9A2 & 1;
+    ((struct FlagBit0 *)&owner->state->busy9A2)->b0 = 0;
+}
 
 void clear_command_records(struct Owner *owner)
 {
