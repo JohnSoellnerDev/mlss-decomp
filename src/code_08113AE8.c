@@ -17,7 +17,9 @@ struct Scene
     u8 filler0[0x34];
     struct Owner *entry;
     struct Obj *main;
-    u8 filler3C[0x18];
+    u8 filler3C[0x40 - 0x3C];
+    s32 unk40;
+    u8 filler44[0x54 - 0x44];
     void (*cb54)(struct Obj *);
     u8 filler58[0x04];
     void (*cb5C)(struct Obj *);
@@ -183,7 +185,7 @@ void obj_reset_when_free(struct Obj *obj);
 void obj_spawn_child(struct Obj *obj);
 void obj_spawn_effect_part(struct Obj *obj);
 void obj_circle_step(struct Obj *obj);
-void obj_partner_step(struct Obj *obj);
+u32 obj_partner_step(struct Obj *obj, struct Obj *partner);
 void obj_select_callback(struct Obj *obj);
 void world_links_release(struct Obj *obj);
 void obj_step_path(struct Obj *obj);
@@ -400,7 +402,36 @@ ASM_FUNC("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part
 
 ASM_FUNC("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
 
-ASM_FUNC("asm/code_08113AE8/obj_partner_step.s", void obj_partner_step(struct Obj *obj))
+void obj_finish_motion(struct Obj *obj);
+
+u32 obj_partner_step(struct Obj *obj, struct Obj *partner)
+{
+    if (partner != partner->scene->main)
+    {
+        return 1;
+    }
+    if (obj->posX < partner->scene->unk40)
+    {
+        return -1;
+    }
+    if (obj->posX < obj->dispX)
+    {
+        return -1;
+    }
+    place_targets(obj, 0x50, obj->posY / 0x100, obj->posZ / 0x100, 0x100);
+    set_motion_start(obj, gSlotMotion[obj->slot]);
+    obj->scene->mode ^= 1;
+    obj->callback = obj_finish_motion;
+    ((u16 *)&obj->slot)[0] = ((u16 *)&obj->slot)[0] + 1;
+    if (obj->slot >= obj->unk9C)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct SpriteBits *)&obj->sprite->mode)->mode = 1;
+    }
+    effect_spawn_at(0x2AFB, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+    set_slot_value(0x119, -1);
+    return -1;
+}
 
 void obj_finish_motion(struct Obj *obj)
 {

@@ -256,7 +256,62 @@ void obj_countdown_then_place(struct SceneObj *obj)
 }
 
 
-ASM_FUNC("asm/code_0811229C/obj_anim6_spawn_child.s", void obj_anim6_spawn_child(struct SceneObj *obj))
+struct StageBits
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
+struct SpriteActiveBits
+{
+    u8 low3 : 3;
+    u8 active : 1;
+    u8 high4 : 4;
+};
+
+struct Flag79Low
+{
+    u8 bit0 : 1;
+    u8 rest : 7;
+};
+
+void obj_anim6_spawn_child(struct SceneObj *obj)
+{
+    struct SceneObj *child;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    if (((struct SpriteActiveBits *)&obj->sprite->flags12)->active != 0)
+    {
+        sprite_set_action(obj, 6, 0, 0);
+        ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
+        effect_spawn_at(0x270E, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+        child = obj_spawn_linked(obj, 0x4040, 0);
+        x = child->posX - 0x400;
+        child->posX = x;
+        child->dispX = x;
+        y = child->posY + 0x100;
+        child->posY = y;
+        child->dispY = y;
+        z = child->posZ + 0x1400;
+        child->posZ = z;
+        child->dispZ = z;
+        if (gPhaseLevelTable[obj->phase] != 0)
+        {
+            ((struct StageBits *)&child->unk78)->hi3 = gPhaseLevelTable[obj->phase] - 1;
+        }
+        else
+        {
+            ((struct Flag79Low *)&child->flags79)->bit0 = 1;
+        }
+        obj_list_push_default(child);
+        child->callback60 = (void *)obj_lookup_slot_or_place;
+        child->state = obj_place_by_owner_kind;
+        obj->state = obj_anim_d_if_active;
+        set_slot_value(0x85, -1);
+    }
+}
 
 
 void obj_random_chance_or_wait(struct SceneObj *obj)
@@ -291,7 +346,44 @@ void obj_random_chance_or_wait(struct SceneObj *obj)
 }
 
 
-ASM_FUNC("asm/code_0811229C/obj_spawn_and_place_part.s", void obj_spawn_and_place_part(struct SceneObj *obj))
+void obj_spawn_and_place_part(struct SceneObj *obj)
+{
+    struct SceneObj *part;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    sprite_set_action(obj, 0x10, 0, 0);
+    ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
+    part = obj->hold;
+    if (part == NULL)
+    {
+        part = obj_spawn_linked(obj, 0x4040, 0);
+        x = part->posX + 0x400;
+        part->posX = x;
+        part->dispX = x;
+        y = part->posY + 0x100;
+        part->posY = y;
+        part->dispY = y;
+        z = part->posZ + 0x2800;
+        part->posZ = z;
+        part->dispZ = z;
+        if (gPhaseLevelTable[obj->phase] != 0)
+        {
+            ((struct StageBits *)&part->unk78)->hi3 = gPhaseLevelTable[obj->phase] - 1;
+        }
+        else
+        {
+            ((struct Flag79Low *)&part->flags79)->bit0 = 1;
+        }
+    }
+    obj_list_push_default(part);
+    part->callback60 = (void *)obj_lookup_slot_or_place;
+    effect_spawn_at(0x2716, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+    part->state = obj_place_by_owner_kind;
+    obj->state = obj_anim_d_if_active;
+    set_slot_value(0x6A, -1);
+}
 
 
 

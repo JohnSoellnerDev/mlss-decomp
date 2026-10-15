@@ -253,7 +253,53 @@ void obj_action_d_pose_mode1_then_e0b4(struct ActorObj *obj);
 void obj_action_9_pose_mode1_then_e104(struct ActorObj *obj);
 void obj_action_9_pose_mode1_then_e180(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child(void))
+NONMATCH("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    u16 timer;
+
+    u16 *dhp = (u16 *)&obj->dh;
+    s16 *dyp = &obj->dy;
+    s16 *dxp = &obj->dx;
+
+    *dhp = *dhp + obj->dhStep;
+    obj->posX = obj->baseX + *dxp;
+    obj->posY = obj->baseY + *dyp;
+    obj->posH = obj->baseH + (s16)*dhp;
+    timer = obj->timer;
+    if ((s16)obj->timer > 0)
+    {
+        obj->timer = timer - 1;
+        return;
+    }
+    if (obj->spawnLeft > 0)
+    {
+        obj->spawnLeft = obj->spawnLeft - 1;
+        child = obj_spawn(obj->data, 0x417E, obj->targetX, obj->targetY, obj->targetH,
+                          ((u32)obj->pose->byte11 << 25) >> 31, 1);
+        child->child = obj->child;
+        obj->child = child;
+        ((struct ObjFlags79Bit0 *)child)->bit0 = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = obj_begin_fall_to_owner_alt;
+        child->handler68 = on_arrive;
+        child->childValue = obj->childValue;
+        child->owner = obj->owner;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->spawnLeft = obj->spawnLeft;
+        child->byte74 = 0xFF;
+        sprite_set_action(child, 0, 0, 0);
+        child->timer = 2;
+        child->targetX = obj->targetX;
+        child->targetY = obj->targetY;
+        child->targetH = obj->targetH;
+    }
+    obj->state = obj_timed_bounce_or_finish;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce_or_finish(struct ActorObj *obj))
 
@@ -346,7 +392,50 @@ void obj_settle_step_land_slot69(struct ActorObj *obj)
 
 ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(void))
 
-ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_offscreen.s", void obj_fall_spawn_fx_offscreen(struct ActorObj *obj))
+void obj_fall_spawn_fx_offscreen(struct ActorObj *obj)
+{
+    s32 sx;
+    s32 sy;
+    s32 sh;
+    void *fx;
+    struct FxTask *task;
+
+    obj->posX = obj->baseX + obj->dx;
+    obj->posH = obj->baseH + obj->dh;
+    obj->dh = obj->dh - 0x5E;
+    sx = obj->posX / 0x100;
+    sy = obj->posY / 0x100;
+    sh = obj->posH / 0x100;
+    offset_three_words_camera(&sx, &sy, &sh, 0);
+    if ((s16)obj->timer > 0)
+    {
+        obj->timer = obj->timer - 1;
+    }
+    else
+    {
+        obj->timer = 2;
+        fx = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
+        obj_load_record(fx, 0, -1, 0, 0);
+        sprite_update_cd0(fx);
+        obj_load_record(fx, 0, obj->pose->record23, 0, 0);
+        ((struct FxRec *)fx)->unk0 = ((struct FxRec *)obj->pose)->unk0;
+        ((struct FxRec *)fx)->unk2 = ((struct FxRec *)obj->pose)->unk2;
+        ((struct FxRec *)fx)->unkE = ((struct FxRec *)obj->pose)->unkE;
+        ((struct FxBit12 *)fx)->bit4 = 1;
+        ((struct FxBits1F *)fx)->a = ((struct FxBits1F *)obj->pose)->a;
+        ((struct FxBits1F *)fx)->b = ((struct FxBits1F *)obj->pose)->b;
+        ((struct FxBits1F *)fx)->c = ((struct FxBits1F *)obj->pose)->c;
+        ((struct FxBits1F *)fx)->d = ((struct FxBits1F *)obj->pose)->d;
+        task = task_create_list_4c(fx_task_tick_release, fx);
+        task->counter = 0;
+        task->unk18 = 0;
+    }
+    if (sx < -0x10 || sy > 0x110)
+    {
+        sound_stop_song(0x117);
+        obj_release(obj);
+    }
+}
 
 ASM_FUNC("asm/code_080DD204/obj_spawn_aimed_child_pair.s", void obj_spawn_aimed_child_pair(struct ActorObj *obj))
 

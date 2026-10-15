@@ -57,7 +57,9 @@ struct AppearObj
 {
     u8 filler0[0x8];
     struct ObjRecord *unk08;
-    u8 filler0C[0x18 - 0x0C];
+    u8 filler0C[0x10 - 0x0C];
+    s32 unk10;
+    s32 unk14;
     s32 unk18;
     u8 filler1C[0x28 - 0x1C];
     void *unk28;
@@ -580,7 +582,34 @@ void release_item_8(struct AnimSub *sub)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/item_attach_sprite_c.s", void item_attach_sprite_c(void))
+struct FxRecE
+{
+    u16 unk0;
+    u16 unk2;
+    u8 filler4[0xE - 0x4];
+    u16 unkE;
+};
+
+struct FxBits1FLow
+{
+    u8 filler0[0x1F];
+    u8 a : 2;
+    u8 b : 2;
+    u8 c : 2;
+    u8 d : 2;
+};
+
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+
+void item_attach_sprite_c(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5)
+{
+    release_item_c(sub);
+    sub->unk0C = create_obj_de4(p1, p2, p3, -1, -1, -1, -1);
+    obj_load_record(sub->unk0C, p4, -1, 0, 0);
+    sprite_update_cd0(sub->unk0C);
+    ((struct FxBits1FLow *)sub->unk0C)->a = p5 & 3;
+    ((struct FxRecE *)sub->unk0C)->unkE = 0xFFFF;
+}
 
 void init_appear_obj_base(struct AnimSub *sub)
 {
