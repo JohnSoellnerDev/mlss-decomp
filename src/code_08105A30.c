@@ -1,6 +1,15 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct MsBits
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 rest : 3;
+};
+
 struct Sprite
 {
     s16 x;
@@ -490,7 +499,7 @@ void state_heroes_anim_stop(struct Owner *owner)
 
 ASM_FUNC("asm/code_08105A30/state_menu_build.s", void state_menu_build(void))
 
-NONMATCH("asm/code_08105A30/state_menu_slide_in.s", void state_menu_slide_in(struct Owner *owner))
+void state_menu_slide_in(struct Owner *owner)
 {
     u16 timer = owner->timer;
     s32 signedTimer = owner->timer;
@@ -511,19 +520,14 @@ NONMATCH("asm/code_08105A30/state_menu_slide_in.s", void state_menu_slide_in(str
         if ((s16)ny > 0x5F)
         {
             menu->y = 0x60;
-            flags = menu->flags;
-            mask = -0x11;
-            mask &= flags;
-            mask &= -7;
-            mask |= 2;
-            menu->flags = mask;
+            ((struct MsBits *)&menu->flags)->b4 = 0;
+            ((struct MsBits *)&menu->flags)->mode = 1;
             owner->timer = 0x60;
             owner->state = state_menu_alloc_scene;
             set_slot_value(0x8B, -1);
         }
     }
 }
-END_NONMATCH
 
 void state_menu_alloc_scene(struct Owner *owner)
 {

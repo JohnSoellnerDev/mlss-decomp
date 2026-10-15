@@ -1,6 +1,13 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct TwBit4
+{
+    u8 lo : 4;
+    u8 b4 : 1;
+    u8 rest : 3;
+};
+
 struct TaskNode
 {
     struct TaskNode *next;
@@ -306,7 +313,7 @@ void task_spawn_wait_idle(struct SpriteObj *obj)
     node->obj = obj;
 }
 
-NONMATCH("asm/code_08080580/task_wait_idle.s", void task_wait_idle(struct TaskNode *task))
+void task_wait_idle(struct TaskNode *task)
 {
     u8 *flags;
     struct SpriteObj *obj = task->obj;
@@ -314,23 +321,20 @@ NONMATCH("asm/code_08080580/task_wait_idle.s", void task_wait_idle(struct TaskNo
 
     flags = &obj->flags;
     {
-        s32 f = *flags;
-
-        f &= -0x11;
-        *flags = f;
+        ((struct TwBit4 *)flags)->b4 = 0;
     }
     if (obj->checkA != 0)
     {
         if (motion_step(obj) == 0)
         {
-            *flags |= 0x10;
+            ((struct TwBit4 *)flags)->b4 = 1;
         }
     }
     if (obj->checkB != 0)
     {
         if (advance_height(obj) == 0)
         {
-            obj->flags |= 0x10;
+            ((struct TwBit4 *)&obj->flags)->b4 = 1;
         }
     }
     busy = obj->flags & 0x10;
@@ -339,7 +343,6 @@ NONMATCH("asm/code_08080580/task_wait_idle.s", void task_wait_idle(struct TaskNo
         task->fn = (void *)(u32)busy;
     }
 }
-END_NONMATCH
 
 struct TaskNode *task_push_list_50(void *next, void *obj)
 {
