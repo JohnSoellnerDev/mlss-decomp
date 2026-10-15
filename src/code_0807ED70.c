@@ -20,7 +20,9 @@ struct SpriteState
     u8 flags0C;
     u8 filler0D[0x54 - 0x0D];
     struct SpriteObj *objs;
-    u8 filler58[0x238 - 0x58];
+    u8 filler58[0x228 - 0x58];
+    struct SpriteObj *partsB[2];
+    struct SpriteObj *partsA[2];
     struct SpriteNode *nodeFree;
     struct SpriteNode *nodeUsed;
     struct SpriteNode *nodePool;
@@ -55,12 +57,16 @@ struct SpriteObj
     u8 flags13;
     u8 filler14[0x18 - 0x14];
     s32 unk18;
-    u8 filler1C[0x34 - 0x1C];
+    u8 filler1C[0x28 - 0x1C];
+    void *ring;
+    u8 filler2C[0x34 - 0x2C];
     struct SpriteObj *activeNext;
     s32 posX;
     s32 posY;
     s32 posZ;
-    u8 filler44[0x58 - 0x44];
+    u8 filler44[0x4C - 0x44];
+    void *stateFn;
+    u8 filler50[0x58 - 0x50];
     u32 slots58[4];
     u8 filler68[0x76 - 0x68];
     u8 flags76;
@@ -116,10 +122,48 @@ void task_step_z(void);
 void task_slide_step(void);
 void popup_rise_step(void);
 void popup_rise_step_b(void);
+u8 step_motion(void *obj);
+void effect_spawn_at(u32 kind, s32 x, s32 y, s32 z, void *obj);
+void task_finish_anim(void);
 
 struct Lo77
 {
     u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+
+struct Lo5
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
+struct Bits13
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 hi4 : 4;
+};
+
+struct Bits0C
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 hi6 : 6;
+};
+
+struct Bits76
+{
+    u8 lo3 : 3;
+    u8 mid3 : 3;
+    u8 hi2 : 2;
+};
+
+struct Bits12
+{
+    u8 bit0 : 1;
+    u8 mid2 : 2;
     u8 hi5 : 5;
 };
 
@@ -135,7 +179,31 @@ ASM_FUNC("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_object
 
 ASM_FUNC("asm/code_0807ED70/set_body_part.s", void set_body_part(void))
 
-ASM_FUNC("asm/code_0807ED70/obj_free_parts.s", void obj_free_parts(void))
+void obj_free_parts(struct SpriteObj *obj)
+{
+    struct SpriteObj *part;
+
+    part = gUnk_03000FD8->partsA[*(s16 *)((u8 *)obj->ring + 0xEC) + 2];
+    if (part != NULL)
+    {
+        obj_bind_slots(part);
+        ((struct Bits13 *)&part->flags13)->bit2 = 0;
+        ((struct Bits13 *)&part->flags13)->bit3 = 0;
+        list_push_active(part);
+        release_obj_131c(part);
+        gUnk_03000FD8->partsA[*(s16 *)((u8 *)obj->ring + 0xEC) + 2] = NULL;
+    }
+    part = gUnk_03000FD8->partsB[*(s16 *)((u8 *)obj->ring + 0xEC) + 2];
+    if (part != NULL)
+    {
+        obj_bind_slots(part);
+        ((struct Bits13 *)&part->flags13)->bit2 = 0;
+        ((struct Bits13 *)&part->flags13)->bit3 = 0;
+        list_push_active(part);
+        release_obj_131c(part);
+        gUnk_03000FD8->partsB[*(s16 *)((u8 *)obj->ring + 0xEC) + 2] = NULL;
+    }
+}
 
 ASM_FUNC("asm/code_0807ED70/body_set_pose.s", void body_set_pose(void))
 
@@ -143,7 +211,14 @@ ASM_FUNC("asm/code_0807ED70/hero_select_index.s", void hero_select_index(void))
 
 ASM_FUNC("asm/code_0807ED70/sprite_objects_obj_show_at.s", void sprite_objects_obj_show_at(void))
 
-ASM_FUNC("asm/code_0807ED70/display_flush.s", void display_flush(void))
+void display_flush(void)
+{
+    if (gUnk_03000FD8->flags0C & 2)
+    {
+        sub_0811733C(gUnk_03000FD8->display, 1);
+        ((struct Bits0C *)&gUnk_03000FD8->flags0C)->bit1 = 0;
+    }
+}
 
 void obj_list_remove(struct SpriteObj *obj)
 {
@@ -171,7 +246,19 @@ void obj_list_remove(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807ED70/obj_list_push_arg.s", void obj_list_push_arg(void))
+void obj_list_push_arg(struct SpriteObj *obj, u32 arg)
+{
+    if (obj->activeNext == NULL)
+    {
+        obj->activeNext = gUnk_03000FD8->objs;
+        gUnk_03000FD8->objs = obj;
+        obj->slots58[0] = (u32)partner_link_update;
+        obj->slots58[1] = arg;
+        obj->slots58[2] = arg;
+        obj->slots58[3] = arg;
+        ((struct Lo77 *)&obj->flags77)->lo3 = 0;
+    }
+}
 
 void obj_list_push_default(struct SpriteObj *obj)
 {
@@ -188,7 +275,21 @@ void obj_list_push_default(struct SpriteObj *obj)
 
 ASM_FUNC("asm/code_0807ED70/obj_start_pose.s", void obj_start_pose(void))
 
-ASM_FUNC("asm/code_0807ED70/obj_update_pose.s", void obj_update_pose(void))
+void obj_update_pose(struct Task *task)
+{
+    struct SpriteObj *obj = task->obj;
+
+    if (step_motion(obj) == 0)
+    {
+        if (*(s16 *)((u8 *)obj->ring + 0xEC) == -1)
+            sprite_set_action(obj, 0, 0x2039, 0);
+        else
+            sprite_set_action(obj, 0, 0x2068, 0);
+        ((struct Bits12 *)&obj->record->flags12)->mid2 = 1;
+        effect_spawn_at(0x33, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+        task->fn = (void *)task_finish_anim;
+    }
+}
 
 void obj_step_task(struct Task *task)
 {
@@ -204,7 +305,25 @@ void obj_step_task(struct Task *task)
     }
 }
 
-ASM_FUNC("asm/code_0807ED70/obj_timer_task.s", void obj_timer_task(void))
+void obj_timer_task(struct Task *task)
+{
+    struct SpriteObj *obj = task->obj;
+    u16 timer = task->timer;
+
+    if (task->timer > 0)
+    {
+        s32 t = timer - 1;
+
+        task->timer = t;
+        if ((t << 16) == 0)
+            ((struct Bits76 *)&obj->flags76)->mid3 = 0;
+    }
+    else if (obj->posZ >= obj->unk18 && obj->posZ <= 0xC00)
+    {
+        sprite_set_action(obj, 0, 0, 0);
+        task->fn = NULL;
+    }
+}
 
 void display_pause(void)
 {
@@ -319,7 +438,17 @@ ASM_FUNC("asm/code_0807ED70/oam_list_rows_b.s", void oam_list_rows_b(void))
 
 ASM_FUNC("asm/code_0807ED70/sprite_node_take_link.s", void sprite_node_take_link(void))
 
-ASM_FUNC("asm/code_0807ED70/sprite_node_take.s", void sprite_node_take(void))
+struct SpriteNode *sprite_node_take(void)
+{
+    struct SpriteState *st = gUnk_03000FD8;
+    struct SpriteNode *node = st->nodeFree;
+
+    st->nodeFree = node->next;
+    node->next = st->nodeUsed;
+    st->nodeUsed = node;
+    ((struct Lo5 *)&node->u0C.flags0C)->lo5 = 0;
+    return node;
+}
 
 u8 *work_buf_entry_addr(u32 index)
 {
@@ -352,7 +481,17 @@ struct SpriteNode *sprite_node_alloc_default(void)
     return node;
 }
 
-ASM_FUNC("asm/code_0807ED70/obj_release_node.s", void obj_release_node(void))
+void obj_release_node(struct SpriteObj *obj)
+{
+    if (obj != NULL)
+    {
+        obj_bind_slots(obj);
+        ((struct Bits13 *)&obj->flags13)->bit2 = 0;
+        ((struct Bits13 *)&obj->flags13)->bit3 = 0;
+        list_push_active(obj);
+        release_obj_131c(obj);
+    }
+}
 
 void obj_detach_active(void *obj)
 {
@@ -360,7 +499,17 @@ void obj_detach_active(void *obj)
     list_remove_active(obj);
 }
 
-ASM_FUNC("asm/code_0807ED70/obj_setup_load.s", void obj_setup_load(void))
+void obj_setup_load(struct SpriteObj *obj, u32 arg)
+{
+    obj_bind_slots(obj);
+    ((struct Bits13 *)&obj->flags13)->bit2 = 0;
+    ((struct Bits13 *)&obj->flags13)->bit3 = 0;
+    setup_obj_10bc(obj, 0, arg, 1, -1, -1, -1, -1);
+    ((struct Bits13 *)&obj->flags13)->bit2 = 1;
+    ((struct Bits13 *)&obj->flags13)->bit3 = 1;
+    obj_load_record(obj, 0, -1, 0, 0);
+    list_remove_active(obj);
+}
 
 void offset_words_camera(u32 a, u32 b, u32 d, u32 e)
 {
