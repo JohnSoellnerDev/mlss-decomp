@@ -2,14 +2,36 @@
 
 struct OwnerState
 {
-    u8 filler0[0x9A1];
+    u8 filler0[0x9A0];
+    u8 cur9A0;
     u8 mode9A1;
+    u8 busy9A2;
+    u8 flags9A3;
+};
+
+struct Slot
+{
+    u8 *obj;
+    u8 filler4[0x14 - 4];
+    s32 xFix;
+    s32 yFix;
+    u8 filler1C[0x3A - 0x1C];
+    u16 scale;
+    u8 flags;
+    u8 unk3D;
+    u8 filler3E[0x40 - 0x3E];
+};
+
+struct ObjList
+{
+    u8 filler0[0x158];
+    struct Slot *slots;
 };
 
 struct Owner
 {
     u8 filler0[0x14];
-    u8 *list;
+    struct ObjList *list;
     u32 type;
     u8 filler1C[0x20 - 0x1C];
     u32 aux;
@@ -17,10 +39,48 @@ struct Owner
     u8 *entry;
 };
 
-void clear_command_records(void);
+extern u8 *gUnk_03000FC0;
+extern u8 gOwnerTypeCreateDestroy[];
+extern u8 gStateTag[];
+extern u32 gTextExtraFlagPtrs[];
+extern u32 gTextCountPtrs[];
+extern u32 gTextKindPtrs[];
+extern u32 gTextModePtrs[];
+extern u32 gTextHalfPtrs[];
+extern u8 *gEffectState;
+extern u8 *gMemRoutines;
+extern u8 gUnk_03000C80[];
+extern u8 gClaimKindTable[];
+
+void clear_command_records(struct Owner *owner);
 void owner_reset(struct Owner *owner);
+void owner_release_handles(struct Owner *owner);
 void clear_slot_rect(u8 *rect, u32 n);
 void copy_map_rects(u8 *rects, u32 n);
+void task_insert(struct Owner *owner, u32 prio, u32 arg);
+void task_remove(struct Owner *owner, u32 arg);
+u8 *heap_alloc_raw(u32 a, u32 size, u8 *tag);
+void heap_free(u8 *p);
+void free_ptr_pair(u8 *p, u32 n);
+void release_obj_parts(u8 *p, u32 n);
+void unpack_stream_values(u8 *a, u32 *stream, u32 *p1, u32 *p2, u32 *p3);
+void tween_move_to(struct ObjList *list, u32 index, u32 flags, u32 one, u32 v1, u32 v2, s32 v3);
+void release_obj_131c(u32 handle);
+u32 claim_table_slot(u32 table, u32 a, u32 b, u32 c, s32 d, s32 e, u32 f);
+void update_slot_bounds(u32 table, u32 index);
+void set_tween_anim(struct ObjList *list, u32 a, u32 b, u32 c);
+void slot_load_object(struct Owner *owner, u32 index);
+void slot_store_object(struct Owner *owner, u32 index);
+void ensure_tween_sprite(struct ObjList *list, u32 a, u32 b);
+u8 flags_vars_set_obj_state(u8 *owner1C, u32 a2, u8 *obj, u32 b, u32 c);
+u32 sub_08122768(struct ObjList *list);
+u32 tween_step(struct ObjList *list, u32 id);
+void start_sub_obj(struct ObjList *list);
+void start_sub_obj_display(struct ObjList *list);
+void release_obj_slots(struct ObjList *list);
+void update_sprite_obj(struct ObjList *list);
+u32 restore_obj_word0(u8 *obj, u32 arg);
+void reset_obj_params_b(u8 *obj, u8 *state, u32 arg, u32 zero, u32 one, u32 ff);
 
 
 ASM_FUNC("asm/code_080FA598/cmd_set_value.s", void cmd_set_value(void))
@@ -41,19 +101,71 @@ ASM_FUNC("asm/code_080FA598/cmd_place_sprite.s", void cmd_place_sprite(void))
 
 ASM_FUNC("asm/code_080FA598/cmd_aux_entry.s", void cmd_aux_entry(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_latch_when_ready.s", void cmd_latch_when_ready(void))
+u32 cmd_latch_when_ready(struct Owner *owner, u32 *cmd)
+{
+    if ((u8)sub_08122768(owner->list) != 0)
+    {
+        cmd[0] = cmd[5];
+        return 0;
+    }
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_list_toggle.s", void cmd_list_toggle(void))
+u32 cmd_list_toggle(struct Owner *owner, u32 unused, u32 *data)
+{
+    if (*data & 1)
+        start_sub_obj(owner->list);
+    else
+        start_sub_obj_display(owner->list);
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/unknown_thumb_080faf3a.s", void unknown_thumb_080faf3a(void))
+u32 stub_return_0(struct ObjList *list);
+
+u32 unknown_thumb_080faf3a(struct Owner *owner, u32 *cmd)
+{
+    if ((u8)stub_return_0(owner->list) != 1)
+    {
+        cmd[0] = cmd[5];
+        return 0;
+    }
+    owner->state->mode9A1 = 2;
+    return 1;
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_start_move.s", void cmd_start_move(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_list_mode.s", void cmd_list_mode(void))
+u32 cmd_list_mode(struct Owner *owner, u32 unused, u32 *data)
+{
+    switch (*data)
+    {
+    case 0:
+        release_obj_slots(owner->list);
+        break;
+    case 1:
+        update_sprite_obj(owner->list);
+        break;
+    }
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_set_mode_1.s", void cmd_set_mode_1(void))
+u8 cmd_set_mode_1(struct Owner *owner, u32 arg)
+{
+    owner->state->mode9A1 = 1;
+    return restore_obj_word0((u8 *)owner + 0x1C, arg);
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_latch_when_free.s", void cmd_latch_when_free(void))
+u32 cmd_latch_when_free(struct Owner *owner, u32 *cmd)
+{
+    u32 own = ((u32)owner->state->busy9A2 << 31) >> 31;
+
+    if ((gUnk_03000C80[0] | own) != 0)
+    {
+        cmd[0] = cmd[5];
+        return 0;
+    }
+    return 1;
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_push_handle.s", void cmd_push_handle(void))
 
@@ -73,42 +185,129 @@ ASM_FUNC("asm/code_080FA598/cmd_place_obj_sync.s", void cmd_place_obj_sync(void)
 
 ASM_FUNC("asm/code_080FA598/cmd_place_obj_flags3.s", void cmd_place_obj_flags3(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_obj_setup_global.s", void cmd_obj_setup_global(void))
+u32 cmd_obj_setup_global(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    reset_obj_params_b((u8 *)owner + 0x1C, gEffectState + 0x1F8, cmd[1], 0, 1, 0xFF);
+    return 1;
+}
 
-ASM_FUNC("asm/code_080FA598/cmd_reset_next_record.s", void cmd_reset_next_record(void))
+u32 cmd_reset_next_record(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    u32 idx = cmd[0];
+    u8 *rec = (u8 *)owner->state + idx * 0xA8;
+    u8 *next = rec + 0xA8;
+    u8 *obj = owner->list->slots[idx].obj;
+    s32 v;
+
+    *(u16 *)(rec + 0x148) = 0;
+    *(u32 *)next = *(u32 *)(next + 4);
+    v = obj[0x12];
+    v = (-7 & v) | 2;
+    obj[0x12] = v;
+    return 1;
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_set_slot_flag.s", void cmd_set_slot_flag(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_find_record.s", void cmd_find_record(void))
+u32 cmd_find_record(struct Owner *owner, u32 *cmd, u32 *key_ptr, u8 key)
+{
+    u8 *rec = (u8 *)owner->state + 0xA8;
+    u32 start = 12;
+    s16 remaining;
+
+    if (key_ptr[0] == 0)
+    {
+        rec += key_ptr[1] * 0xA8;
+        start = 1;
+    }
+    remaining = start;
+    if (remaining != 0)
+    {
+        do
+        {
+            if ((*(u16 *)(rec + 0xA0) & 1) != 0 && rec[0xA4] == key)
+            {
+                cmd[0] = cmd[5];
+                return 0;
+            }
+            remaining--;
+            rec += 0xA8;
+        } while (remaining > 0);
+    }
+    return 1;
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_set_next_flag4.s", void cmd_set_next_flag4(void))
 
 ASM_FUNC("asm/code_080FA598/run_record.s", void run_record(void))
 
-ASM_FUNC("asm/code_080FA598/owner_release_handles.s", void owner_release_handles(void))
+ASM_FUNC("asm/code_080FA598/owner_release_handles.s", void owner_release_handles(struct Owner *owner))
 
-ASM_FUNC("asm/code_080FA598/clear_command_records.s", void clear_command_records(void))
+void clear_command_records(struct Owner *owner)
+{
+    s16 remaining = 13;
+    u8 *rec = (u8 *)owner->state;
+
+    do
+    {
+        ((void (*)(u32, u8 *, u32))gMemRoutines)(0, rec, 0xA8);
+        rec += 0xA8;
+        remaining--;
+    } while (remaining > 0);
+}
 
 ASM_FUNC("asm/code_080FA598/tick_slot_timer.s", void tick_slot_timer(void))
 
-ASM_FUNC("asm/code_080FA598/toggle_on_motion_done.s", void toggle_on_motion_done(void))
+void toggle_on_motion_done(struct Owner *owner, u8 *state, u8 id)
+{
+    if ((u8)tween_step(owner->list, id) == 1)
+        *(u16 *)(state + 0xA0) ^= 2;
+}
 
 u8 state_mode(struct Owner *owner)
 {
     return owner->state->mode9A1;
 }
 
-ASM_FUNC("asm/code_080FA598/owner_stop.s", void owner_stop(void))
+void owner_stop(struct Owner *owner)
+{
+    u32 *word;
 
-ASM_FUNC("asm/code_080FA598/clear_slot_marks.s", void clear_slot_marks(void))
+    owner_reset(owner);
+    owner_release_handles(owner);
+    word = (u32 *)(gUnk_03000FC0 + 0x100);
+    *word &= -2;
+}
+
+void clear_slot_marks(struct Owner *owner)
+{
+    if (owner->state->flags9A3 & 1)
+    {
+        s16 remaining = 12;
+        struct Slot *slot = owner->list->slots;
+
+        do
+        {
+            if (slot->obj != 0)
+                slot->obj[0x20] = 0;
+            slot++;
+            remaining--;
+        } while (remaining > 0);
+    }
+    clear_command_records(owner);
+}
 
 void unknown_thumb_080fb7b4(struct Owner *owner)
 {
-    clear_command_records();
+    clear_command_records(owner);
     owner_reset(owner);
 }
 
-ASM_FUNC("asm/code_080FA598/begin_state_mode.s", void begin_state_mode(void))
+void begin_state_mode(struct Owner *owner, u32 arg)
+{
+    reset_obj_params_b((u8 *)owner + 0x1C, (u8 *)owner->state, arg, 0, 1, 0xFF);
+    owner->state->mode9A1 = 2;
+}
 
 void unknown_thumb_080fb7f8(struct Owner *owner)
 {
@@ -116,9 +315,52 @@ void unknown_thumb_080fb7f8(struct Owner *owner)
     copy_map_rects(owner->entry, 0x10);
 }
 
-ASM_FUNC("asm/code_080FA598/owner_destroy.s", void owner_destroy(void))
+void owner_destroy(struct Owner *owner, u32 arg)
+{
+    u8 *flag;
 
-ASM_FUNC("asm/code_080FA598/owner_create.s", void owner_create(void))
+    owner->type = (u32)gOwnerTypeCreateDestroy;
+    owner_stop(owner);
+    if (owner->aux != 0)
+    {
+        free_ptr_pair((u8 *)owner->aux, 3);
+        owner->aux = 0;
+    }
+    if (owner->entry != 0)
+    {
+        release_obj_parts(owner->entry, 3);
+        owner->entry = 0;
+    }
+    heap_free((u8 *)owner->state);
+    flag = gUnk_03000FC0;
+    *(u32 *)(flag + 0x55C) = gTextExtraFlagPtrs[0];
+    *(u32 *)(flag + 0x560) = gTextCountPtrs[0];
+    *(u32 *)(flag + 0x564) = gTextKindPtrs[0];
+    *(u32 *)(flag + 0x568) = gTextModePtrs[0];
+    *(u32 *)(flag + 0x56C) = gTextHalfPtrs[0];
+    task_remove(owner, arg);
+}
+
+struct Owner *owner_create(struct Owner *owner, u32 kind, u32 arg)
+{
+    u8 *state;
+    u8 *flag;
+
+    task_insert(owner, (u8)kind, arg);
+    owner->type = (u32)gOwnerTypeCreateDestroy;
+    owner->entry = 0;
+    owner->aux = 0;
+    state = heap_alloc_raw(1, 0x9A8, gStateTag);
+    owner->state = (struct OwnerState *)state;
+    ((void (*)(u32, u8 *, u32))gMemRoutines)(0, state, 0x9A8);
+    flag = gUnk_03000FC0;
+    *(u32 *)(flag + 0x55C) = gTextExtraFlagPtrs[2];
+    *(u32 *)(flag + 0x560) = gTextCountPtrs[2];
+    *(u32 *)(flag + 0x564) = gTextKindPtrs[2];
+    *(u32 *)(flag + 0x568) = gTextModePtrs[2];
+    *(u32 *)(flag + 0x56C) = gTextHalfPtrs[2];
+    return owner;
+}
 
 ASM_FUNC("asm/code_080FA598/load_object_def.s", void load_object_def(void))
 
