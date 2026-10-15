@@ -350,4 +350,56 @@ void obj_start_move_right(struct ActorObj *obj)
     obj->state = obj_prepare_when_index_clear;
 }
 
-ASM_FUNC("asm/code_0806E410/obj_wait_then_spawn_child.s", void obj_wait_then_spawn_child(struct ActorObj *obj))
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+void obj_wait_then_spawn_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        if ((s16)--obj->timer > 0)
+        {
+            return;
+        }
+        obj_list_remove(obj);
+        if (obj->owner->handler68 != 0)
+        {
+            obj->owner->handler68(obj->owner);
+        }
+        obj->owner->state = actor_side_walk_idle;
+        sprite_set_action(obj, 6, 0, 0);
+        effect_spawn_at(0x1EC0, obj->owner->part->targetX / 0x100, obj->owner->part->targetY / 0x100,
+                        obj->owner->part->targetH / 0x100, obj);
+        child = obj_spawn(obj->part, 0x4111, obj->owner->part->targetX / 0x100, obj->owner->part->targetY / 0x100,
+                          obj->owner->part->targetH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->kind = child;
+        child->byte74 = obj->byte74;
+        child->byte75 = obj->byte75;
+        ((struct ActorFlagBits *)&child->flags)->bit0 = 1;
+        child->state = obj_finish_if_active;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        gUnk_03000E3C = effect_from_table_obj(child, 0x173E);
+        child->handler60 = 0;
+        obj->targetX = obj->owner->part->targetX + 0x4000;
+        obj->targetY = obj->owner->part->targetY;
+        obj->phase = obj->baseH;
+        obj->motionSpeed = 0x199;
+        ((struct ActorModeBits *)&obj->flags)->bit5 = 1;
+        obj->motionStart = 0;
+        start_motion(obj);
+        set_slot_value(0x98, -1);
+        obj->state = obj_idle_when_active;
+    }
+}

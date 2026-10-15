@@ -178,4 +178,53 @@ void obj_screen_cull_step(struct ActorObj *obj);
 void obj_drop_land_stop(struct ActorObj *obj);
 void obj_drop_clamp_to_limit(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_080DD090/move_states_obj_pose_active_spawn_child.s", void move_states_obj_pose_active_spawn_child(void))
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+void move_states_obj_pose_active_spawn_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        child = obj_spawn(obj->data, 0x4138, obj->baseX / 0x100 - 0x25, obj->baseY / 0x100 - 1,
+                          obj->baseH / 0x100 + 0x26, ((u32)obj->pose->byte11 << 25) >> 31, 1);
+        child->child = obj->child;
+        obj->child = child;
+        ((struct Flags78Bits *)&child->dir)->kind = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = obj_begin_fall_to_owner_alt;
+        child->handler68 = on_arrive;
+        child->childValue = obj->childValue;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler60 = obj_slot_found_recoil_kids;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->spawnLeft = obj->spawnLeft;
+        child->targetX = obj->baseX / 0x100 - 0x25;
+        child->targetY = obj->baseY / 0x100 - 1;
+        child->targetH = obj->baseH / 0x100 + 0x26;
+        child->byte74 = 0xFF;
+        sprite_set_action(child, 0, 0, 0);
+        child->timer = 2;
+        obj->childValue = 0;
+        sprite_set_action(obj, 0xF, 0, 0);
+        ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
+        obj->state = obj_pose_active_idle_arrive;
+    }
+}

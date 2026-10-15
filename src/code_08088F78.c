@@ -106,10 +106,15 @@ struct Actor
     u8 filler44[0x4C - 0x44];
     void (*state)(struct Actor *);
     void (*savedState)(struct Actor *);
-    u8 filler54[0x68 - 0x54];
+    u8 filler54[0x5C - 0x54];
+    void (*handler5C)(struct Actor *);
+    void (*handler60)(struct Actor *);
+    u8 filler64[0x68 - 0x64];
     void (*callback68)(struct Actor *);
     u32 link;
-    u8 filler70[0x76 - 0x70];
+    u8 filler70[0x74 - 0x70];
+    u8 tag;
+    u8 filler75[0x76 - 0x75];
     u8 mode;
     u8 flags77;
     u8 flags78;
@@ -226,7 +231,57 @@ void timed_move_3000(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08088F78/spawn_pose_child.s", void spawn_pose_child(void))
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Actor *obj_spawn(void *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void slide_x_timed(struct Actor *obj);
+void approach_contact(struct Actor *obj);
+void approach_slot(struct Actor *obj);
+void on_arrive(struct Actor *obj);
+void on_arrive_if_posed(struct Actor *obj);
+
+void spawn_pose_child(struct Actor *obj)
+{
+    struct Actor *child;
+
+    child = obj_spawn(obj->data, 0x4004, obj->baseX / 0x100 - 0x20, obj->baseY / 0x100,
+                      obj->baseH / 0x100 + 0xE, ((u32)obj->pose->flags11 << 25) >> 31, 1);
+    obj->child = child;
+    ((struct Flags78Bits *)&child->flags78)->kind = 1;
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+    child->state = slide_x_timed;
+    child->callback68 = on_arrive;
+    child->link = obj->link;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+    child->handler5C = approach_contact;
+    child->handler60 = approach_slot;
+    child->dx = 0xFF00;
+    child->timer = 0;
+    child->unk9C = obj->unk9C;
+    child->angleOfs = obj->angleOfs;
+    child->paramA4 = obj->paramA4;
+    child->waitCount = obj->waitCount;
+    child->tag = 0xFF;
+    effect_spawn_at(0xBDA, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+    sprite_set_action(obj, 3, 0, 0);
+    obj->link = 0;
+    obj->state = on_arrive_if_posed;
+}
 
 void begin_countdown(struct Actor *obj)
 {

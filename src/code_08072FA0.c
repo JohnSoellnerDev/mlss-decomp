@@ -75,9 +75,14 @@ struct ActorObj
     s32 baseH;
     u8 filler44[0x4C - 0x44];
     void (*state)(struct ActorObj *);
-    u8 filler50[0x60 - 0x50];
+    u8 filler50[0x58 - 0x50];
+    void (*handler58)(struct ActorObj *);
+    u8 filler5C[0x60 - 0x5C];
     void (*handler60)(struct ActorObj *);
-    u8 filler64[0x74 - 0x64];
+    u8 filler64[0x68 - 0x64];
+    void (*handler68)(struct ActorObj *);
+    u32 unk6C;
+    u8 filler70[0x74 - 0x70];
     u8 group;
     u8 depth;
     u8 filler76[0x77 - 0x76];
@@ -166,7 +171,67 @@ void settle_to_data_target(struct ActorObj *obj);
 void step_child_chain(struct ActorObj *obj);
 void step_child_chain_b(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08072FA0/spawn_child_at_base.s", void spawn_child_at_base(struct ActorObj *obj))
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct Flags79Bit5
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 rest : 2;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+void notify_effect_unlink_finish(struct ActorObj *obj);
+void lookup_then_notify(struct ActorObj *obj);
+void settle_to_owner_data(struct ActorObj *obj);
+void pose_action0_then_idle(struct ActorObj *obj);
+void on_arrive(struct ActorObj *obj);
+
+void spawn_child_at_base(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+        effect_spawn_at(0x2266, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        child = obj_spawn(obj->part, 0x4144, obj->baseX / 0x100, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 3;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler58 = notify_effect_unlink_finish;
+        child->handler60 = lookup_then_notify;
+        child->targetX = obj->posX;
+        child->targetY = obj->posY;
+        child->targetH = obj->posH + 0x8000;
+        ((struct Flags79Bit5 *)&child->flags79)->bit5 = 1;
+        child->motionSpeed = 0x400;
+        child->motionStart = 0;
+        start_motion(child);
+        child->group = obj->group;
+        child->state = settle_to_owner_data;
+        set_slot_value(0x10B, -1);
+        obj->state = pose_action0_then_idle;
+    }
+}
 
 void timer_then_target_from_owner(struct ActorObj *obj)
 {

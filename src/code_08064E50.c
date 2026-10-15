@@ -178,6 +178,82 @@ u32 obj_lookup_slot_then_state_bc0(struct ActorObj *obj);
 void obj_move_place_cull(struct ActorObj *obj);
 void obj_no_sprite_idle(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08064E50/parts_obj_spawn_child_b.s", void parts_obj_spawn_child_b(struct ActorObj *obj))
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void on_arrive(struct ActorObj *obj);
+void obj_list_push_default(struct ActorObj *obj);
+void obj_wait_then_slide_and_finish(struct ActorObj *obj);
+void obj_move_step_c(struct ActorObj *obj);
+void obj_wait_then_state_5619(struct ActorObj *obj);
+
+void parts_obj_spawn_child_b(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    s32 a0;
+
+    if (obj->pose->flags & 8)
+    {
+        if (obj->paramA0 == 0)
+        {
+            sprite_set_action(obj, 6, 0, 0);
+        }
+        else
+        {
+            sprite_set_action(obj, 0xA, 0, 0);
+        }
+        ((struct PoseBits *)&obj->pose->flags)->mode = 1;
+        obj->timer = 0;
+        child = obj_spawn(obj->part, 0x40F6, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                          obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->tag = obj->tag;
+        a0 = obj->paramA0;
+        if (a0 == 0)
+        {
+            child->dx = (child->baseX - obj->owner->part->targetX) / 0x100;
+            child->dy = (child->baseY - obj->owner->part->targetY) / 0x100;
+            child->targetX = child->baseX;
+            child->targetY = child->baseY;
+            child->param9C = 0x500;
+            child->timer = a0;
+            child->paramA0 = 0x500;
+            child->state = obj_wait_then_slide_and_finish;
+            set_slot_value(0x117, -1);
+        }
+        else
+        {
+            sprite_set_action(child, 1, 0, 0);
+            child->dx = (child->baseX - 0x4000) / 0x100;
+            child->dy = (child->baseY - obj->owner->part->targetY) / 0x100;
+            child->targetX = child->baseX;
+            child->targetY = child->baseY;
+            child->param9C = 0x480;
+            child->state = obj_move_step_c;
+            set_slot_value(0x117, -1);
+        }
+        obj->state = obj_wait_then_state_5619;
+    }
+}
 
 ASM_FUNC("asm/code_08064E50/unknown_code_08065044.s", void unknown_code_08065044(struct ActorObj *obj))

@@ -52,7 +52,8 @@ struct MapObj
     s32 baseH;
     u8 filler44[0x4C - 0x44];
     void (*state)(struct MapObj *);
-    u8 filler50[0x6C - 0x50];
+    u8 filler50[0x68 - 0x50];
+    void (*handler68)(struct MapObj *);
     s32 link;
     u8 filler70[0x74 - 0x70];
     u8 tag;
@@ -179,7 +180,84 @@ void destroy_map_obj_loader(struct MapObj *obj, u32 arg)
     task_remove(obj, arg);
 }
 
-ASM_FUNC("asm/code_0805E118/map_view_map_obj_setup_sprites.s", void map_view_map_obj_setup_sprites(struct MapObj *obj))
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+static inline void inherit_flags_77(struct MapObj *parent, struct MapObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)parent)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)parent)->bit5;
+}
+
+void slide_in_step(struct MapObj *obj);
+void map_obj_hide_step(struct MapObj *obj);
+void on_arrive(struct MapObj *obj);
+void obj_list_push_default(struct MapObj *obj);
+struct MapObj *obj_spawn(struct MapPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+
+void map_view_map_obj_setup_sprites(struct MapObj *obj)
+{
+    struct MapObj *child;
+    struct MapObj *second;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 6, 0, 0);
+        effect_spawn_at(0x10EE, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        obj->state = map_obj_hide_step;
+        child = obj_spawn(obj->part, 0x408E, obj->baseX / 0x100, obj->baseY / 0x100 + 1,
+                          obj->baseH / 0x100 + obj->radius, ((u32)obj->pose->flip << 25) >> 31, 1);
+        obj->sprite = child;
+        ((struct Flags78Bits *)&child->mode78)->kind = 2;
+        inherit_flags_77(obj, child);
+        child->state = slide_in_step;
+        child->handler68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->dx = 0x100;
+        child->timer = 0;
+        child->param9C = obj->param9C;
+        child->radius = obj->radius;
+        child->wait = obj->wait;
+        child->angle = obj->angle;
+        child->tag = obj->tag;
+        child->pose->unk4 = 0x10;
+        child->pose->unk6 = 0x10;
+        second = obj_spawn(obj->part, 0x408F, obj->baseX / 0x100, obj->baseY / 0x100 - 1,
+                           obj->baseH / 0x100 + obj->radius, ((u32)obj->pose->flip << 25) >> 31, 1);
+        child->sprite = second;
+        ((struct Flags78Bits *)&second->mode78)->kind = 2;
+        inherit_flags_77(obj, second);
+        second->state = slide_in_step;
+        second->handler68 = on_arrive;
+        second->link = obj->link;
+        second->owner = obj->owner;
+        obj_list_push_default(second);
+        second->dx = 0x100;
+        second->timer = 0;
+        second->param9C = obj->param9C;
+        second->radius = obj->radius;
+        second->wait = obj->wait;
+        second->angle = obj->angle;
+        second->tag = obj->tag;
+        second->pose->unk4 = 0x10;
+        second->pose->unk6 = 0x10;
+        set_slot_value(0xD3, -1);
+    }
+}
 
 void slide_in_step(struct MapObj *obj)
 {

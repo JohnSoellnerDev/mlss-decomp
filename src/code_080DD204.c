@@ -225,6 +225,10 @@ void sprite_update_cd0(void *sprite);
 void *task_create_list_4c(void (*fn)(struct FxTask *), void *obj);
 void fx_task_tick_release(struct FxTask *task);
 void obj_spawn_aimed_child_pair(struct ActorObj *obj);
+void obj_child_trail_update(struct ActorObj *obj);
+void obj_begin_fall_to_owner_alt(struct ActorObj *obj);
+struct SpriteNode *sprite_node_take(void);
+void obj_list_push_arg(struct ActorObj *obj, u32 arg);
 void obj_fall_spawn_fx_offscreen(struct ActorObj *obj);
 u32 lookup_slot(struct ActorObj *obj, u32 slot);
 void obj_active_spawn_then_e1fc(struct ActorObj *obj);
@@ -346,7 +350,7 @@ ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_offscreen.s", void obj_fall_spawn_
 
 ASM_FUNC("asm/code_080DD204/obj_spawn_aimed_child_pair.s", void obj_spawn_aimed_child_pair(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080DD204/obj_child_trail_update.s", void obj_child_trail_update(void))
+ASM_FUNC("asm/code_080DD204/obj_child_trail_update.s", void obj_child_trail_update(struct ActorObj *obj))
 
 void fx_task_tick_release(struct FxTask *task)
 {
@@ -377,7 +381,7 @@ u32 obj_slot_found_recoil(struct ActorObj *obj, u32 slot)
 
 ASM_FUNC("asm/code_080DD204/obj_begin_fall_to_owner.s", void obj_begin_fall_to_owner(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080DD204/obj_begin_fall_to_owner_alt.s", void obj_begin_fall_to_owner_alt(void))
+ASM_FUNC("asm/code_080DD204/obj_begin_fall_to_owner_alt.s", void obj_begin_fall_to_owner_alt(struct ActorObj *obj))
 
 void obj_pose_active_idle_arrive(struct ActorObj *obj)
 {

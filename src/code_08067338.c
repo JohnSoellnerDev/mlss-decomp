@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Pose
 {
@@ -87,6 +88,13 @@ void actor_slide_left_to_target(struct Actor *obj);
 void obj_wait_child_then_place(struct Actor *obj);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct Actor *owner);
 u32 query_contact(struct Actor *obj, u32 a, u32 b);
+
+struct ObjFlags79Bit0
+{
+    u8 filler0[0x79];
+    u8 bit0 : 1;
+    u8 rest : 7;
+};
 
 struct Flags78Bits
 {
@@ -524,7 +532,59 @@ void obj_fall_bounce_step(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08067338/obj_spawn_arc_child.s", void obj_spawn_arc_child(struct Actor *obj))
+void obj_spawn_arc_child(struct Actor *obj)
+{
+    struct Actor *child;
+    s32 ddx;
+    s32 ddy;
+    s32 len;
+    s32 q;
+    s32 half;
+    s32 d;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 4, 0, 0);
+        effect_spawn_at(0x1092, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        child = obj_spawn(obj->data, 0x4106, obj->baseX / 0x100 - 0x12, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        inherit_flags_77(obj, child);
+        child->callback68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->cb60 = obj_owner_check_place;
+        child->tag = obj->tag;
+        child->timer = 0;
+        child->targetX = obj->owner->data->targetX + 0x3600;
+        child->targetY = obj->owner->data->targetY;
+        child->targetH = child->baseH;
+        child->dx = child->baseX / 0x100;
+        child->dy = child->baseY / 0x100;
+        child->dh = child->baseH / 0x100;
+        ddx = child->targetX - ((s16)child->dx << 8);
+        ddy = child->targetY - (child->dy << 8);
+        len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(ddx * ddx + ddy * ddy);
+        q = len / 0x200;
+        half = q / 2;
+        d = 0x3000 / (half * half);
+        if (d == 1)
+        {
+            d = 2;
+        }
+        child->param9C = -d;
+        child->paramA0 = q;
+        child->paramA4 = ddx;
+        child->paramA8 = ddy;
+        child->timer = 0;
+        child->state = obj_child_arc_land;
+        child->targetH = obj->param9C;
+        set_slot_value(0x57, -1);
+        obj->state = obj_idle_when_pose_active;
+    }
+}
 
 ASM_FUNC("asm/code_08067338/obj_child_arc_land.s", void obj_child_arc_land(struct Actor *obj))
 
@@ -722,4 +782,36 @@ void obj_pose_then_spawn_arc(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08067338/obj_spawn_child_412b.s", void obj_spawn_child_412b(struct Actor *obj))
+void obj_spawn_child_412b(struct Actor *obj)
+{
+    struct Actor *child;
+    struct ActorData *part;
+    u32 busy;
+
+    busy = is_state_busy();
+    if (busy == 0)
+    {
+        part = obj->data;
+        child = obj_spawn(part, 0x412B, 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100 + 2,
+                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct ObjFlags79Bit0 *)child)->bit0 = 1;
+        inherit_flags_77(obj, child);
+        child->callback68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        child->tag = obj->tag;
+        child->targetX = obj->baseX + 0x2200;
+        child->timer = busy;
+        child->state = actor_slide_left_to_target;
+        if (obj->paramA8 == 0)
+        {
+            set_slot_value(0x81, -1);
+        }
+        else
+        {
+            set_slot_value(0x81, -1);
+        }
+        obj->state = obj_wait_child_then_place;
+    }
+}
