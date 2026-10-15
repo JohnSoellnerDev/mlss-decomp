@@ -117,6 +117,12 @@ void task_slide_step(void);
 void popup_rise_step(void);
 void popup_rise_step_b(void);
 
+struct Lo77
+{
+    u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+
 struct NodeDesc
 {
     u32 unk0;
@@ -167,7 +173,18 @@ void obj_list_remove(struct SpriteObj *obj)
 
 ASM_FUNC("asm/code_0807ED70/obj_list_push_arg.s", void obj_list_push_arg(void))
 
-ASM_FUNC("asm/code_0807ED70/obj_list_push_default.s", void obj_list_push_default(void))
+void obj_list_push_default(struct SpriteObj *obj)
+{
+    if (obj->activeNext == NULL)
+    {
+        obj->activeNext = gUnk_03000FD8->objs;
+        gUnk_03000FD8->objs = obj;
+        obj->slots58[0] = (u32)partner_link_update;
+        obj->slots58[1] = (u32)lookup_part;
+        obj->slots58[2] = (u32)lookup_link_slot;
+        ((struct Lo77 *)&obj->flags77)->lo3 = 0;
+    }
+}
 
 ASM_FUNC("asm/code_0807ED70/obj_start_pose.s", void obj_start_pose(void))
 
