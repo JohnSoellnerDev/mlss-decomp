@@ -304,35 +304,22 @@ s32 sub_080A1074(struct Body *body)
     return 1;
 }
 
-NONMATCH("asm/code_080A048C/start_fx_then_twin_chain.s", void start_fx_then_twin_chain(struct Body *body))
+void start_fx_then_twin_chain(struct Body *body)
 {
-    s32 flags;
-
     sprite_set_action(body, 0x20, 0, 0);
-    flags = body->sprite->flags;
-    flags = -7 & flags;
-    flags |= 2;
-    body->sprite->flags = flags;
+    ((struct SpriteModeByte *)&body->sprite->flags)->mode = 1;
     effect_spawn_at(0x2AC7, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
     set_slot_value(0xD5, -1);
     body->state = (u32)build_twin_part_chain;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080A048C/start_fx_then_part_chain.s", void start_fx_then_part_chain(struct Body *body))
+void start_fx_then_part_chain(struct Body *body)
 {
-    struct SpriteEntry *sprite;
-    s32 flags;
-
     sprite_set_action(body, 0x18, 0, 0);
-    sprite = body->sprite;
-    flags = sprite->flags;
-    flags = -7 & flags;
-    sprite->flags = flags;
+    ((struct SpriteModeByte *)&body->sprite->flags)->mode = 0;
     effect_spawn_at(0x2AAF, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
     body->state = (u32)build_part_chain;
 }
-END_NONMATCH
 
 u32 pair_heroes_with_partner(struct Body *body)
 {
@@ -426,11 +413,10 @@ void hero_step_and_set_pose(struct Body *body)
     }
 }
 
-NONMATCH("asm/code_080A048C/hero_advance_and_pose.s", void hero_advance_and_pose(struct Body *body))
+void hero_advance_and_pose(struct Body *body)
 {
     struct Hero *hero;
     struct Body *hbody;
-    s32 flags;
 
     hero = gUnk_03000FD8->heroA;
     hbody = &hero->body;
@@ -447,14 +433,11 @@ NONMATCH("asm/code_080A048C/hero_advance_and_pose.s", void hero_advance_and_pose
             {
                 sprite_set_action(hbody, 4, 0x204D, 0);
             }
-            flags = hbody->sprite->flags & -7;
-            flags |= 2;
-            hbody->sprite->flags = flags;
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
         }
         body->state = (u32)hero_a_move_to_partner_target;
     }
 }
-END_NONMATCH
 
 void hero_a_move_to_partner_target(struct Body *body)
 {
