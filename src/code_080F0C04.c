@@ -11,6 +11,45 @@ struct ObjList
     void *table304;
 };
 
+struct Bit0Only
+{
+    u8 b0 : 1;
+    u8 rest : 7;
+};
+
+struct Bit2Field
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 rest : 5;
+};
+
+struct SpriteHdr
+{
+    u8 filler0[0x11];
+    u8 unk11;
+    u8 unk12;
+};
+
+struct SpriteBits12
+{
+    u8 bit0 : 1;
+    u8 field1 : 2;
+    u8 rest : 5;
+};
+
+struct Bit6Byte
+{
+    u8 low6 : 6;
+    u8 bit6 : 1;
+    u8 rest : 1;
+};
+
+void obj_set_state(void *obj, u32 state);
+void obj_sync_sub_slot(void *obj, u32 value);
+void obj_set_cell_coord(void *ent, u32 cell, u32 arg);
+
 struct OwnerObj
 {
     u8 filler0[0x14];
@@ -414,7 +453,12 @@ u32 obj_bit4_copy_word(struct OwnerObj *owner, u32 *dst)
     return result;
 }
 
-ASM_FUNC("asm/code_080F0C04/obj_set_bit0_208.s", void obj_set_bit0_208(void))
+NONMATCH("asm/code_080F0C04/obj_set_bit0_208.s", u32 obj_set_bit0_208(struct OwnerObj *owner, u32 unused, u32 *flag))
+{
+    ((struct Bit0Only *)&owner->list->unk208)->b0 = *flag & 1;
+    return 1;
+}
+END_NONMATCH
 
 u32 obj_status_check_copy(void *unused0, u32 *dst, u32 *block)
 {
@@ -517,7 +561,14 @@ u32 set_object_mode_limit(struct OwnerObj *owner, void *unused, u32 *block)
 
 ASM_FUNC("asm/code_080F0C04/obj_display_command.s", void obj_display_command(void))
 
-ASM_FUNC("asm/code_080F0C04/obj_set_bit2_f9.s", void obj_set_bit2_f9(void))
+u32 obj_set_bit2_f9(struct OwnerObj *owner, u32 unused, u32 *flags)
+{
+    if ((((s32)*flags >> 1) & 1) == 0)
+    {
+        ((struct Bit2Field *)((u8 *)owner->list + 0xF9))->b2 = *flags & 1;
+    }
+    return 1;
+}
 
 u32 set_flag_from_row(void *unused0, void *unused1, s32 *block)
 {
@@ -836,7 +887,23 @@ ASM_FUNC("asm/code_080F0C04/obj_state_entry.s", void obj_state_entry(void))
 
 ASM_FUNC("asm/code_080F0C04/obj_state_direct.s", void obj_state_direct(void))
 
-ASM_FUNC("asm/code_080F0C04/obj_reset_command.s", void obj_reset_command(void))
+NONMATCH("asm/code_080F0C04/obj_reset_command.s", u32 obj_reset_command(struct OwnerObj *owner, u32 unused, u32 *block))
+{
+    u8 *obj;
+    struct SpriteHdr *sub;
+
+    obj = *(u8 **)((u8 *)owner->list + (block[0] << 2) + 0x28);
+    obj_set_state(obj, 0);
+    obj_sync_sub_slot(obj, 0);
+    obj_set_cell_coord(obj, block[1], block[2]);
+    obj[0x214] &= 0x7F;
+    sub = *(struct SpriteHdr **)(obj + 0x294);
+    ((struct SpriteBits12 *)&sub->unk12)->field1 = 0;
+    sub = *(struct SpriteHdr **)(obj + 0x294);
+    ((struct Bit6Byte *)&sub->unk11)->bit6 = block[3] ^ (((u32)sub->unk11 << 25) >> 31);
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F0C04/obj_state_entry_plain.s", void obj_state_entry_plain(void))
 

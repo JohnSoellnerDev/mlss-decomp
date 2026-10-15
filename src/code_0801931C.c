@@ -6,6 +6,27 @@ struct FlagBits2
     u8 unk1 : 1;
 };
 
+struct LinkModeBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
+struct BitB0
+{
+    u8 b0 : 1;
+    u8 rest : 7;
+};
+
+struct LinkStateBits
+{
+    u8 b0 : 1;
+    u8 b1_3 : 3;
+    u8 b4_5 : 2;
+    u8 rest : 2;
+};
+
 struct ListNode
 {
     u8 filler0;
@@ -94,6 +115,12 @@ extern u32 gUnk_03000C84;
 extern u32 gUnk_03000C78;
 extern u8 gUnk_03000D08;
 extern u8 gUnk_03000C80;
+extern u8 gUnk_03000D18;
+extern u8 gUnk_03000D30[];
+void serial_irq_handler(void);
+void serial_timeout(void);
+void serial_clear_timer(void);
+void set_irq_callback(u32 kind, void *cb);
 extern struct RegEntry *gUnk_03000C88[];
 void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
 void cpu_set(const void *src, void *dst, u32 ctl);
@@ -252,7 +279,17 @@ void flag_88c_handler_b(void)
 
 ASM_FUNC("asm/code_0801931C/sound_dma_reset.s", void sound_dma_reset(void))
 
-ASM_FUNC("asm/code_0801931C/sound_stop_all_reset.s", void sound_stop_all_reset(void))
+void sound_stop_all_reset(void)
+{
+    u8 *base;
+
+    queue_player_key_off(0);
+    queue_player_key_off(1);
+    queue_stop_all();
+    sound_dma_reset();
+    base = gUnk_0300034C;
+    ((struct FlagBits2 *)(base + 0x88C))->unk0 = 0;
+}
 
 s16 recip_fixed16(s16 x)
 {
@@ -389,9 +426,73 @@ ASM_FUNC("asm/code_0801931C/obj_init_gfx.s", void obj_init_gfx(void))
 
 ASM_FUNC("asm/code_0801931C/anim_state_step.s", void anim_state_step(void))
 
-ASM_FUNC("asm/code_0801931C/serial_link_enable.s", void serial_link_enable(void))
+void serial_link_enable(void)
+{
+    u8 *base = gUnk_0300034C;
+    u32 zero;
 
-ASM_FUNC("asm/code_0801931C/serial_link_disable.s", void serial_link_disable(void))
+    if (((struct LinkModeBits *)(base + 0x888))->mode == 1)
+    {
+        serial_clear_timer();
+        ((struct LinkStateBits *)&gUnk_03000D18)->b4_5 = 0;
+        ((struct LinkStateBits *)&gUnk_03000D18)->rest = 0;
+        ((struct LinkStateBits *)&gUnk_03000D18)->b0 = 1;
+        REG_IME = 0;
+        REG_IE = REG_IE & 0xFFBF;
+        REG_IF = REG_IF | 0x40;
+        REG_IME = 1;
+        REG_IME = 0;
+        REG_IE = REG_IE & 0xFF7F;
+        REG_IF = REG_IF | 0x80;
+        REG_IME = 1;
+        REG_RCNT = 0;
+        REG_SIOCNT = 0x1008;
+        REG_SIOCNT = REG_SIOCNT | 0x4000;
+        set_irq_callback(1, serial_irq_handler);
+        set_irq_callback(0, serial_timeout);
+        REG_IME = 0;
+        REG_IE = REG_IE | 0x80;
+        REG_IF = REG_IF | 0x80;
+        REG_IME = 1;
+        REG_IME = 0;
+        REG_IE = REG_IE | 0x40;
+        REG_IF = REG_IF | 0x40;
+        REG_IME = 1;
+        ((struct BitB0 *)REG_ADDR_SIOCNT)->b0 = 0;
+        ((struct LinkStateBits *)&gUnk_03000D18)->b1_3 = 1;
+        zero = 0;
+        cpu_set(&zero, gUnk_03000D30, 0x05000003);
+        REG_IME = 0;
+        REG_SIOCNT = REG_SIOCNT | 0x80;
+        REG_IME = 1;
+        REG_TM3CNT_L = 0x8000;
+        REG_TM3CNT_H = 0xC1;
+    }
+}
+
+void serial_link_disable(void)
+{
+    u8 *base = gUnk_0300034C;
+
+    if (((struct LinkModeBits *)(base + 0x888))->mode == 1)
+    {
+        ((struct LinkStateBits *)&gUnk_03000D18)->b0 = 0;
+        ((struct LinkStateBits *)&gUnk_03000D18)->b1_3 = 0;
+        ((struct LinkStateBits *)&gUnk_03000D18)->b4_5 = 0;
+        REG_IME = 0;
+        REG_IE = REG_IE & 0xFFBF;
+        REG_IF = REG_IF | 0x40;
+        REG_IME = 1;
+        REG_IME = 0;
+        REG_IE = REG_IE & 0xFF7F;
+        REG_IF = REG_IF | 0x80;
+        REG_IME = 1;
+        REG_IME = 0;
+        REG_SIOCNT = 0x2000;
+        REG_TM3CNT = 0x8000;
+        REG_IME = 1;
+    }
+}
 
 ASM_FUNC("asm/code_0801931C/serial_irq_handler.s", void serial_irq_handler(void))
 
