@@ -1,0 +1,580 @@
+#include "global.h"
+
+struct Obj
+{
+    u8 filler0[4];
+    void *unk4;
+    struct Obj *unk8;
+    struct Obj *unkC;
+    s16 unk10;
+    u16 unk12;
+    u16 unk14;
+    u16 unk16;
+    u16 unk18;
+    u8 filler1A[0x40 - 0x1A];
+    s32 unk40;
+    s32 unk44;
+    u8 filler48[0x4C - 0x48];
+    void *unk4C;
+    u8 filler50[0x79 - 0x50];
+    u8 unk79;
+    u8 filler7A[0x80 - 0x7A];
+    void *unk80;
+    u8 filler84[0xE0 - 0x84];
+    s32 unkE0;
+};
+
+struct Fig
+{
+    u8 filler0[0x7E];
+    u8 unk7E;
+    u8 filler7F[0xEC - 0x7F];
+    s16 unkEC;
+};
+
+struct SysState
+{
+    u8 filler0[0x3E];
+    u16 held;
+    u8 filler40[0x880 - 0x40];
+    u16 *oamPtr;
+};
+
+struct MarkerPos
+{
+    u8 filler0[0x10];
+    s32 unk10;
+    s32 unk14;
+    s32 unk18;
+    u8 filler1C[0x84 - 0x1C];
+    s32 unk84;
+    s32 unk88;
+    s32 unk8C;
+};
+
+struct Flags79
+{
+    u8 low : 4;
+    u8 bit4 : 1;
+    u8 high : 3;
+};
+
+struct World
+{
+    u8 filler0[7];
+    u8 modeByte;
+    u8 filler8[0x0B - 0x08];
+    u8 flags0B;
+    u8 filler0C[0x7C - 0x0C];
+    struct Obj *active;
+    struct Fig *fig1;
+    struct Fig *fig2;
+    u8 filler88[0x1F0 - 0x88];
+    u8 *tileBank;
+    u8 filler1F4[0x250 - 0x1F4];
+    void *slot4Tiles;
+    u8 filler254[0x278 - 0x254];
+    struct Obj *markerObj;
+    struct Obj *marks[2];
+    struct Obj *slotObjs[2];
+    struct Obj *effect;
+    struct Obj *timerObj;
+    u8 filler294[0x2BC - 0x294];
+    u8 uploadState;
+    u8 filler2BD[0x2F9 - 0x2BD];
+    u8 stateByte;
+    u8 filler2FA[0x2FC - 0x2FA];
+    struct Obj *slotTable[4];
+    u32 statusValue;
+    struct Obj *statusObj;
+    u16 counter314;
+};
+
+extern struct World *gUnk_03000FD8;
+extern u16 gUnk_0200001A;
+extern u16 gUnk_0200001E;
+
+void slide_window_panel(void);
+void panel_slide_end(void);
+void bg_slide_in(struct Obj *obj);
+void bg_slide_offset_callback(struct Obj *obj);
+void bg_restore_after_sprite(struct Obj *obj);
+void child_slide_to_bg2(struct Obj *obj);
+void scroll_text_step(struct Obj *obj);
+void voice_message_step(struct Obj *obj);
+void start_voice_message(struct Obj *obj);
+void status_slots_update(struct Obj *owner);
+void status_slots_setup(struct Obj *owner);
+void step_slot_object(void);
+void update_slot_display(u32 index);
+void place_world_object(s32 x, s32 y, s32 z, struct Obj *obj, u32 mode);
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
+struct Obj *list_add_task(void *list, void *next);
+struct Obj *task_create_list_4c(u32 next, u32 obj);
+s32 measure_text(u32 font, void *text, u32 pad);
+u32 obj_motion_start(struct Obj *obj, s32 x, s32 y, s32 height, s32 extra);
+u32 dma_copy_or_queue(u32 src, u32 dst, u32 count, u32 width, u32 mode);
+extern u8 *gWorkBuf;
+extern struct SysState gUnk_0300034C;
+void figure_select_action(u32 arg);
+void set_tile_slot(void *slot, u32 idx, u32 flag, u32 value, u32 p5, u32 p6, u32 p7);
+void draw_slot_frame(void *slot, u32 idx, u32 rect, u32 kind);
+void draw_slot_text(void *slot, u32 idx, u32 x, u32 y, void *text, u32 color);
+void copy_slot_tiles(void *slot, u32 idx, u8 *dst, u32 off, u32 count);
+void draw_obj_display(void);
+void draw_panel_values(void);
+void draw_counter_display(void);
+void countdown_world_counter(struct Obj *obj);
+extern u8 gGaugeTableC[];
+struct GlyphIndexTable
+{
+    u8 filler0[0xE];
+    u16 index;
+    u16 index10;
+};
+
+extern u32 gMapTable[];
+extern struct GlyphIndexTable gGlyphIndexTable;
+void spawn_slot_marker(u32 slot);
+void update_slot_markers(void);
+void obj_release(struct Obj *obj);
+void obj_release_node(struct Obj *node);
+void release_tile_slot(void *obj, u8 idx);
+u8 motion_step(struct Obj *obj);
+struct Obj *raster_line_add(void *fn, u32 kind, u32 arg);
+
+void release_slot_objects(void)
+{
+    struct Obj *slot = gUnk_03000FD8->slotObjs[0];
+
+    if (slot != 0)
+    {
+        obj_release_node(slot->unk8);
+        gUnk_03000FD8->slotObjs[0] = 0;
+        slot->unk4 = 0;
+    }
+    slot = gUnk_03000FD8->slotObjs[1];
+    if (slot != 0)
+    {
+        obj_release_node(slot->unk8);
+        gUnk_03000FD8->slotObjs[1] = 0;
+        slot->unk4 = 0;
+    }
+}
+
+void release_slot_object(u32 idx)
+{
+    struct Obj *slot = gUnk_03000FD8->slotObjs[idx];
+
+    if (slot != 0)
+    {
+        obj_release_node(slot->unk8);
+        gUnk_03000FD8->slotObjs[idx] = 0;
+        slot->unk4 = 0;
+    }
+}
+
+struct Obj *unknown_thumb_0810d74c(u32 index)
+{
+    struct Obj *slot;
+    struct Obj *node;
+
+    if (gUnk_03000FD8->flags0B & 8)
+    {
+        return 0;
+    }
+    slot = gUnk_03000FD8->slotObjs[index];
+    if (slot != 0)
+    {
+        return slot;
+    }
+    node = list_add_task((u8 *)gUnk_03000FD8 + 0x48, step_slot_object);
+    node->unk8 = slot;
+    node->unk16 = (u32)slot;
+    gUnk_03000FD8->slotObjs[index] = node;
+    return node;
+}
+
+void update_slot_markers(void)
+{
+    if ((gUnk_03000FD8->fig1->unk7E & 6) == 2)
+    {
+        update_slot_display(0);
+    }
+    else
+    {
+        release_slot_object(0);
+    }
+    if (gUnk_03000FD8->fig2 != 0)
+    {
+        if ((gUnk_03000FD8->fig2->unk7E & 6) == 2)
+        {
+            update_slot_display(1);
+        }
+        else
+        {
+            release_slot_object(1);
+        }
+    }
+}
+
+void set_slot_state(u32 state)
+{
+    gUnk_03000FD8->stateByte = state;
+    update_slot_markers();
+}
+
+void unknown_thumb_0810d818(u32 index)
+{
+    struct Obj *mark = gUnk_03000FD8->marks[index];
+
+    if (mark != 0)
+    {
+        mark->unk4 = panel_slide_end;
+    }
+}
+
+void set_mark_callbacks(void)
+{
+    if (gUnk_03000FD8->marks[0] != 0)
+    {
+        gUnk_03000FD8->marks[0]->unk4 = panel_slide_end;
+    }
+    if (gUnk_03000FD8->marks[1] != 0)
+    {
+        gUnk_03000FD8->marks[1]->unk4 = panel_slide_end;
+    }
+}
+
+ASM_FUNC("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(void))
+
+void queue_mark_display(void)
+{
+    u16 idx = gGlyphIndexTable.index;
+    u32 *entry = gMapTable + idx;
+    u8 *text = (u8 *)gMapTable + *entry;
+
+    queue_display_entry(0, text, gUnk_03000FD8->tileBank + 0x1880, 0x900, 0, 0);
+}
+
+void spawn_slot_markers(void)
+{
+    spawn_slot_marker(0);
+    spawn_slot_marker(1);
+}
+
+void bg_restore_while_busy(struct Obj *obj)
+{
+    if (obj->unk8->unk4 == 0)
+    {
+        obj->unk4 = 0;
+    }
+    else
+    {
+        REG_BG2VOFS = gUnk_0200001A;
+        REG_BG3VOFS = gUnk_0200001E;
+    }
+}
+
+void bg_slide_timer(struct Obj *obj)
+{
+    s32 t = 0x19 - obj->unk8->unk14;
+
+    obj->unk10 = t;
+    if ((s16)t > 0x17)
+    {
+        obj->unk4 = 0;
+    }
+    else
+    {
+        REG_BG2VOFS = gUnk_0200001A - 0x18;
+        REG_BG3VOFS = gUnk_0200001E - 0x18;
+    }
+}
+
+ASM_FUNC("asm/code_0810D6C0/bg_slide_out.s", void bg_slide_out(void))
+
+ASM_FUNC("asm/code_0810D6C0/battle_bg_scroll_callback.s", void battle_bg_scroll_callback(void))
+
+void spawn_timer_child(void)
+{
+    struct Obj *child = raster_line_add(slide_window_panel, 0x86, 0);
+
+    child->unk14 = 0;
+}
+
+void spawn_linked_children(void)
+{
+    struct Obj *first = raster_line_add(bg_slide_in, 0, 0);
+
+    first->unk14 = 0;
+    raster_line_add(bg_restore_after_sprite, 0x18, 0)->unk8 = first;
+}
+
+void clear_world_effect(void)
+{
+    struct Obj *effect = gUnk_03000FD8->effect;
+
+    if (effect != 0)
+    {
+        gUnk_03000FD8->effect = 0;
+        effect->unk4 = 0;
+        release_tile_slot(gUnk_03000FD8->slot4Tiles, 2);
+        release_tile_slot(gUnk_03000FD8->slot4Tiles, 3);
+    }
+}
+
+void copy_gauge_tiles(struct Obj *obj)
+{
+    u8 *bank = gUnk_03000FD8->tileBank;
+    s32 n = (s16)obj->unk16;
+    s32 width;
+    void *slot;
+    u32 value;
+
+    if (n > 5)
+    {
+        n = 5;
+    }
+    slot = gUnk_03000FD8->slot4Tiles;
+    width = (n * 11 + 8) / 8;
+    value = gGaugeTableC[(u32)obj->unkC & 0xF] * width;
+    copy_slot_tiles(slot, 2, bank, 0, value);
+    obj->unk4 = draw_obj_display;
+}
+
+void timer_object_state_db08(struct Obj *obj)
+{
+    obj->unkC->unk4 = 0;
+    obj->unk4 = 0;
+    gUnk_03000FD8->timerObj = 0;
+}
+
+void release_timer_tiles(void)
+{
+    if (gUnk_03000FD8->timerObj != 0)
+    {
+        release_tile_slot(gUnk_03000FD8->slot4Tiles, 4);
+        release_tile_slot(gUnk_03000FD8->slot4Tiles, 5);
+        gUnk_03000FD8->timerObj->unk4 = timer_object_state_db08;
+    }
+}
+
+ASM_FUNC("asm/code_0810D6C0/timer_window_setup.s", void timer_window_setup(void))
+
+ASM_FUNC("asm/code_0810D6C0/voice_message_step.s", void voice_message_step(struct Obj *obj))
+
+void scroll_text_step(struct Obj *obj)
+{
+    if (gUnk_03000FD8->flags0B & 0x40)
+    {
+        voice_message_step(obj);
+    }
+    else
+    {
+        u16 cur = obj->unk16;
+
+        if ((s16)obj->unk16 > 0)
+        {
+            obj->unk16 = cur - 1;
+        }
+        else if ((s16)obj->unk18 == 0)
+        {
+            obj->unk12 += 0x40;
+        }
+    }
+}
+
+ASM_FUNC("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
+
+ASM_FUNC("asm/code_0810D6C0/show_slot4_text_centered.s", void show_slot4_text_centered(void))
+
+void release_slot4_tiles(void)
+{
+    release_tile_slot(gUnk_03000FD8->slot4Tiles, 0);
+    release_tile_slot(gUnk_03000FD8->slot4Tiles, 1);
+}
+
+void show_slot4_text_left(void *text)
+{
+    release_slot4_tiles();
+    set_tile_slot(gUnk_03000FD8->slot4Tiles, 0, 0, 0xD, 0, 0x12, 3);
+    draw_slot_frame(gUnk_03000FD8->slot4Tiles, 1, 0, 0);
+    draw_slot_text(gUnk_03000FD8->slot4Tiles, 0, 7, 6, text, 0x91);
+}
+
+void upload_obj_tiles(u32 index)
+{
+    u16 idx = index;
+    u8 state = gUnk_03000FD8->uploadState;
+
+    if (state > 0x13)
+    {
+        dma_copy_or_queue((u32)(gWorkBuf + ((idx << 9) + 0x4E70)), 0x060113A0, 0x100, 0x20, 0);
+    }
+    else if ((u8)(state - 1) <= 0x11)
+    {
+        dma_copy_or_queue((u32)(gWorkBuf + ((((idx << 4) + 8) << 5) + 0x4E70)), 0x060113A0, 0x100, 0x20, 0);
+    }
+}
+
+void queue_obj_upload_entry(void)
+{
+    u16 idx = gGlyphIndexTable.index10;
+    u32 *entry = gMapTable + idx;
+    u8 *text = (u8 *)gMapTable + *entry;
+
+    queue_display_entry(0, text, gWorkBuf + 0x4E70, -1, 0, 0);
+    gUnk_03000FD8->uploadState = 0;
+}
+
+void release_marker_object(void)
+{
+    struct Obj *marker = gUnk_03000FD8->markerObj;
+
+    if (marker != 0)
+    {
+        marker->unk80 = 0;
+        obj_release(marker);
+        gUnk_03000FD8->markerObj = 0;
+    }
+}
+
+void release_sprite_state(struct Obj *obj)
+{
+    struct Obj *sprite = obj->unk8;
+
+    ((struct Flags79 *)&sprite->unk79)->bit4 = 0;
+    if (sprite->unk80 != 0)
+    {
+        if (motion_step(sprite) == 0)
+        {
+            return;
+        }
+    }
+    obj->unk4 = 0;
+}
+
+void place_at_active(struct Obj *obj)
+{
+    struct Obj *active = gUnk_03000FD8->active;
+
+    place_world_object(active->unk40 / 0x100 - 4, active->unk44 / 0x100, active->unkE0 / 0x100 + 0x18, obj, 0x7001);
+}
+
+void set_marker_position(s32 x, s32 y, s32 z)
+{
+    struct MarkerPos *marker = (struct MarkerPos *)gUnk_03000FD8->markerObj;
+
+    marker->unk84 = x << 8;
+    marker->unk10 = x << 8;
+    marker->unk88 = y << 8;
+    marker->unk14 = y << 8;
+    marker->unk8C = z << 8;
+    marker->unk18 = z << 8;
+}
+
+s32 number_right_edge(u32 value, s32 x)
+{
+    s32 width = 0;
+
+    do
+    {
+        value >>= 4;
+        width += 4;
+    } while (value != 0);
+    return x + width;
+}
+
+ASM_FUNC("asm/code_0810D6C0/draw_digits_c0_p12.s", void draw_digits_c0_p12(void))
+
+ASM_FUNC("asm/code_0810D6C0/draw_digits_49_p12.s", void draw_digits_49_p12(void))
+
+ASM_FUNC("asm/code_0810D6C0/draw_digits_c0_p11.s", void draw_digits_c0_p11(void))
+
+ASM_FUNC("asm/code_0810D6C0/draw_digits_49_p11.s", void draw_digits_49_p11(void))
+
+u32 status_anim_wait(void)
+{
+    u32 value = gUnk_03000FD8->statusValue;
+
+    gUnk_03000FD8->modeByte = (gUnk_03000FD8->modeByte & 0x1F) | 0xA0;
+    while (value == 0)
+    {
+    }
+    return obj_motion_start((struct Obj *)value, gUnk_03000FD8->active->unk40, gUnk_03000FD8->active->unk44, 0x3000, 0x3800);
+}
+
+ASM_FUNC("asm/code_0810D6C0/status_anim_start.s", void status_anim_start(void))
+
+void set_status_word(void)
+{
+    gUnk_03000FD8->statusObj->unk18 = 0x241;
+}
+
+void status_wait_slot(struct Obj *obj)
+{
+    struct Obj *slot;
+
+    status_slots_update(obj);
+    slot = gUnk_03000FD8->slotTable[gUnk_03000FD8->statusObj->unk10];
+    if (slot->unk4C == 0)
+    {
+        gUnk_03000FD8->modeByte &= 0x1F;
+        obj->unk4 = status_slots_update;
+    }
+}
+
+ASM_FUNC("asm/code_0810D6C0/set_status_entry.s", void set_status_entry(void))
+
+void hero_select_input(void)
+{
+    if (gUnk_0300034C.held & 1)
+    {
+        if (gUnk_03000FD8->fig1->unkEC == -1)
+        {
+            figure_select_action(0);
+        }
+        else
+        {
+            figure_select_action(1);
+        }
+    }
+    if (gUnk_0300034C.held & 2)
+    {
+        if (gUnk_03000FD8->fig1->unkEC == -2)
+        {
+            figure_select_action(0);
+        }
+        else
+        {
+            figure_select_action(1);
+        }
+    }
+}
+
+void bg_restore_after_sprite(struct Obj *obj)
+{
+    if (obj->unk8->unk4 == 0)
+    {
+        obj->unk4 = 0;
+    }
+    REG_BG2VOFS = gUnk_0200001A;
+    REG_BG3VOFS = gUnk_0200001E;
+}
+
+ASM_FUNC("asm/code_0810D6C0/bg_slide_in.s", void bg_slide_in(struct Obj *obj))
+
+ASM_FUNC("asm/code_0810D6C0/child_slide_to_bg2.s", void child_slide_to_bg2(struct Obj *obj))
+
+ASM_FUNC("asm/code_0810D6C0/countdown_world_counter.s", void countdown_world_counter(struct Obj *obj))
+
+ASM_FUNC("asm/code_0810D6C0/bg_slide_offset_callback.s", void bg_slide_offset_callback(struct Obj *obj))
+
+ASM_FUNC("asm/code_0810D6C0/resolve_contact_action.s", void resolve_contact_action(void))
+
+ASM_FUNC("asm/code_0810D6C0/partner_link_update.s", void partner_link_update(void))
+
+ASM_FUNC("asm/code_0810D6C0/hero_random_offset.s", void hero_random_offset(void))
+
+ASM_FUNC("asm/code_0810D6C0/apply_partner_effect.s", void apply_partner_effect(void))
