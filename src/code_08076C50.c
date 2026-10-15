@@ -911,24 +911,3 @@ void countdown_set_anim_0b_place_part(struct ActorObj *obj)
         }
     }
 }
-
-ASM_FUNC("asm/code_08076C50/link_actor_pair_start.s", void link_actor_pair_start(struct ActorObj *obj))
-
-void countdown_phase_then_wait(struct ActorObj *obj)
-{
-    obj->phase--;
-    if (obj->phase <= 0)
-    {
-        set_slot_value(0x54, -1);
-        obj->phase = 0xA;
-    }
-    obj->wait--;
-    if (obj->wait <= 0)
-    {
-        sprite_set_action(obj, 0x11, 0, 0);
-        obj->wait = 0x64;
-        obj->state = countdown_spawn_pair_link;
-    }
-}
-
-ASM_FUNC("asm/code_08076C50/countdown_spawn_pair_link.s", void countdown_spawn_pair_link(struct ActorObj *obj))
