@@ -72,9 +72,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   before the loop), the flag is a plain local that did not get a register (`u32 saved;`, not a
   struct field) and the loop is `for (count = 0; count < 1; count++)`: the reversed loop takes
   its start value from the flag (example `obj_bounce_point_3fb0` in src/code_08182EB8.c).
-- A signed division by 256 (`cmp; bge; adds #0xFF; asrs #8`) whose temporary takes a
-  callee-saved register in your C: write `x / 0x100` in the expression instead of
-  `t = x; if (t < 0) t += 0xFF; t >>= 8;`.
+- A signed division by 256 (`cmp; bge; adds #0xFF; asrs #8`): try both `x / 0x100` in the
+  expression and `t = x; if (t < 0) t += 0xFF; t >>= 8;`. They differ in the temporaries GCC
+  creates, and each form is the right one in some functions.
 - The original computes a field address into r0 and copies it into a callee-saved register
   only after the first load (`adds r0, r4, #0; adds r0, #0xAC; ldrsh …; adds r5, r0, #0`), but
   your C puts it straight into r5: write `obj->field` at every use instead of keeping a
@@ -88,8 +88,17 @@ function start, calls show the relocation (the called symbol). A worked example 
   assignment: `((struct FlagBits *)&p->flags)->bit3 = 0;`, and for `(x & -7) | 2` (bits 1-2 set to
   01) `((struct ModeBits *)&p->flags)->mode = 1;`. This is the first thing to try: an int
   temporary (`int b = p->flags; b = -7 & b; b |= 2; p->flags = b;`) usually loads the byte into
-  the other register. Only two masks in a row on one byte sometimes need the int temporary
-  (`b = -0x41 & b; b = -0x21 & b;`). Examples: src/code_080A048C.c, src/code_08092784.c.
+  the other register. Two masks in a row on one byte are usually two bit-field assignments as
+  well (`bits->b23 = 0; bits->lo2 = 0;` for `& -13; & -4`, example
+  `script_init_obj_setup_sprite` in src/code_080502DC.c); only sometimes do they need the int
+  temporary (`b = -0x41 & b; b = -0x21 & b;`). Halfwords work the same with `u16` bit fields
+  (`obj_clear_mask_if_timer`). Examples: src/code_080A048C.c, src/code_08092784.c.
+- Several stores through one pointer (`*p = a; p++; *p = b;`) become `stmia`; when the original
+  uses `str` and `adds`, compute each address in its own variable (`figure_pair_step` in
+  src/code_080FD8D8.c).
+- A teardown that sets a class pointer, calls a child, then sets the base class pointer again
+  and frees the object: the second half is an inlined helper. Written directly, GCC keeps the
+  field address in a register across the call (`obj_teardown` in src/code_080502DC.c).
 - A halfword/byte field is tested sign-extended (`ldrsh rX` + `cmp`) and later re-read with
   `ldrh`/`ldrb` for an update, but your C loads the `ldrh` first: read the field into an `s32`
   local (`s32 t = obj->timer; if (t != 0) obj->timer--;`). An `s16` local or a direct
