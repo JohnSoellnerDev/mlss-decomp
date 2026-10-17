@@ -208,7 +208,43 @@ void obj_timer_anim_6(struct SceneObj *obj);
 void obj_place_part_mode_anim7(struct SceneObj *obj);
 void obj_scene_move_or_stop(struct SceneObj *obj);
 
-ASM_FUNC("asm/code_0811229C/obj_wave_step_b.s", void obj_wave_step_b(struct SceneObj *obj))
+void obj_wave_step_b(struct SceneObj *obj)
+{
+    u32 part;
+    s32 angle;
+
+    obj_update_orbit_pos(obj);
+    if ((u32)(obj->orbitAngle + 0xFFFF) > 0x1FFFE)
+    {
+        obj->orbitAngle -= obj->orbitAngle / 0x10000 * 0x10000;
+        obj->timer++;
+        if (obj->timer > 1)
+        {
+            obj->state = obj_start_scene_move;
+        }
+        if (gWaveSlotTable[obj->unkB0] != 0)
+        {
+            sound_stop_song(gWaveSlotTable[obj->unkB0]);
+        }
+    }
+    if (obj->phase == 0)
+    {
+        world_set_link_callback(obj_anim1_for_slot);
+        obj->phase = 1;
+    }
+    if (obj->stepY == 0)
+    {
+        angle = (obj->orbitAngle / 0x100) & 0xFF;
+        part = 0x2680;
+        if (angle <= 0x7F)
+        {
+            part -= 9;
+        }
+        effect_spawn_at(part, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+        obj->stepY = 6;
+    }
+    obj->stepY--;
+}
 
 
 void obj_update_orbit_pos(struct SceneObj *obj)
