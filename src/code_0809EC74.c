@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Sprite
 {
@@ -96,13 +97,13 @@ struct Body
 
 extern void spawn_hero_children(void);
 extern void spawn_hero_children(void);
-extern void move_between_poses(void);
+extern void move_between_poses(struct Body *body);
 extern void counter_then_begin_motion(struct Body *body);
 extern void fall_step_then_remove(struct Body *body);
 extern void anim_by_sprite_key(struct Body *body);
 extern void stop_anim_when_shown(struct Body *body);
 extern void anim_by_partner_pose(struct Body *body);
-extern void spawn_child_part(void);
+extern void spawn_child_part(struct Body *body);
 extern void group_targets_then_step(struct Body *body);
 extern void step_and_detach_child(struct Body *body);
 extern void advance_and_fx_when_ready(struct Body *body);
@@ -141,7 +142,7 @@ extern struct Body *obj_spawn_linked(struct Body *parent, s32 kind, s32 zero);
 extern void end_anim_when_active_b(void);
 extern void anim4_with_effect_rate(void);
 extern void arrange_group_on_ellipse(void);
-extern void companion_jump_land_step_toward_partner(void);
+extern void companion_jump_land_step_toward_partner(struct Body *body);
 extern void place_chain_nodes(void);
 extern void *sprite_node_take(void);
 extern void *sprite_node_alloc(s32 x, s32 y, s32 z);
@@ -188,8 +189,50 @@ void stop_anim_when_shown(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_0809EC74/move_between_poses.s", void move_between_poses(void))
+void move_between_poses(struct Body *body)
+{
+    struct Body *partner = body->partner;
+    struct BodyData *data = partner->data;
+    struct BodyData *a;
+    struct BodyData *b;
 
-ASM_FUNC("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(void))
+    if (data->pose == -1)
+    {
+        b = data;
+        a = (struct BodyData *)((u8 *)data + 0x130);
+    }
+    else if (data->pose == -2)
+    {
+        b = (struct BodyData *)((u8 *)data - 0x130);
+        a = data;
+    }
+    if (b->pose != 0)
+    {
+        if (a->pose != 0)
+        {
+            body->landX = (b->limitX + a->limitX) / 2 + body->unkA4 * 0x100;
+            body->landY = (b->height + a->height) / 2 + 0x200;
+        }
+        else
+        {
+            body->landX = b->posX + body->unkA4 * 0x100;
+            body->landY = b->posY + 0x200;
+        }
+    }
+    else
+    {
+        body->landX = a->posX + body->unkA4 * 0x100;
+        body->landY = a->posY + 0x200;
+    }
+    body->landZ = partner->data->targetH;
+    *((u8 *)body + 0x79) |= 0x20;
+    body->unk7C = 0x600;
+    body->unk7A = 0;
+    start_motion(body);
+    sprite_set_action(body, 0xF, 0, 0);
+    body->state = (void *)start_timed_motion_if_free;
+}
 
-ASM_FUNC("asm/code_0809EC74/companion_jump_land_step_toward_partner.s", void companion_jump_land_step_toward_partner(void))
+ASM_FUNC("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(struct Body *body))
+
+ASM_FUNC("asm/code_0809EC74/companion_jump_land_step_toward_partner.s", void companion_jump_land_step_toward_partner(struct Body *body))
