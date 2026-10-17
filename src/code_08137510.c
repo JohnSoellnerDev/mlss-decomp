@@ -1,6 +1,106 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct Enemy;
+
+struct Sprite
+{
+    u8 filler0[0x12];
+    u8 flags12;
+    u8 filler13[0x20 - 0x13];
+    u8 unk20;
+};
+
+struct Enemy
+{
+    u8 filler0[0x2];
+    u8 heading;
+    u8 filler3[0xC - 0x3];
+    s32 posX;
+    s32 posY;
+    s32 posZ;
+    s32 unk18;
+    u8 filler1C[0x24 - 0x1C];
+    u8 unk24;
+    u8 filler25[0x34 - 0x25];
+    s32 unk34;
+    s32 unk38;
+    u8 filler3C[0x54 - 0x3C];
+    u8 unk54;
+    u8 filler55[0xF8 - 0x55];
+    u16 unkF8;
+    u8 fillerFA[0x100 - 0xFA];
+    u16 unk100[4];
+    u16 unk108[4];
+    u16 unk110[4];
+    u16 unk118[4];
+    u16 unk120[4];
+    u16 unk128[4];
+    s16 unk130[2];
+    u8 filler134[0x138 - 0x134];
+    s16 unk138;
+    s16 unk13A;
+    s16 unk13C;
+    s16 unk13E;
+    u8 filler140[0x198 - 0x140];
+    void *unk198;
+    u8 filler19C[0x1AC - 0x19C];
+    u32 unk1AC;
+    u8 filler1B0[0x1B8 - 0x1B0];
+    s16 unk1B8;
+    s16 unk1BA;
+    u16 unk1BC;
+    u16 unk1BE;
+    s32 unk1C0;
+    u16 unk1C4;
+    u16 unk1C6;
+    u16 unk1C8;
+    u8 filler1CA[0x1CC - 0x1CA];
+    s32 unk1CC;
+    u16 unk1D0;
+    u16 unk1D2;
+    u8 filler1D4[0x1D6 - 0x1D4];
+    u8 unk1D6;
+    u8 filler1D7[0x20C - 0x1D7];
+    u8 unk20C;
+    u8 unk20D;
+    u8 filler20E[0x216 - 0x20E];
+    u8 unk216;
+    u8 filler217[0x239 - 0x217];
+    u8 unk239;
+    u8 filler23A[0x23E - 0x23A];
+    u16 unk23E;
+    u8 filler240[0x242 - 0x240];
+    u16 unk242;
+    u16 unk244;
+    u8 filler246[0x248 - 0x246];
+    s32 unk248;
+    s32 unk24C;
+    s32 unk250;
+    s32 unk254;
+    s32 unk258;
+    s32 unk25C;
+    u8 filler260[0x294 - 0x260];
+    struct Sprite *sprite;
+    u8 filler298[0x2B5 - 0x298];
+    u8 unk2B5;
+    u8 unk2B6;
+    u8 filler2B7[0x2BC - 0x2B7];
+    s32 unk2BC;
+    s32 unk2C0;
+    u8 filler2C4[0x2CC - 0x2C4];
+    s32 unk2CC;
+    s32 unk2D0;
+    u8 filler2D4[0x2D8 - 0x2D4];
+    s16 unk2D8;
+    s16 unk2DA;
+    u8 filler2DC[0x2DE - 0x2DC];
+    u16 unk2DE;
+    u16 unk2E0;
+    u8 filler2E2[0x33C - 0x2E2];
+    u8 unk33C;
+};
+
 struct Vec3
 {
     s32 x;
@@ -142,7 +242,26 @@ struct TaskObj *obj_callback_18_task_insert(struct TaskObj *obj, u8 kind, const 
     return obj;
 }
 
-ASM_FUNC("asm/code_08137510/fade_end.s", void fade_end(struct Fade *obj))
+NONMATCH("asm/code_08137510/fade_end.s", void fade_end(struct Fade *obj))
+{
+    vu16 *p;
+
+    p = gUnk_02000050;
+    *p = obj->unk2C;
+    p += 2;
+    *p = obj->unk2A;
+    if (obj->unk24 != 0)
+    {
+        obj_callback_18_task_remove(obj->unk24, 3);
+    }
+    obj->unk24 = 0;
+    if (obj != 0)
+    {
+        obj->cb18 = gFadeClass;
+        task_remove(obj, 3);
+    }
+}
+END_NONMATCH
 
 void obj_callback_18_remove_de60(struct TaskObj *obj, u32 task)
 {
@@ -150,7 +269,30 @@ void obj_callback_18_remove_de60(struct TaskObj *obj, u32 task)
     task_remove(obj, task);
 }
 
-ASM_FUNC("asm/code_08137510/fade_start.s", void fade_start(void))
+NONMATCH("asm/code_08137510/fade_start.s", struct Fade *fade_start(struct Fade *obj, u8 kind))
+{
+    struct TaskObj *t;
+    vu16 *p;
+
+    task_insert(obj, kind);
+    obj->cb18 = gFadeClass;
+    obj->unk1C = 0;
+    t = obj_callback_18_task_insert(heap_alloc2(0x1C, 0, gHeapTagHdrw, 0), 8, gHeapTagHasd);
+    obj->unk24 = t;
+    t->owner14 = obj;
+    obj->unk28 = 0;
+    obj->unk2E = 0x1000;
+    p = gUnk_02000050;
+    obj->unk2C = *p;
+    *p = 0xFF;
+    p += 2;
+    obj->unk2A = *p;
+    *p = 0x10;
+    p -= 0x2A;
+    *p = 0x1140;
+    return obj;
+}
+END_NONMATCH
 
 s8 get_s8_28(u8 *obj)
 {
