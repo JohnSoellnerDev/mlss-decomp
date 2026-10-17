@@ -142,6 +142,7 @@ void hero_b_link_when_ready(struct Body *body);
 void hero_b_begin_step_rate6(struct Body *body);
 void hero_b_place_at_data_target(struct Body *body);
 void hero_pair_meet(struct Body *body);
+void hero_pair_place_both_finish_t399(void);
 
 void step_motion(struct Body *body);
 void state_stack_advance_progress(struct Body *body);
@@ -324,7 +325,41 @@ void enter_body_speed_z_step(struct Body *body)
     body->state = (u32)body_speed_z_step;
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_pair_setup_pose.s", void hero_pair_setup_pose(void))
+extern u8 *gUnk_03000FF4;
+void schedule_pose_task(struct Body *body);
+void hero_b_place_with_effect(struct Body *body);
+u32 hero_pair_setup_pose(struct Body *body)
+{
+    u8 **party = &gUnk_03000FF4;
+    struct BodyData *data = body->data;
+    struct Body *partner;
+    struct Body *body_a;
+    struct Body *body_b;
+    u32 anim;
+    u8 *entry;
+
+    entry = *party - (data->pose * 0x3C + 0x3C);
+    data->poseVal = *(u16 *)(entry + 0x2A);
+    body_a = &gUnk_03000FD8->heroA->body;
+    body_b = &gUnk_03000FD8->heroB->body;
+    partner = body->partner;
+    body_b->partner = partner;
+    body_a->partner = partner;
+    anim = body->anim;
+    body_b->anim = anim;
+    body_a->anim = anim;
+    partner->slot50 = 0;
+    body_b->slot50 = 0;
+    body_a->slot50 = 0;
+    partner->speed = 0x100;
+    body_b->speed = 0x100;
+    body_a->speed = 0x100;
+    body->state = (u32)hero_b_place_with_effect;
+    body_b->count = 0;
+    body_a->count = 0;
+    schedule_pose_task(partner);
+    return 1;
+}
 void hero_b_place_with_effect(struct Body *body)
 {
     struct Hero *hero;
@@ -438,8 +473,59 @@ void hero_b_advance_anim4(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_b_move_to_partner_target.s", void hero_b_move_to_partner_target(struct Body *body))
-ASM_FUNC("asm/code_080A1DC8/hero_b_move_to_partner_step.s", void hero_b_move_to_partner_step(void))
+void find_frame_entry(struct Body *body, u32 index);
+void hero_b_move_to_partner_step(struct Body *body);
+void hero_b_move_to_partner_target(struct Body *body)
+{
+    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Body *body_b = &hero_b->body;
+    struct Body *partner = body->partner;
+    s32 t;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 h;
+
+    if ((body_b->sprite->flags & 8) != 0)
+    {
+        set_slot_value(0x2B, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            x = partner->targetX / 0x100 + partner->ofsX;
+            y = partner->targetY / 0x100 + partner->ofsY;
+            z = partner->targetZ / 0x100 + partner->ofsZ;
+            place_targets(body_b, x, y, z, -1);
+            if (partner == (struct Body *)((u8 *)partner->data + 8))
+            {
+                h = partner->ofsZ;
+            }
+            else
+            {
+                find_frame_entry(partner, 0);
+                h = partner->unk47;
+            }
+            t = partner->targetZ;
+            if (t < 0)
+                t += 0xFF;
+            h += t >> 8;
+            t = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x6E4, (h * h) / 64 + 0x2A);
+            h += t;
+            body_b->arc = h;
+            set_motion_offsets(body_b, 0x680);
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->pose == -1)
+                sprite_set_action(body_b, 5, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 5, 0x204D, 0);
+            ((struct SpriteModeByte *)&body_b->sprite->flags)->mode = 1;
+        }
+        body_b->timer = body_b->timer & 0xFFF;
+        body->state = (u32)hero_b_move_to_partner_step;
+    }
+}
+ASM_FUNC("asm/code_080A1DC8/hero_b_move_to_partner_step.s", void hero_b_move_to_partner_step(struct Body *body))
 
 void hero_b_arm_full_step(struct Body *body)
 {
@@ -758,7 +844,39 @@ void enter_body_fall_with_speed(struct Body *body)
     body->state = (u32)body_fall_with_speed;
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_pair_start.s", void hero_pair_start(void))
+void hero_a_go_to_partner(struct Body *body);
+u32 hero_pair_start(struct Body *body)
+{
+    u8 **party = &gUnk_03000FF4;
+    struct BodyData *data = body->data;
+    struct Body *partner;
+    struct Body *body_a;
+    struct Body *body_b;
+    u32 anim;
+    u8 *entry;
+
+    entry = *party - (data->pose * 0x3C + 0x3C);
+    data->poseVal = *(u16 *)(entry + 0x2A);
+    body_a = &gUnk_03000FD8->heroA->body;
+    body_b = &gUnk_03000FD8->heroB->body;
+    partner = body->partner;
+    body_b->partner = partner;
+    body_a->partner = partner;
+    anim = body->anim;
+    body_b->anim = anim;
+    body_a->anim = anim;
+    partner->slot50 = 0;
+    body_b->slot50 = 0;
+    body_a->slot50 = 0;
+    partner->speed = 0x100;
+    body_b->speed = 0x100;
+    body_a->speed = 0x100;
+    body->state = (u32)hero_a_go_to_partner;
+    body_b->count = 0;
+    body_a->count = 0;
+    schedule_pose_task(partner);
+    return 1;
+}
 void hero_a_go_to_partner(struct Body *body)
 {
     struct Hero *hero;
