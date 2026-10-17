@@ -182,9 +182,11 @@ void obj_drift_slow(struct ActorObj *obj);
 s32 obj_query_part_settle(struct ActorObj *obj);
 void obj_pose_active_action5_then_spawn(struct ActorObj *obj);
 
+void obj_orbit_place(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp, s32 timer, s32 param);
+void obj_set_sprite_offsets(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp);
 ASM_FUNC("asm/code_0805FA0C/map_obj_drift_x.s", void map_obj_drift_x(void))
 
-ASM_FUNC("asm/code_0805FA0C/obj_orbit_place.s", void obj_orbit_place(void))
+ASM_FUNC("asm/code_0805FA0C/obj_orbit_place.s", void obj_orbit_place(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp, s32 timer, s32 param))
 
 void map_obj_place_from_offsets(struct ActorObj *obj)
 {
@@ -203,4 +205,13 @@ void map_obj_place_from_offsets(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805FA0C/obj_set_sprite_offsets.s", void obj_set_sprite_offsets(void))
+void obj_set_sprite_offsets(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 d)
+{
+    struct ActorObj *child = obj->child;
+    struct ActorObj *grandchild = child->child;
+
+    child->dx = grandchild->dx = x / 0x100;
+    child->dy = grandchild->dy = y / 0x100;
+    child->dh = h / 0x100 + d;
+    grandchild->dh = h / 0x100 - d;
+}
