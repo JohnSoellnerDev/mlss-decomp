@@ -53,9 +53,11 @@ typedef void (*BodyFunc)(struct HeroBody *);
 
 struct BodyData
 {
-    u8 filler0[0xDC];
+    u8 filler0[0xD8];
+    s32 unkD8;
     s32 height;
-    u8 filler0E0[0xEC - 0xE0];
+    s32 unkE0;
+    u8 filler0E4[0xEC - 0xE4];
     s16 poseOfs;
     u8 filler0EE[0xF6 - 0xEE];
     s16 effect;
@@ -120,7 +122,7 @@ u32 mt19937_next(void);
 s32 sub_081DE850(s32 n, u32 seed);
 extern u16 gUnk_0200004A;
 extern u16 gUnk_02000052;
-extern u8 gActionCodes[];
+extern const u16 gActionCodes[];
 
 struct ModelCtx
 {
@@ -198,6 +200,8 @@ void child_jump_to_pose(struct HeroBody *body);
 void apply_velocity_step(struct HeroBody *body);
 u32 try_lookup_slot(struct HeroBody *body, u32 arg);
 u32 finish_and_remove(struct HeroBody *body);
+void draw_if_visible(struct HeroBody *body);
+void follow_focus_then_pose(struct HeroBody *body);
 void update_pose_if_shown_b(struct HeroBody *body);
 u32 set_pose_mode_6_or_7(struct HeroBody *body);
 u32 set_pose_mode_0_or_1(struct HeroBody *body);
@@ -228,11 +232,75 @@ void choose_hero_target(struct HeroBody *body);
 void rise_stop(struct HeroBody *body);
 void wait_child_gone(struct HeroBody *body);
 
-ASM_FUNC("asm/code_0809A420/spawn_trail_part.s", void spawn_trail_part(struct HeroBody *body))
+struct HeroBody *obj_spawn(void *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void *sprite_node_alloc(s32 x, s32 y, s32 z);
+void spawn_trail_part(struct HeroBody *body)
+{
+    struct HeroBody *child;
+    void **node;
+    void *head;
+    s32 i;
+
+    if (body->sprite->flags & 0x8) {
+        sprite_set_action(body, 0xB, 0, 0);
+        effect_spawn_at(0xD5F, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+        child = obj_spawn(body->data, 0, body->targetX / 0x100 - 0x14, body->targetY / 0x100 - 8,
+                          body->targetZ / 0x100, 1, 1);
+        body->child = child;
+        child->unk9C = 0;
+        *(u32 *)((u8 *)child + 0x6C) = *(u32 *)((u8 *)body + 0x6C);
+        child->partner = body->partner;
+        child->startX = child->x;
+        child->startY = child->y;
+        child->unkAE = 0;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = *(void **)((u8 *)child + 0xC);
+        *node = head;
+        *(void **)((u8 *)child + 0xC) = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = *(void **)((u8 *)child + 0xC);
+        *node = head;
+        *(void **)((u8 *)child + 0xC) = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = *(void **)((u8 *)child + 0xC);
+        *node = head;
+        *(void **)((u8 *)child + 0xC) = node;
+        i = 0xF;
+        do {
+            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+            head = *(void **)((u8 *)child + 0xC);
+            *node = head;
+            *(void **)((u8 *)child + 0xC) = node;
+            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+            head = *(void **)((u8 *)child + 0xC);
+            *node = head;
+            *(void **)((u8 *)child + 0xC) = node;
+            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+            head = *(void **)((u8 *)child + 0xC);
+            *node = head;
+            *(void **)((u8 *)child + 0xC) = node;
+            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+            head = *(void **)((u8 *)child + 0xC);
+            *node = head;
+            *(void **)((u8 *)child + 0xC) = node;
+            i -= 4;
+        } while (i >= 0);
+        child->state = trail_follow_partner;
+        body->state = begin_tile_update;
+        set_slot_value(0x8C, -1);
+    }
+}
 
 ASM_FUNC("asm/code_0809A420/trail_follow_partner.s", void trail_follow_partner(struct HeroBody *body))
 
-ASM_FUNC("asm/code_0809A420/begin_tile_update.s", void begin_tile_update(struct HeroBody *body))
+void begin_tile_update(struct HeroBody *body)
+{
+    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000460, gWorkBuf + 0x3CD0, 0x20);
+    gUnk_03000D74->unk28 = gUnk_03000D74->unk2A;
+    gUnk_03000D74->unk2A |= 0xFFFF;
+    task_create_list_48(update_layer_tiles, body);
+    body->state = update_pose_if_shown;
+}
 
 
 u32 lookup_part_or_wait(struct HeroBody *body, u32 arg1, u32 arg2)
@@ -543,7 +611,27 @@ void fall_and_release(struct HeroBody *body)
 }
 
 
-ASM_FUNC("asm/code_0809A420/place_at_focus_y.s", void place_at_focus_y(struct HeroBody *body))
+void place_at_focus_y(struct HeroBody *body)
+{
+    struct World **pworld = &gUnk_03000FD8;
+    struct World *world = *pworld;
+    u32 flags;
+
+    if (body->partner->child == 0)
+    {
+        gUnk_02000052 = 0x808;
+        sprite_set_action(body, 0, gActionCodes[(world->unkC >> 7) * 0x12] + ~body->data->poseOfs, 0);
+        flags = body->sprite->flags;
+        body->sprite->flags = flags | 0x10;
+        body->targetZ = body->z = ((s32)(obj_last_y((*pworld)->focus) << 16) >> 8) + body->data->height;
+        if (body->data->effect != 0)
+        {
+            place_targets(body, body->targetX / 0x100, body->targetY / 0x100, 0, -1);
+            set_motion_speed_aux(body, 0, 0x66);
+        }
+        body->state = update_pair_link;
+    }
+}
 
 
 void update_pair_link(struct HeroBody *body)
