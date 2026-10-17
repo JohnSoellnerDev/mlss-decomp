@@ -112,6 +112,7 @@ extern u16 gUnk_0200004A;
 extern u16 gUnk_0200025C;
 extern u16 gUnk_02000040;
 extern u8 gUnk_0300034C[];
+
 void reset_display_step(void);
 void add_obj_target_offset(u32 item, s32 a, s32 b);
 void update_scroll_shadows(void *task);
@@ -177,7 +178,9 @@ ASM_FUNC("asm/code_080E0814/rotate_point_list.s", void rotate_point_list(void))
 ASM_FUNC("asm/code_080E0814/rasterize_outline_rows.s", void rasterize_outline_rows(void))
 
 ASM_FUNC("asm/code_080E0814/advance_path.s", void advance_path(void))
+void advance_path(void);
 
+void copy_bg_block_flipped(struct StreamObj *obj);
 ASM_FUNC("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(void))
 
 ASM_FUNC("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear(void))
@@ -248,9 +251,28 @@ void set_scroll_slot(s32 x, s32 y)
     gUnk_03000FD8->scrollBlock = block;
 }
 
-ASM_FUNC("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(void))
+ASM_FUNC("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(struct StreamObj *obj))
 
-ASM_FUNC("asm/code_080E0814/stream_next_halfword.s", void stream_next_halfword(void))
+void stream_next_halfword(struct StreamObj *obj)
+{
+    struct World *world = gUnk_03000FD8;
+    u16 *stream;
+
+    if (world->flags & 2)
+    {
+        obj->state = 0;
+    }
+    else
+    {
+        world->flags |= 2;
+        stream = obj->stream;
+        obj->unk12 = 0;
+        obj->unk14 = 0;
+        obj->unk10 = *stream++;
+        obj->stream = stream;
+        obj->state = (void (*)(void))advance_path;
+    }
+}
 
 ASM_FUNC("asm/code_080E0814/add_offset_to_records.s", void add_offset_to_records(void))
 
@@ -275,4 +297,19 @@ s32 sub_080E1FA4(struct ScrollSlot *dst, s32 unused, struct SlotSource *src)
     return 1;
 }
 
-ASM_FUNC("asm/code_080E0814/randomize_obj_params.s", void randomize_obj_params(void))
+s32 randomize_obj_params(struct ObjParams *p, struct ObjParamSrc *src)
+{
+    u32 rnd;
+
+    p->unk8 = 0;
+    rnd = mt19937_next();
+    p->unk16 = (((rnd & 0xFF) + 0x100) * src->a) >> 8;
+    rnd >>= 8;
+    p->unk12 = (((rnd & 0xFF) + 0x100) * src->b) >> 8;
+    rnd >>= 8;
+    p->unk18 = (((rnd & 0xFF) + 0x100) * src->c) >> 8;
+    p->unk10 = 0;
+    rnd >>= 8;
+    p->unk14 = rnd;
+    return (rnd & 1) + 1;
+}
