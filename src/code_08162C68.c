@@ -1,5 +1,32 @@
 #include "global.h"
 #include "ram_routines.h"
+struct EffectObj
+{
+    u32 unk00;
+    s32 unk04;
+    s32 unk08;
+    void *unk0C;
+    s32 unk10;
+    s32 unk14;
+    s32 unk18;
+    s32 unk1C;
+    s32 unk20;
+    s32 unk24;
+    s32 unk28;
+    s32 unk2C;
+    s32 unk30;
+    s32 unk34;
+    s32 unk38;
+    s32 unk3C;
+    s32 unk40;
+    s32 unk44;
+};
+struct SpritePos
+{
+    s16 x;
+    s16 y;
+};
+
 
 struct Timer
 {
@@ -66,7 +93,52 @@ extern u8 gBigObjTag[];
 void heap_free_b(void *p);
 void release_obj_131c(void *p);
 
-ASM_FUNC("asm/code_08162C68/effect_step_d.s", void effect_step_d(void))
+extern u16 gUnk_02000010[];
+extern u16 gUnk_02000014[];
+extern u16 gUnk_02000018[];
+extern u16 gUnk_0200001C[];
+extern u32 gObjGroup500bClasses[];
+extern s16 gAnimLangChildC[];
+void obj_script_step(struct BigObj *obj);
+
+void obj_release_slots(void *sprite);
+void sprite_update_cd0(void *sprite);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+
+NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj *obj))
+{
+    s32 delta;
+    s32 pos;
+
+    switch (obj->unk30)
+    {
+    case 0:
+        delta = obj->unk10 + 0x14;
+        obj->unk10 = delta;
+        pos = obj->unk08 + delta;
+        obj->unk08 = pos;
+        if (pos > 0x4FFF)
+        {
+            obj->unk10 = (-delta * 2) / 3;
+            if ((obj->unk10 >> 8) == 0)
+                goto finish;
+        }
+        ((struct SpritePos *)obj->unk00)->x = (obj->unk04 + obj->unk14) >> 8;
+        ((struct SpritePos *)obj->unk00)->y = (obj->unk08 + obj->unk18) >> 8;
+        break;
+    case 1:
+        if (--obj->unk2C <= 0)
+            return 1;
+        break;
+    }
+    return 0;
+
+finish:
+    obj->unk2C = 0x50;
+    obj->unk30 = 1;
+    return 0;
+}
+END_NONMATCH
 
 void obj_release_child_free_c(void *obj, u32 freeFlag)
 {
@@ -132,7 +204,31 @@ struct BigObj *obj_init_big(struct BigObj *obj, u32 first)
 
 ASM_FUNC("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos(void))
 
-ASM_FUNC("asm/code_08162C68/obj_set_anim_from_offset.s", void obj_set_anim_from_offset(struct BigObj *obj))
+void obj_set_anim_from_offset(struct BigObj *obj)
+{
+    if ((s32)obj->unk3C < -0x1400)
+    {
+        if (*(u8 *)(obj->unk14 + 0x21) != 2)
+            obj_load_record((void *)obj->unk14, 2, 0, 0, 0);
+        sprite_update_cd0((void *)obj->unk14);
+    }
+    else if ((s32)obj->unk3C < -0xA00)
+    {
+        if (*(u8 *)(obj->unk14 + 0x21) != 1)
+            obj_load_record((void *)obj->unk14, 1, 0, 0, 0);
+        sprite_update_cd0((void *)obj->unk14);
+    }
+    else if ((s32)obj->unk3C < 0)
+    {
+        if (*(u8 *)(obj->unk14 + 0x21) != 0)
+            obj_load_record((void *)obj->unk14, 0, 0, 0, 0);
+        sprite_update_cd0((void *)obj->unk14);
+    }
+    else
+    {
+        obj_release_slots((void *)obj->unk14);
+    }
+}
 
 struct SpriteBits11
 {
@@ -189,7 +285,7 @@ done:
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08162C68/obj_script_step.s", void obj_script_step(void))
+ASM_FUNC("asm/code_08162C68/obj_script_step.s", void obj_script_step(struct BigObj *obj))
 
 ASM_FUNC("asm/code_08162C68/tween_groups_obj_start_move.s", void tween_groups_obj_start_move(void))
 
@@ -205,6 +301,8 @@ ASM_FUNC("asm/code_08162C68/init_obj_table_classes.s", void init_obj_table_class
 
 ASM_FUNC("asm/code_08162C68/create_obj_group_500b.s", void create_obj_group_500b(void))
 
+extern u32 gObjGroup500bClasses[];
+extern s16 gAnimLangChildC[];
 ASM_FUNC("asm/code_08162C68/obj_init_children_classes.s", void obj_init_children_classes(void))
 
 ASM_FUNC("asm/code_08162C68/obj_tween_step.s", void obj_tween_step(void))
@@ -226,9 +324,43 @@ u32 get_flag_bit(u32 flagId)
     return (*word >> bit) & 1;
 }
 
-ASM_FUNC("asm/code_08162C68/tween_groups_set_flag_bit.s", void tween_groups_set_flag_bit(void))
+void tween_groups_set_flag_bit(u16 index, u8 value)
+{
+    u32 *word = (u32 *)(gUnk_03000FC0 + 0x20 + ((index >> 5) << 2));
+    u32 bit = index & 0x1F;
 
-ASM_FUNC("asm/code_08162C68/obj_copy_pos_to_shadow.s", void obj_copy_pos_to_shadow(void))
+    *word = (*word & ~(1 << bit)) | ((value & 1) << bit);
+}
+
+void obj_copy_pos_to_shadow(struct TweenObj *obj)
+{
+    vu16 *dst;
+
+    if (obj->unk20 & 1)
+    {
+        dst = gUnk_02000010;
+        *dst++ = obj->unk18;
+        *dst = obj->unk1C;
+    }
+    if (obj->unk20 & 2)
+    {
+        dst = gUnk_02000014;
+        *dst++ = obj->unk18;
+        *dst = obj->unk1C;
+    }
+    if (obj->unk20 & 4)
+    {
+        dst = gUnk_02000018;
+        *dst++ = obj->unk18;
+        *dst = obj->unk1C;
+    }
+    if (obj->unk20 & 8)
+    {
+        dst = gUnk_0200001C;
+        *dst++ = obj->unk18;
+        *dst = obj->unk1C;
+    }
+}
 
 u32 obj_is_idle_081642B0(struct TweenObj *obj)
 {
