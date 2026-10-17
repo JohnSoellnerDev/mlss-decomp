@@ -25,14 +25,39 @@ struct PartTable
 
 struct SpritePart
 {
-    u8 filler0[0x7E];
+    u8 filler0[0x10];
+    u8 *ptr10;
+    u8 filler14[0x7E - 0x14];
     u8 mode;
     u8 filler7F[0xCD - 0x7F];
     s8 unkCD;
     u8 filler0CE[0xE4 - 0xCE];
     struct PartTable *table;
-    u8 filler0E8[0x110 - 0xE8];
+    u8 filler0E8[0xF0 - 0xE8];
+    struct PartRunner *runner;
+    u8 filler0F4[0x110 - 0xF4];
     u8 flags110;
+};
+
+struct PartRunner
+{
+    u8 filler0[0x10];
+    void (*handler)(struct SpritePart *part);
+    u8 filler14[0x1C - 0x14];
+    u8 flags1C;
+};
+
+struct PartSlot
+{
+    u16 id;
+    u8 flags;
+    u8 pad3;
+};
+
+struct PartBlock
+{
+    u8 filler0[8];
+    struct PartSlot slots[6];
 };
 
 struct SubInner
@@ -53,7 +78,9 @@ struct TaskState
     u8 filler4[0xA - 4];
     u8 unkA;
     u8 flagsB;
-    u8 filler0C[0x3C - 0xC];
+    u8 filler0C[0x1C - 0xC];
+    u8 *unk1C;
+    u8 filler20[0x3C - 0x20];
     struct TaskNode *freeList;
     struct TaskNode *list40;
     struct TaskNode *list44;
@@ -62,7 +89,12 @@ struct TaskState
     struct TaskNode *list50;
     u8 filler54[0x58 - 0x54];
     struct SpritePart *parts[8];
-    u8 filler78[0x1F4 - 0x78];
+    u8 filler78[0x80 - 0x78];
+    struct SpritePart *unk80;
+    struct SpritePart *unk84;
+    u8 filler88[0x1C0 - 0x88];
+    u16 *unk1C0[8];
+    u8 filler1E0[0x1F4 - 0x1E0];
     u32 unk1F4;
     u8 filler1F8[0x244 - 0x1F8];
     void *unk244;
@@ -72,7 +104,7 @@ struct TaskState
     u8 filler254[0x2B6 - 0x254];
     u16 unk2B6;
     u8 unk2B8;
-    u8 filler2B9[0x2BA - 0x2B9];
+    u8 unk2B9;
     u8 unk2BA;
     u8 filler2BB[0x2BE - 0x2BB];
     u8 unk2BE;
@@ -148,6 +180,12 @@ struct SpriteObj
 };
 
 extern struct TaskState *gUnk_03000FD8;
+void sprite_update_parts(struct TaskNode *task);
+u32 lookup_or_alloc_13b4(u32 a, u16 id, s32 b, u32 c);
+u32 mt19937_next(void);
+s32 sub_081DE850(s32 range, u32 seed);
+u32 mt19937_next(void);
+s32 sub_081DE850(s32 range, u32 seed);
 void task_begin_obj(struct TaskNode *task);
 void obj_release(void *obj);
 void task_wait_idle(struct TaskNode *task);
@@ -425,7 +463,7 @@ struct TaskNode *list_add_task(struct TaskNode **list, void *next)
     return node;
 }
 
-NONMATCH("asm/code_08080580/run_task_list.s", void run_task_list(struct TaskNode **list))
+void run_task_list(struct TaskNode **list)
 {
     struct TaskNode *prev;
     struct TaskNode *node;
@@ -458,14 +496,13 @@ NONMATCH("asm/code_08080580/run_task_list.s", void run_task_list(struct TaskNode
             else
             {
                 struct TaskNode *cur = *list;
-                struct TaskNode *before;
 
                 do
                 {
-                    before = cur;
-                    cur = before->next;
+                    prev = cur;
+                    cur = prev->next;
                 } while (cur != node);
-                before->next = next;
+                prev->next = next;
             }
             {
                 struct TaskState *st = gUnk_03000FD8;
@@ -477,7 +514,6 @@ NONMATCH("asm/code_08080580/run_task_list.s", void run_task_list(struct TaskNode
         node = next;
     }
 }
-END_NONMATCH
 
 void obj_start_anim(struct SpriteObj *obj)
 {
@@ -648,11 +684,15 @@ void task_wait_poll_flag(struct TaskNode *task)
 
 ASM_FUNC("asm/code_08080580/task_init_map.s", void task_init_map(struct TaskNode *task))
 
-ASM_FUNC("asm/code_08080580/sprite_update_parts.s", void sprite_update_parts(void))
+void task_run_parts(struct TaskNode *task);
+ASM_FUNC("asm/code_08080580/sprite_update_parts.s", void sprite_update_parts(struct TaskNode *task))
 
-ASM_FUNC("asm/code_08080580/task_run_parts.s", void task_run_parts(void))
+u32 lookup_or_alloc_13b4(u32 a, u16 id, s32 b, u32 c);
+void task_spawn_objects(struct TaskNode *task);
+ASM_FUNC("asm/code_08080580/task_run_parts.s", void task_run_parts(struct TaskNode *task))
 
-ASM_FUNC("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(void))
+void task_load_part_codes(void);
+ASM_FUNC("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(struct TaskNode *task))
 
 ASM_FUNC("asm/code_08080580/task_load_part_codes.s", void task_load_part_codes(void))
 
