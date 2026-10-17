@@ -18,6 +18,11 @@ void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void *obj_init_big(void *obj, u32 first);
 void obj_create_sprite_10(void *obj, u32 a, u32 kind, u32 b, u32 c, u32 d);
 void list_insert(void *list, void *node);
+void write_var(u16 id, u16 value);
+void tween_groups_set_flag_bit(u16 index, u8 value);
+void timer_set(void *timer, u32 limit);
+void anim_task_start(void *task, u32 a, const void *table, u32 b, u32 c);
+extern const u8 gHeapTagAnimTaskData[];
 
 struct ChildPart
 {
@@ -32,7 +37,9 @@ struct ChildPart
     s32 unk70;
     s32 unk74;
     s32 unk78;
-    u8 filler7C[0x8C - 0x7C];
+    u8 filler7C[0x84 - 0x7C];
+    s32 unk84;
+    u8 filler88[0x8C - 0x88];
     s32 unk8C;
 };
 
@@ -80,17 +87,18 @@ struct StageObj
     u8 filler0[0x18];
     struct StageClass *cls;
     void *list1C;
-    u8 filler20[0x2C - 0x20];
+    u8 filler20[0x28 - 0x20];
+    void *klass28;
     struct SpawnNode2C *node2C;
     struct ChildPart *part30;
     struct ChildPart *part34;
-    u8 filler38[0x3C - 0x38];
+    struct PlacedObj *placed38;
     struct SpawnAnim *anim3C;
     void *shadowSrc;
-    u8 filler44[0x48 - 0x44];
+    struct ChildPart *part44;
     struct ChildPart *part48;
     s32 timer4C;
-    u8 filler50[0x54 - 0x50];
+    s32 unk50;
     s32 stage;
     s32 unk58;
     s32 unk5C;
@@ -323,11 +331,10 @@ sync:
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0816CA84/obj_sync_children_pos.s", void obj_sync_children_pos(struct ChildObj *obj))
+void obj_sync_children_pos(struct ChildObj *obj)
 {
     s32 counter;
     s32 sin;
-    s32 off;
     s32 pos;
     u8 *spr;
     struct ChildPart *target;
@@ -354,8 +361,9 @@ NONMATCH("asm/code_0816CA84/obj_sync_children_pos.s", void obj_sync_children_pos
         if (sin < 0)
             sin += 0x3F;
         sin >>= 6;
-        off = (sin << 5) + -0x2800;
-        pos = obj->unk18 - off;
+        sin <<= 5;
+        sin += -0x2800;
+        pos = obj->unk18 - sin;
     }
     else
     {
@@ -364,13 +372,13 @@ NONMATCH("asm/code_0816CA84/obj_sync_children_pos.s", void obj_sync_children_pos
         if (sin < 0)
             sin += 0x3F;
         sin >>= 6;
-        off = (sin << 5) + -0x2800;
-        pos = obj->unk18 + off;
+        sin <<= 5;
+        sin += -0x2800;
+        pos = obj->unk18 + sin;
     }
     target->x = pos;
     target->y = obj->unk1C;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0816CA84/obj_chase_step.s", s32 obj_chase_step(struct ChildObj *node, s32 a1, s32 a2, void *a3, void *a4))
 
@@ -536,4 +544,9 @@ ASM_FUNC("asm/code_0816CA84/obj_step_stage2.s", void obj_step_stage2(struct Stag
 
 ASM_FUNC("asm/code_0816CA84/obj_spawn_phase.s", void obj_spawn_phase(struct StageObj *obj))
 
+void write_var(u16 id, u16 value);
+void tween_groups_set_flag_bit(u16 index, u8 value);
+void timer_set(void *timer, u32 limit);
+void anim_task_start(void *task, u32 a, const void *table, u32 b, u32 c);
+extern const u8 gHeapTagAnimTaskData[];
 ASM_FUNC("asm/code_0816CA84/obj_step_stage4.s", void obj_step_stage4(struct StageObj *obj))
