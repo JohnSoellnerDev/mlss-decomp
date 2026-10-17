@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct ActorPose
 {
@@ -27,6 +28,12 @@ struct ActorPart
     s16 unkF6;
     u8 filler3[0x11E - 0xF8];
     u16 unk11E;
+};
+
+struct ActorWorld
+{
+    u8 filler0[0x58];
+    u8 *partners[8];
 };
 
 struct ActorObj
@@ -198,7 +205,78 @@ void obj_child_timer_finish(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080667F8/obj_fan_out_children.s", void obj_fan_out_children(struct ActorObj *obj))
+void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
+void obj_fan_out_children(struct ActorObj *obj)
+{
+    s32 x;
+    s32 y;
+    s32 h;
+    s32 camX;
+    s32 camY;
+    s32 camH;
+    s32 offX;
+    s32 offY;
+    s32 offH;
+    s32 stepX;
+    s32 stepY;
+    s32 stepH;
+    s32 accX;
+    s32 accY;
+    s32 accH;
+    s32 *node;
+    s32 t;
+
+    x = obj->targetX + 0x1000;
+    y = obj->targetY;
+    h = obj->targetH;
+    t = x;
+    if (x < 0)
+    {
+        t = obj->targetX + 0x10FF;
+    }
+    camX = t >> 8;
+    t = y;
+    if (y < 0)
+    {
+        t += 0xFF;
+    }
+    camY = t >> 8;
+    t = h;
+    if (h < 0)
+    {
+        t += 0xFF;
+    }
+    camH = t >> 8;
+    offset_three_words_camera(&camX, &camY, &camH, 0);
+
+    offX = obj->dx << 8;
+    offY = obj->dy << 8;
+    offH = obj->dh << 8;
+    stepX = x - offX;
+    stepY = y - offY;
+    stepH = h - offH;
+
+    node = (s32 *)&obj->filler0C;
+    if (node != NULL)
+    {
+        accH = stepH;
+        accY = stepY;
+        accX = stepX;
+        do
+        {
+            s32 px = accX / 6 + offX;
+            s32 py = accY / 6 + offY;
+            s32 ph = accH / 6 + offH;
+            node[1] = px;
+            node[2] = py;
+            node[3] = ph;
+            node = (s32 *)*node;
+            accH += stepH;
+            accY += stepY;
+            accX += stepX;
+        } while (node != NULL);
+    }
+}
 
 s32 obj_query_contact_action1(struct ActorObj *obj, struct ActorObj *owner, s32 b)
 {
