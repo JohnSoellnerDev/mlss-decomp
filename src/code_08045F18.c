@@ -1,11 +1,14 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct FieldSub
 {
     u8 filler0[4];
     u16 h04;
     u16 h06;
-    u8 filler08[0x11 - 0x08];
+    u16 h08;
+    u16 h0A;
+    u8 filler0C[0x11 - 0x0C];
     u8 flags11;
     u8 filler12;
     u8 count13;
@@ -15,6 +18,14 @@ struct FieldSub
     u8 b1E;
     u8 filler1F[0x21 - 0x1F];
     u8 anim21;
+};
+
+struct ObjClass
+{
+    u8 filler0[0x38];
+    s16 thisOffset38;
+    u16 filler3A;
+    void (*fn3C)(void *self, u32 mode);
 };
 
 struct FieldObj
@@ -30,16 +41,19 @@ struct FieldObj
     u8 unk24;
     u8 filler25[0x4C - 0x25];
     u8 unk4C;
-    u8 filler4D[0x20D - 0x4D];
+    u8 filler4D[0x20C - 0x4D];
+    u8 flags20C;
     u8 flags20D;
-    u8 filler20E[0x213 - 0x20E];
+    u8 filler20E[0x20F - 0x20E];
+    u8 flags20F;
+    u8 filler210[0x213 - 0x210];
     u8 change213;
     u8 state214;
     u8 flags215;
     u8 flags216;
     u8 filler217;
     u16 id218;
-    u8 filler21A[0x21C - 0x21A];
+    u16 nextId21A;
     u16 prevId21C;
     u16 h21E;
     u8 anim220;
@@ -61,23 +75,58 @@ struct FieldObj
     struct FieldSub *sub;
     u8 filler298[0x2B5 - 0x298];
     u8 moveFlags2B5;
-    u8 filler2B6[0x2E0 - 0x2B6];
+    u8 flags2B6;
+    u8 flags2B7;
+    u8 flags2B8;
+    u8 filler2B9[0x2BC - 0x2B9];
+    s32 unk2BC;
+    s32 unk2C0;
+    s32 unk2C4;
+    u8 filler2C8[0x2CC - 0x2C8];
+    s32 unk2CC;
+    s32 unk2D0;
+    s32 unk2D4;
+    s16 unk2D8;
+    s16 unk2DA;
+    s16 unk2DC;
+    u16 unk2DE;
     u16 v2E0;
-    u8 filler2E2[0x2FA - 0x2E2];
+    u8 filler2E2[0x2E4 - 0x2E2];
+    s32 unk2E4;
+    s32 unk2E8;
+    s32 unk2EC;
+    s32 unk2F0;
+    s32 unk2F4;
+    s16 unk2F8;
     u16 axisACur;
     u16 axisBCur;
-    u8 filler300[0x302 - 0x300];
+    u16 unk2FE;
+    u16 unk300;
     u16 axisATarget;
     u16 axisBTarget;
-    u8 filler306[0x30A - 0x306];
+    u16 unk306;
+    u16 unk308;
     u16 axisAStep;
     u16 axisBStep;
-    u8 filler30E[0x312 - 0x30E];
+    u16 unk30E;
+    u16 unk310;
     u16 axisACount;
     u16 axisBCount;
-    u8 filler316[0x31A - 0x316];
+    u16 unk316;
+    u16 unk318;
     u16 axisASpeed;
     u16 axisBSpeed;
+    u16 unk31E;
+    u16 unk320;
+    s16 unk322;
+          s16 unk324;
+      u8 filler326[0x328 - 0x326];
+    s32 unk328;
+    s32 unk32C;
+          u8 filler330[2];
+      u16 unk332;
+      u8 filler334[4];
+    struct ObjClass *klass338;
 };
 
 static inline u32 round_to_pixel(u32 v)
@@ -164,41 +213,106 @@ ASM_FUNC("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(void))
 
 ASM_FUNC("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(void))
 
-NONMATCH("asm/code_08045F18/obj_sync_sub_slot.s", void obj_sync_sub_slot(struct FieldObj *obj, s32 slot))
+struct SlotBits
 {
-    u32 bit;
-    u32 value;
-    u32 mark;
-    u8 *flags;
+    u8 bit0 : 1;
+    u8 has0 : 1;
+    u8 has1 : 1;
+    u8 flip0 : 1;
+    u8 flip1 : 1;
+    u8 hi3 : 3;
+};
+
+void obj_sync_sub_slot(struct FieldObj *obj, s32 slot)
+{
+    u32 flip;
 
     if (slot == 0)
     {
         obj->anim220 = obj->sub->anim21;
-        flags = &obj->flags215;
-        bit = ((u32)obj->sub->flags11 << 25) >> 31;
-        value = (*flags & -9) | (bit << 3);
-        mark = 2;
+        flip = ((u32)obj->sub->flags11 << 25) >> 31;
+        ((struct SlotBits *)&obj->flags215)->flip0 = flip;
+        ((struct SlotBits *)&obj->flags215)->has0 = 1;
     }
     else
     {
         obj->anim221 = obj->sub->anim21;
-        flags = &obj->flags215;
-        bit = ((u32)obj->sub->flags11 << 25) >> 31;
-        value = (*flags & -0x11) | (bit << 4);
-        mark = 4;
+        flip = ((u32)obj->sub->flags11 << 25) >> 31;
+        ((struct SlotBits *)&obj->flags215)->flip1 = flip;
+        ((struct SlotBits *)&obj->flags215)->has1 = 1;
     }
-    *flags = value | mark;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08045F18/obj_step_index.s", void obj_step_index(void))
 
 ASM_FUNC("asm/code_08045F18/obj_set_state.s", void obj_set_state(void))
 
-ASM_FUNC("asm/code_08045F18/obj_apply_state_a.s", void obj_apply_state_a(void))
+void obj_apply_state_a(struct FieldObj *obj)
+{
+    u8 *p;
+    u32 v;
+    u32 w;
+    u32 idx;
+    u32 f;
+    s32 anim;
+    s32 sub;
+    u32 top;
+
+    p = &obj->state214;
+    v = *p;
+    if (v & 0x40)
+    {
+        idx = ((u32)(v << 26)) >> 29;
+        w = (v & -8) | idx;
+        *p = w;
+        if (((u32)(w << 29) >> 29) > 2)
+            obj->unk02 = obj->unk24 << 5;
+        *(s8 *)p &= -0x41;
+    }
+    if (obj->state214 & 0x80)
+    {
+        if (obj->nextId21A != obj->id218)
+        {
+            obj->id218 = obj->nextId21A;
+            obj_update_special_flag(obj);
+        }
+    }
+    top = obj->state214 >> 7;
+    if (obj->flags215 & 2)
+        anim = obj->anim220;
+    else
+        anim = -1;
+    f = obj->flags215;
+    if (f & 2)
+        sub = (f << 28) >> 31;
+    else
+        sub = -1;
+    obj_refresh_anim_state(obj, top, anim, sub);
+    obj->state214 &= 0x7F;
+    *(s8 *)&obj->flags215 &= -3;
+    obj->klass338->fn3C((u8 *)obj + obj->klass338->thisOffset38, 1);
+}
 
 ASM_FUNC("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(void))
 
-ASM_FUNC("asm/code_08045F18/obj_set_sprite_slot.s", void obj_set_sprite_slot(void))
+void obj_set_sprite_slot(struct FieldObj *obj, u32 slot)
+{
+    u16 v;
+    u32 hi;
+    u16 lo;
+    u32 i;
+
+    v = *(slot + gUnk_0203FFC4);
+    hi = (v >> 10) & 0xf;
+    lo = v & 0x3ff;
+    obj->h21E = ((hi + 1) << 12) | lo;
+    ((struct MoveBits *)&obj->sub->b1E)->hi4 = hi;
+    obj->sub->index1C = lo;
+    obj->sub->mask14 = 0;
+    for (i = 0; i < (obj->sub->count13 >> 4); i++, slot++)
+    {
+        obj->sub->mask14 |= 1 << slot;
+    }
+}
 
 ASM_FUNC("asm/code_08045F18/obj_set_sprite_link.s", void obj_set_sprite_link(void))
