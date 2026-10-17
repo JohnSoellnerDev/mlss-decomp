@@ -198,6 +198,7 @@ void set_slot_value(u32 id, s32 value);
 u8 step_motion(struct HeroBody *body);
 void step_motion_d(struct HeroBody *body);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
+void set_motion_offsets(struct HeroBody *obj, u32 value);
 void set_motion_start(struct HeroBody *body, u32 speed);
 void set_step_and_offsets(struct HeroBody *body, u32 step, u32 offsets);
 void set_motion_offsets(struct HeroBody *body, u32 offsets);
@@ -311,10 +312,10 @@ void pick_random_partner(struct HeroBody *body)
     body->state = partner_move_a;
 }
 
-NONMATCH("asm/code_0809583C/partner_move_a.s", void partner_move_a(struct HeroBody *body))
+void partner_move_a(struct HeroBody *body)
 {
-    struct HeroBody *hero_b;
     struct HeroBody *hero_a;
+    struct HeroBody *hero_b;
     struct HeroBody *partner;
     struct World *world = gUnk_03000FD8;
     s32 y;
@@ -359,7 +360,7 @@ NONMATCH("asm/code_0809583C/partner_move_a.s", void partner_move_a(struct HeroBo
             body->side = 0;
         }
     }
-    partner = (body->side != 0) ? hero_b : hero_a;
+    partner = (body->side == 0) ? hero_a : hero_b;
     body->partner = partner;
     if (partner != 0)
     {
@@ -379,7 +380,6 @@ NONMATCH("asm/code_0809583C/partner_move_a.s", void partner_move_a(struct HeroBo
     body->timer = 10;
     body->state = move_until_offscreen;
 }
-END_NONMATCH
 
 void move_until_offscreen(struct HeroBody *body)
 {
@@ -404,10 +404,11 @@ void partner_wait_after_connect(struct HeroBody *body)
     body->state = visible_action_8;
 }
 
-NONMATCH("asm/code_0809583C/contact_check.s", s32 contact_check(struct HeroBody *body, struct HeroBody *other))
+s32 contact_check(struct HeroBody *body, struct HeroBody *other)
 {
     s32 result;
-    s32 flags;
+    s16 rate;
+    s32 speed;
 
     result = query_contact(body, other);
     if (result != 0)
@@ -428,16 +429,16 @@ NONMATCH("asm/code_0809583C/contact_check.s", s32 contact_check(struct HeroBody 
     }
     else
     {
-        {
-            s32 rate = body->rate;
-            set_motion_start(body, rate + 0x4C);
-        }
+        rate = body->rate;
+        speed = rate + 0x4C;
+        if (speed > 0x380)
+            speed = 0x380;
+        set_motion_start(body, rate + 0x4C);
     }
     body->link++;
     ((struct ActionModeBits *)&body->mode)->action = 0;
     return -2;
 }
-END_NONMATCH
 
 u32 partner_link_hook(struct HeroBody *body, u32 a, u32 b)
 {
@@ -552,7 +553,71 @@ void move_progress_check(struct HeroBody *body)
 
 ASM_FUNC("asm/code_0809583C/pair_choose_partner.s", void pair_choose_partner(struct HeroBody *body))
 
-ASM_FUNC("asm/code_0809583C/partner_chase_pair_step.s", void partner_chase_pair_step(struct HeroBody *body))
+void partner_chase_pair_step(struct HeroBody *body)
+{
+    struct HeroBody *child;
+    struct HeroBody *partner;
+    s32 i;
+    s32 height;
+
+    state_stack_advance_progress(body);
+    if (body->flags79 & 0x20)
+    {
+        i = 0;
+        child = body->child;
+        if (child != NULL)
+        {
+            do
+            {
+                partner = child->partner;
+                if (body == partner)
+                {
+                    if ((child->mode & 6) == 2 || (child->mode & 6) == 4)
+                    {
+                        place_targets(child, body->targetX / 0x100 + body->ofsX + 4, body->targetY / 0x100 + body->ofsY, body->targetZ / 0x100 + body->ofsZ - 8, -1);
+                        if (body == (struct HeroBody *)((u8 *)body->data + 8))
+                        {
+                            height = body->ofsZ;
+                        }
+                        else
+                        {
+                            find_frame_entry(body, 0);
+                            height = body->candidateLimit;
+                        }
+                        height += partner->targetZ / 0x100;
+                        height += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, (height * height) / 0x40 + 0x28);
+                        child->unk92 = height;
+                        set_motion_offsets(child, 0x480);
+                    }
+                }
+                else
+                {
+                    if ((child->mode & 6) == 2 || (child->mode & 6) == 4)
+                    {
+                        place_targets(child, partner->targetX / 0x100 + partner->ofsX + 4, partner->targetY / 0x100 + partner->ofsY, partner->targetZ / 0x100 + partner->ofsZ - 8, -1);
+                        if (partner == (struct HeroBody *)((u8 *)partner->data + 8))
+                        {
+                            height = partner->ofsZ;
+                        }
+                        else
+                        {
+                            find_frame_entry(partner, 0);
+                            height = partner->candidateLimit;
+                        }
+                        height += partner->targetZ / 0x100;
+                        height += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, (height * height) / 0x40 + 0x28);
+                        child->unk92 = height;
+                        set_motion_offsets(child, 0x480);
+                    }
+                }
+                child->handle = MATH_ROUTINE(s32 (*)(s32, s32, s32), iwram_div)((s16)child->handle << 14, 0x4000 - i++ * (s16)child->handle * 18, 1);
+                child->state = partner_step_wait;
+                child = child->child;
+            } while (child != NULL);
+        }
+        body->state = NULL;
+    }
+}
 
 NONMATCH("asm/code_0809583C/partner_step_wait.s", void partner_step_wait(struct HeroBody *body))
 {
@@ -648,7 +713,7 @@ void step_motion_arrive(struct HeroBody *body)
     }
 }
 
-NONMATCH("asm/code_0809583C/child_visible_check.s", void child_visible_check(struct HeroBody *body))
+void child_visible_check(struct HeroBody *body)
 {
     struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
     s32 action;
@@ -666,19 +731,13 @@ NONMATCH("asm/code_0809583C/child_visible_check.s", void child_visible_check(str
             sprite_set_action(body, 5, action, 0);
             ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
         }
-        action = 0x2023;
-        if (body == hero_a)
-        {
-            action += 0x2F;
-        }
-        sprite_set_action(body->partner, 1, action, 0);
+        sprite_set_action(body->partner, 1, body == hero_a ? 0x2023 + 0x2F : 0x2023, 0);
         ((struct SpriteModeBits *)&body->partner->sprite->flags)->mode = 1;
         sprite_set_action(body->child, 1, 0x208C, 0);
         body->child->state = child_launch;
         body->state = pose_switch;
     }
 }
-END_NONMATCH
 
 void pose_switch(struct HeroBody *body)
 {
@@ -739,6 +798,7 @@ void child_launch(struct HeroBody *body)
     }
 }
 
+s32 menu_cursor_pos(s32 x, s32 y, u32 n);
 ASM_FUNC("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struct HeroBody *body))
 
 ASM_FUNC("asm/code_0809583C/pair_partner_swap.s", void pair_partner_swap(struct HeroBody *body))
