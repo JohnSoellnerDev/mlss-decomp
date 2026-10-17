@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct SpriteTask;
 struct SpriteObj;
@@ -148,7 +149,7 @@ void release_block(void *block);
 void ensure_code_entry(u32 key);
 s32 is_state_busy(void);
 s32 set_free_list_head(void);
-void run_obj_entry(u32 arg);
+void run_obj_entry();
 void move_slots_toward(struct SpriteObj *obj);
 u8 step_motion(struct SpriteObj *obj);
 void map_obj_set_impulse(struct MapObj *obj, s32 dx, s32 dy);
@@ -165,6 +166,7 @@ void lookup_or_alloc_14b8(u32 a, u32 key, s32 b, s32 c);
 void set_flag_2_2(void *ptr);
 void load_table_entries(u32 code);
 void state_timed_motion(struct SpriteTask *task);
+void state_wait_arrival(struct SpriteTask *task);
 void state_countdown_reset(struct SpriteTask *task);
 void state_countdown_next(struct SpriteTask *task);
 void state_start_idle(struct SpriteTask *task);
@@ -187,13 +189,15 @@ extern u8 gUnk_0300034C[];
 
 ASM_FUNC("asm/code_08081DA4/move_slots_toward.s", void move_slots_toward(struct SpriteObj *obj))
 
+void state_start_wait(struct SpriteTask *task);
 ASM_FUNC("asm/code_08081DA4/state_show_and_scale.s", void state_show_and_scale(void))
 
+void state_start_motion(struct SpriteTask *task);
 ASM_FUNC("asm/code_08081DA4/state_random_step.s", void state_random_step(void))
 
 ASM_FUNC("asm/code_08081DA4/state_timed_motion.s", void state_timed_motion(struct SpriteTask *task))
 
-ASM_FUNC("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(void))
+ASM_FUNC("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struct SpriteTask *task))
 
 void state_draw_pose(struct SpriteTask *task)
 {
@@ -491,6 +495,7 @@ void state_spawn_object(struct SpriteTask *task)
     }
 }
 
+void state_spawn_object(struct SpriteTask *task);
 ASM_FUNC("asm/code_08081DA4/state_fill_table_and_spawn.s", void state_fill_table_and_spawn(void))
 
 void state_run_handler(struct SpriteTask *task)
@@ -539,7 +544,23 @@ void state_countdown_reset(struct SpriteTask *task)
     }
 }
 
-ASM_FUNC("asm/code_08081DA4/state_countdown_start.s", void state_countdown_start(struct SpriteTask *task))
+void state_countdown_start(struct SpriteTask *task)
+{
+    if ((s16)task->timer > 1)
+        task->timer--;
+    else
+        task->timer = 1;
+    run_obj_entry();
+    task_create_list_4c(owner_wait_entry, 0);
+    gUnk_03000FD8->unk10 = 4;
+    {
+        s32 flags = gUnk_0300034C[0x888];
+
+        flags |= 0x10;
+        gUnk_0300034C[0x888] = flags;
+    }
+    task->next = state_move_then_check;
+}
 
 void state_countdown_next(struct SpriteTask *task)
 {
