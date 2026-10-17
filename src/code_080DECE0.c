@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct ActorPose
 {
@@ -82,6 +83,31 @@ struct ActorObj
     s16 dx;
     s16 dy;
     s16 dh;
+};
+
+struct FxSpawnList
+{
+    s32 pad0;
+    s32 active;
+    struct ActorObj *owner;
+    u16 *cursor;
+    s16 delay;
+    s16 baseX;
+    s16 baseY;
+    s16 baseH;
+};
+
+struct Particle
+{
+    u8 filler0[0x4];
+    s32 posX;
+    s32 posH;
+    s32 posY;
+    s16 x;
+    s16 dh;
+    s16 y;
+    s16 timer;
+    s16 dx;
 };
 
 void obj_release(struct ActorObj *obj);
@@ -216,7 +242,16 @@ void obj_wait_link_then_timer(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/obj_unlink_release_code.s", s32 obj_unlink_release_code(struct ActorObj *obj))
+s32 obj_unlink_release_code(struct ActorObj *obj)
+{
+    obj->state = obj_finish_now;
+    if (obj->data->codeByte & 0x80)
+    {
+        change_item_count(obj->data->codeByte & 0x7F, 1);
+        obj->data->codeByte = 0;
+    }
+    return 1;
+}
 
 void obj_begin_jump_to_data(struct ActorObj *obj)
 {
@@ -252,7 +287,27 @@ void obj_lower_height_512(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/obj_arrive_toggle_pose.s", void obj_arrive_toggle_pose(void))
+void obj_arrive_toggle_pose(struct ActorObj *obj)
+{
+    struct ActorPose *pose;
+    s32 flags;
+    s32 bit;
+    s32 cleared;
+
+    if (obj->link == 0)
+    {
+        sprite_set_action(obj, 0, 0, 0);
+        pose = obj->pose;
+        flags = pose->byte11;
+        bit = ((u32)flags << 25) >> 31;
+        bit = bit ^ 1;
+        bit = bit << 6;
+        cleared = -0x41 & flags;
+        cleared = cleared | bit;
+        pose->byte11 = cleared;
+        on_arrive(obj);
+    }
+}
 
 void obj_action8_slot126_timer(struct ActorObj *obj)
 {
@@ -446,7 +501,44 @@ ASM_FUNC("asm/code_080DECE0/effect_spawn_at.s", void effect_spawn_at(u32 type, s
 
 ASM_FUNC("asm/code_080DECE0/fx_script_step.s", void fx_script_step(void))
 
-ASM_FUNC("asm/code_080DECE0/fx_spawn_list_step.s", void fx_spawn_list_step(void))
+void fx_spawn_list_step(struct FxSpawnList *fx)
+{
+    while (fx->delay == 0)
+    {
+        u16 *rec = fx->cursor;
+        u32 type = rec[0];
+
+        if (type == 0xFFFD)
+        {
+            effect_spawn_at(type, (s16)rec[1], (s16)rec[2], (s16)rec[3], 0);
+        }
+        else
+        {
+            s32 x = fx->baseX;
+            struct ActorObj *owner = fx->owner;
+
+            if (owner != 0 && (owner->pose->byte11 & 0x40))
+            {
+                x -= (s16)rec[1];
+            }
+            else
+            {
+                x += (s16)rec[1];
+            }
+            effect_spawn_at(type, x, fx->baseY + (s16)rec[2], fx->baseH + (s16)rec[3], owner);
+        }
+        fx->delay = rec[4];
+        fx->cursor = rec + 5;
+    }
+    if (fx->delay < 0)
+    {
+        fx->active = 0;
+    }
+    else
+    {
+        fx->delay--;
+    }
+}
 
 ASM_FUNC("asm/code_080DECE0/fx_tick_move_records.s", void fx_tick_move_records(void))
 
