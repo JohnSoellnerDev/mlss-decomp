@@ -184,4 +184,23 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08076630/shrink_then_finish.s", void shrink_then_finish(struct ActorObj *obj))
+void shrink_then_finish(struct ActorObj *obj)
+{
+    struct ActorPose *pose;
+
+    if (obj->timer == 2)
+    {
+        obj->paramA0 += -0x600;
+        obj->pose->unkC = obj->paramA0;
+    }
+    if (obj->paramA4 > 0)
+    {
+        obj->paramA4 -= 8;
+        pose = obj->pose;
+        pose->unk4 = pose->unk6 = obj->paramA4;
+    }
+    if (obj->index == 0)
+    {
+        obj_release(obj);
+    }
+}
