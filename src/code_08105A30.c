@@ -47,10 +47,21 @@ struct Obj
     u8 filler0E4[0xF5 - 0xE4];
     u8 unkF5;
     u16 unkF6;
-    u8 filler0F8[0xFC - 0xF8];
+    u16 unkF8;
+    u8 filler0FA[0xFC - 0xFA];
     u16 unkFC;
-    u8 filler0FE[0x111 - 0xFE];
+    u16 unkFE;
+    u8 filler100[0x102 - 0x100];
+    u16 unk102;
+    u16 unk104;
+    u16 unk106;
+    u16 unk108;
+    u8 filler10A[0x111 - 0x10A];
     u8 unk111;
+    u8 filler112[0x12B - 0x112];
+    u8 unk12B;
+    u8 unk12C;
+    u8 unk12D;
 };
 
 struct CurObj
@@ -96,6 +107,22 @@ struct Owner
     void *block;
 };
 
+struct OrbitNode
+{
+    struct OrbitNode *next;
+    s32 x;
+    u8 filler8[0x4];
+    s32 y;
+};
+
+struct OrbitRoot
+{
+    u8 filler0[0xC];
+    struct OrbitNode head;
+    u8 filler1C[0x9C - 0x1C];
+    s32 scale;
+};
+
 struct World
 {
     void *scene;
@@ -114,7 +141,7 @@ struct World
     struct Obj *fig80[2];
     u8 filler88[0x248 - 0x88];
     struct Menu *menu248;
-    u8 filler24C[0x250 - 0x24C];
+    struct Obj *obj24C;
     void *mapSrc250;
     u8 filler254[0x290 - 0x254];
     u32 unk290;
@@ -129,7 +156,9 @@ struct World
     struct Sprite *menu368;
     u8 filler36C[0x370 - 0x36C];
     struct Sprite *digit370;
-    u8 filler374[0x398 - 0x374];
+    u8 filler374[0x378 - 0x374];
+    struct OrbitRoot *orbit378;
+    u8 filler37C[0x398 - 0x37C];
     u32 unk398[3];
     u8 state3A4;
     u8 unk3A5;
@@ -201,7 +230,38 @@ ASM_FUNC("asm/code_08105A30/state_init_map_tiles.s", void state_init_map_tiles(s
 
 ASM_FUNC("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_tiles(struct Owner *owner))
 
-ASM_FUNC("asm/code_08105A30/state_move_to_target.s", void state_move_to_target(struct Owner *owner))
+void state_move_to_target(struct Owner *owner)
+{
+    struct Obj *obj;
+    s8 *flags;
+    u8 *ufl;
+    s16 h;
+    s16 x;
+    s16 y;
+
+    obj = owner->target;
+    if (move_step(&h, &x, &y, obj->unkD8 - obj->pos18, obj->unkDC - obj->pos1C, obj->unkE0 - obj->pos20, 0x400) > 0x480)
+    {
+        obj->pos18 += h;
+        obj->pos1C += x;
+        obj->pos20 += y;
+    }
+    else
+    {
+        flags = (s8 *)&obj->link->unk1F;
+        *flags = (*flags & -4) | 2;
+        flags = (s8 *)&obj->link->unk1F;
+        *flags = (*flags & -0xD) | 8;
+        flags = (s8 *)&obj->link->unk1F;
+        *flags = (*flags & -0x31) | 0x20;
+        ufl = &obj->link->unk1F;
+        *ufl = (*ufl & 0x3F) | 0x80;
+        obj->pos18 = obj->unkD8;
+        obj->pos1C = obj->unkDC;
+        obj->pos20 = obj->unkE0;
+        owner->state = 0;
+    }
+}
 
 ASM_FUNC("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digits(void))
 
@@ -209,9 +269,113 @@ ASM_FUNC("asm/code_08105A30/state_build_hero_sprites.s", void state_build_hero_s
 
 ASM_FUNC("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(void))
 
-ASM_FUNC("asm/code_08105A30/state_apply_hero_stats.s", void state_apply_hero_stats(struct Owner *owner))
+void set_cur_flags_pending(u32 flags);
+void state_menu_open_wait(struct Owner *owner);
+void state_apply_hero_stats(struct Owner *owner)
+{
+    u8 *rec;
+    u8 *tbl;
+    struct Obj *obj;
+    u16 sVar2;
+    u16 v;
 
-ASM_FUNC("asm/code_08105A30/state_menu_open_wait.s", void state_menu_open_wait(void))
+    obj = gUnk_03000FD8->fig80[0];
+    rec = gUnk_03000FF4 - ((struct CurObj *)obj)->unkEC * 0x3C;
+    tbl = rec - 0x3C;
+    ((struct MsBits *)&obj->unk7E)->mode = 1;
+    obj->unkF5 = rec[-0xC];
+    v = *(u16 *)(tbl + 0xE);
+    sVar2 = 1;
+    if (v != 0)
+    {
+        sVar2 = v;
+    }
+    obj->unkF6 = sVar2;
+    obj->unkF8 = *(u16 *)(tbl + 0x12);
+    obj->unk106 = *(u16 *)(tbl + 0x20);
+    obj->unk102 = *(u16 *)(tbl + 0x1C);
+    obj->unk104 = *(u16 *)(tbl + 0x24);
+    obj->unk108 = *(u16 *)(tbl + 0x28);
+    obj->unkFC = *(u16 *)(tbl + 0x14);
+    obj->unkFE = *(u16 *)(tbl + 0x18);
+    obj->unk12B = rec[-7] + 1;
+    obj->unk12C = rec[-5] + 1;
+    obj->unk12D = rec[-4] + 1;
+
+    obj = gUnk_03000FD8->fig80[1];
+    if (obj != 0)
+    {
+        rec = gUnk_03000FF4 - ((struct CurObj *)obj)->unkEC * 0x3C;
+        tbl = rec - 0x3C;
+        ((struct MsBits *)&obj->unk7E)->mode = 1;
+        obj->unkF5 = rec[-0xC];
+        v = *(u16 *)(tbl + 0xE);
+        sVar2 = 1;
+        if (v != 0)
+        {
+            sVar2 = v;
+        }
+        obj->unkF6 = sVar2;
+        obj->unkF8 = *(u16 *)(tbl + 0x12);
+        obj->unk106 = *(u16 *)(tbl + 0x20);
+        obj->unk102 = *(u16 *)(tbl + 0x1C);
+        obj->unk104 = *(u16 *)(tbl + 0x24);
+        obj->unk108 = *(u16 *)(tbl + 0x28);
+        obj->unkFC = *(u16 *)(tbl + 0x14);
+        obj->unkFE = *(u16 *)(tbl + 0x18);
+        obj->unk12B = rec[-7] + 1;
+        obj->unk12C = rec[-5] + 1;
+        obj->unk12D = rec[-4] + 1;
+    }
+    set_cur_flags_pending(0x10);
+    owner->timer = 1;
+    owner->state = state_menu_open_wait;
+}
+
+void state_menu_open_wait(struct Owner *owner)
+{
+    s32 idx;
+    struct Sprite *entry;
+    u16 v;
+
+    if (owner->timer != 0)
+    {
+        owner->timer--;
+    }
+    else if ((gUnk_03000FD8->flags2BF & 2) != 0 && sub_obj_running(gUnk_03000FD8->menu248) == 0)
+    {
+        if (gUnk_03000FD8->unk4 == 0 && (gUnk_03000FD8->figMode2C0 & 0x20) == 0)
+        {
+            menu_open_setup();
+            return;
+        }
+        if ((gUnk_03000FD8->flags2BF & 0x20) == 0)
+        {
+            slot_reset(1);
+            idx = ~((struct CurObj *)gUnk_03000FD8->fig80[0])->unkEC;
+            entry = (struct Sprite *)(gUnk_03000FF4 + idx * 0x3C);
+            entry->unk0E = gUnk_03000FD8->list58[idx + 6]->unkF6;
+            entry->unk14 = gUnk_03000FD8->list58[idx + 6]->unkFC;
+            if (entry->unk0E == 0)
+            {
+                entry->unk0E = 1;
+            }
+            if (gUnk_03000FD8->fig80[1] != 0)
+            {
+                idx = ~((struct CurObj *)gUnk_03000FD8->fig80[1])->unkEC;
+                entry = (struct Sprite *)(gUnk_03000FF4 + idx * 0x3C);
+                entry->unk0E = gUnk_03000FD8->list58[idx + 6]->unkF6;
+                entry->unk14 = gUnk_03000FD8->list58[idx + 6]->unkFC;
+                if (entry->unk0E == 0)
+                {
+                    entry->unk0E = 1;
+                }
+            }
+            serial_link_disable();
+            owner->state = 0;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_08105A30/set_text_ptrs.s", void set_text_ptrs(void))
 
