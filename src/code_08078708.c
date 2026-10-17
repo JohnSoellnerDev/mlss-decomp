@@ -10,7 +10,9 @@ struct SpriteObj;
 
 struct SpriteEntry
 {
-    u8 filler0[0x11];
+    u8 filler0[0xC];
+    u16 unkC;
+    u8 filler0E[0x11 - 0xE];
     u8 unk11;
     u8 flags;
     u8 filler13[0x28 - 0x13];
@@ -21,15 +23,24 @@ struct SpriteEntry
     s32 unk40;
 };
 
+struct SpriteDesc
+{
+    u8 filler0[0xC];
+    u8 order;
+};
+
 struct SpriteObj
 {
-    u8 filler0[0x8];
+    u8 filler0[0x4];
+    struct SpriteDesc *desc;
     struct SpriteEntry *entry;
     struct ScrollNode *list;
     s32 unk10;
     s32 unk14;
     s32 unk18;
-    u8 filler1C[0x28 - 0x1C];
+    u8 filler1C[0x20 - 0x1C];
+    s32 unk20;
+    u8 filler24[0x28 - 0x24];
     struct SpriteObj *mainObj;
     struct SpriteObj *owner;
     struct SpriteObj *child;
@@ -39,7 +50,9 @@ struct SpriteObj
     s32 unk40;
     u8 filler44[0x4C - 0x44];
     void (*callback)(struct SpriteObj *);
-    u8 filler50[0x60 - 0x50];
+    u8 filler50[0x58 - 0x50];
+    void *unk58;
+    u8 filler5C[0x60 - 0x5C];
     void (*unk60)(struct SpriteObj *);
     u8 filler64[0x68 - 0x64];
     void (*unk68)(struct SpriteObj *);
@@ -79,15 +92,48 @@ struct SpriteObj
     u16 unk124;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags79Bits
+{
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 high : 2;
+};
+
+struct Flags79Bit0
+{
+    u8 bit0 : 1;
+    u8 unk1 : 7;
+};
+
+struct PoseBits6
+{
+    u8 low : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+} __attribute__((packed));
+
 struct SpriteWorld
 {
     u8 filler0[0x58];
     struct SpriteObj *slots[8];
+    u8 filler78[0x24C - 0x78];
+    void *trackedObj;
 };
 
 extern struct SpriteWorld *gUnk_03000FD8;
 extern u8 gUnk_03000ED0;
 extern u32 gUnk_03000F6C;
+extern u8 gUnk_03000F68;
+extern struct SpriteObj *gUnk_03000F60;
 
 void sprite_set_action(struct SpriteObj *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -121,36 +167,118 @@ void anim0_clear_cb_if_active_b(struct SpriteObj *obj);
 
 ASM_FUNC("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(void))
 
+s32 update_positions_to_target(struct SpriteObj *obj);
+void link_actor_if_free(struct SpriteObj *obj);
+void ramp_values_then_remove(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(void))
 
-ASM_FUNC("asm/code_08078708/ramp_values_then_remove.s", void ramp_values_then_remove(void))
+ASM_FUNC("asm/code_08078708/ramp_values_then_remove.s", void ramp_values_then_remove(struct SpriteObj *obj))
 
-ASM_FUNC("asm/code_08078708/link_actor_if_free.s", void link_actor_if_free(void))
+ASM_FUNC("asm/code_08078708/link_actor_if_free.s", void link_actor_if_free(struct SpriteObj *obj))
 
-ASM_FUNC("asm/code_08078708/update_positions_to_target.s", void update_positions_to_target(void))
+ASM_FUNC("asm/code_08078708/update_positions_to_target.s", s32 update_positions_to_target(struct SpriteObj *obj))
 
+s32 slot_step_or_remove(struct SpriteObj *obj);
+s32 actor_link_anim_minus1(void);
+void init_timer_slot(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_child(void))
 
 ASM_FUNC("asm/code_08078708/tick_mode_and_remove_when_low.s", void tick_mode_and_remove_when_low(struct SpriteObj *obj))
 
-ASM_FUNC("asm/code_08078708/slot_step_or_remove.s", void slot_step_or_remove(void))
+ASM_FUNC("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj))
 
 ASM_FUNC("asm/code_08078708/timer_spawn_child_402f.s", void timer_spawn_child_402f(void))
 
 ASM_FUNC("asm/code_08078708/pick_side_random_then_anim.s", void pick_side_random_then_anim(struct SpriteObj *obj))
 
+u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
+void slot_place_and_move(struct SpriteObj *obj);
+void scroll_queue_and_cull(struct SpriteObj *obj);
+void scroll_and_cull(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4030_with_nodes.s", void spawn_child_4030_with_nodes(void))
 
-ASM_FUNC("asm/code_08078708/slot_place_and_move.s", void slot_place_and_move(void))
+ASM_FUNC("asm/code_08078708/slot_place_and_move.s", void slot_place_and_move(struct SpriteObj *obj))
 
-ASM_FUNC("asm/code_08078708/set_pose_halfword_and_link.s", void set_pose_halfword_and_link(void))
+void remove_object(struct SpriteObj *obj);
+void resolve_contact_action(void *owner, void *obj, s32 a, s32 b, u32 code);
+void set_pose_halfword_and_link(struct SpriteObj *obj)
+{
+    struct SpriteObj *partner;
+    u8 *pa;
 
-ASM_FUNC("asm/code_08078708/set_anim_10_spawn_child_random.s", void set_anim_10_spawn_child_random(void))
+    obj->timer--;
+    if ((s16)obj->timer <= 0)
+    {
+        effect_spawn_at(0x2A86, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        obj->timer = 8;
+    }
+    obj->entry->unkC += 0x1200;
+    if (obj->target == 0)
+    {
+        pa = (u8 *)gUnk_03000FD8->slots[gUnk_03000F68 + 6] + 8;
+        if (gUnk_03000F60 != NULL)
+        {
+            partner = gUnk_03000F60;
+            resolve_contact_action(pa, partner, partner->unk10 / 0x100, partner->unk18 / 0x100,
+                                   (((struct SpriteObj *)pa)->mainObj->unkEC != -1) ? 0x13 : 0x12);
+        }
+        set_slot_value(0xCC, -1);
+        effect_spawn_at(0x2A76, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        obj->callback = remove_object;
+    }
+}
 
-ASM_FUNC("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target(void))
+void finish_when_no_target(struct SpriteObj *obj);
+void anim0_clear_cb_if_active(struct SpriteObj *obj);
+void set_anim_10_spawn_child_random(struct SpriteObj *obj)
+{
+    struct SpriteObj *child;
+    u32 rnd;
+
+    if (obj->entry->flags & 8)
+    {
+        sprite_set_action(obj, 0x10, 0, 0);
+        set_slot_value(0x114, -1);
+        effect_spawn_at(0x2A94, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        child = obj_spawn(obj->mainObj, 0x4028, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
+                          obj->unk40 / 0x100 + 0x40, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+        child->child = obj->child;
+        obj->child = child;
+        ((struct Flags79Bit0 *)&child->flags79)->bit0 = 1;
+        child->unk74 = obj->unk74;
+        child->callback = finish_when_no_target;
+        ((struct ObjFlags77 *)child)->bit6 = 0;
+        ((struct ObjFlags77 *)child)->bit5 = 0;
+        child->unk68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        rnd = mt19937_next() & 1;
+        gUnk_03000F6C = rnd;
+        if (rnd == 0)
+        {
+            child->unk84 = 0x7800;
+            child->unk88 = 0x8000;
+            child->unk8C = 0x2800;
+        }
+        else
+        {
+            child->unk84 = 0x7000;
+            child->unk88 = 0x6000;
+            child->unk8C = 0x2800;
+        }
+        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
+        child->unk7C = 0x300;
+        child->unk7A = 0;
+        start_motion(child);
+        obj->callback = anim0_clear_cb_if_active;
+    }
+}
+
+ASM_FUNC("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target(struct SpriteObj *obj))
 
 ASM_FUNC("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_until_timer_done(void))
 
+void start_anim1_if_no_target(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_moving(void))
 
 void start_child_at_main(struct SpriteObj *obj)
@@ -317,7 +445,16 @@ void scroll_queue_and_cull(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08078708/scroll_and_cull.s", void scroll_and_cull(void))
+void scroll_and_cull(struct SpriteObj *obj)
+{
+    s32 x = obj->unk10 + -0x280;
+
+    obj->unk10 = x;
+    if (x / 0x100 <= -0x20)
+    {
+        obj_release(obj);
+    }
+}
 
 void snap_to_world_slot(struct SpriteObj *obj)
 {
