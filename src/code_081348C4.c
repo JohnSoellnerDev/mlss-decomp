@@ -10,6 +10,37 @@ extern const u8 gUnknownObjInitTableA[];
 extern const u8 gUnknownObjInitTableB[];
 extern const u16 gBldcntModeTable[];
 extern const s32 gZoneTable[];
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u8 gUnk_0203FFB8[];
+
+struct ListOwner
+{
+    u8 filler0[0x3C];
+    u32 owner;
+};
+extern u8 gUnk_0300034C[];
+
+struct ModelCtx
+{
+    u8 filler0[0x28];
+    u16 unk28;
+    u16 unk2A;
+};
+
+extern struct ModelCtx *gUnk_03000D74;
+extern u8 *gWorkBuf;
+extern u8 gUnk_02000460[];
+
+struct Mat4
+{
+    s32 m[16];
+    const void *cb40;
+};
+
+void mat4_mul(struct Mat4 *out, struct Mat4 *a, struct Mat4 *b);
+void update_obj_list(void);
+void obj_list_pass_0a8c(void);
 
 struct ListNode
 {
@@ -23,6 +54,26 @@ struct ObjList
     struct ListNode *tail;
     u32 count;
     const void *vtable;
+};
+
+struct VtSlot
+{
+    s16 offset;
+    u16 filler2;
+    void (*fn)(void *);
+};
+
+struct ObjVt
+{
+    u8 filler0[0x10];
+    struct VtSlot slot10;
+};
+
+struct ListObj
+{
+    struct ListNode link;
+    u8 filler08[0x40 - 0x08];
+    const struct ObjVt *vt40;
 };
 
 struct ObjCallback8
@@ -72,8 +123,9 @@ struct AppearObj
     u8 filler50[0x79 - 0x50];
     u8 unk79;
     u16 unk7A;
-    u16 unk7C;
-    u32 unk80;
+          u16 unk7C;
+      s16 unk7E;
+      u32 unk80;
     s32 unk84;
     s32 unk88;
     s32 unk8C;
@@ -122,7 +174,10 @@ s32 lerp_step_081359D8(s32 from, s32 to, s32 steps, s32 step);
 s32 is_state_busy(void);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void sprite_update_cd0(void *sprite);
+void release_item_8(struct AnimSub *sub);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_release_slots(void *sprite);
+void obj_list_push_default(struct AppearObj *obj);
 void sprite_set_action(struct AppearObj *obj, u32 action, u32 arg, u32 extra);
 void start_motion(struct AppearObj *obj);
 void wait_for_index(struct AppearObj *obj);
@@ -135,6 +190,8 @@ void set_slot_value(u32 id, s32 value);
 u32 mt19937_next(void);
 void anim_update_frame(struct AnimSub *sub);
 void obj_zone_update(struct AnimSub *sub);
+void obj_list_remove(struct AppearObj *obj);
+void sound_stop_song(u32 song);
 void anim_place_record(struct AnimSub *sub, s32 off_x, s32 off_y);
 void sub_08135940(struct ObjCallback8 *obj, u16 a, u16 b);
 
@@ -147,7 +204,17 @@ void enter_wait_index_state(struct AppearObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/part_setup_render.s", void part_setup_render(void))
+void task_create_list_48(void (*fn)(), struct AppearObj *obj);
+void part_refresh_tiles(struct AppearObj *obj);
+void part_spawn_timed(struct AppearObj *obj);
+void part_setup_render(struct AppearObj *obj)
+{
+    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000460, gWorkBuf + 0x3CD0, 0x20);
+    gUnk_03000D74->unk28 = gUnk_03000D74->unk2A;
+    gUnk_03000D74->unk2A |= 0xFFFF;
+    task_create_list_48(part_refresh_tiles, obj);
+    obj->unk4C = part_spawn_timed;
+}
 
 void part_fade_2(struct AppearObj *obj)
 {
@@ -254,15 +321,120 @@ u32 obj_randomize_timer(struct AppearObj *obj)
     return 1;
 }
 
+void appear_motion_obj_fall_step(struct AppearObj *obj);
+void appear_motion_obj_orbit_step(struct AppearObj *obj);
+void obj_orbit_step_fixed(struct AppearObj *obj);
 ASM_FUNC("asm/code_081348C4/obj_pick_follow_mode.s", void obj_pick_follow_mode(void))
 
-ASM_FUNC("asm/code_081348C4/appear_motion_obj_fall_step.s", void appear_motion_obj_fall_step(void))
+void obj_list_push_default(struct AppearObj *obj);
+void appear_motion_obj_fall_step(struct AppearObj *obj)
+{
+    s32 div;
+    s32 mul;
+    s32 wait;
 
-ASM_FUNC("asm/code_081348C4/appear_motion_obj_orbit_step.s", void appear_motion_obj_orbit_step(void))
+    div = obj->unkA4 - obj->unk84;
+    mul = obj->unkA8 - obj->unk88;
+    wait = obj->unkAC - 1;
+    obj->unkAC = wait;
+    if ((wait << 16) <= 0)
+    {
+        if (obj->unk98 > 0x8000)
+        {
+            effect_spawn_at(0x27A9, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        else
+        {
+            effect_spawn_at(0x27B2, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        obj->unkAC = 8;
+    }
+    obj->unk10 -= obj->unk9C;
+    obj->unk14 = mul * (obj->unk10 - obj->unkA4) / div + obj->unkA8;
+    if (obj->unk10 / 0x100 < -0x20)
+    {
+        obj_list_remove(obj);
+        obj->unk9C = -obj->unk9C;
+        obj_list_push_default(obj);
+    }
+    else if (obj->unk10 > obj->unkA4)
+    {
+        obj_list_remove(obj);
+        obj->unk4C = 0;
+        sound_stop_song(0xDB);
+    }
+}
 
-ASM_FUNC("asm/code_081348C4/obj_orbit_step_fixed.s", void obj_orbit_step_fixed(void))
+ASM_FUNC("asm/code_081348C4/appear_motion_obj_orbit_step.s", void appear_motion_obj_orbit_step(struct AppearObj *obj))
 
-ASM_FUNC("asm/code_081348C4/obj_step_toward_target_081350A0.s", void obj_step_toward_target_081350A0(void))
+void obj_list_remove(struct AppearObj *obj);
+void sound_stop_song(u32 song);
+void obj_orbit_step_fixed(struct AppearObj *obj)
+{
+    s32 idx;
+    s32 cos;
+    s32 sin;
+    s32 wait;
+
+    idx = (obj->unk98 / 0x100) & 0xFF;
+    wait = obj->unkAC - 1;
+    obj->unkAC = wait;
+    if ((wait << 16) <= 0)
+    {
+        if (obj->unk98 > 0x8000)
+        {
+            effect_spawn_at(0x27A9, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        else
+        {
+            effect_spawn_at(0x27B2, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        obj->unkAC = 8;
+    }
+    cos = gCosineTable[idx];
+    obj->unk10 = (cos / 0x40) * obj->unk84 + 0x5400;
+    sin = gSineTable[idx];
+    obj->unk14 = (sin / 0x40) * 0x20 + 0x6C00;
+    obj->unk98 += obj->unk9C;
+    if ((u32)(obj->unk98 + 0x10000) > 0x20000)
+    {
+        obj_list_remove(obj);
+        obj->unk4C = 0;
+        sound_stop_song(0xDB);
+    }
+}
+
+s32 obj_step_toward_target_081350A0(struct AppearObj *obj)
+{
+    s32 index = obj->unk80;
+    s32 dx = obj->unk84 - obj->unk10;
+    s32 dy = obj->unk88 - obj->unk14;
+    s32 dh = obj->unk8C - obj->unk18;
+    s32 step = obj->unk7E;
+
+    if (index < step)
+    {
+        step = index;
+    }
+    if (dx != 0)
+    {
+        obj->unk10 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * step, index);
+    }
+    if (dy != 0)
+    {
+        obj->unk14 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * step, index);
+    }
+    if (dh != 0)
+    {
+        obj->unk18 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dh * step, index);
+    }
+    obj->unk80 -= step;
+    if (index != 0)
+    {
+        return 0;
+    }
+    return 1;
+}
 
 ASM_FUNC("asm/code_081348C4/sub_0813516C.s", void sub_0813516C(void))
 
@@ -305,13 +477,47 @@ void sub_08135290(struct AppearObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/item_attach_sprite_8.s", void item_attach_sprite_8(void))
+ASM_FUNC("asm/code_081348C4/item_attach_sprite_8.s", void item_attach_sprite_8(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5))
 
 ASM_FUNC("asm/code_081348C4/anim_update_frame.s", void anim_update_frame(struct AnimSub *sub))
 
-ASM_FUNC("asm/code_081348C4/anim_place_record.s", void anim_place_record(struct AnimSub *sub, s32 off_x, s32 off_y))
+void anim_place_record(struct AnimSub *sub, s32 off_x, s32 off_y)
+{
+    s32 y;
 
-ASM_FUNC("asm/code_081348C4/scene_obj_list_pass.s", void scene_obj_list_pass(void))
+    sub->unk08->unk00 = sub->unk28 / 256 - off_x;
+    y = sub->unk2C + sub->unk30;
+    sub->unk08->unk02 = y / 256 - off_y;
+    if (sub->unk0C != NULL)
+    {
+        sub->unk0C->unk00 = sub->unk08->unk00;
+        sub->unk0C->unk02 = sub->unk08->unk02;
+    }
+    sub->unk08->unk02 += sub->unk34 / 256;
+    sub->unk08->unk0E = sub->unk24 - (sub->unk30 / 256 - 0x400);
+}
+
+void scene_obj_list_pass(struct ObjList *head)
+{
+    struct ListObj *obj;
+    struct ListOwner *list;
+    void **hook;
+    u8 *base;
+    u32 owner;
+
+    for (obj = (struct ListObj *)head->head; obj != NULL; obj = (struct ListObj *)obj->link.next)
+    {
+        obj->vt40->slot10.fn((u8 *)obj + obj->vt40->slot10.offset);
+    }
+    update_obj_list();
+    obj_list_pass_0a8c();
+    ((void (*)(u32, u32))gUnk_03000D48)((list = (struct ListOwner *)gUnk_0203FFB8)->owner,
+        list->owner + 0xA14);
+    hook = (void **)&gUnk_03000D4C;
+    owner = list->owner;
+    base = (u8 *)gUnk_0300034C;
+    *(u32 *)(base + 0x880) = ((u32 (*)(u32, u32))*hook)(owner, *(u32 *)(base + 0x880));
+}
 
 u32 list_get_head_tail_count(struct ObjList *list)
 {
@@ -467,6 +673,11 @@ u32 obj_is_idle_08135604(struct AnimSub *sub)
         return 1;
     }
     return 0;
+}
+
+static inline void item_load_record(struct ItemObj *item, s32 record, s32 b, u32 c, u32 d)
+{
+    obj_load_record(item, record, b, c, d);
 }
 
 ASM_FUNC("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct AnimSub *sub))
@@ -644,7 +855,14 @@ void release_items_free(struct AnimSub *sub, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/init_appear_sub_item.s", void init_appear_sub_item(void))
+void item_attach_sprite_8(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5);
+struct AnimSub *init_appear_sub_item(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5)
+{
+    sub->vtable = gAppearSubClass;
+    init_appear_obj_base(sub);
+    item_attach_sprite_8(sub, p1, p2, p3, p4, p5);
+    return sub;
+}
 
 struct AnimSub *init_appear_sub_base(struct AnimSub *sub)
 {
@@ -753,7 +971,7 @@ s32 lerp_step_081359D8(s32 from, s32 to, s32 steps, s32 step)
 
 ASM_FUNC("asm/code_081348C4/interp_cubic_steps.s", void interp_cubic_steps(void))
 
-ASM_FUNC("asm/code_081348C4/mat4_mul.s", void mat4_mul(void))
+ASM_FUNC("asm/code_081348C4/mat4_mul.s", void mat4_mul(struct Mat4 *out, struct Mat4 *a, struct Mat4 *b))
 
 ASM_FUNC("asm/code_081348C4/mat4_apply_scale.s", void mat4_apply_scale(void))
 
