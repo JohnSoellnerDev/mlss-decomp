@@ -33,6 +33,23 @@ struct TextPair
     void *unkC;
 };
 
+struct FlagPairs
+{
+    u8 b01 : 2;
+    u8 b23 : 2;
+    u8 b45 : 2;
+    u8 b67 : 2;
+};
+
+struct Voice
+{
+    u32 unk0;
+    u32 unk4;
+    u32 unk8;
+    u32 unkC;
+    u32 unk10;
+};
+
 extern u8 gUnk_0300034C[];
 extern void *gUnk_03000FB8;
 extern void *gUnk_03000FBC;
@@ -42,6 +59,10 @@ extern void (*gUnk_03000F8C)(u32, u32, u32, u32, u32, u32, u32);
 extern void (*gMemRoutines)(u32 a, void *b, u32 c);
 extern u8 gTagTextState[];
 extern u8 gFlagBlockTag[];
+extern u8 tile_shift_copy[];
+extern u8 var_block_routine[];
+extern u8 gVarBlockTag[];
+void cpu_set(const void *src, void *dst, u32 ctl);
 
 void heap_free(void *p);
 void heap_free_b(void *p);
@@ -55,17 +76,57 @@ void set_flag(u8 *flagsA, u8 *flagsB, u16 id, u8 value);
 u32 read_var(u16 id);
 void write_var(u16 id, u16 value);
 
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+void *format_decimal(void *dst, u32 a, u32 b);
+char *text_copy_entry(char *dst, u32 idx);
+void voice_setup_params(void *voice, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h, u32 i);
+void voice_set_data_ptr(void *voice, u32 a, u32 b, void *ptr);
+void mem_copy_fast(void *dst, void *src, u32 len);
+u32 layout_text_run();
 ASM_FUNC("asm/code_080E9020/init_slot_table.s", void init_slot_table(void))
 
-ASM_FUNC("asm/code_080E9020/claim_table_slot.s", void claim_table_slot(void))
+void sprite_update_cd0(void *sprite);
+u8 claim_table_slot(void *state, u8 a, u8 b, u8 c, u16 d, u16 e, u8 f)
+{
+    struct SlotEntry *p;
+    struct SlotObj *obj;
+    s16 i;
 
-ASM_FUNC("asm/code_080E9020/layout_text_run.s", void layout_text_run(void))
+    i = 0;
+    p = *(struct SlotEntry **)state;
+    for (; i <= 3; i++, p++)
+    {
+        if (p->inUse == 0)
+        {
+            obj = p->obj;
+            obj_load_record(obj, b, -1, 0, 0);
+            p->unkC = a;
+            p->unkE = c;
+            p->unk4 = d;
+            p->unk6 = e;
+            p->unk8 = 0;
+            p->unkA = 0;
+            p->counter = f;
+            p->inUse = 1;
+            ((struct FlagPairs *)((u8 *)obj + 0x1F))->b67 = 1;
+            ((struct FlagPairs *)((u8 *)obj + 0x1F))->b45 = 1;
+            ((struct FlagPairs *)((u8 *)obj + 0x1F))->b23 = 1;
+            ((struct FlagPairs *)((u8 *)obj + 0x1F))->b01 = 1;
+            obj->unkE = 0;
+            sprite_update_cd0(obj);
+            return i;
+        }
+    }
+    return 0xFF;
+}
+
+ASM_FUNC("asm/code_080E9020/layout_text_run.s", u32 layout_text_run())
 
 ASM_FUNC("asm/code_080E9020/text_stream_step.s", void text_stream_step(void))
 
-ASM_FUNC("asm/code_080E9020/format_decimal.s", void format_decimal(void))
+ASM_FUNC("asm/code_080E9020/format_decimal.s", void *format_decimal(void *dst, u32 a, u32 b))
 
-ASM_FUNC("asm/code_080E9020/text_copy_entry.s", void text_copy_entry(void))
+ASM_FUNC("asm/code_080E9020/text_copy_entry.s", char *text_copy_entry(char *dst, u32 idx))
 
 void text_state_free(void)
 {
@@ -98,7 +159,25 @@ void text_window_close(void)
 
 ASM_FUNC("asm/code_080E9020/text_window_open.s", void text_window_open(void))
 
-ASM_FUNC("asm/code_080E9020/update_slot_bounds.s", void update_slot_bounds(void))
+NONMATCH("asm/code_080E9020/update_slot_bounds.s", void update_slot_bounds(u8 **table, u8 idx))
+{
+    u32 off = (u8)idx << 4;
+    u8 *base = *table;
+    struct SlotObj *obj;
+    struct SlotEntry *entry;
+    u32 sum1;
+
+    base += off;
+    entry = (struct SlotEntry *)base;
+    obj = entry->obj;
+    obj->unk0 = entry->unk4 + entry->unk8;
+    sum1 = entry->unkA;
+    base = (u8 *)(u32)entry->unk6;
+    sum1 += (u32)base;
+    obj->unk2 = sum1;
+    obj->unkE = 0x7FFF - sum1;
+}
+END_NONMATCH
 
 u32 slot_countdown(u8 **table, u8 idx, u32 unused2, u32 a3)
 {
@@ -160,11 +239,23 @@ ASM_FUNC("asm/code_080E9020/fill_tile_map_rect.s", void fill_tile_map_rect(void)
 
 ASM_FUNC("asm/code_080E9020/unknown_thumb_080e98a8.s", void unknown_thumb_080e98a8(void))
 
-ASM_FUNC("asm/code_080E9020/fill_rect_88.s", void fill_rect_88(void))
+void fill_rect_88(u32 a0, u32 a1, s16 a2, s16 a3, u8 a4, u8 a5)
+{
+    gUnk_03000F8C(a1, (u8)(a4 + 1), a2 + 8, a3 + 8,
+                  a2 + (u16)(a4 - 1) * 8, a3 + (u16)(a5 - 1) * 8, 0x88888888);
+}
 
-ASM_FUNC("asm/code_080E9020/unknown_thumb_080e997c.s", void unknown_thumb_080e997c(void))
+void unknown_thumb_080e997c(u32 a0, u32 a1, s16 a2, s16 a3, u8 a4, u8 a5)
+{
+    gUnk_03000F8C(a1, (u8)(a4 + 1), a2 + 8, a3 + 8,
+                  a2 + (u16)(a4 - 1) * 8, a3 + (u16)(a5 - 1) * 8, 0x55555555);
+}
 
-ASM_FUNC("asm/code_080E9020/fill_rect_55.s", void fill_rect_55(void))
+void fill_rect_55(u32 a0, u32 a1, s16 a2, s16 a3, u8 a4, u8 a5)
+{
+    gUnk_03000F8C(a1, (u8)(a4 + 1), a2 + 8, a3 + 8,
+                  a2 + (u16)(a4 - 1) * 8, a3 + (u16)(a5 - 1) * 8, 0x55555555);
+}
 
 void unknown_thumb_080e9a64(u32 a0, u32 a1, s16 a2, s16 a3, u8 a4, u8 a5)
 {
@@ -181,7 +272,16 @@ u32 load_u32(u32 *p)
     return *p;
 }
 
-ASM_FUNC("asm/code_080E9020/text_run_layout.s", void text_run_layout(void))
+u32 text_run_layout(u8 *obj, void *dataPtr, u32 mode)
+{
+    struct Voice voice[2];
+
+    voice_setup_params(&voice[0], 0, 0x20, 0, 0, 0, 0, 6, 1,
+                       ((u8 *)*(u32 *)(obj + 4))[0x1B7] >> 5);
+    voice_set_data_ptr(&voice[0], 0, 0, dataPtr);
+    mem_copy_fast(&voice[1], &voice[0], 0x14);
+    return layout_text_run(voice[1], mode);
+}
 
 u32 lang_table_pair(u32 unused0, u8 **table)
 {
@@ -273,7 +373,24 @@ void free_var_block(void)
     heap_free(gUnk_03000FC4);
 }
 
-ASM_FUNC("asm/code_080E9020/alloc_var_block.s", void alloc_var_block(void))
+extern u8 tile_shift_copy[];
+extern u8 var_block_routine[];
+extern u8 gVarBlockTag[];
+void cpu_set(const void *src, void *dst, u32 ctl);
+void alloc_var_block(void)
+{
+    void **dst = &gUnk_03000FC4;
+    u8 *src;
+    void *p;
+    u32 size;
+
+    size = (u32)tile_shift_copy;
+    src = var_block_routine;
+    size -= (u32)src;
+    p = heap_alloc_raw(0, size, gVarBlockTag);
+    *dst = p;
+    cpu_set(src, p, (size & 0x3FFFFF) >> 1);
+}
 
 u32 unknown_thumb_080ea384(u16 id)
 {
@@ -430,6 +547,7 @@ void alloc_flag_block(void)
     gMemRoutines(0, block, size);
 }
 
+u32 lang_table_pair(u32 unused0, u8 **table);
 ASM_FUNC("asm/code_080E9020/draw_text_item.s", void draw_text_item(void))
 
 struct ObjFlags28
