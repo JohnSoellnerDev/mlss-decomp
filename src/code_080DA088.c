@@ -190,7 +190,25 @@ static inline void pose_set_mode_2(struct ActorObj *obj)
     ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
 }
 
-ASM_FUNC("asm/code_080DA088/obj_retarget_c.s", void obj_retarget_c(struct ActorObj *obj))
+void obj_retarget_c(struct ActorObj *obj)
+{
+    struct ActorPart *part;
+    s32 h;
+
+    *(u16 *)&obj->dh += obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + obj->dy;
+    obj->posH = obj->baseH + obj->dh;
+    if (obj->posH <= obj->ground)
+    {
+        obj->posH = obj->ground;
+        part = obj->owner->data;
+        obj->ground = (h = part->targetH);
+        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, part->targetX - obj->baseX,
+                                    part->targetY - obj->baseY, h - obj->baseH, 0x1400, 0x4CC, 0xFD, 0);
+        obj->state = obj_place_finish;
+    }
+}
 
 void obj_place_finish(struct ActorObj *obj)
 {
@@ -285,7 +303,18 @@ void obj_wait_ready_then_anim(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DA088/obj_create_part_then_action3.s", void obj_create_part_then_action3(struct ActorObj *obj))
+void obj_create_part_then_action3(struct ActorObj *obj)
+{
+    s32 h;
+
+    if (obj->pose->flags & 8)
+    {
+        obj->ground = (h = obj->data->targetH);
+        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, 0, 0, h - obj->baseH, 0x1400, 0x4CC, 0x104, 0);
+        sprite_set_action(obj, 3, 0, 0);
+        obj->state = obj_move_clamp_b;
+    }
+}
 
 void obj_wait_ready_then_anim_b(struct ActorObj *obj)
 {
@@ -295,4 +324,35 @@ void obj_wait_ready_then_anim_b(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DA088/anim_steps_obj_move_step.s", void anim_steps_obj_move_step(struct ActorObj *obj))
+void anim_steps_obj_move_step(struct ActorObj *obj)
+{
+    s32 pos[3];
+    s32 v;
+
+    obj->posX = obj->baseX + obj->dx;
+    obj->posH = obj->baseH + obj->dh;
+    obj->dh -= 0x5E;
+    v = obj->posX;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[0] = v >> 8;
+    v = obj->posY;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[1] = v >> 8;
+    v = obj->posH;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[2] = v >> 8;
+    offset_three_words_camera(&pos[0], &pos[1], &pos[2], 0);
+    if (pos[0] < -16 || pos[1] > 272)
+    {
+        obj_release(obj);
+    }
+}
