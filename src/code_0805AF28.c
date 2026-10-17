@@ -1,5 +1,20 @@
 #include "global.h"
 
+struct MapAnimSlot
+{
+    u8 state;
+    u8 filler01;
+    u16 animId;
+    u8 unk04;
+    u8 filler05;
+    u8 frame;
+    u8 timer;
+    u8 unk08;
+    u8 filler09;
+    u16 x[16];
+    u16 y[16];
+};
+
 struct MapLoaderObj
 {
     u8 filler0[0x18];
@@ -24,7 +39,9 @@ struct MapLoaderObj
     void *chunks;
     void *gfx;
     void *metatiles;
-    u8 filler48[0x579 - 0x48];
+    u8 filler48[0xAC - 0x48];
+    struct MapAnimSlot anim[16];
+    u8 filler56C[0x579 - 0x56C];
     u8 layer3Flag579;
     u8 filler57A[0x57C - 0x57A];
     void *stateSpriteCtx;
@@ -45,6 +62,29 @@ extern const u32 gMapObjDescriptor[];
 extern const u32 gMetatileSets[];
 extern const u32 gSpriteTable[];
 extern u8 gUnk_03000DD0[];
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void update_scanline_offsets();
+void set_0d80_slot(void (*fn)(void), u32 slot);
+extern void *gUnk_03000E08;
+extern void *gUnk_03000E0C;
+extern const u8 gHeapTagDisplayBufA[];
+extern const u8 gHeapTagDisplayBufB[];
+
+struct MapAnimEntry
+{
+    u8 flag;
+    u8 type;
+    u16 unk2;
+    void *chunks;
+};
+
+struct MapAnimChunk
+{
+    u16 x;
+    u16 y;
+};
+
+extern const void *gAnimListTable[];
 u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
 extern const u16 gMetatileIndexTable[][2];
 extern const u32 gLayer3Table[][2];
@@ -131,9 +171,10 @@ void map_loader_map_obj_destroy(struct MapLoaderObj *obj, u32 param)
 
 ASM_FUNC("asm/code_0805AF28/map_anim_slots_load.s", void map_anim_slots_load(void))
 
+void map_blit_tile_rect(struct MapLoaderObj *obj, u32 layer);
 ASM_FUNC("asm/code_0805AF28/map_anim_slots_step.s", void map_anim_slots_step(void))
 
-ASM_FUNC("asm/code_0805AF28/map_blit_tile_rect.s", void map_blit_tile_rect(void))
+ASM_FUNC("asm/code_0805AF28/map_blit_tile_rect.s", void map_blit_tile_rect(struct MapLoaderObj *obj, u32 layer))
 
 ASM_FUNC("asm/code_0805AF28/map_anim_update.s", void map_anim_update(void))
 
@@ -150,8 +191,58 @@ ASM_FUNC("asm/code_0805AF28/map_anim2_update.s", void map_anim2_update(void))
 
 ASM_FUNC("asm/code_0805AF28/map_anim2_init.s", void map_anim2_init(void))
 
-ASM_FUNC("asm/code_0805AF28/map_anim2_start_0805BCCC.s", void map_anim2_start_0805BCCC(void))
+void map_anim2_start_0805BCCC(struct MapLoaderObj *obj, u16 animId)
+{
+    u8 slot = 0;
+    u8 i;
+    u8 j;
 
+    if (obj->anim[0].state != 0)
+    {
+        do
+        {
+            slot = (u8)(slot + 1);
+            if (obj->anim[slot].state == 0)
+                break;
+        } while (slot <= 0xF);
+    }
+
+    if (slot <= 0xF)
+    {
+        u8 variant = gUnk_03000DD0[7];
+        const struct MapAnimEntry *list = (const struct MapAnimEntry *)gAnimListTable[variant];
+
+        if (list != NULL)
+        {
+            u8 flag = list[slot].flag;
+
+            if (flag & 0x40)
+            {
+                const struct MapAnimChunk *chunk;
+
+                obj->anim[slot].state = (((u32)list[animId].type << 30) >> 30) + 0x20;
+                obj->anim[slot].animId = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
+                obj->anim[slot].unk04 = ((u32)list[animId].unk2 << 23) >> 27;
+
+                chunk = (const struct MapAnimChunk *)list[animId].chunks;
+                i = 0;
+                do
+                {
+                    j = i;
+                    obj->anim[slot].x[j] = chunk[j].x;
+                    obj->anim[slot].y[j] = chunk[j].y & 0x7FFF;
+                    i = (u8)(i + 1);
+                } while (!(chunk[j].y & 0x8000));
+
+                obj->anim[slot].frame = i;
+                obj->anim[slot].timer = 0;
+                obj->anim[slot].unk08 = 0;
+            }
+        }
+    }
+}
+
+void map_layer3_entry(struct MapLoaderObj *obj, u32 index);
 ASM_FUNC("asm/code_0805AF28/map_check_layer3.s", void map_check_layer3(void))
 
 ASM_FUNC("asm/code_0805AF28/map_layer3_entry.s", void map_layer3_entry(struct MapLoaderObj *obj, u32 index))
@@ -168,4 +259,11 @@ ASM_FUNC("asm/code_0805AF28/init_bg3_scroll_obj.s", void init_bg3_scroll_obj(voi
 
 ASM_FUNC("asm/code_0805AF28/line_scroll_init.s", void line_scroll_init(void))
 
+extern void *gUnk_03000E08;
+extern void *gUnk_03000E0C;
+extern const u8 gHeapTagDisplayBufA[];
+extern const u8 gHeapTagDisplayBufB[];
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void update_scanline_offsets();
+void set_0d80_slot(void (*fn)(void), u32 slot);
 ASM_FUNC("asm/code_0805AF28/map_obj_init_display.s", void map_obj_init_display(void))
