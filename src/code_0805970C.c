@@ -12,6 +12,12 @@ struct Block24
     u8 bytes[24];
 };
 
+struct MapStateDD0
+{
+    u8 bytes[12];
+    u16 half[4];
+};
+
 extern const u32 gSceneDataPtrTable[];
 extern const struct AreaEntry gAreaEntryTable[];
 extern const u8 gClassDc68[];
@@ -22,6 +28,7 @@ extern const u8 gColumnTable[];
 extern const u8 gCollisionGrids[];
 extern const u8 gHeapTagObjBuf6c[];
 extern const u8 gHeapTagObjBuf74[];
+extern u8 gUnk_03000DE8[];
 
 void task_insert(void *node, u8 kind, u32 data);
 void task_remove(void *node, u32 kind);
@@ -39,6 +46,9 @@ void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
 void heap_free_a(void *p);
 void cpu_fast_set(const void *src, void *dst, u32 control);
 u32 dma_cancel_request(u32 dst);
+void draw_metatile_2x2(u8 *obj, u32 layer, s32 col, s32 row, u16 tile);
+extern const u8 gSelTable[];
+void map_obj_draw(u8 *obj);
 
 ASM_FUNC("asm/code_0805970C/redraw_metatile_row.s", void redraw_metatile_row(void))
 
@@ -46,25 +56,102 @@ ASM_FUNC("asm/code_0805970C/redraw_metatile_column.s", void redraw_metatile_colu
 
 ASM_FUNC("asm/code_0805970C/redraw_map_row.s", void redraw_map_row(void))
 
+void draw_metatile_2x2(u8 *obj, u32 layer, s32 col, s32 row, u16 tile);
 ASM_FUNC("asm/code_0805970C/redraw_map_column.s", void redraw_map_column(void))
 
-ASM_FUNC("asm/code_0805970C/map_state_set_field_by_index.s", void map_state_set_field_by_index(void))
+void map_state_set_field_by_index(u32 unused, u8 index, u16 value)
+{
+    switch (index)
+    {
+    case 0:
+        gUnk_03000DD0[0] = value;
+        break;
+    case 1:
+        gUnk_03000DD0[2] = value;
+        break;
+    case 2:
+        gUnk_03000DD0[3] = value;
+        break;
+    case 3:
+        gUnk_03000DD0[4] = value;
+        break;
+    case 4:
+        gUnk_03000DD0[5] = value;
+        break;
+    case 5:
+        gUnk_03000DD0[6] = value;
+        break;
+    case 6:
+        gUnk_03000DD0[7] = value;
+        break;
+    case 7:
+        gUnk_03000DD0[8] = value;
+        break;
+    case 8:
+        gUnk_03000DD0[9] = value;
+        break;
+    case 9:
+        gUnk_03000DD0[10] = value;
+        break;
+    case 10:
+        gUnk_03000DD0[11] = value;
+        break;
+    case 11:
+        ((struct MapStateDD0 *)gUnk_03000DD0)->half[0] = value;
+        break;
+    case 12:
+        ((struct MapStateDD0 *)gUnk_03000DD0)->half[1] = value;
+        break;
+    case 13:
+        ((struct MapStateDD0 *)gUnk_03000DD0)->half[2] = value;
+        break;
+    case 14:
+        ((struct MapStateDD0 *)gUnk_03000DD0)->half[3] = value;
+        break;
+    case 15:
+        gUnk_03000DD0[20] = value;
+        break;
+    case 16:
+        gUnk_03000DD0[1] = value;
+    }
+}
 
+extern u16 gUnk_02000014[];
+extern u16 gUnk_02000016[];
+extern u16 gUnk_0200001C[];
 ASM_FUNC("asm/code_0805970C/obj_set_scroll_target.s", void obj_set_scroll_target(void))
 
 ASM_FUNC("asm/code_0805970C/obj_init_task_and_buffers.s", void obj_init_task_and_buffers(void))
 
+void obj_copy_rom_block(u8 *obj);
+void obj_rebuild_map_tiles(u8 *obj);
 ASM_FUNC("asm/code_0805970C/obj_load_step.s", void obj_load_step(void))
 
+void draw_metatile_pal(u8 *obj, u16 row, s16 col, s16 sub, u16 tile);
 ASM_FUNC("asm/code_0805970C/redraw_track_tiles.s", void redraw_track_tiles(u8 *obj))
 
-ASM_FUNC("asm/code_0805970C/draw_metatile_pal.s", void draw_metatile_pal(void))
+ASM_FUNC("asm/code_0805970C/draw_metatile_pal.s", void draw_metatile_pal(u8 *obj, u16 row, s16 col, s16 sub, u16 tile))
 
 ASM_FUNC("asm/code_0805970C/obj_setup_track_layouts.s", void obj_setup_track_layouts(u8 *obj))
 
 ASM_FUNC("asm/code_0805970C/copy_map_layers_12.s", void copy_map_layers_12(u8 *obj, u32 unused))
 
-ASM_FUNC("asm/code_0805970C/obj_copy_rom_block.s", void obj_copy_rom_block(void))
+extern u8 gUnk_0300034C[];
+extern const u8 gMapPalettesA[];
+extern const u8 gMapPalettesB[];
+extern const u8 gRomBlockTable[];
+extern u8 gUnk_03000DE8[];
+NONMATCH("asm/code_0805970C/obj_copy_rom_block.s", void obj_copy_rom_block(u8 *obj))
+{
+    const u8 *src;
+
+    if ((gUnk_0300034C[0x888] & 6) == 2)
+        src = gMapPalettesB;
+    else
+        src = gMapPalettesA;
+    cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DE8[5]]], *(void **)(obj + 0x78), 0x78);
+}
+END_NONMATCH
 
 void obj_rebuild_map_tiles(u8 *obj)
 {
@@ -145,9 +232,43 @@ u16 count_area_entries(void)
     return count;
 }
 
-ASM_FUNC("asm/code_0805970C/write_scroll_shadows.s", void write_scroll_shadows(u8 *obj))
+NONMATCH("asm/code_0805970C/write_scroll_shadows.s", void write_scroll_shadows(u8 *obj))
+{
+    vu16 *p;
 
-ASM_FUNC("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
+    p = gUnk_02000014;
+    *p = 0x1FF & *(u16 *)(obj + 0x5A);
+    p += 2;
+    *p = 0x1FF & *(u16 *)(obj + 0x5C);
+    *(vu16 *)gUnk_0200001C = 0x1FF & *(u16 *)(obj + 0x5E);
+    {
+        vu16 *q = gUnk_02000016;
+        *q = obj[0x60];
+        q += 2;
+        *q = obj[0x62];
+        q += 2;
+        *q = obj[0x64];
+    }
+}
+END_NONMATCH
+
+extern u8 gUnk_02000080[];
+NONMATCH("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
+{
+    const u8 *src;
+    u8 *base;
+    u32 color;
+
+    if ((gUnk_0300034C[0x888] & 6) == 2)
+        src = gMapPalettesB;
+    else
+        src = gMapPalettesA;
+    cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DD0[5]]], gUnk_02000080, 0x78);
+    base = gUnk_0300034C;
+    color = 0x7fff;
+    *(u16 *)(base + 2) = color;
+}
+END_NONMATCH
 
 void obj_reload_map(u8 *obj)
 {
@@ -264,4 +385,5 @@ ASM_FUNC("asm/code_0805970C/obj_setup_map_object.s", void obj_setup_map_object(v
 
 ASM_FUNC("asm/code_0805970C/map_obj_update.s", void map_obj_update(void))
 
-ASM_FUNC("asm/code_0805970C/map_obj_draw.s", void map_obj_draw(void))
+extern const u8 gSelTable[];
+ASM_FUNC("asm/code_0805970C/map_obj_draw.s", void map_obj_draw(u8 *obj))
