@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Obj;
 
@@ -121,7 +122,8 @@ struct Obj
     u8 filler7E[0x06];
     s32 keyX;
     s32 keyY;
-    u8 filler8C[0x06];
+    s32 keyZ;
+    u8 filler90[0x02];
     u16 unk92;
     u8 filler94[0x04];
     s32 unk98;
@@ -135,6 +137,25 @@ struct Obj
     s16 unkB2;
     u8 fillerB4[0x04];
     u16 timerLong;
+};
+
+struct ChainNode
+{
+    struct ChainNode *next;
+    s32 x;
+    s32 y;
+    s32 z;
+};
+
+struct SpreadPos
+{
+    struct ChainNode *head;
+    s32 x;
+    s32 y;
+    s32 z;
+    s16 px;
+    s16 py;
+    s16 pz;
 };
 
 extern struct World *gUnk_03000FD8;
@@ -164,7 +185,10 @@ struct Obj *obj_spawn_linked(struct Obj *owner, u32 kind, u32 flags);
 void obj_stop_anim_clear_cb(struct Obj *obj);
 void obj_start_anim1_timer(struct Obj *obj);
 void obj_stop_anim(struct Obj *obj);
+void world_link_a_setup(struct Obj *obj, u32 flag);
+void world_link_b_setup(struct Obj *obj, u32 flag);
 void obj_setup_motion_from_scene(struct Obj *obj);
+void obj_motion_step_a(struct Obj *obj);
 void obj_query_contact_step(struct Obj *obj);
 void screen_helpers_obj_show_at(struct Obj *obj);
 void partner_link_update(struct Owner *owner, struct Obj *obj, u32 flags);
@@ -184,6 +208,10 @@ void obj_begin_when_free(struct Obj *obj);
 void obj_reset_when_free(struct Obj *obj);
 void obj_spawn_child(struct Obj *obj);
 void obj_spawn_effect_part(struct Obj *obj);
+void *sprite_node_take(void);
+void *sprite_node_alloc(s32 x, s32 y, s32 h);
+struct Obj *obj_spawn(struct Scene *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void link_state_clear_idle(struct Obj *obj);
 void obj_circle_step(struct Obj *obj);
 u32 obj_partner_step(struct Obj *obj, struct Obj *partner);
 void obj_select_callback(struct Obj *obj);
@@ -193,6 +221,8 @@ void obj_place_target_a(struct Obj *obj);
 void obj_place_target_b(struct Obj *obj);
 u32 obj_claim_partner(struct Obj *obj, struct Obj *partner);
 u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner);
+void sprite_entry_update(struct Sprite *sprite);
+void obj_place_sprite_part(struct Obj *obj);
 
 void obj_spawn_child(struct Obj *obj)
 {
@@ -219,7 +249,48 @@ void obj_spawn_child(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_setup_motion_from_scene.s", void obj_setup_motion_from_scene(struct Obj *obj))
+void obj_setup_motion_from_scene(struct Obj *obj)
+{
+    struct Scene *scene;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 steps;
+    s32 q;
+    s32 *phase;
+
+    scene = obj->scene->entry->target;
+    obj->keyX = scene->x;
+    obj->keyY = scene->y;
+    obj->keyZ = 0x800;
+    obj->pixX = obj->posX / 0x100;
+    obj->pixY = obj->posY / 0x100;
+    obj->pixZ = obj->posZ / 0x100;
+    dx = obj->keyX - obj->posX;
+    dy = obj->keyY - obj->posY;
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+    steps = dist / 0x1CC;
+    q = obj->posZ / (steps * steps);
+    phase = (s32 *)&obj->phase;
+    if (q <= 1)
+    {
+        if (q < -1)
+            *phase = -q;
+        else
+            *phase = 2;
+    }
+    else
+    {
+        *phase = q;
+    }
+    obj->slot = dx / 0x100;
+    obj->unkB0 = dy / 0x100;
+    obj->unkB2 = steps;
+    obj->timer = 0;
+    obj->unk92 = 0x400;
+    obj->level = ((struct WorldEntry *)scene)->level7D - 10;
+    obj->callback = obj_motion_step_a;
+}
 
 void obj_motion_step_a(struct Obj *obj)
 {
@@ -241,9 +312,21 @@ void obj_motion_step_a(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_motion_step_b.s", void obj_motion_step_b(void))
+void obj_motion_step_b(struct Obj *obj)
+{
+    obj->dispX = (((s32)obj->slot * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixX << 8);
+    obj->dispY = (((s32)obj->unkB0 * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixY << 8);
+    obj->sprite->unkC -= 0xB4C;
+    obj->timer++;
+    if (obj->unkB2 <= obj->timer)
+    {
+        obj->dispX = obj->keyX;
+        obj->dispY = obj->keyY;
+        obj->callback = obj_place_sprite_part;
+    }
+}
 
-ASM_FUNC("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part(void))
+ASM_FUNC("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part(struct Obj *obj))
 
 ASM_FUNC("asm/code_08113AE8/obj_query_contact_step.s", void obj_query_contact_step(struct Obj *obj))
 
@@ -256,6 +339,8 @@ void obj_stop_anim_clear_cb(struct Obj *obj)
     }
 }
 
+void sprite_entry_update(struct Sprite *sprite);
+void obj_place_sprite_part(struct Obj *obj);
 ASM_FUNC("asm/code_08113AE8/obj_link_flag_set.s", void obj_link_flag_set(void))
 
 void obj_phase_wait_idle(struct Obj *obj)
@@ -372,11 +457,16 @@ void obj_timer_release_hold(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_to_hold(void))
+ASM_FUNC("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_to_hold(struct Obj *obj))
 
-ASM_FUNC("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(void))
+ASM_FUNC("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struct Obj *obj, u32 flag))
 
-ASM_FUNC("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(void))
+struct Obj *obj_spawn(struct Scene *scene, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+void *sprite_node_take(void);
+void *sprite_node_alloc(s32 x, s32 y, s32 h);
+void link_state_clear_idle(struct Obj *obj);
+void obj_spread_chain_to_hold(struct Obj *obj);
+ASM_FUNC("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struct Obj *obj, u32 flag))
 
 void obj_begin_effect(struct Obj *obj)
 {
@@ -400,6 +490,7 @@ void obj_begin_effect(struct Obj *obj)
 
 ASM_FUNC("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part(struct Obj *obj))
 
+void obj_release_when_motion_done(struct Obj *obj);
 ASM_FUNC("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
 
 void obj_finish_motion(struct Obj *obj);
@@ -490,6 +581,24 @@ void obj_stop_anim(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_link_to_partner.s", u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner))
+u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner)
+{
+    if (partner != partner->scene->main)
+    {
+        return 1;
+    }
+    set_slot_value(0x7D, -1);
+    resolve_contact_action(partner, obj, 0, 0, (s16)partner->scene->slot == -1 ? 0x8032012 : 0x8032013);
+    obj->timerLong = 0x1B58;
+    obj->phase = 1;
+    obj->callback = NULL;
+    obj->cb54 = NULL;
+    obj->scene->cb54 = obj_remove_target;
+    obj->scene->cb5C = NULL;
+    obj->scene->mode = 1;
+    sound_stop_song(0xD5);
+    sound_stop_song(0x120);
+    return 0;
+}
 
 ASM_FUNC("asm/code_08113AE8/obj_claim_partner.s", u32 obj_claim_partner(struct Obj *obj, struct Obj *partner))
