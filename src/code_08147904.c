@@ -60,7 +60,9 @@ struct Owner
 {
     u8 filler0[0x28];
     struct Partner *party[4];
-    u8 filler38[0x208 - 0x38];
+          u8 filler38[0x200 - 0x38];
+      void *unk200;
+      void *unk204;
     struct OwnerFlags flags208;
 };
 
@@ -75,11 +77,17 @@ struct Record
     u16 unk34;
     u16 speeds[4];
     u8 unk3E;
+    u8 filler3F[0x46 - 0x3F];
+    u8 unk46;
+    u8 filler47[0x4A - 0x47];
+    u16 unk4A[1];
 };
 
 struct Enemy
 {
-    u8 filler0[0xC];
+    u8 filler0[0x2];
+    u8 unk2;
+    u8 filler3[0xC - 0x3];
     s32 posX;
     s32 posY;
     s32 posZ;
@@ -108,7 +116,8 @@ struct Enemy
     s32 homeY;
     s32 homeZ;
     s32 homeDZ;
-    u8 filler1EC[0x20D - 0x1EC];
+          u8 filler1EC[0x20C - 0x1EC];
+      u8 unk20C;
     u8 unk20D;
     u8 unk20E;
     u8 unk20F;
@@ -122,21 +131,34 @@ struct Enemy
     u8 filler240[0x242 - 0x240];
     s16 vx;
     s16 vy;
-    u8 filler246[0x27A - 0x246];
-    u16 unk27A;
-    u8 filler27C[0x294 - 0x27C];
-    struct Sprite *sprite;
+          u8 filler246[0x276 - 0x246];
+      u16 unk276;
+      u8 filler278[0x27A - 0x278];
+      u16 unk27A;
+          u8 filler27C[0x290 - 0x27C];
+      void *layer290;
+      struct Sprite *sprite;
     u8 filler298[0x2B6 - 0x298];
     u8 unk2B6;
     u8 filler2B7[0x2DC - 0x2B7];
     u16 speed;
     u16 runLeft;
-    u8 filler2E0[0x2EC - 0x2E0];
-    s32 unk2EC;
-    u8 filler2F0[0x2F4 - 0x2F0];
+          u8 filler2E0[0x2E4 - 0x2E0];
+      s32 unk2E4;
+      s32 unk2E8;
+      s32 unk2EC;
+      u32 unk2F0;
     u32 unk2F4;
     s16 unk2F8;
-    u8 filler2FA[0x338 - 0x2FA];
+          u8 filler2FA[0x30A - 0x2FA];
+      u16 unk30A;
+      u16 unk30C;
+      u16 unk30E;
+      u16 unk310;
+      u8 filler312[0x328 - 0x312];
+      u32 unk328;
+      u32 unk32C;
+      u8 filler330[0x338 - 0x330];
     void *unk338;
     u8 filler33C[0x33D - 0x33C];
     u8 unk33D;
@@ -151,14 +173,18 @@ u32 mt19937_next(void);
 s32 sub_081DE850(s32 n, u32 value);
 void run_state_handler(void);
 void tick_store(void);
-void enemy_move_home(void);
+void enemy_move_home(struct Owner *owner, struct Enemy *ent, u32 *out);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 speed, ByteArg zero);
 void enemy_home_step(struct Owner *owner, struct Enemy *ent, u32 *out);
 void enemy_wander_to_edge(struct Owner *owner, struct Enemy *ent, u32 *out);
 void enemy_seek_partner(void);
 void enemy_guard_aim(void);
 void enemy_step_wait(struct Owner *owner, struct Enemy *ent, u32 *out);
-void enemy_hop_start(void);
-void enemy_aim_and_move(void);
+void enemy_hop_start(struct Owner *owner, struct Enemy *ent, u32 *out);
+void enemy_aim_and_move(struct Owner *owner, struct Enemy *ent, u32 *out);
+u32 angle_of_vector16(s32 x, s32 y);
+void enemy_move_to_target(struct Owner *owner, struct Enemy *ent, u32 *out);
 void obj_box_mirror_to_stack(s16 *box, struct Enemy *ent, u32 flags, u32 index);
 u8 boxes_overlap(s16 *box, struct Enemy *ent, struct Partner *other, s32 zAbove, s32 zBelow);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
@@ -170,15 +196,17 @@ void enemy_zone_pick(void);
 extern const u8 gFrameAttrTable[];
 void obj_set_cell_coord(struct Enemy *ent, u32 cell, u32 arg);
 void enemy_face_owner(void);
-void enemy_place_on_owner(void);
+void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out);
+void enemy_place_body_quadrant(struct Enemy *body);
+void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out);
 void enemy_wait_scan(void);
 void enemy_fall_end_state(void);
 void enemy_fall_decay(void);
 void enemy_fall_pos(void);
-void enemy_bump_wait(void);
-void enemy_collide_settle(void);
-void enemy_start_bump(void);
-void enemy_idle_walk(void);
+void enemy_bump_wait(struct Owner *owner, struct Enemy *ent, u32 *out);
+void enemy_collide_settle(struct Owner *owner, struct Enemy *ent, u32 *out);
+void enemy_start_bump(struct Owner *owner, struct Enemy *ent, u32 *out);
+void enemy_idle_walk(struct Owner *owner, struct Enemy *ent, u32 *out);
 s8 zone_point_code(struct Owner *owner, struct Enemy *ent, u32 zero);
 void obj_set_active(struct Enemy *ent, u32 zero);
 void enemy_start_run(void);
@@ -195,6 +223,7 @@ u8 tile_blocks_move(struct Owner *owner, s32 x, s32 y, s32 z, s32 w, s32 one, s3
 void enemy_run_return(struct Owner *owner, struct Enemy *ent, u32 *out);
 void wander_to_edge(struct Enemy *ent, s32 steps, s32 dist);
 void obj_set_or_add_pos(struct Enemy *ent, s32 x, s32 y, s32 z, u32 zero0, u32 zero1);
+u32 angle_of_vector16(s32 x, s32 y);
 
 void enemy_body_step(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
@@ -380,7 +409,7 @@ void enemy_step_wait(struct Owner *owner, struct Enemy *ent, u32 *out)
     }
 }
 
-ASM_FUNC("asm/code_08147904/enemy_move_home.s", void enemy_move_home(void))
+ASM_FUNC("asm/code_08147904/enemy_move_home.s", void enemy_move_home(struct Owner *owner, struct Enemy *ent, u32 *out))
 
 void enemy_home_step(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
@@ -417,21 +446,101 @@ ASM_FUNC("asm/code_08147904/enemy_move_checked.s", void enemy_move_checked(void)
 
 ASM_FUNC("asm/code_08147904/enemy_update_landing.s", void enemy_update_landing(void))
 
-ASM_FUNC("asm/code_08147904/enemy_start_bump.s", void enemy_start_bump(void))
+ASM_FUNC("asm/code_08147904/enemy_start_bump.s", void enemy_start_bump(struct Owner *owner, struct Enemy *ent, u32 *out))
 
-ASM_FUNC("asm/code_08147904/enemy_bump_wait.s", void enemy_bump_wait(void))
+void enemy_bump_wait(struct Owner *owner, struct Enemy *ent, u32 *out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct Record *rec = ent->rec;
+    u16 *table = ent->wanderDist;
+    struct Partner *partner;
+    s16 box[8];
+    u8 idx;
 
-ASM_FUNC("asm/code_08147904/enemy_aim_and_move.s", void enemy_aim_and_move(void))
+    if (ent->unk1D4 == 0)
+    {
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            partner = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+            obj_box_mirror_to_stack(box, ent, 0x14, 0x22);
+            if (boxes_overlap(box, ent, partner, 0x7ff, 0x7fff) != 0)
+            {
+                if (enemy_companion_hit(owner, ent) != 0)
+                {
+                    out[0] = (u32)enemy_aim_and_move;
+                    return;
+                }
+            }
+        }
+        {
+            u16 reload = rec->unk1A;
 
-ASM_FUNC("asm/code_08147904/enemy_move_to_target.s", void enemy_move_to_target(void))
+            *(u16 *)(ai + 0x17C) = reload;
+        }
+    }
+    else
+    {
+        ent->unk1D4 = ent->unk1D4 - 1;
+    }
+    if (step_pos_xy_c(ent) == 0)
+    {
+        s32 pick = sub_081DE850(4, mt19937_next());
+        u16 pick_val = table[pick + 0x14];
 
-ASM_FUNC("asm/code_08147904/enemy_hop_start.s", void enemy_hop_start(void))
+        *(u16 *)(ai + 0x17A) = pick_val;
+        out[0] = (u32)tick_store;
+        out[3] = (u32)enemy_start_bump;
+    }
+}
+
+void enemy_aim_and_move(struct Owner *owner, struct Enemy *ent, u32 *out)
+{
+    u8 *ai;
+    struct Record *rec;
+    struct Partner *partner;
+    u8 idx;
+    u8 zero;
+    u32 index;
+    s32 dx;
+    s32 dy;
+    u32 facing;
+    u16 pick;
+    u16 speed;
+
+    ai = (u8 *)ent + 0x58;
+    rec = ent->rec;
+    if (find_active_entry(owner, &idx) != 0) {
+        index = idx;
+    } else {
+        index = (u32)(*(u8 *)&owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
+    dx = partner->posX - ent->posX;
+    dy = partner->posY - ent->posY;
+    if ((dx | dy) != 0) {
+        facing = ((u32)((u16)angle_of_vector16(dx, dy) + 0x10)) >> 8;
+    } else {
+        facing = 0xff;
+    }
+    ent->unk2 = facing;
+    ent->sprite->unk20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x2A];
+    speed = (&rec->unk2E)[*(u16 *)(ai + 0x178)];
+    start_move_to(ent, partner->posX, partner->posY, speed, zero = 0);
+    pick = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x36];
+    *(u16 *)(ai + 0x17A) = pick;
+    *out = (u32)enemy_move_to_target;
+}
+
+ASM_FUNC("asm/code_08147904/enemy_move_to_target.s", void enemy_move_to_target(struct Owner *owner, struct Enemy *ent, u32 *out))
+
+void start_z_move(struct Enemy *ent, s32 z, u32 a, u32 b, u32 c);
+ASM_FUNC("asm/code_08147904/enemy_hop_start.s", void enemy_hop_start(struct Owner *owner, struct Enemy *ent, u32 *out))
 
 ASM_FUNC("asm/code_08147904/enemy_hop_3d.s", void enemy_hop_3d(void))
 
-ASM_FUNC("asm/code_08147904/enemy_collide_settle.s", void enemy_collide_settle(void))
+ASM_FUNC("asm/code_08147904/enemy_collide_settle.s", void enemy_collide_settle(struct Owner *owner, struct Enemy *ent, u32 *out))
 
-ASM_FUNC("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(void))
+ASM_FUNC("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(struct Owner *owner, struct Enemy *ent, u32 *out))
 
 void enemy_pose_a(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
@@ -451,6 +560,58 @@ void enemy_pose_a(struct Owner *owner, struct Enemy *ent, u32 *out)
 
 ASM_FUNC("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(void))
 
-ASM_FUNC("asm/code_08147904/enemy_place_on_owner.s", void enemy_place_on_owner(void))
+void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out)
+{
+    u16 *words = (u16 *)((u8 *)ent + 0x58);
+    struct Record *rec = ent->rec;
+    u16 *table = ent->wanderDist;
+    struct Enemy *body = ent->body;
+    s32 kind;
+    s32 i;
+    u16 val;
 
-ASM_FUNC("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c(void))
+    if ((ent->sprite->unk12 & 8) == 0)
+    {
+        return;
+    }
+    enemy_place_body_quadrant(body);
+    kind = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+    switch (kind)
+    {
+    case 0:
+        obj_set_or_add_pos(body, ent->posX, ent->posY - ent->unk276, ent->posZ + ent->unk18 + 0x800, 1, 0);
+        break;
+    case 1:
+        obj_set_or_add_pos(body, ent->posX + 0xA00, ent->posY, ent->posZ + ent->unk18 + 0x800, 1, 0);
+        break;
+    case 2:
+        obj_set_or_add_pos(body, ent->posX, ent->posY, ent->posZ + ent->unk18 + 0x800, 1, 0);
+        break;
+    case 3:
+        obj_set_or_add_pos(body, ent->posX - 0xA00, ent->posY, ent->posZ + ent->unk18 + 0x800, 1, 0);
+        break;
+    }
+    obj_set_active(body, 1);
+    obj_set_sprite_link(body, 1);
+    i = sub_081DE850(4, mt19937_next());
+    body->sprite->unk20 = table[i + 4];
+    body->unk2E4 = body->posX;
+    body->unk2E8 = body->posY;
+    body->unk2EC = body->posZ;
+    body->unk2F4 = 0;
+    body->unk2F0 = 0;
+    body->unk30A = 0x100;
+    body->unk30C = 0x180;
+    body->unk32C = 0;
+    body->unk328 = 0;
+    body->unk30E = 0xC0;
+    body->unk310 = 0x140;
+    val = *(u16 *)((u8 *)rec + words[0xBC] * 2 + 0x2A);
+    words[0xBD] = val;
+    obj_set_cell_coord(ent, gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8] + 0x10, 0);
+    ((struct Mode3 *)&ent->unk214)->mode = 1;
+    ((struct SpriteBits12 *)&ent->sprite->unk12)->field1 = 0;
+    *out = (u32)enemy_after_step_906c;
+}
+
+ASM_FUNC("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out))
