@@ -77,7 +77,8 @@ struct HeroBody
     u16 timer2;
     struct HeroData *data;
     struct HeroBody *partner;
-    u8 filler30[0x38 - 0x30];
+    struct HeroBody *next;
+    u8 filler34[0x38 - 0x34];
     s32 targetX;
     s32 targetY;
     s32 targetZ;
@@ -160,7 +161,55 @@ void enter_finish_rebuild(struct HeroBody *body);
 
 ASM_FUNC("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner_pos(void))
 
-ASM_FUNC("asm/code_080B1D44/hero_a_walk_toward_partner.s", void hero_a_walk_toward_partner(struct HeroBody *body))
+void hero_a_walk_toward_partner(struct HeroBody *body)
+{
+    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct HeroBody *a = &heroA->body;
+    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *partner = body->partner;
+    s32 x;
+    s32 y;
+    s32 dist;
+
+    x = (a->posX * 0xE6 + *(s32 *)&a->spanA * 0x1A) / 0x100;
+    y = (a->posY * 0xE6 + *(s32 *)&a->filler88 * 0x1A) / 0x100;
+
+    a->posX += (x - a->targetX + *(s16 *)&a->timer) / 2;
+    a->posY += (y - a->targetY + a->deltaY) / 2;
+    a->posZ += 0x100;
+    b->posX = a->posX;
+    b->posY = a->posY;
+    b->posZ = a->posZ;
+    *(s16 *)&a->timer = a->posX - a->targetX;
+    a->deltaY = a->posY - a->targetY;
+
+    dist = ((s32 (*)(s32))gMathRoutines)(*(s16 *)&a->timer * *(s16 *)&a->timer + a->deltaY * a->deltaY);
+    if (dist < 0x10 && (a->timer2 & 0xFFF))
+    {
+        u32 keep = 0xFFFFF000;
+
+        a->timer2 &= keep;
+        effect_spawn_at(0x2FBA, a->posX / 0x100, a->posY / 0x100, a->posZ / 0x100 - 14, a);
+    }
+    if (dist < 9)
+    {
+        set_slot_value(0x8E, -1);
+        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        {
+            sprite_set_action(a, 0xA, 0x2032, 0);
+            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+        }
+        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        {
+            sprite_set_action(b, 0xE, 0x2061, 0);
+            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+        }
+        a->vel = a->posZ - a->targetZ;
+        a->spanZ = partner->posZ + (partner->ofsZ << 8);
+        a->link = 1;
+        body->state = hero_a_drop_and_land_with_b;
+    }
+}
 
 void hero_a_drop_and_land_with_b(struct HeroBody *body)
 {
