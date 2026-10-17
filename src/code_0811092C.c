@@ -192,7 +192,7 @@ void wait_move_then_action_4(struct ActionObj *obj);
 void wait_move_then_action_4_b(struct ActionObj *obj);
 u8 candidates_advance_progress(struct ActionObj *obj);
 u32 lookup_part(struct ActionObj *obj);
-u32 lookup_link_slot(struct ActionObj *obj, struct ActionObj *other);
+u32 lookup_link_slot(struct ActionObj *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActionObj *owner);
 
 u32 action_handler_return_minus1(void)
@@ -200,4 +200,27 @@ u32 action_handler_return_minus1(void)
     return -1;
 }
 
-ASM_FUNC("asm/code_0811092C/link_to_slot.s", void link_to_slot(void))
+NONMATCH("asm/code_0811092C/link_to_slot.s", s32 link_to_slot(struct ActionObj *obj))
+{
+    struct ActionObj *o = obj;
+    s32 slot;
+    s32 result;
+
+    slot = lookup_link_slot(o);
+    if (slot == 0)
+    {
+        set_motion_start(o, 0x300);
+        sprite_set_action(o, 1, 0, 0);
+        {
+            s32 *addr = (s32 *)((char *)o + 0x80);
+            *addr = slot;
+        }
+        result = 0;
+    }
+    else
+    {
+        result = slot;
+    }
+    return result;
+}
+END_NONMATCH
