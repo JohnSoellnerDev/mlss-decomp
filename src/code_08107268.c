@@ -16,6 +16,12 @@ struct Obj
     struct Sprite *link;
 };
 
+struct SpriteModeBits
+{
+    u8 unk0 : 5;
+    u8 bit5 : 1;
+};
+
 struct ModeBlock
 {
     u8 filler0[0xA];
@@ -165,8 +171,10 @@ struct Work
 extern struct World *gUnk_03000FD8;
 extern struct Work *gWorkBuf;
 extern const u16 gEffectCodeTable[];
+extern void *gUnk_03000D74;
 
 void update_slot_markers(void);
+void *find_lowest_order_pose(u8 *pic);
 void display_pause(void);
 void draw_digits_49_p11(s32 a, s32 b, s32 c, s32 d);
 void state_hero_select_confirm(struct Owner *owner);
@@ -335,7 +343,19 @@ void state_menu_scroll_begin(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_menu_clear_vram.s", void state_menu_clear_vram(void))
+void state_menu_clear_vram(struct Owner *owner)
+{
+    vu16 *bg = (vu16 *)&gUnk_0200000C;
+
+    *bg |= 1;
+    bg += 8;
+    *(vu16 *)&gUnk_0200001E = 0;
+    *bg = *(vu16 *)&gUnk_0200001E;
+    gMemRoutines(0x11111111, (void *)0x06008000, 0x20);
+    owner->timer = 0x40;
+    owner->scrollStep = 0;
+    owner->state = state_menu_scroll_wait;
+}
 
 void state_wait_menu_clear(struct Owner *owner)
 {
@@ -358,7 +378,17 @@ void state_wait_menu_clear(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/menu_open_setup.s", void menu_open_setup(void))
+void menu_open_setup(void)
+{
+    struct World *world = gUnk_03000FD8;
+
+    ((struct SpriteModeBits *)&world->figMode2C0)->bit5 = 1;
+    ((struct SpriteModeBits *)&world->flags2BF)->bit5 = 1;
+    ensure_code_entry(0x7009);
+    alloc_code_entry(0x7009);
+    gMemRoutines(0x80008000, (void *)0x0600F800, 0x500);
+    task_create_list_4c(state_menu_build, 0)->timer = 0;
+}
 
 void state_hero_sprite_check(struct Owner *owner)
 {
@@ -504,22 +534,23 @@ void set_world_mode_byte(u8 value)
 
 NONMATCH("asm/code_08107268/state_sprite_park.s", void state_sprite_park(struct Owner *owner))
 {
-    u16 timer = owner->timer;
     struct Sprite *sprite = owner->sprite;
-    s32 flags;
 
     if (owner->timer > 0)
     {
-        owner->timer = timer - 1;
+        owner->timer--;
     }
     else
     {
-        flags = sprite->flags & ~0x10;
+        s32 flags = sprite->flags;
+        s32 mask = ~0x10;
+
+        mask &= flags;
         sprite->x = 0x78;
         sprite->y = 0x40;
-        flags &= ~6;
-        flags |= 2;
-        sprite->flags = flags;
+        mask &= ~6;
+        mask |= 2;
+        sprite->flags = mask;
         owner->state = 0;
     }
 }
@@ -858,7 +889,19 @@ void state_restore_saved_when_flag(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_place_sprite_at_obj.s", void state_place_sprite_at_obj(struct Owner *owner))
+void state_place_sprite_at_obj(struct Owner *owner)
+{
+    struct Pos *pos;
+    u8 *obj;
+
+    if (is_state_busy() == 0)
+    {
+        obj = gUnk_03000FD8->curObj;
+        pos = (struct Pos *)obj;
+        effect_spawn_at(gEffectCodeTable[(u16)owner->index], pos->x / 0x100, pos->y / 0x100 + 2, pos->z / 0x100 - 2, obj + 8);
+        owner->state = state_move;
+    }
+}
 
 void state_select_by_status(struct Owner *owner)
 {
@@ -975,16 +1018,24 @@ void state_wait_then_clear(struct Owner *owner)
     }
 }
 
+void marker_flag1_update(u8 *self);
+void marker_flag2_update(u8 *self);
+void marker_flag100_update();
+void marker_cursor_update();
+void marker_flag400_update(struct Owner *owner);
+void marker_flag800_update();
 ASM_FUNC("asm/code_08107268/update_world_objects.s", void update_world_objects(void))
 
 ASM_FUNC("asm/code_08107268/marker_flag100_update.s", void marker_flag100_update(void))
 
-ASM_FUNC("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(void))
+void *find_lowest_order_pose(u8 *pic);
+extern void *gUnk_03000D74;
+ASM_FUNC("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(u8 *self))
 
-ASM_FUNC("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(void))
+ASM_FUNC("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(u8 *self))
 
 ASM_FUNC("asm/code_08107268/marker_cursor_update.s", void marker_cursor_update(void))
 
-ASM_FUNC("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update(void))
+ASM_FUNC("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update(struct Owner *owner))
 
 ASM_FUNC("asm/code_08107268/marker_flag800_update.s", void marker_flag800_update(void))
