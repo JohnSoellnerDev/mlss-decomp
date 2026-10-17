@@ -335,7 +335,25 @@ void actor_spawn_motion_child(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806BCCC/actor_retarget_to_owner_part.s", void actor_retarget_to_owner_part(struct ActorObj *obj))
+void actor_retarget_to_owner_part(struct ActorObj *obj)
+{
+    s32 t;
+
+    t = obj->timer;
+    t--;
+    obj->timer = t;
+    if ((t << 16) <= 0)
+    {
+        obj->targetX = obj->owner->part->targetX;
+        obj->targetY = obj->owner->part->targetY;
+        obj->targetH = obj->owner->part->targetH;
+        ((struct Flags79Bits *)&obj->flags79)->bit5 = 1;
+        obj->motionSpeed = 0x166;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = actor_release_when_free_b;
+    }
+}
 
 void actor_plan_arc_path(struct ActorObj *obj)
 {
@@ -425,4 +443,37 @@ void actor_spawn_counted_child(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806BCCC/actor_finish_with_child_effect.s", void actor_finish_with_child_effect(struct ActorObj *obj))
+void actor_finish_with_child_effect(struct ActorObj *obj)
+{
+    u32 id;
+
+    if (obj->pose->flags & 8)
+    {
+        s32 t = obj->timer;
+
+        t--;
+        obj->timer = t;
+        if ((t << 16) <= 0)
+        {
+            ((struct ObjFlags77 *)obj)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+            ((struct ObjFlags77 *)obj)->bit5 = 0;
+            obj->targetX = 0;
+            set_slot_value(0x119, -1);
+            if (obj->paramA8 == 0)
+            {
+                sprite_set_action(obj, 9, 0, 0);
+                sprite_set_action(obj->child, 9, 0, 0);
+                id = 0x1534;
+            }
+            else
+            {
+                sprite_set_action(obj, 0x11, 0, 0);
+                sprite_set_action(obj->child, 0x11, 0, 0);
+                id = 0x159E;
+            }
+            gUnk_03000E3C = effect_from_table_obj(obj, id);
+            obj->handler58 = (void (*)(struct ActorObj *))actor_link_partner_then_step;
+            obj->state = actor_action_a_or_12_child;
+        }
+    }
+}
