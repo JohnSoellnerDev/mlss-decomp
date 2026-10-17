@@ -1,9 +1,11 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Char {
     u8 filler0[4];
     u32 unk04;
-    u8 filler8[0xC];
+    s32 unk08;
+    u8 filler0C[8];
     u16 unk14;
 };
 
@@ -15,6 +17,9 @@ struct CharSpeedS {
 struct GameState {
     u8 filler0[0x1C98];
     struct Char *charA;
+    struct Char *charB;
+    u8 filler1CA0[0x1CB0 - 0x1CA0];
+    void *unk1CB0;
 };
 
 extern struct GameState *gGamePtr;
@@ -53,7 +58,10 @@ struct TrackObj {
 struct SubObj {
     u16 unk00;
     u16 unk02;
-    u8 filler04[0xA];
+    u16 unk04;
+    u16 unk06;
+    u8 filler08[0x4];
+    u16 unkC;
     u16 unkE;
     u8 filler10;
     u8 unk11;
@@ -116,13 +124,14 @@ void sprite_update_cd0(void *sprite);
 void release_obj_131c(struct Sprite *sprite);
 void obj_set_sprite_kind(void *obj, u32 kind);
 void obj_release_sprite(void *obj);
-u32 view_coord(u32 a, s32 b);
 u32 hitboxes_overlap(void *a, void *b);
 void obj_add_value(void *a, s32 b);
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e1e0.s", void obj_behavior_e1e0(void))
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e1a0.s", void obj_behavior_e1a0(void))
+
+struct Obj;
 
 struct E0E0Table {
     u8 filler0[0x10];
@@ -141,10 +150,13 @@ struct E0E0Table {
 struct E0E0Char {
     u8 filler0[4];
     s32 unk04;
-    u8 filler08[0x1C];
+    s32 unk08;
+    u8 filler0C[0x18];
     u8 unk24;
     u8 filler25[0xB];
     struct E0E0Table *unk30;
+    struct SubObj *unk34;
+    u16 unk38;
 };
 
 struct CharPos {
@@ -172,6 +184,9 @@ struct E160Obj {
     u8 unk26;
     u8 filler27[9];
     struct E0E0Table *unk30;
+    u8 filler34[4];
+    s32 unk38;
+    s32 unk3C;
 };
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e160.s", void obj_behavior_e160(void))
@@ -243,7 +258,38 @@ ASM_FUNC("asm/code_08154490/obj_behavior_dfe0.s", void obj_behavior_dfe0(void))
 
 ASM_FUNC("asm/code_08154490/obj_state_load_step.s", void obj_state_load_step(void))
 
-ASM_FUNC("asm/code_08154490/obj_track_char_a.s", void obj_track_char_a(void))
+void obj_track_char_a(struct TrackObj *obj)
+{
+    struct Char *charA;
+    u16 speed;
+    s16 s;
+
+    charA = gGamePtr->charA;
+    switch (obj->unk38)
+    {
+    case 0:
+        if ((s16)charA->unk14 > 0)
+            obj->unk38 = 1;
+        break;
+    case 1:
+        speed = charA->unk14;
+        s = speed;
+        if (s == 0)
+        {
+            if ((s32)(charA->unk04 - obj->unk04) <= 0x3BFF)
+                obj->unk38 = 2;
+        }
+        else if ((s16)obj->unk14 >= s)
+            obj->unk14 = speed;
+        else
+            obj->unk14 += 2;
+        break;
+    case 2:
+        obj->unk14 = 0;
+        obj->unk38 = 0;
+        break;
+    }
+}
 
 ASM_FUNC("asm/code_08154490/obj_create_digits.s", void obj_create_digits(void))
 
