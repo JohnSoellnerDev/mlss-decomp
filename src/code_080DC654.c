@@ -180,6 +180,91 @@ void obj_drop_clamp_to_limit(struct ActorObj *obj);
 
 ASM_FUNC("asm/code_080DC654/obj_random_move_start.s", void obj_random_move_start(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080DC654/obj_random_move_b.s", void obj_random_move_b(void))
+void obj_random_move_b(struct ActorObj *obj)
+{
+    struct ActorPart *data;
+    u8 *flags;
+    s32 x;
+    s32 y;
+    s32 h;
+    s32 v;
+    s32 n;
 
-ASM_FUNC("asm/code_080DC654/obj_wait_then_move_screen.s", void obj_wait_then_move_screen(struct ActorObj *obj))
+    data = obj->data;
+    v = data->targetX;
+    if (v < 0)
+    {
+        v += 0xff;
+    }
+    x = v >> 8;
+    v = data->targetY;
+    if (v < 0)
+    {
+        v += 0xff;
+    }
+    y = v >> 8;
+    v = data->targetH;
+    if (v < 0)
+    {
+        v += 0xff;
+    }
+    h = v >> 8;
+    offset_three_words_camera(&x, &y, &h, 0);
+    n = 0xf0 - x;
+    obj->targetX = obj->data->targetX + sub_081DE850(n, mt19937_next()) * 0x100;
+    obj->targetY = obj->data->targetY;
+    obj->targetH = obj->data->targetH;
+    flags = &obj->flags;
+    *flags |= 0x20;
+    obj->motionSpeed = 0x400;
+    obj->motionStart = 0;
+    start_motion(obj);
+    obj->state = obj_wait_index_then_slot84;
+}
+
+void obj_wait_then_move_screen(struct ActorObj *obj)
+{
+    struct ActorPart *data;
+    u8 *flags;
+    s32 x;
+    s32 y;
+    s32 h;
+    s32 v;
+    s32 n;
+
+    obj->timer--;
+    if ((s16)obj->timer < 0)
+    {
+        data = obj->data;
+        v = data->targetX;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        x = v >> 8;
+        v = data->targetY;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        y = v >> 8;
+        v = data->targetH;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        h = v >> 8;
+        offset_three_words_camera(&x, &y, &h, 0);
+        n = 0x110 - x;
+        obj->targetX = obj->data->targetX + n * 0x100;
+        obj->targetY = obj->data->targetY;
+        obj->targetH = obj->data->targetH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x400;
+        obj->motionStart = 0;
+        start_motion(obj);
+        sprite_set_action(obj, 2, 0, 0);
+        obj->state = obj_wait_index_release_data;
+    }
+}
