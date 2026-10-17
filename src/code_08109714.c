@@ -198,7 +198,8 @@ void state_hero_marker_end(struct AnimTask *owner)
     }
 }
 
-NONMATCH("asm/code_08109714/state_hero_marker_begin.s", void state_hero_marker_begin(struct AnimTask *owner))
+void state_figure_begin(struct AnimTask *owner);
+void state_hero_marker_begin(struct AnimTask *owner)
 {
     struct AnimObj *obj = owner->obj;
 
@@ -219,12 +220,15 @@ NONMATCH("asm/code_08109714/state_hero_marker_begin.s", void state_hero_marker_b
         }
         sprite_set_action(pic, 2, action, 0);
         owner->state = state_hero_marker_end;
-        slot = 0xF5;
         if (obj->index == none)
         {
-            slot += 0x52;
+            slot = 0x147;
         }
-        set_slot_value(slot, -1);
+        else
+        {
+            slot = 0xF5;
+        }
+        set_slot_value(slot, none);
     }
     else
     {
@@ -232,7 +236,6 @@ NONMATCH("asm/code_08109714/state_hero_marker_begin.s", void state_hero_marker_b
         owner->state = 0;
     }
 }
-END_NONMATCH
 
 void state_hero_marker_end_quiet(struct AnimTask *owner)
 {
@@ -265,7 +268,36 @@ void state_countdown_slot(struct AnimTask *owner)
     owner->state = state_hero_marker_end_quiet;
 }
 
-ASM_FUNC("asm/code_08109714/state_wait_ready.s", void state_wait_ready(struct AnimTask *owner))
+void state_wait_ready(struct AnimTask *owner)
+{
+    if (!is_state_busy()) {
+        struct AnimObj *obj = owner->obj;
+        struct AnimPic *pic = &obj->pic;
+        u32 action;
+        u32 slot;
+
+        if (obj->index == -1)
+        {
+            action = 0x202B;
+        }
+        else
+        {
+            action = 0x205A;
+        }
+        sprite_set_action(pic, 0, action, 0);
+        if (obj->index == -1)
+        {
+            slot = 0xF0;
+        }
+        else
+        {
+            slot = 0xFE;
+        }
+        set_slot_value(slot, -1);
+        owner->timer = 0x10;
+        owner->state = state_countdown_slot;
+    }
+}
 
 void task_wait_control(struct AnimTask *owner)
 {
@@ -344,7 +376,20 @@ void anim_stop_mode(struct AnimObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08109714/anim_roll_bit8000.s", s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance))
+s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance)
+{
+    if (obj->bits & 0x8000)
+    {
+        return 0;
+    }
+    if (chance < sub_081DE850(100, mt19937_next()))
+    {
+        return 0;
+    }
+    obj->bits = (s16)(obj->bits & 0xFFF) | (s16)0x8000;
+    ((struct AnimFlags *)&obj->flags)->mode = 3;
+    return 1;
+}
 
 s32 anim_roll_bit4000(struct AnimObj *obj, s32 chance)
 {
@@ -417,6 +462,7 @@ void anim_clear_flag_bits(struct AnimObj *obj, u32 mask)
     obj->bits &= ~mask;
 }
 
+void state_figure_wait(struct AnimTask *owner);
 ASM_FUNC("asm/code_08109714/figure_select_action.s", void figure_select_action(void))
 
 ASM_FUNC("asm/code_08109714/state_figure_wait.s", void state_figure_wait(struct AnimTask *owner))
