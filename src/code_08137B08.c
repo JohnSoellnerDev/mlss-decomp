@@ -7,6 +7,8 @@ struct Owner
 {
     u8 filler0[0x2C];
     struct Enemy *anchors[4];
+    u8 filler3C[0x208 - 0x3C];
+    u8 unk208;
 };
 
 struct Sprite
@@ -28,7 +30,10 @@ struct Enemy
     s32 unk18;
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
-    u8 filler25[0x54 - 0x25];
+    u8 filler25[0x34 - 0x25];
+    s32 unk34;
+    s32 unk38;
+    u8 filler3C[0x54 - 0x3C];
     u8 unk54;
     u8 filler55[0xF8 - 0x55];
     u16 unkF8;
@@ -118,6 +123,7 @@ u16 angle_of_vector16(s32 x, s32 y);
 void obj_set_or_add_pos(struct Enemy *ent, s32 x, s32 y, s32 z, u32 a, u32 b);
 void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty);
 void obj_move_interp(struct Enemy *ent);
+void obj_step_toward_target_08138FDC(struct Enemy *obj);
 
 void obj_random_target_b(struct Owner *owner, struct Enemy *obj, u32 *out)
 {
@@ -161,7 +167,46 @@ ASM_FUNC("asm/code_08137B08/obj_start_move_to_target.s", void obj_start_move_to_
 
 ASM_FUNC("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty))
 
-ASM_FUNC("asm/code_08137B08/obj_start_hop.s", void obj_start_hop(void))
+void obj_start_hop(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
+{
+    u8 **routines;
+    s32 dy;
+    s32 len;
+    s32 speed;
+    s32 t;
+
+    obj->unk1C4 = obj->posX / 0x100;
+    obj->unk1C6 = obj->posY / 0x100;
+    obj->unk1C8 = (obj->posZ + obj->unk18) / 0x100;
+
+    if (mode == 1)
+    {
+        tx += obj->posX;
+        ty += obj->posY;
+    }
+    obj->unk2CC = obj->posX;
+    obj->unk2D0 = obj->posY;
+    obj->unk2BC = tx;
+    obj->unk2C0 = ty;
+
+    routines = &gMathRoutines;
+    tx -= obj->posX;
+    tx = tx * (tx / 4) / 4;
+    dy = ty - obj->posY;
+    len = ((s32 (*)(s32))*routines)(tx + dy * (dy / 4) / 4);
+
+    obj->unk2D8 = obj->unk23E;
+    obj->unk242 = obj->unk23E;
+    speed = (s16)obj->unk23E;
+    t = speed + len * 8;
+    obj->unk248 = -((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(-speed * speed + t / 2, t);
+    if (obj->unk248 == 0)
+    {
+        obj->unk248 = 1;
+    }
+    obj->unk2DE = 0;
+    obj->unkF8 |= 0x800;
+}
 
 ASM_FUNC("asm/code_08137B08/obj_start_move_zero_anchor.s", void obj_start_move_zero_anchor(void))
 
