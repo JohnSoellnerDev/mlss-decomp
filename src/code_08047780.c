@@ -31,7 +31,9 @@ struct FieldObj
     u8 unk00;
     u8 unk01;
     u8 unk02;
-    u8 filler3[0x9];
+    u8 filler3[0x1];
+    s16 unk04;
+    u8 filler6[0x6];
     s32 unk0C;
     s32 unk10;
     s32 unk14;
@@ -44,14 +46,18 @@ struct FieldObj
     u8 filler27[0x2];
     u8 unk29;
     u8 unk2A;
-    u8 filler2B[0x9];
+    u8 filler2B[0x1];
+    s16 unk2C;
+    u8 filler2E[0x6];
     s32 unk34;
     s32 unk38;
     s32 unk3C;
     s32 unk40;
     u8 filler44[0x8];
     u8 unk4C;
-    u8 filler4D[0x1BF];
+    u8 filler4D[0x7];
+    u8 unk54;
+    u8 filler55[0x1B7];
     u8 flags20C;
     u8 flags20D;
     u8 flags20E;
@@ -118,7 +124,10 @@ struct FieldObj
     u8 unk33E;
     u8 filler33F[0x1];
     u8 unk340;
-    u8 filler341[0x5];
+    u8 filler341[0x2];
+    s8 unk343;
+    u8 unk344;
+    s8 unk345;
     u8 unk346;
     u8 unk347;
     u8 filler348[0x9];
@@ -132,7 +141,8 @@ struct FieldObj
     u8 unk359;
     u8 filler35A[0x12];
     struct FieldAttrEntry * attr;
-    u8 filler370[0x8];
+          u16 unk370;
+      u8 filler372[0x6];
     u8 unk378;
     u8 unk379;
     u8 filler37A[0x1];
@@ -145,6 +155,19 @@ struct FieldObj
     u16 unk384;
 };
 
+struct FieldBits213
+{
+    u8 low : 6;
+    u8 hi : 2;
+};
+
+struct FieldBits212
+{
+    u16 low : 7;
+    u16 mode : 2;
+    u16 high : 7;
+};
+
 void obj_update_special_flag(struct FieldObj *obj);
 void obj_refresh_anim_state(struct FieldObj *obj, u32 a, s32 b, s32 c);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
@@ -155,7 +178,9 @@ void menu_entry_mark_2(void *table, u32 idx);
 void menu_entry_refresh(void *table, u32 idx, u32 mode);
 void obj_alloc_entry(struct FieldObj *obj, u8 mode);
 void heap_free_b(void *p);
-void obj_queue_update(void *sub, u32 key, u8 *flags, u32 c);
+void obj_queue_update();
+void obj_create_sub(struct FieldObj *obj);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 extern const u8 gObjBaseClass[];
 u32 arc_tan2(s32 x, s32 y);
 
@@ -262,6 +287,24 @@ struct FieldBit4
     u8 high : 3;
 };
 
+struct FieldBits24
+{
+    u32 low : 3;
+    u32 b3 : 4;
+    u32 b7 : 2;
+    u32 b9 : 1;
+    u32 b10 : 1;
+    u32 b11 : 4;
+    u32 b15 : 2;
+    u32 rest : 15;
+};
+
+struct FieldLow3
+{
+    u8 low3 : 3;
+    u8 high5 : 5;
+} __attribute__((packed));
+
 struct FieldBits1F
 {
     u8 lo : 2;
@@ -307,7 +350,14 @@ void obj_set_table_id_flag7(struct FieldObj *obj, u8 idx)
     ((struct FieldBit7 *)&obj->state)->b7 = 1;
 }
 
-ASM_FUNC("asm/code_08047780/obj_set_stage.s", void obj_set_stage(void))
+void obj_set_stage(struct FieldObj *obj, u8 stage)
+{
+    ((struct FieldBits24 *)&obj->stage)->low = stage;
+    obj->unk02 = stage << 5;
+    ((struct FieldBits24 *)&obj->unk4C)->low = ((struct FieldLow3 *)&obj->stage)->low3;
+    obj->unk2A = obj->unk02;
+    obj->data->callback((u8 *)obj + obj->data->unk38, 0);
+}
 
 void flags_obj_set_mode(struct FieldObj *obj, u8 mode)
 {
@@ -354,7 +404,17 @@ ASM_FUNC("asm/code_08047780/obj_flags_2b6_30_set.s", void obj_flags_2b6_30_set(v
 
 ASM_FUNC("asm/code_08047780/obj_flags_2b6_0c_set.s", void obj_flags_2b6_0c_set(void))
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b6_03_set.s", void obj_flags_2b6_03_set(void))
+s32 obj_flags_2b6_03_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B6 & 0x3;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
 ASM_FUNC("asm/code_08047780/obj_flags_2b5_c0_set.s", void obj_flags_2b5_c0_set(void))
 
@@ -403,9 +463,30 @@ void obj_set_limit(struct FieldObj *obj, u32 value)
     obj->unk266 = value;
 }
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b5_07_set.s", void obj_flags_2b5_07_set(void))
+s32 obj_flags_2b5_07_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B5 & 0x7;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
-ASM_FUNC("asm/code_08047780/obj_set_motion_mode.s", void obj_set_motion_mode(void))
+extern const u8 gUnk_083A1E72[];
+extern const u8 gFrameAttrTable[];
+void obj_set_sprite_link(struct FieldObj *obj, u32 zero);
+void obj_set_motion_mode(struct FieldObj *obj, u32 mode)
+{
+    u32 bits = ((u32)obj->sub->unk12 << 29) >> 30;
+    ((struct FieldBits213 *)&obj->flags213)->hi = bits;
+    ((struct FieldBits212 *)&obj->flags212)->mode = mode;
+    obj->moveTable = mode == 1 ? (u8 *)(gUnk_083A1E72 + 1) : (u8 *)(gFrameAttrTable + 0x31);
+    obj->unk2B4 = *obj->moveTable;
+    obj_set_sprite_link(obj, 0);
+}
 
 s32 obj_compare_depth(struct FieldObj *a, struct FieldObj *b)
 {
@@ -450,7 +531,18 @@ void obj_update_link_pos(struct FieldObj *obj, struct FieldObj **list, u8 idx)
     obj->unk1C = r3;
 }
 
-ASM_FUNC("asm/code_08047780/obj_reset_link_fields.s", void obj_reset_link_fields(void))
+void obj_reset_link_fields(struct FieldObj *obj)
+{
+    obj->unk00 = 0xFF;
+    obj->unk01 = 0xFF;
+    obj->linkIndex = -1;
+    ((struct FieldBits24 *)&obj->stage)->b3 = 0;
+    ((struct FieldBits24 *)&obj->stage)->b7 = 0;
+    ((struct FieldBits24 *)&obj->stage)->b9 = 0;
+    ((struct FieldBits24 *)&obj->stage)->b10 = 0;
+    ((struct FieldBits24 *)&obj->stage)->b11 = 0;
+    ((struct FieldBits24 *)&obj->stage)->b15 = 0;
+}
 
 void obj_entry_activate(struct FieldObj *obj)
 {
@@ -575,7 +667,32 @@ ASM_FUNC("asm/code_08047780/obj_store_attrs.s", void obj_store_attrs(void))
 
 ASM_FUNC("asm/code_08047780/obj_place_sprite.s", void obj_place_sprite(void))
 
-ASM_FUNC("asm/code_08047780/init_pos_obj_refresh_sprite.s", void init_pos_obj_refresh_sprite(void))
+void init_pos_obj_refresh_sprite(struct FieldObj *obj)
+{
+    obj_create_sub(obj);
+    if ((obj->unk378 & 1) != 0)
+    {
+        obj->attr = create_obj_de4(0, obj->unk370, 1, -1, -1, -1, -1);
+        obj_load_record(obj->attr, obj->unk37B, -1, 0, 0);
+        obj_load_record(obj->attr, obj->unk37B, obj->unk37C, 0, 0);
+        obj_queue_update(obj->attr);
+        ((struct FieldBit6 *)&obj->attr->unk11)->bit6 = (((u32)obj->unk378 << 30) >> 31);
+        ((struct FieldBits1F *)&obj->attr->unk1F)->lo = (((u32)obj->unk378 << 28) >> 30);
+        ((struct FieldBits1F *)&obj->attr->unk1F)->hi = (((u32)obj->unk378 << 26) >> 30);
+        ((struct FieldBits12 *)&obj->attr->unk12)->mid2 = obj->unk378 >> 6;
+        ((struct FieldBit3 *)&obj->attr->unk12)->bit3 = (((u32)obj->unk379 << 31) >> 31);
+        ((struct FieldBit4 *)&obj->attr->unk12)->bit4 = (((u32)obj->unk379 << 30) >> 31);
+        obj->attr->unk2A = obj->unk37E;
+        obj->attr->unk2C = obj->unk380;
+        obj->attr->unk04 = obj->unk382;
+        obj->attr->unk06 = obj->unk384;
+        ((struct FieldBit0 *)&obj->unk378)->active = 0;
+    }
+    else
+    {
+        obj->attr = create_obj_de4(0, -1, 1, -1, -1, -1, -1);
+    }
+}
 
 ASM_FUNC("asm/code_08047780/obj_copy_sprite_attrs.s", void obj_copy_sprite_attrs(void))
 
