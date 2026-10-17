@@ -18,9 +18,12 @@ struct TileList
 struct HeroSprite
 {
     s16 unk0;
-    u8 filler2[0x12 - 0x02];
+    s16 unk2;
+    u8 filler4[0x12 - 0x04];
     u8 flags;
-    u8 filler13[0x30 - 0x13];
+    u8 filler13[0x21 - 0x13];
+    u8 unk21;
+    u8 filler22[0x30 - 0x22];
     struct TileList *tiles;
 };
 
@@ -33,7 +36,8 @@ struct HeroData
     u8 filler4[0xD8 - 0x04];
     s32 unkD8;
     s32 unkDC;
-    u8 filler0E0[0x108 - 0xE0];
+    u8 filler0E0[0x106 - 0xE0];
+    s16 unk106;
     s16 unk108;
     u8 filler10A[0x110 - 0x10A];
     u8 unk110;
@@ -62,7 +66,8 @@ struct HeroBody
     s32 posZ;
     u8 filler1C[0x1E - 0x1C];
     s16 level;
-    u8 filler20[0x28 - 0x20];
+    s16 unk20;
+    u8 filler22[0x28 - 0x22];
     struct HeroData *data;
     struct HeroBody *partner;
     struct HeroBody *child;
@@ -93,7 +98,7 @@ struct HeroBody
     s32 clock;
     s32 repeats;
     u8 filler0A8[0xAC - 0xA8];
-    u16 step;
+    s16 step;
     u16 timerE;
 };
 
@@ -108,6 +113,16 @@ struct HeroSpriteBits
     u8 unk0 : 1;
     u8 mode : 2;
     u8 unk3 : 5;
+};
+
+struct HeroFlags77Bits
+{
+    u8 unk0 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 unk7 : 1;
 };
 
 struct Hero
@@ -140,6 +155,7 @@ struct World
 };
 
 extern struct World *gUnk_03000FD8;
+extern u8 gUnk_0300034C[];
 
 void sprite_set_action(struct HeroBody *body, u32 action, u32 arg, u32 extra);
 void on_arrive(struct HeroBody *body);
@@ -167,12 +183,17 @@ void drop_to_focus(struct HeroBody *body);
 void drop_to_focus_b(struct HeroBody *body);
 void orbit_nodes_b(struct HeroBody *body);
 void orbit_nodes_c(struct HeroBody *body);
+struct TileNode *sprite_node_release(struct TileNode *node);
+void partner_link_update(struct HeroBody *body, struct HeroBody *other, u32 mode);
+struct Hero *active_candidate(struct HeroData *data);
 void pose_update_if_active_a(struct HeroBody *body);
 void pose_update_if_active_b(struct HeroBody *body);
 void pose_update_if_active_c(struct HeroBody *body);
 void start_parts_after_32(struct HeroBody *body);
 void follow_spawn_child(struct HeroBody *body);
 void follow_focus_x(struct HeroBody *body);
+s32 obj_last_x(void *obj);
+void release_other_hero(struct HeroBody *body);
 void prepare_follow_focus(struct HeroBody *body);
 void follow_focus_settle(struct HeroBody *body);
 void set_anim_12(struct HeroBody *body);
@@ -272,7 +293,27 @@ void follow_focus_wait(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/set_follow_handle.s", void set_follow_handle(struct HeroBody *body))
+void set_follow_handle(struct HeroBody *body)
+{
+    struct FollowFlagBits
+    {
+        u8 unk0 : 5;
+        u8 bit5 : 1;
+        u8 unk6 : 2;
+    };
+
+    if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+    {
+        s32 value = body->data->unk108 + 0x64;
+
+        body->handle = (value != body->level)
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, value - body->level)
+            : 0x4000;
+        body->unk7E = 0;
+        ((struct FollowFlagBits *)&body->flags)->bit5 = 0;
+    }
+    body->state = follow_focus_end;
+}
 
 void follow_focus_end(struct HeroBody *body)
 {
@@ -500,6 +541,9 @@ void focus_follow_spawn_orbit_child_b(struct HeroBody *body)
     }
 }
 
+struct TileNode *sprite_node_release(struct TileNode *node);
+void partner_link_update(struct HeroBody *body, struct HeroBody *other, u32 mode);
+struct Hero *active_candidate(struct HeroData *data);
 ASM_FUNC("asm/code_08098B18/orbit_nodes_b.s", void orbit_nodes_b(struct HeroBody *body))
 
 void pose_update_if_active_b(struct HeroBody *body)
@@ -604,8 +648,10 @@ ASM_FUNC("asm/code_08098B18/focus_follow_step_toward_partner.s", void focus_foll
 
 ASM_FUNC("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(struct HeroBody *body))
 
+s32 obj_last_x(void *obj);
 ASM_FUNC("asm/code_08098B18/drop_to_focus.s", void drop_to_focus(struct HeroBody *body))
 
+extern u8 gUnk_0300034C[];
 ASM_FUNC("asm/code_08098B18/unknown_code_08099f58.s", void unknown_code_08099f58(s32 a, s32 b))
 
 ASM_FUNC("asm/code_08098B18/approach_partner.s", void approach_partner(struct HeroBody *body))
