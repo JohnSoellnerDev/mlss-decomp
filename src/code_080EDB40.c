@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Entity
 {
@@ -32,7 +33,8 @@ struct Entity
     u8 unk1D6;
     u8 filler1D7[0x20C - 0x1D7];
     u8 unk20C;
-    u8 filler20D[0x20F - 0x20D];
+          u8 unk20D;
+      u8 filler20E[0x20F - 0x20E];
     u8 unk20F;
     u8 filler210[0x214 - 0x210];
     u8 unk214;
@@ -41,7 +43,9 @@ struct Entity
     u16 unk218;
     u8 filler21A[0x21C - 0x21A];
     u16 unk21C;
-    u8 filler21E[0x294 - 0x21E];
+          u8 filler21E[0x270 - 0x21E];
+      u16 unk270;
+      u8 filler272[0x294 - 0x272];
     struct SubObj *sub294;
     u8 filler298[0x2B6 - 0x298];
     u8 unk2B6;
@@ -53,6 +57,14 @@ struct Entity
     u8 unk33C;
     u8 filler33D[0x344 - 0x33D];
     struct Entity *link344;
+};
+
+struct MotionBody
+{
+    u32 flags;
+    s32 x;
+    s32 y;
+    u32 z;
 };
 
 struct ObjArgs
@@ -138,6 +150,8 @@ void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void obj_sync_sub_slot(void *obj, u32 value);
 void obj_set_cell_coord(void *obj, u32 cell, u32 arg);
 u32 flags_vars_set_obj_state(void *root, void *dst, void *obj, u32 state, u32 zero);
+void set_half_23e(void *obj, s16 v);
+extern u8 *gEffectState;
 
 ASM_FUNC("asm/code_080EDB40/command_on_list_entry.s", void command_on_list_entry(void))
 
@@ -256,6 +270,7 @@ ASM_FUNC("asm/code_080EDB40/cmd_test_and_store.s", void cmd_test_and_store(void)
 
 ASM_FUNC("asm/code_080EDB40/cmd_move_toward.s", void cmd_move_toward(void))
 
+void set_half_23e(void *obj, s16 v);
 ASM_FUNC("asm/code_080EDB40/cmd_move_slot.s", void cmd_move_slot(void))
 
 u32 apply_stage_command(struct OwnerObj *owner, struct Entity *obj, struct Record *rec, u32 *cmds)
@@ -318,7 +333,131 @@ u32 set_quad_coords(void *unused0, struct Entity *entity, void *unused2, u32 *cm
 
 ASM_FUNC("asm/code_080EDB40/set_entity_field.s", void set_entity_field(void))
 
-ASM_FUNC("asm/code_080EDB40/set_box_fields.s", void set_box_fields(void))
+u32 set_box_fields(void *unused0, struct Entity *entity, void *unused2, u32 *cmds)
+{
+    struct Entity *target;
+    u8 *base;
+    u8 *hi;
+    u32 *p = cmds;
+    u32 v;
+    u32 w;
+
+    if (*p++ != 0)
+        target = entity->link344;
+    else
+        target = entity;
+    base = (u8 *)target + 0x100;
+    hi = base;
+    switch (*p++)
+    {
+    case 0:
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0x8) = v & 0xF;
+        else
+            *(s16 *)(base + 0x8) = v << 4;
+        p++;
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0xA) = v & 0xF;
+        else
+            *(s16 *)(base + 0xA) = v << 4;
+        p++;
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0xC) = v & 0xF;
+        else
+            *(s16 *)(base + 0xC) = v << 4;
+        v = p[1];
+        if (v & 0x40)
+            *(u16 *)(base + 0xE) = v & 0xF;
+        else
+            *(s16 *)(base + 0xE) = v << 4;
+        break;
+    case 1:
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0x0) = (v & 0xF) << 4;
+        else
+            *(u16 *)(base + 0x0) = v << 8;
+        p++;
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0x2) = (v & 0xF) << 4;
+        else
+            *(u16 *)(base + 0x2) = v << 8;
+        p++;
+        v = *p;
+        if (v & 0x40)
+            *(u16 *)(base + 0x4) = (v & 0xF) << 4;
+        else
+            *(u16 *)(base + 0x4) = v << 8;
+        v = p[1];
+        if (v & 0x40)
+            *(u16 *)(base + 0x6) = (v & 0xF) << 4;
+        else
+            *(u16 *)(base + 0x6) = v << 8;
+        break;
+    case 2:
+        *(u16 *)(base + 0x28) = *p++;
+        *(u16 *)(base + 0x2A) = *p++;
+        *(u16 *)(base + 0x2C) = *p++;
+        *(u16 *)(base + 0x2E) = *p;
+        break;
+    case 3:
+        p[0] <<= 4;
+        p[1] <<= 4;
+        p[2] <<= 4;
+        p[3] <<= 4;
+        /* fall through */
+    case 4:
+        *(u16 *)(base + 0x20) = *p++;
+        *(u16 *)(base + 0x22) = *p++;
+        *(u16 *)(base + 0x24) = *p++;
+        *(u16 *)(base + 0x26) = *p;
+        break;
+    case 5:
+        *(u16 *)(base + 0x10) = *p++;
+        *(u16 *)(base + 0x12) = *p++;
+        *(u16 *)(base + 0x14) = *p++;
+        *(u16 *)(base + 0x16) = *p;
+        break;
+    case 6:
+        *(u16 *)(base + 0x18) = *p++;
+        *(u16 *)(base + 0x1A) = *p++;
+        *(u16 *)(base + 0x1C) = *p++;
+        *(u16 *)(base + 0x1E) = *p;
+        break;
+    case 7:
+        *(u16 *)(hi + 0x3E) = *p++;
+        v = *p++;
+        *(u16 *)(hi + 0x40) = v;
+        w = *p++;
+        *(u16 *)(hi + 0x42) = w;
+        v = *p;
+        *(u16 *)(hi + 0x44) = v;
+        break;
+    case 8:
+        *(u16 *)(hi + 0x36) = *p++;
+        *(u16 *)(hi + 0x38) = *p++;
+        *(u16 *)(hi + 0x3A) = *p++;
+        *(u16 *)(hi + 0x3C) = *p;
+        break;
+    case 9:
+        *(u16 *)(base + 0x8) = *p++;
+        *(u16 *)(base + 0xA) = *p++;
+        *(u16 *)(base + 0xC) = *p++;
+        *(u16 *)(base + 0xE) = *p;
+        break;
+    case 10:
+        *(u16 *)(base + 0x0) = *p++;
+        *(u16 *)(base + 0x2) = *p++;
+        *(u16 *)(base + 0x4) = *p++;
+        *(u16 *)(base + 0x6) = *p;
+        break;
+    }
+    return 1;
+}
 
 u32 set_entity_mode(void *unused0, struct Entity *entity, void *unused2, u32 *cmds)
 {
