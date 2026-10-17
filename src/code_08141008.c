@@ -123,18 +123,18 @@ void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_switch_to_free_partner(void);
 void obj_set_cell_coord(struct Actor *ent, u32 cell, u32 arg);
 void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **out);
-void enemy_move_to_partner_3d(void);
+void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_move_home_3d(void);
-void enemy_state_run_move(void);
+void enemy_state_run_move(struct Owner *owner, struct Actor *ent);
 void enemy_wait_sprite_timer(void);
-void enemy_turn_to_partner(void);
+void enemy_turn_to_partner(struct Owner *owner, struct Actor *ent, void **out);
 u8 z_approach(struct Actor *ent);
 void enemy_rand_setup(struct Actor *ent);
-void enemy_partner_walk_step(void);
+void enemy_partner_walk_step(struct Owner *owner, struct Actor *ent, void **out);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void sprite_step_e6a0(void *spr);
 void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out);
-void enemy_prepare_move_to_partner(void);
+void enemy_prepare_move_to_partner(struct Owner *owner, struct Actor *ent, void **out);
 void obj_set_sprite_link(struct Actor *ent, u32 zero);
 void obj_set_active(struct Actor *ent, u32 zero);
 void start_move_to(struct Actor *ent, s32 x, s32 y, s32 speed, u8 zero);
@@ -152,7 +152,7 @@ ASM_FUNC("asm/code_08141008/enemy_approach_partner.s", void enemy_approach_partn
 
 ASM_FUNC("asm/code_08141008/enemy_init_group_random.s", void enemy_init_group_random(void))
 
-ASM_FUNC("asm/code_08141008/enemy_state_run_move.s", void enemy_state_run_move(void))
+ASM_FUNC("asm/code_08141008/enemy_state_run_move.s", void enemy_state_run_move(struct Owner *owner, struct Actor *ent))
 
 void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out)
 {
@@ -176,9 +176,40 @@ void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out)
 
 ASM_FUNC("asm/code_08141008/enemy_switch_to_free_partner.s", void enemy_switch_to_free_partner(void))
 
-ASM_FUNC("asm/code_08141008/enemy_step_or_bump_update.s", void enemy_step_or_bump_update(void))
+void enemy_step_or_bump_update(struct Owner *owner, struct Actor *ent)
+{
+    struct Actor *e = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[ent->timer];
+    u8 *sensor = ent->sensor;
+    s16 box[8];
+    s32 nx = e->posX + e->vx;
+    s32 ny = e->posY + e->vy;
+    u8 i;
 
-ASM_FUNC("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare_move_to_partner(void))
+    if (e->unk2DE != 0)
+    {
+        for (i = 0; i < sensor[1]; i++)
+        {
+            obj_box_to_stack(box, ent, 0x22, i * 8 + 2);
+            if ((e->posX < box[0] * 0x100 || e->posX > box[1] * 0x100 || e->posY < box[3] * 0x100 || e->posY > box[2] * 0x100)
+                && (nx >= box[0] * 0x100 && nx <= box[1] * 0x100 && ny >= box[3] * 0x100 && ny <= box[2] * 0x100))
+            {
+                e->posX -= e->vx;
+                e->posY -= e->vy;
+                e->unk2DE = 0;
+            }
+        }
+    }
+    step_pos_xy_plain(e);
+    if (z_approach(e) == 0)
+    {
+        *(u8 *)&e->flags20D |= 0x40;
+        *(s8 *)&e->flags20E &= -5;
+        obj_set_cell_coord(e, 0, 0);
+        enemy_rand_setup(ent);
+    }
+}
+
+ASM_FUNC("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare_move_to_partner(struct Owner *owner, struct Actor *ent, void **out))
 
 ASM_FUNC("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_run(void))
 
@@ -265,7 +296,7 @@ void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out)
     out[0] = enemy_move_to_partner_3d;
 }
 
-ASM_FUNC("asm/code_08141008/enemy_move_to_partner_3d.s", void enemy_move_to_partner_3d(void))
+ASM_FUNC("asm/code_08141008/enemy_move_to_partner_3d.s", void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out))
 
 NONMATCH("asm/code_08141008/enemy_collide_random_kick.s", void enemy_collide_random_kick(struct Owner *owner, struct Actor *ent, void **out))
 {
@@ -352,8 +383,8 @@ void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **
     out[3] = enemy_collide_random_kick;
 }
 
-ASM_FUNC("asm/code_08141008/enemy_turn_to_partner.s", void enemy_turn_to_partner(void))
+ASM_FUNC("asm/code_08141008/enemy_turn_to_partner.s", void enemy_turn_to_partner(struct Owner *owner, struct Actor *ent, void **out))
 
 ASM_FUNC("asm/code_08141008/enemy_start_partner_walk.s", void enemy_start_partner_walk(void))
 
-ASM_FUNC("asm/code_08141008/enemy_partner_walk_step.s", void enemy_partner_walk_step(void))
+ASM_FUNC("asm/code_08141008/enemy_partner_walk_step.s", void enemy_partner_walk_step(struct Owner *owner, struct Actor *ent, void **out))
