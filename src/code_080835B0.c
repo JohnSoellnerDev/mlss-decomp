@@ -11,7 +11,9 @@ struct PartObj
     u8 filler0C[0x11 - 0x0C];
     u8 flags11;
     u8 flags12;
-    u8 filler13[0x18 - 0x13];
+    u8 filler13[0x14 - 0x13];
+    u16 unk14;
+    u8 filler16[0x18 - 0x16];
     const u8 *descriptor;
     u8 filler1C[0x1F - 0x1C];
     u8 unk1F;
@@ -51,7 +53,8 @@ struct ActiveMgr
 {
     u8 filler0;
     u8 count;
-    u8 filler2[0x26 - 2];
+    u8 filler2[0x24 - 2];
+    u16 unk24;
     u16 unk26;
     u8 filler28[0x30 - 0x28];
     struct PartObj *head;
@@ -64,11 +67,30 @@ extern const u8 gMapObjDescriptor[];
 extern u8 *gWorkBuf;
 extern u8 *gUnk_03000FD8;
 extern u8 gUnk_02000420[];
+extern const u8 gUnk_083BA8A0[];
+extern const u8 gUnk_083BA8AC[];
+u32 table_085213b8(u32 index);
 void obj_setup_map_object(struct PartObj *obj, u32 prio, u32 arg, u32 cfg, s32 a, s32 b, u32 ptr);
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
 void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y);
+
+struct PoseBits11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 hi1 : 1;
+};
+
+struct PoseBits12
+{
+    u8 b0 : 1;
+    u8 mid : 2;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 hi3 : 3;
+};
 
 struct PartObj *create_map_object(struct PartObj *obj, u8 prio, u32 arg, u8 cfg, s16 a, s16 b, u32 ptr)
 {
@@ -149,65 +171,83 @@ void apply_offset_row(struct PartObj *obj, u32 row)
     }
 }
 
-NONMATCH("asm/code_080835B0/state_bits.s", s32 state_bits(struct PartObj *obj, s32 kind))
+s32 state_bits(struct PartObj *obj, s32 kind)
 {
     s32 byte = obj->unkF0[0x1D];
 
-    if (kind == 1)
+    switch (kind)
     {
-        return (byte >> 4) & 3;
-    }
-    if (kind > 1)
-    {
-        if (kind == 2)
-        {
-            return (byte >> 2) & 3;
-        }
-        return -1;
-    }
-    if (kind == 0)
-    {
+    case 0:
         return (u32)byte >> 6;
+    case 1:
+        return (byte >> 4) & 3;
+    case 2:
+        return (byte >> 2) & 3;
     }
     return -1;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080835B0/measure_text.s", void measure_text(void))
-
-NONMATCH("asm/code_080835B0/to_bcd.s", s32 to_bcd(s32 value))
+s32 measure_text(u32 index, const u8 *str, s32 spacing)
 {
-    s32 rest = value;
+    u32 *table;
+    s32 total;
+    s32 c;
+
+    total = 0;
+    table = *(u32 **)table_085213b8(index);
+    for (;;)
+    {
+        c = *str++;
+        if (c == 0xFF)
+        {
+            str++;
+            continue;
+        }
+        if (c > 0xFB)
+        {
+            s32 font = 0xFF - c;
+            u32 ch = *str;
+            u32 v = ((table + font)[(ch >> 3) + 1] >> ((ch & 7) << 2)) & 0xF;
+            s32 w = spacing + 1;
+
+            total += v + w;
+        }
+        else if (c != 0)
+        {
+            u32 v = (table[c / 8 + 1] >> ((c & 7) << 2)) & 0xF;
+            s32 w = spacing + 1;
+
+            total += v + w;
+        }
+        else
+        {
+            return total;
+        }
+    }
+}
+
+s32 to_bcd(s32 value)
+{
     s32 digits = 1;
-    s32 place;
+    s32 place = 10;
     s32 bcd;
     s32 digit;
 
-    place = 10;
-    if (rest > 9)
+    while (place - 1 < value)
     {
-        do
-        {
-            digits++;
-            place = place * 10;
-        } while (place - 1 < rest);
+        digits++;
+        place *= 10;
     }
     bcd = 0;
-    digits--;
-    if (digits != -1)
+    while (--digits != -1)
     {
-        do
-        {
-            rest = rest * 10;
-            digit = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(rest, place);
-            rest -= digit * place;
-            bcd = (bcd << 4) | digit;
-            digits--;
-        } while (digits != -1);
+        value *= 10;
+        digit = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(value, place);
+        value -= digit * place;
+        bcd = (bcd << 4) | digit;
     }
     return bcd;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080835B0/unknown_code_08084840.s", void unknown_code_08084840(void))
 
@@ -326,7 +366,10 @@ void sub_08084A8C(struct PartObj *node)
     gUnk_03000D74->tail = node;
 }
 
-NONMATCH("asm/code_080835B0/list_push_active.s", void list_push_active(struct PartObj *node))
+extern const u8 gUnk_083BA8A0[];
+extern const u8 gUnk_083BA8AC[];
+u32 table_085213b8(u32 index);
+void list_push_active(struct PartObj *node)
 {
     struct PartObj *head;
 
@@ -338,24 +381,23 @@ NONMATCH("asm/code_080835B0/list_push_active.s", void list_push_active(struct Pa
     {
         return;
     }
-    head = gUnk_03000D74->head;
-    if (node == head)
+    if (node == gUnk_03000D74->head)
     {
         return;
     }
-    if (head == 0)
+    head = gUnk_03000D74->head;
+    if (head != 0)
     {
-        gUnk_03000D74->tail = node;
+        head->prev = node;
     }
     else
     {
-        head->prev = node;
+        gUnk_03000D74->tail = node;
     }
     node->next = head;
     gUnk_03000D74->count++;
     gUnk_03000D74->head = node;
 }
-END_NONMATCH
 
 void list_remove_active(struct PartObj *node)
 {
