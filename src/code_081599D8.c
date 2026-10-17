@@ -114,14 +114,21 @@ struct ClassObj
 
 struct CamObj
 {
-    u8 filler0[0x508];
+    u8 filler0[0x500];
+    s32 unk500;
+    s32 unk504;
     s32 unk508;
     s32 unk50C;
-    u8 filler510[4];
+    s16 unk510;
+    u8 filler512[2];
     u16 unk514;
     u8 filler516[2];
     u16 unk518;
-    u8 filler51A[0xA];
+    u8 filler51A[2];
+    s16 unk51C;
+    u8 filler51E[2];
+    u16 unk520;
+    u8 filler522[2];
     void *unk524;
     u16 unk528;
     u8 filler52A[2];
@@ -129,6 +136,7 @@ struct CamObj
     s32 unk530;
     s32 unk534;
     s32 unk538;
+    s32 unk53C;
 };
 
 extern const u8 gClassE400[];
@@ -149,6 +157,7 @@ void obj_run_callbacks(void);
 void obj_free_tiles(void *p, u32 n);
 extern u16 gUnk_02000004;
 extern void *gUnk_0300101C;
+extern u8 *gUnk_03001020;
 extern const u8 gClassE420[];
 void obj_reset_e400(void *obj);
 void cam_build_line_table(struct CamObj *cam, struct Pair *arg);
@@ -176,6 +185,13 @@ struct NewObj
 {
     u8 filler0[4];
     const struct SceneVt *unk04;
+};
+
+struct LineTables
+{
+    u32 unk0;
+    u16 unk4[0xE4];
+    u16 unk1CC[0xE4];
 };
 
 extern struct KeyState gUnk_0300034C;
@@ -555,11 +571,112 @@ struct SceneObj *sub_08159F18(struct GameVars *game, s32 kind)
     return 0;
 }
 
-ASM_FUNC("asm/code_081599D8/sub_08159F78.s", void sub_08159F78(void))
+NONMATCH("asm/code_081599D8/sub_08159F78.s", void *sub_08159F78(struct GameVars *game))
+{
+    void **p;
+    s32 i;
+    s32 slot;
 
-ASM_FUNC("asm/code_081599D8/pool_first_free_slot.s", void pool_first_free_slot(void))
+    for (i = 0, p = game->unk1898; i <= 0xFF; i += 8)
+    {
+        if (p[0] == 0)
+            goto store;
+        slot = i + 1;
+        if (p[1] == 0)
+            goto found;
+        slot = i + 2;
+        if (p[2] == 0)
+            goto found;
+        slot = i + 3;
+        if (p[3] == 0)
+            goto found;
+        slot = i + 4;
+        if (p[4] == 0)
+            goto found;
+        slot = i + 5;
+        if (p[5] == 0)
+            goto found;
+        slot = i + 6;
+        if (p[6] == 0)
+            goto found;
+        slot = i + 7;
+        if (p[7] == 0)
+        {
+found:
+            i = slot;
+            goto store;
+        }
+        p += 8;
+    }
+    slot = -1;
+    i = slot;
+store:
+    return game->unk1898[i] = obj_create(game);
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_081599D8/sub_0815A054.s", void sub_0815A054(void))
+NONMATCH("asm/code_081599D8/pool_first_free_slot.s", s32 pool_first_free_slot(struct GameVars *game))
+{
+    struct SceneObj **p;
+    s32 slot;
+    struct SceneObj *obj;
+    s32 i;
+
+    i = 0;
+    p = (struct SceneObj **)game->unk1898;
+    do
+    {
+        obj = p[0];
+        if (obj == 0)
+            return i;
+        slot = i + 1;
+        obj = p[1];
+        if (obj == 0)
+            goto found;
+        slot = i + 2;
+        obj = p[2];
+        if (obj == 0)
+            goto found;
+        slot = i + 3;
+        obj = p[3];
+        if (obj == 0)
+            goto found;
+        slot = i + 4;
+        obj = p[4];
+        if (obj == 0)
+            goto found;
+        slot = i + 5;
+        obj = p[5];
+        if (obj == 0)
+            goto found;
+        slot = i + 6;
+        obj = p[6];
+        if (obj == 0)
+            goto found;
+        slot = i + 7;
+        obj = p[7];
+        if (obj != 0)
+            goto next;
+    found:
+        return slot;
+    next:
+        p += 8;
+        i += 8;
+    } while (i <= 0xFF);
+    return -1;
+}
+END_NONMATCH
+
+void sub_0815A054(struct GameVars *game)
+{
+    struct Pair pos;
+    s32 *p;
+    pos = *(struct Pair *)&game->unk1C98->unk04;
+    p = &pos.unk00;
+    p[0] -= game->unk1CB8;
+    p[1] -= game->unk1CBC;
+    obj_place_on_screen(game->unk1CB4, p);
+}
 
 void transition_end_check(struct GameVars *game)
 {
@@ -573,7 +690,17 @@ void transition_end_check(struct GameVars *game)
     }
 }
 
-ASM_FUNC("asm/code_081599D8/irq_hblank_line.s", void irq_hblank_line(void))
+void irq_hblank_line(void)
+{
+    u16 scan = *(vu16 *)0x04000006;
+    *(vu16 *)0x04000018 = 0;
+    *(vu16 *)0x0400001A = 0x80 - scan;
+    *(vu16 *)0x04000040 = ((struct LineTables *)gUnk_03001014)->unk4[scan];
+    if ((gGamePtr->unk1CC4 & 4) == 0)
+    {
+        *(vu16 *)0x05000000 = ((struct LineTables *)gUnk_03001014)->unk1CC[scan];
+    }
+}
 
 void irq_copy_tilemaps(void)
 {
@@ -701,11 +828,72 @@ struct ClassObj *obj_init_class_df60(struct ClassObj *obj)
 
 ASM_FUNC("asm/code_081599D8/obj_init_ext_fields.s", void obj_init_ext_fields(void))
 
-ASM_FUNC("asm/code_081599D8/cam_pan_by_keys.s", void cam_pan_by_keys(struct CamObj *cam))
+void cam_pan_by_keys(struct CamObj *cam)
+{
+    if (gUnk_0300034C.held & 0x10)
+        cam->unk508 += 0x400;
+    if (gUnk_0300034C.held & 0x20)
+        cam->unk508 -= 0x400;
+    if (gUnk_0300034C.held & 0x80)
+        cam->unk50C += 0x400;
+    if (gUnk_0300034C.held & 0x40)
+        cam->unk50C -= 0x400;
+}
 
 ASM_FUNC("asm/code_081599D8/cam_scroll_anim.s", void cam_scroll_anim(void))
 
-ASM_FUNC("asm/code_081599D8/cam_follow_target.s", void cam_follow_target(void))
+void cam_follow_target(struct CamObj *cam, struct Pair *target)
+{
+    s32 x = cam->unk508 + target->unk00;
+    s32 y = cam->unk50C + target->unk04;
+    u16 uVar1;
+    s32 sVar1;
+    s32 t;
+    s32 c;
+
+    if (x > 0xF000)
+    {
+        cam->unk508 = 0xF000 - target->unk00;
+    }
+    else if (x < 0)
+    {
+        cam->unk508 = -target->unk00;
+    }
+    if (y > 0xA000)
+    {
+        cam->unk50C = 0xA000 - target->unk04;
+    }
+    else if (y < 0)
+    {
+        cam->unk50C = -target->unk04;
+    }
+    uVar1 = cam->unk518;
+    if ((s16)cam->unk518 > 0)
+    {
+        t = uVar1 + 0xC;
+        cam->unk518 = t;
+        if ((s16)t > 0xFF)
+        {
+            cam->unk518 = 0;
+        }
+        c = gCosineTable[*(u8 *)&cam->unk518];
+        if (c < 0)
+        {
+            c += 0x3F;
+        }
+        sVar1 = (c >> 6) * 3;
+        cam->unk51C = sVar1;
+        cam->unk514 = sVar1;
+        cam->unk508 += cam->unk510;
+        cam->unk50C += (s16)cam->unk514;
+    }
+    cam->unk500 = -(target->unk00 + cam->unk508);
+    cam->unk504 = -(target->unk04 + cam->unk50C);
+    if (REG_VCOUNT > 0x9F)
+    {
+        cam_build_line_table(cam, target);
+    }
+}
 
 ASM_FUNC("asm/code_081599D8/cam_build_line_table.s", void cam_build_line_table(struct CamObj *cam, struct Pair *arg))
 
@@ -730,7 +918,10 @@ void call_zeroed_arg_block_b(struct CamObj *cam)
     cam_build_line_table(cam, &block);
 }
 
-ASM_FUNC("asm/code_081599D8/obj_clear_halfword_528_bit0.s", void obj_clear_halfword_528_bit0(void))
+void obj_clear_halfword_528_bit0(struct CamObj *obj)
+{
+    *(s16 *)&obj->unk528 &= ~1;
+}
 
 void cam_enable_scroll(struct CamObj *cam)
 {
@@ -776,6 +967,7 @@ void cam_free(struct CamObj *cam, u32 flags)
 
 ASM_FUNC("asm/code_081599D8/bg_update_wave.s", void bg_update_wave(void))
 
+extern u8 *gUnk_03001020;
 ASM_FUNC("asm/code_081599D8/irq_hblank_fx_bg.s", void irq_hblank_fx_bg(void))
 
 ASM_FUNC("asm/code_081599D8/irq_hblank_fx_blend.s", void irq_hblank_fx_blend(void))
