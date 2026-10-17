@@ -9,15 +9,20 @@ struct Sprite
     u16 unkE;
     u8 filler10[0x12 - 0x10];
     u8 flags;
-    u8 filler13[0x20 - 0x13];
+    u8 filler13[0x1F - 0x13];
+    u8 bits1F;
     u8 frame;
     u8 action;
 };
+
+struct Owner;
 
 struct DisplayEntry
 {
     u8 filler0[4];
     u32 unk4;
+    u8 filler8[4];
+    struct Owner *owner;
 };
 
 struct Hero
@@ -51,6 +56,12 @@ struct Task
     u16 unk12;
     u16 unk14;
     u16 unk16;
+};
+
+struct TaskSprite
+{
+    u8 filler0[8];
+    struct Sprite *sprite8;
 };
 
 struct Widget
@@ -116,9 +127,12 @@ struct World
 {
     u8 filler0[0x48];
     void *taskList48;
-    u8 filler4C[0x24C - 0x4C];
+    u8 filler4C[0x7C - 0x4C];
+    u32 unk7C;
+    u8 filler80[0x24C - 0x80];
     void *focus24C;
-    u8 filler250[0x278 - 0x250];
+    void *mapSrc250;
+    u8 filler254[0x278 - 0x254];
     struct Owner *obj278;
     u8 filler27C[0x342 - 0x27C];
     u8 pose342;
@@ -169,10 +183,11 @@ void draw_digits_c0_p11(s32 a, s32 b, s32 c, s32 d);
 struct Sprite *spawn_obj_by_id(s32 id, u32 a, u32 b, u32 c);
 void sprite_entry_update(void *obj);
 
+void state_tally_hero_stats(struct Owner *owner);
 ASM_FUNC("asm/code_081041E4/state_figure_land.s", void state_figure_land(void))
 
 
-ASM_FUNC("asm/code_081041E4/state_tally_hero_stats.s", void state_tally_hero_stats(void))
+ASM_FUNC("asm/code_081041E4/state_tally_hero_stats.s", void state_tally_hero_stats(struct Owner *owner))
 
 void state_slide_back(struct Owner *owner)
 {
@@ -263,7 +278,45 @@ void state_show_hero_panel(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_081041E4/draw_digit_cycle.s", u32 draw_digit_cycle(struct Owner *owner, s32 n))
+u32 draw_digit_cycle(struct Owner *owner, s32 n)
+{
+    u32 cycle;
+    s32 digit;
+    u32 bcd;
+    u32 scaled;
+    u32 rowY;
+    u8 *base;
+
+    cycle = owner->timer & 0x7FF;
+    digit = owner->timer >> 11;
+    if (cycle == 0)
+    {
+        digit++;
+        if (digit == 10)
+        {
+            digit = 0;
+        }
+        base = gWorkBuf + 0x8E34;
+        owner->index = to_bcd(base[digit]);
+    }
+    cycle++;
+    if (cycle == n)
+    {
+        cycle = 0;
+    }
+    if (digit != 0)
+    {
+        bcd = to_bcd(*(gWorkBuf + digit + 0x8E33));
+    }
+    else
+    {
+        bcd = to_bcd(*(gWorkBuf + 0x8E3D));
+    }
+    rowY = gUnk_03000FD8->pose342 * 0x10 + 0x28;
+    scaled = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(cycle << 6, n);
+    draw_number_rotated(owner->index, bcd, number_right_edge(owner->index, 0xB8), rowY, scaled);
+    return cycle | digit << 11;
+}
 
 void state_digit_input_wait(struct Owner *owner)
 {
