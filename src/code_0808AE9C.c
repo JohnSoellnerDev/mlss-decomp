@@ -72,6 +72,12 @@ struct ActionBits
     u8 unk3 : 5;
 };
 
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+
 struct Counter
 {
     u8 filler0[0x7];
@@ -190,8 +196,11 @@ void wait_then_remove_part(struct Actor *obj);
 void settle_aim_then_finish(struct Actor *obj);
 void settle_aim_then_remove(struct Actor *obj);
 void pose_update_if_visible_e(struct Actor *obj);
+void *sprite_node_alloc(s32 x, s32 y, s32 h);
+void walk_then_spawn_home(struct Actor *obj);
 void place_effect_and_remove(struct Actor *obj);
 void pose_update_if_visible_b(struct Actor *obj);
+void part_landing_step(struct Actor *obj);
 void pose_update_if_visible_c(struct Actor *obj);
 void pose_update_if_visible_d(struct Actor *obj);
 extern u8 gUnk_0300034C[];
@@ -200,11 +209,125 @@ void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void sprite_node_take_link(struct Actor *obj);
 void arrive_when_timer_done(struct Actor *obj);
 
-ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite.s", void spawn_child_4068_sprite(void))
+void spawn_child_4068_sprite(struct Actor *obj)
+{
+    struct Actor *child;
+    struct Actor *owner;
+    s32 x;
+    s32 y;
+    s32 h;
 
-ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite_b.s", void spawn_child_4068_sprite_b(void))
+    if (obj->pose->visible)
+    {
+        sprite_set_action(obj, 5, 0, 0);
+        obj->state = pose_update_if_visible_e;
+        set_slot_value(0x85, -1);
+        x = obj->x / 0x100;
+        y = obj->y / 0x100;
+        h = obj->h / 0x100;
+        owner = obj->owner;
+        child = obj_spawn(obj->data, 0x4068, x - 0xC, y, h + 0x32, 1, 1);
+        effect_spawn_at(0xC52, x, y, h, obj);
+        obj->child = child;
+        child->listSlot = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        child->timer = obj->timer;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->buttons = obj->buttons;
+        child->step = 0;
+        child->targetX = owner->data->x - 0x2000;
+        child->targetY = owner->data->y - 0x400;
+        child->targetH = owner->data->h + 0x1000;
+        ((struct Flags79Bits *)&child->flags79)->rebuild = 1;
+        child->motionSpeed = 0x400;
+        child->motionStart = 0;
+        start_motion(child);
+        child->anim = obj->anim;
+        obj_list_push_arg(child, 0);
+        child->state = place_effect_and_remove;
+    }
+}
 
-ASM_FUNC("asm/code_0808AE9C/spawn_child_4068_sprite_c.s", void spawn_child_4068_sprite_c(void))
+void spawn_child_4068_sprite_b(struct Actor *obj)
+{
+    struct Actor *child;
+    struct Actor *owner;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    if (obj->pose->visible)
+    {
+        sprite_set_action(obj, 9, 0, 0);
+        obj->state = pose_update_if_visible_d;
+        set_slot_value(0x85, -1);
+        x = obj->x / 0x100;
+        y = obj->y / 0x100;
+        h = obj->h / 0x100;
+        owner = obj->owner;
+        child = obj_spawn(obj->data, 0x4068, x - 0xA, y, h + 0x28, 1, 1);
+        effect_spawn_at(0xC52, x, y, h, obj);
+        obj->child = child;
+        child->listSlot = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        child->timer = obj->timer;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->buttons = obj->buttons;
+        child->step = 0;
+        child->targetX = owner->data->x - 0x2000;
+        child->targetY = owner->data->y + 0x400;
+        child->targetH = owner->data->h + 0x1200;
+        ((struct Flags79Bits *)&child->flags79)->rebuild = 1;
+        child->motionSpeed = 0x400;
+        child->motionStart = 0;
+        start_motion(child);
+        child->anim = obj->anim;
+        obj_list_push_arg(child, 0);
+        child->state = place_effect_and_remove;
+    }
+}
+
+void spawn_child_4068_sprite_c(struct Actor *obj)
+{
+    struct Actor *child;
+    struct Actor *owner;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    if (obj->pose->visible)
+    {
+        sprite_set_action(obj, 5, 0, 0);
+        obj->state = pose_update_if_visible_c;
+        set_slot_value(0x85, -1);
+        x = obj->x / 0x100;
+        y = obj->y / 0x100;
+        h = obj->h / 0x100;
+        owner = obj->owner;
+        child = obj_spawn(obj->data, 0x4068, x - 0xC, y, h + 0x32, 1, 1);
+        effect_spawn_at(0xC59, x, y, h, obj);
+        obj->child = child;
+        child->listSlot = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        child->timer = obj->timer;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->buttons = obj->buttons;
+        child->step = 0;
+        child->targetX = owner->data->x + (obj->timer << 8);
+        child->targetY = owner->data->y + (obj->paramA0 << 8);
+        child->targetH = owner->data->h + (obj->paramA4 << 8);
+        ((struct Flags79Bits *)&child->flags79)->rebuild = 1;
+        child->motionSpeed = 0x300;
+        child->motionStart = 0;
+        start_motion(child);
+        child->anim = obj->anim;
+        obj_list_push_arg(child, 0);
+        child->state = place_effect_and_remove;
+    }
+}
 
 void spawn_child_4068_sprite_d(struct Actor *obj)
 {
@@ -250,6 +373,7 @@ void spawn_child_4068_sprite_d(struct Actor *obj)
 
 ASM_FUNC("asm/code_0808AE9C/travel_aim_at_target.s", s32 travel_aim_at_target(struct Actor *obj))
 
+void travel_then_spawn_home(struct Actor *obj);
 ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_traveler.s", void wait_then_spawn_traveler(void))
 
 void travel_then_spawn_home(struct Actor *obj)
@@ -368,9 +492,10 @@ NONMATCH("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(struc
 }
 END_NONMATCH
 
+void part_jump_setup(struct Actor *obj);
 ASM_FUNC("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(void))
 
-ASM_FUNC("asm/code_0808AE9C/part_jump_setup.s", void part_jump_setup(void))
+ASM_FUNC("asm/code_0808AE9C/part_jump_setup.s", void part_jump_setup(struct Actor *obj))
 
 ASM_FUNC("asm/code_0808AE9C/jump_arc_step.s", void jump_arc_step(void))
 
