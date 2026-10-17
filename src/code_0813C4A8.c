@@ -1,5 +1,60 @@
 #include "global.h"
 #include "ram_routines.h"
+struct RomBox
+{
+    s16 left;
+    s16 bottom;
+    s16 right;
+    s16 top;
+};
+struct Obj
+{
+    u8 filler0[0x2];
+    u8 facing;
+    u8 filler3[0xC - 0x3];
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 dz;
+    u8 filler1C[0x24 - 0x1C];
+    u8 sector;
+    u8 filler25[0x28 - 0x25];
+    struct Obj *entA;
+    struct Obj *entB;
+    u8 filler30[0x1B4 - 0x30];
+    struct RomBox *romBox;
+    u8 filler1B8[0x1C0 - 0x1B8];
+    s32 zSpan;
+    u8 filler1C4[0x1CC - 0x1C4];
+    s32 unk1CC;
+    u8 filler1D0[0x200 - 0x1D0];
+    struct Obj *tgtA;
+    struct Obj *tgtB;
+    u8 filler208[0x214 - 0x208];
+    u8 mode;
+    u8 filler215;
+    u8 unk216;
+    u8 filler217[0x23E - 0x217];
+    s16 speed;
+    u8 filler240[0x242 - 0x240];
+    s16 vx;
+    s16 vy;
+    u8 filler246[0x248 - 0x246];
+    s32 zRest;
+    u8 filler24C[0x258 - 0x24C];
+    s32 zVel;
+    u8 filler25C[0x294 - 0x25C];
+    u8 *rec;
+    u8 filler298[0x2C4 - 0x298];
+    s32 zStart;
+    s32 zLimit;
+    u8 filler2CC[0x2D4 - 0x2CC];
+    s32 zTarget;
+    u8 filler2D8[0x2DC - 0x2D8];
+    s16 zSpeed;
+    u16 steps;
+};
+
 
 struct ActorChild
 {
@@ -18,6 +73,18 @@ struct ModeBits
 {
     u8 mode : 3;
     u8 rest : 5;
+};
+
+struct FlagBits
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
 };
 
 struct SubBox
@@ -54,7 +121,8 @@ struct Actor
     s16 *sensor;
     s16 vecX;
     s16 vecY;
-    u8 filler1BC[0x1D6 - 0x1BC];
+    u8 filler1BC[0x1D4 - 0x1BC];
+    u16 timer1D4;
     u8 flags1D6;
     u8 filler1D7[0x214 - 0x1D7];
     u8 mode;
@@ -93,19 +161,19 @@ void setup_random_offset_state(void);
 void run_handler_1a0(s32 arg, u8 *obj);
 void run_handler_1a0_b(s32 arg, u8 *obj);
 void entity_mode_49_noop(void);
-void box_hit_state_d4a5(void);
+void box_hit_state_d4a5(struct Owner *owner, struct Actor *obj);
 u8 advance_move_step(struct Owner *owner, struct Actor *ent);
 void obj_step_toward_target_08138FDC(struct Actor *obj);
 void tick_store(void);
 void obj_state_run_advance(void);
 void child_box_state(void);
-void place_child_by_stage(void);
+void place_child_by_stage(s32 arg, struct Obj *ent, u32 *out);
 u32 mt19937_next(void);
 s32 sub_081DE850(s32 range, u32 seed);
-void active_hit_state(void);
-void box_hit_state_d4ed(void);
+void active_hit_state(struct Owner *owner, struct Actor *ent, void **out);
+void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj);
 void setup_mode4_with_cell(s32 arg, struct Actor *obj, s32 *slot);
-void pick_active_target(void);
+void pick_active_target(struct Owner *owner, struct Actor *obj, void **out);
 u8 boxes_overlap_oriented(s16 *box, struct Actor *ent, void *entry, s32 zAbove, s32 zBelow);
 void setup_mode4_with_index(s32 arg, struct Actor *obj, s32 *slot);
 void run_state_handler(void);
@@ -123,12 +191,41 @@ void obj_pick_move_vector(struct Actor *obj, u32 dir);
 u32 owner_entry(s32 arg, u32 idx);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 u8 point_in_box(s16 *box, void *entry, s32 a, s32 b);
+s8 zone_overlap_code(struct Owner *owner, struct Actor *ent, u32 zero);
+void box_contacts_aim_at_target(void);
+void aim_and_box_state(struct Owner *owner, struct Actor *ent);
+void aim_and_check_overlap(struct Owner *owner, struct Actor *ent);
 
-ASM_FUNC("asm/code_0813C4A8/step_z.s", s32 step_z(struct Actor *obj))
+u32 step_z(struct Obj *obj)
+{
+    if (obj->steps == 0)
+        return 0;
+    obj->dz += obj->zSpeed;
+    obj->steps--;
+    return obj->steps != 0;
+}
 
-ASM_FUNC("asm/code_0813C4A8/start_axis_move.s", void start_axis_move(void))
+void start_axis_move(struct Actor *ent, s32 a, u16 frames, u8 rel)
+{
+    if (rel != 0)
+        a += ent->baseA + ent->baseB;
 
-ASM_FUNC("asm/code_0813C4A8/advance_move.s", s32 advance_move(struct Actor *obj))
+    ent->frames = frames;
+    ent->axisStart = ent->baseA + ent->baseB;
+    ent->axisTarget = a;
+    a -= ent->axisStart;
+    ent->step = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a, frames);
+}
+
+u32 advance_move(struct Obj *obj)
+{
+    if (obj->steps == 0)
+        return 0;
+    obj->x += obj->vx;
+    obj->y += obj->vy;
+    obj->steps--;
+    return obj->steps != 0;
+}
 
 ASM_FUNC("asm/code_0813C4A8/start_move_2d.s", void start_move_2d(void))
 
@@ -183,15 +280,65 @@ s32 widths_overlap_x(struct Actor *a, struct Actor *b)
 
 ASM_FUNC("asm/code_0813C4A8/tile_blocks_move.s", void tile_blocks_move(void))
 
-ASM_FUNC("asm/code_0813C4A8/step_move_set_state_8.s", void step_move_set_state_8(void))
+static inline u8 actor_advance_move(struct Actor *ent)
+{
+    if (ent->frames == 0)
+        return 0;
+    ent->posX += ent->vx;
+    ent->posY += ent->vy;
+    ent->frames--;
+    return ent->frames != 0;
+}
 
-ASM_FUNC("asm/code_0813C4A8/probe_then_move.s", void probe_then_move(void))
+void step_move_set_state_8(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    if (actor_advance_move(ent) == 0)
+        out[0] = out[2];
+}
 
-ASM_FUNC("asm/code_0813C4A8/route_or_move_ad10.s", void route_or_move_ad10(void))
+void probe_then_move(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    if (zone_overlap_code(owner, ent, 0) != -1)
+    {
+        out[0] = (u32)box_contacts_aim_at_target;
+        return;
+    }
 
-ASM_FUNC("asm/code_0813C4A8/route_or_move_ac90.s", void route_or_move_ac90(void))
+    if (actor_advance_move(ent) == 0)
+        out[0] = out[1];
+}
 
-ASM_FUNC("asm/code_0813C4A8/step_move_set_state_4.s", void step_move_set_state_4(void))
+void box_contacts_aim_at_target(void);
+void route_or_move_ad10(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    if (zone_overlap_code(owner, ent, 0) != -1)
+    {
+        out[0] = out[2];
+        return;
+    }
+
+    if (actor_advance_move(ent) == 0)
+        out[0] = out[1];
+}
+
+s8 zone_point_code(struct Owner *owner, struct Actor *ent, u32 zero);
+void route_or_move_ac90(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    if (zone_point_code(owner, ent, 0) != -1)
+    {
+        out[0] = out[2];
+        return;
+    }
+
+    if (actor_advance_move(ent) == 0)
+        out[0] = out[1];
+}
+
+void step_move_set_state_4(struct Owner *owner, struct Actor *ent, u32 *out)
+{
+    if (actor_advance_move(ent) == 0)
+        out[0] = out[1];
+}
 
 void vec3_normalize_fx8(s32 *v, s32 *out)
 {
@@ -332,11 +479,14 @@ void vec2_store(s32 a, s32 b, s32 *out)
     out[1] = b;
 }
 
-ASM_FUNC("asm/code_0813C4A8/active_hit_state.s", void active_hit_state(void))
+ASM_FUNC("asm/code_0813C4A8/active_hit_state.s", void active_hit_state(struct Owner *owner, struct Actor *ent, void **out))
 
-ASM_FUNC("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(void))
+void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out);
+void pair_div256(s32 *dst, s32 *src);
+void pair_shl8(s32 *dst, s32 *src);
+ASM_FUNC("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struct Owner *owner, struct Actor *obj, void **out))
 
-ASM_FUNC("asm/code_0813C4A8/step_toward.s", void step_toward(void))
+ASM_FUNC("asm/code_0813C4A8/step_toward.s", void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out))
 
 void entity_mode_50(s32 unused, struct Actor *obj)
 {
@@ -458,9 +608,33 @@ void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out)
     }
 }
 
-ASM_FUNC("asm/code_0813C4A8/box_hit_state_d4a5.s", void box_hit_state_d4a5(void))
+void box_hit_state_d4a5(struct Owner *owner, struct Actor *obj)
+{
+    void *entry;
+    s16 box[8];
+    u8 idx;
+    struct SubBox *sub;
+    void **handler;
 
-ASM_FUNC("asm/code_0813C4A8/box_hit_state_d4ed.s", void box_hit_state_d4ed(void))
+    handler = (void **)&obj->handler;
+    ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
+    if ((obj->flags1D6 & 1) != 0)
+    {
+        sub = (struct SubBox *)((u8 *)obj + 0x100);
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            entry = *(void **)((u8 *)owner + 0x28 + (idx << 2));
+            box[0] = sub->unk3C;
+            box[1] = sub->unk3E;
+            box[2] = sub->unk3A;
+            box[3] = sub->unk38;
+            if (point_in_box(box, entry, 0x7FFF, 0) != 0)
+                obj->update = (void *)start_state_d405;
+        }
+    }
+}
+
+ASM_FUNC("asm/code_0813C4A8/box_hit_state_d4ed.s", void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj))
 
 void start_state_d405(s32 arg, struct Actor *obj)
 {
@@ -551,11 +725,11 @@ void start_state_c189(s32 arg, struct Actor *obj)
 
 ASM_FUNC("asm/code_0813C4A8/timer_overlap_state.s", void timer_overlap_state(void))
 
-ASM_FUNC("asm/code_0813C4A8/aim_and_check_overlap.s", void aim_and_check_overlap(void))
+ASM_FUNC("asm/code_0813C4A8/aim_and_check_overlap.s", void aim_and_check_overlap(struct Owner *owner, struct Actor *ent))
 
 ASM_FUNC("asm/code_0813C4A8/timer_overlap_state_b.s", void timer_overlap_state_b(void))
 
-ASM_FUNC("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(void))
+ASM_FUNC("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct Owner *owner, struct Actor *ent))
 
 ASM_FUNC("asm/code_0813C4A8/timer_overlap_state_c.s", void timer_overlap_state_c(void))
-ASM_FUNC("asm/code_0813C4A8/place_child_by_stage.s", void place_child_by_stage(void))
+ASM_FUNC("asm/code_0813C4A8/place_child_by_stage.s", void place_child_by_stage(s32 arg, struct Obj *ent, u32 *out))
