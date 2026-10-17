@@ -182,7 +182,43 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
 
-ASM_FUNC("asm/code_080C47AC/hero_a_place_on_partner_offset.s", void hero_a_place_on_partner_offset(void))
+void hero_a_place_on_partner_offset(struct HeroBody *body)
+{
+    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *partner = body->partner;
+    s32 height;
+
+    effect_spawn_at(0x2FE6, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100 + 8, body_a);
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        place_targets(body_a,
+                      (partner->targetX / 0x100) + partner->ofsX - 10,
+                      (partner->targetY / 0x100) + partner->ofsY + 3,
+                      (partner->targetZ / 0x100) + partner->ofsZ - 0x15,
+                      -1);
+        if (partner == (struct HeroBody *)((u8 *)partner->data + 8))
+        {
+            height = partner->ofsZ;
+        }
+        else
+        {
+            find_frame_entry(partner, 0);
+            height = partner->unk47;
+        }
+        height += partner->targetZ / 0x100;
+        height += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x90, (height * height) / 0x40 + 0xc);
+        body_a->height = height;
+        set_motion_offsets(body_a, 0x600);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        sprite_set_action(body_a, 4, 0x2034, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    body_a->timer &= 0xFFF;
+    body->state = hero_a_step_window_c491c;
+}
 
 ASM_FUNC("asm/code_080C47AC/hero_a_step_window_c491c.s", void hero_a_step_window_c491c(struct HeroBody *body))
 
@@ -288,6 +324,54 @@ void hero_pair_place_and_finish_alt3(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080C47AC/hero_a_jitter_place_near_partner.s", void hero_a_jitter_place_near_partner(void))
+void hero_a_jitter_place_near_partner(struct HeroBody *body)
+{
+    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *partner = body->partner;
+    s32 index;
+    s32 jx;
+    s32 jy;
+
+    index = body_a->timer & 0xFFF;
+    if (index <= 3)
+    {
+        hero_a->body.jitterX = gJitterTable1[index * 2];
+        hero_a->body.jitterY = gJitterTable1[(body_a->timer & 0xFFF) * 2 + 1];
+    }
+    else
+    {
+        s8 *range = gJitterRange1;
+
+        if (range[0] < range[2])
+            jx = range[0] + sub_081DE850(range[2] - range[0], mt19937_next());
+        else
+            jx = range[2] + sub_081DE850(range[0] - range[2], mt19937_next());
+        hero_a->body.jitterX = jx;
+
+        if (range[1] < range[3])
+            jy = range[1] + sub_081DE850(range[3] - range[1], mt19937_next());
+        else
+            jy = range[3] + sub_081DE850(range[1] - range[3], mt19937_next());
+        body_a->jitterY = jy;
+    }
+    effect_spawn_at(0x2FE6, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100 + 8, body_a);
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        place_targets(body_a,
+                      (partner->targetX / 0x100) + partner->ofsX - 10,
+                      (partner->targetY / 0x100) + partner->ofsY + 3,
+                      (partner->targetZ / 0x100) + partner->ofsZ - 0x15,
+                      -1);
+        set_motion_start(body_a, 0x600);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        sprite_set_action(body_a, 4, 0x2034, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    body_a->timer = body_a->timer & 0xFFF;
+    body->state = hero_a_jitter_step_5ca4;
+}
 
 ASM_FUNC("asm/code_080C47AC/hero_a_jitter_step_5ca4.s", void hero_a_jitter_step_5ca4(struct HeroBody *body))
