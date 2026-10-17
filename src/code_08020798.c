@@ -16,12 +16,16 @@ struct ObjNode
     u8 filler2A[0x2E - 0x2A];
     u16 rangeStart;
     u16 rangeLen;
-    u8 filler32[0x44 - 0x32];
+    u8 filler32[0x38 - 0x32];
+    void *unk38;
+    u8 filler3C[0x44 - 0x3C];
     u32 block44;
     u32 block48;
-    u8 filler4C[0x54 - 0x4C];
+    u32 block4C;
+    u32 block50;
     s32 unk54;
-    u8 filler58[0x64 - 0x58];
+    s32 unk58;
+    u8 filler5C[0x64 - 0x5C];
     struct ObjNode *prev;
     struct ObjNode *next;
 };
@@ -30,12 +34,20 @@ struct ObjListHead
 {
     u8 filler0;
     u8 count;
-    u8 filler2[6];
+    u8 filler2;
+    u8 unk03;
+    u8 unk04;
+    u8 unk05;
+    u8 unk06;
+    u8 filler07;
     u16 rangeEnd;
-    u8 filler0A[0x2C - 0x0A];
+    u16 unk0A;
+    u8 filler0C[0x2C - 0x0C];
     struct BlockRec *firstBlock;
     struct ObjNode *first;
     struct ObjNode *last;
+    u8 filler38[0x3C - 0x38];
+    void *buf3C;
 };
 
 struct BlockRec
@@ -48,6 +60,28 @@ struct BlockRec
     u16 id;
 };
 
+struct NodeRec
+{
+    u32 unk0;
+    u16 unk4;
+    u16 unk6;
+    u32 key;
+    struct NodeRec *prev;
+    struct NodeRec *next;
+};
+
+struct NodeListHead
+{
+    u8 filler0[0x10];
+    struct NodeRec *first;
+};
+
+struct NodeCopy
+{
+    u32 unk0;
+    u16 unk4;
+};
+
 extern struct ObjListHead gUnk_0203FFB8;
 void heap_free(void *p);
 extern u16 gUnk_0203FFC4[];
@@ -58,14 +92,119 @@ u32 find_obj_1a2c(struct ObjNode *p, u32 mode);
 void release_obj_131c(struct ObjNode *obj);
 void obj_release_blocks(struct ObjNode *obj);
 void release_block(void *node);
+extern const u32 gTableEntryRows[];
+extern u16 **gBankRecordTablePtrs[];
+void *find_list_entry(u32 kind, u8 sub, u16 id);
+void *alloc_list_entry(s32 kind, u32 size, u8 sub, u16 id);
+void decode_e400(void *dst, u16 *src);
 
-ASM_FUNC("asm/code_08020798/iwram_routine_03006c53.s", void iwram_routine_03006c53(void))
+struct NodeCopy *iwram_routine_03006c53(struct NodeRec *node, struct NodeCopy *dst)
+{
+    struct NodeCopy *out = dst;
 
-ASM_FUNC("asm/code_08020798/sort_node_list.s", void sort_node_list(void))
+    while ((node = node->next) != NULL)
+    {
+        if (node->unk6 == 0)
+        {
+            u32 a = node->unk0;
+            u16 b = node->unk4;
 
-ASM_FUNC("asm/code_08020798/init_node_flags.s", void init_node_flags(void))
+            out->unk0 = a;
+            out->unk4 = b;
+            out++;
+        }
+    }
+    return out;
+}
+
+void sort_node_list(struct NodeListHead *list, struct NodeRec *end)
+{
+    struct NodeRec *cur = list->first;
+    struct NodeRec *prev;
+    struct NodeRec *moved;
+    struct NodeRec *before;
+    struct NodeRec *after;
+
+    do
+    {
+        prev = cur->prev;
+        moved = NULL;
+        while (prev->key > cur->key)
+        {
+            before = prev->prev;
+            after = cur->next;
+            before->next = cur;
+            after->prev = prev;
+            cur->prev = before;
+            prev->prev = cur;
+            prev->next = after;
+            cur->next = prev;
+            moved = prev;
+            prev = cur->prev;
+        }
+        if (moved != NULL)
+            cur = moved->next;
+        else
+            cur = cur->next;
+    } while (cur != end);
+}
+
+void init_node_flags(struct NodeRec *node, s32 count)
+{
+    s32 rem;
+    s32 lim;
+    u16 flag;
+    struct NodeRec *q;
+
+    count--;
+    node->key = 0;
+    node++;
+    if (count == 0)
+        return;
+    flag = 1;
+    rem = -count & 3;
+    if (rem == 0)
+        goto loop;
+    lim = 3;
+    if (rem >= lim)
+        goto one;
+    lim = 2;
+    if (rem >= lim)
+        goto two;
+    node->unk6 = flag;
+    count--;
+    node++;
+two:
+    node->unk6 = flag;
+    count--;
+    node++;
+one:
+    node->unk6 = flag;
+    count--;
+    node++;
+    if (count == 0)
+        return;
+loop:
+    do
+    {
+        node[0].unk6 = flag;
+        node[1].unk6 = flag;
+        node[2].unk6 = flag;
+        q = node + 3;
+        q->unk6 = flag;
+        count -= 4;
+        node += 4;
+    } while (count != 0);
+}
 
 ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(void))
+
+extern u8 gUnk_0300034C[];
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u32 gUnk_03000D50;
+extern u8 gUnk_03000D70;
+extern u32 gUnk_03000D58[];
 
 struct RecordSource
 {
@@ -185,7 +324,43 @@ void release_obj_131c(struct ObjNode *obj)
 
 ASM_FUNC("asm/code_08020798/lookup_or_alloc_13b4.s", void lookup_or_alloc_13b4(void))
 
-ASM_FUNC("asm/code_08020798/lookup_or_alloc_14b8.s", void lookup_or_alloc_14b8(void))
+void *lookup_or_alloc_14b8(u32 bank, u32 index, s32 size, u8 flag)
+{
+    u8 *hdr;
+    void *iVar1;
+    u32 uVar2;
+    u32 span;
+
+    if ((index & 0xF000) != 0)
+    {
+        bank = ((s32)index >> 12) - 1;
+        index &= 0xFFF;
+    }
+    uVar2 = (*(u32 *)(gTableEntryRows[bank] + (index << 2)) & 0x7FFFFFF) >> 0x12;
+    hdr = (u8 *)gBankRecordTablePtrs[bank][uVar2];
+    span = hdr[2] | (hdr[3] << 8);
+    if (span == 0)
+    {
+        u8 *base = hdr - (hdr[0] | (hdr[1] << 8));
+        u32 cnt = (hdr[6] & 0x7F) + 1;
+        u32 unit = base[0];
+
+        if (size == -1)
+            size = cnt * unit + 1;
+        size = (size + 3) & 0xFFFFFFFC;
+        iVar1 = find_list_entry(3, bank & 0xFF, uVar2);
+        if (iVar1 == NULL)
+        {
+            iVar1 = alloc_list_entry(3, size, bank & 0xFF, uVar2);
+            decode_e400(iVar1, (u16 *)hdr);
+        }
+        else if (flag == 0)
+            return NULL;
+    }
+    else
+        iVar1 = hdr - span;
+    return iVar1;
+}
 
 ASM_FUNC("asm/code_08020798/find_or_alloc_obj_slots.s", u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g))
 
@@ -230,7 +405,7 @@ void obj_release_blocks(struct ObjNode *obj)
     }
 }
 
-ASM_FUNC("asm/code_08020798/alloc_list_entry.s", void alloc_list_entry(void))
+ASM_FUNC("asm/code_08020798/alloc_list_entry.s", void *alloc_list_entry(s32 kind, u32 size, u8 sub, u16 id))
 
 void release_block(void *node)
 {
@@ -293,7 +468,35 @@ u32 rom_table_ptr(u32 bank, u32 index)
 
 void sprite_update_cd0(struct ObjNode *obj);
 
-ASM_FUNC("asm/code_08020798/obj_queue_update.s", void obj_queue_update(void))
+extern u8 gUnk_0300034C[];
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u32 gUnk_03000D50;
+extern u8 gUnk_03000D70;
+extern u32 gUnk_03000D58[];
+void obj_queue_update(struct ObjNode *obj)
+{
+    struct ObjListHead *list;
+
+    if (obj->flags & 0x20)
+    {
+        if (obj->prev == obj->next)
+        {
+            list = &gUnk_0203FFB8;
+            if (list->first == NULL)
+                list->first = obj;
+            else
+            {
+                obj->next = (*(struct ObjNode *volatile *)&list->last)->next;
+                list->last->next = obj;
+            }
+            obj->prev = list->last;
+            list->last = obj;
+            list->count++;
+        }
+        sprite_update_cd0(obj);
+    }
+}
 
 void obj_release_slots(struct ObjNode *obj)
 {
