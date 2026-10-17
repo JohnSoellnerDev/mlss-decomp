@@ -255,7 +255,64 @@ void hero_a_active_setup(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080BFBF8/hero_b_take_a_position.s", void hero_b_take_a_position(struct HeroBody *body))
+void hero_b_take_a_position(struct HeroBody *body)
+{
+    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroData *data;
+    s32 tx;
+    s32 ty;
+    s32 th;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    step_motion(body_a);
+    body_b->posX = body_a->posX;
+    body_b->posY = body_a->posY;
+    if ((body_a->flags & 0x20) != 0)
+    {
+        set_slot_value(0x2b, -1);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            data = body_a->data;
+            tx = data->targetX;
+            if (tx < 0)
+                tx += 0xFF;
+            x = tx >> 8;
+            ty = data->targetY;
+            if (ty < 0)
+                ty += 0xFF;
+            y = ty >> 8;
+            th = data->targetH;
+            if (th < 0)
+                th += 0xFF;
+            h = th >> 8;
+            place_targets(body_a, x, y, h, -1);
+            th = body_a->data->targetH;
+            if (th < 0)
+                th += 0xFF;
+            body_a->unk92 = (th >> 8) + 0x20;
+            set_motion_offsets(body_a, 0x500);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            body_a->state = 0;
+            start_action_5(body_a);
+        }
+        body = body_b;
+        set_slot_value(0x38, -1);
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+        {
+            sprite_set_action(body, 0x11, 0x2062, 0);
+            body->sprite->flags = ((*(s8 *)&body->sprite->flags) & -7) | 2;
+        }
+        body_b->unk74 = 0;
+        body_b->unk75 = 0;
+        body->state = hero_b_visible_place;
+    }
+}
 
 void hero_b_visible_place(struct HeroBody *body)
 {
