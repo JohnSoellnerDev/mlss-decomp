@@ -255,7 +255,43 @@ void timer_then_target_from_owner(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08072FA0/prepare_slide_timing.s", void prepare_slide_timing(struct ActorObj *obj))
+void prepare_slide_timing(struct ActorObj *obj)
+{
+    s32 dirX;
+    s32 dirY;
+    s32 dist;
+    s32 steps;
+    s32 half;
+    s32 speed;
+
+    sprite_set_action(obj, 2, 0, 0);
+    obj->targetX = obj->part->targetX;
+    obj->targetY = obj->part->targetY;
+    obj->targetH = obj->part->targetH;
+    obj->dx = obj->baseX / 0x100;
+    obj->dy = obj->baseY / 0x100;
+    obj->dh = obj->baseH / 0x100;
+    dirX = obj->targetX - ((s16)obj->dx << 8);
+    dirY = obj->targetY - ((s16)obj->dy << 8);
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dirX * dirX + dirY * dirY);
+    if (dist < 0)
+    {
+        dist += 0x3FF;
+    }
+    steps = dist >> 10;
+    half = steps / 2;
+    speed = 0x3000 / (half * half);
+    if (speed == 1)
+    {
+        speed = 2;
+    }
+    obj->param9C = -speed;
+    obj->paramA0 = steps;
+    obj->paramA4 = dirX;
+    obj->paramA8 = dirY;
+    obj->timer = 0;
+    obj->state = slide_step;
+}
 
 ASM_FUNC("asm/code_08072FA0/slide_step.s", void slide_step(struct ActorObj *obj))
 
