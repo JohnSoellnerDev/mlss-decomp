@@ -6,6 +6,9 @@ struct Sensor
     u8 filler0[0x8];
     s8 flag8;
     s8 kind;
+    u8 filler0A[0x18 - 0xA];
+    u16 unk18;
+    u16 unk1A;
 };
 
 struct Sprite
@@ -42,9 +45,12 @@ struct StateBits
 
 struct Behavior
 {
-    u8 filler0[0x178];
+    u8 filler0[0x158];
+    struct ZoneAnim *anim158;
+    u8 filler15C[0x178 - 0x15C];
     u16 index178;
-    u8 filler17A[0x184 - 0x17A];
+    u16 timer17C;
+    u8 filler17E[0x184 - 0x17E];
     s32 homeX;
     s32 homeY;
 };
@@ -92,7 +98,7 @@ struct CompanionObj
     u8 filler1C0[0x1D0 - 0x1C0];
     u16 index1D0;
     u16 timer;
-    u8 filler1D4[0x1D6 - 0x1D4];
+          u8 filler1D4[0x1D6 - 0x1D4];
     u8 flags1D6;
     u8 filler1D7[0x1DC - 0x1D7];
     s32 homeX;
@@ -127,6 +133,14 @@ struct CompanionObj
     u8 flags352;
 };
 
+struct ZoneAnim
+{
+    u8 filler0[0x1A];
+    s16 unk1A;
+    u16 unk1C;
+    s16 unk1E;
+};
+
 u32 mt19937_next(void);
 u32 sub_081DE850(u32 range, u32 rnd);
 u32 angle_of_vector16(s32 dx, s32 dy);
@@ -152,7 +166,7 @@ void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u3
 void ai_choose_move_target(void);
 void load_anim_tables(struct CompanionObj *obj);
 void init_size_and_pose(struct CompanionObj *obj);
-void companion_chase_tick(void);
+void companion_chase_tick(void *parent, struct CompanionObj *obj);
 void tick_store(void);
 void obj_roll_spawn(void);
 void ai_hold_at_home(void);
@@ -174,8 +188,8 @@ void obj_clear_flags_2b5_c0(void *obj);
 void obj_set_sprite_link(void *obj, u32 v);
 void obj_roll_spawn(void);
 void obj_load_kind_record(void);
-void random_pose(void);
-void entry_switch_handler(void);
+void random_pose(void *owner, struct CompanionObj *obj, u32 *slot);
+void entry_switch_handler(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot);
 u32 entry_within_reach(struct CompanionObj *obj, struct CompanionObj *other);
 
 void obj_enter_ai(void *parent, struct CompanionObj *obj)
@@ -268,6 +282,8 @@ void ai_check_flags_c0(void *parent, struct CompanionObj *obj, u32 *slot)
 
 ASM_FUNC("asm/code_0814DF44/ai_choose_move_target.s", void ai_choose_move_target(void))
 
+void ai_set_anim_by_mode(struct CompanionObj *obj, u8 mode);
+void ai_aim_and_strike(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot);
 ASM_FUNC("asm/code_0814DF44/ai_move_or_return.s", void ai_move_or_return(void))
 
 NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot))
@@ -562,11 +578,35 @@ void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u3
 
 ASM_FUNC("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void))
 
-ASM_FUNC("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void))
+void enter_idle_wait(struct CompanionObj *obj, u32 *slot);
+ASM_FUNC("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
 
-ASM_FUNC("asm/code_0814DF44/entry_switch_handler.s", void entry_switch_handler(void))
+ASM_FUNC("asm/code_0814DF44/entry_switch_handler.s", void entry_switch_handler(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814DF44/random_pose.s", void random_pose(void))
+void random_pose(void *owner, struct CompanionObj *obj, u32 *slot)
+{
+    struct Sprite **sprp;
+    struct Behavior *ai;
+    s16 *tbl;
+
+    ai = (struct Behavior *)((u8 *)obj + 0x58);
+    tbl = obj->tbl;
+    sprp = &obj->sprite;
+    ((struct SpriteFlagBits *)&(*sprp)->flags)->mode = 1;
+    (*sprp)->anim = ((u16 *)tbl)[sub_081DE850(4, mt19937_next()) + 4];
+    switch (obj->variant)
+    {
+    case 0:
+        obj_load_record(*sprp, 4, -1, 0, 0);
+        break;
+    case 1:
+        obj_load_record(*sprp, 5, -1, 0, 0);
+        break;
+    }
+    sprite_step_e6a0(obj->sprite);
+    ai->index178 = sub_081DE850(4, mt19937_next());
+    *slot = (u32)obj_roll_spawn;
+}
 
 ASM_FUNC("asm/code_0814DF44/follow_entry_axis.s", void follow_entry_axis(void))
 
@@ -615,6 +655,26 @@ ASM_FUNC("asm/code_0814DF44/spawn_random_offset.s", void spawn_random_offset(voi
 
 ASM_FUNC("asm/code_0814DF44/box_fx8_div_and_dispatch.s", void box_fx8_div_and_dispatch(void))
 
-ASM_FUNC("asm/code_0814DF44/entry_within_reach.s", u32 entry_within_reach(struct CompanionObj *obj, struct CompanionObj *other))
+u32 entry_within_reach(struct CompanionObj *obj, struct CompanionObj *other)
+{
+    struct Sensor *sensor = obj->sensor;
+
+    if (obj->variant == 0)
+    {
+        if (sensor->kind == 1)
+        {
+            u16 half = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->size278, 2);
+
+            if (obj->x - half <= other->x && obj->x + half >= other->x)
+                return 1;
+        }
+    }
+    else if (obj->variant == 1 && sensor->kind == 1)
+    {
+        if (obj->y >= other->y && obj->y - obj->size27C <= other->y)
+            return 1;
+    }
+    return 0;
+}
 
 ASM_FUNC("asm/code_0814DF44/zone_move_handler.s", void zone_move_handler(void))
