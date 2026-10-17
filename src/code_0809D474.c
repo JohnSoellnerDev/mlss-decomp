@@ -105,10 +105,19 @@ struct SpriteFlagBits
     u8 rest : 4;
 };
 
+struct ModeBits
+{
+    u8 low : 3;
+    u8 mode : 3;
+    u8 high : 2;
+};
+
 struct World
 {
     u8 filler0[0x58];
     u8 *partners[8];
+    u8 filler78[0x24C - 0x78];
+    void *focus24C;
 };
 
 extern struct World *gUnk_03000FD8;
@@ -122,7 +131,9 @@ struct ActorData
     s32 unk20;
     u8 filler24[0x38 - 0x24];
     struct ActorBody *members;
-    u8 filler3C[0x7E - 0x3C];
+    u8 filler3C[0x44 - 0x3C];
+    s32 unk44;
+    u8 filler48[0x7E - 0x48];
     u8 mode7E;
     u8 filler7F[0xB0 - 0x7F];
     s32 childCount;
@@ -322,7 +333,25 @@ ASM_FUNC("asm/code_0809D474/hero_helper_spawn.s", void hero_helper_spawn(struct 
 ASM_FUNC("asm/code_0809D474/hero_pair_link.s", void hero_pair_link(struct ActorBody *body))
 
 ASM_FUNC("asm/code_0809D474/slide_and_settle.s", void slide_and_settle(struct ActorBody *body))
-ASM_FUNC("asm/code_0809D474/lower_height_then_slide.s", void lower_height_then_slide(struct ActorBody *body))
+void lower_height_then_slide(struct ActorBody *body)
+{
+    s32 h;
+    struct ActorData *data;
+
+    h = body->z - 0xCC;
+    if (h < 0)
+        h = 0;
+    data = body->data;
+    body->z = h;
+    data->unk20 = h;
+    if (h == 0)
+    {
+        ((struct ModeBits *)&data->mode7E)->mode = 0;
+        sprite_set_action((struct ActorBody *)((u8 *)body->data + 8), 0, 0, 0);
+        ((struct ModeBits *)&body->data->mode7E)->mode = 1;
+        body->state = slide_and_settle;
+    }
+}
 
 
 void step_then_effect(struct ActorBody *body)
@@ -610,6 +639,7 @@ s32 tick_timer_or_remove(struct ActorBody *body, struct ActorBody *other)
 
 ASM_FUNC("asm/code_0809D474/start_pair_motion.s", void start_pair_motion(struct ActorBody *body))
 
+void arrange_child_or_remove(struct ActorBody *body);
 ASM_FUNC("asm/code_0809D474/approach_heroes_step.s", void approach_heroes_step(struct ActorBody *body))
 
 ASM_FUNC("asm/code_0809D474/arrange_child_nodes.s", void arrange_child_nodes(struct ActorBody *body))
