@@ -13,6 +13,12 @@ struct SpriteObj
     u8 unk12;
 };
 
+struct Bits12Field
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+};
+
 struct Pos16
 {
     u16 x;
@@ -46,6 +52,14 @@ struct ObjClass
     s16 thisOffset38;
     u16 filler3A;
     void (*fn3C)(void *self);
+};
+
+struct ObjKlassA
+{
+    u8 filler0[0x10];
+    s16 thisOffset10;
+    u16 filler12;
+    void (*fn14)(void *self);
 };
 
 struct ClassVt
@@ -366,7 +380,28 @@ void obj_clear_field20(struct TransObj *obj)
     obj->unk20.word = 0;
 }
 
-ASM_FUNC("asm/code_081581B8/obj_add_value.s", void obj_add_value(void))
+void obj_add_value(struct TransObj *obj, s16 value)
+{
+    if (obj->unk1C.word + value < 0)
+    {
+        obj->unk1C.word = 0;
+    }
+    else
+    {
+        obj->unk1C.word = obj->unk1C.word + value;
+    }
+    if (value < 0)
+    {
+        obj->unk24.word = 0x64;
+        obj->unk20.word = 1;
+    }
+    else if (value > 0)
+    {
+        obj->unk24.word = 0x64;
+        obj->unk20.word = 2;
+    }
+    obj_update_digits(obj);
+}
 
 s32 obj_get_value(struct TransObj *obj)
 {
@@ -619,4 +654,38 @@ void set_class_e080(struct TransObj *obj, u32 arg)
     obj_reset(obj, arg);
 }
 
-ASM_FUNC("asm/code_081581B8/obj_mode_update.s", void obj_mode_update(void))
+s32 obj_mode_update(struct TransObj *obj, u32 ctx, u16 speed, u32 unused, u8 mode)
+{
+    const struct ObjClass *klass;
+    struct SpriteObj *sprite;
+
+    switch (mode)
+    {
+    case 3:
+        klass = obj->klass30;
+        klass->fn34((u8 *)obj + klass->thisOffset30);
+        obj->unk24.byte = 1;
+        break;
+    case 4:
+        obj_release_sprite(obj);
+        break;
+    case 0xc:
+        obj->unk24.byte = 2;
+        break;
+    default:
+        switch (obj->unk24.byte)
+        {
+        case 0:
+            break;
+        case 1:
+            obj->unk08.word = (s32)(view_coord(ctx, obj->unk04) << 16) >> 8;
+            break;
+        case 2:
+            obj_set_sprite_kind(obj, 0x3c);
+            sprite = obj_get_sprite(obj);
+            ((struct Bits12Field *)&sprite->unk12)->mode = 1;
+            break;
+        }
+    }
+    return 0;
+}
