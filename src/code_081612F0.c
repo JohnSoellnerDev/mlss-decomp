@@ -1,4 +1,10 @@
 #include "global.h"
+struct ListHeadX
+{
+    u8 filler0[0x3C];
+    u32 head3C;
+};
+
 
 struct TileObj
 {
@@ -34,11 +40,45 @@ struct EffectObj
     s32 unk44;
 };
 
-struct EffectWorld
+struct EffectChildTable
+{
+    u8 filler0[0x10];
+    s16 ofs10;
+    u16 filler12;
+    void *fn14;
+    s16 ofs18;
+    u16 filler1A;
+    void *fn1C;
+    u8 filler20[0x8];
+    s16 ofs28;
+    u16 filler2A;
+    void *fn2C;
+    s16 ofs30;
+    u16 filler32;
+    void *fn34;
+    s16 ofs38;
+    u16 filler3A;
+    void *fn3C;
+    s16 ofs40;
+    u16 filler42;
+    void *fn44;
+};
+
+struct EffectChild
 {
     u8 filler0[0x2C];
+    struct EffectChildTable *table;
+};
+
+struct EffectWorld
+{
+    u8 filler0[0x24];
+    s32 posX;
+    s32 posY;
     struct TileObj *tilesA;
     struct TileObj *tilesB;
+    u8 filler34[0x3C - 0x34];
+    struct EffectChild *child;
 };
 
 struct ObjVtable
@@ -79,9 +119,15 @@ extern u32 gEffectStateClass[];
 extern u32 gUnknownEffectStateTable[];
 extern u32 gFrameUpdateClass[];
 extern u32 gHeapTagListB[];
+extern u32 gHeapTagOtkdB[];
+extern u32 gHeapTagMt7p[];
+extern u16 gUnk_02000050[];
 extern u32 gClassE980[];
 extern u8 gUnk_0300034C[];
 extern struct EffectWorld *gUnk_03001024;
+void init_bg_gfx();
+struct EffectChild *obj_init_ex();
+void effect_dma_callback(void);
 
 
 struct ChildVt4
@@ -102,6 +148,25 @@ struct SpritePos
     s16 y;
 };
 
+struct EffectHead
+{
+    u32 a;
+    u32 b;
+    u32 c;
+};
+
+struct EffectB
+{
+    u16 timer;
+    s16 state;
+    u16 ofsX;
+    u16 ofsY;
+    struct SpritePos *outX;
+    struct SpritePos *outY;
+    s32 posX;
+    s32 posY;
+};
+
 void heap_free_a(void *p);
 void heap_free_b(void *p);
 void task_insert(void *node, u8 kind, void *data);
@@ -114,8 +179,14 @@ void sprite_update_cd0(void *sprite);
 void obj_release_slots(void *sprite);
 void task_remove(void *node, u32 kind);
 s16 view_coord(struct TileObj *obj, s32 pos);
+u32 arc_tan2(s32 x, s32 y);
+u32 obj_classify_row(struct TileObj *obj, u32 index);
+u32 classify_tile_code(void *obj, u32 tile, s32 row);
+struct EffectObj *obj_init_class_ea30(struct EffectObj *obj);
+void *lookup_or_alloc_13b4(s32 a, s32 b, s32 c, s32 d);
+void *find_or_alloc_obj_slots(s32 a, s32 b, s32 c, s32 d, s32 e, void *f, s32 g);
 
-ASM_FUNC("asm/code_081612F0/classify_tile_code.s", void classify_tile_code(void))
+ASM_FUNC("asm/code_081612F0/classify_tile_code.s", u32 classify_tile_code(void *obj, u32 tile, s32 row))
 
 ASM_FUNC("asm/code_081612F0/obj_classify_row.s", u32 obj_classify_row(struct TileObj *obj, u32 index))
 
@@ -198,9 +269,29 @@ s32 tile_step_by_mode(struct TileObj *obj, s32 pos)
     return 0;
 }
 
-ASM_FUNC("asm/code_081612F0/view_angle.s", void view_angle(void))
+u8 view_angle(struct TileObj *obj, s32 x, s32 y)
+{
+    u16 rowX = view_coord(obj, x);
+    s16 rowY = view_coord(obj, y);
+    s32 dx = ((y - x) << 8) >> 16;
+    s32 dy = rowY - (s16)rowX;
 
-ASM_FUNC("asm/code_081612F0/obj_build_tile_table.s", void obj_build_tile_table(void))
+    return ((u32)arc_tan2(dx, (s16)dy) << 16) >> 24;
+}
+
+void obj_build_tile_table(struct TileObj *obj)
+{
+    u32 *table;
+    u32 *entry;
+    s32 i;
+
+    for (i = 0; i < obj->tileWidth; i++)
+    {
+        table = (u32 *)obj->tiles80C;
+        entry = (u32 *)(i * 4 + (u32)table);
+        *entry = obj_classify_row(obj, i);
+    }
+}
 
 ASM_FUNC("asm/code_081612F0/scan_classify_rows_down.s", void scan_classify_rows_down(void))
 
@@ -313,7 +404,29 @@ void obj_task_update(struct EffectObj *obj)
     obj_task_teardown(obj);
 }
 
-ASM_FUNC("asm/code_081612F0/update_objects_frame.s", void update_objects_frame(void))
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u8 gUnk_0203FFB8[];
+void update_obj_list(void);
+void obj_list_pass_0a8c(void);
+void update_objects_frame(void)
+{
+    u8 *base;
+    u32 *oam_slot;
+    struct ListHeadX *list;
+    u32 old;
+
+    base = (u8 *)&gUnk_0300034C;
+    oam_slot = (u32 *)(base + 0x880);
+    old = *oam_slot;
+    update_obj_list();
+    obj_list_pass_0a8c();
+    ((void (*)(u32, u32))gUnk_03000D48)(((struct ListHeadX *)gUnk_0203FFB8)->head3C,
+        ((struct ListHeadX *)gUnk_0203FFB8)->head3C + 0xA14);
+    list = (struct ListHeadX *)gUnk_0203FFB8;
+    old = ((u32 (*)(u32, u32))gUnk_03000D4C)(list->head3C, old);
+    *oam_slot = old;
+}
 
 void effect_release_cls980(struct EffectObj *obj, u32 kind)
 {
@@ -332,9 +445,32 @@ void effect_release_cls980(struct EffectObj *obj, u32 kind)
     task_remove(obj, kind);
 }
 
-ASM_FUNC("asm/code_081612F0/effect_ctor_cls980.s", void effect_ctor_cls980(void))
+NONMATCH("asm/code_081612F0/effect_ctor_cls980.s", struct EffectObj *effect_ctor_cls980(struct EffectObj *obj, u8 kind, void *data))
+{
+    struct EffectObj *child;
+    vu16 *p;
 
-ASM_FUNC("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx(void))
+    task_insert(obj, kind, data);
+    obj->unk18 = (s32)gClassE980;
+    child = heap_alloc2(0x1c, 1, gHeapTagOtkdB, 0);
+    task_insert(child, 8, gHeapTagOtkdB);
+    child->unk18 = (s32)gFrameUpdateClass;
+    obj->unk1C = (s32)child;
+    child->unk14 = (s32)obj;
+    obj->unk20 = (s32)obj_init_class_ea30(heap_alloc2(8, 1, gHeapTagMt7p, 0));
+    obj->unk24 = 0;
+    obj->unk28 = 0;
+    obj->unk40 = 0;
+    obj->unk44 = 0;
+    p = (vu16 *)gUnk_02000050;
+    *p = 0xdf;
+    p += 2;
+    *p = 0x1f;
+    return obj;
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
 
 u32 pos_in_view_box(struct EffectObj *obj, struct EffectObj *other)
 {
@@ -381,7 +517,7 @@ void stub_nop_08161ff8(void)
 {
 }
 
-ASM_FUNC("asm/code_081612F0/obj_init_ex.s", void obj_init_ex(void))
+ASM_FUNC("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex())
 
 void obj_effect_child_method(struct EffectObj *obj)
 {
@@ -461,7 +597,28 @@ void obj_release_both(struct EffectObj *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_081612F0/effect_sub_init_cls9e8.s", void effect_sub_init_cls9e8(void))
+struct EffectObj *effect_sub_init_cls9e8(struct EffectObj *obj, struct EffectHead *src, s32 arg)
+{
+    s32 tmp;
+    s32 x;
+    s32 hi;
+    u16 lo;
+
+    obj->unk2C = (s32)gClassE9e8;
+    obj->unk10 = arg;
+    *(struct EffectHead *)obj = *src;
+    obj->unk0C = 0;
+    obj->unk14 = obj->unk1C = ((s16 *)obj)[0] << 8;
+    obj->unk18 = obj->unk20 = ((s16 *)obj)[1] << 8;
+    obj->unk24 = 0;
+    obj->unk28 = 0;
+    lookup_or_alloc_13b4(0, ((s16 *)obj)[3], -1, 1);
+    x = ((s16 *)obj)[3];
+    hi = (x >> 12) & 0xf;
+    lo = x & 0xfff;
+    find_or_alloc_obj_slots(0, hi << 12 | lo, 0, 0, 0, &tmp, -1);
+    return obj;
+}
 
 ASM_FUNC("asm/code_081612F0/effect_step.s", void effect_step(void))
 
@@ -569,7 +726,40 @@ void obj_set_class_ea88_keep(struct EffectObj *obj)
 
 ASM_FUNC("asm/code_081612F0/effect_init_sprites.s", void effect_init_sprites(void))
 
-ASM_FUNC("asm/code_081612F0/effect_step_a.s", void effect_step_a(void))
+NONMATCH("asm/code_081612F0/effect_step_a.s", s32 effect_step_a(struct EffectObj *obj))
+{
+    s32 delta;
+    s32 pos;
+
+    switch (obj->unk30)
+    {
+    case 0:
+        delta = obj->unk10 + 0x14;
+        obj->unk10 = delta;
+        pos = obj->unk08 + delta;
+        obj->unk08 = pos;
+        if (pos > 0x4FFF)
+        {
+            obj->unk10 = (-delta * 2) / 3;
+            if ((obj->unk10 >> 8) == 0)
+                goto finish;
+        }
+        ((struct SpritePos *)obj->unk00)->x = (obj->unk04 + obj->unk14) >> 8;
+        ((struct SpritePos *)obj->unk00)->y = (obj->unk08 + obj->unk18) >> 8;
+        break;
+    case 1:
+        if (--obj->unk2C <= 0)
+            return 1;
+        break;
+    }
+    return 0;
+
+finish:
+    obj->unk2C = 0x50;
+    obj->unk30 = 1;
+    return 0;
+}
+END_NONMATCH
 
 void obj_release_child_free(struct EffectObj *obj, u32 flags)
 {
@@ -580,7 +770,32 @@ void obj_release_child_free(struct EffectObj *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_081612F0/effect_step_b.s", void effect_step_b(void))
+s32 effect_step_b(struct EffectB *obj)
+{
+    switch (obj->state)
+    {
+    case 0:
+        break;
+    case 1:
+        obj->timer--;
+        if ((s16)obj->timer < 0)
+        {
+            obj->timer = 0x50;
+            obj->state++;
+        }
+        obj->posX += 1000;
+        obj->posY += -1000;
+        obj->outX->x = (obj->posX >> 8) + obj->ofsX;
+        obj->outY->x = (obj->posY >> 8) + obj->ofsY;
+        break;
+    case 2:
+        obj->timer--;
+        if ((s16)obj->timer > 0)
+            return 0;
+        return 1;
+    }
+    return 0;
+}
 
 ASM_FUNC("asm/code_081612F0/effect_init_sprite_pair.s", void effect_init_sprite_pair(void))
 
@@ -598,6 +813,12 @@ void obj_release_two_children(struct EffectObj *obj, u32 flags)
     {
         heap_free_b(obj);
     }
+}
+
+static inline void clear_axis(s32 *p)
+{
+    p[0] = 0;
+    p[2] = 0;
 }
 
 ASM_FUNC("asm/code_081612F0/obj_clear_bounds.s", void obj_clear_bounds(void))
