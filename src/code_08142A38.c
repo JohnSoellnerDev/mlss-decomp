@@ -186,7 +186,7 @@ void enemy_collide_random_kick(void);
 void enemy_partner_in_box_check(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sprite_scale_check(void *owner, struct Actor *ent, void **out);
 void enemy_state_wander_run(void);
-void enemy_contact_check_state(void *owner, struct Actor *ent);
+void enemy_contact_check_state(struct Owner *owner, struct Actor *ent);
 void enemy_run_move(void);
 void load_record_fields(struct Actor *ent, u32 mode);
 void load_hit_box_words(struct Actor *ent, u32 mode);
@@ -209,7 +209,8 @@ void enemy_end_countdown(void);
 void enemy_wait_after_step(void *owner, struct Actor *ent, void **out);
 void enemy_wait_after_step_b(void *owner, struct Actor *ent, void **out);
 u16 angle_of_vector16(s32 x, s32 y);
-void start_move_to(struct Actor *ent, s32 x, s32 y, s32 speed, u8 zero);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void start_move_to(struct Actor *ent, s32 x, s32 y, s32 speed, ByteArg zero);
 u8 obj_flags_2b5_30_set(struct Actor *ent);
 void enemy_timer_then_cell(void);
 void enemy_wait_then_wander(void);
@@ -232,7 +233,7 @@ void tick_store(void);
 void start_wander_b(void);
 void enemy_hop_return_home(void);
 void enemy_wander_random_edge(void *owner, struct Actor *ent, void **out);
-void enemy_collide_then_idle(void);
+void enemy_collide_then_idle();
 void enemy_start_motion_if_free(void *owner, struct Actor *ent, void **out);
 void enemy_kick_after_probe(void);
 void random_collide(void);
@@ -241,22 +242,49 @@ void start_wander(void);
 u8 step_pos_xy_plain(struct Actor *ent);
 u8 point_in_box(s16 *box, void *entry, s32 a, s32 b);
 void obj_box_to_stack(s16 *box, struct Actor *ent, u32 a, u32 b);
+void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out);
 
 void enemy_enter_contact_state(void *owner, struct Actor *ent);
 
 ASM_FUNC("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_home(void))
 
+void enemy_idle_handler(void);
 ASM_FUNC("asm/code_08142A38/enemy_collide_then_idle.s", void enemy_collide_then_idle(void))
 
 ASM_FUNC("asm/code_08142A38/enemy_idle_handler.s", void enemy_idle_handler(void))
 
+void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
+void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
 ASM_FUNC("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(void))
 
-ASM_FUNC("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(void))
+ASM_FUNC("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))
 
-ASM_FUNC("asm/code_08142A38/enemy_sway_then_check.s", void enemy_sway_then_check(void))
+void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
+{
+    u8 **routines = &gMathRoutines;
+    s16 box[8];
 
-ASM_FUNC("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_states_enemy_return_home(void))
+    ent->sprite->frame20 = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(*(s16 *)&ent->filler2FA, 0x100);
+    *(s16 *)&ent->filler2FA += *(u16 *)&ent->filler2FA[0x30A - 0x2FA];
+    if (--ent->timerB == 0)
+    {
+        s8 *mode = (s8 *)&ent->mode;
+        *mode = (*mode & -8) | 1;
+        obj_set_cell_coord(ent, ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(ent->filler1C[0x24 - 0x1C] << 29) >> 29, 2), 0);
+        obj_box_to_stack(box, ent, 0x22, 0);
+        if (point_in_box(box, ent, 0x7FFF, 0))
+        {
+            out[0] = start_wander_b;
+            out[1] = enemy_collide_then_idle;
+        }
+        else
+        {
+            out[0] = contact_states_enemy_return_home;
+        }
+    }
+}
+
+ASM_FUNC("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out))
 
 void enemy_wait_after_step(void *owner, struct Actor *ent, void **out)
 {
@@ -602,7 +630,7 @@ NONMATCH("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_ow
     ent->homeX = ent->posX;
     ent->homeY = ent->posY;
     speed = *(u16 *)((u8 *)ent->rec + ent->index * 2 + 0x2A);
-    start_move_to(ent, tgt->posX + (tgt->vx << 4), tgt->posY + (tgt->vy << 4), speed, 0);
+    start_move_to(ent, tgt->posX + (tgt->vx << 4), tgt->posY + (tgt->vy << 4), speed, (u8)0);
     out[0] = enemy_after_step_box_check;
 }
 END_NONMATCH
@@ -727,7 +755,7 @@ void enemy_sprite_scale_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
-ASM_FUNC("asm/code_08142A38/enemy_contact_check_state.s", void enemy_contact_check_state(void *owner, struct Actor *ent))
+ASM_FUNC("asm/code_08142A38/enemy_contact_check_state.s", void enemy_contact_check_state(struct Owner *owner, struct Actor *ent))
 
 ASM_FUNC("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out))
 
