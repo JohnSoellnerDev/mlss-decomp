@@ -250,7 +250,39 @@ void hero_pair_finish(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080B3670/body_set_target_offset.s", void body_set_target_offset(struct HeroBody *body))
+void body_set_target_offset(struct HeroBody *body)
+{
+    s32 tx;
+    s32 ty;
+    s32 tz;
+    s32 px;
+    s32 py;
+
+    if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+    {
+        tx = body->targetX;
+        if (tx < 0)
+        {
+            tx += 0xff;
+        }
+        px = (tx >> 8) + body->ofsX - 0x1e;
+        ty = body->targetY;
+        if (ty < 0)
+        {
+            ty += 0xff;
+        }
+        py = (ty >> 8) + body->ofsY;
+        place_targets(body, px, py, 0, -1);
+        tz = body->targetZ;
+        if (tz < 0)
+        {
+            tz += 0xff;
+        }
+        body->height = (tz >> 8) + 0x28;
+        set_motion_offsets(body, 0x600);
+    }
+    body->state = body_step_reset_pose;
+}
 
 void body_step_reset_pose(struct HeroBody *body)
 {
