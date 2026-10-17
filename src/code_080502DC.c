@@ -114,15 +114,18 @@ struct WinObj
     s16 unk1E;
     u16 unk20;
     u16 unk22;
-    u8 filler24[2];
+    u16 unk24;
     u16 unk26;
     u16 unk28;
-    u8 filler2A[2];
+    u16 unk2A;
     u32 sub2C;
     u32 sub30;
     u32 sub34;
     u32 sub38;
     u8 *frame3C;
+    u8 *unk40;
+    u8 *unk44;
+    u8 *unk48;
 };
 
 struct FramePos
@@ -152,6 +155,7 @@ struct Mode3
 };
 
 extern u8 *gUnk_03000FC0;
+extern const u16 gSpriteSelectAnimTable[];
 void set_flag(u8 *flags, u32 a, u32 b, u32 c);
 void reset_record_fields(u8 *obj);
 void obj_random_pick(u32 r0, u8 *obj, u32 *state);
@@ -191,6 +195,7 @@ extern const u8 gObjForwardChildClass[];
 extern const u8 gObjAttachedChildClass[];
 extern const u8 gObjFlagsClass[];
 extern const u8 gObjStateClass[];
+u8 test_flag(u8 *table, u8 *tableB, u16 id);
 
 extern u8 gUnk_0300034C[];
 extern u32 gUnk_03000D48;
@@ -461,8 +466,11 @@ ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(voi
 
 ASM_FUNC("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(void))
 
-ASM_FUNC("asm/code_080502DC/obj_commit_sprite.s", void obj_commit_sprite(void))
+ASM_FUNC("asm/code_080502DC/obj_commit_sprite.s", void obj_commit_sprite(u8 *obj))
 
+extern const u16 gSpriteSelectAnimTable[];
+u8 test_flag(u8 *table, u8 *tableB, u16 id);
+void obj_commit_sprite(u8 *obj);
 ASM_FUNC("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(void))
 
 void obj_clear_mask_if_timer(u8 *obj)
@@ -567,10 +575,12 @@ NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 
 }
 END_NONMATCH
 
-NONMATCH("asm/code_080502DC/obj_random_enter.s", void obj_random_enter(u32 owner, u8 *obj, u32 *state))
+void obj_random_enter(u32 owner, u8 *obj, u32 *state)
 {
     u8 flag;
     u32 idx;
+    u16 *tbl;
+    u16 val;
 
     flag = step_pos_xy_c(obj);
     if ((u8)zone_overlap_code(owner, obj, 0) != 0)
@@ -579,15 +589,16 @@ NONMATCH("asm/code_080502DC/obj_random_enter.s", void obj_random_enter(u32 owner
     }
     else if (flag == 0)
     {
-        idx = sub_081DE850(4, mt19937_next());
-        *(u16 *)(obj + 0x1D2) = ((u16 *)(obj + 0x128))[idx];
+        idx = sub_081DE850(4, mt19937_next()) * 2;
+        tbl = (u16 *)(obj + 0x128);
+        val = *(u16 *)((u8 *)tbl + idx);
+        *(u16 *)(obj + 0x1D2) = val;
         *(u16 *)(obj + 0x244) = flag;
         *(u16 *)(obj + 0x242) = flag;
         *state = (u32)tick_store;
         *(u32 *)((u8 *)state + 0xC) = (u32)obj_random_pick;
     }
 }
-END_NONMATCH
 
 void obj_bind_callbacks(u32 arg, u8 *obj)
 {
@@ -601,17 +612,75 @@ void obj_bind_callbacks_entry(u32 arg, u8 *obj)
     obj_bind_callbacks(arg, obj);
 }
 
-NONMATCH("asm/code_080502DC/obj_call_hook_1a0.s", void obj_call_hook_1a0(u32 a0, u8 *obj))
+void obj_call_hook_1a0(u32 a0, u8 *obj)
 {
-    void (*hook)(u32, u8 *);
+    u8 *slot = obj + 0x1A0;
+    void (*handler)(u32, u8 *, u8 *) = *(void (**)(u32, u8 *, u8 *))slot;
 
-    hook = ((struct HookObj *)obj)->hook1A0;
-    hook(a0, obj);
+    handler(a0, obj, slot);
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080502DC/window_create.s", void window_create(void))
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+void task_insert(void *node, u8 kind, u32 data);
+void set_flag_2_2(void *obj);
+void *menu_obj_init(void *obj, u32 a, const void *table, u32 c);
+void *map_obj_start(void *obj, u32 a, const void *table, u32 c, s32 x, s32 y, void *d);
+void init_obj_09a8(u16 a, u8 b, u8 c, u8 d);
+extern u8 gWindowStateClass[];
+extern u8 gWindowSubBlockClass[];
+extern u8 gWindowCreateBlockTag[];
+extern u8 gWindowCreateBlock2Tag[];
+extern u8 gWindowCreateSpriteTag[];
+extern u16 gWindowSizeTable[];
+struct WinObj *window_create(struct WinObj *w, u8 kind, u32 a, u16 id)
+{
+    u16 *entry;
+    u8 *block;
+    u8 *menu;
+    u8 *map;
+    u8 *base;
 
+    task_insert(w, kind, a);
+    *(u32 *)((u8 *)w + 0x18) = (u32)gWindowStateClass;
+    *(u16 *)0x02000000 = 0;
+    base = gUnk_0300034C;
+    *(u32 *)(base + 0x884) = 0;
+    w->unk2A = id;
+    w->unk24 = 0x200;
+    w->unk1C = 0;
+    w->unk1E = 0;
+    w->unk20 = 0;
+    w->unk22 = 0;
+    w->unk26 = 0x78;
+    w->unk28 = 0x50;
+    for (entry = gWindowSizeTable; entry[0] != 0xFFFF; entry += 4)
+    {
+        if (entry[0] == id)
+        {
+            w->unk24 = entry[1];
+            w->unk26 = entry[2];
+            w->unk28 = entry[3];
+            break;
+        }
+    }
+    block = heap_alloc2(0x1C, 0, gWindowCreateBlockTag, 1);
+    task_insert(block, 8, (u32)gWindowCreateBlockTag);
+    *(u32 *)(block + 0x18) = (u32)gWindowSubBlockClass;
+    w->unk40 = block;
+    *(struct WinObj **)(block + 0x14) = w;
+    set_flag_2_2(block);
+    menu = menu_obj_init(heap_alloc2(0x5C, 0, gWindowCreateBlock2Tag, 0), 8, gWindowCreateBlock2Tag, 8);
+    w->unk48 = menu;
+    *(struct WinObj **)(menu + 0x14) = w;
+    set_flag_2_2(menu);
+    map = map_obj_start(heap_alloc2(0x59C, 0, gWindowCreateSpriteTag, 0), 8, gWindowCreateSpriteTag, w->unk24, w->unk1C, w->unk1E, w->unk48);
+    w->unk44 = map;
+    *(struct WinObj **)(map + 0x14) = w;
+    init_obj_09a8(0x15C0, 0, 1, 0x80);
+    return w;
+}
+
+void scene_update_sprites(u8 *obj);
 ASM_FUNC("asm/code_080502DC/window_state_step.s", void window_state_step(void))
 
 void scene_update_sprites(u8 *obj)
