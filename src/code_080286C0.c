@@ -72,7 +72,10 @@ struct SceneObj
     u8 flags20B;
     u8 filler20C[0x246 - 0x20C];
     u8 mode246;
-    u8 filler247[0x27A - 0x247];
+    u8 filler247[0x274 - 0x247];
+    s16 unk274;
+    s16 unk276;
+    s16 unk278;
     u16 unk27A;
     u16 unk27C;
     s16 camX;
@@ -80,7 +83,13 @@ struct SceneObj
     u8 filler282[0x286 - 0x282];
     u16 unk286;
     u16 unk288;
-    u8 filler28A[0x2AC - 0x28A];
+    u8 unk28A;
+    u8 unk28B;
+    u8 unk28C;
+    u8 unk28D;
+    u8 unk28E;
+    u8 unk28F;
+    u8 filler290[0x2AC - 0x290];
     u16 saved2AC;
     u8 filler2AE[0x2B4 - 0x2AE];
     u16 half2B4;
@@ -209,7 +218,8 @@ extern u32 gUnk_03000E00;
 extern u32 gUnk_03000E04;
 void sub_08115F54(void *child, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7);
 void poll_keys(void);
-void obj_draw_desc_entries(void *a0, u8 *p1, u32 p2, u32 p3, u32 x5, u32 p6, u8 p7, u8 p8);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void obj_draw_desc_entries(void *a0, u8 *p1, u32 p2, u32 p3, u32 x5, u32 p6, ByteArg p7, ByteArg p8);
 extern void *gSlotInitPtrPairs[];
 extern const u16 gLookup14b8Ids[];
 void serial_link_disable(void);
@@ -286,6 +296,7 @@ NONMATCH("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set
 }
 END_NONMATCH
 
+void clear_obj_state_2f8(struct SceneObj *obj);
 ASM_FUNC("asm/code_080286C0/sprites_obj_step_move.s", void sprites_obj_step_move(void))
 
 ASM_FUNC("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(void))
@@ -308,7 +319,17 @@ void clear_obj_state_2f8(struct SceneObj *obj)
     ((struct PendingBits *)&obj->pending)->low2 = 0;
 }
 
-ASM_FUNC("asm/code_080286C0/obj_has_pending_bits.s", void obj_has_pending_bits(void))
+s32 obj_has_pending_bits(struct SceneObj *obj)
+{
+    u32 v = obj->pending & 0x3;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
 void entity_camera_offset(struct SceneObj *obj, u32 idx, s32 *outX, s32 *outY)
 {
@@ -484,9 +505,36 @@ void load_dirty_blocks(struct SceneObj *obj, u32 hi, u16 lo)
     }
 }
 
-ASM_FUNC("asm/code_080286C0/set_obj_fc_state.s", void set_obj_fc_state(void))
+void set_obj_fc_state(struct SceneObj *obj, s32 value)
+{
+    struct FcByteBits *bits = (struct FcByteBits *)&obj->fc;
 
-ASM_FUNC("asm/code_080286C0/call_7380_for_state.s", void call_7380_for_state(void))
+    switch ((u32)(*(u8 *)bits << 25) >> 28)
+    {
+    case 1:
+        sub_0811733C(obj->child, value);
+        bits->mode = value + 1;
+        break;
+    case 2:
+        sub_0811733C(obj->child, value);
+        bits->mode = 2 - value;
+        break;
+    }
+}
+
+void call_0d80_handlers(void);
+void call_7380_for_state(struct SceneObj *obj)
+{
+    s32 mode = ((u32)(*(u8 *)&obj->fc) << 25) >> 28;
+
+    switch (mode)
+    {
+    case 1:
+    case 2:
+        sub_08117380(obj->child);
+        break;
+    }
+}
 
 ASM_FUNC("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(void))
 
@@ -616,7 +664,10 @@ struct DrawDesc
     u32 p18;
 };
 
-ASM_FUNC("asm/code_080286C0/draw_desc_with_offset.s", void draw_desc_with_offset(void))
+void draw_desc_with_offset(void *a0, u32 *p1, u32 p2, ByteArg p3, s32 p5, ByteArg p6)
+{
+    obj_draw_desc_entries(a0, (u8 *)p1[3], p1[4], p1[5], (u32)((u8 *)p1[6] + ((p5 << 8) + 0xF00)), p2, p3, p6);
+}
 
 void finish_obj_fc(struct SceneObj *obj)
 {
@@ -668,7 +719,55 @@ void set_0d80_slot(void (*fn)(void), u32 slot)
     }
 }
 
-ASM_FUNC("asm/code_080286C0/reset_0d80_table.s", void reset_0d80_table(void))
+NONMATCH("asm/code_080286C0/reset_0d80_table.s", void reset_0d80_table(void))
+{
+    void (*handler)(void) = call_0d80_handlers;
+    void (**table)(void) = gUnk_03000D80;
+    void (*zero)(void) = 0;
+    s32 end;
+    s32 rem;
+    void (**p)(void);
+    void (**q)(void);
+    s32 lim;
+
+    p = &table[1];
+    end = (s32)table - 1;
+    rem = (end - (s32)p) & 0xF;
+    if ((s32)p <= end)
+        goto one;
+    if (rem == 0)
+        goto loop;
+    lim = 12;
+    if (rem >= lim)
+        goto one;
+    lim = 8;
+    if (rem >= lim)
+        goto two;
+    if (rem <= 3)
+        goto loop;
+    *p-- = zero;
+two:
+    *p-- = zero;
+one:
+    *p-- = zero;
+    if ((s32)p < (s32)table)
+        goto done;
+loop:
+    do
+    {
+        *p = zero;
+        q = p - 1;
+        *q = zero;
+        q--;
+        *q = zero;
+        q--;
+        *q = zero;
+        p -= 4;
+    } while ((s32)p >= (s32)table);
+done:
+    set_irq_callback(2, handler);
+}
+END_NONMATCH
 
 void call_0d80_handlers(void)
 {
