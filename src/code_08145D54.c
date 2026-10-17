@@ -176,7 +176,13 @@ s32 sub_081DE850(s32 n, u32 seed);
 u32 angle_of_vector16(s32 x, s32 y);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 u8 box_hit_kind(struct Owner *owner, struct Enemy *ent, u32 a, u32 b, u32 c);
-void start_move_to_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, u8 arg5);
+// u8 stack argument the original passes unpromoted (strb/ldrb on the stack slot)
+struct ByteArg
+{
+    u8 val;
+} __attribute__((packed));
+
+void start_move_to_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, struct ByteArg arg5);
 
 void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -187,7 +193,7 @@ void enemy_start_chase(struct Owner *owner, struct Enemy *ent, struct StateOut *
 void enemy_start_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_wait_count(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 u8 companion_in_sight(struct Owner *owner, struct Enemy *ent);
-void enemy_start_move_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, u8 arg5, struct StateOut *state_out, void *handler_next);
+void enemy_start_move_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, struct ByteArg arg5, struct StateOut *state_out, void *handler_next);
 void enemy_approach_z(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void body_contact_enemy_reset_idle(struct Owner *owner, struct Enemy *ent);
 void enemy_after_contact(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -312,10 +318,65 @@ void enemy_face_companion(struct Owner *owner, struct Enemy *ent, struct StateOu
 
 ASM_FUNC("asm/code_08145D54/enemy_start_chase.s", void enemy_start_chase(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-ASM_FUNC("asm/code_08145D54/enemy_start_wait.s", void enemy_start_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_start_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    struct Ai *ai;
+    s32 cmd;
+
+    ai = (struct Ai *)&ent->filler58;
+    ((struct Flags8 *)&ent->sprite->unk11)->bit6 = 0;
+    cmd = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+    switch (cmd)
+    {
+    case 0:
+        ent->sprite->unk21 = 3;
+        break;
+    case 3:
+        ((struct Flags8 *)&ent->sprite->unk11)->bit6 = 1;
+    case 1:
+        ent->sprite->unk21 = 6;
+        break;
+    case 2:
+        ent->sprite->unk21 = 9;
+        break;
+    }
+    obj_load_record(ent->sprite, ent->sprite->unk21, -1, 0, 0);
+    sprite_step_e6a0(ent->sprite);
+    ai->unk17A = 0x14;
+    state_out->state = enemy_wait_count;
+}
 
 
-ASM_FUNC("asm/code_08145D54/enemy_wait_count.s", void enemy_wait_count(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_wait_count(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    u8 *ai = ent->unk1B0;
+    s16 box[8];
+    u16 arg4;
+    struct ByteArg flag;
+
+    ent->unk1D2--;
+    if (ent->unk1D2 == 0)
+    {
+        ((struct Mode3 *)&ent->unk214)->mode = 4;
+        obj_set_cell_coord(ent, MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2), 0);
+        obj_box_to_stack(box, ent, 0x22, 0);
+        ent->unk1D2 = ai[ent->unk1D0 + 0x40];
+        if (point_in_box(box, ent, 0x7FFF, 0))
+        {
+            state_out->state = tick_store;
+            state_out->unkC = enemy_push_by_mode;
+        }
+        else
+        {
+            arg4 = *(u16 *)(ai + ent->unk1D0 * 2 + 0x38);
+            ent->sprite->unk20 = ai[ent->unk1D0 + 0x34];
+            ((struct Mode3 *)&ent->unk214)->mode = 3;
+            flag.val = 0;
+            enemy_start_move_3d(ent, ent->unk1DC, ent->unk1E0, ent->unk14, arg4, flag, state_out, tick_store);
+            state_out->unkC = enemy_push_by_mode;
+        }
+    }
+}
 
 u8 companion_in_sight(struct Owner *owner, struct Enemy *ent)
 {
@@ -356,9 +417,36 @@ u8 companion_in_sight(struct Owner *owner, struct Enemy *ent)
     return 0;
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_start_move_3d.s", void enemy_start_move_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, u8 arg5, struct StateOut *state_out, void *handler_next))
+void enemy_start_move_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, struct ByteArg arg5, struct StateOut *state_out, void *handler_next)
+{
+    struct Ai *ai;
 
-ASM_FUNC("asm/code_08145D54/enemy_approach_z.s", void enemy_approach_z(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+    ai = (struct Ai *)&ent->filler58;
+    start_move_to_3d(ent, x, y, z, arg4, arg5);
+    if ((ent->unk242 | ent->unk244) != 0)
+    {
+        ent->unk2 = ((u32)(u16)angle_of_vector16(ent->unk242, ent->unk244) + 0x10) >> 8;
+    }
+    else
+    {
+        ent->unk2 = 0xff;
+    }
+    state_out->state = body_contact_enemy_move_3d_step;
+    ai->handler_next = handler_next;
+}
+
+void enemy_approach_z(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    s32 unused[4];
+
+    ent->unkC += ent->unk242;
+    ent->unk10 += ent->unk244;
+    if (z_approach(ent) == 0)
+    {
+        ((struct Flags8 *)&ent->unk20F)->bit2 = 0;
+        state_out->state = enemy_start_wait;
+    }
+}
 
 void body_contact_enemy_reset_idle(struct Owner *owner, struct Enemy *ent)
 {
@@ -393,7 +481,21 @@ void enemy_after_contact(struct Owner *owner, struct Enemy *ent, struct StateOut
     obj_drift_with_cap_step(body);
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_run_body_handler.s", void enemy_run_body_handler(struct Owner *owner, struct Enemy *ent))
+void enemy_run_body_handler(struct Owner *owner, struct Enemy *ent)
+{
+    void **slot = ent->body->unk1A0;
+    void (*fn)(struct Owner *, struct Enemy *, void **) = (void (*)(struct Owner *, struct Enemy *, void **))slot[0];
+
+    if (fn != NULL)
+    {
+        fn(owner, ent, slot);
+    }
+    if (ent->sprite->unk12 & 8)
+    {
+        ((struct Mode3 *)&ent->unk214)->mode = 3;
+        ent->unk198 = enemy_setup_wait_b;
+    }
+}
 
 void enemy_setup_idle(struct Owner *owner, struct Enemy *ent)
 {
@@ -470,7 +572,49 @@ ASM_FUNC("asm/code_08145D54/enemy_chase_partner.s", void enemy_chase_partner(str
 
 ASM_FUNC("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-ASM_FUNC("asm/code_08145D54/enemy_face_partner.s", void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    u8 *rec = ent->unk1B0;
+    u8 idx;
+    u32 index;
+    struct Partner *partner;
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    u32 (*math)(u32, u32);
+
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->unk208 << 30) >> 31;
+    }
+    partner = *(struct Partner **)((u8 *)owner + index * 4 + 0x28);
+    ((struct Mode3 *)&ent->unk214)->mode = 1;
+    ent->sprite->unk20 = rec[ai->unk178 + 0x12];
+    math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+    dx = partner->posX - ent->unkC;
+    dy = partner->posY - ent->unk10;
+    if (dx | dy)
+    {
+        u16 angle = angle_of_vector16(dx, dy);
+        dir = (((s32)(angle + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        dir = -1;
+    }
+    {
+        u32 facing = math(dir, 2);
+        obj_set_cell_coord(ent, facing + 4, 0);
+    }
+    ai->unk17A = rec[ai->unk178 + 0x16];
+    state_out->state = tick_store;
+    state_out->unkC = enemy_align_body_to_partner;
+}
 
 ASM_FUNC("asm/code_08145D54/enemy_align_body_to_partner.s", void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
