@@ -63,11 +63,51 @@ struct Lo2Bits
     u8 rest : 6;
 };
 
+struct Prio4Bits
+{
+    u8 f0 : 2;
+    u8 f2 : 2;
+    u8 f4 : 2;
+    u8 f6 : 2;
+};
+
 struct Triple
 {
     s32 x;
     s32 y;
     s32 z;
+};
+
+struct DialogObj
+{
+    s16 *sprite;
+    u8 filler4[0x4];
+    s32 unk8;
+    s32 unkC;
+    const u8 *text;
+    u8 unk14;
+    u8 unk15;
+    u8 filler16[0x2];
+    s32 unk18;
+    s32 unk1C;
+    u8 filler20[0x8];
+    s32 unk28;
+    s32 unk2C;
+    s32 unk30;
+    s32 unk34;
+    u8 filler38[0x14];
+    void (*unk4C)(void *);
+    u8 filler50[0x8];
+    const u8 *unk58;
+    s32 unk5C;
+    u32 state;
+    s32 count;
+    s32 idx;
+    s32 maxIdx;
+    s32 pos[4][2];
+    u8 filler90[0x10];
+    u16 soundOn;
+    s16 soundId;
 };
 
 extern const u8 gTweenGroupVtable[];
@@ -92,9 +132,9 @@ void update_obj_sprite_pos(struct Obj *obj, u32 camX, u32 camY);
 void obj_release_slots(void *sprite);
 void sprite_update_cd0(void *sprite);
 void heap_free_b(void *ptr);
-void tween_groups_obj_start_move(struct Obj *obj, u32 dist, u32 target, u32 useRam);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void tween_groups_obj_start_move(struct Obj *obj, u32 dist, u32 target, ByteArg useRam);
 void obj_list_drain(struct ObjList *list);
-void obj_set_home_params(struct Obj *obj, u32 a, u32 b, u32 c, u8 flag);
 void release_obj_131c(void *sprite);
 void obj_load_record(void *sprite, s32 anim, u32 a, u32 b, u32 c);
 u32 read_varlen_plus1(const u8 *src);
@@ -127,7 +167,28 @@ void obj_set_child_table(struct Obj *obj)
 
 ASM_FUNC("asm/code_08164468/obj_load_scaled_anims.s", void obj_load_scaled_anims(void))
 
-ASM_FUNC("asm/code_08164468/obj_init_children_sprites.s", void obj_init_children_sprites(struct Obj *obj))
+void obj_init_children_sprites(struct Obj *obj)
+{
+    struct Obj **children = (struct Obj **)obj;
+    u32 i = 0;
+    const void *script = gObjScript08213b8a;
+
+    obj_set_class_38fa(children[0], 6, i * 8);
+    children[0]->unk44 = script;
+    children[0]->unk48 = 0;
+    i++;
+    obj_set_class_38fa(children[1], 6, i * 8);
+    children[1]->unk44 = script;
+    children[1]->unk48 = 0;
+    i++;
+    obj_set_class_38fa(children[2], 6, i * 8);
+    children[2]->unk44 = script;
+    children[2]->unk48 = 0;
+    i++;
+    obj_set_class_38fa(children[3], 6, i * 8);
+    children[3]->unk44 = script;
+    children[3]->unk48 = 0;
+}
 
 void obj_refresh_children(struct Obj *obj)
 {
@@ -235,7 +296,28 @@ void obj_init_empty(struct Obj *obj)
     obj->unkC = gTweenGroupVtable;
 }
 
-ASM_FUNC("asm/code_08164468/obj_set_home_params.s", void obj_set_home_params(struct Obj *obj, u32 a, u32 b, u32 c, u8 flag))
+void obj_set_home_params(struct Obj *obj, u32 a, u32 b, u32 c, ByteArg flag)
+{
+    u32 f = flag.value;
+    struct Triple *dst;
+    struct Triple *src;
+    struct Triple *home;
+
+    obj->unk5A &= 0xFFFC;
+    dst = (struct Triple *)&obj->unk30;
+    src = (struct Triple *)&obj->unk18;
+    dst->x = src->x;
+    dst->y = src->y;
+    dst->z = src->z;
+    home = (struct Triple *)&obj->unk24;
+    home->x = a;
+    home->y = b;
+    home->z = c;
+    if (f != 0)
+    {
+        obj->unk5A |= 1;
+    }
+}
 
 void obj_set_class_38fa(struct Obj *obj, u32 mode, u32 offset)
 {
@@ -246,9 +328,21 @@ void obj_set_class_38fa(struct Obj *obj, u32 mode, u32 offset)
     obj->unk40 = mode;
 }
 
-ASM_FUNC("asm/code_08164468/obj_setup_move.s", void obj_setup_move(struct Obj *obj, u32 a, u32 b, u32 c, u32 dist, u32 target, u8 flag, u8 useRam))
+void obj_setup_move(struct Obj *obj, u32 a, u32 b, u32 c, u32 dist, u32 target, ByteArg flag, ByteArg useRam)
+{
+    u32 f = flag.value;
+    u32 ram = useRam.value;
 
-ASM_FUNC("asm/code_08164468/obj_setup_slot.s", void obj_setup_slot(struct Obj *obj, u32 a, u32 b, u32 c, u32 offset, u8 flag))
+    obj_set_home_params(obj, a, b, c, (u8)f);
+    tween_groups_obj_start_move(obj, dist, target, (u8)ram);
+    obj_set_class_38fa(obj, 4, target);
+}
+
+void obj_setup_slot(struct Obj *obj, u32 a, u32 b, u32 c, u32 offset, ByteArg flag)
+{
+    obj_set_home_params(obj, a, b, c, flag);
+    obj_set_class_38fa(obj, 3, offset);
+}
 
 void tween_start_set_cls38fa(struct Obj *obj, u32 dist, u32 target, u8 useRam)
 {
@@ -341,7 +435,21 @@ void obj_create_sprite_14(struct Obj *obj, u32 a, u32 b, u32 c, s32 anim, u32 pr
     ((struct Sprite *)obj->unk14)->unkE = 0xFFFF;
 }
 
-ASM_FUNC("asm/code_08164468/obj_create_sprite_10.s", void obj_create_sprite_10(void))
+void obj_create_sprite_10(struct Obj *obj, u32 a, u32 b, u32 c, s32 anim, u32 prio)
+{
+    struct Prio4Bits *bits;
+
+    obj->unk10 = create_obj_de4(a, b, c, -1, -1, -1, -1);
+    obj_load_record(obj->unk10, anim, -1, 0, 0);
+    sprite_update_cd0(obj->unk10);
+    bits = (struct Prio4Bits *)&((struct Sprite *)obj->unk10)->unk1F;
+    bits->f6 = prio;
+    bits->f4 = prio;
+    bits->f2 = prio;
+    bits->f0 = prio;
+    ((struct Sprite *)obj->unk10)->unkE = 0;
+    obj->unk14 = 0;
+}
 
 void obj_set_frame_table(struct Obj *obj, void *table)
 {
@@ -607,7 +715,20 @@ s32 lerp_step_08164EE0(s32 a, s32 b, s32 steps, s32 t)
 
 ASM_FUNC("asm/code_08164468/smoothstep_lerp.s", u32 smoothstep_lerp(s32 start, s32 end, s32 steps, s32 step))
 
-ASM_FUNC("asm/code_08164468/rand_scaled.s", u32 rand_scaled(u32 count, u32 base))
+u32 rand_scaled(u32 count, u32 base)
+{
+    u32 seed;
+    u32 r;
+    u32 n;
+    u32 (*fn)(u32, u32, u32);
+
+    seed = gUnk_03001028 * 0x41c64e6d + 0x3039;
+    gUnk_03001028 = seed;
+    fn = MATH_ROUTINE(u32 (*)(u32, u32, u32), iwram_math_08199424);
+    r = (seed & 0x7fffffff) >> 16;
+    n = count - 1;
+    return fn(r, base - n, n) + count;
+}
 
 void vec3_sub_ops(struct Triple *dst, struct Triple *src)
 {
@@ -692,10 +813,50 @@ ASM_FUNC("asm/code_08164468/window_obj_setup.s", void window_obj_setup(void))
 
 ASM_FUNC("asm/code_08164468/window_build_tiles.s", void window_build_tiles(void))
 
-ASM_FUNC("asm/code_08164468/window_layout_plain.s", void window_layout_plain(void))
+void obj_release_tiles(void *obj);
+void voice_setup_params(void *voice, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h, u32 i);
+void voice_set_data_ptr(void *voice, u32 a, u32 b, void *ptr);
+void obj_flush_tiles(void *obj);
+void window_layout_plain(s32 *win, u8 *src, s32 x, s32 y)
+{
+    obj_release_tiles(win);
+    win[10] = x;
+    if (x < 4)
+    {
+        win[10] = 4;
+    }
+    win[11] = y;
+    if (y < 4)
+    {
+        win[11] = 4;
+    }
+    win[12] = src[0];
+    win[13] = src[1];
+    if (win[10] + (win[12] << 3) > 0xEC)
+    {
+        win[10] = 0xEC - (win[12] << 3);
+    }
+    if (win[11] + (win[13] << 3) > 0x9C)
+    {
+        win[11] = 0x9C - (win[13] << 3);
+    }
+    voice_setup_params(win + 2, win[8], 0x20, 0xC, (((0x20 - win[12]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 0);
+    voice_set_data_ptr(win + 2, 0, 6, src + 2);
+    win[23] = 0;
+    win[22] = 0;
+    win[25] = 0;
+    win[26] = 0;
+    win[27] = 0;
+    win[24] = 0;
+    obj_release_slots((void *)win[0]);
+    *(s16 *)win[20] = -(s16)win[10];
+    *(s16 *)win[21] = -(s16)win[11];
+    obj_flush_tiles(win);
+}
 
-ASM_FUNC("asm/code_08164468/win_set_layout.s", void win_set_layout(void))
+ASM_FUNC("asm/code_08164468/win_set_layout.s", void win_set_layout(s32 *win, u8 *src, s32 x, s32 y))
 
+void win_set_layout(s32 *win, u8 *src, s32 x, s32 y);
 ASM_FUNC("asm/code_08164468/win_draw_text.s", void win_draw_text(void))
 
 ASM_FUNC("asm/code_08164468/obj_dialog_step.s", void obj_dialog_step(void))
