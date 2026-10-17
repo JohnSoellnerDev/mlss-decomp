@@ -176,6 +176,8 @@ struct FxBits1F
     u8 d : 2;
 };
 
+void obj_release(struct ActorObj *obj);
+
 u32 is_state_busy(void);
 void release_obj_131c(void *p);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
@@ -390,7 +392,7 @@ void obj_settle_step_land_slot69(struct ActorObj *obj)
     on_arrive(obj);
 }
 
-ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(void))
+ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(struct ActorObj *obj))
 
 void obj_fall_spawn_fx_offscreen(struct ActorObj *obj)
 {
@@ -468,6 +470,35 @@ u32 obj_slot_found_recoil(struct ActorObj *obj, u32 slot)
     return found;
 }
 
-ASM_FUNC("asm/code_080DD204/obj_begin_fall_to_owner.s", void obj_begin_fall_to_owner(struct ActorObj *obj))
+void obj_fall_spawn_fx_then_finish(struct ActorObj *obj);
+void obj_begin_fall_to_owner(struct ActorObj *obj)
+{
+    s32 *ground = &obj->ground;
+    struct ActorPart *data = obj->owner->data;
+    s32 targetH = data->targetH;
+    s32 offY = -1;
+    s32 offH = -8;
 
-ASM_FUNC("asm/code_080DD204/obj_begin_fall_to_owner_alt.s", void obj_begin_fall_to_owner_alt(struct ActorObj *obj))
+    *ground = targetH;
+    obj->dhStep = jump_velocity(&obj->dx, (s16 *)((u8 *)ground + 0x18), &obj->dh,
+                                data->targetX - obj->baseX,
+                                data->targetY - (obj->baseY + offY),
+                                targetH - (obj->baseH + offH), 0x4800, obj->param9C, 0x100, 0);
+    obj->state = obj_fall_spawn_fx_then_finish;
+}
+
+void obj_begin_fall_to_owner_alt(struct ActorObj *obj)
+{
+    s32 *ground = &obj->ground;
+    struct ActorPart *data = obj->owner->data;
+    s32 targetH = data->targetH;
+    s32 offY = 3;
+    s32 offH = -8;
+
+    *ground = targetH;
+    obj->dhStep = jump_velocity(&obj->dx, (s16 *)((u8 *)ground + 0x18), &obj->dh,
+                                data->targetX - obj->baseX,
+                                data->targetY - (obj->baseY + offY),
+                                targetH - (obj->baseH + offH), 0x4800, obj->param9C, 0x100, 0);
+    obj->state = obj_timed_spawn_child;
+}
