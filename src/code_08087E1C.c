@@ -144,7 +144,8 @@ struct Actor
 
 struct CandMgr
 {
-    u8 filler0[0x70];
+    u8 filler0[0x58];
+    struct Rec *slots[6];
     struct Rec *candA;
     struct Rec *candB;
     u8 filler78[0x80 - 0x78];
@@ -187,7 +188,14 @@ void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
 
 ASM_FUNC("asm/code_08087E1C/search_frame_pairs.s", u32 search_frame_pairs(struct Actor *a, struct Actor *b))
 
-ASM_FUNC("asm/code_08087E1C/candidate_for_slot.s", struct Rec *candidate_for_slot(struct Rec *obj))
+struct Rec *candidate_for_slot(struct Rec *obj)
+{
+    struct CandMgr *mgr = gUnk_03000FD8;
+
+    if (mgr->target != NULL)
+        return mgr->slots[obj->slot + 8];
+    return NULL;
+}
 
 struct Rec *active_candidate(struct Rec *obj)
 {
@@ -234,7 +242,22 @@ void set_progress(struct Actor *obj, s32 value)
     obj->progress = value;
 }
 
-ASM_FUNC("asm/code_08087E1C/tick_progress.s", u32 tick_progress(struct Actor *obj))
+u32 tick_progress(struct Actor *obj)
+{
+    s16 *progress = &obj->progress;
+    s32 value;
+    u32 result;
+
+    if (*progress > 0) {
+        (*progress)--;
+    }
+    value = *progress;
+    result = 1;
+    if (value != 0) {
+        result = 0;
+    }
+    return result;
+}
 
 u32 progress_is_zero(struct Actor *obj)
 {
@@ -243,7 +266,12 @@ u32 progress_is_zero(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_08087E1C/set_speed_from_delta.s", void set_speed_from_delta(struct Actor *obj, s32 value))
+void set_speed_from_delta(struct Actor *obj, s32 value)
+{
+    s32 len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(obj->dx * obj->dx + obj->dy * obj->dy + obj->dh * obj->dh);
+
+    obj->motionSpeed = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(value << 12, len);
+}
 
 void sub_08087FCC(struct Actor *obj, s32 divisor)
 {
@@ -456,7 +484,18 @@ void timed_motion_done(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08087E1C/place_part_sprite.s", void place_part_sprite(struct Actor *obj))
+void place_part_sprite(struct Actor *obj)
+{
+    struct Pose *pose = obj->pose;
+
+    if (pose->frame->count != 0) {
+        u16 count = pose->frame->count;
+
+        effect_spawn_at(count, pose->baseX / 0x100, pose->baseY / 0x100, pose->baseH / 0x100, (struct Actor *)&pose->filler8);
+    }
+    pose->unk54 = 0;
+    obj->unk4 = 0;
+}
 
 void stop_unless_flagged(struct Actor *obj)
 {
@@ -534,9 +573,70 @@ u32 step_motion_checked(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_08087E1C/step_motion_scaled.s", u32 step_motion_scaled(struct Actor *obj))
+u32 step_motion_scaled(struct Actor *obj)
+{
+    s16 *progress;
+    s32 p;
+    s32 t;
+    s32 dx;
+    s32 dy;
+    s32 dh;
+    s32 hl;
+    s32 oa;
 
-ASM_FUNC("asm/code_08087E1C/step_motion_d.s", u32 step_motion_d(struct Actor *obj))
+    progress = &obj->progress;
+    p = *progress + (obj->motionStart * obj->motionSpeed) / 0x100;
+    obj->timer = *progress;
+    *progress = p;
+    if (p <= 0x3FFF && obj->motionStart != 0)
+    {
+        hl = obj->heightLimit;
+        oa = obj->offsetA;
+        t = ((hl * p) / 0x100 * p) / 0x40 + oa * p;
+        dx = (obj->targetX >> 16) - (s16)obj->targetX;
+        dy = (obj->targetY >> 16) - (s16)obj->targetY;
+        dh = (obj->targetH >> 16) - (s16)obj->targetH;
+        obj->x = ((s16)obj->targetX << 8) + (dx * t) / 0x4000;
+        obj->y = ((s16)obj->targetY << 8) + (dy * t) / 0x4000;
+        obj->h = ((s16)obj->targetH << 8) + (dh * t) / 0x4000;
+        return 1;
+    }
+    obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
+    obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
+    obj->h = ((struct HalfPair *)&obj->targetH)->hi << 8;
+    *((u8 *)obj + 0x79) |= 0x20;
+    return 0;
+}
+
+u32 step_motion_d(struct Actor *obj)
+{
+    s32 t;
+    s32 v;
+
+    t = obj->progress;
+    t += (obj->motionStart * obj->motionSpeed) / 0x800;
+    obj->timer = obj->progress;
+    obj->progress = t;
+
+    v = (obj->targetX >> 16) * t + (s16)obj->targetX * (0x800 - t);
+    if (v < 0)
+        v += 7;
+    obj->x = v >> 3;
+
+    v = (obj->targetY >> 16) * t + (s16)obj->targetY * (0x800 - t);
+    if (v < 0)
+        v += 7;
+    obj->y = v >> 3;
+
+    v = (obj->targetH >> 16) * t + (s16)obj->targetH * (0x800 - t);
+    if (v < 0)
+        v += 7;
+    obj->h = v >> 3;
+
+    if (t <= 0x7FF)
+        return 1;
+    return 0;
+}
 
 void set_motion_start(struct Actor *obj, u32 value)
 {
