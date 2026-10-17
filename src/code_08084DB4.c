@@ -19,6 +19,7 @@ struct TileSlot
 };
 
 extern u32 gUnk_03000F70;
+s32 distance_step(s32 x, s32 y, s32 z);
 
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 void heap_free(void *p);
@@ -96,6 +97,8 @@ alloc:
     fresh->len = len;
 }
 
+extern u8 *gMemRoutines;
+void insert_span(u8 *obj, s32 start, s32 len);
 ASM_FUNC("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8 idx, u8 palette))
 
 ASM_FUNC("asm/code_08084DB4/draw_slot_frame.s", void draw_slot_frame(void))
@@ -166,7 +169,27 @@ void draw_slot_text(u8 *obj, u8 idx, u32 x, u32 y, u8 *text, u8 color)
 
 ASM_FUNC("asm/code_08084DB4/release_tile_slot.s", void release_tile_slot(u8 *obj, u8 idx))
 
-ASM_FUNC("asm/code_08084DB4/flush_copy_queue.s", void flush_copy_queue(void))
+void flush_copy_queue(u8 *obj)
+{
+    struct SpanNode *node;
+    u32 vram;
+
+    while ((node = *(struct SpanNode **)(obj + 0x1F4)) != 0)
+    {
+        if (node->start <= 0x27F)
+        {
+            vram = 0x0600F000;
+        }
+        else
+        {
+            vram = 0x0600F300;
+        }
+        cpu_set(*(u8 **)(obj + 0x288) + node->start * 2, (void *)(vram + node->start * 2), node->len & 0x1FFFFF);
+        *(struct SpanNode **)(obj + 0x1F4) = node->next;
+        node->next = *(struct SpanNode **)(obj + 0x1F0);
+        *(struct SpanNode **)(obj + 0x1F0) = node;
+    }
+}
 
 ASM_FUNC("asm/code_08084DB4/free_slot_blocks.s", void free_slot_blocks(void))
 ASM_FUNC("asm/code_08084DB4/reset_display.s", void reset_display(void))
@@ -185,7 +208,26 @@ ASM_FUNC("asm/code_08084DB4/jump_velocity.s", void jump_velocity(void))
 
 ASM_FUNC("asm/code_08084DB4/unknown_code_08085f6c.s", void unknown_code_08085f6c(void))
 
-ASM_FUNC("asm/code_08084DB4/sub_080861A4.s", void sub_080861A4(void))
+s32 distance_step(s32 x, s32 y, s32 z);
+s32 sub_080861A4(s32 *dist, s32 *outX, s32 x, s32 y, s32 h, s32 n)
+{
+    s32 s1;
+    s32 s2;
+    s32 s3;
+    s32 s4;
+    s32 s5;
+    s32 h2;
+
+    s1 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((h * (h / 2)) / 2 - (h * (y / 2)) / 2);
+    h2 = h + s1 * 2;
+    s2 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((h2 * (h2 / 2)) / 2 + (x * (x / 4)) / 4);
+    *outX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(n * h2 * 0x10 + s2 / 2, s2) << 3;
+    s3 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(s2 * 4 + n / 2, n);
+    s5 = s3 * (s3 + 1);
+    s4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((y << 8) - *outX * s3) * 2 + s5 / 2, s5);
+    *dist = distance_step(*outX, s4, y);
+    return s4;
+}
 
 struct MotionObj
 {
