@@ -12,7 +12,9 @@ struct SceneObj
     s32 y;
     s32 z;
     s32 dz;
-    u8 filler1C[0x1D6 - 0x1C];
+    u8 filler1C[0x24 - 0x1C];
+    u8 unk24;
+    u8 filler25[0x1D6 - 0x25];
     u8 unk1D6;
     u8 filler1D7[0x20C - 0x1D7];
     u8 unk20C;
@@ -95,7 +97,31 @@ u8 find_active_entry(u8 *owner, u8 *out);
 u32 boxes_overlap(s16 *bounds, struct SceneObj *a, struct SceneObj *b, s32 zAbove, s32 zBelow);
 u32 boxes_overlap_oriented(s16 *box, struct SceneObj *a, struct SceneObj *b, s32 zAbove, s32 zBelow);
 
-ASM_FUNC("asm/code_080FBF10/find_def_index.s", void find_def_index(void))
+extern const u8 gTeeheeValleyRodsAndOrbsAnim[];
+u32 find_def_index(u16 bank, u8 *out, u8 *ptr)
+{
+    u8 *header;
+    u8 *base;
+    u8 *entry;
+    u16 key;
+    u16 cur;
+
+    header = (u8 *)*(gRecordPtrTable + bank);
+    base = header - ((header[3] << 8) | header[2]);
+    entry = (u8 *)(gTeeheeValleyRodsAndOrbsAnim + 0x15E1E);
+    key = *(u16 *)(base + ptr[0x222] * 2);
+    cur = entry[1] << 8 | entry[0];
+    for (*out = 0; cur != 0; (*out)++)
+    {
+        if (cur == key)
+        {
+            return 1;
+        }
+        entry += 9;
+        cur = entry[1] << 8 | entry[0];
+    }
+    return 0;
+}
 
 u32 object_def_mode(u16 bank, u8 index)
 {
@@ -579,9 +605,35 @@ u32 slot_kind_matches(u8 *owner, struct SceneSlot *slot)
     return 0;
 }
 
-ASM_FUNC("asm/code_080FBF10/load_save_slot.s", void load_save_slot(void))
+extern u32 gUnk_03000FFC;
+extern u32 gUnk_03000D40;
+extern u32 gUnk_03000FC0;
+void cpu_set(const void *src, void *dst, u32 ctl);
+void load_save_slot(void)
+{
+    u8 *base = (u8 *)gUnk_03000FFC + (((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0x10);
+    {
+        vu32 *dma = (vu32 *)REG_ADDR_DMA3SAD;
+        dma[0] = (u32)(base + 0x1DC);
+        dma[1] = (u32)((u8 *)gUnk_03000FC0 + 0x20);
+        dma[2] = 0x840000DB;
+        dma[2];
+    }
+    cpu_set(base + 0x548, (u8 *)gUnk_03000FC0 + 0x394, 0xD4);
+}
 
-ASM_FUNC("asm/code_080FBF10/store_save_slot.s", void store_save_slot(void))
+void store_save_slot(void)
+{
+    u8 *base = (u8 *)gUnk_03000FFC + (((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0x10);
+    {
+        vu32 *dma = (vu32 *)REG_ADDR_DMA3SAD;
+        dma[0] = (u32)((u8 *)gUnk_03000FC0 + 0x20);
+        dma[1] = (u32)(base + 0x1DC);
+        dma[2] = 0x840000DB;
+        dma[2];
+    }
+    cpu_set((u8 *)gUnk_03000FC0 + 0x394, base + 0x548, 0xD4);
+}
 
 struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *handle)
 {
@@ -621,10 +673,10 @@ struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *h
 
 NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 mode))
 {
+    u8 *sys;
     u16 *p;
     u8 *list;
     u8 *world;
-    u8 *sys;
 
     ((struct TaskOwner *)owner)->type = (void *)gTypeB;
     sys = gUnk_0300034C;
@@ -680,6 +732,7 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
 }
 END_NONMATCH
 
+void world_tick(void);
 ASM_FUNC("asm/code_080FBF10/world_init.s", void world_init(void))
 
 ASM_FUNC("asm/code_080FBF10/world_main_frame.s", void world_main_frame(void))
@@ -747,9 +800,10 @@ void owner_wait_entry(u8 *owner)
     }
 }
 
+void state_prepare_world(u32 *slot);
 ASM_FUNC("asm/code_080FBF10/world_begin_scene.s", void world_begin_scene(void))
 
-ASM_FUNC("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(void))
+ASM_FUNC("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(u32 *slot))
 
 ASM_FUNC("asm/code_080FBF10/world_objects_tick.s", void world_objects_tick(void))
 
