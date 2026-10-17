@@ -254,7 +254,25 @@ u32 obj_link_owner_callback(struct Actor *obj)
     return 0;
 }
 
-ASM_FUNC("asm/code_080684D4/obj_drift_left_child.s", void obj_drift_left_child(struct Actor *obj))
+NONMATCH("asm/code_080684D4/obj_drift_left_child.s", void obj_drift_left_child(struct Actor *obj))
+{
+    s32 x;
+    s32 old = obj->x;
+    s32 px;
+
+    x = old + -0x133;
+    obj->x = x;
+    if (x < 0)
+    {
+        x = old - 0x34;
+    }
+    px = x >> 8;
+    if (px <= -0x20)
+    {
+        obj_release(obj);
+    }
+}
+END_NONMATCH
 
 void obj_wait_index_then_dx(struct Actor *obj)
 {
@@ -325,7 +343,38 @@ u32 unknown_part_steps_080689cc(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_080684D4/obj_fall_and_remove.s", void obj_fall_and_remove(struct Actor *obj))
+void obj_fall_and_remove(struct Actor *obj)
+{
+    s32 xOld = obj->x;
+    s32 xNew = xOld - 0x133;
+    s32 hOld;
+    s32 hNew;
+    s32 xChk;
+    s32 hChk;
+
+    obj->x = xNew;
+    hOld = obj->h;
+    hNew = hOld - 0x200;
+    obj->h = hNew;
+    xChk = xNew;
+    if (xChk < 0)
+    {
+        xChk = xOld - 0x34;
+    }
+    if ((xChk >> 8) > -0x20)
+    {
+        hChk = hNew;
+        if (hChk < 0)
+        {
+            hChk = hOld - 0x101;
+        }
+        if ((hChk >> 8) > 0)
+        {
+            return;
+        }
+    }
+    obj_release(obj);
+}
 
 void obj_place_sprite_and_remove(struct Actor *obj)
 {
