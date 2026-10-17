@@ -3,7 +3,9 @@
 
 struct ActorPose
 {
-    u8 filler0[0x0C];
+    u8 filler0[0x04];
+    u16 unk4;
+    u8 filler6[0x0C - 0x06];
     u16 unkC;
     u8 filler0E[0x11 - 0x0E];
     u8 unk11;
@@ -75,9 +77,14 @@ struct ActorObj
     s32 baseH;
     u8 filler44[0x4C - 0x44];
     void (*state)(struct ActorObj *);
-    u8 filler50[0x60 - 0x50];
+    u8 filler50[0x58 - 0x50];
+    u32 (*handler58)();
+    s32 (*handler5C)(struct ActorObj *);
     void (*handler60)(struct ActorObj *);
-    u8 filler64[0x74 - 0x64];
+    u8 filler64[0x68 - 0x64];
+    void (*handler68)(struct ActorObj *);
+    u32 field6C;
+    u8 filler70[0x74 - 0x70];
     u8 group;
     u8 depth;
     u8 filler76[0x77 - 0x76];
@@ -308,4 +315,15 @@ void scroll_obj_out(struct ActorObj *obj)
 done:;
 }
 
-ASM_FUNC("asm/code_0807213C/roll_action_chance.s", u32 roll_action_chance(struct ActorObj *obj, struct ActorObj *target))
+u32 roll_action_chance(struct ActorObj *obj, struct ActorObj *target)
+{
+    u8 roll;
+
+    roll = mt19937_next() % 100;
+    if (roll <= 0x32 && target->part->unkF6 != 0)
+    {
+        anim_bit200_step(target->part, 0xC8);
+        sprite_set_action(target, 0, 0, 0);
+    }
+    obj->state = scroll_obj_out;
+}
