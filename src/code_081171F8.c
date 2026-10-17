@@ -1,4 +1,18 @@
 #include "global.h"
+#include "ram_routines.h"
+
+struct ListHeadX
+{
+    u8 filler0[0x3C];
+    u32 head3C;
+};
+
+extern u8 gUnk_0300034C[];
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u8 gUnk_0203FFB8[];
+void update_obj_list(void);
+void obj_list_pass_0a8c(void);
 
 struct MenuObj
 {
@@ -55,6 +69,33 @@ void task_insert(void *node, u8 kind);
 void task_remove(void *node, u32 kind);
 void run_pending_obj_callbacks(void);
 void menu_obj_free(struct MenuTable *obj, u32 flags);
+
+void cpu_set(const void *src, void *dst, u32 ctl);
+
+struct ScreenObj
+{
+    u8 filler0[0x18];
+    void *unk18;
+    void *unk1C;
+    u16 unk20;
+    u16 unk22;
+    u16 unk24;
+    u8 filler26[0x46 - 0x26];
+    u8 unk46;
+    u8 filler47[0x4C - 0x47];
+    struct ScreenChild *unk4C;
+    void *unk50;
+};
+
+struct ScreenChild
+{
+    u8 filler0[0x14];
+    struct ScreenObj *unk14;
+    void *unk18;
+    u8 unk1C;
+};
+
+void cpu_set(const void *src, void *dst, u32 ctl);
 
 ASM_FUNC("asm/code_081171F8/obj_draw_tile_rows.s", void obj_draw_tile_rows(void))
 
@@ -169,9 +210,27 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/screen_obj_setup.s", void screen_obj_setup(void))
 
+void obj_toggle_1c(struct MenuObj *obj);
 ASM_FUNC("asm/code_081171F8/screen_obj_update.s", void screen_obj_update(void))
 
-ASM_FUNC("asm/code_081171F8/run_frame_hooks.s", void run_frame_hooks(void))
+void run_frame_hooks(void)
+{
+    u8 *base;
+    u32 *oam_slot;
+    struct ListHeadX *list;
+    u32 old;
+
+    base = (u8 *)&gUnk_0300034C;
+    oam_slot = (u32 *)(base + 0x880);
+    old = *oam_slot;
+    update_obj_list();
+    obj_list_pass_0a8c();
+    ((void (*)(u32, u32))gUnk_03000D48)(((struct ListHeadX *)gUnk_0203FFB8)->head3C,
+        ((struct ListHeadX *)gUnk_0203FFB8)->head3C + 0xA14);
+    list = (struct ListHeadX *)gUnk_0203FFB8;
+    old = ((u32 (*)(u32, u32))gUnk_03000D4C)(list->head3C, old);
+    *oam_slot = old;
+}
 
 void obj_toggle_1c(struct MenuObj *obj)
 {
@@ -205,10 +264,12 @@ ASM_FUNC("asm/code_081171F8/drop_roll.s", void drop_roll(void))
 
 ASM_FUNC("asm/code_081171F8/build_menu_list.s", void build_menu_list(void))
 
-ASM_FUNC("asm/code_081171F8/text_block_state.s", void text_block_state(void))
+ASM_FUNC("asm/code_081171F8/text_block_state.s", u32 text_block_state(void))
 
-ASM_FUNC("asm/code_081171F8/text_block_busy.s", void text_block_busy(void))
+ASM_FUNC("asm/code_081171F8/text_block_busy.s", u32 text_block_busy(void))
 
+u32 text_block_state(void);
+u32 text_block_busy(void);
 ASM_FUNC("asm/code_081171F8/text_slot_status.s", void text_slot_status(void))
 
 ASM_FUNC("asm/code_081171F8/text_slot_set.s", void text_slot_set(void))
@@ -221,4 +282,28 @@ ASM_FUNC("asm/code_081171F8/unknown_thumb_081188a4.s", void unknown_thumb_081188
 
 ASM_FUNC("asm/code_081171F8/sub_0811891C.s", void sub_0811891C(void))
 
-ASM_FUNC("asm/code_081171F8/menu_cursor_pos.s", void menu_cursor_pos(void))
+s32 menu_cursor_pos(s32 pos, s32 max, s32 step)
+{
+    switch (step)
+    {
+    case 0xFFFD:
+        pos = max >> 2;
+        if (max & 3)
+            pos++;
+        break;
+    case 0xFFFE:
+        pos = max >> 1;
+        if (max & 1)
+            pos++;
+        break;
+    case 0xFFFF:
+        pos = max;
+        break;
+    default:
+        pos += step;
+        if (max < pos)
+            pos = max;
+        break;
+    }
+    return pos;
+}
