@@ -270,7 +270,28 @@ s32 obj_setup_owner_target_drift(struct ActorObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_08060504/obj_move_and_cull.s", void obj_move_and_cull(struct ActorObj *obj))
+void obj_move_and_cull(struct ActorObj *obj)
+{
+    s32 sx;
+    s32 sy;
+    s32 sz;
+
+    obj->posX = obj->baseX - obj->dx;
+    obj->posH = obj->baseH - obj->dh;
+    obj->dh += 0x20;
+    sx = obj->posX / 0x100;
+    sy = obj->posY / 0x100;
+    sz = obj->posH / 0x100;
+    offset_three_words_camera(&sx, &sy, &sz, 0);
+    if (sy > 0x110)
+    {
+        obj_release(obj);
+    }
+    else if (sx < -0x10)
+    {
+        obj_release(obj);
+    }
+}
 
 void obj_index_zero_reset_x(struct ActorObj *obj)
 {
@@ -394,7 +415,21 @@ void obj_index_zero_slot_action4_b(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08060504/obj_pose_active_aim_part_action3.s", void obj_pose_active_aim_part_action3(struct ActorObj *obj))
+void obj_pose_active_aim_part_action3(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+        obj->targetX = obj->part->targetX;
+        obj->targetY = obj->part->targetY;
+        obj->targetH = obj->part->targetH;
+        ((struct Flags79Bit5 *)&obj->flags)->bit5 = 1;
+        obj->motionSpeed = 0x180;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->state = pose_steps_obj_index_zero_action4;
+    }
+}
 
 void obj_index_zero_setup_action4(struct ActorObj *obj)
 {
@@ -449,4 +484,13 @@ s32 pose_steps_obj_wait_mode0(struct ActorObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_08060504/obj_pos_x_dec_then_cull.s", void obj_pos_x_dec_then_cull(struct ActorObj *obj))
+void obj_pos_x_dec_then_cull(struct ActorObj *obj)
+{
+    s32 old = obj->posX;
+    s32 x = obj->posX = old + -0x166;
+
+    if (x < 0)
+        x = old - 0x67;
+    if ((x >> 8) <= -0x20)
+        obj_release(obj);
+}
