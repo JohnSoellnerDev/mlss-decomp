@@ -120,6 +120,11 @@ struct World
 
 extern struct World *gUnk_03000FD8;
 
+static inline void *world_focus(struct World *world)
+{
+    return world->focus;
+}
+
 void obj_release(void *obj);
 void release_object(void *obj);
 void task_list_remove(void *obj);
@@ -176,6 +181,7 @@ void fx_only_a(struct ActorBody *body);
 void fx_only_b(struct ActorBody *body);
 void fx_only_c(struct ActorBody *body);
 void check_offscreen_b(struct ActorBody *body);
+void check_offscreen(struct ActorBody *body);
 void obj_list_push_arg(struct ActorBody *obj, u32 arg);
 void obj_detach_active(struct ActorSprite *sprite);
 void wander_step(struct ActorBody *body);
@@ -203,7 +209,28 @@ void draw_while_group_busy(struct ActorBody *body);
 u32 mt19937_next(void);
 s32 sub_081DE850(s32 range, u32 seed);
 
-ASM_FUNC("asm/code_0809C68C/release_fx_a.s", void release_fx_a(struct ActorBody *body))
+void release_fx_a(struct ActorBody *body)
+{
+    struct World **pw = &gUnk_03000FD8;
+    struct ActorBody *partner = body->partner;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (partner != NULL)
+        {
+            obj_list_push_arg(body, 0);
+        }
+        if (body->data->effect != 0)
+        {
+            s32 x = (s16)obj_last_x(world_focus(*pw)) + 0x36;
+            s32 y = (s16)obj_last_y(world_focus(*pw)) + 0x5c;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x2c0);
+        }
+        body->state = check_offscreen_b;
+    }
+}
 
 void set_focus_pos_b(struct ActorBody *body)
 {
@@ -230,7 +257,28 @@ void set_focus_pos_b(struct ActorBody *body)
     body->state = fx_only_b;
 }
 
-ASM_FUNC("asm/code_0809C68C/release_fx_b.s", void release_fx_b(struct ActorBody *body))
+void release_fx_b(struct ActorBody *body)
+{
+    struct World **pw = &gUnk_03000FD8;
+    struct ActorBody *partner = body->partner;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (partner != NULL)
+        {
+            obj_list_push_arg(body, 0);
+        }
+        if (body->data->effect != 0)
+        {
+            s32 x = (s16)obj_last_x(world_focus(*pw)) + 0x28;
+            s32 y = (s16)obj_last_y(world_focus(*pw)) + 0x7c;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x2c0);
+        }
+        body->state = check_offscreen;
+    }
+}
 
 void set_focus_pos_c(struct ActorBody *body)
 {
@@ -257,7 +305,24 @@ void set_focus_pos_c(struct ActorBody *body)
     body->state = fx_only_a;
 }
 
-ASM_FUNC("asm/code_0809C68C/fx_only_a.s", void fx_only_a(struct ActorBody *body))
+void check_offscreen(struct ActorBody *body);
+void fx_only_a(struct ActorBody *body)
+{
+    struct World **pw = &gUnk_03000FD8;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            s32 x = (s16)obj_last_x(world_focus(*pw)) + 0xb1;
+            s32 y = (s16)obj_last_y(world_focus(*pw)) + 0x6c;
+            place_targets(body, x, y, 0x18, -1);
+            set_motion_start(body, 0x100);
+        }
+        body->state = follow_focus_while_effect;
+    }
+}
 
 void check_offscreen(struct ActorBody *body)
 {
@@ -268,7 +333,25 @@ void check_offscreen(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809C68C/fx_only_b.s", void fx_only_b(struct ActorBody *body))
+void fx_only_b(struct ActorBody *body)
+{
+    struct World **world = &gUnk_03000FD8;
+    s32 x;
+    s32 y;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0xaa;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x7c;
+            place_targets(body, x, y, 0x18, -1);
+            set_motion_start(body, 0x180);
+        }
+        body->state = place_on_focus_a;
+    }
+}
 
 void check_offscreen_b(struct ActorBody *body)
 {
@@ -298,11 +381,65 @@ u32 part_step_set_anim_0b_mode1(struct ActorBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_0809C68C/follow_focus_while_effect.s", void follow_focus_while_effect(struct ActorBody *body))
+void follow_focus_while_effect(struct ActorBody *body)
+{
+    struct World **world = &gUnk_03000FD8;
+    s32 x;
+    s32 y;
 
-ASM_FUNC("asm/code_0809C68C/place_on_focus_a.s", void place_on_focus_a(struct ActorBody *body))
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0x89;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x6c;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x140);
+        }
+        body->state = place_on_focus_c;
+    }
+}
 
-ASM_FUNC("asm/code_0809C68C/place_on_focus_b.s", void place_on_focus_b(struct ActorBody *body))
+void place_on_focus_a(struct ActorBody *body)
+{
+    struct World **world = &gUnk_03000FD8;
+    s32 x;
+    s32 y;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0x82;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x7c;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x200);
+        }
+        body->state = release_fx_b;
+    }
+}
+
+void place_on_focus_b(struct ActorBody *body)
+{
+    struct World **world = &gUnk_03000FD8;
+    s32 x;
+    s32 y;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0x90;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x5c;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x200);
+        }
+        body->state = release_fx_a;
+    }
+}
 
 void set_anim_0b_mode1(struct ActorBody *body)
 {
@@ -311,7 +448,25 @@ void set_anim_0b_mode1(struct ActorBody *body)
     body->state = anim_0c_fx_at_pos;
 }
 
-ASM_FUNC("asm/code_0809C68C/place_on_focus_c.s", void place_on_focus_c(struct ActorBody *body))
+void place_on_focus_c(struct ActorBody *body)
+{
+    struct World **world = &gUnk_03000FD8;
+    s32 x;
+    s32 y;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0x2F;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x6C;
+            place_targets(body, x, y, 10, -1);
+            set_motion_start(body, 0x14C);
+        }
+        body->state = remove_when_expired;
+    }
+}
 
 void anim_0c_fx_at_pos(struct ActorBody *body)
 {
@@ -362,6 +517,7 @@ void spawn_five_children(struct ActorBody *body)
 
 ASM_FUNC("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct ActorBody *body))
 
+void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 arg);
 ASM_FUNC("asm/code_0809C68C/float_above_focus.s", void float_above_focus(struct ActorBody *body))
 
 void draw_while_group_busy(struct ActorBody *body)
@@ -486,4 +642,52 @@ void anim_stop_if_sprite_active(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809C68C/float_parts_spawn_part_child.s", void float_parts_spawn_part_child(void))
+void float_parts_spawn_part_child(struct ActorBody *body)
+{
+    struct ActorBody *child;
+    struct SpriteNode *node;
+    struct SpriteNode *head;
+
+    if (body->sprite->flags & 8)
+    {
+        set_slot_value(0x8B, -1);
+        set_slot_value(0x8C, -1);
+        sprite_set_action(body, 7, 0, 0);
+        effect_spawn_at(0x1E47, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+        child = obj_spawn(body->data, 0x410C, body->targetX / 0x100 - 0x15, body->targetY / 0x100 + 1, body->targetZ / 0x100, 1, 1);
+        child->child = body->child;
+        body->child = child;
+        *((u8 *)child + 0x79) |= 1;
+        child->timeLink = 0;
+        child->node = sprite_node_take();
+        child->node->sprite = child->sprite;
+        child->node->link = &child->parts;
+        child->unk6C = body->unk6C;
+        child->partner = body->partner;
+        child->baseX = child->x;
+        child->baseY = child->y;
+        child->vspeed = 0x14;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = child->parts;
+        node->next = head;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = child->parts;
+        node->next = head;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = child->parts;
+        node->next = head;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = child->parts;
+        node->next = head;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        head = child->parts;
+        node->next = head;
+        child->parts = node;
+        child->state = orbit_parts_falling;
+        body->state = pose_update_b;
+    }
+}
