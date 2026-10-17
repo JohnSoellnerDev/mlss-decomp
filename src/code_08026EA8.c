@@ -17,10 +17,32 @@ struct Bits2A9
     u8 rest : 2;
 };
 
+struct BitsFC16
+{
+    u16 low3 : 3;
+    u16 mode : 4;
+    u16 bit7 : 1;
+} __attribute__((packed));
+
 struct Sub200
 {
     u8 filler0[0x18];
     s32 unk18;
+};
+
+struct Entity
+{
+    u8 filler0[0xC];
+    s32 unkC;
+    s32 unk10;
+    s32 unk14;
+    s32 unk18;
+    u8 filler1C[0x24 - 0x1C];
+    u8 byte24;
+    u8 filler25[0x24C - 0x25];
+    s32 unk24C;
+    u8 filler250[0x25C - 0x250];
+    s32 unk25C;
 };
 
 struct Bits12D
@@ -35,7 +57,8 @@ struct SceneObj
     u8 state;
     u8 filler1[0x28 - 0x01];
     void *entities[32];
-    u8 filler0A8[0xE4 - 0xA8];
+    void *sub0A8[8];
+    u8 filler0C8[0xE4 - 0xC8];
     void *sub0E4;
     u8 filler0E8[0xF0 - 0xE8];
     u32 unkF0;
@@ -63,17 +86,32 @@ struct SceneObj
     u8 filler12B;
     u8 state12C;
     u8 flags12D;
-    u8 filler12E[0x1FA - 0x12E];
+          u16 half12E;
+      u16 half130;
+      u8 filler132[0x1FA - 0x132];
     u16 timer1FA;
     void *sub1FC;
     struct Sub200 *sub200;
     void *sub204;
-    u8 filler208[0x20A - 0x208];
+    u8 flags208;
+    u8 filler209;
     u16 half20A;
     u8 filler20C[0x244 - 0x20C];
     u16 half244;
     u8 flags246;
-    u8 filler247[0x291 - 0x247];
+          u8 filler247[0x274 - 0x247];
+      u16 half274;
+      u16 half276;
+      u16 half278;
+      u16 half27A;
+      u16 half27C;
+      u16 half27E;
+      u8 filler280[0x28A - 0x280];
+      u8 byte28A;
+      u8 byte28B;
+      u8 byte28C;
+      u8 byte28D;
+      u8 filler28E[0x291 - 0x28E];
     u8 flags291;
     u8 filler292[0x294 - 0x292];
     u16 half294;
@@ -86,10 +124,23 @@ struct SceneObj
     u8 byte2AF;
     u8 filler2B0[0x2B8 - 0x2B0];
     u8 flags2B8;
-    u8 filler2B9[0x2D0 - 0x2B9];
+    u8 byte2B9;
+    u8 filler2BA[0x2BC - 0x2BA];
+    s32 unk2BC;
+    s32 unk2C0;
+    s32 unk2C4;
+    s32 unk2C8;
+    s32 unk2CC;
     u32 unk2D0;
     u32 unk2D4;
-    u8 filler2D8[0x304 - 0x2D8];
+    u8 flags2D8;
+    u8 filler2D9[0x2DA - 0x2D9];
+    u16 half2DA;
+    s32 unk2DC;
+    s32 unk2E0;
+    s32 unk2E4;
+    s32 unk2E8;
+    u8 filler2EC[0x304 - 0x2EC];
     void *sub304;
     void *sub308;
     void *sub30C;
@@ -113,6 +164,7 @@ extern u8 gUnk_03000D40;
 
 void serial_link_disable(void);
 void set_flag_2_2(void *obj);
+void pair_set_mode(void *list, u32 mode, u32 flag);
 void set_slot_fields(u32 idx, u8 level, u8 period);
 void object_teardown(struct SceneObj *obj);
 void obj_clear_vram(void *obj);
@@ -134,11 +186,37 @@ void obj_teardown_subs(struct SceneObj *obj, u32 mode);
 
 ASM_FUNC("asm/code_08026EA8/apply_display_state.s", void apply_display_state(struct SceneObj *obj))
 
+void apply_display_state(struct SceneObj *obj);
 ASM_FUNC("asm/code_08026EA8/set_object_mode.s", void set_object_mode(void))
 
 ASM_FUNC("asm/code_08026EA8/object_setup_wipe.s", void object_setup_wipe(void))
 
-ASM_FUNC("asm/code_08026EA8/object_mode_check.s", void object_mode_check(void))
+u32 sub_obj_running(void *menu);
+u32 task_is_linked(void *task);
+u32 object_mode_check(struct SceneObj *obj)
+{
+    u32 ret;
+
+    if (((struct BitsFC16 *)&obj->flagsFC)->mode <= 2)
+    {
+        ret = sub_obj_running(obj->sub314);
+        if ((u8)ret)
+            ret = 1;
+        return ret;
+    }
+    else if (((struct BitsFC16 *)&obj->flagsFC)->mode >= 3 && ((struct BitsFC16 *)&obj->flagsFC)->mode <= 5)
+    {
+        u8 byte = ((u8 *)obj->sub1FC)[0xA];
+
+        if (byte)
+            byte = 1;
+        return byte;
+    }
+    else if (((struct BitsFC16 *)&obj->flagsFC)->mode >= 6 && ((struct BitsFC16 *)&obj->flagsFC)->mode <= 7)
+    {
+        return (u8)task_is_linked(obj->sub318);
+    }
+}
 
 ASM_FUNC("asm/code_08026EA8/object_teardown.s", void object_teardown(struct SceneObj *obj))
 
@@ -274,9 +352,11 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08026EA8/obj_start_battle.s", void obj_start_battle(void))
 
+void pair_set_mode(void *list, u32 mode, u32 flag);
+void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, u8 v, u8 f);
 ASM_FUNC("asm/code_08026EA8/draw_entity_sprite.s", void draw_entity_sprite(void))
 
-ASM_FUNC("asm/code_08026EA8/obj_reinit.s", void obj_reinit(void))
+ASM_FUNC("asm/code_08026EA8/obj_reinit.s", void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, u8 v, u8 f))
 
 void scene_transition_step(struct SceneObj *obj)
 {
