@@ -85,7 +85,35 @@ ASM_FUNC("asm/code_08025650/obj_collision_mask.s", void obj_collision_mask(void)
 
 ASM_FUNC("asm/code_08025650/obj_test_mode.s", void obj_test_mode(void))
 
-ASM_FUNC("asm/code_08025650/obj_sequence_step.s", void obj_sequence_step(void))
+u32 obj_sequence_step(struct Obj *obj)
+{
+    if (gUnk_0300034C.pressed != 0)
+    {
+        if (gUnk_0300034C.pressed == gInputSequenceKeys[obj->seqIndex])
+        {
+            obj->seqIndex++;
+            if ((u8)obj->seqIndex == 10)
+            {
+                obj->seqIndex = 0;
+                obj->seqTimer = 0xFFFF;
+                return 1;
+            }
+            obj->seqTimer = 0x1E;
+        }
+        else
+        {
+            obj->seqIndex = 0;
+            obj->seqTimer = 0xFFFF;
+        }
+    }
+    obj->seqTimer--;
+    if ((s16)obj->seqTimer <= 0)
+    {
+        obj->seqIndex = 0;
+        obj->seqTimer = 0xFFFF;
+    }
+    return 0;
+}
 
 ASM_FUNC("asm/code_08025650/obj_fill_sprite_entry.s", void obj_fill_sprite_entry(void))
 
