@@ -1,8 +1,10 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Cell
 {
-    u8 filler0[0x12];
+    u8 filler0[0x11];
+    u8 unk11;
     u8 unk12;
     u8 filler13[0x20 - 0x13];
     s8 unk20;
@@ -27,14 +29,17 @@ struct Enemy
     u8 filler68[0x100 - 0x68];
     s16 unk100[4];
     u16 unk108[4];
-    u8 filler110[0x130 - 0x110];
+    struct Cell *unk110;
+    u8 filler114[0x130 - 0x114];
     u16 unk130[2];
     u8 filler134[0x198 - 0x134];
     u32 unk198;
     u8 filler19C[0x1A0 - 0x19C];
     u32 unk1A0;
     u32 unk1A4;
-    u8 filler1A8[0x1D4 - 0x1A8];
+    u8 filler1A8[0x1B0 - 0x1A8];
+    u8 *unk1B0;
+    u8 filler1B4[0x1D4 - 0x1B4];
     u16 unk1D4;
     u8 unk1D6;
     u8 filler1D7;
@@ -61,7 +66,9 @@ struct Enemy
     s16 unk244;
     u8 filler246[0x248 - 0x246];
     s32 unk248;
-    u8 filler24C[0x294 - 0x24C];
+    u8 filler24C[0x272 - 0x24C];
+    u16 unk272[6];
+    u8 filler27E[0x294 - 0x27E];
     struct Cell *cell;
     u8 filler298[0x2C4 - 0x298];
     s32 unk2C4;
@@ -81,6 +88,13 @@ struct BitsMode
 {
     u8 low : 3;
     u8 high : 5;
+};
+
+struct BitsFlag4D
+{
+    u8 low : 3;
+    u8 mid : 4;
+    u8 top : 1;
 };
 
 struct BitsFlag1D6
@@ -104,6 +118,22 @@ struct Bits33E
     u8 rest : 3;
 };
 
+struct Flags8
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+void obj_set_or_add_pos(struct Enemy *obj, u32 dx, u32 dy, u32 dz, u32 copy, u32 add);
+void obj_box_to_stack(s16 *box, struct Enemy *ent, u32 a, u32 b);
+u8 point_in_box(s16 *box, struct Enemy *obj, s32 x, s32 y);
+void enemy_pick_entry_sprite(void);
 void wander_to_edge(struct Enemy *ent, s32 steps, s32 dist);
 void start_axis_move(struct Enemy *ent, s32 a, s32 b, s32 c);
 s32 advance_move(struct Enemy *ent);
@@ -129,11 +159,32 @@ void fall_landing_state(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_active_state(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void start_fall_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void start_fall_to_target_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot);
-void fall_landing_entry(void);
+void fall_landing_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_check_1d8(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_check_1d8_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+void obj_set_active(struct Enemy *ent, u32 zero);
+void obj_set_sprite_link(struct Enemy *ent, u32 zero);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 
-ASM_FUNC("asm/code_0814CB10/hit_active_entry.s", void hit_active_entry(void))
+void hit_active_entry(struct Enemy *owner, struct Enemy *ent, u32 *out)
+{
+    s16 box[8];
+    u8 idx;
+    struct Enemy *partner;
+    s32 v;
+
+    if ((u8)find_active_entry(owner, &idx))
+    {
+        partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
+        obj_box_to_stack(box, ent, 0x22, 0);
+        v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(ent->posZ + ent->dz, 0x100);
+        if (point_in_box(box, partner, (v * 0x10000 + 0x200000) >> 16, (v * 0x10000 - 0x200000) >> 16))
+        {
+            *out = (u32)enemy_pick_entry_sprite;
+        }
+    }
+}
 
 void start_fall_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
@@ -212,7 +263,7 @@ void fall_landing_check_1d8(struct Enemy *parent, struct Enemy *obj, u32 *slot)
     }
 }
 
-ASM_FUNC("asm/code_0814CB10/fall_landing_entry.s", void fall_landing_entry(void))
+ASM_FUNC("asm/code_0814CB10/fall_landing_entry.s", void fall_landing_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
 void fall_landing_check_1d8_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
@@ -245,28 +296,65 @@ void fall_landing_check_1d8_alt(struct Enemy *parent, struct Enemy *obj, u32 *sl
     }
 }
 
-ASM_FUNC("asm/code_0814CB10/snap_to_linked.s", void snap_to_linked(void))
+void obj_set_or_add_pos(struct Enemy *obj, u32 dx, u32 dy, u32 dz, u32 copy, u32 add);
+void obj_box_to_stack(s16 *box, struct Enemy *ent, u32 a, u32 b);
+u8 point_in_box(s16 *box, struct Enemy *obj, s32 x, s32 y);
+void enemy_pick_entry_sprite(void);
+void snap_to_linked(struct Enemy *ent)
+{
+    struct Enemy *obj;
 
+    obj = ent->unk344;
+    obj_set_or_add_pos(obj, ent->posX, ent->posY, ent->posZ, 0, 0);
+    ((struct Flags8 *)&obj->unk20E)->bit2 = 0;
+    ((struct Flags8 *)&obj->unk20D)->bit3 = 1;
+    ((struct Flags8 *)&obj->unk20D)->bit2 = 0;
+    ((struct Flags8 *)&obj->unk20D)->bit5 = 0;
+    ((struct Flags8 *)&obj->unk20D)->bit6 = 0;
+    *(u32 *)((u8 *)obj + 0x20C) = (*(u32 *)((u8 *)obj + 0x20C) & 0xFFFC7FFF) | 0x8000;
+    {
+        u8 *p = &obj->unk20F;
+        *p = *p | 4;
+    }
+}
+
+extern const u8 gFrameAttrTable[];
+void obj_set_cell_coord(struct Enemy *ent, u32 a, u32 b);
+void entry_overlap_or_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot);
+void face_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+void obj_set_cell_coord(struct Enemy *ent, u32 cell, u32 arg);
+extern const u8 gFrameAttrTable[];
+void aim_at_entry_move(struct Enemy *owner, struct Enemy *obj, u32 *slot);
+void entry_overlap_flags_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot);
 ASM_FUNC("asm/code_0814CB10/random_cell_walk.s", void random_cell_walk(void))
 
-ASM_FUNC("asm/code_0814CB10/entry_overlap_or_zone.s", void entry_overlap_or_zone(void))
+ASM_FUNC("asm/code_0814CB10/entry_overlap_or_zone.s", void entry_overlap_or_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/aim_at_entry_move.s", void aim_at_entry_move(void))
+ASM_FUNC("asm/code_0814CB10/aim_at_entry_move.s", void aim_at_entry_move(struct Enemy *owner, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flags_zone(void))
+ASM_FUNC("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flags_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/face_entry.s", void face_entry(void))
+void ai_face_target_tick(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+ASM_FUNC("asm/code_0814CB10/face_entry.s", void face_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_face_target_tick.s", void ai_face_target_tick(void))
+void ai_start_dash(struct Enemy *unused, struct Enemy *parent, u32 *slot);
+void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+ASM_FUNC("asm/code_0814CB10/ai_face_target_tick.s", void ai_face_target_tick(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_start_dash.s", void ai_start_dash(void))
+ASM_FUNC("asm/code_0814CB10/ai_start_dash.s", void ai_start_dash(struct Enemy *unused, struct Enemy *parent, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_dash_step.s", void ai_dash_step(void))
+ASM_FUNC("asm/code_0814CB10/ai_dash_step.s", void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(void))
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+ASM_FUNC("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_airborne.s", void ai_airborne(void))
+void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+ASM_FUNC("asm/code_0814CB10/ai_airborne.s", void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(void))
+void ai_hop_fall(u32 unused, struct Enemy *obj, u32 *slot);
+ASM_FUNC("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_hop_fall.s", void ai_hop_fall(void))
+void obj_set_sprite_link(struct Enemy *ent, u32 zero);
+void obj_set_active(struct Enemy *ent, u32 zero);
+ASM_FUNC("asm/code_0814CB10/ai_hop_fall.s", void ai_hop_fall(u32 unused, struct Enemy *obj, u32 *slot))
