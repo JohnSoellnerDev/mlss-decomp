@@ -149,7 +149,7 @@ void obj_stop_anim_if_active(struct ActionObj *obj);
 void obj_spawn_part_chain(struct ActionObj *obj);
 void obj_start_anim11_if_active(struct ActionObj *obj);
 void obj_slide_in_from_left(struct ActionObj *obj);
-void obj_lookup_link_or_move(struct ActionObj *obj);
+u32 obj_lookup_link_or_move(struct ActionObj *obj);
 void obj_fly_to_scene_target(struct ActionObj *obj);
 void obj_finish_when_idle(struct ActionObj *obj);
 void obj_motion_then_place_part(struct ActionObj *obj);
@@ -165,7 +165,6 @@ void arc_step(struct ActionObj *obj);
 void linear_step_then_arrive(struct ActionObj *obj);
 void ease_step(struct ActionObj *obj);
 void timed_effect_then_step(struct ActionObj *obj);
-void link_and_start_action_from_flags(void);
 struct ActionObj *obj_spawn_linked(struct ActionObj *parent, u32 kind, u32 value);
 void wait_progress_then_return_or_destroy(struct ActionObj *obj);
 void start_move_to_part(struct ActionObj *obj);
@@ -192,7 +191,7 @@ void wait_move_then_action_4(struct ActionObj *obj);
 void wait_move_then_action_4_b(struct ActionObj *obj);
 u8 candidates_advance_progress(struct ActionObj *obj);
 u32 lookup_part(struct ActionObj *obj);
-u32 lookup_link_slot(struct ActionObj *obj, struct ActionObj *other);
+u32 lookup_link_slot(struct ActionObj *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActionObj *owner);
 
 ASM_FUNC("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_step(struct ActionObj *obj))
@@ -427,13 +426,36 @@ void obj_wait_motion_spawn_part(struct ActionObj *obj)
         ((struct ActionFlagBits *)&obj->record->flags)->mode = 1;
         effect_spawn_at(0x219E, 0, 0, 0, (struct ActionObj *)(u32)busy);
         obj_list_push_default(obj);
-        obj->handler = obj_lookup_link_or_move;
+        obj->handler = (void (*)(struct ActionObj *))obj_lookup_link_or_move;
         set_slot_value(0xD5, -1);
         obj->state = obj_start_anim11_if_active;
     }
 }
 
-ASM_FUNC("asm/code_0811121C/obj_lookup_link_or_move.s", void obj_lookup_link_or_move(struct ActionObj *obj))
+NONMATCH("asm/code_0811121C/obj_lookup_link_or_move.s", u32 obj_lookup_link_or_move(struct ActionObj *obj))
+{
+    struct ActionObj *o = obj;
+    u32 slot;
+    u32 result;
+
+    slot = lookup_link_slot(o);
+    if (slot == 0)
+    {
+        set_motion_start(o, 0x300);
+        sprite_set_action(o, 1, 0, 0);
+        {
+            u32 *addr = (u32 *)((u8 *)o + 0x80);
+            *addr = slot;
+        }
+        result = 0;
+    }
+    else
+    {
+        result = slot;
+    }
+    return result;
+}
+END_NONMATCH
 
 void obj_start_anim11_if_active(struct ActionObj *obj)
 {
