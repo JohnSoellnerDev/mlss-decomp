@@ -3,23 +3,35 @@
 
 struct Pose
 {
-    u8 filler0[0x11];
+    u8 filler0[0xE];
+    u16 unkE;
+    u8 filler10;
     u8 flags11;
     u8 flags12;
-    u8 filler13[0x20 - 0x13];
+    u8 filler13[0x16 - 0x13];
+    u16 unk16;
+    u8 filler18[0x1E - 0x18];
+    u8 unk1E;
+    u8 filler1F;
     u8 amount20;
     u8 waitFlag21;
-    u8 filler22[0xBA - 0x22];
-    u16 unkBA;
+          u8 filler22;
+      u8 unk23;
+      u8 filler24[0xBA - 0x24];
+      u16 unkBA;
 };
 
 struct Rec
 {
     struct Rec *ringNext;
-    u8 filler4[0x38 - 0x4];
-    struct Actor *field38;
-    u8 filler3C[0x78 - 0x3C];
-    u16 arrive78;
+          u8 filler4[0x10 - 0x4];
+      struct Pose *pose10;
+      u8 filler14[0x38 - 0x14];
+      struct Actor *field38;
+          u8 filler3C[0x4C - 0x3C];
+      void (*state)(struct Actor *);
+      u8 filler50[0x78 - 0x50];
+      u16 arrive78;
     u8 filler7A[0x7C - 0x7A];
     u8 unk7C;
     u8 unk7D;
@@ -32,10 +44,29 @@ struct Rec
     s32 targetH;
     u8 fillerE4[0xEC - 0xE4];
     s16 slot;
-    u8 fillerEE[0xF6 - 0xEE];
-    s16 timer;
-    u8 filler0F8[0x111 - 0xF8];
-    u8 status111;
+          u8 fillerEE[0xF0 - 0xEE];
+      struct SlotTable *table;
+      u8 fillerF4[0xF6 - 0xF4];
+      s16 timer;
+      u8 filler0F8[0x110 - 0xF8];
+      u8 status110;
+      u8 status111;
+};
+
+struct SlotEntry
+{
+    u8 filler0[0x8];
+    u8 flags8;
+    u8 filler9[0xE - 0x9];
+    s16 offE;
+    s16 off10;
+    u16 unk12;
+};
+
+struct SlotTable
+{
+    u8 filler0[0xC];
+    struct SlotEntry *entries;
 };
 
 struct CandMgr
@@ -47,8 +78,8 @@ struct CandMgr
     u8 filler0D[0x70 - 0x0D];
     struct Rec *candA;
     struct Rec *candB;
-    u8 filler78[0x7C - 0x78];
-    struct Rec *cand7C;
+          struct Rec *list78;
+      struct Rec *cand7C;
 };
 
 struct Actor
@@ -56,19 +87,32 @@ struct Actor
     u8 filler0[0x4];
     void (*routine4)(struct Actor *);
     struct Pose *pose;
-    u8 filler0C[0x28 - 0x0C];
-    struct Rec *data;
+          u8 filler0C[0x10 - 0x0C];
+      s32 posX;
+      s32 posY;
+      s32 posZ;
+      u8 filler1C[0x28 - 0x1C];
+      struct Rec *data;
     struct Actor *owner;
     struct Actor *child;
     u8 filler34[0x38 - 0x34];
     s32 baseX;
     s32 baseY;
     s32 baseH;
-    u8 filler44[0x4C - 0x44];
+    u8 unk44;
+        u8 unk45;
+        u8 unk46;
+        u8 unk47;
+        u8 unk48;
+        u8 unk49;
+        u8 filler4A[0x4C - 0x4A];
     void (*state)(struct Actor *);
     void (*savedState)(struct Actor *);
     s32 field54;
-    u8 filler58[0x68 - 0x58];
+    s32 field58;
+        s32 field5C;
+        s32 field60;
+        s32 field64;
     struct Actor *activeNext;
     struct Actor *link;
     u8 filler70[0x76 - 0x70];
@@ -83,13 +127,28 @@ struct Actor
     s32 targetX;
     s32 targetY;
     s32 targetH;
-    u8 filler90[0xA8 - 0x90];
-    s32 waitCount;
-    u16 timer;
-    u8 fillerAE[0xF0 - 0xAE];
+                  u8 filler90[0x94 - 0x90];
+        s32 unk94;
+        s32 unk98;
+        s32 unk9C;
+        s32 unkA0;
+        s32 unkA4;
+      s32 waitCount;
+      u16 timer;
+      s16 offX;
+      s16 offY;
+      s16 offZ;
+      u8 fillerB4[0xC8 - 0xB4];
+      u16 unkC8;
+      u16 unkCA;
+      u8 unkCC;
+      u8 fillerCD[0xF0 - 0xCD];
     void *dataPtr;
     u8 counter;
 };
+
+void on_arrive(struct Actor *obj);
+void poll_link_routine(struct Actor *obj);
 
 struct PoseBits
 {
@@ -116,6 +175,7 @@ extern struct CandMgr *gUnk_03000FD8;
 extern const u16 gActionCodes[];
 
 void place_part_sprite(struct Actor *obj);
+void effect_follow(struct Actor *obj);
 s32 is_state_busy(void);
 void release_object(void *obj);
 void task_list_remove(struct Actor *obj);
@@ -148,6 +208,8 @@ s32 resolve_contact_action(struct Actor *a, struct Actor *b, s32 c, s32 d, s32 e
 void wait_pose_flag(struct Actor *obj);
 void set_motion_start(struct Actor *obj, s32 a);
 void enter_finish_rebuild(struct Actor *obj);
+void obj_release(struct Actor *obj);
+extern const s16 gOffsetRows[];
 
 ASM_FUNC("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(void))
 
@@ -159,9 +221,10 @@ ASM_FUNC("asm/code_080865F8/obj_attach.s", void obj_attach(void))
 
 ASM_FUNC("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(void))
 
-ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(void))
+void obj_arrive_check(struct Actor *obj);
+ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(struct Actor *obj))
 
-ASM_FUNC("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(void))
+ASM_FUNC("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Actor *obj))
 
 s32 obj_stop(struct Actor *obj)
 {
@@ -191,11 +254,13 @@ s32 obj_stop(struct Actor *obj)
     return 1;
 }
 
+void obj_track_target(struct Actor *obj);
+void start_placement(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(void))
 
 ASM_FUNC("asm/code_080865F8/effect_from_table_obj.s", void effect_from_table_obj(void))
 
-ASM_FUNC("asm/code_080865F8/effect_follow.s", void effect_follow(void))
+ASM_FUNC("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *obj))
 
 void obj_place_start(struct Actor *obj)
 {
@@ -216,15 +281,74 @@ void obj_place_start(struct Actor *obj)
     obj->state = obj_place_step;
 }
 
-ASM_FUNC("asm/code_080865F8/obj_place_step.s", void obj_place_step(struct Actor *obj))
+u8 step_motion(struct Actor *obj);
+void timed_wait_step(struct Actor *obj);
+void obj_place_step(struct Actor *obj)
+{
+    s32 n;
+    s32 *count;
+    s32 x;
+    s32 y;
+
+    if (step_motion(obj) == 0)
+    {
+        count = &obj->waitCount;
+        n = *count;
+        if (n != 0)
+        {
+            x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetX + obj->baseX * (n - 1)) / 0x100, n);
+            y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetY + obj->baseY * (n - 1)) / 0x100, n);
+            place_targets(obj, x, y, 0, 0x100);
+            set_step_and_offsets(obj, 0x700, (obj->baseH / 0x100) + 0x14);
+            *count = *count - 1;
+        }
+        else
+        {
+            *count = 0x14;
+            obj->state = timed_wait_step;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_080865F8/obj_finish_placement.s", void obj_finish_placement(void))
 
 ASM_FUNC("asm/code_080865F8/lookup_part.s", void lookup_part(void))
 
-ASM_FUNC("asm/code_080865F8/lookup_slot.s", void lookup_slot(void))
+ASM_FUNC("asm/code_080865F8/lookup_slot.s", s32 lookup_slot())
 
-ASM_FUNC("asm/code_080865F8/find_lowest_order_pose.s", void *find_lowest_order_pose(struct Actor *obj))
+void *find_lowest_order_pose(struct Actor *obj)
+{
+    struct Pose *best = obj->pose;
+    struct Actor *child;
+    struct Rec *head;
+    struct Rec *rec;
+    struct Rec *next;
+
+    for (child = obj->child; child != NULL; child = child->child)
+    {
+        if ((child->flags & 8) && child->pose->unkE < best->unkE)
+            best = child->pose;
+    }
+    head = obj->data;
+    rec = head->ringNext;
+    if (rec != NULL)
+    {
+        while (rec != head)
+        {
+            if (rec->pose10->unkE < best->unkE)
+                best = rec->pose10;
+            child = rec->field38;
+            next = rec->ringNext;
+            for (; child != NULL; child = child->child)
+            {
+                if ((child->flags & 8) && child->pose->unkE < best->unkE)
+                    best = child->pose;
+            }
+            rec = next;
+        }
+    }
+    return best;
+}
 
 ASM_FUNC("asm/code_080865F8/arbitrate_candidates.s", void arbitrate_candidates(void))
 
@@ -287,7 +411,49 @@ s32 state_clear_08087958(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_080865F8/lookup_link_slot.s", void lookup_link_slot(void))
+s32 lookup_slot();
+s32 lookup_link_slot(struct Actor *a, struct Actor *b)
+{
+    struct Rec *rec;
+    struct Actor *cur;
+    s32 result;
+    u8 found;
+
+    result = lookup_slot(a, b);
+    if (result != 0)
+        return result;
+    result = resolve_contact_action(b, a, 0, 0, (b->data->slot == -1) ? 0x8032012 : 0x8032013);
+    if (result > 0)
+        return result;
+    rec = a->data;
+    if (rec != NULL)
+    {
+        found = 0;
+        if ((void *)a != (u8 *)rec + 8)
+        {
+            cur = rec->field38;
+            if (cur != NULL)
+            {
+                if (a == cur)
+                    goto set;
+                do
+                {
+                    cur = cur->child;
+                    if (cur == NULL)
+                        goto check;
+                } while (a != cur);
+                found = 1;
+            }
+        check:
+            if (!found)
+                return 0;
+        }
+    set:
+        a->index = 0;
+        a->state = wait_pose_flag;
+    }
+    return 0;
+}
 
 s32 query_contact(struct Actor *obj, struct Actor *other, s32 kind)
 {
@@ -413,6 +579,8 @@ void noop_state_08087c7c(struct Actor *obj)
 {
 }
 
+void obj_release(struct Actor *obj);
+extern const s16 gOffsetRows[];
 ASM_FUNC("asm/code_080865F8/process_record_ring.s", void process_record_ring(void))
 
 void set_targets_from_record(struct Actor *obj)
