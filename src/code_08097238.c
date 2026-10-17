@@ -35,9 +35,12 @@ struct Data
 {
     u8 filler0[0xEC];
     s16 slot;
-    u8 fillerEE[0x106 - 0xEE];
+    u8 fillerEE[0xF5 - 0xEE];
+    s8 unkF5;
+    u8 fillerF6[0x106 - 0xF6];
     u16 rate;
-    u8 filler108[0x114 - 0x108];
+    s16 unk108;
+    u8 filler10A[0x114 - 0x10A];
     u32 slotValue;
     u8 filler118[0x11E - 0x118];
     u16 input;
@@ -82,7 +85,7 @@ struct Actor
     u16 scale;
     u16 phase;
     u8 filler80[0x92 - 0x80];
-    u8 filler92[0x94 - 0x92];
+    s16 unk92;
     s32 speedLo;
     s32 speedHi;
     s32 time;
@@ -102,15 +105,30 @@ struct Hero
     struct Actor body;
 };
 
+struct Partner
+{
+    u8 filler0[0x7E];
+    u8 flags7E;
+    u8 filler7F[0xF5 - 0x7F];
+    s8 unkF5;
+    u8 fillerF6[0x106 - 0xF6];
+    s16 unk106;
+    s16 unk108;
+};
+
 struct World
 {
-    u8 filler0[0x70];
+    u8 filler0[0x58];
+    struct Partner *partners[6];
     struct Hero *heroA;
     struct Hero *heroB;
+    u8 filler78[0x7C - 0x78];
+    struct Hero *unk7C;
 };
 
 extern struct World *gUnk_03000FD8;
 extern u8 *gUnk_03000FF4;
+extern u8 *gWorkBuf;
 
 void sprite_set_action(struct Actor *obj, u32 action, u32 part, u32 extra);
 u8 step_motion(struct Actor *obj);
@@ -155,6 +173,11 @@ u32 pair_begin_setup_b(struct Actor *obj);
 void pair_sum_offsets(struct Actor *obj);
 void schedule_pose_task(struct Actor *partner);
 void follow_focus_settle(struct Actor *obj);
+u32 mt19937_next(void);
+s32 sub_081DE850(s32 range, u32 seed);
+void obj_free_parts(struct Actor *obj);
+void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
+void set_motion_offsets(struct Actor *obj, u32 value);
 
 
 ASM_FUNC("asm/code_08097238/pair_children_end.s", void pair_children_end(struct Actor *obj))
@@ -332,7 +355,41 @@ u32 pair_begin_setup(struct Actor *obj)
 
 ASM_FUNC("asm/code_08097238/state_pair_setup_motion.s", void state_pair_setup_motion(struct Actor *obj))
 
-ASM_FUNC("asm/code_08097238/pair_end_heroes.s", void pair_end_heroes(struct Actor *obj))
+void pair_end_heroes(struct Actor *obj)
+{
+    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
+    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Hero *hero;
+    u8 mode;
+
+    if (obj == heroA) {
+        sprite_set_action(obj, 1, 0x2027, 0);
+    }
+    if (obj == heroB) {
+        sprite_set_action(obj, 1, 0x2056, 0);
+    }
+    obj->pose->mode = 1;
+    hero = gUnk_03000FD8->unk7C;
+    if (obj == &hero->body) {
+        mode = hero->body.flags76 & 6;
+        if (mode == 2 || mode == 4) {
+            place_targets(obj, obj->targetX / 0x100 + (s8)hero->body.offX + 10,
+                          obj->targetY / 0x100 + (s8)hero->body.offY, 0, -1);
+            hero->body.unk92 = obj->targetZ / 0x100 + 0xe;
+            set_motion_offsets(obj, 0x200);
+        }
+    } else {
+        mode = obj->flags76 & 6;
+        if (mode == 2 || mode == 4) {
+            place_targets(obj, obj->targetX / 0x100 + (s8)obj->offX + 0xe,
+                          obj->targetY / 0x100 + (s8)obj->offY, 0, -1);
+            obj->unk92 = obj->targetZ / 0x100 + 0xe;
+            set_motion_offsets(obj, 0x200);
+        }
+    }
+    set_slot_value(0x2b, -1);
+    obj->state = hero_motion_done;
+}
 
 void spawn_child_on_visible(struct Actor *obj)
 {
@@ -356,12 +413,44 @@ void spawn_child_on_visible(struct Actor *obj)
 
 ASM_FUNC("asm/code_08097238/hero_random_walk.s", void hero_random_walk(struct Actor *obj))
 
-ASM_FUNC("asm/code_08097238/pair_finish_handle.s", void pair_finish_handle(struct Actor *obj))
+void pair_finish_handle(struct Actor *obj)
+{
+    s32 n;
+    u8 bits;
+
+    obj_free_parts(obj);
+    if (obj == &gUnk_03000FD8->heroA->body)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+    }
+    else
+    {
+        sprite_set_action(obj, 3, 0, 0);
+    }
+    obj->pose->mode = 1;
+    set_slot_value(0x2e, -1);
+    bits = obj->flags76 & 6;
+    if (bits == 2 || bits == 4)
+    {
+        n = sub_081DE850(3, mt19937_next());
+        obj->handle = *(s32 *)(gWorkBuf + 0x5480) + n * *(s32 *)(gWorkBuf + 0x5484) != 0
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + sub_081DE850(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
+            : 0x4000;
+        obj->phase = 0;
+        *((s8 *)obj + 0x79) &= -0x21;
+    }
+    obj->clock = 0;
+    obj->repeats = *(s32 *)(gWorkBuf + 0x5488);
+    obj->state = pair_repeat_countdown;
+}
 
 ASM_FUNC("asm/code_08097238/pair_repeat_countdown.s", void pair_repeat_countdown(struct Actor *obj))
 
 ASM_FUNC("asm/code_08097238/start_random_handle.s", void start_random_handle(struct Actor *obj))
 
+s32 sub_081DE850(s32 range, u32 seed);
+u32 mt19937_next(void);
+extern u8 *gWorkBuf;
 ASM_FUNC("asm/code_08097238/sprite_nodes_fall.s", void sprite_nodes_fall(struct Actor *obj))
 
 ASM_FUNC("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(struct Actor *obj))
@@ -490,4 +579,48 @@ u32 pair_begin_setup_b(struct Actor *obj)
 
 ASM_FUNC("asm/code_08097238/pair_sum_offsets.s", void pair_sum_offsets(struct Actor *obj))
 
-ASM_FUNC("asm/code_08097238/follow_focus_settle.s", void follow_focus_settle(struct Actor *obj))
+void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
+void set_motion_offsets(struct Actor *obj, u32 value);
+void end_hero_follow(struct Actor *obj);
+void follow_focus_settle(struct Actor *obj)
+{
+    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
+    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *focus;
+    s32 mode;
+
+    if (obj == heroA) {
+        sprite_set_action(obj, 1, 0x2027, 0);
+    }
+    if (obj == heroB) {
+        sprite_set_action(obj, 1, 0x2056, 0);
+    }
+    obj->pose->mode = 1;
+    focus = &gUnk_03000FD8->unk7C->body;
+    if (obj == focus) {
+        mode = focus->flags76 & 6;
+        if (mode == 2 || mode == 4) {
+            s32 col = obj->targetX / 0x100 + (s8)focus->offX + 10;
+            s32 row = obj->targetY / 0x100 + (s8)focus->offY;
+            s16 z;
+
+            place_targets(obj, col, row, 0, -1);
+            z = obj->targetZ / 0x100 + 14;
+            *(s16 *)((u8 *)focus + 0x92) = z;
+            set_motion_offsets(obj, 0x200);
+        }
+    } else {
+        mode = obj->flags76 & 6;
+        if (mode == 2 || mode == 4) {
+            s32 col = obj->targetX / 0x100 + (s8)obj->offX + 14;
+            s32 row = obj->targetY / 0x100 + (s8)obj->offY;
+            s16 z;
+
+            place_targets(obj, col, row, 0, -1);
+            z = obj->targetZ / 0x100 + 14;
+            *(s16 *)((u8 *)obj + 0x92) = z;
+            set_motion_offsets(obj, 0x200);
+        }
+    }
+    obj->state = end_hero_follow;
+}
