@@ -1,4 +1,70 @@
 #include "global.h"
+struct MapAnimSlot
+{
+    u8 state;
+    u8 filler01;
+    u16 animId;
+    u8 unk04;
+    u8 filler05;
+    u8 frame;
+    u8 timer;
+    u8 unk08;
+    u8 filler09;
+    u16 x[16];
+    u16 y[16];
+    u16 filler4A;
+};
+struct MapLoaderObj
+{
+    u8 filler0[0x18];
+    void *desc;
+    s16 phase;
+    u16 selector;
+    s16 impulseX;
+    s16 impulseY;
+    s16 baseX;
+    s16 baseY;
+    s16 scaleX;
+    s16 scaleY;
+    u8 filler2C[0x2D - 0x2C];
+    u8 wavePhase;
+    u8 waveStep;
+    u8 filler2F[0x30 - 0x2F];
+    u16 posX;
+    u16 accX;
+    u16 posY;
+    u16 accY;
+    void *tilemap;
+    void *chunks;
+    void *gfx;
+    void *metatiles;
+    u8 filler48[0xAC - 0x48];
+    struct MapAnimSlot anim[16];
+    u8 filler56C[0x579 - 0x56C];
+    u8 layer3Flag579;
+    u8 filler57A[0x57C - 0x57A];
+    void *stateSpriteCtx;
+    u8 stateSpriteSlots[4];
+    u8 filler584[0x599 - 0x584];
+    u8 layer3Flag599;
+    u8 filler59A[0x768 - 0x59A];
+    void *spriteCtx;
+    u8 spriteSlots[4];
+    u8 animLock;
+};
+struct MapAnimEntry
+{
+    u8 flag;
+    u8 type;
+    u16 unk2;
+    void *chunks;
+};
+struct MapAnimChunk
+{
+    u16 x;
+    u16 y;
+};
+
 
 void heap_free_b(void *p);
 void menu_entry_refresh(void *ctx, u32 id, u32 value);
@@ -16,7 +82,9 @@ extern u16 gUnk_02000008;
 extern const u32 gObjectTilesets[];
 struct BgViewEntry
 {
-    u8 filler0[0xC];
+    u32 unk0;
+    const u8 *unk4;
+    const u8 *unk8;
     u8 unkC;
     u8 filler1[3];
 };
@@ -34,6 +102,9 @@ u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
 extern u8 gUnk_03000DD0[];
 extern const u32 gLayer3Table[];
 void map_layer3_entry(u8 *obj, u32 index);
+void update_scanline_offsets();
+void bg3_line_scroll_frame(void);
+extern const void *gAnimListTable[];
 
 ASM_FUNC("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display_b(void))
 
@@ -124,20 +195,14 @@ void map_view_map_obj_destroy(u8 *obj, u32 arg)
     task_remove(obj, arg);
 }
 
-NONMATCH("asm/code_0805C82C/set_state_sprite_value.s", void set_state_sprite_value(u8 *obj, u8 slot, u8 value))
+void set_state_sprite_value(struct MapLoaderObj *obj, u8 slot, u8 value)
 {
-    s32 off = 0x57C;
-    void *ctx = *(void **)(obj + off);
-    u8 id;
-    off += 4;
-    id = *((u8 *)(obj + off) + slot);
-    menu_entry_refresh(ctx, id, value);
+    menu_entry_refresh(obj->stateSpriteCtx, obj->stateSpriteSlots[slot], value);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0805C82C/create_state_sprite.s", void create_state_sprite(u8 *obj, u8 slot))
+void create_state_sprite(struct MapLoaderObj *obj, u8 slot)
 {
-    void *ctx = *(void **)(obj + 0x57C);
+    void *ctx = obj->stateSpriteCtx;
 
     if (ctx != NULL)
     {
@@ -150,22 +215,32 @@ NONMATCH("asm/code_0805C82C/create_state_sprite.s", void create_state_sprite(u8 
 
             if (entry[0] & 0x40)
             {
-                u32 tile = entry[1];
-                u32 flag = 0x5000;
-                u8 id;
-                u8 *ids;
+                u16 tile = entry[1] | 0x5000;
 
-                tile = tile | flag;
-                id = sprite_alloc(ctx, 0xFF, tile, 0xFF, 0xFFFF, 0xFFFF);
-                ids = obj + 0x580;
-                ids[slot] = id;
+                obj->stateSpriteSlots[slot] = sprite_alloc(ctx, 0xFF, tile, 0xFF, 0xFFFF, 0xFFFF);
             }
         }
     }
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_0805C82C/put_layer3_rect.s", void put_layer3_rect(void))
+void put_layer3_rect(u8 *obj, u8 *src)
+{
+    u8 x = src[0];
+    u8 y = src[1];
+    u8 w = src[2];
+    u8 h = src[3];
+    u8 i;
+    u8 j;
+    u16 k = 4;
+
+    for (i = 0; i < h; i++)
+    {
+        u16 off = (u16)(x + (y + i) * *(u16 *)(obj + 0x26));
+
+        for (j = 0; j < w; j++)
+            *(*(u8 **)(obj + 0x9C) + (off + j)) = src[k++];
+    }
+}
 
 void layer3_entries_by_group(u8 *obj, u16 group)
 {
@@ -207,17 +282,14 @@ void layer3_entries_by_attr(u8 *obj, u16 attr)
     }
 }
 
-NONMATCH("asm/code_0805C82C/copy_halfwords_to_obj_buf.s", void copy_halfwords_to_obj_buf(u8 *obj, u32 a, u32 count, u16 *src))
+void copy_halfwords_to_obj_buf(u8 *obj, u16 a, u16 count, u16 *src)
 {
     u16 i;
-    u16 start = a << 2;
-    s32 end = (u16)count << 2;
-    u16 **buf = (u16 **)(obj + 0xA8);
 
-    for (i = 0; i < end; i++)
-        (*buf)[start + i] = src[i];
+    a *= 4;
+    for (i = 0; i < count * 4; i++)
+        ((struct { u8 filler0[0xA8]; u16 *buf; } *)obj)->buf[a + i] = src[i];
 }
-END_NONMATCH
 
 void map_anim2_upload(void *unused, u16 slot, u8 count, u16 index)
 {
@@ -254,9 +326,12 @@ void clear_byte_0a(u8 *obj)
 
 ASM_FUNC("asm/code_0805C82C/init_map_obj.s", void init_map_obj(void))
 
+void upload_map_palettes(u8 *obj);
+void anim_slots_load(struct MapLoaderObj *obj);
+void map_anim_slots_update(u8 *obj);
 ASM_FUNC("asm/code_0805C82C/map_obj_loader_step.s", void map_obj_loader_step(void))
 
-ASM_FUNC("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(void))
+ASM_FUNC("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(u8 *obj))
 
 ASM_FUNC("asm/code_0805C82C/load_layer_columns.s", void load_layer_columns(void))
 
@@ -264,10 +339,80 @@ ASM_FUNC("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(v
 
 ASM_FUNC("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index))
 
-ASM_FUNC("asm/code_0805C82C/map_anim_slots_update.s", void map_anim_slots_update(void))
+ASM_FUNC("asm/code_0805C82C/map_anim_slots_update.s", void map_anim_slots_update(u8 *obj))
 
-ASM_FUNC("asm/code_0805C82C/anim_slots_clear.s", void anim_slots_clear(void))
+void anim_slots_clear(struct MapLoaderObj *obj)
+{
+    u8 i;
+    u8 j;
 
-ASM_FUNC("asm/code_0805C82C/anim_slots_load.s", void anim_slots_load(void))
+    for (i = 0; i < 0x20; i++)
+    {
+        obj->anim[i].state = 0;
+        obj->anim[i].animId = 0;
+        obj->anim[i].unk04 = 0;
+        obj->anim[i].filler05 = 0;
+        obj->anim[i].frame = 0;
+        obj->anim[i].timer = 0;
+        obj->anim[i].unk08 = 0;
+        for (j = 0; j < 0x10; j++)
+        {
+            obj->anim[i].x[j] = 0;
+            obj->anim[i].y[j] = 0;
+        }
+    }
+}
 
-ASM_FUNC("asm/code_0805C82C/map_anim2_start_0805E018.s", void map_anim2_start_0805E018(void))
+ASM_FUNC("asm/code_0805C82C/anim_slots_load.s", void anim_slots_load(struct MapLoaderObj *obj))
+
+extern const void *gAnimListTable[];
+void map_anim2_start_0805E018(struct MapLoaderObj *obj, u16 animId)
+{
+    u8 slot = 0;
+    u8 i;
+    u8 j;
+
+    if (obj->anim[0].state != 0)
+    {
+        do
+        {
+            slot = (u8)(slot + 1);
+            if (obj->anim[slot].state == 0)
+                break;
+        } while (slot <= 0xF);
+    }
+
+    if (slot <= 0xF)
+    {
+        u8 variant = gUnk_03000DD0[7];
+        const struct MapAnimEntry *list = (const struct MapAnimEntry *)gAnimListTable[variant];
+
+        if (list != NULL)
+        {
+            u8 flag = list[slot].flag;
+
+            if (flag & 0x40)
+            {
+                const struct MapAnimChunk *chunk;
+
+                obj->anim[slot].state = (((u32)list[animId].type << 30) >> 30) + 0x20;
+                obj->anim[slot].animId = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
+                obj->anim[slot].unk04 = ((u32)list[animId].unk2 << 23) >> 27;
+
+                chunk = (const struct MapAnimChunk *)list[animId].chunks;
+                i = 0;
+                do
+                {
+                    j = i;
+                    obj->anim[slot].x[j] = chunk[j].x;
+                    obj->anim[slot].y[j] = chunk[j].y & 0x7FFF;
+                    i = (u8)(i + 1);
+                } while (!(chunk[j].y & 0x8000));
+
+                obj->anim[slot].frame = i;
+                obj->anim[slot].timer = 0;
+                obj->anim[slot].unk08 = 0;
+            }
+        }
+    }
+}
