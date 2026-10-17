@@ -93,6 +93,20 @@ struct ClassB
     void (*update)(u32, u32);
 };
 
+struct Obj;
+
+struct HudCounter
+{
+    struct Obj *sprite0;
+    struct Obj *sprite1;
+    struct Obj *slots[6][6];
+    u32 unkA8[6];
+    u32 unkC0[6];
+    u32 unkD8[4];
+    u16 unkE8;
+    u16 unkEA;
+};
+
 // Halves a value, rounding toward zero.
 static inline s32 div2_trunc(s32 v)
 {
@@ -411,7 +425,45 @@ struct EffectObj *init_vt_08cdebf0(struct EffectObj *obj, u8 kind)
 
 ASM_FUNC("asm/code_0816E57C/obj_draw_counter.s", void obj_draw_counter(void))
 
-ASM_FUNC("asm/code_0816E57C/obj_restore_counter_tiles.s", void obj_restore_counter_tiles(void))
+void obj_restore_counter_tiles(struct EffectObj *obj)
+{
+    u16 *src;
+    vu16 *dst;
+    u16 v0, v1, v2, v3, v4, v5, v6, v7;
+
+    *((u8 *)obj + 0x74) = 0;
+    src = (u16 *)0x0600700C;
+    dst = (vu16 *)0x0600702E;
+    dst[0] = v0 = src[0];
+    dst[1] = v1 = src[1];
+    dst[2] = v2 = src[2];
+    dst[3] = v3 = src[3];
+    dst += 0x20;
+    src += 0x20;
+    *dst = v4 = *src;
+    dst++;
+    src++;
+    *dst = v5 = *src;
+    dst++;
+    src++;
+    *dst = v6 = *src;
+    dst++;
+    src++;
+    *dst = v7 = *src;
+    src += 0x30;
+    src[0] = v0;
+    src[1] = v1;
+    src[2] = v2;
+    src[3] = v3;
+    src += 0x20;
+    *(vu16 *)src = v4;
+    src++;
+    *(vu16 *)src = v5;
+    src++;
+    *(vu16 *)src = v6;
+    src++;
+    *(vu16 *)src = v7;
+}
 
 ASM_FUNC("asm/code_0816E57C/obj_create_hud_counter.s", void obj_create_hud_counter(void))
 
