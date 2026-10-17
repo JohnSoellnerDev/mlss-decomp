@@ -196,7 +196,20 @@ ASM_FUNC("asm/code_080DACF4/anim_steps_obj_fall_step.s", void anim_steps_obj_fal
 
 ASM_FUNC("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn_child(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080DACF4/obj_damp_step_limit.s", void obj_damp_step_limit(struct ActorObj *obj))
+void obj_damp_step_limit(struct ActorObj *obj)
+{
+    obj->dx = obj->dx * 0xFD / 0x100;
+    obj->dy = obj->dy * 0xFD / 0x100;
+    obj->dh += obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + obj->dy;
+    obj->posH = obj->baseH + obj->dh;
+    if (obj->dh <= 0 && obj->posH <= obj->data->targetH)
+    {
+        obj->posH = obj->data->targetH;
+        obj->state = obj_pose_update_if_active_b;
+    }
+}
 
 ASM_FUNC("asm/code_080DACF4/obj_fall_step_b.s", void obj_fall_step_b(struct ActorObj *obj))
 
@@ -270,7 +283,38 @@ void obj_start_timed_motion_2(struct ActorObj *obj)
     obj->handler50 = obj_action2_pose2_then_spawn;
 }
 
-ASM_FUNC("asm/code_080DACF4/anim_steps_obj_move_step_b.s", void anim_steps_obj_move_step_b(struct ActorObj *obj))
+void anim_steps_obj_move_step_b(struct ActorObj *obj)
+{
+    s32 pos[3];
+    s32 v;
+
+    obj->posX = obj->baseX + obj->dx;
+    obj->posH = obj->baseH + obj->dh;
+    obj->dh -= 0x5E;
+    v = obj->posX;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[0] = v >> 8;
+    v = obj->posY;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[1] = v >> 8;
+    v = obj->posH;
+    if (v < 0)
+    {
+        v += 0xFF;
+    }
+    pos[2] = v >> 8;
+    offset_three_words_camera(&pos[0], &pos[1], &pos[2], 0);
+    if (pos[0] < -16 || pos[1] > 272)
+    {
+        obj_release(obj);
+    }
+}
 
 void obj_create_part_notify_then_state(struct ActorObj *obj)
 {
