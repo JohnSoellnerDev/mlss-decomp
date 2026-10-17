@@ -136,11 +136,15 @@ struct World
     u8 lock;
     u8 filler08[0x0B - 0x08];
     u8 flags0B;
-    u8 filler0C[0x7C - 0x0C];
+    u8 filler0C[0x74 - 0x0C];
+    s32 unk74;
+    u8 filler78[0x7C - 0x78];
     struct ActiveObj *active;
     u8 filler80[0x250 - 0x80];
     void *slot250;
-    u8 filler254[0x28C - 0x254];
+    u8 filler254[0x278 - 0x254];
+    struct Obj *slot278;
+    u8 filler27C[0x28C - 0x27C];
     struct WorldEffect *effect;
     u8 filler290[0x29C - 0x290];
     struct Voice voice29C;
@@ -184,6 +188,12 @@ s32 measure_text(u32 font, void *text, u32 pad);
 s32 track_run(void *voice);
 u32 clamp_reflect_offsets(s32 *outA, s32 *outB, s32 lo, s32 hi, s32 v);
 struct WorldEffect *task_create_list_48(void (*fn)(void), u32 arg);
+
+struct PadState
+{
+    u8 filler0[0x42];
+    u16 held;
+};
 
 extern u8 gUnk_0300034C[];
 
@@ -274,9 +284,10 @@ NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0810A2FC/state_motion_step.s", void state_motion_step(struct Owner *owner))
+void state_motion_step(struct Owner *owner)
 {
     struct Obj *obj;
+    struct Pic *pic;
     s32 sum;
     s32 t;
     s32 frac;
@@ -328,19 +339,17 @@ NONMATCH("asm/code_0810A2FC/state_motion_step.s", void state_motion_step(struct 
         obj->y = sx + (dx >> 8);
         obj->z = parabola_height(t, obj->unkA4, obj->unkA8, obj->unk98);
         v = obj->unk94;
+        pic = obj->pic;
         dx = ease * (0x100 - v);
         if (dx < 0)
         {
             dx += 0xFF;
         }
-        v = v + (dx >> 8);
-        obj->pic->a4 = v;
-        obj->pic->a6 = v;
+        pic->a6 = pic->a4 = v + (dx >> 8);
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0810A2FC/status_cursor_step.s", s32 status_cursor_step(u32 cursor, u32 count))
+s32 status_cursor_step(u32 cursor, u32 count)
 {
     s32 sel;
     s32 back;
@@ -352,7 +361,7 @@ NONMATCH("asm/code_0810A2FC/status_cursor_step.s", s32 status_cursor_step(u32 cu
         {
             if (gUnk_03000FD8->active->action48 == 0)
             {
-                if ((*(u16 *)(gUnk_0300034C + 0x42) & 0x20) != 0 && count != 1)
+                if ((((struct PadState *)gUnk_0300034C)->held & 0x20) != 0 && count != 1)
                 {
                     back = count - 1;
                     if (sel > 0)
@@ -363,17 +372,10 @@ NONMATCH("asm/code_0810A2FC/status_cursor_step.s", s32 status_cursor_step(u32 cu
                     gUnk_03000FD8->scroll316 -= 1;
                     set_slot_value(0x78, -1);
                 }
-                if ((*(u16 *)(gUnk_0300034C + 0x42) & 0x10) != 0 && count != 1)
+                if ((((struct PadState *)gUnk_0300034C)->held & 0x10) != 0 && count != 1)
                 {
                     back = count - 1;
-                    if (sel < back)
-                    {
-                        sel = sel + 1;
-                    }
-                    else
-                    {
-                        sel = 0;
-                    }
+                    sel = (sel < back) ? sel + 1 : 0;
                     gUnk_03000FD8->scroll316 += 1;
                     set_slot_value(0x78, -1);
                 }
@@ -383,7 +385,6 @@ NONMATCH("asm/code_0810A2FC/status_cursor_step.s", s32 status_cursor_step(u32 cu
     gUnk_03000FD8->statusObj->index = sel;
     return sel;
 }
-END_NONMATCH
 
 s32 slot_marker_step(u32 slot)
 {
@@ -551,7 +552,38 @@ void tile_upload_step(u16 block)
     gUnk_03000FD8->uploadState = gUnk_03000FD8->uploadState - 1;
 }
 
-ASM_FUNC("asm/code_0810A2FC/start_voice_message.s", void start_voice_message(void))
+void start_voice_message(struct Owner *owner)
+{
+    void *block;
+    struct Voice *voice;
+    u32 text;
+    s16 sVar;
+
+    owner->startY = 0x40;
+    owner->timer = 0;
+    set_tile_slot(gUnk_03000FD8->slot250, 4, 0, 0xf, 0x11, 0x11, 2);
+    draw_slot_frame(gUnk_03000FD8->slot250, 5, 4, 4);
+    fill_slot(gUnk_03000FD8->slot250, 4, 0x90);
+    block = slot_block_ptr(gUnk_03000FD8->slot250, 4);
+    voice = &gUnk_03000FD8->voice29C;
+    voice_setup_params(voice, block, 0x11, 0, 0, 0, 1, 2, 1, 3);
+    text = next_text_id();
+    owner->flag18 = measure_text(3, (void *)text, 0) < 0x68;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, block, 0x440);
+    voice->textId = text;
+    voice->unkC = 0;
+    voice->unkD = 0xd;
+    *((u8 *)voice + 0x12) |= 0x20;
+    do
+    {
+        if (voice->unkC < 0)
+            break;
+        sVar = track_run(voice);
+    } while (sVar != 0);
+    *(s8 *)&gUnk_03000FD8->flags0B &= -0x41;
+    owner->state = scroll_text_step;
+    owner->timer = 0x5a;
+}
 
 ASM_FUNC("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(void))
 
