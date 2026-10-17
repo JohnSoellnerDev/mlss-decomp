@@ -32,6 +32,13 @@ struct SpriteHdr
     u8 unk12;
 };
 
+struct Bits1to4
+{
+    u8 b0 : 1;
+    u8 f : 4;
+    u8 rest : 3;
+};
+
 struct SpriteBits12
 {
     u8 bit0 : 1;
@@ -155,6 +162,10 @@ void pair_set_mode(struct ObjList *list, u32 mode, u32 flag);
 u32 direction_octant(void *root, s32 x0, s32 y0, s32 x1, s32 y1);
 void set_half_23e(void *obj, s16 v);
 void unpack_stream_values(void *src, s32 *block, s32 *a, s32 *b, s32 *c);
+void entity_camera_offset(void *list, u32 mode, s32 *x, s32 *y);
+void sprites_obj_set_move_target(void *list, u32 type, u32 one, s32 x, s32 y, s32 z);
+void entity_camera_offset(void *list, u32 mode, s32 *x, s32 *y);
+void object_setup_wipe(void *list, u32 mode, u32 a, s32 x, s32 y);
 
 typedef u32 (*KindHandler)(struct ObjList *list, void *slot);
 extern const u32 gKindHandlerTable[];
@@ -164,7 +175,65 @@ extern u8 *gUnk_03000FC0;
 extern u8 gUnk_03000DD0[];
 extern const u8 gLayer3Table[];
 
-ASM_FUNC("asm/code_080F0C04/step_status_1f8.s", void step_status_1f8(void))
+void obj_clear_flags_2b5_30(void *obj);
+void obj_clear_flags_2b5_c0(void *obj);
+void obj_clear_flags_2b6_30(void *obj);
+u8 obj_flags_2b5_30_set(void *obj);
+u8 obj_flags_2b5_c0_set(void *obj);
+u8 obj_flags_2b6_30_set(void *obj);
+
+u8 flags_vars_set_obj_state(void *root, void *dst, void *obj, u32 state, u32 zero);
+
+typedef void (*ObjMethod)(void *self, u32 arg);
+
+struct MethodEntry
+{
+    s16 offset;
+    u16 unk2;
+    ObjMethod fn;
+};
+
+struct SubObj
+{
+    u8 filler0[0x11];
+    u8 unk11;
+    u8 unk12;
+    u8 filler13[0x21 - 0x13];
+    u8 unk21;
+};
+
+struct Entity
+{
+    u8 filler0[0x214];
+    u8 unk214;
+    u8 unk215;
+    u8 filler216[0x294 - 0x216];
+    struct SubObj *sub294;
+    u8 filler298[0x338 - 0x298];
+    u8 *unk338;
+};
+
+struct ListEntryArgs
+{
+    u32 index;
+    u8 unk4;
+    u8 filler5[3];
+    u32 unk8;
+    u8 unkC;
+    u8 filler0D[3];
+    u32 unk10;
+};
+
+void step_status_1f8(struct OwnerObj **self)
+{
+    u8 *state = gEffectState;
+    u8 *timer = state + 0x1f8;
+    u16 *flags = (u16 *)(timer + 0xa0);
+    if ((*flags & 0x100) && (u8)obj_has_pending_bits((*self)->list) == 0)
+        *flags ^= 0x100;
+    if (*(u16 *)(timer + 0xa0) & 0x10)
+        tick_obj_timer((u8 *)*self + 0x1c, timer);
+}
 
 void task_slot_release(u8 *slot, u32 flags)
 {
@@ -214,7 +283,11 @@ void *task_slot_attach(u8 *slot, u32 attach, u32 kind, u32 data)
     return slot;
 }
 
-ASM_FUNC("asm/code_080F0C04/set_flag_a0_2.s", void set_flag_a0_2(void *a, void *b, u8 *p, u32 c))
+void set_flag_a0_2(void *a, void *b, u8 *p, u32 c)
+{
+    struct { u8 pad[0xA0]; u16 flags; } *obj = (void *)p;
+    obj->flags |= 2;
+}
 
 u32 dispatch_kind_handler(struct OwnerObj *owner, u32 value, u32 *dst, u32 *block)
 {
@@ -453,12 +526,13 @@ u32 obj_bit4_copy_word(struct OwnerObj *owner, u32 *dst)
     return result;
 }
 
-NONMATCH("asm/code_080F0C04/obj_set_bit0_208.s", u32 obj_set_bit0_208(struct OwnerObj *owner, u32 unused, u32 *flag))
+u32 obj_set_bit0_208(struct OwnerObj *owner, u32 unused, u32 *flag)
 {
-    ((struct Bit0Only *)&owner->list->unk208)->b0 = *flag & 1;
+    struct ObjList *list = owner->list;
+    u32 v = *flag;
+    ((struct Bit0Only *)&list->unk208)->b0 = v;
     return 1;
 }
-END_NONMATCH
 
 u32 obj_status_check_copy(void *unused0, u32 *dst, u32 *block)
 {
@@ -590,7 +664,15 @@ u32 set_flag_from_row(void *unused0, void *unused1, s32 *block)
     return 1;
 }
 
-ASM_FUNC("asm/code_080F0C04/effect_idle_copy_word.s", void effect_idle_copy_word(void))
+u32 effect_idle_copy_word(void *unused, u32 *dst)
+{
+    if ((*(u16 *)((u8 *)gEffectState + 0x55E) & 0x603F) != 0)
+    {
+        dst[0] = dst[5];
+        return 0;
+    }
+    return 1;
+}
 
 u32 effect_flag_55f_set(void)
 {
@@ -639,6 +721,7 @@ ASM_FUNC("asm/code_080F0C04/reinit_object_block_scaled.s", void reinit_object_bl
 
 ASM_FUNC("asm/code_080F0C04/store_param_block.s", void store_param_block(void))
 
+void sprites_obj_set_move_target(void *list, u32 type, u32 one, s32 x, s32 y, s32 z);
 ASM_FUNC("asm/code_080F0C04/store_scaled_pair.s", void store_scaled_pair(void))
 
 ASM_FUNC("asm/code_080F0C04/obj_flags_command.s", void obj_flags_command(void))
@@ -907,9 +990,30 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080F0C04/obj_state_entry_plain.s", void obj_state_entry_plain(void))
 
+u8 flags_vars_set_obj_state(void *root, void *dst, void *obj, u32 state, u32 zero);
 ASM_FUNC("asm/code_080F0C04/obj_routine_entry.s", void obj_routine_entry(void))
 
-ASM_FUNC("asm/code_080F0C04/cmd_place_list_entry.s", void cmd_place_list_entry(void))
+u32 cmd_place_list_entry(struct OwnerObj *owner, void *unused, struct ListEntryArgs *args)
+{
+    struct Entity *obj;
+    u32 index = args->index;
+    struct ObjList *list = owner->list;
+    obj = *(struct Entity **)((u8 *)list + 0x28 + (index << 2));
+    obj_set_state(obj, 1);
+    obj_sync_sub_slot(obj, 0);
+    if (args->unk10 != 0)
+    {
+        struct MethodEntry *m = (struct MethodEntry *)(obj->unk338 + 0x98);
+        m->fn((u8 *)obj + m->offset, args->unk4);
+    }
+    else
+    {
+        struct MethodEntry *m = (struct MethodEntry *)(obj->unk338 + 0x90);
+        m->fn((u8 *)obj + m->offset, args->unk4);
+    }
+    obj_set_cell_coord(obj, args->unk8, 0);
+    return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, (u8 *)obj + 0x58, obj->sub294, (u8)args->unk10, (u8)args->unkC);
+}
 
 u32 obj_set_state_entry(struct OwnerObj *owner, void *unused, u32 *block)
 {
@@ -937,7 +1041,25 @@ ASM_FUNC("asm/code_080F0C04/cmd_set_obj_state.s", void cmd_set_obj_state(void))
 
 ASM_FUNC("asm/code_080F0C04/cmd_place_object_toggle.s", void cmd_place_object_toggle(void))
 
-ASM_FUNC("asm/code_080F0C04/cmd_set_obj_state_b.s", void cmd_set_obj_state_b(void))
+u32 cmd_set_obj_state_b(u8 *owner, u8 *obj, u32 *dst, u32 *args)
+{
+    obj_set_state(obj, 1);
+    obj_sync_sub_slot(obj, args[3]);
+    if (args[3] != 0)
+    {
+        u8 *m = *(u8 **)(obj + 0x338) + 0x98;
+
+        ((void (*)(void *, u32))*(void **)(m + 4))(obj + *(s16 *)m, ((u8 *)args)[0]);
+    }
+    else
+    {
+        u8 *m = *(u8 **)(obj + 0x338) + 0x90;
+
+        ((void (*)(void *, u32))*(void **)(m + 4))(obj + *(s16 *)m, ((u8 *)args)[0]);
+    }
+    obj_set_cell_coord(obj, args[1], 0);
+    return (u8)flags_vars_set_obj_state(owner + 0x1C, dst, *(void **)(obj + 0x294), ((u8 *)args)[0xC], ((u8 *)args)[8]);
+}
 
 u32 cmd_commit_or_activate(void *unused0, void *obj, void *unused2, u32 *kind)
 {
@@ -955,8 +1077,16 @@ u32 cmd_commit_or_activate(void *unused0, void *obj, void *unused2, u32 *kind)
 
 ASM_FUNC("asm/code_080F0C04/cmd_toggle_flag.s", void cmd_toggle_flag(void))
 
+void entity_camera_offset(void *list, u32 mode, s32 *x, s32 *y);
+void object_setup_wipe(void *list, u32 mode, u32 a, s32 x, s32 y);
 ASM_FUNC("asm/code_080F0C04/cmd_set_sprite_slot.s", void cmd_set_sprite_slot(void))
 
+void obj_clear_flags_2b5_30(void *obj);
+void obj_clear_flags_2b5_c0(void *obj);
+void obj_clear_flags_2b6_30(void *obj);
+u8 obj_flags_2b5_30_set(void *obj);
+u8 obj_flags_2b5_c0_set(void *obj);
+u8 obj_flags_2b6_30_set(void *obj);
 ASM_FUNC("asm/code_080F0C04/cmd_set_obj_bit.s", void cmd_set_obj_bit(void))
 
 u32 copy_word(void *unused, u32 *dst, u32 *src)
