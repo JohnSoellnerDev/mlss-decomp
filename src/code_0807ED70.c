@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct SpriteNode;
 struct SpriteObj;
@@ -15,7 +16,8 @@ struct OamRow
 
 struct SpriteState
 {
-    u8 filler0[0x0B];
+    u8 filler0[0x0A];
+    u8 flags0A;
     u8 flags0B;
     u8 flags0C;
     u8 filler0D[0x54 - 0x0D];
@@ -45,19 +47,35 @@ struct SpriteNode
 
 struct SpriteRecord
 {
-    u8 filler0[0x12];
+    u16 x;
+    u16 y;
+    u8 filler4[0x0E - 0x04];
+    u16 unkE;
+    u8 filler10[0x12 - 0x10];
     u8 flags12;
+    u8 filler13[0x1F - 0x13];
+    u8 flags1F;
 };
 
 struct SpriteObj
 {
-    u8 filler0[0x08];
+    u16 x;
+    u16 y;
+    u8 filler4[0x08 - 0x04];
     struct SpriteRecord *record;
-    u8 filler0C[0x13 - 0x0C];
+    u8 filler0C[0x0E - 0x0C];
+    u16 unkE;
+    u8 filler10[0x13 - 0x10];
     u8 flags13;
-    u8 filler14[0x18 - 0x14];
+    u8 filler14[0x16 - 0x14];
+    u16 unk16;
     s32 unk18;
-    u8 filler1C[0x28 - 0x1C];
+    u8 filler1C[0x1E - 0x1C];
+    u8 flags1E;
+    u8 flags1F;
+    u8 filler20[0x21 - 0x20];
+    u8 unk21;
+    u8 filler22[0x28 - 0x22];
     void *ring;
     u8 filler2C[0x34 - 0x2C];
     struct SpriteObj *activeNext;
@@ -96,6 +114,8 @@ extern struct SpriteState *gUnk_03000FD8;
 extern u8 *gWorkBuf;
 extern u8 *gMemRoutines;
 extern u16 gUnk_0300034C;
+extern u8 *gUnk_03000FF4;
+void mem_copy_fast(void *dst, const void *src, u32 n);
 
 void sub_08115F54(void *display, u32 kind, u32 x, u32 y, u32 a, u32 b, u32 c, u32 d);
 void sub_08117380(void *display);
@@ -115,7 +135,6 @@ void sprite_set_action(void *obj, u32 a, u32 b, u32 c);
 void place_targets(struct SpriteObj *obj, s32 col, s32 row, s32 z, s32 extra);
 void set_step_and_offsets(struct SpriteObj *obj, s32 a, s32 b);
 void obj_start_anim(struct SpriteObj *obj);
-s32 number_right_edge(u32 tiles);
 void oam_write_tiles(u32 tiles, s32 x, s32 y, u32 prio, u32 right);
 void setup_obj_10bc(void *obj, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
 void obj_load_record(void *obj, u32 a, u32 b, u32 c, u32 d);
@@ -210,6 +229,8 @@ void obj_free_parts(struct SpriteObj *obj)
 
 ASM_FUNC("asm/code_0807ED70/body_set_pose.s", void body_set_pose(void))
 
+extern u8 *gUnk_03000FF4;
+void mem_copy_fast(void *dst, const void *src, u32 n);
 ASM_FUNC("asm/code_0807ED70/hero_select_index.s", void hero_select_index(void))
 
 ASM_FUNC("asm/code_0807ED70/sprite_objects_obj_show_at.s", void sprite_objects_obj_show_at(void))
@@ -444,9 +465,42 @@ void task_draw_step_b(struct Task *task)
 
 ASM_FUNC("asm/code_0807ED70/oam_list_rows_a.s", void oam_list_rows_a(void))
 
-ASM_FUNC("asm/code_0807ED70/oam_list_rows_b.s", void oam_list_rows_b(void))
+void oam_list_rows_b(struct OamRow *row, s32 count)
+{
+    u16 *dst;
+    u16 v;
 
-ASM_FUNC("asm/code_0807ED70/sprite_node_take_link.s", void sprite_node_take_link(void))
+    dst = (u16 *)(gWorkBuf + 0x37E8);
+    while (--count != -1)
+    {
+        v = row->hw0;
+        *dst++ = (u8)v - 0x50;
+        *dst++ = v & 0xFF00;
+        v = row->hw2;
+        *dst++ = (v & 0x1FF) - 0x78;
+        *dst++ = v & 0xFE00;
+        *dst++ = row->hw4;
+        row->hw6 = 1;
+        row = row->next;
+    }
+}
+
+struct SpriteNode *sprite_node_take_link(struct NodeDesc *desc)
+{
+    struct SpriteState *st;
+    struct SpriteNode *node;
+
+    st = gUnk_03000FD8;
+    node = st->nodeFree;
+    st->nodeFree = node->next;
+    node->next = st->nodeUsed;
+    st->nodeUsed = node;
+    ((struct Lo5 *)&node->u0C.flags0C)->lo5 = 0;
+    desc->node = node;
+    node->unk4 = desc->value;
+    node->unk8 = (u32)&desc->unkC;
+    return node;
+}
 
 struct SpriteNode *sprite_node_take(void)
 {
@@ -468,7 +522,17 @@ u8 *work_buf_entry_addr(u32 index)
     return *buf + offset;
 }
 
-ASM_FUNC("asm/code_0807ED70/sprite_node_release.s", void sprite_node_release(void))
+s32 sprite_node_release(struct SpriteNode *node)
+{
+    s32 ret;
+
+    if (node == NULL)
+        return 0;
+    ret = (s32)node->next;
+    node->next = gUnk_03000FD8->nodePool;
+    gUnk_03000FD8->nodePool = node;
+    return ret;
+}
 
 struct SpriteNode *sprite_node_alloc(u32 a, u32 b, u32 d)
 {
