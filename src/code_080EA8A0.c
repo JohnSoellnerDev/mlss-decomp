@@ -143,6 +143,15 @@ struct KeyMatchRecord
     u32 value;
 };
 
+struct BinOpCmd
+{
+    s16 index;
+    u8 filler2[2];
+    u32 op;
+    u32 a;
+    u32 b;
+};
+
 extern u8 *gUnk_03000FB8;
 void set_link_slot_mask(u32 mask);
 void serial_schedule(u32 a, u32 b, u32 c);
@@ -154,6 +163,7 @@ void draw_text_prim(void *a, u32 b, s32 c, s32 d, u32 e, u32 f, u32 g, u32 h, u3
 u32 mt19937_next(void);
 s32 sub_081DE850(s32 n, u32 value);
 u32 compare_op(void *ctx, u32 op, u32 a, u32 b);
+u32 atan2_angle(s32 x, s32 y);
 void set_var(u32 a, void *b, void *c, u32 d, s32 e, u32 f);
 void poll_keys(void);
 void slot_obj_clear(struct ListEntry **list, u8 index);
@@ -225,13 +235,6 @@ void reset_obj_params_b(void *ctx, struct ScriptObj *obj, u32 a, u32 b, u16 s5, 
     set_obj_params_b(ctx, obj, a, b, s5, s6);
 }
 
-struct Flags11Bit6
-{
-    u8 lo6 : 6;
-    u8 b6 : 1;
-    u8 b7 : 1;
-};
-
 struct SpriteModeBits
 {
     u8 lo1 : 1;
@@ -239,24 +242,70 @@ struct SpriteModeBits
     u8 hi5 : 5;
 };
 
-NONMATCH("asm/code_080EA8A0/flags_vars_set_obj_state.s", u8 flags_vars_set_obj_state(void *ctx, struct ScriptObj *obj, struct FlagRec *sub, u8 value, u8 bit))
+struct FlagRecBits
 {
-    ((struct Flags11Bit6 *)&sub->unk11)->b6 = (((u32)sub->unk11 << 25) >> 31) ^ bit;
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 b6 : 1;
+    u8 b7 : 1;
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+};
+
+u8 flags_vars_set_obj_state(void *ctx, struct ScriptObj *obj, struct FlagRec *sub, u8 value, u8 bit)
+{
+    struct FlagRecBits *rec = (struct FlagRecBits *)sub;
+    u8 flip = rec->b6;
+
+    rec->b6 = flip ^ bit;
     if (value != 0)
     {
         obj->word9C = value;
         obj->halfA0 |= 0x20;
-        ((struct SpriteModeBits *)&sub->unk12)->mode = 1;
+        rec->mode = 1;
     }
     else
     {
-        ((struct SpriteModeBits *)&sub->unk12)->mode = 0;
+        rec->mode = 0;
     }
     return value == 0;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080EA8A0/direction_octant.s", void direction_octant(void))
+u32 direction_octant(void *ctx, s32 x0, s32 y0, s32 x1, s32 y1)
+{
+    s32 negX;
+    s32 negY;
+    s32 t;
+
+    x0 = x1 - x0;
+    y0 = y1 - y0;
+    negX = 0;
+    negY = 0;
+    if (x0 < 0)
+    {
+        negX = 1;
+        x0 = -x0;
+    }
+    if (y0 < 0)
+    {
+        negY = 1;
+        y0 = -y0;
+    }
+    while (((x0 | y0) & 0xFFFF8000) != 0)
+    {
+        x0 >>= 1;
+        y0 >>= 1;
+    }
+    if (negX)
+        x0 = -x0;
+    if (negY)
+        y0 = -y0;
+    t = atan2_angle(x0, y0) + 0x50;
+    if (t < 0)
+        t += 0x1F;
+    return (t >> 5) & 7;
+}
 
 void unpack_stream_values(void *ctx, u32 *stream, u32 *out_a, u32 *out_b, u32 *out_c)
 {
@@ -463,7 +512,41 @@ u32 copy_on_key_match_a(void *ctx, u32 *out, struct KeyMatchRecord *rec)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/copy_on_key_match_b.s", void copy_on_key_match_b(void))
+u32 copy_on_key_match_b(void *ctx, u32 *out, struct KeyMatchRecord *rec)
+{
+    u32 keys = gUnk_0300034C.keys28;
+    u32 mask;
+    u32 want;
+    u32 kind;
+
+    if (((s32)rec->flag >> 1) == 0)
+        keys = gUnk_0300034C.keys2A;
+    mask = rec->mask;
+    want = mask;
+    kind = rec->kind + 0xB;
+    switch (kind)
+    {
+    case 0xB:
+        mask = 0;
+        break;
+    case 0xC:
+        mask = ~mask;
+        want = mask;
+        break;
+    }
+    if ((rec->flag & 1) != 0)
+    {
+        if ((want & keys) != mask)
+        {
+            *out = rec->value;
+        }
+    }
+    else if ((want & keys) == mask)
+    {
+        *out = rec->value;
+    }
+    return 1;
+}
 
 u32 set_var_from_keys(void *ctx, struct ScriptObj *obj, s16 *src, u32 mid)
 {
@@ -471,25 +554,41 @@ u32 set_var_from_keys(void *ctx, struct ScriptObj *obj, s16 *src, u32 mid)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/set_var_from_key_group.s", u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupRecord *src, u32 mid))
+u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupRecord *src, u32 mid)
+{
+    u16 value = src->group;
+
+    if (value == 0)
+    {
+        value = gUnk_0300034C.keys2A;
+    }
+    else if (value == 1)
+    {
+        value = gUnk_0300034C.keys28;
+    }
+    else
+    {
+        value = 0;
+    }
+    set_var(mid, (u8 *)obj + 0x18, 0, 0, src->index, value);
+    return 1;
+}
 
 ASM_FUNC("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
 
-struct KeyModeBits
+u32 set_key_mode_bits(void *ctx, void *unused, u8 *src)
 {
-    u8 lo2 : 2;
-    u8 f2 : 2;
-    u8 hi4 : 4;
-};
-
-NONMATCH("asm/code_080EA8A0/set_key_mode_bits.s", u32 set_key_mode_bits(void *ctx, void *unused, u8 *src))
-{
+    struct KeyModeBits16
+    {
+        u16 lo10 : 10;
+        u16 f2 : 2;
+        u16 hi4 : 4;
+    };
     u8 *sys = (u8 *)&gUnk_0300034C;
 
-    ((struct KeyModeBits *)(sys + 0x79))->f2 = *src & 3;
+    ((struct KeyModeBits16 *)(sys + 0x78))->f2 = *src;
     return 1;
 }
-END_NONMATCH
 
 u32 set_shadow_bits(void *ctx, void *unused, u32 *src)
 {
@@ -521,7 +620,52 @@ u32 copy_if_cmp_match(void *ctx, u32 *out, struct CmpMatchRecord *rec)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/binary_op_and_set_var.s", void binary_op_and_set_var(void))
+u32 binary_op_and_set_var(void *unused, u8 *obj, struct BinOpCmd *cmd, u32 a, void *b, u32 c)
+{
+    switch (cmd->op)
+    {
+    case 0:
+        break;
+    case 1:
+        cmd->a = cmd->a + cmd->b;
+        break;
+    case 2:
+        cmd->a = cmd->a - cmd->b;
+        break;
+    case 3:
+        cmd->a = cmd->a * cmd->b;
+        break;
+    case 4:
+        cmd->a = (s32)cmd->a / (s32)cmd->b;
+        break;
+    case 5:
+        cmd->a = (s32)cmd->a % (s32)cmd->b;
+        break;
+    case 6:
+        cmd->a = cmd->a << cmd->b;
+        break;
+    case 7:
+        cmd->a = (s32)cmd->a >> cmd->b;
+        break;
+    case 8:
+        cmd->a = cmd->a & cmd->b;
+        break;
+    case 9:
+        cmd->a = cmd->a | cmd->b;
+        break;
+    case 10:
+        cmd->a = cmd->a ^ cmd->b;
+        break;
+    case 11:
+        cmd->a = cmd->a == 0;
+        break;
+    case 12:
+        cmd->a = ~cmd->a;
+        break;
+    }
+    set_var(a, obj + 0x18, b, c, cmd->index, cmd->a);
+    return 1;
+}
 
 u32 cmd_store_obj_field(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
 {
@@ -809,7 +953,28 @@ u32 set_text_window_32(void *ctx, void *unused, u32 *src)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/bump_or_branch_record.s", void bump_or_branch_record(void))
+u32 bump_or_branch_record(void *ctx, u32 *st, u32 *dst, u32 *p)
+{
+    u32 sel = *p++;
+    u8 *rec;
+
+    switch (sel)
+    {
+    case 0:
+        bump_record(st, (u16)*p);
+        break;
+    case 1:
+        rec = (u8 *)st[1];
+        rec += *p * 0x4C;
+        if ((rec[0x42] << 29) >= 0)
+        {
+            dst[0] = dst[5];
+            return 0;
+        }
+        break;
+    }
+    return 1;
+}
 
 u32 map_rects_cmd(void *ctx, struct ScriptObj *obj, void *unused, u32 *cmd)
 {
@@ -875,7 +1040,22 @@ u32 set_obj_word0_saved(void *ctx, struct ScriptObj *obj, u32 *rec)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ctx, struct ScriptObj *obj))
+NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ctx, struct ScriptObj *obj))
+{
+    u32 saved = obj->word10;
+
+    if (saved == 0)
+    {
+        obj->word4 = obj->word0;
+    }
+    else
+    {
+        obj->word0 = saved;
+        obj->word10 = 0;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 reset_cursor(void *ctx, struct ScriptObj *obj)
 {
@@ -884,6 +1064,7 @@ u32 reset_cursor(void *ctx, struct ScriptObj *obj)
     return 1;
 }
 
+u8 step_effect_slot(u8 *owner, u32 index, u8 *state);
 ASM_FUNC("asm/code_080EA8A0/update_owner_objects.s", void update_owner_objects(void))
 
 struct ObjSubState
@@ -925,4 +1106,4 @@ void update_obj_sub_state(void *ctx, struct ObjSubState *obj, struct ScriptObj *
 
 ASM_FUNC("asm/code_080EA8A0/set_obj_mode.s", void set_obj_mode(void))
 
-ASM_FUNC("asm/code_080EA8A0/step_effect_slot.s", void step_effect_slot(void))
+ASM_FUNC("asm/code_080EA8A0/step_effect_slot.s", u8 step_effect_slot(u8 *owner, u32 index, u8 *state))
