@@ -7,9 +7,12 @@ struct Record
 {
     u8 filler0[0x1A];
     u16 unk1A;
-    u8 filler1C[0x23 - 0x1C];
+    u8 filler1C[0x22 - 0x1C];
+    u8 unk22;
     u8 unk23;
-    u8 filler24[0x36 - 0x24];
+    u16 unk24;
+    u16 unk26;
+    u8 filler28[0x36 - 0x28];
     s16 unk36;
 };
 
@@ -110,6 +113,12 @@ struct Flags210
 };
 
 struct Record;
+
+struct Behavior
+{
+    u8 filler0[0x17A];
+    u16 timerB;
+};
 
 struct Enemy
 {
@@ -237,19 +246,20 @@ void enemy_dash_to_owner_target(void);
 void reset_record_fields(struct Enemy *obj);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 u8 point_in_box(s16 *bounds, struct Partner *partner, s32 zMax, s32 zMin);
-void tile_step_probe(void);
+void tile_step_probe(struct Owner *ctx, struct Enemy *body, EnemyFn *out);
+void face_partner(void *ctx, struct Enemy *obj, EnemyFn *out);
 void enemy_land_reload_sprite(void);
-void enemy_hop_start_kick(void);
+void enemy_hop_start_kick(struct Owner *owner, struct Enemy *ent, EnemyFn *out);
 void obj_start_hop(struct Enemy *ent, u32 mode, s32 x, s32 y);
 void bounce_and_check(void *ctx, struct Enemy *obj, EnemyFn *out);
-void enemy_hop_state_runner(void);
+void enemy_hop_state_runner(u8 *owner, struct Enemy *ent);
 void enemy_wait_sprite_flag_then_load(void);
 u8 find_partner_in_box(void *ctx, struct Enemy *obj, struct Partner **found);
 void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index);
 u8 step_pos_xy(struct Enemy *ent);
-void load_record_state(void);
-void random_collide(void *ctx, struct Enemy *obj, EnemyFn *out);
-void step_with_box_check(void);
+void load_record_state(u8 *owner, struct Enemy *ent, EnemyFn *out);
+void random_collide(struct Owner *owner, struct Enemy *obj, EnemyFn *out);
+void step_with_box_check(void *ctx, struct Enemy *ent, EnemyFn *out);
 void enemy_hop_jump_to_partner(void);
 u8 enemy_partner_in_sensor(void *ctx, struct Enemy *ent);
 u8 step_pos_xy_c(struct Enemy *ent);
@@ -259,7 +269,7 @@ u16 angle_of_vector16(s32 x, s32 y);
 void timed_step_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void finish_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void move_toward_partner(void *ctx, struct Enemy *obj, EnemyFn *slot);
-u8 probe_body_hit(struct Owner *owner, struct Enemy *body, s32 x, s32 y, s32 z, u32 a, u32 b);
+u8 probe_body_hit(struct Owner *owner, struct Enemy *body, s32 x, s32 y, s32 z, u32 a, u16 *b);
 void obj_state_run_advance(void);
 void partner_seek_countdown_then_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void cpu_set(const void *src, void *dst, u32 ctl);
@@ -346,9 +356,10 @@ void bounce_and_check(void *ctx, struct Enemy *obj, EnemyFn *out)
     }
 }
 
+void probe_contact_move(struct Owner *owner, struct Enemy *ent);
 ASM_FUNC("asm/code_0813DE50/seek_partner.s", void seek_partner(void *ctx, struct Enemy *obj))
 
-ASM_FUNC("asm/code_0813DE50/probe_contact_move.s", void probe_contact_move(void))
+ASM_FUNC("asm/code_0813DE50/probe_contact_move.s", void probe_contact_move(struct Owner *owner, struct Enemy *ent))
 
 
 void enter_seek_state(void *ctx, struct Enemy *obj)
@@ -577,13 +588,13 @@ hit:
 
 ASM_FUNC("asm/code_0813DE50/probe_zone_point.s", void probe_zone_point(void *ctx, struct Enemy *obj, EnemyFn *out))
 
-ASM_FUNC("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(void))
+ASM_FUNC("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owner *ctx, struct Enemy *body, EnemyFn *out))
 
 
 
 
 
-ASM_FUNC("asm/code_0813DE50/face_partner.s", void face_partner(void))
+ASM_FUNC("asm/code_0813DE50/face_partner.s", void face_partner(void *ctx, struct Enemy *obj, EnemyFn *out))
 
 
 
@@ -761,17 +772,104 @@ void sub_0813EE00(void *ctx, struct Enemy *obj)
 
 
 
-ASM_FUNC("asm/code_0813DE50/random_collide.s", void random_collide(void *ctx, struct Enemy *obj, EnemyFn *out))
+void random_collide(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
+{
+    u8 *tbl;
+    u8 idx;
+    s32 pick;
+    s32 pick2;
+    u16 speed;
+    u16 kick;
+    u8 index;
+
+    tbl = (u8 *)ent + 0x100;
+    pick = sub_081DE850(4, mt19937_next());
+    ent->sprite->unk20 = *(u16 *)(tbl + pick * 2 + 8);
+    ((struct Flags214 *)&ent->unk214)->low3 = 4;
+    ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 0;
+    pick = sub_081DE850(4, mt19937_next());
+    speed = *(u16 *)(tbl + pick * 2);
+    pick2 = sub_081DE850(2, mt19937_next());
+    kick = *(u16 *)(tbl + pick2 * 2 + 0x30);
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    collide_react(owner, ent, ((void **)((u8 *)owner + 0x28))[index], kick, speed, (s8)tbl[0x40], (s8)tbl[0x41], 0x22, 0);
+    *out = step_with_box_check;
+}
 
 
 
-ASM_FUNC("asm/code_0813DE50/step_with_box_check.s", void step_with_box_check(void))
+void step_with_box_check(void *ctx, struct Enemy *ent, EnemyFn *out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u16 *table = ent->wanderDist;
+    struct Record *rec = ent->rec;
+    struct Partner *partner;
+    s16 box[8];
+    u16 reload;
+    u16 pick_val;
+
+    if (ent->unk1D4 == 0) {
+        if (find_partner_in_box(ctx, ent, &partner)) {
+            if (((u16 *)ent->box)[4] == 0) {
+                out[0] = load_record_state;
+                return;
+            }
+            obj_box_to_stack(box, ent, 0x12, 10);
+            if (point_in_box(box, partner, 0x7FFF, 0)) {
+                out[0] = load_record_state;
+                return;
+            }
+        }
+        reload = rec->unk1A;
+        *(u16 *)(ai + 0x17C) = reload;
+    } else {
+        ent->unk1D4 = ent->unk1D4 - 1;
+    }
+    if (step_pos_xy(ent) == 0) {
+        s32 pick = sub_081DE850(4, mt19937_next());
+        pick_val = table[pick + 0x14];
+        *(u16 *)(ai + 0x17A) = pick_val;
+        out[0] = tick_store;
+        out[3] = random_collide;
+    }
+}
 
 
-ASM_FUNC("asm/code_0813DE50/load_record_state.s", void load_record_state(void))
+void load_record_state(u8 *owner, struct Enemy *ent, EnemyFn *out)
+{
+    struct Record *rec = ent->rec;
+
+    ent->index = sub_081DE850(4, mt19937_next());
+    ent->sprite->unk20 = ((u8 *)rec)[ent->index + 0x22];
+    ((struct Flags214 *)&ent->unk214)->low3 = 1;
+    ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 1;
+    obj_load_record(ent->sprite, 3, 0, 0, 0);
+    sprite_step_e6a0(ent->sprite);
+    ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 1;
+    out[0] = enemy_wait_sprite_flag_then_load;
+}
 
 
-ASM_FUNC("asm/code_0813DE50/load_record_state_b.s", void load_record_state_b(void))
+void load_record_state_b(u8 *owner, struct Enemy *ent, EnemyFn *out)
+{
+    struct Record *rec = ent->rec;
+
+    ent->sprite->unk20 = ((u8 *)rec)[ent->index + 0x22];
+    ((struct Flags214 *)&ent->unk214)->low3 = 1;
+    ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 0;
+    obj_load_record(ent->sprite, 4, 0, 0, 0);
+    sprite_step_e6a0(ent->sprite);
+    ent->unk1D2 = ((s8 *)rec)[ent->index + 0x26];
+    out[0] = tick_store;
+    out[3] = enemy_dash_to_owner_target;
+}
 
 ASM_FUNC("asm/code_0813DE50/aim_and_start_move.s", void aim_and_start_move(void))
 
@@ -801,11 +899,81 @@ void init_state_from_box(void *ctx, struct Enemy *obj)
     }
 }
 
-ASM_FUNC("asm/code_0813DE50/enemy_hop_state_runner.s", void enemy_hop_state_runner(void))
+void enemy_hop_jump_to_partner();
+ASM_FUNC("asm/code_0813DE50/enemy_hop_state_runner.s", void enemy_hop_state_runner(u8 *owner, struct Enemy *ent))
 
-ASM_FUNC("asm/code_0813DE50/enemy_hop_start_kick.s", void enemy_hop_start_kick(void))
+extern const u8 gFrameAttrTable[];
+void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out);
+void enemy_hop_start_kick(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
+{
+    u8 *tbl;
+    s32 pick;
+    u16 speed;
+    u16 kick;
+    u8 idx;
+    u8 index;
+    struct Partner *party;
+
+    tbl = (u8 *)ent + 0x100;
+    pick = sub_081DE850(4, mt19937_next());
+    ent->sprite->unk20 = *(u16 *)(tbl + pick * 2 + 8);
+    ((struct Flags214 *)&ent->unk214)->low3 = 4;
+    ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 0;
+    ((struct Flags214 *)&ent->unk214)->low3 = 4;
+    obj_set_cell_coord(ent, gFrameAttrTable[(((u32)ent->unk216 << 28) >> 30) * 0x10 + (((u32)ent->unk24 << 29) >> 29) + 8], 0);
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    party = *(struct Partner **)((u8 *)owner + index * 4 + 0x28);
+    pick = sub_081DE850(4, mt19937_next());
+    speed = *(u16 *)(tbl + pick * 2);
+    pick = sub_081DE850(2, mt19937_next());
+    kick = *(u16 *)(tbl + pick * 2 + 0x30);
+    collide_react(owner, ent, party, kick, speed, (s8)tbl[0x40], (s8)tbl[0x41], 0x22, 0);
+    *out = enemy_hop_wait_partner;
+}
 
 
-ASM_FUNC("asm/code_0813DE50/enemy_hop_wait_partner.s", void enemy_hop_wait_partner(void))
+void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out)
+{
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
+    u16 *table = ent->wanderDist;
+    struct Record *rec = ent->rec;
+    u16 *timer = &ent->unk1D4;
+    s32 t = *timer;
+    s32 next;
 
+    if (t == 0)
+    {
+        if (enemy_partner_in_sensor(owner, ent))
+        {
+            out[0] = enemy_hop_jump_to_partner;
+            return;
+        }
+        next = rec->unk1A;
+    }
+    else
+    {
+        next = t - 1;
+    }
+    *timer = next;
+    if (step_pos_xy_c(ent))
+    {
+        return;
+    }
+    {
+        u32 rnd = mt19937_next();
+        s32 pick = sub_081DE850(4, rnd);
+        ai->timerB = table[pick + 0x14];
+    }
+    out[0] = tick_store;
+    out[3] = enemy_hop_start_kick;
+}
+
+s32 sub_081DE850(s32 range, u32 seed);
 ASM_FUNC("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(void))
