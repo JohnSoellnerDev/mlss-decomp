@@ -344,7 +344,15 @@ s32 part_step_wait_mode_2(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_0808C6F0/part_step_wait_mode_1.s", s32 part_step_wait_mode_1(struct Actor *obj))
+s32 part_step_wait_mode_1(struct Actor *obj)
+{
+    s32 mode;
+
+    obj->state = (void (*)(struct Actor *))arm_wait_by_mode;
+    mode = 1;
+    obj->mode = mode;
+    return mode;
+}
 
 s32 part_step_wait_mode_0(struct Actor *obj)
 {
@@ -542,7 +550,32 @@ s32 part_step_start_move_to_owner(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_0808C6F0/arm_wait_by_mode.s", void arm_wait_by_mode(struct Actor *obj, u32 defaultTimer))
+void arm_wait_by_mode(struct Actor *obj, u32 defaultTimer)
+{
+    struct Actor *owner = obj->owner;
+
+    switch (obj->mode)
+    {
+    case 0:
+        defaultTimer = 8;
+        break;
+    case 1:
+        defaultTimer = 8;
+        break;
+    case 2:
+        defaultTimer = 8;
+        break;
+    case 3:
+        defaultTimer = 8;
+        break;
+    }
+    obj->timer = defaultTimer;
+    if (owner->data->slot == -1)
+        motion_timed(obj, 2, 8);
+    if (owner->data->slot == -2)
+        motion_timed(obj, 6, 8);
+    obj->next = set_action_by_mode;
+}
 
 void clear_record_b4(struct Actor *obj)
 {
@@ -674,7 +707,21 @@ void wait_release_child(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808C6F0/start_move_to_owner.s", void start_move_to_owner(struct Actor *obj))
+void start_move_to_owner(struct Actor *obj)
+{
+    struct Actor *owner = obj->owner;
+
+    set_slot_value(0x6c, -1);
+    obj->targetX = owner->baseX + 0x4800;
+    obj->targetY = owner->baseY;
+    obj->targetH = owner->baseH;
+    *(u8 *)&obj->flags79 |= 0x20;
+    obj->unk7C = 0x200;
+    obj->unk7A = 0;
+    start_motion(obj);
+    sprite_set_action(obj, 2, 0, 0);
+    obj->state = begin_motion_wait_b;
+}
 
 void state_advance_pos_by_vel(struct Actor *obj)
 {
@@ -934,7 +981,30 @@ void end_action_if_done(struct Actor *obj)
         actor_end_action(obj);
 }
 
-ASM_FUNC("asm/code_0808C6F0/orbit_slots_spawn_orbit_child.s", void orbit_slots_spawn_orbit_child(struct Actor *obj))
+void orbit_slots_spawn_orbit_child(struct Actor *obj)
+{
+    struct Actor *child;
+
+    child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
+    obj->child = child;
+    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 6; }
+    child->unk44 = 0xF6;
+    child->unk45 = 8;
+    child->unk46 = 0xF6;
+    child->unk47 = 0xA;
+    child->unk48 = 0xF4;
+    child->unk49 = 4;
+    ((struct Lo3Bits *)&child->flags77)->lo3 = 2;
+    child->targetX = obj->baseX;
+    child->targetH = child->baseH;
+    child->anim = gAnim284;
+    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 0x40; }
+    child->callback = on_arrive;
+    { u8 *p; p = (u8 *)&child->flags79; *p = *p | 1; }
+    obj->timer = 0;
+    set_slot_value(0x7C, -1);
+    orbit_slots_orbit_step_a(obj);
+}
 
 void orbit_slots_orbit_step_a(struct Actor *obj)
 {
@@ -1073,7 +1143,34 @@ void finish_orbit(struct Actor *obj)
         actor_end_action(obj);
 }
 
-ASM_FUNC("asm/code_0808C6F0/orbit_slots_spawn_orbit_child_b.s", void orbit_slots_spawn_orbit_child_b(struct Actor *obj))
+void orbit_slots_spawn_orbit_child_b(struct Actor *obj)
+{
+    struct Actor *child;
+    u8 *p;
+
+    child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
+    obj->child = child;
+    p = &child->flags76;
+    *p = *p | 6;
+    child->unk44 = 0xF6;
+    child->unk45 = 8;
+    child->unk46 = 0xF6;
+    child->unk47 = 0xA;
+    child->unk48 = 0xF4;
+    child->unk49 = 4;
+    ((struct Lo3Bits *)&child->flags77)->lo3 = 2;
+    child->targetX = obj->baseX;
+    child->targetH = child->baseH;
+    child->anim = gAnim284;
+    p = &child->flags76;
+    *p = *p | 0x40;
+    child->callback = on_arrive;
+    p = &child->flags79;
+    *p = *p | 1;
+    obj->timer = 0;
+    set_slot_value(0x7C, -1);
+    orbit_slots_orbit_step_c(obj);
+}
 
 void orbit_slots_orbit_step_c(struct Actor *obj)
 {
