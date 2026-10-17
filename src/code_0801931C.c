@@ -29,13 +29,15 @@ struct LinkStateBits
 
 struct ListNode
 {
-    u8 filler0;
+    u8 unk0;
     u8 unk1;
     u8 unk2;
-    u8 filler3[0x0C - 3];
+    u8 unk3;
+    u32 unk4;
+    u8 unk8[4];
     struct ListNode *prev;
     struct ListNode *next;
-    u8 filler14[0x18 - 0x14];
+    void *unk14;
     void *desc;
 };
 
@@ -144,6 +146,7 @@ u32 slot_bit_test(u32 i);
 void slot_reset(u32 idx);
 void set_slot_fields(u32 idx, u8 level, u8 period);
 void set_ramp0_target(u8 level, u8 period);
+u8 move_complete_records(u8 *base);
 
 void set_slot_target(u32 idx, u32 value, u32 mode)
 {
@@ -302,7 +305,12 @@ s16 fixed_div_8_8(s16 a, s16 b)
     return ((s32)a << 8) / b;
 }
 
-ASM_FUNC("asm/code_0801931C/fixed_mul_8_8.s", void fixed_mul_8_8(void))
+s16 fixed_mul_8_8(s16 a, s16 b)
+{
+    s32 x = a * b;
+    x /= 256;
+    return x;
+}
 
 u32 decimal_digits(s32 x)
 {
@@ -368,7 +376,19 @@ void obj_list_set_flags_3(void)
     }
 }
 
-ASM_FUNC("asm/code_0801931C/obj_list_update_flags.s", void obj_list_update_flags(void))
+void obj_list_update_flags(void)
+{
+    struct ListNode *node = SYS_AREA->listHead;
+
+    for (; node != 0; node = node->next)
+    {
+        if (node->unk1 != 0 && node->unk1 != 0xFF)
+        {
+            ((struct FlagBits2 *)&node->unk2)->unk0 = 0;
+            ((struct FlagBits2 *)&node->unk2)->unk1 = 1;
+        }
+    }
+}
 
 void set_flags_2_3(u8 *p)
 {
@@ -404,13 +424,36 @@ void task_remove(struct ListNode *task, u32 flags)
 
 ASM_FUNC("asm/code_0801931C/serial_link_init.s", void serial_link_init(void))
 
-ASM_FUNC("asm/code_0801931C/serial_link_shutdown.s", void serial_link_shutdown(void))
+void heap_free(void *p);
+void serial_link_shutdown(void)
+{
+    REG_IME = 0;
+    REG_IE = REG_IE & 0xFFBF;
+    REG_IF = REG_IF | 0x40;
+    REG_IME = 1;
+    REG_IME = 0;
+    REG_IE = REG_IE & 0xFF7F;
+    REG_IF = REG_IF | 0x80;
+    REG_IME = 1;
+    REG_IME = 0;
+    REG_SIOCNT = 0x2003;
+    REG_TM3CNT = 0xABFB;
+    REG_IME = 1;
+    heap_free(gUnk_03000D10);
+    heap_free(*(void **)((u8 *)gUnk_03000D0C + 0x180));
+    heap_free(gUnk_03000D0C);
+    REG_IME = 0;
+    gUnk_03000D0C = 0;
+    gUnk_03000D10 = 0;
+    gUnk_0300034C[0x888] = gUnk_0300034C[0x888] & 0x7F;
+    REG_IME = 1;
+}
 
 ASM_FUNC("asm/code_0801931C/serial_frame.s", void serial_frame(void))
 
 ASM_FUNC("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
 
-ASM_FUNC("asm/code_0801931C/move_complete_records.s", void move_complete_records(void))
+ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base))
 
 ASM_FUNC("asm/code_0801931C/serial_link_update.s", void serial_link_update(void))
 
@@ -424,6 +467,7 @@ void serial_flag6_if_active(void)
 
 ASM_FUNC("asm/code_0801931C/obj_init_gfx.s", void obj_init_gfx(void))
 
+void task_remove(struct ListNode *task, u32 flags);
 ASM_FUNC("asm/code_0801931C/anim_state_step.s", void anim_state_step(void))
 
 void serial_link_enable(void)
@@ -496,6 +540,35 @@ void serial_link_disable(void)
 
 ASM_FUNC("asm/code_0801931C/serial_irq_handler.s", void serial_irq_handler(void))
 
-ASM_FUNC("asm/code_0801931C/serial_check_packet.s", void serial_check_packet(void))
+u8 serial_rx_error(void);
+u32 serial_check_packet(u8 kind)
+{
+    u32 *regs = (u32 *)&gUnk_03000D18;
+    u32 type = regs[2] >> 28;
+
+    if (serial_rx_error() != 0)
+        return 1;
+
+    switch (kind)
+    {
+    case 2:
+        regs[3] = ((regs[2] & 0xFFFFFFF) >> 4) & 1;
+        if (type == 1)
+            goto ok;
+        return 1;
+    case 3:
+        if (type == 2 && regs[3] == ((regs[2] & 0xFFFFFFF) >> 4))
+            goto ok;
+        return 1;
+    case 4:
+        if (type == 3)
+            goto ok;
+        return 1;
+    }
+    return 1;
+
+ok:
+    return 0;
+}
 
 ASM_FUNC("asm/code_0801931C/serial_make_packet.s", void serial_make_packet(void))
