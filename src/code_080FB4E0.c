@@ -18,7 +18,8 @@ struct Slot
     s32 yFix;
     u8 filler1C[0x3A - 0x1C];
     u16 scale;
-    u8 flags;
+    u8 flag0 : 1;
+    u8 flagsRest : 7;
     u8 unk3D;
     u8 filler3E[0x40 - 0x3E];
 };
@@ -27,6 +28,13 @@ struct ObjList
 {
     u8 filler0[0x158];
     struct Slot *slots;
+};
+
+struct SlotTimer
+{
+    u8 filler0[0x9C];
+    s32 word9C;
+    u16 halfA0;
 };
 
 struct Owner
@@ -83,11 +91,26 @@ struct FlagBit0
     u8 rest : 7;
 };
 
+struct SpriteModeBits
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+};
+
 struct SprBits12
 {
     u8 lo : 4;
     u8 b4 : 1;
     u8 hi : 3;
+};
+
+struct ObjBits20F
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 rest : 5;
 };
 
 // Sets the mirror bit (bit 6 of the sprite byte at +0x11).
@@ -115,7 +138,11 @@ void decode_stream_run(u8 *rec, u32 *buf, u8 *block, u8 *p3, u8 *p4, u32 advance
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
-ASM_FUNC("asm/code_080FB4E0/cmd_set_slot_flag.s", void cmd_set_slot_flag(void))
+u32 cmd_set_slot_flag(struct Owner *owner, u32 unused, u32 *cmd)
+{
+    owner->list->slots[cmd[0]].flag0 = cmd[1];
+    return 1;
+}
 
 u32 cmd_find_record(struct Owner *owner, u32 *cmd, u32 *key_ptr, u8 key)
 {
@@ -200,7 +227,21 @@ void clear_command_records(struct Owner *owner)
     } while (remaining > 0);
 }
 
-ASM_FUNC("asm/code_080FB4E0/tick_slot_timer.s", void tick_slot_timer(void))
+void tick_slot_timer(struct Owner *owner, struct SlotTimer *timer, u8 index)
+{
+    u8 *obj = owner->list->slots[index].obj;
+
+    ((struct SpriteModeBits *)(obj + 0x12))->mode = 1;
+    if (obj[0x12] & 8)
+    {
+        if (--timer->word9C == 0)
+        {
+            obj[0x12] |= 0x10;
+            timer->halfA0 ^= 0x20;
+        }
+        ((struct SpriteModeBits *)(obj + 0x12))->mode = 0;
+    }
+}
 
 void toggle_on_motion_done(struct Owner *owner, u8 *state, u8 id)
 {
