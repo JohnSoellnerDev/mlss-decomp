@@ -40,6 +40,12 @@ struct Owner
     u8 *entry;
 };
 
+struct CmdRec
+{
+    u8 filler0[0xA0];
+    u16 flagsA0;
+};
+
 extern u8 *gUnk_03000FC0;
 extern u8 gOwnerTypeCreateDestroy[];
 extern u8 gStateTag[];
@@ -176,7 +182,30 @@ u8 cmd_place_object(struct Owner *owner, u32 a2, u32 *args)
     return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, spr, (u8)args[4], 0);
 }
 
-ASM_FUNC("asm/code_080FA598/cmd_start_move_list.s", void cmd_start_move_list(void))
+u32 cmd_start_move_list(struct Owner *owner, struct CmdRec *rec, s32 *data)
+{
+    s32 mode = (data[1] >> 1) & 3;
+    s32 one = data[1] & 1;
+    u8 index = owner->state->cur9A0 - 1;
+
+    if (data[0] != 0)
+    {
+        data[2] = data[2] << 4;
+        data[3] = data[3] << 4;
+    }
+    if (mode == 1)
+    {
+        if (data[4] & 0x40)
+            data[4] = (data[4] & 0xF) << 4;
+        else
+            data[4] = data[4] << 8;
+        if (data[4] != 0)
+            owner->list->slots[index].scale = data[4];
+    }
+    tween_move_to(owner->list, index, mode, one, data[2], data[3], (s16)data[4]);
+    rec->flagsA0 = rec->flagsA0 | 2;
+    return 0;
+}
 
 ASM_FUNC("asm/code_080FA598/cmd_set_position.s", void cmd_set_position(void))
 
@@ -216,7 +245,19 @@ u32 cmd_set_mode2_or_latch(struct Owner *owner, u32 *cmd)
     return 1;
 }
 
-ASM_FUNC("asm/code_080FA598/cmd_start_move.s", void cmd_start_move(void))
+u32 cmd_start_move(struct Owner *owner, struct CmdRec *rec, u32 *data)
+{
+    u32 v1;
+    u32 v2;
+    u32 v3;
+    u8 index = owner->state->cur9A0 - 1;
+
+    unpack_stream_values(owner->filler1C, data, &v1, &v2, &v3);
+    data += 3;
+    tween_move_to(owner->list, index, data[0] & 3, 1, v1, v2, *(s16 *)&data[1]);
+    rec->flagsA0 = rec->flagsA0 | 2;
+    return 0;
+}
 
 u32 cmd_list_mode(struct Owner *owner, u32 unused, u32 *data)
 {
