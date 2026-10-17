@@ -48,6 +48,14 @@ struct ActorPart
     s16 slot;
     u8 filler4[0xF6 - 0xEE];
     s16 timerF6;
+    u8 filler0F8[0x102 - 0xF8];
+    s16 unk102;
+    s16 unk104;
+    u8 filler106[0x10A - 0x106];
+    u16 unk10A;
+    u16 unk10C;
+    u8 filler10E[0x114 - 0x10E];
+    s32 unk114;
 };
 
 struct ActorObj
@@ -102,6 +110,19 @@ struct ActorObj
     s16 dh;
 };
 
+struct BodyData
+{
+    u8 filler0[0x102];
+    s16 unk102;
+    s16 unk104;
+    u8 filler106[0x10A - 0x106];
+    u16 unk10A;
+    u16 unk10C;
+    u8 filler10E[0x114 - 0x10E];
+    u32 unk114;
+};
+
+void apply_partner_effect(struct ActorObj *a, struct ActorObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
 void sound_stop_song(u32 song);
 void set_slot_value(u32 id, s32 value);
 u32 lookup_link_slot(struct ActorObj *obj, u32 a, u32 b);
@@ -136,8 +157,8 @@ void timed_move_3800(struct ActorObj *obj);
 void set_target_from_records(struct ActorObj *obj);
 void spawn_child_with_offsets(struct ActorObj *obj);
 void offset_and_move_child(struct ActorObj *obj);
-void contact_step_79e4(struct ActorObj *obj);
-void contact_step_75bc(struct ActorObj *obj);
+s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 arg);
+u32 contact_step_75bc(struct ActorObj *obj, struct ActorObj *other);
 void tick_timer_then_move(struct ActorObj *obj);
 void setup_motion_with_callbacks(struct ActorObj *obj);
 void timed_move_3400(struct ActorObj *obj);
@@ -224,15 +245,183 @@ void timed_move_3800(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808962C/set_target_from_records.s", void set_target_from_records(struct ActorObj *obj))
+void set_target_from_records(struct ActorObj *obj)
+{
+    struct ActorObj *owner = obj->owner;
+    struct ActorPart *data = owner->part;
+    struct ActorPart *a;
+    struct ActorPart *b;
+
+    if (data->slot == -1)
+    {
+        b = data;
+        a = (struct ActorPart *)((u8 *)data + 0x130);
+    }
+    else if (data->slot == -2)
+    {
+        b = (struct ActorPart *)((u8 *)data - 0x130);
+        a = data;
+    }
+    if (b->slot != 0)
+    {
+        if (a->slot != 0)
+        {
+            obj->targetX = (b->targetX + a->targetX) / 2 + obj->paramA4 * 0x100;
+            obj->targetY = (b->targetY + a->targetY) / 2 + 0x200;
+        }
+        else
+        {
+            obj->targetX = b->baseX + obj->paramA4 * 0x100;
+            obj->targetY = b->baseY + 0x200;
+        }
+    }
+    else
+    {
+        obj->targetX = a->baseX + obj->paramA4 * 0x100;
+        obj->targetY = a->baseY + 0x200;
+    }
+    obj->targetH = owner->part->targetH;
+    *((u8 *)obj + 0x79) |= 0x20;
+    obj->motionSpeed = 0x600;
+    obj->motionStart = 0;
+    start_motion(obj);
+    sprite_set_action(obj, 2, 0, 0);
+    obj->state = start_motion_by_owner_slot;
+}
 
 ASM_FUNC("asm/code_0808962C/spawn_child_with_offsets.s", void spawn_child_with_offsets(struct ActorObj *obj))
 
 ASM_FUNC("asm/code_0808962C/offset_and_move_child.s", void offset_and_move_child(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_0808962C/contact_step_79e4.s", void contact_step_79e4(struct ActorObj *obj))
+s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 arg)
+{
+    s32 contact = query_contact(body, (u32)other, arg);
 
-ASM_FUNC("asm/code_0808962C/contact_step_75bc.s", void contact_step_75bc(struct ActorObj *obj))
+    if (contact == 0)
+    {
+        struct BodyData *otherData = (struct BodyData *)other->part;
+        s32 otherWord = otherData->unk114;
+        s32 otherW = otherData->unk102;
+        u16 otherH = otherData->unk10A;
+        struct BodyData *bodyData = (struct BodyData *)body->part;
+        s32 bodyW = bodyData->unk104;
+        u16 bodyH = bodyData->unk10C;
+        s32 otherProd;
+        s32 strength;
+        s32 bodyScale;
+
+        strength = otherW * 0x66;
+        otherProd = strength * otherH;
+        if (otherProd < 0)
+        {
+            otherProd += 0xFF;
+        }
+        strength = otherProd >> 8;
+        bodyScale = bodyW * 3;
+        bodyScale = bodyScale + (bodyScale << 4);
+        otherProd = bodyH * bodyScale;
+        if (otherProd < 0)
+        {
+            otherProd += 0xFF;
+        }
+        strength -= otherProd >> 8;
+        strength /= 2;
+        if (otherWord > 0x100)
+        {
+            s32 scaled = otherWord * strength;
+
+            strength = scaled;
+            if (strength < 0)
+            {
+                scaled = strength + 0xFFFF;
+            }
+            strength = scaled >> 16;
+        }
+        else
+        {
+            s32 scaled = strength;
+
+            if (strength < 0)
+            {
+                scaled += 0xFF;
+            }
+            strength = scaled >> 8;
+        }
+        if (strength <= 1)
+        {
+            strength = 1;
+        }
+        apply_partner_effect(other, body, strength, 0, other->posX / 0x100, other->posH / 0x100, 0);
+        hit_react(body);
+        *(u16 *)((u8 *)body + 0xAC) = 8;
+    }
+    return contact;
+}
+
+u32 contact_step_75bc(struct ActorObj *obj, struct ActorObj *other)
+{
+    s32 contact = lookup_slot(obj, (u32)other);
+
+    if (contact == 0)
+    {
+        struct ActorPart *otherPart = other->part;
+        s32 otherWord = otherPart->unk114;
+        s32 otherW = otherPart->unk102;
+        u16 otherH = otherPart->unk10A;
+        struct ActorPart *objPart = obj->part;
+        s32 objW = objPart->unk104;
+        u16 objH = objPart->unk10C;
+        s32 otherProd;
+        s32 strength;
+        s32 objScale;
+
+        strength = otherW * 0x66;
+        otherProd = strength * otherH;
+        if (otherProd < 0)
+        {
+            otherProd += 0xFF;
+        }
+        strength = otherProd >> 8;
+        objScale = objW * 3;
+        objScale = objScale + (objScale << 4);
+        otherProd = objH * objScale;
+        if (otherProd < 0)
+        {
+            otherProd += 0xFF;
+        }
+        strength -= otherProd >> 8;
+        strength /= 2;
+        if (otherWord > 0x100)
+        {
+            s32 scaled = otherWord * strength;
+
+            strength = scaled;
+            if (strength < 0)
+            {
+                scaled = strength + 0xFFFF;
+            }
+            strength = scaled >> 16;
+        }
+        else
+        {
+            s32 scaled = strength;
+
+            if (strength < 0)
+            {
+                scaled += 0xFF;
+            }
+            strength = scaled >> 8;
+        }
+        if (strength <= 1)
+        {
+            strength = 1;
+        }
+        apply_partner_effect(other, obj, strength, 0, other->posX / 0x100, other->posH / 0x100, 0);
+        hit_react(obj);
+        obj->timer = 8;
+    }
+    return contact;
+}
 
 void tick_timer_then_move(struct ActorObj *obj)
 {
