@@ -174,7 +174,45 @@ void obj_walk_by_side(struct ActorObj *obj);
 void obj_pose_action15(struct ActorObj *obj);
 void obj_fall_and_launch(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_0806CB50/actor_wait_then_side_action.s", void actor_wait_then_side_action(struct ActorObj *obj))
+void actor_wait_then_side_action(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        s32 t = obj->timer;
+
+        t--;
+        obj->timer = t;
+        if ((t << 16) <= 0)
+        {
+            sound_stop_song(0x7C);
+            if (obj->paramA4 != 0)
+            {
+                if (obj->paramA8 == 0)
+                {
+                    sprite_set_action(obj, 9, 0, 0);
+                }
+                else
+                {
+                    sprite_set_action(obj, 0xF, 0, 0);
+                }
+                obj->state = obj_flip_side_walk;
+            }
+            else
+            {
+                if (obj->paramA8 == 0)
+                {
+                    sprite_set_action(obj, 0x1E, 0, 0);
+                }
+                else
+                {
+                    sprite_set_action(obj, 0x1F, 0, 0);
+                }
+                obj->timer = 3;
+                obj->state = actor_spawn_effect_set_cmd;
+            }
+        }
+    }
+}
 
 void actor_spawn_effect_set_cmd(struct ActorObj *obj)
 {
@@ -358,7 +396,30 @@ void actor_countdown_then_timer(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806CB50/actor_link_contact_partner.s", u32 actor_link_contact_partner(struct ActorObj *obj, struct ActorObj *other, u32 arg))
+u32 actor_link_contact_partner(struct ActorObj *obj, struct ActorObj *other, u32 arg)
+{
+    u8 *p;
+    struct ActorObj *partner;
+    u32 result;
+
+    result = query_contact(obj, other, arg);
+    if (result != 0)
+    {
+        return result;
+    }
+    if (obj->paramA8 == 0)
+    {
+        p = gUnk_03000FD8->partners[2];
+    }
+    else
+    {
+        p = gUnk_03000FD8->partners[1];
+    }
+    partner = (struct ActorObj *)(p + 8);
+    resolve_contact_action(other, partner, partner->posX / 0x100, partner->posH / 0x100,
+                           other->part->slot != -1 ? 0x11 : 0x10);
+    return 0;
+}
 
 u32 actor_set_speed_link(struct ActorObj *obj, u32 other)
 {
