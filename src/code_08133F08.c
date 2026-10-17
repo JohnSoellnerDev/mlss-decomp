@@ -78,6 +78,15 @@ struct Part
 struct SpriteNode
 {
     struct SpriteNode *next;
+    s32 x;
+    s32 y;
+    s32 h;
+};
+
+struct TileMap
+{
+    u8 filler0[0xC];
+    u16 cells[16];
 };
 
 struct OwnerSprite
@@ -346,7 +355,24 @@ void part_wait_ready_2(struct Part *obj)
     }
 }
 
-ASM_FUNC("asm/code_08133F08/part_setup_sprite.s", void part_setup_sprite(struct Part *obj))
+void part_setup_sprite(struct Part *obj)
+{
+    if (obj->sprite->flags12 & 8)
+    {
+        u8 *fp;
+        obj->targetA = 0x8800;
+        obj->targetB = 0x6800;
+        obj->targetH = obj->baseH;
+        fp = &obj->flags79;
+        *fp |= 0x20;
+        obj->size7C = 0x180;
+        obj->step7A = 0;
+        start_motion(obj);
+        sprite_set_action(obj, 3, 0, 0);
+        set_slot_value(0x6c, -1);
+        obj->state = part_motion_wait;
+    }
+}
 
 void part_motion_wait(struct Part *obj)
 {
