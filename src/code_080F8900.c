@@ -44,9 +44,21 @@ struct KeyWord
     u16 high : 6;
 };
 
+struct OwnerFlag9A2
+{
+    u8 b0 : 1;
+    u8 rest : 7;
+};
+
 struct HeapOwner
 {
     void *block;
+};
+
+struct WorldSlotTable
+{
+    u8 filler0[0x58];
+    u8 *slots[8];
 };
 
 extern u8 *gUnk_03000FD8;
@@ -64,6 +76,10 @@ void set_var(u8 *mid, u8 *low, u8 *flagsA, u8 *flagsB, s16 index, u32 value);
 void set_text_ptrs(u32 a);
 void start_timer_display(void);
 void voice_message_step(void);
+u32 slot_find_max_key(void *unused0, s32 threshold);
+u32 slot_find_min_key(void *unused0, s32 threshold);
+u32 slot_widest_span(void *unused0, s32 threshold);
+s32 slot_get_field(void *obj, s32 idx, s32 field);
 
 void heap_free(void *p);
 void heap_free_b(void *p);
@@ -76,7 +92,16 @@ u32 restore_obj_word0(void *ctx, void *obj);
 u32 cmd_reset_obj_part(struct OwnerObj *obj, u8 *state, u32 *params, u8 idx);
 void set_targets_from_record(void *obj);
 void change_item_count(u8 item, s16 count);
-u32 cmd_update_and_store(void *ctx, u32 arg);
+void unpack_stream_values(u8 *a, u32 *stream, u32 *p1, u32 *p2, u32 *p3);
+void slot_set_value(struct OwnerObj *obj, u32 idx, s32 value, u32 flag);
+void slot_set_vec(u32 idx, s32 x, s32 y, s32 z, u32 flag);
+void slot_start_motion(u32 idx, u32 flag);
+void set_mark_callbacks(void);
+void spawn_slot_markers(void);
+void set_world_flag0(u8 flag);
+void update_slot_markers(void);
+void release_slot_objects(void);
+void release_timer_tiles(void);
 
 ASM_FUNC("asm/code_080F8900/cmd_slot_flag_20.s", u32 cmd_slot_flag_20(void *obj, u32 unused, u32 *p))
 
@@ -108,9 +133,33 @@ ASM_FUNC("asm/code_080F8900/cmd_effect_mode.s", u32 cmd_effect_mode(void *obj, u
 
 ASM_FUNC("asm/code_080F8900/cmd_reward_or_update.s", u32 cmd_reward_or_update(struct OwnerObj *obj, u32 arg, u32 *p))
 
-ASM_FUNC("asm/code_080F8900/cmd_find_slot_set_var.s", u32 cmd_find_slot_set_var(struct OwnerObj *obj, u8 *var, u32 *p, u32 ctx))
+u32 cmd_find_slot_set_var(struct OwnerObj *obj, u8 *var, s16 *p, u32 ctx)
+{
+    u32 value;
 
-ASM_FUNC("asm/code_080F8900/cmd_slot_get_set_var.s", void cmd_slot_get_set_var(void))
+    switch (*(s32 *)(p + 2))
+    {
+    case 0:
+        value = slot_find_max_key(obj, *(s32 *)(p + 4));
+        break;
+    case 1:
+        value = slot_find_min_key(obj, *(s32 *)(p + 4));
+        break;
+    case 2:
+        value = slot_widest_span(obj, *(s32 *)(p + 4));
+        break;
+    }
+    set_var((u8 *)ctx, var + 0x18, obj->state + 0x1794, var + 0xA8, p[0], value);
+    return 1;
+}
+
+u32 cmd_slot_get_set_var(struct OwnerObj *obj, u8 *var, s16 *p, u32 ctx)
+{
+    u32 value = slot_get_field(obj, p[2], *(s32 *)(p + 4));
+
+    set_var((u8 *)ctx, var + 0x18, obj->state + 0x1794, var + 0xA8, p[0], value);
+    return 1;
+}
 
 ASM_FUNC("asm/code_080F8900/cmd_flag_op.s", u32 cmd_flag_op(struct OwnerObj *obj, u32 *dst, u32 *p))
 
@@ -138,9 +187,43 @@ u32 cmd_world_flag_2f8(void *obj, u32 unused, u32 *p)
 
 ASM_FUNC("asm/code_080F8900/cmd_slot_refresh.s", u32 cmd_slot_refresh(struct OwnerObj *obj, u32 unused, u8 *p))
 
-ASM_FUNC("asm/code_080F8900/cmd_slot_shift_pos.s", u32 cmd_slot_shift_pos(struct OwnerObj *obj, u32 unused, u32 *p))
+u32 cmd_slot_shift_pos(struct OwnerObj *obj, u32 unused, s32 *p)
+{
+    u8 base = obj->state[0x179C];
+    u8 idx;
+    s16 x, y, z;
 
-ASM_FUNC("asm/code_080F8900/cmd_slot_resync_pos.s", u32 cmd_slot_resync_pos(struct OwnerObj *obj, u32 unused, s16 *p))
+    if (base < 7)
+    {
+        idx = base - 1;
+    }
+    else
+    {
+        idx = base - 7;
+    }
+    slot_read_pos(obj, (s16)p[0], &x, &y, &z);
+    slot_set_pos_abs(obj, idx, p[1] + x, p[2] + y, p[3] + z);
+    return 0;
+}
+
+u32 cmd_slot_resync_pos(struct OwnerObj *obj, u32 unused, s16 *p)
+{
+    u8 base = obj->state[0x179C];
+    u8 idx;
+    s16 x, y, z;
+
+    if (base < 7)
+    {
+        idx = base - 1;
+    }
+    else
+    {
+        idx = base - 7;
+    }
+    slot_read_pos(obj, p[0], &x, &y, &z);
+    slot_set_pos_abs(obj, idx, x, y, z);
+    return 0;
+}
 
 ASM_FUNC("asm/code_080F8900/cmd_slot_flag_copy.s", u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p))
 
@@ -203,6 +286,10 @@ u32 cmd_owner_part_copy(struct OwnerObj *obj, u32 *dst, u32 *p)
     return 1;
 }
 
+void unpack_stream_values(u8 *a, u32 *stream, u32 *p1, u32 *p2, u32 *p3);
+void slot_set_value(struct OwnerObj *obj, u32 idx, s32 value, u32 flag);
+void slot_set_vec(u32 idx, s32 x, s32 y, s32 z, u32 flag);
+void slot_start_motion(u32 idx, u32 flag);
 ASM_FUNC("asm/code_080F8900/cmd_owner_part_reset.s", u32 cmd_owner_part_reset(struct OwnerObj *obj, u32 unused, u32 *p))
 
 ASM_FUNC("asm/code_080F8900/cmd_reset_obj_part.s", u32 cmd_reset_obj_part(struct OwnerObj *obj, u8 *state, u32 *params, u8 idx))
@@ -219,6 +306,10 @@ u32 cmd_part_shift(struct OwnerObj *obj, u32 unused, u32 *p)
 
 ASM_FUNC("asm/code_080F8900/cmd_find_part_copy.s", void cmd_find_part_copy(void))
 
+u32 slot_find_max_key(void *unused0, s32 threshold);
+u32 slot_find_min_key(void *unused0, s32 threshold);
+u32 slot_widest_span(void *unused0, s32 threshold);
+s32 slot_get_field(void *obj, s32 idx, s32 field);
 ASM_FUNC("asm/code_080F8900/cmd_part_flag4.s", u32 cmd_part_flag4(struct OwnerObj *obj, u32 unused, u32 *p))
 
 ASM_FUNC("asm/code_080F8900/cmd_node_stream.s", void cmd_node_stream(void))
@@ -239,6 +330,12 @@ ASM_FUNC("asm/code_080F8900/slot_clear_flag800_if_idle.s", void slot_clear_flag8
 
 ASM_FUNC("asm/code_080F8900/setup_bg_entry.s", void setup_bg_entry(void))
 
+void set_mark_callbacks(void);
+void spawn_slot_markers(void);
+void set_world_flag0(u8 flag);
+void update_slot_markers(void);
+void release_slot_objects(void);
+void release_timer_tiles(void);
 ASM_FUNC("asm/code_080F8900/create_text_entry.s", u32 create_text_entry(u8 *owner, u8 idx, u32 a, u32 b, u32 c))
 
 u16 read_entry_half_1a0(struct OwnerObj *obj, u8 idx)
@@ -286,7 +383,25 @@ void reset_root_params(struct OwnerObj *obj, u32 a)
     reset_obj_params_b((u8 *)obj + 0x1C, obj->state, a, 0, 1, 0xFF);
 }
 
-ASM_FUNC("asm/code_080F8900/unknown_thumb_080f970e.s", void unknown_thumb_080f970e(struct SlotTable *table, u8 idx))
+NONMATCH("asm/code_080F8900/unknown_thumb_080f970e.s", void unknown_thumb_080f970e(struct SlotTable *table, u8 idx))
+{
+    u32 off = (u8)idx << 4;
+    u8 *base = table->entries;
+    struct SlotPos *obj;
+    struct SlotEntry *entry;
+    u32 sum1;
+
+    base += off;
+    entry = (struct SlotEntry *)base;
+    obj = entry->sprite;
+    obj->unk0 = entry->unk4 + entry->unk8;
+    sum1 = entry->unkA;
+    base = (u8 *)(u32)entry->unk6;
+    sum1 += (u32)base;
+    obj->unk2 = sum1;
+    obj->unkE = 0x7FFF - sum1;
+}
+END_NONMATCH
 
 u32 slot_countdown_step(struct SlotTable *table, u8 idx)
 {
@@ -336,13 +451,80 @@ void heap_free_owner(struct HeapOwner *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_080F8900/owner_step.s", void owner_step(void))
+u32 owner_tick_records(u8 *owner);
+u32 run_record(struct OwnerObj *owner, u8 *rec);
+u8 text_layer_step(u8 *owner);
+u32 slot_countdown(struct SlotTable *table, u8 idx);
+void update_slot_bounds(struct SlotTable *table, u8 idx);
+void owner_step(struct OwnerObj *owner)
+{
+    u8 *state = *(u8 **)((u8 *)owner + 0x24);
+    u8 *cnt = state + 0x9A0;
+    u8 *end;
+    struct SlotEntry *entry;
+    s16 i;
+
+    ((struct OwnerFlag9A2 *)(state + 0x9A2))->b0 = 0;
+    owner_tick_records((u8 *)owner);
+    *cnt = 0;
+    if ((*(u16 *)(state + 0xA0) & 0x14) == 0)
+    {
+        run_record(owner, state);
+    }
+    *cnt = *cnt + 1;
+    state += 0xA8;
+    end = state + (0xFC << 3);
+    while (state != end)
+    {
+        if ((*(u16 *)(state + 0xA0) & 0x36) == 0)
+        {
+            *(u32 *)(*(u8 **)((u8 *)owner + 0x24) + 0x994) = *cnt - 1;
+            run_record(owner, state);
+        }
+        state += 0xA8;
+        *cnt = *cnt + 1;
+    }
+    if (*(u8 *)(*(u8 **)(*(u8 **)((u8 *)owner + 0x28) + 4) + 0x1B2) != 0)
+    {
+        *(u8 *)(*(u8 **)(*(u8 **)((u8 *)owner + 0x28) + 4) + 0x1B2) = text_layer_step(*(u8 **)((u8 *)owner + 0x28));
+    }
+    if ((*(u8 *)(*(u8 **)((u8 *)owner + 0x24) + 0x9A3) & 1) != 0)
+    {
+        i = 0;
+        entry = (struct SlotEntry *)(*(struct SlotTable **)((u8 *)owner + 0x20))->entries;
+        do
+        {
+            if ((u8)slot_countdown(*(struct SlotTable **)((u8 *)owner + 0x20), (u8)i) != 0)
+            {
+                if (entry->filler0E != 0)
+                {
+                    u8 *src = *(u8 **)(*(u8 **)((u8 *)owner + 0x14) + 0x158) + (entry->filler0C << 6);
+                    s32 v = *(s32 *)(src + 0x14);
+                    if (v < 0)
+                    {
+                        v += 0xFF;
+                    }
+                    entry->unk8 = v >> 8;
+                    v = *(s32 *)(src + 0x18);
+                    if (v < 0)
+                    {
+                        v += 0xFF;
+                    }
+                    entry->unkA = (v >> 8) - src[0x3D];
+                }
+                update_slot_bounds(*(struct SlotTable **)((u8 *)owner + 0x20), (u8)i);
+            }
+            i++;
+            entry++;
+        } while (i < 4);
+    }
+}
 
 ASM_FUNC("asm/code_080F8900/unknown_thumb_080f98d8.s", void unknown_thumb_080f98d8(void))
 
 ASM_FUNC("asm/code_080F8900/owner_init_entry.s", void owner_init_entry(void))
 
-ASM_FUNC("asm/code_080F8900/owner_tick_records.s", void owner_tick_records(void))
+ASM_FUNC("asm/code_080F8900/owner_tick_records.s", u32 owner_tick_records(u8 *owner))
 
 ASM_FUNC("asm/code_080F8900/owner_reset.s", void owner_reset(void))
 
