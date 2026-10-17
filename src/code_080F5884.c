@@ -18,7 +18,14 @@ struct World
     s32 angle;
     u8 filler250[0x2B4 - 0x250];
     u16 unk2B4;
-    u8 filler2B6[0x310 - 0x2B6];
+    u8 filler2B6[0x2BF - 0x2B6];
+    u8 unk2BF;
+    u8 filler2C0[0x2E0 - 0x2C0];
+    u32 unk2E0[3];
+    u8 filler2EC[0x2EC - 0x2EC];
+    u16 unk2EC;
+    u16 unk2EE;
+    u8 filler2F0[0x310 - 0x2F0];
     u8 *unk310;
     u8 filler314[0x346 - 0x314];
     u8 unk346;
@@ -214,16 +221,14 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080F5884/cmd_flags_show.s", void cmd_flags_show(void))
 
-NONMATCH("asm/code_080F5884/list_slot_ops_cmd_world_mode.s", u32 list_slot_ops_cmd_world_mode(u32 unused0, u32 unused1, s32 *cmd))
+u32 list_slot_ops_cmd_world_mode(u32 unused0, u32 unused1, s32 *cmd)
 {
     u8 *a;
-    s32 bits;
 
     switch (*cmd)
     {
     case 0:
-        gUnk_03000FD8->unk351 = 0x80;
-        gUnk_03000FD8->unk350 = 0x80;
+        gUnk_03000FD8->unk350 = gUnk_03000FD8->unk351 = 0x80;
         break;
     case 1:
         state_status_release(gUnk_03000FD8->unk310);
@@ -246,14 +251,11 @@ NONMATCH("asm/code_080F5884/list_slot_ops_cmd_world_mode.s", u32 list_slot_ops_c
         break;
     case 2:
         gUnk_03000FD8->unk2B4 = 0;
-        bits = *((u8 *)gUnk_03000FD8 + 0x2C1);
-        bits = bits & -9;
-        *((u8 *)gUnk_03000FD8 + 0x2C1) = bits;
+        *((s8 *)gUnk_03000FD8 + 0x2C1) &= -9;
         break;
     }
     return 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080F5884/draw_list_item.s", void draw_list_item(void))
 
