@@ -434,19 +434,15 @@ void obj_wait_motion_spawn_part(struct ActionObj *obj)
 
 NONMATCH("asm/code_0811121C/obj_lookup_link_or_move.s", u32 obj_lookup_link_or_move(struct ActionObj *obj))
 {
-    struct ActionObj *o = obj;
     u32 slot;
     u32 result;
 
-    slot = lookup_link_slot(o);
+    slot = lookup_link_slot(obj);
     if (slot == 0)
     {
-        set_motion_start(o, 0x300);
-        sprite_set_action(o, 1, 0, 0);
-        {
-            u32 *addr = (u32 *)((u8 *)o + 0x80);
-            *addr = slot;
-        }
+        set_motion_start(obj, 0x300);
+        sprite_set_action(obj, 1, 0, 0);
+        obj->link = slot;
         result = 0;
     }
     else
