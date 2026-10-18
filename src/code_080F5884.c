@@ -173,17 +173,138 @@ ASM_FUNC("asm/code_080F5884/cmd_slot_release.s", void cmd_slot_release(void))
 
 ASM_FUNC("asm/code_080F5884/cmd_slot_move_step.s", void cmd_slot_move_step(void))
 
-ASM_FUNC("asm/code_080F5884/cmd_slot_set_bits.s", void cmd_slot_set_bits(void))
 
-ASM_FUNC("asm/code_080F5884/cmd_slot_set_bit_pair.s", void cmd_slot_set_bit_pair(void))
+NONMATCH("asm/code_080F5884/cmd_slot_set_bits.s", u32 cmd_slot_set_bits(u32 unused0, u32 unused1, u32 *cmd))
+{
+    u8 *cur;
+    u8 *q;
+    s32 mode;
+
+    cur = gWorld->curObj;
+    q = *(u8 **)(cur + 0x38);
+    mode = *cmd;
+    switch (mode)
+    {
+    case 0:
+    case 2:
+    {
+        u8 *ptr;
+
+        cur[0x80] |= 0x10;
+        ptr = *(u8 **)(cur + 0x10);
+        if (ptr != 0)
+        {
+            ptr[0x12] |= 0x10;
+        }
+        if (q != 0)
+        {
+            q[0x78] |= 0x10;
+            ptr = *(u8 **)(q + 8);
+            if (ptr != 0)
+            {
+                ptr[0x12] |= 0x10;
+            }
+        }
+    }
+        break;
+    case 1:
+    case 3:
+    {
+        u8 *ptr;
+        s32 mask;
+
+        mask = -0x11;
+        cur[0x80] = cur[0x80] & mask;
+        ptr = *(u8 **)(cur + 0x10);
+        if (ptr != 0)
+        {
+            ptr[0x12] = ptr[0x12] & mask;
+        }
+        if (q != 0)
+        {
+            q[0x78] = q[0x78] & mask;
+            ptr = *(u8 **)(q + 8);
+            if (ptr != 0)
+            {
+                ptr[0x12] = ptr[0x12] & mask;
+            }
+        }
+    }
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
+
+
+NONMATCH("asm/code_080F5884/cmd_slot_set_bit_pair.s", u32 cmd_slot_set_bit_pair(u32 unused0, u8 *dst, u32 *cmd))
+{
+    u8 *p;
+    s32 w1;
+    s32 mode;
+
+    if (cmd[0] == 0x3F)
+    {
+        cmd[0] = ((struct SlotByteFD *)dst)->lo;
+    }
+    p = gWorld->slots[*cmd++];
+    w1 = *cmd;
+    mode = w1 >> 1;
+    switch (mode)
+    {
+    case 0:
+    {
+        u8 *q;
+        u8 *r;
+        s32 bit;
+        s32 hi;
+        s32 lo;
+        s32 flags;
+
+        bit = w1 & 1;
+        q = p + 0x7F;
+        hi = bit << 7;
+        *q = (*q & 0x7F) | hi;
+        r = p + 0x80;
+        flags = *r;
+        flags = (flags & -2) | bit;
+        lo = bit << 1;
+        flags = (flags & -3) | lo;
+        *r = flags;
+    }
+        break;
+    case 1:
+    {
+        s32 flags;
+        s32 both;
+        s32 hi;
+        s32 lo;
+
+        both = w1 & mode;
+        p += 0x80;
+        hi = both << 2;
+        flags = *p;
+        flags = (flags & -5) | hi;
+        lo = both << 3;
+        flags = (flags & -9) | lo;
+        *p = flags;
+    }
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F5884/cmd_world_slot.s", void cmd_world_slot(void))
+
 
 ASM_FUNC("asm/code_080F5884/cmd_slot_table.s", void cmd_slot_table(void))
 
 ASM_FUNC("asm/code_080F5884/slot_follow_source.s", void slot_follow_source(void))
 
+
 ASM_FUNC("asm/code_080F5884/cmd_set_ctx_fields.s", void cmd_set_ctx_fields(void))
+
 
 ASM_FUNC("asm/code_080F5884/cmd_world_scroll.s", void cmd_world_scroll(void))
 
@@ -260,3 +381,4 @@ u32 list_slot_ops_cmd_world_mode(u32 unused0, u32 unused1, s32 *cmd)
 ASM_FUNC("asm/code_080F5884/draw_list_item.s", void draw_list_item(void))
 
 ASM_FUNC("asm/code_080F5884/cmd_spawn_item.s", void cmd_spawn_item(void))
+
