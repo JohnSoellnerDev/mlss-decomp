@@ -186,7 +186,25 @@ s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
 s32 move_step(u16 *outX, u16 *outY, u16 *outH, s32 dx, s32 dy, s32 dh, s32 speed);
 void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
 
-ASM_FUNC("asm/code_08087E1C/search_frame_pairs.s", u32 search_frame_pairs(struct Actor *a, struct Actor *b))
+NONMATCH("asm/code_08087E1C/search_frame_pairs.s", u32 search_frame_pairs(struct Actor *a, struct Actor *b))
+{
+    s32 ia = 0;
+    s32 ib;
+    s32 check;
+
+    do {
+        ia = find_frame_entry(a, ia);
+        ib = 0;
+        do {
+            ib = find_frame_entry(b, ib);
+            check = contact_face(a, b);
+            if (check != 0)
+                return check;
+        } while (ib >= 0);
+    } while (ia >= 0);
+    return 0;
+}
+END_NONMATCH
 
 struct Rec *candidate_for_slot(struct Rec *obj)
 {
@@ -540,7 +558,31 @@ void start_rebuild(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08087E1C/step_motion.s", u32 step_motion(struct Actor *obj))
+u32 step_motion(struct Actor *obj)
+{
+    s32 p;
+    s32 h;
+
+    p = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
+    obj->timer = obj->progress;
+    obj->progress = p;
+    if (p <= 0x3FFF && obj->motionStart != 0)
+    {
+        obj->x = ((obj->targetX >> 16) * p + (s16)obj->targetX * (0x4000 - p)) / 0x40;
+        obj->y = ((obj->targetY >> 16) * p + (s16)obj->targetY * (0x4000 - p)) / 0x40;
+        if (obj->heightLimit == 0)
+            h = ((obj->targetH >> 16) * p + (s16)obj->targetH * (0x4000 - p)) / 0x40;
+        else
+            h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+        obj->h = h;
+        return 1;
+    }
+    obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
+    obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
+    obj->h = ((struct HalfPair *)&obj->targetH)->hi << 8;
+    *((u8 *)obj + 0x79) |= 0x20;
+    return 0;
+}
 
 u32 step_motion_checked(struct Actor *obj)
 {
