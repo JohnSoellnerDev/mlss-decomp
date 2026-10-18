@@ -173,6 +173,11 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Table reads the original adds as `lsls r0, r0, #1; adds r0, r0, rBase` (index first) are
   array indexing, `((u16 *)(ai + 0xD0))[idx]`; hand-written `*(u16 *)(ai + (idx << 1) + 0xD0)`
   swaps the operands of the add (example `enemy_wait_sense` in src/code_08145D54.c).
+- Stack slots follow the declaration scopes: a local array declared in an inner `{ }` block is
+  placed after the outer locals (moves a byte local from `sp+0x14` to `sp+4`; example
+  `enemy_contact_check_state` in src/code_08142A38.c).
+- A signed halfword the original keeps as `ldrsh` while yours becomes `ldrh` + shifts: assign it to
+  an `s32` temporary first (`v = obj->unk1D4;` with `s32 v`).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
