@@ -2,9 +2,12 @@
 
 struct FieldSub
 {
-    u8 filler0[0xC];
+    u16 unk00;
+    u16 unk02;
+    u8 filler04[0x8];
     u16 unk0C;
-    u8 fillerE[0x4];
+    u16 unk0E;
+    u8 filler10[0x2];
     u8 unk12;
     u8 filler13[0x1];
     u16 mask14;
@@ -33,7 +36,9 @@ struct FieldObj
     u8 unk02;
     u8 filler3[0x1];
     s16 unk04;
-    u8 filler6[0x6];
+    u16 unk06;
+    u16 unk08;
+    u16 unk0A;
     s32 unk0C;
     s32 unk10;
     s32 unk14;
@@ -78,12 +83,15 @@ struct FieldObj
     u8 filler223[0x15];
     s8 linkIndex;
     u8 mode;
-    u8 filler23A[0x2];
+    s8 unk23A;
+    s8 unk23B;
     u8 unk23C;
     u8 filler23D[0x1];
     s16 unk23E;
     u16 unk240;
-    u8 filler242[0xA];
+    u16 unk242;
+    u16 unk244;
+    u8 filler246[0x6];
     s32 unk24C;
     s32 unk250;
     s32 unk254;
@@ -122,27 +130,36 @@ struct FieldObj
     u8 unk33C;
     u8 unk33D;
     u8 unk33E;
-    u8 filler33F[0x1];
+    u8 unk33F;
     u8 unk340;
-    u8 filler341[0x2];
+    u8 unk341;
+    u8 unk342;
     s8 unk343;
     u8 unk344;
     s8 unk345;
     u8 unk346;
     u8 unk347;
-    u8 filler348[0x9];
+    u8 filler348[0x8];
+    u8 unk350;
     u8 unk351;
     u8 unk352;
     u8 unk353;
-    u8 filler354[0x1];
+    u8 unk354;
     u8 unk355;
     u8 filler356[0x2];
     u8 unk358;
     u8 unk359;
-    u8 filler35A[0x12];
+    u8 filler35A[0x8];
+    u16 unk362;
+    u16 unk364;
+    u8 filler366[0x2];
+    struct FieldSpr16 * unk368;
     struct FieldAttrEntry * attr;
           u16 unk370;
-      u8 filler372[0x6];
+    u8 unk372;
+    u8 unk373;
+    u8 unk374;
+    u8 filler375[0x3];
     u8 unk378;
     u8 unk379;
     u8 filler37A[0x1];
@@ -213,10 +230,13 @@ struct FieldTail
 
 struct FieldAttrEntry
 {
-    u8 filler0[0x4];
+    u16 unk00;
+    u16 unk02;
     u16 unk04;
     u16 unk06;
-    u8 filler08[0x11 - 0x08];
+    u8 filler08[0x6];
+    u16 unk0E;
+    u8 filler10;
     u8 unk11;
     u8 unk12;
     u8 filler13[0x1F - 0x13];
@@ -262,6 +282,22 @@ struct FieldBit6
     u8 low6 : 6;
     u8 bit6 : 1;
     u8 high1 : 1;
+};
+
+struct FieldBits378
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b23 : 2;
+    u8 b45 : 2;
+    u8 b67 : 2;
+};
+
+struct FieldBits379
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 rest : 6;
 };
 
 void obj_set_active(struct FieldObj *obj, u32 on)
@@ -400,9 +436,29 @@ void obj_clear_flags_2b5_30(struct FieldObj *obj)
     ((struct FlagPairs *)&obj->flags2B5)->b45 = 0;
 }
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b6_30_set.s", void obj_flags_2b6_30_set(void))
+s32 obj_flags_2b6_30_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B6 & 0x30;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b6_0c_set.s", void obj_flags_2b6_0c_set(void))
+s32 obj_flags_2b6_0c_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B6 & 0xC;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
 s32 obj_flags_2b6_03_set(struct FieldObj *obj)
 {
@@ -416,9 +472,29 @@ s32 obj_flags_2b6_03_set(struct FieldObj *obj)
     return r;
 }
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b5_c0_set.s", void obj_flags_2b5_c0_set(void))
+s32 obj_flags_2b5_c0_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B5 & 0xC0;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
-ASM_FUNC("asm/code_08047780/obj_flags_2b5_30_set.s", void obj_flags_2b5_30_set(void))
+s32 obj_flags_2b5_30_set(struct FieldObj *obj)
+{
+    u32 v = obj->flags2B5 & 0x30;
+    s32 r = (u8)v;
+    while (v != 0)
+    {
+        r = 1;
+        break;
+    }
+    return r;
+}
 
 u32 obj_set_move_params(struct FieldObj *obj, u32 mode, u16 value, s32 dir, u16 extra)
 {
@@ -562,7 +638,22 @@ void obj_release_entry(struct FieldObj *obj, u8 mode)
     obj->entryKey = 0xFFFF;
 }
 
-ASM_FUNC("asm/code_08047780/obj_alloc_entry.s", void obj_alloc_entry(struct FieldObj *obj, u8 mode))
+u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
+
+NONMATCH("asm/code_08047780/obj_alloc_entry.s", void obj_alloc_entry(struct FieldObj *obj, u8 mode))
+{
+    if (obj->entryKey != 0xFFFF)
+    {
+        s32 shift = 0;
+        s32 mask = obj->sub->mask14;
+
+        while (((mask >> shift) & 1) == 0)
+            shift++;
+        obj->entry = sprite_alloc(obj->entryTable, mode, obj->entryKey, (u8)(shift + 0x10), 0xFFFF, 0xFFFF);
+        set_u8_bits(&obj->flags216, 0x40);
+    }
+}
+END_NONMATCH
 
 void obj_request_entry(struct FieldObj *obj, u32 key)
 {
@@ -659,11 +750,131 @@ void obj_set_base_table(struct FieldObj *obj, u32 flags)
         heap_free_b(obj);
 }
 
-ASM_FUNC("asm/code_08047780/obj_init_defaults.s", void obj_init_defaults(void))
+struct FieldHalf358
+{
+    u16 lo4 : 4;
+    u16 mid8 : 8;
+    u16 hi4 : 4;
+};
+
+struct FieldBits352
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 hi : 2;
+};
+
+extern const u8 gObjDefaultClass[];
+void obj_init(struct FieldObj *obj);
+
+struct FieldObj *obj_init_defaults(struct FieldObj *obj)
+{
+    obj_init(obj);
+    obj->data = (struct FieldData *)gObjDefaultClass;
+    obj->unk355 = 0;
+    set_u8_bits(&obj->unk33C, 0x7F);
+    set_u8_bits(&obj->unk33D, 0x7F);
+    obj->unk33E = 0xFF;
+    obj->unk346 = 0xE;
+    obj->unk347 = 7;
+    obj->unk340 = 0;
+    ((struct FieldBit6 *)&obj->unk351)->bit6 = 0;
+    ((struct FieldBit3 *)&obj->unk358)->bit3 = 0;
+    ((struct FieldHalf358 *)&obj->unk358)->mid8 = 0;
+    ((struct FieldBit4 *)&obj->unk359)->bit4 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b0 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b1 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b2 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b3 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b4 = 0;
+    ((struct FieldBits352 *)&obj->unk352)->b5 = 0;
+    set_u8_bits(&obj->unk211, 1);
+    ((struct FieldBit7 *)&obj->unk210)->b7 = 1;
+    set_u8_bits(&obj->unk353, 8);
+    obj->attr = 0;
+    return obj;
+}
 
 ASM_FUNC("asm/code_08047780/obj_select_state_code.s", void obj_select_state_code(void))
 
-ASM_FUNC("asm/code_08047780/obj_store_attrs.s", void obj_store_attrs(void))
+struct FieldSpr16
+{
+    u8 filler0[0x16];
+    u8 unk16;
+    u8 unk17;
+};
+
+struct FieldHalf350
+{
+    u16 lo7 : 7;
+    u16 mid4 : 4;
+    u16 hi5 : 5;
+};
+
+struct FieldBits34
+{
+    u8 low3 : 3;
+    u8 mid2 : 2;
+    u8 high3 : 3;
+};
+
+void obj_refresh_dirty(struct FieldObj *obj);
+
+static inline void store_low7(u8 *p, u32 v)
+{
+    ((struct FieldBit7 *)p)->low = v;
+}
+
+static inline void merge_hi(u8 *p, u32 v)
+{
+    *p = (*p & 0x7F) | v;
+}
+
+static inline void store_bit5(u8 *p, u32 v)
+{
+    ((struct FieldBit5 *)p)->bit5 = v;
+}
+
+static inline void store_mid2(u8 *p, u32 v)
+{
+    ((struct FieldBits34 *)p)->mid2 = v;
+}
+
+static inline void store_mid4(u8 *p, u32 v)
+{
+    ((struct FieldHalf350 *)p)->mid4 = v;
+}
+
+static inline void store_b7(u8 *p, u32 v)
+{
+    ((struct FieldBit7 *)p)->b7 = v;
+}
+
+NONMATCH("asm/code_08047780/obj_store_attrs.s", void obj_store_attrs(struct FieldObj *obj))
+{
+    obj_refresh_dirty(obj);
+    store_low7(&obj->unk33D, ((u32)obj->unk33C << 25) >> 25);
+    store_bit5(&obj->unk351, ((u32)obj->unk350 << 25) >> 31);
+    merge_hi(&obj->unk33D, ((u32)obj->unk33C >> 7) << 7);
+    obj->unk33F = obj->unk33E;
+    obj->unk341 = obj->unk340;
+    obj->unk343 = obj->unk342;
+    store_mid4(&obj->unk350, ((u32)obj->unk350 << 28) >> 28);
+    store_mid2(&obj->unk351, ((u32)obj->unk350 << 26) >> 30);
+    obj->unk345 = obj->unk344;
+    obj->unk354 = obj->linkIndex;
+    obj->unk362 = obj->unk242;
+    obj->unk364 = obj->unk244;
+    store_b7(&obj->unk353, ((u32)obj->unk353 << 25) >> 31);
+    store_low7(&obj->unk368->unk17, ((u32)obj->unk368->unk16 << 25) >> 25);
+    merge_hi(&obj->unk368->unk17, ((u32)obj->unk368->unk16 >> 7) << 7);
+    store_low7(&obj->unk368->unk16, 0);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08047780/obj_place_sprite.s", void obj_place_sprite(void))
 
@@ -694,6 +905,37 @@ void init_pos_obj_refresh_sprite(struct FieldObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08047780/obj_copy_sprite_attrs.s", void obj_copy_sprite_attrs(void))
+void obj_copy_sub_fields(struct FieldObj *obj);
+
+static inline void set_flags378_b1(u8 *p, u32 v)
+{
+    ((struct FieldBits378 *)p)->b1 = v;
+}
+
+static inline void set_flags379_b0(u8 *p, u32 v)
+{
+    ((struct FieldBits379 *)p)->b0 = v;
+}
+
+void obj_copy_sprite_attrs(struct FieldObj *obj)
+{
+    obj_copy_sub_fields(obj);
+    if ((obj->attr->unk12 & 0x20) == 0)
+    {
+        set_flags378_b1(&obj->unk378, ((u32)obj->attr->unk11 << 25) >> 31);
+        ((struct FieldBits378 *)&obj->unk378)->b23 = ((u32)obj->attr->unk1F << 30) >> 30;
+        ((struct FieldBits378 *)&obj->unk378)->b45 = ((u32)obj->attr->unk1F << 28) >> 30;
+        ((struct FieldBits378 *)&obj->unk378)->b67 = ((u32)obj->attr->unk12 << 29) >> 30;
+        set_flags379_b0(&obj->unk379, ((u32)obj->attr->unk12 << 28) >> 31);
+        ((struct FieldBits379 *)&obj->unk379)->b1 = ((u32)obj->attr->unk12 << 27) >> 31;
+        obj->unk37B = obj->attr->unk21;
+        obj->unk37C = obj->attr->unk23;
+        obj->unk37E = obj->attr->unk2A;
+        obj->unk380 = obj->attr->unk2C;
+        obj->unk382 = obj->attr->unk04;
+        obj->unk384 = obj->attr->unk06;
+        set_u8_bits(&obj->unk378, 1);
+    }
+}
 
 ASM_FUNC("asm/code_08047780/obj_sub_frame_update.s", void obj_sub_frame_update(void))
