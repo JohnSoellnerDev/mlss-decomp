@@ -280,20 +280,22 @@ void obj_effect_action_c(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_08064310/obj_drift_left.s", void obj_drift_left(struct ActorObj *obj))
+void obj_drift_left(struct ActorObj *obj)
 {
-    s32 x = obj->posX - 0x200;
+    s32 x;
+    s32 old = obj->posX;
 
+    x = old - 0x200;
     obj->posX = x;
     if (x < 0)
         x += 0xFF;
-    if ((x >> 8) < -0x20)
+    old = x >> 8;
+    if (old < -0x20)
     {
         obj->posX = 0x10000;
         obj->state = wait_for_index;
     }
 }
-END_NONMATCH
 
 void obj_countdown_then_action1(struct ActorObj *obj)
 {
