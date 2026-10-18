@@ -1,8 +1,10 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
 struct SpriteTask;
 struct SpriteObj;
+struct DispEntry;
 struct SpriteHead;
 struct SpriteRunner;
 typedef void (*TaskFunc)(struct SpriteTask *task);
@@ -55,8 +57,8 @@ struct SpriteObj
     u8 filler44[0x6C - 0x44];
     u16 **seq6C;
     u8 filler70[0x74 - 0x70];
-    s8 unk74;
-    s8 unk75;
+    u8 unk74;
+    u8 unk75;
     u8 filler76[0x79 - 0x76];
     u8 flags79;
 };
@@ -70,7 +72,9 @@ struct SpriteHead
     u8 unkEC;
     u8 filler0ED[0xF6 - 0xED];
     s16 timerF6;
-    u8 filler0F8[0x111 - 0xF8];
+    u8 filler0F8[0x108 - 0xF8];
+    s16 size108;
+    u8 filler10A[0x111 - 0x10A];
     u8 flags111;
 };
 
@@ -112,20 +116,55 @@ struct SpriteStateBits
     u8 bit1 : 1;
 };
 
+struct SpriteLo2Bits
+{
+    u8 lo2 : 2;
+};
+
+struct SpriteBit2Bits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+};
+
+struct DispKindBits
+{
+    u8 kind : 2;
+    u8 rest : 6;
+};
+
+struct DispEntry
+{
+    u16 head;
+    u16 arg2;
+    u32 val;
+    u32 flag8;
+    void *ptr;
+    u32 value;
+    u8 filler14[4];
+};
+
 struct SpriteState
 {
     u8 *unk0;
     u8 filler4[0xB - 4];
     u8 unkB;
-    u8 filler0C[4];
+    u8 filler0C;
+    u8 unkD;
+    u8 filler0E[2];
     u8 unk10;
     u8 filler11[0x58 - 0x11];
     struct SpritePart *part58[6];
-    u8 filler70[0x1F4 - 0x70];
+    u8 filler70[0x1F0 - 0x70];
+    u32 unk1F0;
     struct ListEntry *list1F4;
-    u8 filler1F8[0x244 - 0x1F8];
+    struct DispEntry *list1F8;
+    u8 filler1FC[0x200 - 0x1FC];
+    void *unk200[8];
+    u8 filler220[0x244 - 0x220];
     void *unk244;
-    u8 filler248[0x2BE - 0x248];
+    void *unk248;
+    u8 filler24C[0x2BE - 0x24C];
     u8 unk2BE;
     u8 unk2BF;
     u8 unk2C0;
@@ -165,6 +204,7 @@ void sprite_set_action(struct SpriteObj *obj, u32 action, u32 arg, u32 extra);
 void lookup_or_alloc_14b8(u32 a, u32 key, s32 b, s32 c);
 void set_flag_2_2(void *ptr);
 void load_table_entries(u32 code);
+void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
 void state_timed_motion(struct SpriteTask *task);
 void state_wait_arrival(struct SpriteTask *task);
 void state_countdown_reset(struct SpriteTask *task);
@@ -177,6 +217,7 @@ void sprite_sum_parts(struct SpriteObj *obj);
 void place_targets(struct SpriteObj *obj, s32 x, s32 y, s32 z, s32 w);
 void set_step_and_offsets(struct SpriteObj *obj, u32 a, s32 b);
 void anim_bit200_step(struct SpriteHead *head, u32 arg);
+void anim_bit100_step(struct SpriteHead *head, u32 arg);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 z, struct SpriteObj *owner);
 u8 *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(u8 *obj, u32 a, s32 b, u32 c, u32 flag);
@@ -186,6 +227,17 @@ extern u16 gEffectCodeTable[];
 extern u16 gSpriteLoadList[];
 extern u8 *gWorkBuf;
 extern u8 gSys[];
+u32 read_varlen_plus1(const u8 *src);
+u32 mt19937_next(void);
+void list_remove_active(u8 *obj);
+void table_register(void *p);
+u32 sub_obj_running(void *menu);
+void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
+extern u8 gUnk_02000280[];
+extern u32 gUnk_03000C88[];
+s32 rand_below(s32 n, u32 seed);
+void number_popup(s32 value, s32 x, s32 y, s32 z, u32 a, u32 b, u32 c);
+extern const u16 gActionCodes[];
 
 ASM_FUNC("asm/code_08081DA4/move_slots_toward.s", void move_slots_toward(struct SpriteObj *obj))
 
@@ -195,9 +247,43 @@ ASM_FUNC("asm/code_08081DA4/state_show_and_scale.s", void state_show_and_scale(v
 void state_start_motion(struct SpriteTask *task);
 ASM_FUNC("asm/code_08081DA4/state_random_step.s", void state_random_step(void))
 
+
 ASM_FUNC("asm/code_08081DA4/state_timed_motion.s", void state_timed_motion(struct SpriteTask *task))
 
-ASM_FUNC("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struct SpriteTask *task))
+NONMATCH("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struct SpriteTask *task))
+{
+    struct SpriteObj *obj = task->obj;
+    struct SpriteHead *head = obj->head;
+    s32 timer = head->timerF6;
+    u8 bit;
+
+    if (timer == 0)
+    {
+        head->flags111 |= 1;
+        task_create_list_4c(task_release_obj, (u32)obj);
+        task->next = state_wait_flag;
+        task->timer = timer;
+        ((struct SpriteLo2Bits *)&gWorld->unk2C0)->lo2 = 1;
+        bit = ~obj->head->unkEC & 1;
+        ((struct SpriteBit2Bits *)&gWorld->unk2C0)->bit2 = bit;
+    }
+    else
+    {
+        u16 t = task->timer;
+
+        if ((s16)task->timer > 0)
+        {
+            task->timer = t - 1;
+        }
+        else
+        {
+            sprite_set_action(obj, 0, -1, 0);
+            ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
+            task->next = state_set_flags_and_run;
+        }
+    }
+}
+END_NONMATCH
 
 void state_draw_pose(struct SpriteTask *task)
 {
@@ -422,7 +508,53 @@ void draw_fixed_labels(void)
     ensure_code_entry(0x2089);
 }
 
-ASM_FUNC("asm/code_08081DA4/sprite_load_tables.s", void sprite_load_tables(void))
+NONMATCH("asm/code_08081DA4/sprite_load_tables.s", void sprite_load_tables(void))
+{
+    u8 *info = gWorld->unk2DC;
+    u16 *row;
+    u16 *list;
+    u16 entry;
+
+    ensure_code_entry(info[2] + 0x4188);
+    row = gEffectCodeTable + gWorld->unk349;
+    load_table_entries(row[0]);
+    load_table_entries(row[0]);
+    list = gSpriteLoadList;
+    if (list == 0)
+    {
+        return;
+    }
+    entry = *list;
+    list++;
+    if (entry == 0)
+    {
+        return;
+    }
+    if (entry != 0xFFFF)
+    {
+        do
+        {
+            load_table_entries(entry);
+            entry = *list;
+            list++;
+            if (entry == 0)
+            {
+                return;
+            }
+        } while (entry != 0xFFFF);
+    }
+    for (;;)
+    {
+        entry = *list;
+        list++;
+        if (entry == 0)
+        {
+            return;
+        }
+        ensure_code_entry(entry);
+    }
+}
+END_NONMATCH
 
 void run_slot_script(s32 index)
 {
@@ -496,7 +628,23 @@ void state_spawn_object(struct SpriteTask *task)
 }
 
 void state_spawn_object(struct SpriteTask *task);
-ASM_FUNC("asm/code_08081DA4/state_fill_table_and_spawn.s", void state_fill_table_and_spawn(void))
+void state_fill_table_and_spawn(struct SpriteTask *task)
+{
+    s32 i;
+    u8 *obj;
+
+    if (!(u8)is_state_busy())
+    {
+        for (i = 0; i < 8; i++)
+        {
+            gWorld->unk200[i] = spawn_obj_by_id(0x2084, 0, 2, 1);
+        }
+        obj = create_obj_de4(0, 0x7000, 0, -1, -1, -1, -1);
+        obj_load_record(obj, 0, -1, 0, 0);
+        gWorld->unk0 = obj;
+        task->next = state_spawn_object;
+    }
+}
 
 void state_run_handler(struct SpriteTask *task)
 {
@@ -677,9 +825,124 @@ ASM_FUNC("asm/code_08081DA4/init_sprite_pools.s", void init_sprite_pools(void))
 
 ASM_FUNC("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_display(void))
 
-ASM_FUNC("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54(void))
+NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54(u16 *list))
+{
+    s32 count;
+    u16 *table;
+    u16 code;
+    u16 item;
 
-ASM_FUNC("asm/code_08081DA4/queue_display_entry.s", void queue_display_entry(void))
+    if (list == 0)
+    {
+        return;
+    }
+    code = *list;
+    list++;
+    if (code == 0)
+    {
+        return;
+    }
+    if (code != 0xFFFF)
+    {
+        do
+        {
+            table = load_table_value(&count, code);
+            count--;
+            while (count != -1)
+            {
+                item = table[count];
+                if (item != 0)
+                {
+                    u32 kind = item & 0xF000;
+
+                    if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
+                    {
+                        lookup_or_alloc_14b8(0, item, -1, 1);
+                    }
+                }
+                count--;
+            }
+            code = *list;
+            list++;
+            if (code == 0)
+            {
+                return;
+            }
+        } while (code != 0xFFFF);
+    }
+    for (;;)
+    {
+        item = *list;
+        list++;
+        if (item == 0)
+        {
+            return;
+        }
+        {
+            u32 kind = item & 0xF000;
+
+            if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
+            {
+                lookup_or_alloc_14b8(0, item, -1, 1);
+            }
+        }
+    }
+}
+END_NONMATCH
+
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b)
+{
+    struct DispEntry **slot;
+    struct DispEntry *cur;
+    struct DispEntry *ent;
+    u32 len;
+    u32 idx;
+    u16 low;
+
+    slot = &gWorld->list1F8;
+    cur = *slot;
+    if (cur != 0)
+    {
+        cur = cur + 1;
+    }
+    else
+    {
+        cur = (struct DispEntry *)(gWorkBuf + 0x3668);
+    }
+    *slot = cur;
+    ent = gWorld->list1F8;
+    ((struct DispKindBits *)ent)->kind = kind;
+    ent->val = (u32)dst;
+    ent->arg2 = b;
+    if ((s32)size < 0)
+    {
+        len = read_varlen_plus1(text) >> 5;
+    }
+    else
+    {
+        len = size >> 5;
+    }
+    idx = len << 2;
+    low = (ent->head & 3) | idx;
+    ent->head = low;
+    ent->ptr = text;
+    if (kind != 0)
+    {
+        if (a == 0)
+        {
+            ent->value = gWorld->unk1F0;
+        }
+        else
+        {
+            ent->value = a;
+        }
+    }
+    else
+    {
+        ent->value = (u32)dst;
+    }
+    ent->flag8 = 1;
+}
 
 void load_table_entries(u32 code)
 {
