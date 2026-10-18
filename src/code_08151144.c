@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Bit4Bits
 {
@@ -439,11 +440,97 @@ ASM_FUNC("asm/code_08151144/obj_init_table.s", u32 obj_init_table(void))
 
 ASM_FUNC("asm/code_08151144/cam_update.s", void cam_update(void))
 
-ASM_FUNC("asm/code_08151144/obj_place_on_screen.s", void obj_place_on_screen(void))
+void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
+
+struct CamXY
+{
+    s32 x;
+    s32 y;
+};
+
+NONMATCH("asm/code_08151144/obj_place_on_screen.s", void obj_place_on_screen(struct Obj *obj, struct CamXY *cam))
+{
+    s32 sx;
+    s32 sy;
+    s32 camY;
+    s32 v;
+    s32 dz;
+
+    sx = obj->x + cam->x;
+    sy = obj->y + cam->y;
+    if (sx > 0xF000)
+    {
+        obj->x = 0xF000 - cam->x;
+    }
+    else if (sx < 0)
+    {
+        obj->x = -cam->x;
+    }
+    if (sy > 0xA000)
+    {
+        v = cam->y;
+        obj->y = 0xA000 - v;
+        camY = v;
+    }
+    else
+    {
+        camY = cam->y;
+        if (sy < 0)
+        {
+            obj->y = -camY;
+        }
+    }
+    if ((s16)(obj->flags & 0x20) == 0)
+    {
+        if (*(s16 *)&obj->count > 0)
+        {
+            obj->count += 0xC;
+            if (*(s16 *)&obj->count > 0xFF)
+            {
+                obj->count = 0;
+            }
+            v = gCosineTable[(u8)obj->count];
+            if (v < 0)
+            {
+                v += 0x3F;
+            }
+            v >>= 6;
+            dz = (v << 1) + v;
+            obj->unk20 = dz;
+            obj->field18.vy = dz;
+            obj->x += *(s16 *)&obj->z;
+            obj->y += *(s16 *)&obj->field18.vy;
+        }
+    }
+    obj->posX = -(cam->x + obj->x);
+    obj->posY = -(camY + obj->y);
+    obj_build_iris_rows(obj, (s32 *)cam);
+    dma_copy_or_queue(obj->rows, gUnk_03001014 + 4, 0x1C8, 0x10, 1);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(struct Obj *obj, s32 *pos))
 
-ASM_FUNC("asm/code_08151144/obj_set_flag_08.s", void obj_set_flag_08(struct Obj *obj, s32 on))
+NONMATCH("asm/code_08151144/obj_set_flag_08.s", void obj_set_flag_08(struct Obj *obj, s32 on))
+{
+    s32 m;
+    s32 f;
+
+    if (on == 0)
+    {
+        f = obj->flags;
+        m = -9;
+        m &= f;
+    }
+    else
+    {
+        f = obj->flags;
+        m = 8;
+        m |= f;
+    }
+    obj->flags = m;
+}
+END_NONMATCH
 
 void obj_set_behavior_table(struct Obj *obj, void *table)
 {
@@ -471,7 +558,16 @@ void call_zeroed_arg_block(struct Obj *obj)
     obj_build_iris_rows(obj, args);
 }
 
-ASM_FUNC("asm/code_08151144/obj_clear_flag_01.s", void obj_clear_flag_01(void))
+void obj_clear_flag_01(struct Obj *obj)
+{
+    s32 f;
+    s32 m;
+
+    f = obj->flags;
+    m = -2;
+    m &= f;
+    obj->flags = m;
+}
 
 void obj_set_flag_01(struct Obj *obj)
 {
@@ -487,7 +583,40 @@ void obj_set_vy_if_free(struct Obj *obj, s32 vy)
     }
 }
 
-ASM_FUNC("asm/code_08151144/obj_point_in_iris.s", void obj_point_in_iris(void))
+NONMATCH("asm/code_08151144/obj_point_in_iris.s", u32 obj_point_in_iris(struct Obj *obj, s32 *target, s32 *anchor))
+{
+    s32 ax;
+    s32 ay;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 scale;
+    s32 limit;
+
+    ax = anchor[0] + obj->x;
+    ay = anchor[1] + obj->y;
+    dx = target[0] - ax;
+    dy = target[1] - ay;
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+    scale = obj->base;
+    if (scale < 0)
+    {
+        scale += 0xFF;
+    }
+    scale >>= 8;
+    limit = obj->field30.radius * scale;
+    limit = (limit << 1) + limit;
+    if (limit < 0)
+    {
+        limit += 3;
+    }
+    if (dist < (limit >> 2))
+    {
+        return 1;
+    }
+    return 0;
+}
+END_NONMATCH
 
 void obj_set_iris(struct Obj *obj, s32 *target, s32 *anchor, s32 radius)
 {
@@ -574,6 +703,49 @@ ASM_FUNC("asm/code_08151144/hitboxes_overlap.s", void hitboxes_overlap(void))
 u32 obj_init_table(void);
 ASM_FUNC("asm/code_08151144/scene_init_display.s", void *scene_init_display(void *obj, u32 kind, const void *table))
 
-ASM_FUNC("asm/code_08151144/scene_teardown.s", void scene_teardown(void))
+struct SysHalf2
+{
+    u8 filler0[2];
+    u16 v2;
+};
+
+void scene_teardown(struct SceneState *state, u32 task)
+{
+    s32 flagsByte;
+    s32 mask;
+
+    state->sceneTable = (void *)gSceneTable08cdde80;
+    slot_reset(0);
+    set_irq_callback(2, 0);
+    REG_IME = 0;
+    gUnk_02000004 = gUnk_02000004 & 0xFFEF;
+    REG_IE = REG_IE & 0xFFFD;
+    REG_IF = REG_IF | 2;
+    REG_IME = 1;
+    set_irq_callback(4, 0);
+    scene_release_objects(state);
+    if (state->gameTask != 0)
+    {
+        task_remove(state->gameTask, 3);
+    }
+    dma_cancel_request(gUnk_03001014 + 4);
+    if (state->iris != 0)
+    {
+        obj_destroy_iris((struct Obj *)state->iris, 3);
+    }
+    heap_free(gUnk_03001014);
+    ((struct SysHalf2 *)gSys)->v2 = 0xFFFF;
+    flagsByte = *(u8 *)(gSys + 0x888);
+    mask = -0x21;
+    mask &= flagsByte;
+    *(u8 *)(gSys + 0x888) = mask;
+    set_flags_2_3(state->x14);
+    obj_run_callbacks();
+    *(u16 *)0x02000000 = 0x40;
+    obj_free_tiles((u8 *)state + 0x1064, 2);
+    obj_free_tiles((u8 *)state + 0x840, 2);
+    obj_free_tiles((u8 *)state + 0x1C, 2);
+    task_remove(state, task);
+}
 
 ASM_FUNC("asm/code_08151144/scene_build_state.s", void scene_build_state(void))
