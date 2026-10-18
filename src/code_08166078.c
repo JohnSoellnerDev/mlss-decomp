@@ -197,7 +197,7 @@ void window_destroy(u8 *obj, u32 flag)
         heap_free_b(obj);
 }
 
-NONMATCH("asm/code_08166078/rom_offset_call_a.s", void rom_offset_call_a(u8 *obj, u32 a))
+void rom_offset_call_a(u8 *obj, u32 a)
 {
     void (*fn)(void *, void *, u32);
     u32 mode;
@@ -209,9 +209,8 @@ NONMATCH("asm/code_08166078/rom_offset_call_a.s", void rom_offset_call_a(u8 *obj
         fn(*(void **)(obj + 4), *(void **)(obj + 0xc), mode);
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_b.s", void rom_offset_call_b(u8 *obj, u32 a))
+void rom_offset_call_b(u8 *obj, u32 a)
 {
     u32 off;
 
@@ -223,9 +222,8 @@ NONMATCH("asm/code_08166078/rom_offset_call_b.s", void rom_offset_call_b(u8 *obj
         ((void (*)(void *, u32))(*(u8 **)(obj + 0x20) + off))(*(void **)(obj + 0xc), a + 0x10);
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_c.s", void rom_offset_call_c(u8 *obj))
+void rom_offset_call_c(u8 *obj)
 {
     void (*fn)(void *, u32, s32);
 
@@ -235,7 +233,6 @@ NONMATCH("asm/code_08166078/rom_offset_call_c.s", void rom_offset_call_c(u8 *obj
         fn(*(void **)(obj + 0xc), 10000, -10000);
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08166078/tilemap_write_entry.s", void tilemap_write_entry(u8 *obj, u32 index, u32 tile, u32 pal, u32 hi))
 {
@@ -295,50 +292,45 @@ NONMATCH("asm/code_08166078/palette_fade16.s", void palette_fade16(u8 *obj, u32 
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_d.s", void rom_offset_call_d(u8 *obj, u32 a, u16 b))
+void rom_offset_call_d(u8 *obj, u32 a, u16 b)
 {
     void (*fn)(void *, u32, u32);
 
     fn = (void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)line_1px_4bpp - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/obj_child_ram_call.s", void obj_child_ram_call(u8 *obj, u32 a, u16 b))
+void obj_child_ram_call(u8 *obj, u32 a, u16 b)
 {
     void (*fn)(void *, u32, u32);
 
     fn = (void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)line_3px_4bpp - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_e.s", void rom_offset_call_e(u8 *obj, u32 a, u32 b, u16 c))
+void rom_offset_call_e(u8 *obj, u32 a, u32 b, u16 c)
 {
     void (*fn)(void *, u32, u32, u32);
 
     fn = (void (*)(void *, u32, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)dot2x2_4bpp_clip - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b, c);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_f.s", void rom_offset_call_f(u8 *obj, u32 a, u32 b, u16 c))
+void rom_offset_call_f(u8 *obj, u32 a, u32 b, u16 c)
 {
     void (*fn)(void *, u32, u32, u32);
 
     fn = (void (*)(void *, u32, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)gUnk_080026F0 - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b, c);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/rom_offset_call_g.s", void rom_offset_call_g(u8 *obj, u32 a, u32 b, u16 c))
+void rom_offset_call_g(u8 *obj, u32 a, u32 b, u16 c)
 {
     void (*fn)(void *, u32, u32, u32);
 
     fn = (void (*)(void *, u32, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)dot3x3_4bpp_clip - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b, c);
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08166078/rom_offset_call_h.s", void rom_offset_call_h(u8 *obj, u32 a, u16 b))
 {
