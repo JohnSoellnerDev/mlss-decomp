@@ -130,7 +130,25 @@ void clear_map_rect(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h)
     }
 }
 
-ASM_FUNC("asm/code_08084DB4/copy_map_rect_add.s", void copy_map_rect_add(void))
+void copy_map_rect_add(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h, u16 *src, u32 add)
+{
+    if (src != NULL)
+    {
+        u16 off = y * 0x280 + layer * 32 + x;
+        u16 *row = *(u16 **)(obj + 0x288) + off;
+        s32 i;
+
+        insert_span(obj, off, ((h - 1) << 5) + w);
+        while (--h >= 0)
+        {
+            i = w;
+            while (--i >= 0)
+                row[i] = src[i] + add;
+            row += 0x20;
+            src += 0x20;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(void))
 
