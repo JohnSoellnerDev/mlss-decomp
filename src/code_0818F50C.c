@@ -48,8 +48,8 @@ void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 extern s16 gCosineTable[];
 extern s16 gSineTable[];
 
-ASM_FUNC("asm/code_0818F50C/obj_zoom_model8_turn_rem6_f50c.s", void obj_zoom_model8_turn_rem6_f50c(void))
-ASM_FUNC("asm/code_0818F50C/obj_zoom_model6_flat_f760.s", void obj_zoom_model6_flat_f760(void))
+ASM_FUNC("asm/code_0818F50C/obj_zoom_model8_turn_rem6_f50c.s", void obj_zoom_model8_turn_rem6_f50c(struct Point1Obj *obj))
+ASM_FUNC("asm/code_0818F50C/obj_zoom_model6_flat_f760.s", void obj_zoom_model6_flat_f760(struct Point1Obj *obj))
 // Single-point object with a zoom that sinks by its step; the step is damped to 31/32.
 void obj_point1_zoom_step31_f994(struct Point1Obj *obj)
 {
