@@ -166,27 +166,26 @@ NONMATCH("asm/code_0817E4F0/obj_turn_zoom12_ee84.s", void obj_turn_zoom12_ee84(s
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0817E4F0/obj_rotx_zoom12_f0c0.s", void obj_rotx_zoom12_f0c0(struct Point1Obj *obj))
+void obj_rotx_zoom12_f0c0(struct Point1Obj *obj)
 {
     struct Point1Local l;
-    u32 *words;
+    struct ObjRecord *rec;
     s32 zoom;
     s32 step;
-    struct ObjRecord *rec;
+    u32 *words;
     u32 h;
     u32 saved;
-    s32 left;
+    s32 i;
     s32 *p1;
     s32 *p2;
     u32 *pslot;
     s32 vx;
-    s32 vy;
-    s32 vz;
-    s32 x0;
-    s32 y0;
-    s32 z0;
-    s32 pos;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 y2;
     s32 t;
+    s32 pos;
 
     words = obj->data;
     zoom = *words++;
@@ -199,62 +198,47 @@ NONMATCH("asm/code_0817E4F0/obj_rotx_zoom12_f0c0.s", void obj_rotx_zoom12_f0c0(s
     p1 = &l.y;
     p2 = &l.z;
     pslot = &l.model;
-    left = 11;
-    for (;;) {
+    for (i = 0; i < 12; i++) {
         vx = *words++;
         l.x = vx;
-        vy = *words++;
-        l.y = vy;
-        vz = *words++;
-        l.z = vz;
-        x0 = vx * zoom / 0x100;
-        l.x = x0;
-        y0 = vy * zoom / 0x100;
-        l.y = y0;
-        z0 = vz * zoom / 0x100;
-        l.z = z0;
-        l.y = (y0 * (gCosineTable[16] / 0x40) - (gSineTable[16] / 0x40) * z0) / 0x100;
-        l.z = (z0 * (gCosineTable[16] / 0x40) + (gSineTable[16] / 0x40) * y0) / 0x100;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        t = y1;
+        t = t * (gCosineTable[16] / 0x40);
+        y2 = (t - (gSineTable[16] / 0x40) * z1) / 0x100;
+        l.y = y2;
+        l.z = ((z1 * (gCosineTable[16] / 0x40)) + ((gSineTable[16] / 0x40) * y1)) / 0x100;
+
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = x0;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            pos >>= 8;
+            l.x = t - pos;
         } else {
-            pos = obj->posX;
-            t = x0;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            pos >>= 8;
+            l.x = t + pos;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.z = pos + t;
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
             l.model = gModelCtx->model;
             saved = 1;
-        }
-        left--;
-        if (left < 0) {
-            break;
         }
     }
     if (saved) {
@@ -268,7 +252,6 @@ NONMATCH("asm/code_0817E4F0/obj_rotx_zoom12_f0c0.s", void obj_rotx_zoom12_f0c0(s
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 
 void obj_drift_point_f2a4(struct Point1Obj *obj)
 {
