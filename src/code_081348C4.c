@@ -6,6 +6,7 @@ void release_obj_131c(void *p);
 extern const u8 gVtDe08[];
 extern const u8 gAppearSubClass[];
 extern const u8 gAppearCallback8Class[];
+extern const u8 gAppearCallback40Class[];
 extern const u8 gUnknownObjInitTableA[];
 extern const u8 gUnknownObjInitTableB[];
 extern const u16 gBldcntModeTable[];
@@ -114,7 +115,8 @@ struct AppearObj
     s32 unk18;
     u8 filler1C[0x28 - 0x1C];
     void *unk28;
-    u8 filler2C[0x38 - 0x2C];
+    void *unk2C;
+    u8 filler30[0x38 - 0x30];
     s32 unk38;
     s32 unk3C;
     s32 unk40;
@@ -138,6 +140,7 @@ struct AppearObj
     s32 unkA4;
     s32 unkA8;
     u16 unkAC;
+    u16 unkAE;
 };
 
 struct AnimSub
@@ -365,7 +368,40 @@ void appear_motion_obj_fall_step(struct AppearObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/appear_motion_obj_orbit_step.s", void appear_motion_obj_orbit_step(struct AppearObj *obj))
+void appear_motion_obj_orbit_step(struct AppearObj *obj)
+{
+    s32 idx;
+    s32 cos;
+    s32 sin;
+    s32 wait;
+
+    idx = (obj->unk98 / 0x100) & 0xFF;
+    wait = obj->unkAC - 1;
+    obj->unkAC = wait;
+    if ((wait << 16) <= 0)
+    {
+        if (obj->unk98 > 0x8000)
+        {
+            effect_spawn_at(0x27A9, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        else
+        {
+            effect_spawn_at(0x27B2, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        }
+        obj->unkAC = 8;
+    }
+    cos = gCosineTable[idx];
+    obj->unk10 = (cos / 0x40) * obj->unk8C + obj->unk84;
+    sin = gSineTable[idx];
+    obj->unk14 = (sin / 0x40) * 0x10 + obj->unk88;
+    obj->unk98 += obj->unk9C;
+    if ((u32)(obj->unk98 + 0x10000) > 0x20000)
+    {
+        obj_list_remove(obj);
+        obj->unk4C = 0;
+        sound_stop_song(0xDB);
+    }
+}
 
 void obj_list_remove(struct AppearObj *obj);
 void sound_stop_song(u32 song);
@@ -436,7 +472,45 @@ s32 obj_step_toward_target_081350A0(struct AppearObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_speed(void))
+NONMATCH("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_speed(struct AppearObj *obj))
+{
+    s32 r;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 t;
+    s32 flags;
+
+    r = (s16)obj->unk7A << 8;
+    x = obj->unk84;
+    y = obj->unk88;
+    z = obj->unk8C;
+    if ((obj->unk79 & 0x20) == 0)
+    {
+        x += obj->unk10;
+        y += obj->unk14;
+        z += obj->unk18;
+    }
+    obj->unk84 = x;
+    obj->unk88 = y;
+    obj->unk8C = z;
+    if (r == 0)
+    {
+        x = (x - obj->unk10) / 4;
+        y = (y - obj->unk14) / 4;
+        z = (z - obj->unk18) / 4;
+        t = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(x * x + y * y + z * z);
+        r = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(t << 6, (s16)obj->unk7C / 16);
+    }
+    obj->unk80 = r;
+    flags = obj->unk79;
+    flags &= -0x21;
+    obj->unk79 = flags;
+    obj->unk7C = 0;
+    obj->unk7A = 0;
+    obj->unk7E = 0x100;
+}
+END_NONMATCH
 
 u32 obj_step_accum_clamp(struct AppearObj *obj)
 {
@@ -477,9 +551,95 @@ void sub_08135290(struct AppearObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_081348C4/item_attach_sprite_8.s", void item_attach_sprite_8(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5))
+struct FxRecE
+{
+    u16 unk0;
+    u16 unk2;
+    u8 filler4[0xE - 0x4];
+    u16 unkE;
+};
 
-ASM_FUNC("asm/code_081348C4/anim_update_frame.s", void anim_update_frame(struct AnimSub *sub))
+struct FxBits1FLow
+{
+    u8 filler0[0x1F];
+    u8 a : 2;
+    u8 b : 2;
+    u8 c : 2;
+    u8 d : 2;
+};
+
+NONMATCH("asm/code_081348C4/item_attach_sprite_8.s", void item_attach_sprite_8(struct AnimSub *sub, u32 p1, u32 p2, u32 p3, u32 p4, u32 p5))
+{
+    s32 t;
+    s32 hi;
+    u8 *rec;
+
+    release_item_8(sub);
+    sub->unk1C = p4;
+    sub->unk08 = create_obj_de4(p1, p2, p3, -1, -1, -1, -1);
+    obj_load_record(sub->unk08, p4, -1, 0, 0);
+    sprite_update_cd0(sub->unk08);
+    hi = p5 << 6;
+    rec = (u8 *)sub->unk08;
+    t = rec[0x1F];
+    t = (t & 0x3F) | hi;
+    p5 &= 3;
+    t = (t & -0x31) | (p5 << 4);
+    t = (t & -0xD) | (p5 << 2);
+    t = (t & -4) | p5;
+    rec[0x1F] = t;
+    ((struct FxRecE *)sub->unk08)->unkE = 0;
+}
+END_NONMATCH
+
+struct RecFlags11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+NONMATCH("asm/code_081348C4/anim_update_frame.s", void anim_update_frame(struct AnimSub *sub))
+{
+    u8 *table;
+    u8 *bytes;
+    s32 idx;
+    u32 flag;
+    u32 sub_index;
+    u8 b;
+
+    table = (u8 *)sub->unk14;
+    if (table != NULL)
+    {
+        bytes = (u8 *)sub->unk10;
+        if (bytes != NULL)
+        {
+            if (*((s8 *)sub + 0x1C) != *((s8 *)sub + 0x1D) || (sub->unk1E >> 8) != (sub->unk20 >> 8))
+            {
+                idx = *((s8 *)sub + 0x1C);
+                if (idx <= 3)
+                {
+                    if (idx >= 0)
+                    {
+                        b = *(bytes + (sub->unk1E >> 8));
+                        flag = b >> 7;
+                        sub_index = (b & 0x7F) + table[idx];
+                        obj_load_record(sub->unk08, sub_index, 0, sub->unk38, sub->unk3C);
+                        ((struct RecFlags11 *)sub->unk08)->bit6 = flag;
+                        if (*((s8 *)sub + 0x1C) == 0)
+                        {
+                            sub->unk23 = 1;
+                        }
+                    }
+                }
+                *((u8 *)sub + 0x1D) = *((u8 *)sub + 0x1C);
+                sub->unk20 = sub->unk1E;
+            }
+        }
+    }
+}
+END_NONMATCH
 
 void anim_place_record(struct AnimSub *sub, s32 off_x, s32 off_y)
 {
@@ -680,7 +840,55 @@ static inline void item_load_record(struct ItemObj *item, s32 record, s32 b, u32
     obj_load_record(item, record, b, c, d);
 }
 
-ASM_FUNC("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct AnimSub *sub))
+NONMATCH("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct AnimSub *sub))
+{
+    s32 zone;
+    s32 t;
+    s32 z;
+
+    if (sub->unk0C != NULL)
+    {
+        zone = 0;
+        z = sub->unk34;
+        if (z < gZoneTable[0])
+        {
+            t = gZoneTable[1];
+        }
+        else
+        {
+            zone = 1;
+            if (z < gZoneTable[2])
+            {
+                t = gZoneTable[3];
+            }
+            else
+            {
+                zone = 2;
+                if (z >= gZoneTable[4])
+                {
+                    zone = 3;
+                }
+                else
+                {
+                    t = gZoneTable[5];
+                }
+            }
+        }
+        if (zone != 3)
+        {
+            if (sub->unk0C->unk21 != t)
+            {
+                item_load_record(sub->unk0C, t, -1, 0, 0);
+            }
+            sprite_update_cd0(sub->unk0C);
+        }
+        if (zone > 2)
+        {
+            obj_release_slots(sub->unk0C);
+        }
+    }
+}
+END_NONMATCH
 
 u32 anim_refresh(struct AnimSub *sub)
 {
@@ -792,23 +1000,6 @@ void release_item_8(struct AnimSub *sub)
         sub->unk08 = NULL;
     }
 }
-
-struct FxRecE
-{
-    u16 unk0;
-    u16 unk2;
-    u8 filler4[0xE - 0x4];
-    u16 unkE;
-};
-
-struct FxBits1FLow
-{
-    u8 filler0[0x1F];
-    u8 a : 2;
-    u8 b : 2;
-    u8 c : 2;
-    u8 d : 2;
-};
 
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 
@@ -969,11 +1160,83 @@ s32 lerp_step_081359D8(s32 from, s32 to, s32 steps, s32 step)
     return from + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((to - from) * step, steps);
 }
 
-ASM_FUNC("asm/code_081348C4/interp_cubic_steps.s", void interp_cubic_steps(void))
+NONMATCH("asm/code_081348C4/interp_cubic_steps.s", s32 interp_cubic_steps(s32 a, s32 b, s32 steps, s32 step))
+{
+    s32 (*div)(s32, s32);
+    s32 acc;
+    s32 part;
+
+    if (steps <= 0)
+    {
+        steps = 1;
+    }
+    if (step < 0)
+    {
+        step = 0;
+    }
+    if (step >= steps)
+    {
+        step = steps;
+    }
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    acc = div((b * 2 + b - (a * 2 + a)) * step, steps);
+    acc = div(acc * step, steps);
+    acc = acc + a;
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    part = div((a - b) * (step * 2), steps);
+    part = div(part * step, steps);
+    part = div(part * step, steps);
+    return acc + part;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081348C4/mat4_mul.s", void mat4_mul(struct Mat4 *out, struct Mat4 *a, struct Mat4 *b))
 
-ASM_FUNC("asm/code_081348C4/mat4_apply_scale.s", void mat4_apply_scale(void))
+
+NONMATCH("asm/code_081348C4/mat4_apply_scale.s", void mat4_apply_scale(struct Mat4 *m, s32 x, s32 y, s32 z))
+{
+    struct Mat4 sc;
+    struct Mat4 out;
+    s32 i;
+
+    sc.cb40 = gAppearCallback40Class;
+    sc.m[0] = x;
+    sc.m[1] = 0;
+    sc.m[2] = 0;
+    sc.m[3] = 0;
+    sc.m[4] = 0;
+    sc.m[5] = y;
+    sc.m[6] = 0;
+    sc.m[7] = 0;
+    sc.m[8] = 0;
+    sc.m[9] = 0;
+    sc.m[10] = z;
+    sc.m[11] = 0;
+    sc.m[12] = 0;
+    sc.m[13] = 0;
+    sc.m[14] = 0;
+    sc.m[15] = 0x100;
+    mat4_mul(&out, m, &sc);
+    m->m[0] = out.m[0];
+    m->m[1] = out.m[1];
+    m->m[2] = out.m[2];
+    m->m[3] = out.m[3];
+    m->m[4] = out.m[4];
+    m->m[5] = out.m[5];
+    m->m[6] = out.m[6];
+    m->m[7] = out.m[7];
+    m->m[8] = out.m[8];
+    m->m[9] = out.m[9];
+    m->m[10] = out.m[10];
+    m->m[11] = out.m[11];
+    m->m[12] = out.m[12];
+    m->m[13] = out.m[13];
+    m->m[14] = out.m[14];
+    m->m[15] = out.m[15];
+    out.cb40 = gAppearCallback40Class;
+    sc.cb40 = gAppearCallback40Class;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081348C4/mat4_apply_rotate_zxy.s", void mat4_apply_rotate_zxy(void))
 
