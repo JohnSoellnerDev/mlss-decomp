@@ -11,6 +11,10 @@ extern u8 gSys[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
+extern u8 *gParty;
+extern const u8 gRowTable[];
+extern const u8 gRowTableC[];
+extern const u8 gRowTable8[];
 void update_obj_list(void);
 void obj_list_pass_0a8c(void);
 
@@ -65,12 +69,42 @@ extern u8 gMenuTableVtable[];
 void heap_free_a(void *p);
 void heap_free_b(void *p);
 extern u8 gScreenChildClass[];
-void task_insert(void *node, u8 kind);
+void task_insert(void *node, u8 kind, u32 data);
 void task_remove(void *node, u32 kind);
 void run_pending_obj_callbacks(void);
 void menu_obj_free(struct MenuTable *obj, u32 flags);
 
 void cpu_set(const void *src, void *dst, u32 ctl);
+u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
+void menu_entry_refresh(void *ctx, u32 id, u32 value);
+void sub_08115F54(void *child, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7);
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+void sprite_update_cd0(void *sprite);
+void init_obj_09a8(u32 a, u32 b, u32 c, u32 d);
+void *menu_obj_init(void *block, u32 a, const void *tag, u32 c);
+void cpu_fast_set(const void *src, void *dst, u32 ctl);
+extern const u8 gScreenChildTag[];
+extern const u8 gScreenChildTaskTag[];
+extern const u8 gScreenMenuTag[];
+extern const u8 gScreenBgTilesBlock0[];
+extern const u8 gScreenBgTilesBlock1[];
+extern const u8 gScreenBgPalette[];
+extern u8 gUnk_02000080[];
+extern u8 gUnk_0200000A[];
+
+struct SysKeys2A
+{
+    u8 filler0[0x2A];
+    u16 keys;
+};
+
+struct SysBgDirty
+{
+    u8 filler0[2];
+    u16 unk2;
+};
 
 struct ScreenObj
 {
@@ -82,7 +116,8 @@ struct ScreenObj
     u16 unk24;
     u8 filler26[0x46 - 0x26];
     u8 unk46;
-    u8 filler47[0x4C - 0x47];
+    u8 unk47;
+    u8 filler48[0x4C - 0x48];
     struct ScreenChild *unk4C;
     void *unk50;
 };
@@ -93,6 +128,24 @@ struct ScreenChild
     struct ScreenObj *unk14;
     void *unk18;
     u8 unk1C;
+};
+
+struct TextBlock
+{
+    u8 filler0[0xE];
+    u16 unkE;
+    u8 filler10[0x12 - 0x10];
+    u16 unk12;
+    u16 unk14;
+    u8 filler16[0x18 - 0x16];
+    u16 unk18;
+    u8 filler1A[0x4A - 0x1A];
+    u16 unk4A;
+    u8 filler4C[0x4E - 0x4C];
+    u16 unk4E;
+    u16 unk50;
+    u8 filler52[0x54 - 0x52];
+    u16 unk54;
 };
 
 void cpu_set(const void *src, void *dst, u32 ctl);
@@ -181,7 +234,7 @@ NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTabl
         entryFlags = entry->flags;
         if ((entryFlags & 3) != 0)
         {
-            if ((((u32)entryFlags << 26) >> 29) & 6)
+            if (((u32)entryFlags << 26) >> 29 & 6)
             {
                 if (entry->unk14 != 0)
                 {
@@ -208,10 +261,120 @@ NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTabl
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_081171F8/screen_obj_setup.s", void screen_obj_setup(void))
+NONMATCH("asm/code_081171F8/screen_obj_setup.s", struct ScreenObj *screen_obj_setup(struct ScreenObj *obj, u8 prio, u32 arg))
+{
+    struct ScreenChild *child;
+    void *menu;
+    void *sprite;
+    s32 attr;
+
+    task_insert(obj, prio, arg);
+    obj->unk18 = gScreenObjClass;
+    obj->unk20 = 0;
+    obj->unk46 = 0;
+    obj->unk24 = 0;
+    obj->unk22 = 0;
+    child = heap_alloc2(0x20, 0, gScreenChildTag, 0);
+    task_insert(child, 8, (u32)gScreenChildTaskTag);
+    child->unk18 = gScreenChildClass;
+    child->unk1C = 0;
+    obj->unk4C = child;
+    menu = heap_alloc2(0x5C, 0, gScreenMenuTag, 0);
+    obj->unk50 = menu_obj_init(menu, 8, gScreenMenuTag, 0x10);
+    obj->unk4C->unk14 = obj;
+    init_obj_09a8(0, 0, 0, 0);
+    sprite = create_obj_de4(0, 0x1001, 0, -1, -1, -1, -1);
+    obj->unk1C = sprite;
+    obj_load_record(sprite, 4, -1, 0, 0);
+    sprite_update_cd0(obj->unk1C);
+    attr = ((u8 *)obj->unk1C)[0x12];
+    attr = (attr & -7) | 2;
+    ((u8 *)obj->unk1C)[0x12] = attr;
+    *(u16 *)obj->unk1C = 0x50;
+    *(u16 *)((u8 *)obj->unk1C + 2) = 0x78;
+    cpu_fast_set(gScreenBgTilesBlock0, (void *)0x06000000, 0x1E0);
+    cpu_fast_set(gScreenBgTilesBlock1, (void *)0x06001000, 0x160);
+    cpu_set(gScreenBgPalette, gUnk_02000080, 0x04000008);
+    ((struct SysBgDirty *)gSys)->unk2 = 0xFF;
+    *(u16 *)gUnk_0200000A = 0x201;
+    *(u16 *)(gUnk_0200000A - 10) = 0x1340;
+    return obj;
+}
+END_NONMATCH
 
 void obj_toggle_1c(struct MenuObj *obj);
-ASM_FUNC("asm/code_081171F8/screen_obj_update.s", void screen_obj_update(void))
+void screen_obj_update(struct ScreenObj *obj)
+{
+    u8 *cell;
+    s32 value;
+
+    if (((struct SysKeys2A *)gSys)->keys & 0x40)
+    {
+        cell = &obj->unk46;
+        value = *cell;
+        if (value == 7)
+        {
+            goto cell_done;
+        }
+        value = value + 1;
+        goto cell_store;
+    }
+    if (((struct SysKeys2A *)gSys)->keys & 0x80)
+    {
+        cell = &obj->unk46;
+        value = *cell;
+        if (value == 0)
+        {
+            goto cell_done;
+        }
+        value = value - 1;
+    }
+    else
+    {
+        goto cell_done;
+    }
+cell_store:
+    *cell = value;
+cell_done:
+    if (((struct SysKeys2A *)gSys)->keys & 1)
+    {
+        if (obj->unk20 == 0)
+        {
+            sprite_alloc(obj->unk50, 0, obj->unk46, 0xFF, 0xFFFF, 0xFFFF);
+            obj->unk47 = obj->unk46;
+        }
+        else
+        {
+            menu_entry_refresh(obj->unk50, 0, 1);
+        }
+        obj->unk20 ^= 1;
+    }
+    if (((struct SysKeys2A *)gSys)->keys & 0x100)
+    {
+        sub_08115F54(obj->unk50, 4, 0, 8, 0x7FFF, 0xFFFF, 0, 0);
+    }
+    if (((struct SysKeys2A *)gSys)->keys & 2)
+    {
+        obj_toggle_1c((struct MenuObj *)obj->unk4C);
+    }
+    if (((struct SysKeys2A *)gSys)->keys & 8)
+    {
+        if (obj != 0)
+        {
+            obj->unk18 = gScreenObjClass;
+            run_pending_obj_callbacks();
+            if (obj->unk50 != 0)
+            {
+                menu_obj_free((struct MenuTable *)obj->unk50, 3);
+            }
+            if (obj->unk4C != 0)
+            {
+                task_remove(obj->unk4C, 3);
+            }
+            task_remove(obj, 3);
+        }
+    }
+}
 
 void run_frame_hooks(void)
 {
@@ -252,9 +415,9 @@ void screen_obj_release(struct MenuObj *obj, u32 kind)
     task_remove(obj, kind);
 }
 
-struct MenuObj *screen_child_init(struct MenuObj *obj, u8 kind)
+struct MenuObj *screen_child_init(struct MenuObj *obj, u8 kind, u32 data)
 {
-    task_insert(obj, kind);
+    task_insert(obj, kind, data);
     obj->unk18 = gScreenChildClass;
     obj->unk1C = 0;
     return obj;
@@ -264,7 +427,34 @@ ASM_FUNC("asm/code_081171F8/drop_roll.s", void drop_roll(void))
 
 ASM_FUNC("asm/code_081171F8/build_menu_list.s", void build_menu_list(void))
 
-ASM_FUNC("asm/code_081171F8/text_block_state.s", u32 text_block_state(void))
+u32 text_block_state(void)
+{
+    struct TextBlock *block;
+    s32 span;
+    s32 scaled;
+    s32 second;
+
+    block = (struct TextBlock *)gParty;
+    if (block->unkE == 0 || block->unkE == block->unk12)
+    {
+        if (block->unk4A == 0 || block->unk4A == block->unk4E)
+        {
+            return 0xFF;
+        }
+        return 1;
+    }
+    if (block->unk4A == 0 || block->unk4A == block->unk4E)
+    {
+        return 0;
+    }
+    span = block->unkE * 100;
+    span = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(span, block->unk12);
+    block = (struct TextBlock *)gParty;
+    scaled = block->unk4A * 100;
+    second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scaled, block->unk4E);
+    return span > second;
+}
+
 
 ASM_FUNC("asm/code_081171F8/text_block_busy.s", u32 text_block_busy(void))
 
@@ -278,7 +468,44 @@ ASM_FUNC("asm/code_081171F8/char_menu_cell.s", void char_menu_cell(void))
 
 ASM_FUNC("asm/code_081171F8/char_menu_list.s", void char_menu_list(void))
 
-ASM_FUNC("asm/code_081171F8/unknown_thumb_081188a4.s", void unknown_thumb_081188a4(void))
+NONMATCH("asm/code_081171F8/unknown_thumb_081188a4.s", u8 unknown_thumb_081188a4(u8 kind, u8 idx))
+{
+    u8 result;
+    u8 *party;
+    u8 *field;
+    const u8 *table;
+
+    switch (kind)
+    {
+    case 0:
+        party = gParty;
+        field = party + idx * 0x3C + 0x32;
+        if (*field == 0xFF)
+        {
+            result = 0xFF;
+            break;
+        }
+        table = gRowTable;
+        result = table[*field * 20 + 6];
+        break;
+    case 1:
+        party = gParty;
+        field = party + idx * 0x3C + 0x31;
+        if (*field == 0xFF)
+        {
+            result = 0xFF;
+            break;
+        }
+        table = gRowTableC;
+        result = table[*field * 20 + 6];
+        break;
+    case 2:
+        result = 0xFF;
+        break;
+    }
+    return result;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/sub_0811891C.s", void sub_0811891C(void))
 
