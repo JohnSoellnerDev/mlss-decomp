@@ -126,8 +126,19 @@ extern u32 gClassE980[];
 extern u8 gSys[];
 extern struct EffectWorld *gUnk_03001024;
 void init_bg_gfx();
-struct EffectChild *obj_init_ex();
+struct EffectChild *obj_init_ex(struct EffectObj *obj, void *src, void *parent, s32 extra);
 void effect_dma_callback(void);
+u32 read_varlen_plus1(const void *p);
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void cpu_fast_set(const void *src, void *dst, u32 ctl);
+extern const u8 gUnk_08002D2C[];
+extern const u16 gScenePaletteA[];
+extern const u8 gBgDecompBufferTag[];
+extern u32 gUnk_03000C84;
+extern u8 gUnk_02000080[];
+extern u8 gUnk_0200000A[];
+extern u32 gClassE9a0[];
+extern struct EffectWorld *gUnk_03001024;
 
 
 struct ChildVt4
@@ -470,7 +481,36 @@ NONMATCH("asm/code_081612F0/effect_ctor_cls980.s", struct EffectObj *effect_ctor
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
+struct SysBgDirty
+{
+    u8 filler0[2];
+    u16 bgPalDirty;
+};
+
+NONMATCH("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
+{
+    const u8 *packed = gUnk_08002D2C + 0x81F4;
+    u8 *dst = heap_alloc(read_varlen_plus1(packed), 1, gBgDecompBufferTag, 0);
+
+    ((void (*)(const void *, void *))gUnk_03000C84)(packed, dst);
+    cpu_fast_set(dst, (void *)0x06000000, 0x2000);
+    if (dst != NULL)
+    {
+        heap_free_a(dst);
+    }
+    cpu_fast_set(gScenePaletteA, gUnk_02000080, 0x80);
+    *(u16 *)gUnk_02000080 = 0x190;
+    {
+        vu16 *bg = (vu16 *)gUnk_0200000A;
+
+        *bg = 0x1701;
+        bg += 2;
+        *bg = 0x1D02;
+    }
+    *(vu16 *)0x02000000 |= 0xA00;
+    ((struct SysBgDirty *)gSys)->bgPalDirty |= 0x7FFF;
+}
+END_NONMATCH
 
 u32 pos_in_view_box(struct EffectObj *obj, struct EffectObj *other)
 {
@@ -517,7 +557,31 @@ void stub_nop_08161ff8(void)
 {
 }
 
-ASM_FUNC("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex())
+NONMATCH("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex(struct EffectObj *obj, void *src, void *parent, s32 extra))
+{
+    s32 tmp;
+    s32 x;
+    s32 hi;
+    u16 lo;
+
+    obj->unk2C = (s32)gClassE9e8;
+    obj->unk10 = extra;
+    *(struct EffectHead *)obj = *(struct EffectHead *)src;
+    obj->unk0C = 0;
+    obj->unk14 = obj->unk1C = ((s16 *)obj)[0] << 8;
+    obj->unk18 = obj->unk20 = ((s16 *)obj)[1] << 8;
+    obj->unk24 = 0;
+    obj->unk28 = 0;
+    lookup_or_alloc_13b4(0, ((s16 *)obj)[3], -1, 1);
+    x = ((s16 *)obj)[3];
+    hi = (x >> 12) & 0xf;
+    lo = x & 0xfff;
+    find_or_alloc_obj_slots(0, hi << 12 | lo, 0, 0, 0, &tmp, -1);
+    obj->unk2C = (s32)gClassE9a0;
+    obj->unk30 = (s32)parent;
+    return (struct EffectChild *)obj;
+}
+END_NONMATCH
 
 void obj_effect_child_method(struct EffectObj *obj)
 {
@@ -724,21 +788,85 @@ void obj_set_class_ea88_keep(struct EffectObj *obj)
     obj->unk00 = (u32)gClassEa88;
 }
 
-ASM_FUNC("asm/code_081612F0/effect_init_sprites.s", void effect_init_sprites(void))
+struct SpriteEntry
+{
+    void *sprite;
+    s32 x;
+    s32 y;
+    s32 unkC;
+    s32 unk10;
+    s32 vx;
+    s32 vy;
+};
+
+struct SpriteEntries
+{
+    struct SpriteEntry entries[2];
+};
+
+s32 effect_init_sprites(void *p)
+{
+    struct SpriteEntries *obj = p;
+    void *sprite;
+    s32 i;
+
+    obj->entries[1].sprite = (void *)0x7800;
+    obj->entries[1].x = 0x5000;
+    obj->entries[1].y = 0;
+    obj->entries[1].unkC = 0;
+    obj->entries[1].unk10 = 0x12C;
+    obj->entries[1].vx = 0;
+    i = 0;
+    do
+    {
+        sprite = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
+        obj->entries[i].sprite = sprite;
+        switch (gSys[0x8C0])
+        {
+        case 0:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x39, -1, 0, 0);
+            break;
+        case 1:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x3A, -1, 0, 0);
+            break;
+        case 2:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x3B, -1, 0, 0);
+            break;
+        case 3:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x3C, -1, 0, 0);
+            break;
+        case 4:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x3D, -1, 0, 0);
+            break;
+        default:
+            obj_load_record(sprite, i * 6 + 0x3E, -1, 0, 0);
+            break;
+        }
+        sprite_update_cd0(obj->entries[i].sprite);
+        obj->entries[i].x = (s32)obj->entries[1].sprite;
+        obj->entries[i].y = 0xFFFFD800;
+        obj->entries[i].vx = 0;
+        obj->entries[i].vy = 0;
+        obj->entries[i].unkC = 0;
+        obj->entries[i].unk10 = 0;
+        ((struct SpritePos *)obj->entries[i].sprite)->x = (obj->entries[i].x + obj->entries[i].vx) >> 8;
+        ((struct SpritePos *)obj->entries[i].sprite)->y = (obj->entries[i].y + obj->entries[i].vy) >> 8;
+        i++;
+    } while (i <= 0);
+    return (s32)obj;
+}
 
 NONMATCH("asm/code_081612F0/effect_step_a.s", s32 effect_step_a(struct EffectObj *obj))
 {
     s32 delta;
-    s32 pos;
 
     switch (obj->unk30)
     {
     case 0:
         delta = obj->unk10 + 0x14;
         obj->unk10 = delta;
-        pos = obj->unk08 + delta;
-        obj->unk08 = pos;
-        if (pos > 0x4FFF)
+        obj->unk08 += delta;
+        if (obj->unk08 > 0x4FFF)
         {
             obj->unk10 = (-delta * 2) / 3;
             if ((obj->unk10 >> 8) == 0)
@@ -797,7 +925,63 @@ s32 effect_step_b(struct EffectB *obj)
     return 0;
 }
 
-ASM_FUNC("asm/code_081612F0/effect_init_sprite_pair.s", void effect_init_sprite_pair(void))
+struct SpritePair
+{
+    u16 width;
+    u16 height;
+    u16 unk4;
+    u16 unk6;
+    void *sprites[2];
+    s32 posY[2];
+};
+
+void effect_init_sprite_pair(void *p)
+{
+    struct SpritePair *obj = p;
+    void *sprite;
+    s32 i;
+
+    for (i = 0; i < 2; i++)
+    {
+        sprite = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
+        obj->sprites[i] = sprite;
+        switch (gSys[0x8C0])
+        {
+        case 0:
+            obj_load_record(obj->sprites[i], i * 6 + 0x2E, -1, 0, 0);
+            break;
+        case 1:
+            obj_load_record(obj->sprites[i], i * 6 + 0x2F, -1, 0, 0);
+            obj->unk4 = 0xFFFC;
+            obj->unk6 = 4;
+            break;
+        case 2:
+            obj_load_record(obj->sprites[i], i * 6 + 0x30, -1, 0, 0);
+            obj->unk4 = 0xFFFC;
+            obj->unk6 = 4;
+            break;
+        case 3:
+            obj_load_record(obj->sprites[i], i * 6 + 0x31, -1, 0, 0);
+            obj->unk4 = 0xFFFE;
+            obj->unk6 = 2;
+            break;
+        case 4:
+            obj_load_record(obj->sprites[i], i * 6 + 0x32, -1, 0, 0);
+            obj->unk4 = 0xFFFE;
+            obj->unk6 = 2;
+            break;
+        default:
+            obj_load_record(sprite, i * 6 + 0x2D, -1, 0, 0);
+            break;
+        }
+        sprite_update_cd0(obj->sprites[i]);
+        obj->posY[i] = (i * 15) << 12;
+        ((struct SpritePos *)obj->sprites[i])->x = obj->posY[i] >> 8;
+        ((struct SpritePos *)obj->sprites[i])->y = 0x50;
+    }
+    obj->width = 0x1E;
+    obj->height = 1;
+}
 
 void obj_release_two_children(struct EffectObj *obj, u32 flags)
 {
@@ -821,7 +1005,17 @@ static inline void clear_axis(s32 *p)
     p[2] = 0;
 }
 
-ASM_FUNC("asm/code_081612F0/obj_clear_bounds.s", void obj_clear_bounds(void))
+NONMATCH("asm/code_081612F0/obj_clear_bounds.s", struct EffectB *obj_clear_bounds(struct EffectB *obj))
+{
+    clear_axis((s32 *)&obj->outX);
+    clear_axis((s32 *)&obj->outY);
+    obj->timer = 0;
+    obj->state = 0;
+    obj->ofsX = 0;
+    obj->ofsY = 0;
+    return obj;
+}
+END_NONMATCH
 
 struct EffectObj *effect_create_sprites(struct EffectObj *obj)
 {
@@ -909,4 +1103,54 @@ void obj_release_child_free_b(struct EffectObj *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_081612F0/effect_init_sprites_b.s", void effect_init_sprites_b(void))
+s32 effect_init_sprites_b(void *p)
+{
+    struct SpriteEntries *obj = p;
+    void *sprite;
+    s32 i;
+
+    obj->entries[1].sprite = (void *)0x7800;
+    obj->entries[1].x = 0x5000;
+    obj->entries[1].y = 0;
+    obj->entries[1].unkC = 0;
+    obj->entries[1].unk10 = 0x12C;
+    obj->entries[1].vx = 0;
+    i = 0;
+    do
+    {
+        sprite = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
+        obj->entries[i].sprite = sprite;
+        switch (gSys[0x8C0])
+        {
+        case 0:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x4B, -1, 0, 0);
+            break;
+        case 1:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x4C, -1, 0, 0);
+            break;
+        case 2:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x4D, -1, 0, 0);
+            break;
+        case 3:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x4E, -1, 0, 0);
+            break;
+        case 4:
+            obj_load_record(obj->entries[i].sprite, i * 6 + 0x4F, -1, 0, 0);
+            break;
+        default:
+            obj_load_record(sprite, i * 6 + 0x4A, -1, 0, 0);
+            break;
+        }
+        sprite_update_cd0(obj->entries[i].sprite);
+        obj->entries[i].x = (s32)obj->entries[1].sprite;
+        obj->entries[i].y = 0xFFFFD800;
+        obj->entries[i].vx = 0;
+        obj->entries[i].vy = 0;
+        obj->entries[i].unkC = 0;
+        obj->entries[i].unk10 = 0;
+        ((struct SpritePos *)obj->entries[i].sprite)->x = (obj->entries[i].x + obj->entries[i].vx) >> 8;
+        ((struct SpritePos *)obj->entries[i].sprite)->y = (obj->entries[i].y + obj->entries[i].vy) >> 8;
+        i++;
+    } while (i <= 0);
+    return (s32)obj;
+}
