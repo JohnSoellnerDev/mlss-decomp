@@ -31,6 +31,7 @@ void alloc_tile_slot(u8 *obj, u8 idx, u8 palette);
 void release_tile_slot(u8 *obj, u8 idx);
 void cpu_set(const void *src, void *dst, u32 ctl);
 void free_list_move(void *head, void *block);
+u32 free_list_alloc(void *list, u32 size);
 void draw_text(u8 *base, u8 maxTiles, u16 x, u16 y, u8 *text, u8 palette);
 void vram_slots_draw_number(u8 *base, u8 maxTiles, u16 x, u16 y, u32 value, u8 palette, u32 align, u32 font);
 
@@ -39,7 +40,38 @@ static inline struct TileSlot *slot_at(u8 *obj, u32 idx)
     return (struct TileSlot *)(obj + idx * 0x14);
 }
 
-ASM_FUNC("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(void))
+struct TileSlotFlags
+{
+    u8 filler0[5];
+    u8 low6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx, u32 flag, u32 value, u32 p5, u32 p6, u32 p7))
+{
+    struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
+    u32 tiles;
+    u32 bit6;
+
+    if (slot->maxTiles != 0)
+    {
+        release_tile_slot(obj, idx);
+    }
+    ((struct TileSlotFlags *)slot)->bit6 = flag & 1;
+    ((struct TileSlotFlags *)slot)->bit7 = 0;
+    tiles = (p6 * p7) & 0x3FFF;
+    slot->size = (slot->size & -0x4000) | tiles;
+    slot->value = value;
+    slot->unk1 = p5;
+    slot->maxTiles = p6;
+    slot->unk3 = p7;
+    bit6 = ((struct TileSlotFlags *)slot)->bit6;
+    slot->pos = (bit6 * 5 << 7) + (p5 << 5) + value;
+    slot->end = ((p7 - 1) << 5) + p6;
+    slot->block = 0;
+}
+END_NONMATCH
 
 struct SpanNode
 {
@@ -102,7 +134,66 @@ alloc:
 
 extern u8 *gMemRoutines;
 void insert_span(u8 *obj, s32 start, s32 len);
-ASM_FUNC("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8 idx, u8 palette))
+NONMATCH("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8 idx, u8 palette))
+{
+    struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
+    void *list;
+    void **head;
+    u8 flags;
+    u32 sel;
+    u32 off;
+    u32 size;
+    u32 block;
+    u32 tile;
+    u32 attr;
+    u32 width;
+    s32 rows;
+    u32 left;
+    u16 *p;
+    u16 *cell;
+    u16 *next;
+
+    flags = ((u8 *)slot)[5];
+    if ((flags & 0x80) == 0)
+    {
+        flags |= 0x80;
+        ((u8 *)slot)[5] = flags;
+        sel = ((u32)flags << 25) >> 31;
+        size = ((u32)slot->size << 18) >> 18;
+        if (slot->spare == 0)
+        {
+            slot->spare = slot->block;
+        }
+        off = sel * 4;
+        head = (void **)(obj + 0x280);
+        list = *(void **)((u8 *)head + off);
+        size <<= 5;
+        block = free_list_alloc(list, size);
+        slot->block = (u8 *)block;
+        tile = ((block - 0x06004000) << 11) >> 16;
+        ((void (*)(u32, u8 *, u32))gMemRoutines)(0, (u8 *)block, size);
+        width = slot->maxTiles;
+        rows = slot->unk3;
+        cell = *(u16 **)(obj + 0x288) + slot->pos;
+        attr = ((palette & 0xF) << 12) | tile;
+        while (--rows >= 0)
+        {
+            next = cell + 0x20;
+            if (width != 0)
+            {
+                left = width;
+                p = cell;
+                do
+                {
+                    *p++ = attr++;
+                } while (--left != 0);
+            }
+            cell = next;
+        }
+        insert_span(obj, slot->pos, slot->end);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08084DB4/draw_slot_frame.s", void draw_slot_frame(void))
 
@@ -150,7 +241,37 @@ void copy_map_rect_add(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h, u16 *src,
     }
 }
 
-ASM_FUNC("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(void))
+NONMATCH("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(u8 *obj, u32 y, u16 *src, u32 h, u32 value))
+{
+    u16 *dst;
+    s32 n;
+    u16 *p;
+
+    dst = (u16 *)(*(u8 **)(obj + 0x288) + ((y * 5) << 8));
+    if (src != 0)
+    {
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)src, (u8 *)dst, h << 6);
+    }
+    else
+    {
+        ((void (*)(u32, u8 *, u32))gMemRoutines)((value << 16) | value, (u8 *)dst, h << 6);
+    }
+    insert_span(obj, (y * 5) << 7, h << 5);
+    if (value != 0 && src != 0)
+    {
+        n = h << 5;
+        if (n > 0)
+        {
+            p = dst;
+            do
+            {
+                *p = *p + value;
+                p++;
+            } while (--n != 0);
+        }
+    }
+}
+END_NONMATCH
 
 void copy_slot_tiles(u8 *obj, u8 idx, void *dst, u32 off, u32 count)
 {
@@ -202,7 +323,48 @@ void draw_slot_text(u8 *obj, u8 idx, u32 x, u32 y, u8 *text, u8 color)
     }
 }
 
-ASM_FUNC("asm/code_08084DB4/release_tile_slot.s", void release_tile_slot(u8 *obj, u8 idx))
+void release_tile_slot(u8 *obj, u8 idx)
+{
+    struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
+    u8 *block;
+    void **list;
+    u32 off;
+    u16 *row;
+    s32 h;
+    s32 i;
+    u32 bit6;
+
+    if (slot->maxTiles != 0)
+    {
+        if (slot->spare != 0)
+        {
+            block = slot->block;
+            if (block == 0)
+            {
+                return;
+            }
+            bit6 = ((u32)((u8 *)slot)[5] << 25) >> 31;
+            off = bit6 * 4;
+            list = (void **)(obj + 0x280);
+            free_list_move(*(void **)((u8 *)list + off), block);
+        }
+        else
+        {
+            slot->spare = slot->block;
+        }
+        slot->block = 0;
+        h = slot->unk3;
+        row = *(u16 **)(obj + 0x288) + slot->pos;
+        while (--h >= 0)
+        {
+            i = slot->maxTiles;
+            while (--i >= 0)
+                row[i] = 0;
+            row += 0x20;
+        }
+        insert_span(obj, slot->pos, slot->end);
+    }
+}
 
 void flush_copy_queue(u8 *obj)
 {
@@ -255,7 +417,7 @@ NONMATCH("asm/code_08084DB4/reset_display.s", void reset_display(void))
     *p = 0xA0;
     p--;
     *p = 0xF0;
-    p = (u16 *)((u8 *)p + 4);
+    p += 2;
     *p = 0xA0;
     dma_fill_or_queue(0, (void *)0x06008000, 0x5000, 0x20, 0);
     dma_fill_or_queue(0, (void *)0x0600F800, 0x800, 0x20, 0);
