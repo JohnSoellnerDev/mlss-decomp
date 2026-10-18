@@ -783,7 +783,7 @@ u32 obj_top_bit_store(void *unused0, struct ObjEntry *obj, u32 *dst, u32 *block)
     return 1;
 }
 
-NONMATCH("asm/code_080F0C04/obj_motion_command.s", u32 obj_motion_command(void *unused0, void *obj, void *dst, u32 *block))
+u32 obj_motion_command(void *unused0, void *obj, void *dst, u32 *block)
 {
     u32 mode = *block++;
     if ((mode & 2) == 0)
@@ -791,7 +791,7 @@ NONMATCH("asm/code_080F0C04/obj_motion_command.s", u32 obj_motion_command(void *
         obj_set_move(obj, mode, block[0]);
         {
             u16 *flags = (u16 *)((u8 *)dst + 0xA0);
-            u32 v = 0x42;
+            s16 v = 0x42;
             v |= *flags;
             *flags = v;
         }
@@ -806,7 +806,6 @@ NONMATCH("asm/code_080F0C04/obj_motion_command.s", u32 obj_motion_command(void *
     }
     return 1;
 }
-END_NONMATCH
 
 u32 probe_object_entry(struct OwnerObj *owner, void *dst, void *third, s32 *block)
 {
