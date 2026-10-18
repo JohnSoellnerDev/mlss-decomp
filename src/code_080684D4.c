@@ -254,11 +254,10 @@ u32 obj_link_owner_callback(struct Actor *obj)
     return 0;
 }
 
-NONMATCH("asm/code_080684D4/obj_drift_left_child.s", void obj_drift_left_child(struct Actor *obj))
+void obj_drift_left_child(struct Actor *obj)
 {
     s32 x;
     s32 old = obj->x;
-    s32 px;
 
     x = old + -0x133;
     obj->x = x;
@@ -266,13 +265,12 @@ NONMATCH("asm/code_080684D4/obj_drift_left_child.s", void obj_drift_left_child(s
     {
         x = old - 0x34;
     }
-    px = x >> 8;
-    if (px <= -0x20)
+    old = x >> 8;
+    if (old <= -0x20)
     {
         obj_release(obj);
     }
 }
-END_NONMATCH
 
 void obj_wait_index_then_dx(struct Actor *obj)
 {
