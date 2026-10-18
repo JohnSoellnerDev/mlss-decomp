@@ -159,7 +159,7 @@ void text_window_close(void)
 
 ASM_FUNC("asm/code_080E9020/text_window_open.s", void text_window_open(void))
 
-NONMATCH("asm/code_080E9020/update_slot_bounds.s", void update_slot_bounds(u8 **table, u8 idx))
+void update_slot_bounds(u8 **table, u8 idx)
 {
     u32 off = (u8)idx << 4;
     u8 *base = *table;
@@ -177,7 +177,6 @@ NONMATCH("asm/code_080E9020/update_slot_bounds.s", void update_slot_bounds(u8 **
     obj->unk2 = sum1;
     obj->unkE = 0x7FFF - sum1;
 }
-END_NONMATCH
 
 u32 slot_countdown(u8 **table, u8 idx, u32 unused2, u32 a3)
 {
