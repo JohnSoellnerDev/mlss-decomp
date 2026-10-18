@@ -1,14 +1,62 @@
 #include "global.h"
 
+struct ObjRecord
+{
+    u8 filler0[4];
+    u16 unk4;
+    u16 unk6;
+    u8 filler8[4];
+    u16 unkC;
+    u8 filler10[0x34 - 0x10];
+    u32 model;
+};
+
+struct Point1Obj
+{
+    u8 filler0[8];
+    struct ObjRecord *rec;
+    u32 *data;
+    u8 filler10[2];
+    s16 posX;
+    s16 posY;
+    s16 posZ;
+    u8 filler18[3];
+    u8 flags;
+};
+
+struct Point1Local
+{
+    s32 x;
+    s32 y;
+    s32 z;
+    u32 model;
+};
+
+struct ModelCtx
+{
+    u8 filler0[0x38];
+    u32 model;
+};
+
+extern struct ModelCtx *gModelCtx;
+
+extern s16 gSineTable[];
+extern s16 gCosineTable[];
+
+u32 block_flag_byte(struct ObjRecord *rec);
+void oam_list_rows_b(u32 model, u32 h);
+void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
+void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
+
 void fx_obj_spawn(u32 x, u32 y, u32 z, u32 type, void (*callback)(), u32 attr, u32 mode,
                   u32 unk0C, u32 points, u32 flagA, u32 flagB, const void *table, u32 count);
 
 extern void obj_zoom_spin4_size180_6b24(void);
 extern void obj_zoom_spin5_6e14(void);
 extern void obj_zoom_spin5_size140_683c(void);
-extern void obj_zoom_spin5_7104(void);
-extern void obj_zoom_spin5_736c(void);
-extern void obj_zoom_spin6_75d4(void);
+void obj_zoom_spin5_7104(struct Point1Obj *obj);
+void obj_zoom_spin5_736c(struct Point1Obj *obj);
+void obj_zoom_spin6_75d4(struct Point1Obj *obj);
 extern void obj_point_fixed_3ed8(void);
 extern void obj_point_fixed_3fd8(void);
 extern void obj_point_fixed_40d8(void);
@@ -79,11 +127,299 @@ ASM_FUNC("asm/code_0817683C/obj_zoom_spin4_size180_6b24.s", void obj_zoom_spin4_
 
 ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_6e14.s", void obj_zoom_spin5_6e14(void))
 
-ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_7104.s", void obj_zoom_spin5_7104(void))
+NONMATCH("asm/code_0817683C/obj_zoom_spin5_7104.s", void obj_zoom_spin5_7104(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 vel;
+    s32 angle;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 zoom;
+    u32 *words;
+    s32 vx;
+    s32 z1;
+    s32 x1;
+    s32 y1;
+    s32 x2;
+    s32 y2;
+    s32 z2;
+    s32 z3;
+    s32 t;
+    s32 pos;
 
-ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(void))
+    words = obj->data;
+    zoom = *words++;
+    vel = *words++;
+    angle = *words++;
+    l.model = obj->rec->model;
+    h = block_flag_byte(obj->rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 5; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        y2 = z1;
+        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[32] / 0x40);
+        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        l.y = y2;
+        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
+        l.z = z3;
+        l.y = y2 - 0x800;
 
-ASM_FUNC("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(void))
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += vel;
+    vel = (vel * 3) / 4;
+    angle += 2;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = vel;
+    *words = angle;
+}
+END_NONMATCH
+
+
+NONMATCH("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 vel;
+    s32 angle;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 zoom;
+    u32 *words;
+    s32 vx;
+    s32 z1;
+    s32 x1;
+    s32 y1;
+    s32 x2;
+    s32 y2;
+    s32 z2;
+    s32 z3;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    vel = *words++;
+    angle = *words++;
+    l.model = obj->rec->model;
+    h = block_flag_byte(obj->rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 5; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        z2 = (z1 * (gCosineTable[angle & 0xFF] / 0x40) - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[32] / 0x40);
+        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        l.y = y2;
+        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
+        l.z = z3;
+        l.y = y2 - 0x800;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += vel;
+    vel = (vel * 3) / 4;
+    angle += 2;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = vel;
+    *words = angle;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 vel;
+    s32 angle;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 zoom;
+    u32 *words;
+    s32 vx;
+    s32 z1;
+    s32 x1;
+    s32 y1;
+    s32 x2;
+    s32 y2;
+    s32 z2;
+    s32 z3;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    vel = *words++;
+    angle = *words++;
+    l.model = obj->rec->model;
+    h = block_flag_byte(obj->rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 6; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        z2 = (z1 * (gCosineTable[angle & 0xFF] / 0x40) - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[32] / 0x40);
+        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        l.y = y2;
+        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
+        l.z = z3;
+        l.y = y2 - 0x800;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += vel;
+    vel = (vel * 3) / 4;
+    angle += 2;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = vel;
+    *words = angle;
+}
+END_NONMATCH
 
 void spawn_obj_zoom_spin6_75d4(u32 x, u32 y, u32 z, u32 flag)
 {
