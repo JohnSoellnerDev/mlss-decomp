@@ -64,8 +64,7 @@ NONMATCH("asm/code_080E76A4/copy_map_rects.s", void copy_map_rects(struct ObjWit
     {
         st = obj->state;
         vram = (u8 *)((((u32)*st->header & 0x1F00) << 3) + 0x06000000);
-        slot = st->slots;
-        for (i = 0; i < 5; i++, slot++)
+        for (i = 0, slot = st->slots; i < 5; i++, slot++)
         {
             s32 skip = mask >> i;
             skip ^= 1;
@@ -75,10 +74,11 @@ NONMATCH("asm/code_080E76A4/copy_map_rects.s", void copy_map_rects(struct ObjWit
                 u16 x = slot->x >> 3;
                 u16 y = slot->y >> 3;
                 u32 cell = (y << 5) + x;
-                u8 *map = obj->state->map;
-                u8 *dst = map + cell * 2;
-                u8 *src = vram + cell * 2;
-                u8 *end = map + ((slot->rows + y + 1) << 6) + ((slot->cols + x) << 1) + 4;
+                u8 **pmap = &obj->state->map;
+                u32 index = cell << 1;
+                u8 *dst = *pmap + index;
+                u8 *src = vram + index;
+                u8 *end = *pmap + ((slot->rows + y + 1) << 6) + ((slot->cols + x) << 1) + 4;
                 dma_copy_or_queue(dst, src, end - dst, 0x20, skip);
             }
         }
