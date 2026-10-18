@@ -88,7 +88,7 @@ struct Body
     u32 unkA4;
     s32 unkA8;
     u16 counter;
-    u16 jumpDX;
+    s16 jumpDX;
     s16 jumpDY;
     u16 unkB2;
     u8 fillerB4[0xB8 - 0xB4];
@@ -235,4 +235,34 @@ void move_between_poses(struct Body *body)
 
 ASM_FUNC("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(struct Body *body))
 
-ASM_FUNC("asm/code_0809EC74/companion_jump_land_step_toward_partner.s", void companion_jump_land_step_toward_partner(struct Body *body))
+void companion_jump_land_step_toward_partner(struct Body *body)
+{
+    struct BodyData *group = body->data;
+    struct Body *partner = body->partner;
+    s16 *speed = &body->jumpDX;
+    s16 x;
+    s16 y;
+    s16 z;
+    s32 zOffset = 0x500;
+
+    *speed += body->jumpDY;
+    move_step(&x, &y, &z,
+              partner->data->limitX - group->posX,
+              partner->data->height - group->posY,
+              partner->data->targetH - (group->posZ + zOffset),
+              *speed);
+    body->posX = body->targetX + x;
+    body->posY = body->targetY + y;
+    body->posZ = body->targetZ + z;
+    if (*speed <= -body->unk9C)
+    {
+        struct Body *gbody = (struct Body *)((u8 *)group + 8);
+
+        gbody->state = (void *)set_state_when_shown;
+        gbody->unk68 = (void *)on_arrive;
+        gbody->unk6C = body->unk6C;
+        sprite_set_action(gbody, 0x13, 0, 0);
+        body->unk6C = 0;
+        obj_release(body);
+    }
+}
