@@ -112,7 +112,9 @@ struct CompanionObj
     u8 flags20F;
     u8 filler210[0x214 - 0x210];
     u8 state;
-    u8 filler215[0x242 - 0x215];
+    u8 filler215;
+    u8 flags216;
+    u8 filler217[0x242 - 0x217];
     s16 vx;
     s16 vy;
     u8 filler246[0x272 - 0x246];
@@ -124,7 +126,9 @@ struct CompanionObj
     u16 size27C;
     u8 filler27E[0x294 - 0x27E];
     struct Sprite *sprite;
-    u8 filler298[0x33D - 0x298];
+    u8 filler298[0x338 - 0x298];
+    u8 *methods;
+    u8 filler33C[0x33D - 0x33C];
     u8 flags33D;
     u8 flags33E;
     u8 filler33F[0x344 - 0x33F];
@@ -298,6 +302,7 @@ NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct 
     u32 dir;
     u8 f;
     s32 mask;
+    u8 *fp;
     u32 cell;
     u32 ang;
     u32 roll;
@@ -321,10 +326,11 @@ NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct 
     }
     else
         dir = -1;
-    mask = -8;
+    fp = &obj->facing;
     dir &= 7;
-    f = (obj->facing & mask) | dir;
-    obj->facing = f;
+    mask = -8;
+    f = (*fp & mask) | dir;
+    *fp = f;
     cell = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)f << 29) >> 29, 2);
     obj_set_cell_coord(obj, cell, 0);
     obj->state = (obj->state & mask) | 1;
@@ -417,6 +423,8 @@ void obj_load_anim_table(struct CompanionObj *obj)
 NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_from_velocity(struct CompanionObj *owner, struct CompanionObj *obj))
 {
     s16 *tbl;
+    s16 *vyp;
+    s16 *vxp;
     u8 idx;
     u8 *ip;
     u32 pick;
@@ -425,6 +433,7 @@ NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_f
     s32 dy;
     s32 dir;
     u32 f;
+    u8 *fp;
     u32 cell;
     u32 ang;
     u32 roll;
@@ -439,15 +448,19 @@ NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_f
     *ip = pick;
     target = (struct CompanionObj *)((u32 *)owner)[idx + 10];
     ((struct StateBits *)&obj->state)->low3 = 1;
-    if (((u16)obj->vx | (u16)obj->vy) != 0)
+    vxp = &obj->vx;
+    vyp = &obj->vy;
+    if (((u16)vxp[0] | (u16)vyp[0]) != 0)
     {
-        ang = angle_of_vector16(obj->vx, obj->vy);
+        ang = angle_of_vector16(vxp[0], vyp[0]);
         dir = (((s32)((u16)ang + 0x1000)) >> 13) & 7;
     }
     else
         dir = -1;
-    f = ((u32)obj->facing & -8) | (dir & 7);
-    obj->facing = f;
+    fp = &obj->facing;
+    dir &= 7;
+    f = (*fp & -8) | dir;
+    *fp = f;
     cell = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)f << 29) >> 29, 2);
     obj_set_cell_coord(obj, cell, 0);
     roll = rand_below(4, mt19937_next());
@@ -581,7 +594,36 @@ ASM_FUNC("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void)
 void enter_idle_wait(struct CompanionObj *obj, u32 *slot);
 ASM_FUNC("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
 
-ASM_FUNC("asm/code_0814DF44/entry_switch_handler.s", void entry_switch_handler(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot))
+void entry_switch_handler(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot)
+{
+    u8 unused[0x10];
+    u8 idx;
+    u8 *ip;
+    struct CompanionObj *entry;
+
+    ip = &idx;
+    if (find_active_entry(owner, ip) != 0)
+    {
+        entry = (struct CompanionObj *)((u32 *)owner)[*ip + 10];
+        if ((u8)entry_within_reach(obj, entry) != 0)
+        {
+            *slot = (u32)obj_load_kind_record;
+            return;
+        }
+        *ip = !*ip;
+        entry = (struct CompanionObj *)((u32 *)owner)[*ip + 10];
+        if ((((u32)entry->flags20C << 31) >> 31) & (((u32)entry->flags352 << 28) >> 31))
+        {
+            if ((u8)entry_within_reach(obj, entry) != 0)
+            {
+                *slot = (u32)obj_load_kind_record;
+                return;
+            }
+        }
+        if (obj->child->handler == 0)
+            *slot = (u32)random_pose;
+    }
+}
 
 void random_pose(void *owner, struct CompanionObj *obj, u32 *slot)
 {
