@@ -200,6 +200,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   0x40); y2 = (t - (gSineTable[a] / 0x40) * z1) / 0x100;` - that copy is the `adds r1, r3, #0`
   before the cosine load. Complete examples: `obj_zoom_tilt5_42d8` in src/code_08173678.c,
   `obj_rotx_zoom12_f0c0` in src/code_0817E4F0.c.
+- GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
+  `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
+  zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
+  src/code_0809EC74.c.
 - A callee-saved register that is read on some path without ever being set in the function
   (it still holds the caller's value) is an uninitialised local in the original: declare it
   without an initialiser and leave it unassigned on that path (GCC emits no code for it).
