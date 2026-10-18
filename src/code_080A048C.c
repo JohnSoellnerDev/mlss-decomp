@@ -84,7 +84,9 @@ struct Body
     u8 filler48[0x4C - 0x48];
     u32 state;
     u32 slot50;
-    u8 filler54[0x6C - 0x54];
+    u8 filler54[0x58 - 0x54];
+    u32 slot58;
+    u8 filler5C[0x6C - 0x5C];
     u32 anim;
     u8 filler70[0x74 - 0x70];
     u8 unk74;
@@ -136,7 +138,7 @@ struct World
 
 extern struct World *gWorld;
 extern u8 *gParty;
-extern s8 gEllipseStepScript[];
+extern u8 gEllipseStepScript[];
 
 struct PoseTable
 {
@@ -178,72 +180,57 @@ ASM_FUNC("asm/code_080A048C/place_chain_nodes.s", void place_chain_nodes(void))
 
 ASM_FUNC("asm/code_080A048C/build_twin_part_chain.s", void build_twin_part_chain(struct Body *body))
 
-NONMATCH("asm/code_080A048C/start_script_step.s", void start_script_step(struct Body *body))
-{
-    s32 idx;
-    s32 height;
-    s32 c;
-    s32 t;
-    s32 v;
-    u8 near;
-
-    idx = 0;
-    height = body->height;
-    while (height > 0)
-    {
-        c = gEllipseStepScript[idx];
-        idx++;
-        height--;
-        if (c != 0)
-        {
-            do
-            {
-                c = gEllipseStepScript[idx];
-                idx++;
-            } while (c != 0);
-        }
-    }
-    body->scriptPos = idx;
-    body->scriptB0 = gEllipseStepScript[idx];
-    body->scriptPos = idx + 1;
-    body->speedZ = ((s32)((u32 (*)(u32))gMathRoutines)(0x4C4)) / 2;
-    if ((s16)body->scriptB0 < 0)
-    {
-        t = *(s32 *)&body->spanA;
-        if (t < 0)
-        {
-            t += 0xFF;
-        }
-        near = (u8)(t >> 8);
-        v = 0x80;
-        if (near <= 0x80)
-        {
-            v = -0x80;
-        }
-    }
-    else
-    {
-        t = *(s32 *)&body->spanA;
-        if (t < 0)
-        {
-            t += 0xFF;
-        }
-        t = t << 16;
-        v = 0x80;
-        if (t < 0)
-        {
-            v = 0x180;
-        }
-    }
-    body->timer = v;
-    body->baseY = (s16)body->scriptB0 * 8;
-    body->state = (u32)move_base_toward_target;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_080A048C/start_script_step.s", void start_script_step(void))
 
 ASM_FUNC("asm/code_080A048C/move_base_toward_target.s", void move_base_toward_target(struct Body *body))
 
-ASM_FUNC("asm/code_080A048C/swing_then_draw.s", void swing_then_draw(void))
+void swing_then_draw(struct Body *body)
+{
+    s32 speed;
+    s32 width;
+    s32 bx;
+    s32 cdiv;
+    s32 prod;
+    s32 p8;
+    s32 x2;
+    struct SpriteEntry *sprite;
+
+    body->timer += 0x33;
+    speed = body->swing + (s16)body->timer;
+    body->swing = speed;
+    if (speed <= 0x4FFF)
+    {
+        width = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5000 - speed, 0x50 - (s16)body->speedZ);
+        sprite = body->sprite;
+        width = (width < 4) ? 4 : width;
+        sprite->unk6 = width;
+        sprite->unk4 = width;
+        *(s32 *)&body->spanA += body->baseY;
+        bx = *(s32 *)&body->spanA;
+        cdiv = gCosineTable[(bx / 0x100) & 0xFF] / 0x40;
+        prod = body->swing * cdiv;
+        if (prod < 0)
+        {
+            prod += 0xFF;
+        }
+        p8 = prod >> 8;
+        x2 = ((p8 << 2) + p8) << 7;
+        if (x2 < 0)
+        {
+            x2 += 0xFF;
+        }
+        body->x = 0x2F00 - (x2 >> 8);
+        cdiv = gSineTable[(*(s32 *)&body->spanA / 0x100) & 0xFF] / 0x40;
+        prod = body->swing * cdiv;
+        body->y = 0x6C00 - (prod / 0x100);
+    }
+    else
+    {
+        obj_release(body->child->child);
+        obj_release(body->child);
+        obj_release(body);
+    }
+}
 
 ASM_FUNC("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orbit(void))
 
@@ -541,10 +528,10 @@ NONMATCH("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struc
     struct Hero *hero;
     struct Body *hbody;
     s32 motionX;
-    s32 reached;
-    s32 ratio;
-    s32 mode;
     s32 motionY;
+    s32 ratio;
+    s32 reached;
+    s32 mode;
 
     hero = gWorld->heroA;
     hbody = &hero->body;
