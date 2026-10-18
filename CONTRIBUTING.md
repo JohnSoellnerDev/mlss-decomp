@@ -188,6 +188,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   the mask register as destination comes from a mask variable set earlier
   (`mask = 7; ... if ((mask & flags) != mask)`, example `map_check_layer3` in
   src/code_0805AF28.c).
+- `field |= C` on a `u16` field whose loaded value must stay in its own register: go through a `u16`
+  temporary (`m = o->mask; o->mask = m | 0x1FE;`, example `obj_init_state` in src/code_080502DC.c).
+- `asrs` kept on `(s16)(x & 0x20)` before a compare with 0 needs an `s32` local
+  (`flagBit = (s16)(obj->flags & 0x20); if (flagBit == 0)`, example `obj_place_on_screen` in
+  src/code_08151144.c).
 - A callee-saved register that is read on some path without ever being set in the function
   (it still holds the caller's value) is an uninitialised local in the original: declare it
   without an initialiser and leave it unassigned on that path (GCC emits no code for it).
