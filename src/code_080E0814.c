@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -84,6 +85,12 @@ struct World
     struct ScrollBlock *scrollBlock;
 };
 
+struct SysHead
+{
+    u8 filler0[2];
+    u16 unk2;
+};
+
 struct RecXYZ
 {
     s32 x;
@@ -120,6 +127,8 @@ void *task_create_list_40(void (*entry)(void *));
 void set_irq_callback(u32 kind, void *cb);
 u32 mt19937_next(void);
 void dma_win0_from_buffer(void);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+extern const u8 gTagYbtb[];
 
 ASM_FUNC("asm/code_080E0814/unknown_thumb_080e0814.s", void unknown_thumb_080e0814(void))
 
@@ -130,7 +139,7 @@ struct WorldBit5
     u8 hi2 : 2;
 };
 
-NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 mode))
+void enter_special_mode(u32 mode)
 {
     u16 m = mode;
     struct World *world = gWorld;
@@ -157,11 +166,10 @@ NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 m
         *(u32 *)0x06007FE4 = 0xEEEEEEEE;
         *(u32 *)0x06007FE0 = 0xEEEEEEEE;
         gUnk_0200025C = m;
-        *(u16 *)(base + 2) |= 0x4000;
+        ((struct SysHead *)base)->unk2 |= 0x4000;
         ((struct WorldBit5 *)&gWorld->flags0B)->bit5 = 0;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E0814/leave_special_mode.s", void leave_special_mode(void))
 
@@ -287,7 +295,25 @@ void reset_display_step(void)
     set_irq_callback(2, dma_win0_from_buffer);
 }
 
-ASM_FUNC("asm/code_080E0814/effect_node_spawn_type3.s", void effect_node_spawn_type3(void))
+void *effect_node_spawn_type3(s32 count, s32 a, s32 b, s32 c)
+{
+    u8 *base;
+    u8 *node;
+    s32 i;
+
+    base = heap_alloc_raw(1, count * 0x28, gTagYbtb);
+    for (i = 0; i < count; i++)
+    {
+        node = base + i * 0x28;
+        ((s32 *)node)[4] = a;
+        ((s32 *)node)[5] = b;
+        ((s32 *)node)[6] = c;
+        *(u16 *)node = 0x900;
+        node[2] = 1;
+    }
+    base[2] = 0;
+    return base;
+}
 
 s32 sub_080E1FA4(struct ScrollSlot *dst, s32 unused, struct SlotSource *src)
 {
