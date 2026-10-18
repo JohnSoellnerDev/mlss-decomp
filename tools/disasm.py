@@ -321,8 +321,8 @@ class Writer:
         if f is not None and f.addr <= w < f.end and w in f.labels:
             return lab(w)
         s = self.syms.get(w & ~1)
-        if s is not None and s.is_func and self.in_code(s.addr) and (s.kind == "thumb") == bool(w & 1):
-            return s.name
+        if s is not None and s.is_func and (s.kind == "thumb") == bool(w & 1):
+            return s.name  # functions outside the code units are PROVIDEd by the linker script
         s = self.syms.get(w)
         if s is not None and s.kind in ("data", "ram"):
             return s.name

@@ -208,6 +208,7 @@ struct SlotInit
 
 extern u8 gFlowState;
 extern u32 gUnk_03000C78;
+void sub_0800063C(void);
 extern u8 gUnk_02000080[];
 extern const u8 gTagBtl[];
 extern const u8 gTagEndd[];
@@ -391,7 +392,7 @@ void start_battle_block(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 1;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     {
         void *p = heap_alloc2(0x1C, 0, gTagBtl, 0);
         effect_start(p, 8, gTagBtl, &obj->saved2AC);
@@ -412,7 +413,7 @@ void unload_scene(struct SceneObj *obj)
     set_irq_callback(2, 0);
     obj->state = 1;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     scene_setup(obj->slot);
     obj->slot = -1;
 }
@@ -451,7 +452,7 @@ void enter_scene_mode2(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 2;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     create_menu_object((s8)obj->state12C >> 2, 0);
     obj->state12C = (obj->state12C & 3) | 0xF8;
 }
@@ -619,7 +620,7 @@ void load_id_table_13b4(struct SceneObj *obj, u16 id)
     p = obj->idTable;
     for (i = 0; i < obj->idCount; i++, p++)
         obj->table->ids5C[i] = (void *)lookup_or_alloc_13b4(0, *p, -1, 1);
-    gUnk_03000C78 = 0x0800063C;
+    gUnk_03000C78 = (u32)sub_0800063C;
 }
 
 void dma_copy_or_queue(const void *src, void *dst, u32 size, u32 a, u32 b);

@@ -155,6 +155,7 @@ extern u8 gSys[];
 extern void *gCurObj;
 extern u8 gFlowState;
 extern u32 gUnk_03000C78;
+void sub_0800063C(void);
 extern const u8 gTagSign[];
 extern const u8 gTagOver[];
 extern const u8 gTagLoad[];
@@ -242,7 +243,7 @@ void object_start_kind(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 2;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     create_menu_object((s8)obj->state12C >> 2, 0);
 }
 
@@ -268,7 +269,7 @@ void object_start_flag(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 2;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     create_menu_object(-1, 1);
 }
 
@@ -297,7 +298,7 @@ void object_start_sign(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 2;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     block = heap_alloc2(0x4C, 0, gTagSign, 0);
     window_create(block, 8, gTagSign, obj->half124);
 }
@@ -327,7 +328,7 @@ void obj_start_scene_mode2(struct SceneObj *obj)
     obj->state = 2;
     gFlowState = 2;
     if (gUnk_03000C78 == 0)
-        gUnk_03000C78 = 0x0800063C;
+        gUnk_03000C78 = (u32)sub_0800063C;
     f = obj->flags12D;
     menu_screen_open((f << 30) >> 31, (f << 28) >> 30);
 }
