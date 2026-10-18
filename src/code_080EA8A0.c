@@ -190,9 +190,115 @@ ASM_FUNC("asm/code_080EA8A0/set_obj_flag.s", void set_obj_flag(void))
 
 ASM_FUNC("asm/code_080EA8A0/cmd_update_and_store.s", void cmd_update_and_store(void))
 
-ASM_FUNC("asm/code_080EA8A0/cmd_read_store.s", void cmd_read_store(void))
+u32 cmd_read_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid)
+{
+    u32 value;
+    u32 index = *cmd++;
 
-ASM_FUNC("asm/code_080EA8A0/counter_step_and_branch.s", void counter_step_and_branch(void))
+    if (*cmd == 0xFF)
+    {
+        value = *(u16 *)(gParty + 0x88);
+    }
+    else
+    {
+        switch (((s32)*cmd >> 7) - 1)
+        {
+        case 0:
+            value = gParty[0xBA + (*cmd & 0x7F)];
+            break;
+        case 1:
+            value = gParty[0xF2 + (*cmd & 0x7F)];
+            break;
+        case 3:
+            value = gParty[0x8A + (*cmd & 0x7F)];
+            break;
+        case 2:
+            value = gParty[0xAA + (*cmd & 0x7F)];
+            break;
+        case 5:
+            value = gParty[0x12A + (*cmd & 0x7F)];
+            break;
+        case 4:
+        {
+            s32 bits = *cmd;
+            s32 pos;
+            u32 byte;
+
+            byte = gParty[0xB2 + ((bits & 0x7F) >> 3)];
+            pos = bits;
+            if (bits < 0)
+            {
+                pos = bits + 7;
+            }
+            value = ((s32)byte >> (bits - ((pos >> 3) << 3))) & 1;
+            break;
+        }
+        }
+        if (value == 0xFF)
+        {
+            value = 0;
+        }
+    }
+    set_var(mid, (u8 *)obj + 0x18, 0, 0, (s16)index, value);
+    return 1;
+}
+
+struct CounterRec
+{
+    u32 word0;
+    u8 op4;
+    u8 filler5[3];
+    u32 cmp8;
+    u32 value;
+};
+
+NONMATCH("asm/code_080EA8A0/counter_step_and_branch.s", u32 counter_step_and_branch(void *ctx, struct ScriptObj *obj, struct CounterRec *rec))
+{
+    u8 *count = &obj->countA6;
+    u32 *entry = (u32 *)((u8 *)obj + (*count << 2));
+    u32 mode;
+    u32 result;
+
+    entry = (u32 *)((u8 *)entry + 0x54);
+    mode = rec->word0 & ~0x18;
+    mode = (u8)mode;
+
+    if (mode == 3)
+    {
+        *entry = *entry + 1;
+    }
+    else if (mode == 4)
+    {
+        *entry = *entry - 1;
+    }
+    result = (u8)compare_op(ctx, rec->op4, rec->cmp8, *entry);
+    if (result != 0)
+    {
+        obj->word0 = rec->value;
+        if ((rec->word0 & 0x18) == 0x10)
+        {
+            (*count)--;
+            *entry = 0;
+            return 1;
+        }
+    }
+    else if ((rec->word0 & 0x18) == 0x18)
+    {
+        (*count)--;
+        *entry = result;
+        return 1;
+    }
+    if (mode == 1)
+    {
+        *entry = *entry + 1;
+    }
+    else if (mode == 2)
+    {
+        *entry = *entry - 1;
+    }
+    return 1;
+}
+END_NONMATCH
 
 void set_obj_params_a(void *ctx, struct ScriptObj *obj, u32 a, u32 b, u16 s5, u8 s6)
 {
@@ -371,7 +477,35 @@ void tick_obj_timer(void *ctx, struct ScriptObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080EA8A0/compare_op.s", u32 compare_op(void *ctx, u32 op, u32 a, u32 b))
+u32 compare_op(void *ctx, u32 op, u32 a, u32 b)
+{
+    switch ((u8)op)
+    {
+    case 0:
+        return a == b;
+    case 1:
+        return a != b;
+    case 2:
+        return (s32)a < (s32)b;
+    case 3:
+        return (s32)a > (s32)b;
+    case 4:
+        return (s32)a <= (s32)b;
+    case 5:
+        return (s32)a >= (s32)b;
+    case 8:
+        return (a | b) != 0;
+    case 9:
+        return (a & b) != 0;
+    case 10:
+        return (a ^ b) != 0;
+    case 11:
+        return a == 0;
+    case 12:
+        return ~a != 0;
+    }
+    return 0;
+}
 
 u32 cmd_set_var_lang(void *ctx, struct ScriptObj *obj, struct VarCmd *cmd, u32 mid)
 {
@@ -574,7 +708,20 @@ u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupReco
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
+NONMATCH("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
+{
+    u32 mask = 0x3FF;
+    u32 bits = mask & ~*src;
+    u32 h;
+
+    bits &= mask;
+    h = gSys.enable78;
+    h &= 0xFFFFFC00;
+    gSys.enable78 = h | bits;
+    poll_keys();
+    return 1;
+}
+END_NONMATCH
 
 u32 set_key_mode_bits(void *ctx, void *unused, u8 *src)
 {
@@ -1005,7 +1152,23 @@ u32 branch_if_state_bit(void *ctx, struct ScriptObj *obj, struct BranchState *st
     return 1;
 }
 
-ASM_FUNC("asm/code_080EA8A0/draw_text_item_raw.s", void draw_text_item_raw(void))
+extern u8 gTextWidthTable[];
+
+NONMATCH("asm/code_080EA8A0/draw_text_item_raw.s", u32 draw_text_item_raw(void *ctx, void *obj, void *unused, struct TextItemRec *rec))
+{
+    u32 attr = rec->wordC;
+    u32 extra = *(u32 *)((u8 *)rec + 0x14);
+    u32 hi = (u8)((s32)attr >> 8);
+    u32 width = gTextWidthTable[(attr & 0xFF) << 1];
+    u32 bits = (extra << 2) & 0x800;
+
+    bits |= ((extra - 0x80) << 1) & 0x300;
+    bits |= (extra << 1) & 0xC0;
+    bits |= extra & 0x1F;
+    draw_text_prim(obj, rec->byte0, rec->half4, rec->half8, hi, width, rec->half10, bits, rec->byte18, rec->word1C);
+    return 1;
+}
+END_NONMATCH
 
 u32 unknown_thumb_080eb9e0(void *ctx, void *obj, void *unused, struct TextItemRec *rec)
 {
