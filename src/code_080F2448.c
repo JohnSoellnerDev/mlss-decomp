@@ -219,7 +219,7 @@ u8 *sub_080F2708(u8 *obj, u8 kind, u32 data)
     return obj;
 }
 
-NONMATCH("asm/code_080F2448/init_obj_slot_table.s", void *init_obj_slot_table(u8 **out))
+void *init_obj_slot_table(u8 **out)
 {
     u8 *block;
     u8 *entry;
@@ -229,13 +229,13 @@ NONMATCH("asm/code_080F2448/init_obj_slot_table.s", void *init_obj_slot_table(u8
 
     block = heap_alloc_raw(1, 0x40, gSlotTableTag);
     *out = block;
+    entry = block;
     ((void (*)(u32, void *, u32))gMemRoutines)(0, block, 0x40);
     find_or_alloc_obj_slots(7, 0x8001, 1, 0, 0, &local, 0xF);
     ensure_code_entry(0x8004);
     alloc_code_entry(0x8004);
     i = 4;
     none = 0xFFFFFFFF;
-    entry = block;
     for (; i > 0; )
     {
         entry[0xC] = 0xFF;
@@ -245,7 +245,6 @@ NONMATCH("asm/code_080F2448/init_obj_slot_table.s", void *init_obj_slot_table(u8
     }
     return out;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080F2448/cmd_spawn_obj.s", void cmd_spawn_obj(void))
 
