@@ -98,7 +98,18 @@ extern u16 gUnk_02000014[];
 extern u16 gUnk_02000018[];
 extern u16 gUnk_0200001C[];
 extern u32 gObjGroup500bClasses[];
+extern u32 gObjGroup5001Classes[];
+extern u8 gTweenGroup5005Tag[];
+u32 lookup_or_alloc_13b4(u32 a, u32 key, s32 b, s32 c);
+void lookup_or_alloc_14b8(u32 a, u32 key, s32 b, s32 c);
+u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+extern u8 gObjScript082139ee[];
 extern s16 gAnimLangChildC[];
+extern s16 gAnimLangChildCFlagged[];
+void obj_set_class_38fa(void *obj, u32 mode, u32 offset);
+extern u8 gObjScript08213b74[];
 void obj_script_step(struct BigObj *obj);
 
 void obj_release_slots(void *sprite);
@@ -202,7 +213,54 @@ struct BigObj *obj_init_big(struct BigObj *obj, u32 first)
     return obj;
 }
 
-ASM_FUNC("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos(void))
+NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos(struct BigObj *obj, u32 camX, u32 camY))
+{
+    struct SpritePos *spriteA;
+    struct SpritePos *spriteB;
+    struct SpritePos *spriteA2;
+    struct SpritePos *spriteB2;
+    struct SpritePos *spriteA3;
+    s32 layerSrc;
+    s32 x;
+    s32 y;
+
+    spriteA = (struct SpritePos *)obj->unk10;
+    if (spriteA != 0)
+    {
+        spriteB = (struct SpritePos *)obj->unk14;
+        if (spriteB != 0)
+        {
+            x = ((s32)obj->unk18 >> 8) - camX;
+            spriteB->x = x;
+            spriteA->x = x;
+            spriteA2 = (struct SpritePos *)obj->unk10;
+            spriteB2 = (struct SpritePos *)obj->unk14;
+            y = (((s32)obj->unk1C + (s32)obj->unk20) >> 8) - camY;
+            spriteB2->y = y;
+            spriteA2->y = y;
+            spriteA3 = (struct SpritePos *)obj->unk10;
+            y = ((s32)obj->unk3C >> 8) + *(u16 *)&spriteA3->y;
+        }
+        else
+        {
+            x = ((s32)obj->unk18 >> 8) - camX;
+            spriteA->x = x;
+            y = (s32)obj->unk1C + (s32)obj->unk3C + (s32)obj->unk20;
+            spriteA3 = (struct SpritePos *)obj->unk10;
+            y = (y >> 8) - camY;
+        }
+        spriteA3->y = y;
+        spriteA3 = (struct SpritePos *)obj->unk10;
+        if (spriteA3->y > 208)
+        {
+            spriteA3->x = 0x178;
+        }
+        layerSrc = (s32)obj->unk20 >> 8;
+        spriteA = (struct SpritePos *)obj->unk10;
+        *(u16 *)((u8 *)spriteA + 0xE) = obj->unk50 - (layerSrc - 0x400);
+    }
+}
+END_NONMATCH
 
 void obj_set_anim_from_offset(struct BigObj *obj)
 {
@@ -289,16 +347,99 @@ ASM_FUNC("asm/code_08162C68/obj_script_step.s", void obj_script_step(struct BigO
 
 ASM_FUNC("asm/code_08162C68/tween_groups_obj_start_move.s", void tween_groups_obj_start_move(void))
 
-ASM_FUNC("asm/code_08162C68/tween_groups_obj_step_move.s", void tween_groups_obj_step_move(void))
+NONMATCH("asm/code_08162C68/tween_groups_obj_step_move.s", void tween_groups_obj_step_move(struct BigObj *obj))
+{
+    u32 flags;
+    s32 diff;
+    s32 half;
+
+    flags = obj->unk5A;
+    if (flags & 8)
+    {
+        if (flags & 4)
+        {
+            diff = (s16)obj->unk4C - (s16)obj->unk4A;
+        }
+        else
+        {
+            diff = (s16)obj->unk4C;
+            obj->unk3C = obj->unk5C + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((diff * diff) << 16, obj->unk60);
+            return;
+        }
+    }
+    else
+    {
+        half = (s16)obj->unk4A / 2;
+        if (flags & 4)
+        {
+            if (half < (s16)obj->unk4C)
+            {
+                flags &= 0xFFFB;
+                obj->unk5A = flags;
+                obj->unk56 = 3;
+            }
+        }
+        diff = (s16)obj->unk4C - half;
+    }
+    obj->unk3C = obj->unk5C - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((diff * diff) << 16, obj->unk60);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08162C68/create_obj_group_5005.s", void create_obj_group_5005(void))
 
-ASM_FUNC("asm/code_08162C68/obj_init_pair.s", void obj_init_pair(void))
+struct PairChild
+{
+    u8 filler0[0x10];
+    void *unk10;
+    u8 filler14[0x2C];
+    u32 unk40;
+    u32 unk44;
+    u16 unk48;
+};
+
+struct PairObj
+{
+    u32 unk0;
+    struct PairChild *unk4;
+    struct PairChild *unk8;
+    struct PairChild *unkC;
+};
+
+extern u8 gSys[];
+extern s16 gAnimLangPairChildA[];
+extern s16 gAnimLangPairChildB[];
+extern u8 gObjScript08213904[];
+extern u8 gObjScript08213964[];
+
+static inline void set_pair_child_table(struct PairChild *child, u8 *table)
+{
+    child->unk44 = (u32)table;
+    child->unk48 = 0;
+    child->unk40 = 0;
+}
+
+static inline void load_pair_record(void *sprite, s16 *table)
+{
+    obj_load_record(sprite, *(s16 *)((u8 *)table + (gSys[0x8C0] << 1)), 0, 0, 0);
+}
+
+void obj_init_pair(struct PairObj *obj, u32 kind)
+{
+    obj->unk0 = 1;
+    load_pair_record(obj->unk4->unk10, gAnimLangPairChildA);
+    set_pair_child_table(obj->unk4, gObjScript08213904);
+    if (kind - 1 <= 3)
+    {
+        load_pair_record(obj->unk8->unk10, gAnimLangPairChildB);
+        set_pair_child_table(obj->unk8, gObjScript08213964);
+        obj_load_record(obj->unkC->unk10, kind + 0x44, 0, 0, 0);
+        set_pair_child_table(obj->unkC, gObjScript08213964);
+    }
+}
 
 ASM_FUNC("asm/code_08162C68/create_obj_group_5001.s", void create_obj_group_5001(void))
 
 ASM_FUNC("asm/code_08162C68/init_obj_table_classes.s", void init_obj_table_classes(void))
-
 ASM_FUNC("asm/code_08162C68/create_obj_group_500b.s", void create_obj_group_500b(void))
 
 extern u32 gObjGroup500bClasses[];
@@ -505,4 +646,75 @@ void timer_init_default(struct Timer *timer)
     timer->counter = 0;
 }
 
-ASM_FUNC("asm/code_08162C68/obj_children_done.s", void obj_children_done(void))
+u32 obj_children_done(u32 *obj)
+{
+    struct PairChild *child;
+    u32 done;
+    u32 tmp;
+
+    child = (struct PairChild *)obj[0];
+    if (child->unk44 == 0)
+    {
+        goto set0;
+    }
+    tmp = child->unk40;
+    done = 0;
+    if (tmp == 1)
+    {
+set0:
+        done = 1;
+    }
+    if (!done)
+    {
+        return 0;
+    }
+    child = (struct PairChild *)obj[1];
+    if (child->unk44 == 0)
+    {
+        goto set1;
+    }
+    tmp = child->unk40;
+    done = 0;
+    if (tmp == 1)
+    {
+set1:
+        done = 1;
+    }
+    if (!done)
+    {
+        return 0;
+    }
+    child = (struct PairChild *)obj[2];
+    if (child->unk44 == 0)
+    {
+        goto set2;
+    }
+    tmp = child->unk40;
+    done = 0;
+    if (tmp == 1)
+    {
+set2:
+        done = 1;
+    }
+    if (!done)
+    {
+        return 0;
+    }
+    child = (struct PairChild *)obj[3];
+    if (child->unk44 == 0)
+    {
+        goto set3;
+    }
+    tmp = child->unk40;
+    done = 0;
+    if (tmp == 1)
+    {
+set3:
+        done = 1;
+    }
+    if (done)
+    {
+        return 1;
+    }
+    return 0;
+}
