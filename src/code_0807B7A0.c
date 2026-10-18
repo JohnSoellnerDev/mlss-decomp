@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 struct SpriteLink
