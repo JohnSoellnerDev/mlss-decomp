@@ -443,20 +443,22 @@ void obj_set_bytes_26_27(u8 *obj, u8 value)
     obj[0x28] |= 1;
 }
 
-NONMATCH("asm/code_0801ABFC/timer_set_time.s", void timer_set_time(u8 *obj, u8 h, u8 m, s8 s))
+void timer_set_time(u8 *obj, u8 h, u8 m, s8 s)
 {
+    u8 *p = obj + 0x22;
     u8 zero = 0;
     s32 hundredths;
 
-    obj[0x22] = h;
-    obj[0x23] = m;
-    obj[0x24] = s;
+    *p = h;
+    p++;
+    *p = m;
+    p++;
+    *p = s;
     hundredths = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(s * 100, 0x3C);
     obj[0x25] = hundredths;
     obj[0x29] = zero;
     ((struct Flag1 *)&obj[0x28])->b1 = 0;
 }
-END_NONMATCH
 
 void anim_set_gfx(struct AnimTask *obj, u16 index, u8 pal)
 {
