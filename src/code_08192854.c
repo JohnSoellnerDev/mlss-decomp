@@ -40,6 +40,9 @@ struct ModelCtx
 
 extern struct ModelCtx *gModelCtx;
 
+extern s16 gSineTable[];
+extern s16 gCosineTable[];
+
 u32 block_flag_byte(struct ObjRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
 void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
@@ -817,7 +820,7 @@ void obj_point1_rem190_39a4(struct Point1Obj *obj)
     *words = phase;
 }
 
-ASM_FUNC("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(void))
+ASM_FUNC("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_08192854/obj_zoom_model8.s", void obj_zoom_model8(void))
 
