@@ -277,6 +277,14 @@ void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index);
 void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset);
 void load_hop_entry(struct Enemy *ent, s16 index);
+void cpu_set(const void *src, void *dst, u32 ctl);
+
+struct Nibble33D
+{
+    u8 filler0[0x33D];
+    u8 lo4 : 4;
+    u8 hi4 : 4;
+};
 
 void obj_hop_landing_step(struct Enemy *obj)
 {
@@ -293,7 +301,31 @@ void obj_hop_landing_step(struct Enemy *obj)
     }
 }
 
-ASM_FUNC("asm/code_081393B0/obj_orbit_circle_step.s", void obj_orbit_circle_step(struct Enemy *obj))
+void obj_orbit_circle_step(struct Enemy *obj)
+{
+    s32 prod;
+    s32 *radius = &obj->orbitRadX;
+
+    prod = *radius * gCosineTable[obj->unk2F4 & 0xFF];
+    if (prod < 0)
+    {
+        prod += 0x3F;
+    }
+    obj->posX = (prod >> 6) + (obj->orbitCenX << 8);
+
+    prod = obj->orbitRadY * gSineTable[obj->unk2F4 & 0xFF];
+    if (prod < 0)
+    {
+        prod += 0x3F;
+    }
+    obj->posY = (prod >> 6) + (obj->orbitCenY << 8);
+
+    obj->unk18 = (obj->orbitCenZ << 8) - obj->posZ;
+    obj->unk2F4 = (obj->unk2F4 + obj->unk2F8) & 0xFF;
+
+    obj->vx = obj->posX - obj->prevX;
+    obj->vy = obj->posY - obj->prevY;
+}
 
 ASM_FUNC("asm/code_081393B0/obj_pick_dir_toward_owner.s", u32 obj_pick_dir_toward_owner(struct Owner *owner, struct Enemy *obj))
 
@@ -873,7 +905,71 @@ void enter_idle_hop_a689(void *ctx, struct Enemy *ent)
     fn(ctx, ent);
 }
 
-ASM_FUNC("asm/code_081393B0/reset_record_fields.s", void reset_record_fields(struct Enemy *obj))
+NONMATCH("asm/code_081393B0/reset_record_fields.s", void reset_record_fields(struct Enemy *obj))
+{
+    u8 *fields = (u8 *)obj + 0x100;
+    u8 *ptr;
+    u8 *cursor;
+    u32 hi;
+    u32 flags;
+
+    ptr = (u8 *)obj->rec;
+    hi = *(u16 *)ptr;
+    ptr += 2;
+    hi <<= 16;
+    flags = (s32)hi >> 16;
+    if ((flags & 1) != 0)
+    {
+        cpu_set(ptr, (u8 *)obj + 0x128, 4);
+        ptr += 8;
+    }
+    if ((flags & 2) != 0)
+    {
+        cpu_set(ptr, fields, 4);
+        ptr += 8;
+    }
+    if ((flags & 4) != 0)
+    {
+        cursor = ptr;
+        ((s16 *)fields)[4] = *(s8 *)cursor;
+        cursor++;
+        ((s16 *)fields)[5] = *(s8 *)cursor;
+        cursor++;
+        ((s16 *)fields)[6] = *(s8 *)cursor;
+        cursor++;
+        ((s16 *)fields)[7] = *(s8 *)cursor;
+        cursor++;
+        ptr = cursor;
+    }
+    if ((flags & 8) != 0)
+    {
+        cpu_set(ptr, (u8 *)obj + 0x110, 4);
+        ptr += 8;
+    }
+    if ((flags & 0x10) != 0)
+    {
+        cpu_set(ptr, (u8 *)obj + 0x118, 4);
+        ptr += 8;
+    }
+    if ((flags & 0x20) != 0)
+    {
+        cursor = ptr;
+        ((s16 *)fields)[0x18] = *(s8 *)cursor;
+        cursor++;
+        ((s16 *)fields)[0x19] = *(s8 *)cursor;
+        cursor++;
+    }
+    if ((flags & 0x40) != 0)
+    {
+        *((u8 *)obj + 0x140) = cursor[0];
+        *((u8 *)obj + 0x141) = cursor[1];
+    }
+    if ((flags & 0xF000) != 0)
+    {
+        ((struct Nibble33D *)obj)->hi4 = hi >> 28;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/obj_box_to_stack.s", void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
 
