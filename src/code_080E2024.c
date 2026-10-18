@@ -119,16 +119,6 @@ void sprite_set_action(void *obj, u32 a, u32 b, u32 c);
 void effect_spawn_at(u16 cmd, s16 b, s16 c, s16 d, void *owner);
 void release_or_update_rec(struct StreamObj *obj);
 
-static inline void stream_callback_state(struct StreamObj *obj, void (*callback)())
-{
-    u16 *stream = obj->stream;
-    u32 value = *stream;
-    obj->unk10 = value;
-    obj->stream = stream + 1;
-    obj->state = callback;
-    callback(obj, callback, value);
-}
-
 ASM_FUNC("asm/code_080E2024/fall_and_bounce.s", void fall_and_bounce(void))
 
 NONMATCH("asm/code_080E2024/advance_z.s", void advance_z(struct PosObj *obj, struct FallParams *params))
@@ -188,23 +178,32 @@ void start_obj_from_stream(struct StreamObj *obj)
     release_or_update_rec(obj);
 }
 
-NONMATCH("asm/code_080E2024/start_stream_state_fe29.s", void start_stream_state_fe29(struct StreamObj *obj))
+void start_stream_state_fe29(struct StreamObj *obj)
 {
-    stream_callback_state(obj, fx_spawn_list_step);
+    u16 *stream = obj->stream;
+    obj->unk10 = *stream;
+    obj->stream = stream + 1;
+    obj->state = fx_spawn_list_step;
+    obj->state(obj);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080E2024/start_stream_state_232d.s", void start_stream_state_232d(struct StreamObj *obj))
+void start_stream_state_232d(struct StreamObj *obj)
 {
-    stream_callback_state(obj, run_command_stream);
+    u16 *stream = obj->stream;
+    obj->unk10 = *stream;
+    obj->stream = stream + 1;
+    obj->state = run_command_stream;
+    obj->state(obj);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080E2024/start_stream_state_faed.s", void start_stream_state_faed(struct StreamObj *obj))
+void start_stream_state_faed(struct StreamObj *obj)
 {
-    stream_callback_state(obj, fx_script_step);
+    u16 *stream = obj->stream;
+    obj->unk10 = *stream;
+    obj->stream = stream + 1;
+    obj->state = fx_script_step;
+    obj->state(obj);
 }
-END_NONMATCH
 
 void flush_pending_count(struct StreamObj *obj, struct Rec *rec)
 {
