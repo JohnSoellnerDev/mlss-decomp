@@ -40,6 +40,9 @@ struct ModelCtx
 
 extern struct ModelCtx *gModelCtx;
 
+extern s16 gSineTable[];
+extern s16 gCosineTable[];
+
 u32 block_flag_byte(struct ObjRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
 void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
@@ -140,7 +143,10 @@ void obj_bounce_point_plain(struct Point1Obj *obj)
     *pt = bounce;
 }
 
-ASM_FUNC("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_model3_fast(void))
+// Three points spinning about the vertical axis (angle index from the data), then a fixed
+// tilt by table index 12. The zoom grows by the step, the step decays by 7/8, the angle
+// advances by 6 and the height offset falls by 0x300 each frame.
+ASM_FUNC("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_model3_fast(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_08184814/obj_spin_rise_model3_a.s", void obj_spin_rise_model3_a(void))
 
@@ -322,7 +328,9 @@ void obj_grow_zoom_point(struct Point1Obj *obj)
     *words = zoom;
 }
 
-ASM_FUNC("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(void))
+// Four points turned about the X axis by 90 degrees (table index 64) and then about the Z axis
+// by 45 degrees (table index 32). The zoom grows by the step, the step decays by 7/8.
+ASM_FUNC("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(struct Point1Obj *obj))
 // Single point drifting up at a constant speed. Record size 0x60 x 0xC0.
 void obj_drift_y_60c0(struct Point1Obj *obj)
 {
