@@ -123,9 +123,119 @@ void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
 ASM_FUNC("asm/code_080FA598/cmd_set_value.s", void cmd_set_value(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_slot_value_by_kind.s", void cmd_slot_value_by_kind(void))
+NONMATCH("asm/code_080FA598/cmd_slot_value_by_kind.s", u32 cmd_slot_value_by_kind(struct Owner *owner, u32 unused, u32 *data))
+{
+    u8 *obj;
+    u16 value;
 
-ASM_FUNC("asm/code_080FA598/cmd_slot_op.s", void cmd_slot_op(void))
+    switch (data[0])
+    {
+    case 0:
+    case 1:
+    {
+        struct ObjList *list = owner->list;
+        u32 cur = owner->state->cur9A0;
+        struct Slot *slot = &list->slots[cur - 1];
+
+        ((struct FlagBit0 *)&slot->flags)->b0 = data[0] & 1;
+        return 1;
+    }
+    case 2:
+        obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
+        value = 0;
+        break;
+    case 3:
+        obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
+        value = 0xF000;
+        break;
+    case 4:
+        obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
+        value = 0x8000;
+        break;
+    default:
+        return 1;
+    }
+    *(u16 *)(obj + 0xE) = value;
+    return 1;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_080FA598/cmd_slot_op.s", u32 cmd_slot_op(struct Owner *owner, u32 unused, u32 *data))
+{
+    u8 index = owner->state->cur9A0 - 1;
+    u32 kind = *data++;
+
+    switch (kind)
+    {
+    case 0:
+    {
+        u32 value = *data;
+
+        if (value & 0x40)
+            owner->list->slots[index].scale = (value & 0xF) << 4;
+        else
+            owner->list->slots[index].scale = value << 8;
+        break;
+    }
+    case 1:
+    {
+        u32 value = *data;
+
+        if (value & 0x40)
+        {
+            u8 *obj = owner->list->slots[index].obj;
+            u32 low = value & 0xF;
+
+            obj[0x20] = low;
+        }
+        else
+        {
+            u8 *obj = owner->list->slots[index].obj;
+            u32 high = value << 4;
+
+            obj[0x20] = high;
+        }
+        break;
+    }
+    case 2:
+    {
+        u8 *obj = owner->list->slots[index].obj;
+        u8 *src = owner->list->slots[*data].obj;
+        u16 e = *(u16 *)(src + 0xE);
+
+        if (e != 0)
+            *(u16 *)(obj + 0xE) = e - 1;
+        break;
+    }
+    case 3:
+    {
+        u8 *obj = owner->list->slots[index].obj;
+        u8 *src = owner->list->slots[*data].obj;
+        u16 e = *(u16 *)(src + 0xE);
+
+        if (e > 0xF000)
+            *(u16 *)(obj + 0xE) = e + 1;
+        break;
+    }
+    case 4:
+        owner->list->slots[index].unk3D = *data;
+        break;
+    case 5:
+    {
+        u8 *obj = owner->list->slots[index].obj;
+        u32 value = *data & 3;
+        u32 shifted = value << 2;
+        s32 bits = obj[0x1F];
+
+        bits = (bits & ~0xC) | shifted;
+        bits = (bits & ~3) | value;
+        obj[0x1F] = bits;
+        break;
+    }
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 cmd_slot_field(struct Owner *owner, u32 unused, u32 *data)
 {
@@ -211,7 +321,41 @@ ASM_FUNC("asm/code_080FA598/cmd_set_position.s", void cmd_set_position(void))
 
 ASM_FUNC("asm/code_080FA598/cmd_place_sprite.s", void cmd_place_sprite(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_aux_entry.s", void cmd_aux_entry(void))
+NONMATCH("asm/code_080FA598/cmd_aux_entry.s", u32 cmd_aux_entry(struct Owner *owner, u32 unused, u32 *data))
+{
+    u8 index = owner->state->cur9A0 - 1;
+    u32 py = 0;
+    u32 px = 0;
+    u8 found;
+
+    if (data[2] != 0)
+    {
+        struct Slot *slot = &owner->list->slots[index];
+        s32 t = slot->xFix;
+
+        if (t < 0)
+            t += 0xFF;
+        px = t >> 8;
+        t = slot->yFix;
+        if (t < 0)
+            t += 0xFF;
+        py = (t >> 8) - slot->unk3D;
+    }
+    if (data[5] == 0xFF)
+        data[5] = gClaimKindTable[data[1]];
+    found = claim_table_slot(owner->aux, *(u8 *)data, (u8)data[1], *(u8 *)&data[2],
+                             *(s16 *)&data[3], *(s16 *)&data[4], *(u8 *)&data[5]);
+    if (found != 0x3F)
+    {
+        u8 *entry = *(u8 **)owner->aux + (found << 4);
+
+        *(u16 *)(entry + 8) = px;
+        *(u16 *)(entry + 0xA) = py;
+        update_slot_bounds(owner->aux, found);
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 cmd_latch_when_ready(struct Owner *owner, u32 *cmd)
 {
@@ -291,4 +435,23 @@ u32 cmd_latch_when_free(struct Owner *owner, u32 *cmd)
     return 1;
 }
 
-ASM_FUNC("asm/code_080FA598/cmd_push_handle.s", void cmd_push_handle(void))
+NONMATCH("asm/code_080FA598/cmd_push_handle.s", u32 cmd_push_handle(struct Owner *owner, u32 unused, u32 *data))
+{
+    struct OwnerState *state;
+    struct FlagBit0 *bits;
+    u8 count;
+    u32 shifted;
+    u32 handle;
+
+    handle = (u32)create_obj_de4(0, data[0], 1, -1, -1, -1, -1);
+    obj_load_record((void *)handle, 0, -1, 0, 0);
+    state = owner->state;
+    bits = (struct FlagBit0 *)&state->busy9A2;
+    count = state->busy9A2;
+    shifted = (u32)count << 24;
+    bits->rest = (shifted >> 25) + 1;
+    state->handles[shifted >> 25] = handle;
+    ((struct FlagBit0 *)&owner->state->busy9A2)->b0 = 1;
+    return 0;
+}
+END_NONMATCH
