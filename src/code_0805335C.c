@@ -59,6 +59,7 @@ extern const u8 gDescTextbox[];
 extern const u8 gTaskDescrTextbox[];
 extern u16 gUnk_02000050;
 extern u8 gSys[];
+struct SysKeys2A { u8 filler0[0x2A]; u16 keys; };
 extern struct ObjLists gUnk_0203FFB8;
 extern u32 (*gUnk_03000D48)();
 extern u32 (*gUnk_03000D4C)();
@@ -115,7 +116,7 @@ ASM_FUNC("asm/code_0805335C/textbox_step.s", void textbox_step(void))
 
 ASM_FUNC("asm/code_0805335C/textbox_create.s", void textbox_create(void))
 
-NONMATCH("asm/code_0805335C/textbox_update.s", void textbox_update(struct TextboxObj *obj))
+void textbox_update(struct TextboxObj *obj)
 {
     switch (obj->state)
     {
@@ -132,7 +133,7 @@ NONMATCH("asm/code_0805335C/textbox_update.s", void textbox_update(struct Textbo
         }
         timer = obj->unk1C - 1;
         obj->unk1C = timer;
-        if ((timer << 24) != 0 && (*(u16 *)(gSys + 0x2A) & 0xB) == 0)
+        if ((timer << 24) != 0 && (((struct SysKeys2A *)gSys)->keys & 0xB) == 0)
             break;
         gBgRequestPtr[1] |= 0x20;
         ((u8 *)&obj->unk38)[0] |= 1;
@@ -169,7 +170,6 @@ NONMATCH("asm/code_0805335C/textbox_update.s", void textbox_update(struct Textbo
     }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(void))
 
