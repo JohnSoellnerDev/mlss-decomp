@@ -140,13 +140,15 @@ struct World
     s32 unk74;
     u8 filler78[0x7C - 0x78];
     struct ActiveObj *active;
-    u8 filler80[0x250 - 0x80];
+    u8 filler80[0x24C - 0x80];
+    void *unk24C;
     void *slot250;
     u8 filler254[0x278 - 0x254];
     struct Obj *slot278;
     u8 filler27C[0x28C - 0x27C];
     struct WorldEffect *effect;
-    u8 filler290[0x29C - 0x290];
+    struct Owner *timerObj;
+    u8 filler294[0x29C - 0x294];
     struct Voice voice29C;
     u8 filler2B0[0x2BC - 0x2B0];
     u8 uploadState;
@@ -165,6 +167,8 @@ extern u8 gSlotTableX[];
 extern u8 gSlotTableZ[];
 extern u8 gGaugeTableC[];
 extern u8 gGaugeTableD[];
+s32 obj_last_x(void *obj);
+s32 obj_last_y(void *obj);
 
 void status_slots_update(struct Owner *owner);
 void status_wait_slot(struct Owner *owner);
@@ -195,6 +199,12 @@ struct PadState
     u16 held;
 };
 
+struct KeyRepeat
+{
+    u8 filler0[0x45];
+    u8 rate;
+};
+
 extern u8 gSys[];
 
 NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_slot(struct Owner *owner))
@@ -206,7 +216,7 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
 
     status_slots_update(owner);
     world = gWorld;
-    counter = 0x400 + world->counter314;
+    counter = world->counter314 + 0x400;
     world->counter314 = counter;
     if ((s32)(counter << 16) > 0x1FFF0000)
     {
@@ -218,7 +228,7 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
         }
         else
         {
-            world->lock = world->lock & 0x1F;
+            world->lock &= 0x1F;
             next = status_slots_update;
         }
         owner->state = next;
@@ -226,11 +236,144 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0810A2FC/state_status_release.s", void state_status_release(void))
+NONMATCH("asm/code_0810A2FC/state_status_release.s", void state_status_release(struct Owner *owner))
+{
+    struct World *world;
+    struct Obj *slot;
+    s32 counter;
+
+    if (owner == 0)
+    {
+        while (owner == 0)
+            ;
+    }
+    status_slots_update(owner);
+    owner->state = state_status_release;
+    world = gWorld;
+    counter = world->counter314 - 0x400;
+    world->counter314 = counter;
+    if ((s32)(counter << 16) <= 0)
+    {
+        slot = world->slots[0];
+        if (slot != 0)
+        {
+            slot->owner->state = 0;
+            obj_release(slot);
+            gWorld->slots[0] = 0;
+        }
+        slot = gWorld->slots[1];
+        if (slot != 0)
+        {
+            slot->owner->state = 0;
+            obj_release(slot);
+            gWorld->slots[1] = 0;
+        }
+        slot = gWorld->slots[2];
+        if (slot != 0)
+        {
+            slot->owner->state = 0;
+            obj_release(slot);
+            gWorld->slots[2] = 0;
+        }
+        slot = gWorld->slots[3];
+        if (slot != 0)
+        {
+            slot->owner->state = 0;
+            obj_release(slot);
+            gWorld->slots[3] = 0;
+        }
+        slot = gWorld->slots[4];
+        if (slot != 0)
+        {
+            slot->owner->state = 0;
+            obj_release(slot);
+            gWorld->slots[4] = 0;
+        }
+        if (gWorld->statusObj != 0)
+        {
+            owner->state = 0;
+            gWorld->statusObj = 0;
+        }
+        ((struct KeyRepeat *)gSys)->rate = 4;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(struct Owner *owner))
 
-ASM_FUNC("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
+NONMATCH("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
+{
+    struct OamEntry *cursor;
+    struct OamEntry *nextEntry;
+    struct OamEntry *prevEntry;
+    struct OamEntry *anchor;
+    struct OamEntry *anchorNext;
+    struct Obj *slot;
+    struct Pic *pic;
+    s32 i;
+    s32 kind;
+    s32 posX;
+    s32 posY;
+    s32 tile;
+    s32 attrX;
+    s32 maskX;
+    s32 maskY;
+    s32 flag;
+
+    cursor = gModelCtx->head;
+    i = 0;
+    maskX = 0x1FF;
+    maskY = 0xFF;
+    flag = 0x4000;
+    for (; i < 5; i++)
+    {
+        slot = gWorld->slots[i];
+        if (slot != 0)
+        {
+            pic = slot->pic;
+            kind = pic->kind;
+            if (kind == 5)
+            {
+                kind = 4;
+            }
+            if (kind > 4)
+            {
+                kind -= 5;
+            }
+            posX = pic->posX;
+            posY = pic->posY;
+            tile = gOamTileTable[kind] + 0x5D;
+            if (kind == 3)
+            {
+                attrX = (posX - 8) & maskX;
+                cursor->attr0 = ((posY - 4) & maskY) | flag;
+            }
+            else
+            {
+                cursor->attr0 = ((posY - 4) & maskY) | flag;
+                attrX = ((posX - 0x10) & maskX) | flag;
+            }
+            cursor->attr1 = attrX;
+            cursor->attr2 = tile | -0x2800;
+            nextEntry = cursor->unk10;
+            prevEntry = cursor->unkC;
+            anchor = slot->pic->anchor;
+            anchorNext = anchor->unkC;
+            cursor->unk6 = 0;
+            cursor->unk8 = anchorNext->unk8;
+            nextEntry->unkC = prevEntry;
+            prevEntry->unk10 = nextEntry;
+            cursor->unkC = anchorNext;
+            cursor->unk10 = anchor;
+            anchorNext->unk10 = cursor;
+            anchor->unkC = cursor;
+            gModelCtx->count++;
+            cursor = nextEntry;
+        }
+    }
+    gModelCtx->head = cursor;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(struct Obj *obj, s32 x, s32 y, s32 height, s32 kind))
 {
@@ -238,6 +381,7 @@ NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(
     s32 clampX;
     s32 clampY;
     s32 t;
+    s32 (*div)(s32, s32);
 
     task = obj->owner;
     if (task == 0)
@@ -248,20 +392,18 @@ NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(
     clamp_reflect_offsets(&clampX, &clampY, obj->z, height, kind);
     obj->unkA4 = clampX;
     obj->unkA8 = clampY;
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    t = clampX;
     if (clampX < 0)
     {
-        t = clampX + 0x1F;
-    }
-    else
-    {
-        t = clampX;
+        t += 0x1F;
     }
     t = (t >> 5) * clampX;
     if (t < 0)
     {
         t += 0x3F;
     }
-    obj->speed = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x2CC000, t >> 6);
+    obj->speed = div(0x2CC000, t >> 6);
     obj->x0 = x;
     obj->y0 = y;
     obj->h = height;
@@ -458,7 +600,71 @@ ASM_FUNC("asm/code_0810A2FC/battle_display_draw_number.s", void battle_display_d
 
 ASM_FUNC("asm/code_0810A2FC/unknown_thumb_0810b238.s", void unknown_thumb_0810b238(void))
 
-ASM_FUNC("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x, s32 y, s32 z, s32 mode, u32 kind))
+void release_sprite_state(struct Owner *owner);
+struct Obj *obj_spawn(s32 part, u32 kind, s32 x, s32 y, s32 z, void *parent, s32 flag);
+void sprite_set_action(struct Obj *obj, u32 action, u32 arg, u32 extra);
+void sprite_entry_update(struct Pic *pic);
+void start_motion(struct Obj *obj);
+
+NONMATCH("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x, s32 y, s32 z, s32 mode, u32 kind))
+{
+    struct World *world;
+    struct Obj *obj;
+    struct Pic *sub;
+    s32 prio;
+    s32 handle;
+    s32 slotOfs;
+    s32 bits;
+
+    world = gWorld;
+    slotOfs = 0x278;
+    prio = mode;
+    if ((s32)world->active != world->unk74)
+    {
+        prio += 1;
+    }
+    obj = *(struct Obj **)((u8 *)world + slotOfs);
+    if (obj == 0)
+    {
+        obj = obj_spawn(0, (u16)kind, x, y, z, 0, 1);
+        *((u8 *)obj + 0x79) |= 1;
+        sprite_set_action(obj, prio, 0, 0);
+        *((u8 *)obj + 0x74) = 0x80;
+        *(struct Obj **)((u8 *)gWorld + slotOfs) = obj;
+    }
+    else
+    {
+        if ((*((u8 *)obj->pic + 0x12) & 0x20) != 0)
+        {
+            sprite_entry_update(obj->pic);
+        }
+        sub = obj->pic;
+        bits = *((u8 *)sub + 0x1F);
+        *((u8 *)sub + 0x1F) = (((((((bits & 0x3F) | 0x80) & -0x31) | 0x20) & -0xD) | 8) & -4) | 2;
+        if (*((u8 *)obj->pic + 0x21) != prio)
+        {
+            sprite_set_action(obj, prio, 0, 0);
+        }
+    }
+    x <<= 8;
+    y <<= 8;
+    z <<= 8;
+    if (obj->x0 != x || obj->y0 != y || obj->h != z)
+    {
+        obj->x0 = x;
+        obj->y0 = y;
+        obj->h = z;
+        *((u8 *)obj + 0x79) |= 0x20;
+        obj->speed = 0x1000;
+        handle = *(s32 *)((u8 *)obj + 0x80);
+        start_motion(obj);
+        if (handle == 0)
+        {
+            task_create_list_4c(release_sprite_state, obj);
+        }
+    }
+}
+END_NONMATCH
 
 void refresh_world_object(struct WorldObj *obj, s32 mode)
 {
@@ -585,7 +791,58 @@ void start_voice_message(struct Owner *owner)
     owner->timer = 0x5a;
 }
 
-ASM_FUNC("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(void))
+NONMATCH("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(struct Owner *owner))
+{
+    struct Owner *timer;
+    struct Voice *voice;
+    u8 *block;
+    s32 zero;
+    u32 i;
+    s16 sVar;
+    u16 timerVal;
+
+    timer = gWorld->timerObj;
+    timerVal = timer->startY;
+    if ((s16)timer->startY > 0x7FF)
+    {
+        timerVal -= 0x800;
+        zero = 0;
+        timer->startY = timerVal;
+        block = slot_block_ptr(gWorld->slot250, 4);
+        MEM_ROUTINE(void (*)(void *, void *, u32), iwram_copy)(block + 0x20, block, 0x420);
+        for (i = 0; i < 8; i++)
+        {
+            *(s32 *)(block + 0x200 + i * 4) = zero;
+        }
+        for (i = 0; i < 8; i++)
+        {
+            *(s32 *)(block + 0x420 + i * 4) = zero;
+        }
+        voice = &gWorld->voice29C;
+        if (*(u8 *)voice->textId != 0)
+        {
+            voice->unkC -= 8;
+            do
+            {
+                if (voice->unkC < 0)
+                {
+                    break;
+                }
+                sVar = track_run(voice);
+            } while (sVar != 0);
+            owner->startY = 0;
+        }
+        else
+        {
+            owner->startY++;
+            if ((s16)owner->startY > 10)
+            {
+                voice->textId = next_text_id();
+            }
+        }
+    }
+}
+END_NONMATCH
 
 void set_world_effect(s32 kind)
 {
