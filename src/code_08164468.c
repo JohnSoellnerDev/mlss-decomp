@@ -152,6 +152,19 @@ static inline void obj_run_behavior(struct Obj *child)
         cls->unkC((u8 *)child + cls->unk8, 3);
     }
 }
+
+static inline u32 child_is_done(struct Obj *child)
+{
+    if (child->unk44 == 0)
+    {
+        return 1;
+    }
+    if (child->unk40 == 1)
+    {
+        return 1;
+    }
+    return 0;
+}
 void cpu_fast_set(void *src, void *dst, u32 control);
 
 void obj_set_child_table(struct Obj *obj)
@@ -218,7 +231,31 @@ void obj_run_children_free(struct Obj *obj, u32 flags)
 
 ASM_FUNC("asm/code_08164468/obj_triples_done.s", void obj_triples_done(void))
 
-ASM_FUNC("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_class(struct Obj *obj))
+NONMATCH("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_class(struct Obj *obj))
+{
+    u32 base = (u32)&obj->unk4;
+    s32 group = 0;
+
+    for (; group <= 1; group++)
+    {
+        struct Obj **entry = (struct Obj **)((((group << 1) + group) << 2) + base);
+        struct Obj **first = entry;
+        struct Obj *child = *entry++;
+
+        child->unk44 = gObjScript08213a04;
+        child->unk48 = 0;
+        child->unk40 = 0;
+        child = *entry;
+        child->unk44 = gObjScript08213a04;
+        child->unk48 = 0;
+        child->unk40 = 0;
+        child = first[2];
+        child->unk44 = gObjScript08213a04;
+        child->unk48 = 0;
+        child->unk40 = 0;
+    }
+}
+END_NONMATCH
 
 void obj_set_child_class_3a04(struct Obj *obj, u32 group, u32 slot)
 {
@@ -232,9 +269,65 @@ void obj_set_child_class_3a04(struct Obj *obj, u32 group, u32 slot)
     child->unk40 = 0;
 }
 
-ASM_FUNC("asm/code_08164468/obj_refresh_triples.s", void obj_refresh_triples(struct Obj *obj))
+void obj_refresh_triples(struct Obj *obj)
+{
+    s32 group = 0;
+    u32 base = (u32)&obj->unk4;
+    s32 next;
 
-ASM_FUNC("asm/code_08164468/obj_run_triples_free.s", void obj_run_triples_free(void))
+    while (1)
+    {
+        s32 twice = group << 1;
+        struct Obj **entry;
+        struct Obj **first;
+
+        next = group + 1;
+        entry = (struct Obj **)(((twice + group) << 2) + base);
+        first = entry;
+
+        obj_script_step(*entry);
+        update_obj_sprite_pos(*entry++, 0, 0);
+        obj_script_step(*entry);
+        update_obj_sprite_pos(*entry, 0, 0);
+        obj_script_step(first[2]);
+        update_obj_sprite_pos(first[2], 0, 0);
+        group = next;
+        if (group > 1)
+        {
+            break;
+        }
+    }
+}
+
+void obj_run_triples_free(struct Obj *obj, u32 flags)
+{
+    s32 group = 0;
+    u32 base = (u32)&obj->unk4;
+    s32 next;
+
+    while (1)
+    {
+        s32 twice = group << 1;
+        struct Obj **entry;
+        struct Obj **first;
+
+        next = group + 1;
+        entry = (struct Obj **)(((twice + group) << 2) + base);
+        first = entry;
+        obj_run_behavior(*entry);
+        obj_run_behavior(entry[1]);
+        obj_run_behavior(first[2]);
+        group = next;
+        if (group > 1)
+        {
+            break;
+        }
+    }
+    if ((flags & 1) != 0)
+    {
+        heap_free_b(obj);
+    }
+}
 
 u32 obj_slot0_is_empty(struct Obj *obj)
 {
@@ -263,9 +356,56 @@ void obj_init_single(struct Obj *obj)
     child->unk40 = 0;
 }
 
-ASM_FUNC("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_done(struct Obj *obj))
+NONMATCH("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_done(struct Obj *obj))
+{
+    struct Obj **base;
+    struct Obj **slot;
+    u32 count;
 
-ASM_FUNC("asm/code_08164468/obj_run_children3_free.s", void obj_run_children3_free(struct Obj *obj, u32 flags))
+    if (obj->unk0 == 0)
+    {
+        return;
+    }
+    if (obj->unk0 != 1)
+    {
+        return;
+    }
+    count = 0;
+    slot = (struct Obj **)&obj->unk4;
+    base = slot;
+    do
+    {
+        if (child_is_done(*slot) != 0)
+        {
+            count++;
+        }
+        else
+        {
+            obj_script_step(*slot);
+            update_obj_sprite_pos(*slot, 0, 0);
+        }
+        slot++;
+    } while ((s32)slot <= (s32)(base + 2));
+    if (count == 3)
+    {
+        obj->unk0 = 0;
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08164468/obj_run_children3_free.s", void obj_run_children3_free(struct Obj *obj, u32 flags))
+{
+    struct Obj **children = (struct Obj **)&obj->unk4;
+
+    obj_run_behavior(obj->unk4);
+    obj_run_behavior(children[1]);
+    obj_run_behavior((struct Obj *)obj->unkC);
+    if ((flags & 1) != 0)
+    {
+        heap_free_b(obj);
+    }
+}
+END_NONMATCH
 
 void obj_list_update_pos(struct ObjList *head, u32 camX, u32 camY)
 {
@@ -854,7 +994,79 @@ void window_layout_plain(s32 *win, u8 *src, s32 x, s32 y)
     obj_flush_tiles(win);
 }
 
-ASM_FUNC("asm/code_08164468/win_set_layout.s", void win_set_layout(s32 *win, u8 *src, s32 x, s32 y))
+extern void frame_9slice_tiles(void);
+
+NONMATCH("asm/code_08164468/win_set_layout.s", void win_set_layout(s32 *win, u8 *src, s32 x, s32 y))
+{
+    s32 w;
+    s32 h;
+    s32 style;
+
+    obj_release_tiles(win);
+    win[10] = x;
+    if (x < 4)
+    {
+        win[10] = 4;
+    }
+    win[11] = y;
+    if (y < 4)
+    {
+        win[11] = 4;
+    }
+    w = src[0] + 4;
+    if (w > 3)
+    {
+        if (w > 0x1E)
+        {
+            w = 0x1E;
+        }
+    }
+    else
+    {
+        w = 3;
+    }
+    win[12] = w;
+    style = src[1];
+    if (style != 2 && style != 4 && style != 5)
+    {
+        h = style + 1;
+    }
+    h = style + 2;
+    if (h > 3)
+    {
+        if (h > 0xC)
+        {
+            h = 0xC;
+        }
+    }
+    else
+    {
+        h = 3;
+    }
+    win[13] = h;
+    if (win[10] + (win[12] << 3) > 0xEC)
+    {
+        win[10] = 0xEC - (win[12] << 3);
+    }
+    if (win[11] + (win[13] << 3) > 0x9C)
+    {
+        win[11] = 0x9C - (win[13] << 3);
+    }
+    voice_setup_params(win + 2, win[8], 0x20, 0xC, (((0x20 - win[12]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 2);
+    voice_set_data_ptr(win + 2, 0, 6, src + 2);
+    ((void (*)(void *))(win[19] + ((u32)frame_9slice_tiles - (u32)frame_9slice_tiles)))((u8 *)win + 0x20);
+    win[23] = 0;
+    win[22] = 0;
+    win[25] = 0;
+    win[26] = 0;
+    win[27] = 0;
+    win[24] = 0;
+    obj_release_slots((void *)win[0]);
+    *(s16 *)win[20] = -(s16)win[10];
+    *(s16 *)win[21] = -(s16)win[11];
+    obj_flush_tiles(win);
+}
+END_NONMATCH
 
 void win_set_layout(s32 *win, u8 *src, s32 x, s32 y);
 ASM_FUNC("asm/code_08164468/win_draw_text.s", void win_draw_text(void))
