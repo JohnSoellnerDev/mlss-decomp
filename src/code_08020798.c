@@ -43,7 +43,7 @@ struct ObjListHead
     u8 filler07;
     u16 rangeEnd;
     u16 unk0A;
-    u8 filler0C[0x2C - 0x0C];
+    u16 slots0C[(0x2C - 0x0C) / 2];
     struct BlockRec *firstBlock;
     struct ObjNode *first;
     struct ObjNode *last;
@@ -178,7 +178,7 @@ void init_node_flags(struct NodeRec *node, s32 count)
     }
 }
 
-ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(void))
+ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(struct NodeRec *node, u32 count))
 
 extern u8 gSys[];
 extern u32 gUnk_03000D48;
@@ -324,7 +324,62 @@ void release_obj_131c(struct ObjNode *obj)
     list->count--;
 }
 
-ASM_FUNC("asm/code_08020798/lookup_or_alloc_13b4.s", void lookup_or_alloc_13b4(void))
+extern u8 *gMemRoutines;
+extern u8 *gWindowData[];
+u32 read_varlen_plus1(u8 *p);
+void table_register(void *entry);
+
+void *lookup_or_alloc_13b4(u32 sel, u32 v, s32 size, u8 flag)
+{
+    u32 word;
+    u32 a;
+    u32 b;
+    u32 minUnits;
+    u8 sel8;
+    u8 *rec;
+    u8 *keyTbl;
+    u8 *key;
+    void *entry;
+
+    if ((v & 0xF000) != 0)
+    {
+        sel = ((s32)v >> 12) - 1;
+        v &= 0xFFF;
+    }
+    word = *(u32 *)(gTableEntryRows[sel] + (v << 2));
+    if ((s32)word >= 0)
+    {
+        a = (word << 5) >> 23;
+        b = (word << 14) >> 23;
+        rec = (u8 *)gBankRecordTablePtrs[sel][a];
+        keyTbl = gWindowData[sel];
+        key = keyTbl + ((u32 *)keyTbl)[b];
+        if (size == -1)
+        {
+            minUnits = (rec[4] | ((rec[5] & 1) << 8)) + 1;
+            size = read_varlen_plus1(key) >> 5;
+            if ((s32)size < (s32)minUnits)
+                size = minUnits;
+        }
+        size <<= 5;
+        sel8 = sel & 0xFF;
+        entry = find_list_entry(2, sel8, b);
+        if (entry == NULL)
+        {
+            entry = alloc_list_entry(2, size + 0x10, sel8, b);
+            ((void (*)(u32, void *, u32))gMemRoutines)(0, entry, size + 0x10);
+            *(u32 *)entry = 1;
+            *(u8 **)((u8 *)entry + 4) = key;
+            *(u8 **)((u8 *)entry + 8) = (u8 *)entry + 0x10;
+            *(u32 *)((u8 *)entry + 0xC) = 0;
+            table_register(entry);
+        }
+        else if (flag == 0)
+            return NULL;
+        return entry;
+    }
+    return NULL;
+}
 
 void *lookup_or_alloc_14b8(u32 bank, u32 index, s32 size, u8 flag)
 {
@@ -366,7 +421,53 @@ void *lookup_or_alloc_14b8(u32 bank, u32 index, s32 size, u8 flag)
 
 ASM_FUNC("asm/code_08020798/find_or_alloc_obj_slots.s", u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g))
 
-ASM_FUNC("asm/code_08020798/free_matching_slots_1930.s", void free_matching_slots_1930(void))
+static inline u16 free_slots_matching(struct ObjListHead *list, u32 group, u32 id)
+{
+    u16 *slots;
+    u16 *p;
+    u16 mask;
+    s32 i;
+    u32 kindField;
+    u32 idField;
+
+    slots = list->slots0C;
+    mask = 0;
+    for (i = list->unk04; i < 16; i++)
+    {
+        p = &slots[i];
+        if (*p != 0xFFFF)
+        {
+            kindField = (*p >> 10) & 0xF;
+            idField = *p & 0x3FF;
+            if (group == kindField && id == idField)
+            {
+                *p = 0xFFFF;
+                mask |= 1 << i;
+            }
+        }
+    }
+    return mask;
+}
+
+u16 free_matching_slots_1930(u32 idx)
+{
+    struct ObjListHead *list;
+    u16 *slots;
+    u32 group;
+    u32 id;
+    u16 res;
+
+    list = &gUnk_0203FFB8;
+    slots = list->slots0C;
+    res = 0;
+    if (slots[idx] != 0xFFFF)
+    {
+        group = (slots[idx] >> 10) & 0xF;
+        id = slots[idx] & 0x3FF;
+        res = free_slots_matching(list, group, id);
+    }
+    return res;
+}
 
 u32 find_obj_1a2c(struct ObjNode *p, u32 mode)
 {
@@ -485,7 +586,35 @@ void *find_list_entry(u32 kind, u8 sub, u16 id)
     return NULL;
 }
 
-ASM_FUNC("asm/code_08020798/obj_lists_fill_free.s", void obj_lists_fill_free(void))
+u16 obj_lists_fill_free(u32 kind, u32 id)
+{
+    struct ObjListHead *list;
+    u16 *slots;
+    u16 *p;
+    u16 mask;
+    s32 i;
+    u32 kindField;
+    u32 idField;
+
+    list = &gUnk_0203FFB8;
+    slots = list->slots0C;
+    mask = 0;
+    for (i = list->unk04; i < 16; i++)
+    {
+        p = &slots[i];
+        if (*p != 0xFFFF)
+        {
+            kindField = (*p >> 10) & 0xF;
+            idField = *p & 0x3FF;
+            if (kind == kindField && id == idField)
+            {
+                *p = 0xFFFF;
+                mask |= 1 << i;
+            }
+        }
+    }
+    return mask;
+}
 
 extern const u32 gTableEntryRows[];
 
