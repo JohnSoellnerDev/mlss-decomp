@@ -139,6 +139,25 @@ struct Bits1
     u8 rest : 6;
 };
 
+struct SubFlags
+{
+    u8 bit0 : 1;
+    u8 mid : 2;
+    u8 rest : 5;
+};
+
+struct Flags8
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 void obj_set_state(void *obj, u32 state);
 void obj_finish_move_step(void *obj);
 void obj_stop_motion(void *obj);
@@ -163,25 +182,6 @@ void camera_track_entity(void *list, u32 field, u32 zero);
 
 ASM_FUNC("asm/code_080EDB40/set_host_flags.s", void set_host_flags(void))
 
-struct SubFlags
-{
-    u8 bit0 : 1;
-    u8 mid : 2;
-    u8 rest : 5;
-};
-
-struct Flags8
-{
-    u8 bit0 : 1;
-    u8 bit1 : 1;
-    u8 bit2 : 1;
-    u8 bit3 : 1;
-    u8 bit4 : 1;
-    u8 bit5 : 1;
-    u8 bit6 : 1;
-    u8 bit7 : 1;
-};
-
 NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct OwnerObj *owner, void *unused, u32 *args))
 {
     u32 idx = args[0];
@@ -197,11 +197,8 @@ NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct Own
         s32 flags = entry->sub294->unk11;
         s32 bit = ((u32)flags << 25) >> 31;
 
-        bit ^= args[2];
-        bit &= 1;
-        bit <<= 6;
-        flags = (-0x41 & flags) | bit;
-        entry->sub294->unk11 = flags;
+        bit = args[2] ^ bit;
+        ((struct Flags8 *)&entry->sub294->unk11)->bit6 = bit;
     }
     return 1;
 }
@@ -262,7 +259,40 @@ u32 set_list_obj_state(struct OwnerObj *owner, void *unused1, struct ListObjArgs
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, (u8 *)obj + 0x58, obj->sub294, *(u8 *)&args->unk10, args->unkC);
 }
 
-ASM_FUNC("asm/code_080EDB40/set_record_from_args.s", void set_record_from_args(void))
+struct Rec8
+{
+    u16 head;
+    u8 b2;
+    u8 b3;
+    u8 b4;
+    u8 b5;
+};
+
+extern u32 gUnk_03000FF8;
+extern const u32 gRecordPtrTable[];
+void decode_coord_mode(u32 row, u32 col, s32 x, u8 *out_a, u8 *out_b);
+
+u32 set_record_from_args(struct OwnerObj *owner, void *unused, u32 *args)
+{
+    u8 mode_a;
+    u8 mode_b;
+    u32 *slot = &gUnk_03000FF8;
+    u32 index = *args++;
+    struct Rec8 *rec = (struct Rec8 *)(*slot + (index << 3));
+    u16 sel = *(u16 *)((u8 *)owner->list + 0x126);
+    u8 *block = (u8 *)*(u32 *)((u8 *)gRecordPtrTable + (sel << 2));
+    u8 *table = block - ((block[3] << 8) | block[2]);
+    u32 entry = *args++;
+    rec->head = ((u16 *)table)[entry];
+    mode_a = *args++;
+    decode_coord_mode(((u32)rec->head >> 12) - 1, rec->head & 0xFFF, mode_a, &mode_a, &mode_b);
+    rec->b2 = mode_a;
+    rec->b3 = *args++;
+    rec->b4 = *args++;
+    ((struct Bits1 *)&rec->b5)->bit0 = (*args ^ mode_b) & 1;
+    ((struct Bits1 *)&rec->b5)->bit1 = 0;
+    return 1;
+}
 
 ASM_FUNC("asm/code_080EDB40/set_effect_key.s", void set_effect_key(void))
 
