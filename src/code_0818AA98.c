@@ -1195,6 +1195,8 @@ void spawn_tbl_6b48(u32 x, u32 y, u32 z, u32 flag)
                  gSpawnStartPulseModel8, 2);
 }
 
+void obj_spin_model10(struct Point1Obj *obj);
+
 void spawn_tbl_6b3c(u32 x, u32 y, u32 z, u32 flag)
 {
     fx_obj_spawn(x, y, z, 0, obj_spin_model10, 0x415B, 5, 0, 0xA, flag, 0,
