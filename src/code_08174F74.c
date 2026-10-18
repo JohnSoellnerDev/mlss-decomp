@@ -515,7 +515,7 @@ void obj_point_shrink_wide_54b8(struct Point1Obj *obj)
     *words = counter;
 }
 
-ASM_FUNC("asm/code_08174F74/obj_zoom_spin4_55d0.s", void obj_zoom_spin4_55d0(void))
+ASM_FUNC("asm/code_08174F74/obj_zoom_spin4_55d0.s", void obj_zoom_spin4_55d0(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_08174F74/obj_zoom_tilt6_58c0.s", void obj_zoom_tilt6_58c0(void))
 
