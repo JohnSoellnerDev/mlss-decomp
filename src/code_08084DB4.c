@@ -15,13 +15,15 @@ struct TileSlot
     u16 pos;
     u8 filler0A[2];
     u8 *block;
-    u8 filler10[4];
+    u8 *spare;
 };
 
 extern u32 gSavedDispcnt;
+extern u16 gUnk_02000018;
 s32 distance_step(s32 x, s32 y, s32 z);
 
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
+void dma_fill_or_queue(u32 value, void *dst, u32 len, u32 unit, u32 flags);
 void heap_free(void *p);
 void heap_free_b(void *p);
 void alloc_tile_slot(u8 *obj, u8 idx, u8 palette);
@@ -192,7 +194,40 @@ void flush_copy_queue(u8 *obj)
 }
 
 ASM_FUNC("asm/code_08084DB4/free_slot_blocks.s", void free_slot_blocks(void))
-ASM_FUNC("asm/code_08084DB4/reset_display.s", void reset_display(void))
+NONMATCH("asm/code_08084DB4/reset_display.s", void reset_display(void))
+{
+    u16 *p;
+
+    gSavedDispcnt = *(u16 *)DISPCNT_SHADOW;
+    *(u16 *)DISPCNT_SHADOW = 0x7F40;
+    *(u16 *)(DISPCNT_SHADOW + 0x50) = 0x3740;
+    *(u16 *)(DISPCNT_SHADOW + 0x52) = 0x808;
+    *(u16 *)(DISPCNT_SHADOW + 0x0C) = 0x1E04;
+    *(u16 *)(DISPCNT_SHADOW + 0x0E) = 0x1F08;
+    p = (u16 *)&gUnk_02000018;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    p += 0x15;
+    *p = 0x3F3F;
+    p++;
+    *p = 0x3F3F;
+    p -= 5;
+    *p = 0xF0;
+    p += 2;
+    *p = 0xA0;
+    p--;
+    *p = 0xF0;
+    p = (u16 *)((u8 *)p + 4);
+    *p = 0xA0;
+    dma_fill_or_queue(0, (void *)0x06008000, 0x5000, 0x20, 0);
+    dma_fill_or_queue(0, (void *)0x0600F800, 0x800, 0x20, 0);
+}
+END_NONMATCH
 
 void restore_display(u8 *obj, u32 flags)
 {
