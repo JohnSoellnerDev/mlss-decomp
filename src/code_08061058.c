@@ -136,6 +136,26 @@ void map_obj_spawn_child(struct ActorObj *obj);
 void obj_timer_down_action7_then_idle(struct ActorObj *obj);
 void obj_arc_step_timer(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08061058/obj_arc_step_timer.s", void obj_arc_step_timer(struct ActorObj *obj))
+NONMATCH("asm/code_08061058/obj_arc_step_timer.s", void obj_arc_step_timer(struct ActorObj *obj))
+{
+    s32 t;
+    s32 t2;
+
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
+    t = (s16)obj->timer - obj->paramA0 / 2;
+    t2 = t * t;
+    obj->posH = obj->param9C * t2 + ((s16)obj->dh * 0x100 + 0x1000);
+    obj->timer++;
+    if ((s16)obj->timer > obj->paramA0)
+    {
+        set_slot_value(0xD8, -1);
+        obj->timer = 0x12;
+        sprite_set_action(obj, 6, 0, 0);
+        effect_spawn_at(0x120A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        obj->state = obj_timer_down_action7_then_idle;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08061058/obj_timer_end_build_anim_record.s", void obj_timer_end_build_anim_record(void))
