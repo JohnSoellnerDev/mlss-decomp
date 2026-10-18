@@ -164,6 +164,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   original is a plain loop. Not every original file used the option (the sound driver did
   not), so add the line only when the unit still passes `check_unit.py` with it; if it does
   not, the unit mixes two original files and has to be split (say so in your report).
+- A constant the original loads from the pool (`ldr r1, =0x5000; subs`) while yours folds it into
+  a neighbouring subtraction: compute it in its own statement (`startX = centerX - 0x5000;`).
+  A mask the original keeps in a high register across a loop (`mov r8, rX` before the loop,
+  then `ands` with r8) is an `s32` local set before the loop (`mask = ~0x40;`); `&= ~0x40` on a
+  `u8` narrows to `0xBF` instead (examples in src/code_08098B18.c).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
