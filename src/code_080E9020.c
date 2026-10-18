@@ -497,24 +497,24 @@ NONMATCH("asm/code_080E9020/bump_record.s", void bump_record(struct SlotState *s
     s32 v;
     u8 *q;
     u8 rec;
-    struct RecBits *bits;
 
     p = st->unk4;
     v = (s32)p[0x1B2] >> k;
-    if (((v ^ 1) & 1) != 0)
+    if ((((u8)v ^ 1) & 1) != 0)
     {
         return;
     }
     q = p + k * 0x4C + 0x42;
-    bits = (struct RecBits *)q;
     rec = *q;
     if ((rec & 4) != 0)
     {
-        bits->b2 = 0;
+        s32 t = -5;
+        t &= rec;
+        *q = t;
     }
     else
     {
-        bits->field = (((u32)rec << 25) >> 28) + 1;
+        ((struct RecBits *)q)->field = (((u32)rec << 25) >> 28) + 1;
     }
 }
 END_NONMATCH
@@ -533,13 +533,84 @@ struct FreeListState
     struct FreeDesc *unk8;
 };
 
-ASM_FUNC("asm/code_080E9020/free_list_move.s", void free_list_move(void))
+void free_list_move(struct FreeListState *st, u32 a1)
+{
+    struct FreeDesc *prev;
+    struct FreeDesc *head;
+    struct FreeDesc *cur;
+    u32 size;
+    u32 start;
+
+    prev = 0;
+    head = st->unk0;
+    while (head != 0)
+    {
+        start = head->start;
+        if (start == a1)
+        {
+            break;
+        }
+        prev = head;
+        head = head->next;
+    }
+    if (head == 0)
+    {
+        while (1)
+        {
+        }
+    }
+    if (prev != 0)
+    {
+        prev->next = head->next;
+    }
+    else
+    {
+        st->unk0 = head->next;
+    }
+    prev = 0;
+    cur = st->unk4;
+    while (cur != 0 && cur->start <= a1)
+    {
+        prev = cur;
+        cur = cur->next;
+    }
+    if (prev != 0)
+    {
+        prev->next = head;
+    }
+    else
+    {
+        st->unk4 = head;
+    }
+    head->next = cur;
+    if (cur != 0)
+    {
+        size = head->size;
+        if (start + size == cur->start)
+        {
+            head->size = size + cur->size;
+            head->next = cur->next;
+            cur->next = st->unk8;
+            st->unk8 = cur;
+        }
+    }
+    if (prev != 0)
+    {
+        if (prev->start + prev->size == start)
+        {
+            prev->size = prev->size + head->size;
+            prev->next = head->next;
+            head->next = st->unk8;
+            st->unk8 = head;
+        }
+    }
+}
 
 NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeListState *st, u32 a1))
 {
-    struct FreeDesc *cur;
     struct FreeDesc *best;
-    struct FreeDesc *back;
+    struct FreeDesc *prev;
+    struct FreeDesc *cur;
     struct FreeDesc *newDesc;
     u32 size;
 
@@ -548,7 +619,7 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
         return 0;
     }
     best = 0;
-    back = 0;
+    prev = 0;
     cur = st->unk4;
     while (cur != 0)
     {
@@ -562,33 +633,33 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
         }
         else if (size == a1)
         {
-            if (back == 0)
+            if (prev == 0)
             {
                 st->unk4 = cur->next;
             }
             else
             {
-                back->next = cur->next;
+                prev->next = cur->next;
             }
             cur->next = st->unk0;
             st->unk0 = cur;
             return cur->start;
         }
-        back = cur;
+        prev = cur;
         cur = cur->next;
     }
-    if (best == 0)
+    if (best != 0)
     {
-        return 0;
+        newDesc = st->unk8;
+        newDesc->size = a1;
+        best->size -= a1;
+        newDesc->start = best->start + best->size;
+        st->unk8 = newDesc->next;
+        newDesc->next = st->unk0;
+        st->unk0 = newDesc;
+        return newDesc->start;
     }
-    newDesc = st->unk8;
-    newDesc->size = a1;
-    best->size -= a1;
-    newDesc->start = best->start + best->size;
-    st->unk8 = newDesc->next;
-    newDesc->next = st->unk0;
-    st->unk0 = newDesc;
-    return newDesc->start;
+    return 0;
 }
 END_NONMATCH
 
@@ -650,62 +721,40 @@ u32 angle_of_vector16(s32 x, s32 y)
     return (u16)(arc_tan2((s16)a, (s16)b) + 0x5000);
 }
 
-NONMATCH("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e2e(s16 idx, s16 mode, u16 bit))
-{
-    u8 *entry;
-    u32 b;
-    u32 f;
-    s32 t;
-
-    entry = gParty + idx * 60;
-    switch (mode)
-    {
-    case 0:
-        b = entry[7];
-        f = (b >> 2) | (1 << (s16)bit);
-        entry[7] = (f << 2) | (b & 3);
-        break;
-    case 1:
-        b = entry[8];
-        f = (((b << 26) >> 26) | (1 << (s16)bit)) & 0x3F;
-        t = (b & -0x40) | f;
-        entry[8] = t;
-        break;
-    case 2:
-        b = *(u16 *)(entry + 8);
-        f = (((b << 20) >> 26) | (1 << (s16)bit)) & 0x3F;
-        t = (b & 0xFFFFF03F) | (f << 6);
-        *(u16 *)(entry + 8) = t;
-        break;
-    }
-}
-END_NONMATCH
+ASM_FUNC("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e2e(void))
 
 NONMATCH("asm/code_080E9020/sub_080E9EC4.s", void sub_080E9EC4(s16 idx, s16 mode, u16 bit))
 {
-    u8 *entry;
     u32 b;
     u32 f;
     s32 t;
+    u8 *entry;
 
     entry = gParty + idx * 60;
     switch (mode)
     {
     case 0:
         b = entry[7];
-        f = (b >> 2) & ~(1 << (s16)bit);
-        entry[7] = (f << 2) | (b & 3);
+        f = ((b >> 2) & ~(1 << (s16)bit)) << 2;
+        t = 3;
+        t &= b;
+        t |= f;
+        entry[7] = t;
         break;
     case 1:
         b = entry[8];
         f = ((b << 26) >> 26) & ~(1 << (s16)bit);
-        t = (b & -0x40) | f;
+        t = -0x40;
+        t &= b;
+        t |= f;
         entry[8] = t;
         break;
     case 2:
         b = *(u16 *)(entry + 8);
-        f = ((b << 20) >> 26) & ~(1 << (s16)bit);
-        t = (b & 0xFFFFF03F) | (f << 6);
+        f = (((b << 20) >> 26) & ~(1 << (s16)bit)) << 6;
+        t = 0xFFFFF03F;
+        t &= b;
+        t |= f;
         *(u16 *)(entry + 8) = t;
         break;
     }
