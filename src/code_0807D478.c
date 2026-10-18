@@ -188,8 +188,61 @@ void popup_fade_step(struct Task *task);
 void popup_fade_step_b(struct Task *task);
 void effect_follow(void);
 u32 search_frame_pairs(struct SpriteObj *obj, struct SpritePart *part);
+extern u8 *gMemRoutines;
+extern void task_draw_step_a(void);
+void offset_three_words(void *camera, s32 *a, s32 *b, s32 *c, u32 d);
+u8 *to_bcd(u32 value);
+s32 number_popup_raster(void);
+struct Task *number_popup_spawn(u32 value, s32 x, s32 y, s32 z, s32 kind);
+extern u8 gSys[];
+extern u8 gGlyphIndexTable[];
+extern u32 gMapTable[];
+extern u8 gUnk_02000440[];
+extern u8 iwram_copy[];
+extern u8 iwram_fill[];
+extern void task_anim_countdown(void);
+extern void task_draw_step_b(void);
+void popup_rise_step(struct Task *task);
 
-ASM_FUNC("asm/code_0807D478/number_popup.s", void number_popup(void))
+struct Task *number_popup(u32 value, s32 x, s32 y, s32 z, s32 mode, s32 kind, u8 *out)
+{
+    struct Task *task;
+    struct PopupNode *node;
+    struct World *state;
+    struct World **pworld;
+    u32 fn;
+
+    if (mode == 1)
+    {
+        return number_popup_spawn(value, x, y, z, kind);
+    }
+    pworld = &gWorld;
+    state = *pworld;
+    fn = (u32)task_draw_step_b;
+    task = state->taskFree;
+    state->taskFree = task->next;
+    task->next = state->taskList;
+    task->fn = fn;
+    task->timer = 0;
+    state->taskList = task;
+    node = (*pworld)->nodePool;
+    (*pworld)->nodePool = node->next;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, node, 0x1C);
+    offset_three_words((*pworld)->camera, &x, &y, &z, 0);
+    if (out != NULL)
+        *out = 1;
+    node->out = out;
+    node->x = (x + 8) << 8;
+    node->vx = 0x100;
+    node->y = (y - 0x10) << 8;
+    node->vy = 0xFD9A;
+    node->kind = kind;
+    node->life = 0xE;
+    task->fn = (u32)popup_rise_step;
+    task->data = to_bcd(value);
+    task->node = node;
+    return task;
+}
 
 void popup_rise_step(struct Task *task)
 {
@@ -237,7 +290,38 @@ void popup_fade_step(struct Task *task)
     }
 }
 
-ASM_FUNC("asm/code_0807D478/number_popup_spawn.s", struct Task *number_popup_spawn(u32 value, s32 x, s32 y, s32 z, s32 kind))
+struct Task *number_popup_spawn(u32 value, s32 x, s32 y, s32 z, s32 kind)
+{
+    struct Task *task;
+    struct PopupNode *node;
+    struct World *state;
+    struct World **pworld;
+    u32 fn;
+
+    pworld = &gWorld;
+    state = *pworld;
+    fn = (u32)task_draw_step_a;
+    task = state->taskFree;
+    state->taskFree = task->next;
+    task->next = state->taskList;
+    task->fn = fn;
+    task->timer = 0;
+    state->taskList = task;
+    node = (*pworld)->nodePool;
+    (*pworld)->nodePool = node->next;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, node, 0x1C);
+    offset_three_words((*pworld)->camera, &x, &y, &z, 0);
+    node->x = (x - 0xC) << 8;
+    node->vx = 0xFF34;
+    node->y = (y - 0x18) << 8;
+    node->vy = 0xFE9A;
+    node->kind = kind;
+    node->life = 0xE;
+    task->fn = (u32)popup_rise_step_b;
+    task->data = to_bcd(value);
+    task->node = node;
+    return task;
+}
 
 void popup_rise_step_b(struct Task *task)
 {
@@ -285,8 +369,54 @@ void popup_fade_step_b(struct Task *task)
     }
 }
 
-ASM_FUNC("asm/code_0807D478/popup_digit_spawn.s", void popup_digit_spawn(void))
+NONMATCH("asm/code_0807D478/popup_digit_spawn.s", struct Task *popup_digit_spawn(u32 digit, s32 x, s32 y, s32 z))
+{
+    struct Task *task;
+    struct PopupNode *node;
+    struct World **pworld;
+    struct World *state;
+    u32 glyphIndex;
+    u32 idx;
+    u32 sysVal;
+    u8 *table;
+    s32 xStart;
+    u32 fn;
+    void (*copy)(u8 *, u8 *, u32);
 
+    copy = (void (*)(u8 *, u8 *, u32))(gMemRoutines + ((u32)iwram_copy - (u32)iwram_fill));
+    table = gGlyphIndexTable;
+    glyphIndex = ((gSys[0x888] & 6) != 0) ? 0x1C : 0x1A;
+    idx = *(u16 *)(table + glyphIndex);
+    copy((u8 *)gMapTable + gMapTable[idx], gUnk_02000440, 0x20);
+    sysVal = *(u16 *)gSys;
+    *(u16 *)gSys = sysVal | 0x4000;
+    pworld = &gWorld;
+    state = *pworld;
+    fn = (u32)task_anim_countdown;
+    task = state->taskFree;
+    state->taskFree = task->next;
+    task->next = state->taskList;
+    task->fn = fn;
+    task->timer = 0;
+    state->taskList = task;
+    node = (*pworld)->nodePool;
+    (*pworld)->nodePool = node->next;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, node, 0x1C);
+    offset_three_words((*pworld)->camera, &x, &y, &z, 0);
+    if (digit <= 9)
+        xStart = x + 4;
+    else
+        xStart = x + 8;
+    node->x = xStart;
+    node->x = node->x << 8;
+    node->y = y << 8;
+    node->vy = 0xFF00;
+    node->life = 0xA;
+    task->data = to_bcd(digit);
+    task->node = node;
+    return task;
+}
+END_NONMATCH
 void popup_wave_step(struct Task *task)
 {
     struct PopupNode *node = task->node;
@@ -355,14 +485,58 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0807D478/task_frame_update.s", void task_frame_update(void))
 
-ASM_FUNC("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
+NONMATCH("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
+{
+    struct RasterNode *node;
+    struct RasterNode *next;
+    s32 cur;
+    u32 v;
+    vu16 *regIme;
+    vu16 *regDispstat;
+    vu16 *regIe;
+    u32 vcountBit;
+    s32 (*waitFn)(void);
+
+    node = gWorld->rasterCur;
+    cur = node->line;
+    waitFn = number_popup_raster;
+    regIme = (vu16 *)0x04000208;
+    regDispstat = (vu16 *)0x04000004;
+    regIe = (vu16 *)0x04000200;
+    vcountBit = 4;
+    for (;;)
+    {
+        if (node->handler != NULL)
+            node->handler(node);
+        next = node->next;
+        if (next == NULL)
+            return;
+        if (cur >= next->line)
+            node = next;
+        else
+            break;
+    }
+    gWorld->rasterCur = next;
+    v = next->line << 8;
+    do
+    {
+    } while (waitFn() == 0);
+    *regIme = 0;
+    *regDispstat = *regDispstat & 0xFF;
+    v |= 0x20;
+    v |= *regDispstat;
+    *regDispstat = v;
+    *regIe |= vcountBit;
+    REG_IF |= vcountBit;
+    *regIme = 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0807D478/obj_draw_part.s", void obj_draw_part(void))
 
 ASM_FUNC("asm/code_0807D478/draw_obj_pose.s", void draw_obj_pose(void))
 
 ASM_FUNC("asm/code_0807D478/sprite_objects_obj_set_mode.s", void sprite_objects_obj_set_mode(void))
-
 void task_begin_obj(struct Task *task)
 {
     struct SpriteObj *obj = (struct SpriteObj *)task->data;
@@ -416,7 +590,63 @@ void task_release_obj(struct Task *task)
 
 ASM_FUNC("asm/code_0807D478/obj_run_part.s", void obj_run_part(struct SpriteObj *obj, struct SpritePart *part))
 
-ASM_FUNC("asm/code_0807D478/obj_try_run_part.s", s32 obj_try_run_part(struct SpriteObj *obj, struct SpritePart *part))
+NONMATCH("asm/code_0807D478/obj_try_run_part.s", s32 obj_try_run_part(struct SpriteObj *obj, struct SpritePart *part))
+{
+    struct SpriteObj *owner;
+    struct SpriteObj *cur;
+    struct SpriteObj *prev;
+    struct SpriteObj *next;
+    ObjHandler handler;
+    s32 res;
+    u32 index;
+    ObjHandler *slots;
+    u32 off;
+
+    index = part->index;
+    if ((index & 7) == 0)
+        return 0;
+    if (obj->stateFn == (u32)effect_follow)
+        owner = obj->parent;
+    else
+        owner = obj;
+    off = (u32)(index << 29) >> 27;
+    slots = owner->handlers;
+    handler = *(ObjHandler *)((u8 *)slots + off);
+    if (handler == NULL)
+        return 0;
+    if ((res = search_frame_pairs(obj, part)) == 0)
+        return 0;
+    if (owner != obj)
+        owner->unk54 = 0;
+    if (handler(owner, part) != 0)
+        return 0;
+    prev = NULL;
+    cur = gWorld->objs;
+    if (cur != NULL)
+    {
+        do
+        {
+            next = cur->activeNext;
+            if (cur == obj)
+            {
+                if (prev != NULL)
+                    prev->activeNext = next;
+                else
+                    gWorld->objs = next;
+                obj->handlers[0] = NULL;
+                obj->handlers[1] = NULL;
+                obj->handlers[2] = NULL;
+                obj->handlers[3] = NULL;
+                obj->activeNext = NULL;
+                break;
+            }
+            prev = cur;
+            cur = next;
+        } while (cur != NULL);
+    }
+    return 1;
+}
+END_NONMATCH
 
 void update_active_objs(void)
 {
