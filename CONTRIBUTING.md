@@ -173,6 +173,10 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Table reads the original adds as `lsls r0, r0, #1; adds r0, r0, rBase` (index first) are
   array indexing, `((u16 *)(ai + 0xD0))[idx]`; hand-written `*(u16 *)(ai + (idx << 1) + 0xD0)`
   swaps the operands of the add (example `enemy_wait_sense` in src/code_08145D54.c).
+- Enemy AI handlers stored in the object (`ent + 0x1A0`, ...) take the slot as a third argument:
+  `void (*fn)(struct Owner *, struct Enemy *, u8 *)`, called as `fn(owner, ent, slot)`. Without the
+  third argument GCC puts the handler in the slot's register (example `enemy_wait_spot_owner` in
+  src/code_081442FC.c).
 - Stack slots follow the declaration scopes: a local array declared in an inner `{ }` block is
   placed after the outer locals (moves a byte local from `sp+0x14` to `sp+4`; example
   `enemy_contact_check_state` in src/code_08142A38.c).
