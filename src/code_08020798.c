@@ -204,7 +204,27 @@ void fill_record_08f4(struct RecordSource *p)
     rec[3] = 0;
 }
 
-ASM_FUNC("asm/code_08020798/release_timers_0908.s", void release_timers_0908(void))
+void release_timers_0908(void)
+{
+    s32 i;
+    u32 *slot;
+
+    heap_free((void *)gUnk_03000D48);
+    gUnk_03000D48 = 0;
+    gUnk_03000D4C = 0;
+    gUnk_03000D50 = 0;
+    for (i = 0; i < 6; i++)
+    {
+        if ((gUnk_03000D70 >> i) & 1)
+        {
+            slot = &gUnk_03000D58[i];
+            *slot = *slot - 1;
+            heap_free((void *)*slot);
+            *slot = 0;
+        }
+    }
+    gUnk_03000D70 = 0;
+}
 
 ASM_FUNC("asm/code_08020798/init_obj_09a8.s", void init_obj_09a8(void))
 
