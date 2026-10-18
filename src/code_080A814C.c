@@ -359,9 +359,76 @@ void hero_b_ready_a_place_anim(struct HeroBody *body)
     body->state = hero_a_wait_reach_rate;
 }
 
-ASM_FUNC("asm/code_080A814C/hero_a_wait_reach_rate.s", void hero_a_wait_reach_rate(struct HeroBody *body))
+NONMATCH("asm/code_080A814C/hero_a_wait_reach_rate.s", void hero_a_wait_reach_rate(struct HeroBody *body))
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    s32 reach;
+    u16 rate;
+    u32 distLo;
+    u32 distHi;
+    s32 reached;
 
-ASM_FUNC("asm/code_080A814C/hero_a_active_place_partner_z.s", void hero_a_active_place_partner_z(struct HeroBody *body))
+    step_motion(body_a);
+    distLo = hero_a->body.distLo;
+    distHi = hero_a->body.distHi;
+    reach = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(distHi << 14, distLo);
+    reached = body_a->step <= reach && body_a->progress >= reach;
+    if (reached != 0)
+    {
+        set_slot_value(0x62, -1);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xC);
+            body_a->rate = rate;
+            body_a->progress = 0;
+            ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+        }
+        body->state = hero_a_active_place_partner_z;
+    }
+}
+END_NONMATCH
+
+void hero_a_active_place_partner_z(struct HeroBody *body)
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *partner = body->partner;
+    s32 tx;
+    s32 ty;
+    s32 tz;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    state_stack_advance_progress(body_a);
+    if ((hero_a->body.flags & 0x20) != 0)
+    {
+        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        {
+            tz = body_a->posZ;
+            if (tz < 0)
+                tz += 0xFF;
+            z = tz >> 8;
+            tx = partner->targetX;
+            if (tx < 0)
+                tx += 0xFF;
+            x = (tx >> 8) + partner->ofsX;
+            ty = partner->targetY;
+            if (ty < 0)
+                ty += 0xFF;
+            y = (ty >> 8) + partner->ofsY;
+            place_targets(body_a, x, y, z, -1);
+            {
+                u16 h = 0x28;
+                body_a->height = h;
+            }
+            set_motion_offsets(body_a, 0x533);
+        }
+        body_a->timer = body_a->timer & 0xFFF;
+        body->state = hero_a_step_reach_input;
+    }
+}
 
 ASM_FUNC("asm/code_080A814C/hero_a_step_reach_input.s", void hero_a_step_reach_input(struct HeroBody *body))
 
