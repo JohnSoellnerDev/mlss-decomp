@@ -448,13 +448,14 @@ struct CamXY
     s32 y;
 };
 
-NONMATCH("asm/code_08151144/obj_place_on_screen.s", void obj_place_on_screen(struct Obj *obj, struct CamXY *cam))
+void obj_place_on_screen(struct Obj *obj, struct CamXY *cam)
 {
     s32 sx;
     s32 sy;
     s32 camY;
     s32 v;
     s32 dz;
+    s32 flagBit;
 
     sx = obj->x + cam->x;
     sy = obj->y + cam->y;
@@ -480,7 +481,8 @@ NONMATCH("asm/code_08151144/obj_place_on_screen.s", void obj_place_on_screen(str
             obj->y = -camY;
         }
     }
-    if ((s16)(obj->flags & 0x20) == 0)
+    flagBit = (s16)(obj->flags & 0x20);
+    if (flagBit == 0)
     {
         if (*(s16 *)&obj->count > 0)
         {
@@ -507,7 +509,6 @@ NONMATCH("asm/code_08151144/obj_place_on_screen.s", void obj_place_on_screen(str
     obj_build_iris_rows(obj, (s32 *)cam);
     dma_copy_or_queue(obj->rows, gUnk_03001014 + 4, 0x1C8, 0x10, 1);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(struct Obj *obj, s32 *pos))
 
