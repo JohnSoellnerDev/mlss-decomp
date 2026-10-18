@@ -177,6 +177,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   `void (*fn)(struct Owner *, struct Enemy *, u8 *)`, called as `fn(owner, ent, slot)`. Without the
   third argument GCC puts the handler in the slot's register (example `enemy_wait_spot_owner` in
   src/code_081442FC.c).
+- `eors` with 1 followed by `ands` with 1 is `(x ^ 1) & 1` on a byte or halfword value
+  (`((u8)cmd->unk4 ^ 1) & 1`); on a 32-bit value GCC turns the same expression into `bics`
+  (example `owner_entry_cmds_cmd_slot_set_motion` in src/code_080F3F2C.c).
 - A callee-saved register that is read on some path without ever being set in the function
   (it still holds the caller's value) is an uninitialised local in the original: declare it
   without an initialiser and leave it unassigned on that path (GCC emits no code for it).
