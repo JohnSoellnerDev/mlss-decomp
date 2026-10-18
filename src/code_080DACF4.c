@@ -23,6 +23,21 @@ struct ActorFlagBits
     u8 high : 2;
 };
 
+struct ActorDirBits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct ActorPart
 {
     u8 filler0[0xD8];
@@ -97,6 +112,7 @@ u32 effect_from_table_obj(struct ActorObj *obj, u32 id);
 void obj_release(struct ActorObj *obj);
 void sound_stop_song(u32 song);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct ActorObj *owner);
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
 void start_motion(struct ActorObj *obj);
 void obj_detach_active(struct ActorPose *pose);
@@ -190,11 +206,121 @@ static inline void pose_set_mode_2(struct ActorObj *obj)
     ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
 }
 
-ASM_FUNC("asm/code_080DACF4/obj_spawn_child_part.s", void obj_spawn_child_part(struct ActorObj *obj))
+// The child takes over bits 5 and 6 of the parent's flag byte at +0x77.
+static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
 
-ASM_FUNC("asm/code_080DACF4/anim_steps_obj_fall_step.s", void anim_steps_obj_fall_step(struct ActorObj *obj))
+NONMATCH("asm/code_080DACF4/obj_spawn_child_part.s", void obj_spawn_child_part(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    struct ActorPart *part;
 
-ASM_FUNC("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn_child(struct ActorObj *obj))
+    if (obj->pose->flags & 0x08)
+    {
+        child = obj_spawn(obj->data, 0x4138, obj->baseX / 0x100 - 0x14, obj->baseY / 0x100 - 1,
+                          obj->baseH / 0x100 + 0x14, ((u32)obj->pose->byte11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct ActorDirBits *)&child->dir)->kind = 1;
+        copy_flags77_bits(obj, child);
+        child->state = anim_steps_obj_fall_step;
+        child->handler68 = on_arrive;
+        child->childValue = obj->childValue;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler60 = (void (*)(struct ActorObj *))obj_start_move_if_zero_b;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->unkA8 = obj->unkA8;
+        child->byte74 = 0xFF;
+        sprite_set_action(child, 0, 0, 0);
+        child->ground = obj->owner->data->targetH;
+        part = obj->owner->data;
+        child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
+                                      part->targetX - (child->baseX - 0xA),
+                                      part->targetY - child->baseY,
+                                      child->ground - (child->baseH - 4),
+                                      0x5C00, 0x466, 0x100, 0);
+        obj->childValue = 0;
+        sprite_set_action(obj, 3, 0, 0);
+        pose_set_mode_2(obj);
+        set_slot_value(0x117, -1);
+        obj->state = obj_pose_update_if_active_c;
+    }
+}
+END_NONMATCH
+
+void anim_steps_obj_fall_step(struct ActorObj *obj)
+{
+    s16 *dyp;
+    s16 *dhp;
+    u16 dxw = obj->dx;
+
+    obj->dx = dxw;
+    dyp = &obj->dy;
+    dhp = &obj->dh;
+    obj->dh += obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + *dyp;
+    obj->posH = obj->baseH + *dhp;
+    if (obj->dh <= 0 && obj->posH <= obj->ground)
+    {
+        obj->posH = obj->ground;
+        obj_release(obj);
+    }
+}
+
+NONMATCH("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn_child(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    struct ActorPart *part;
+    s32 *ground;
+
+    obj->dx = obj->dx * 0xFD / 0x100;
+    obj->dy = obj->dy * 0xFD / 0x100;
+    obj->dh += obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + obj->dy;
+    obj->posH = obj->baseH + obj->dh;
+    if (obj->dh <= 0)
+    {
+        part = obj->data;
+        child = obj_spawn(part, 0x4138, obj->baseX / 0x100 - 0x14, obj->baseY / 0x100 - 1,
+                          obj->baseH / 0x100 + 0x14, ((u32)obj->pose->byte11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct ActorDirBits *)&child->dir)->kind = 1;
+        copy_flags77_bits(obj, child);
+        child->state = obj_fall_step_b;
+        child->handler68 = on_arrive;
+        child->childValue = obj->childValue;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler60 = (void (*)(struct ActorObj *))obj_start_move_if_zero_b;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->unkA8 = obj->unkA8;
+        child->byte74 = 0xFF;
+        sprite_set_action(child, 0, 0, 0);
+        ground = &child->ground;
+        part = obj->owner->data;
+        *ground = part->targetH;
+        child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
+                                      part->targetX - (child->baseX - 0xA),
+                                      part->targetY - child->baseY,
+                                      child->ground - (child->baseH - 4),
+                                      0x5C00, 0x466, 0x100, 0);
+        obj->childValue = 0;
+        sprite_set_action(obj, 5, 0, 0);
+        pose_set_mode_2(obj);
+        set_slot_value(0x117, -1);
+        obj->state = obj_damp_step_limit;
+    }
+}
+END_NONMATCH
 
 void obj_damp_step_limit(struct ActorObj *obj)
 {
@@ -211,7 +337,25 @@ void obj_damp_step_limit(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DACF4/obj_fall_step_b.s", void obj_fall_step_b(struct ActorObj *obj))
+void obj_fall_step_b(struct ActorObj *obj)
+{
+    s16 *dyp;
+    s16 *dhp;
+    u16 dxw = obj->dx;
+
+    obj->dx = dxw;
+    dyp = &obj->dy;
+    dhp = &obj->dh;
+    obj->dh += obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + *dyp;
+    obj->posH = obj->baseH + *dhp;
+    if (obj->dh <= 0 && obj->posH <= obj->ground)
+    {
+        obj->posH = obj->ground;
+        obj_release(obj);
+    }
+}
 
 void obj_pose_update_if_active_b(struct ActorObj *obj)
 {
@@ -398,7 +542,30 @@ void obj_target_motion_action8_notify(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DACF4/obj_index_timer_motion_c.s", void obj_index_timer_motion_c(struct ActorObj *obj))
+void obj_index_timer_motion_c(struct ActorObj *obj)
+{
+    s32 index = obj->index;
+
+    if (index == 0)
+    {
+        s32 timer = obj->timer - 1;
+
+        obj->timer = timer;
+        if ((s16)timer < 0)
+        {
+            sound_stop_song(0x81);
+            obj->targetX = obj->owner->data->targetX + 0x2800;
+            obj->targetY = obj->owner->data->targetY;
+            obj->targetH = obj->owner->data->targetH;
+            ((struct ActorFlagBits *)&obj->flags)->bit5 = 1;
+            obj->motionSpeed = 0x400;
+            obj->motionStart = index;
+            start_motion(obj);
+            sprite_set_action(obj, 2, 0, 0);
+            obj->state = obj_index_prep_a_motion_part;
+        }
+    }
+}
 
 void obj_index_prep_a_motion_part(struct ActorObj *obj)
 {
