@@ -241,14 +241,12 @@ NONMATCH("asm/code_0805970C/write_scroll_shadows.s", void write_scroll_shadows(u
     p += 2;
     *p = 0x1FF & *(u16 *)(obj + 0x5C);
     *(vu16 *)gUnk_0200001C = 0x1FF & *(u16 *)(obj + 0x5E);
-    {
-        vu16 *q = gUnk_02000016;
-        *q = obj[0x60];
-        q += 2;
-        *q = obj[0x62];
-        q += 2;
-        *q = obj[0x64];
-    }
+    p = gUnk_02000016;
+    *p = obj[0x60];
+    p += 2;
+    *p = obj[0x62];
+    p += 2;
+    *p = obj[0x64];
 }
 END_NONMATCH
 
