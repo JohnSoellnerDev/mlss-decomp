@@ -143,28 +143,30 @@ void obj_drift_point_9190(struct Point1Obj *obj)
 // Two points are scaled by the zoom (8.8), then turned by the fixed tilt angle in the y-z plane
 // (entry 12 of the sine and cosine tables). The zoom grows by its step per frame, and the step
 // drops to 7/8 per frame.
-NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_92b4.s", void obj_zoom_tilt_model2_92b4(struct Point1Obj *obj))
+void obj_zoom_tilt_model2_92b4(struct Point1Obj *obj)
 {
     struct Point1Local l;
-    u32 *words;
-    s32 zoom;
-    s32 zoomStep;
     struct ObjRecord *rec;
+    s32 zoom;
+    s32 vel;
+    u32 *words;
     u32 h;
     u32 saved;
     s32 i;
     s32 *p1;
     s32 *p2;
     u32 *pslot;
-    s32 sy;
-    s32 sx;
-    s32 sz;
-    s32 pos;
+    s32 vx;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 y2;
     s32 t;
+    s32 pos;
 
     words = obj->data;
     zoom = *words++;
-    zoomStep = *words++;
+    vel = *words++;
     rec = obj->rec;
     l.model = rec->model;
     h = block_flag_byte(rec);
@@ -174,48 +176,41 @@ NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_92b4.s", void obj_zoom_tilt_mod
     p2 = &l.z;
     pslot = &l.model;
     for (i = 0; i < 2; i++) {
-        l.x = *words++;
+        vx = *words++;
+        l.x = vx;
         l.y = *words++;
         l.z = *words++;
-        sx = l.x * zoom / 0x100;
-        l.x = sx;
-        sy = l.y * zoom / 0x100;
-        l.y = sy;
-        sz = l.z * zoom / 0x100;
-        l.z = sz;
-        l.y = (sy * (gCosineTable[12] / 0x40) - sz * (gSineTable[12] / 0x40)) / 0x100;
-        l.z = (sz * (gCosineTable[12] / 0x40) + sy * (gSineTable[12] / 0x40)) / 0x100;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        y2 = (t - (gSineTable[12] / 0x40) * z1) / 0x100;
+        l.y = y2;
+        l.z = ((z1 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
+
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = sx;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            pos >>= 8;
+            l.x = t - pos;
         } else {
-            pos = obj->posX;
-            t = sx;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            pos >>= 8;
+            l.x = t + pos;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.z = pos + t;
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
@@ -226,39 +221,40 @@ NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_92b4.s", void obj_zoom_tilt_mod
     if (saved) {
         gModelCtx->model = l.model;
     }
-    zoom += zoomStep;
-    zoomStep = zoomStep * 7 / 8;
+    zoom += vel;
+    vel = (vel * 7) / 8;
     words = obj->data;
     *words++ = zoom;
-    *words = zoomStep;
+    *words = vel;
 }
-END_NONMATCH
 
 // Two points are scaled by the zoom (8.8), then turned by the fixed tilt angle in the y-z plane
 // (entry 12 of the sine and cosine tables). The zoom grows by its step per frame, and the step
 // drops to 7/8 per frame.
-NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_948c.s", void obj_zoom_tilt_model2_948c(struct Point1Obj *obj))
+void obj_zoom_tilt_model2_948c(struct Point1Obj *obj)
 {
     struct Point1Local l;
-    u32 *words;
-    s32 zoom;
-    s32 zoomStep;
     struct ObjRecord *rec;
+    s32 zoom;
+    s32 vel;
+    u32 *words;
     u32 h;
     u32 saved;
     s32 i;
     s32 *p1;
     s32 *p2;
     u32 *pslot;
-    s32 sy;
-    s32 sx;
-    s32 sz;
-    s32 pos;
+    s32 vx;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 y2;
     s32 t;
+    s32 pos;
 
     words = obj->data;
     zoom = *words++;
-    zoomStep = *words++;
+    vel = *words++;
     rec = obj->rec;
     l.model = rec->model;
     h = block_flag_byte(rec);
@@ -268,48 +264,41 @@ NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_948c.s", void obj_zoom_tilt_mod
     p2 = &l.z;
     pslot = &l.model;
     for (i = 0; i < 2; i++) {
-        l.x = *words++;
+        vx = *words++;
+        l.x = vx;
         l.y = *words++;
         l.z = *words++;
-        sx = l.x * zoom / 0x100;
-        l.x = sx;
-        sy = l.y * zoom / 0x100;
-        l.y = sy;
-        sz = l.z * zoom / 0x100;
-        l.z = sz;
-        l.y = (sy * (gCosineTable[12] / 0x40) - sz * (gSineTable[12] / 0x40)) / 0x100;
-        l.z = (sz * (gCosineTable[12] / 0x40) + sy * (gSineTable[12] / 0x40)) / 0x100;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        y2 = (t - (gSineTable[12] / 0x40) * z1) / 0x100;
+        l.y = y2;
+        l.z = ((z1 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
+
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = sx;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            pos >>= 8;
+            l.x = t - pos;
         } else {
-            pos = obj->posX;
-            t = sx;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = x1;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            pos >>= 8;
+            l.x = t + pos;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
-        }
-        t >>= 8;
-        l.z = pos + t;
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
@@ -320,13 +309,12 @@ NONMATCH("asm/code_08189190/obj_zoom_tilt_model2_948c.s", void obj_zoom_tilt_mod
     if (saved) {
         gModelCtx->model = l.model;
     }
-    zoom += zoomStep;
-    zoomStep = zoomStep * 7 / 8;
+    zoom += vel;
+    vel = (vel * 7) / 8;
     words = obj->data;
     *words++ = zoom;
-    *words = zoomStep;
+    *words = vel;
 }
-END_NONMATCH
 
 // One point that drifts and grows: the offset in x and y grows by its speed per frame, and the
 // record size grows by 0x10 per frame and sets both record width and height.
@@ -744,7 +732,7 @@ void obj_grow_spin_point_a1d4(struct Point1Obj *obj)
     *words = angle;
 }
 
-ASM_FUNC("asm/code_08189190/obj_spin_model5.s", void obj_spin_model5(void))
+ASM_FUNC("asm/code_08189190/obj_spin_model5.s", void obj_spin_model5(struct Point1Obj *obj))
 
 // One point that falls: y grows by vy, vy grows by 0x40 per frame (gravity), and x grows by the
 // x offset, which grows by vx per frame. Bit 7 of the flag byte mirrors the x shift.
