@@ -161,8 +161,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   loop the programmer wrote, one body with step 1: `i = n; while (--i >= 0) p[i] = 0;`
   (`clear_map_rect` in src/code_08084DB4.c), `for (i = 0; i < 15; i++) sum += e[i].v;`
   (`avg_fields_sdiv15_a` in src/code_08167E7C.c). Never unroll by hand (copies of the body,
-  `i += 2`, Duff's device, `goto` into the copies). A unit made from a file built without the
-  option can switch it off with the first line `/* agbcc: -fno-unroll-loops */`.
+  `i += 2`, Duff's device, `goto` into the copies). A loop the original keeps as one plain body
+  has a counter GCC cannot analyse: a `u8` or `u16` counter is never unrolled (`for (i = 0; i < 6;
+  i++)` with `s32 i` comes out as six copies, with `u8 i` as one loop). A unit made from a file
+  built without the option can switch it off with the first line `/* agbcc: -fno-unroll-loops */`.
 - A constant the original loads from the pool (`ldr r1, =0x5000; subs`) while yours folds it into
   a neighbouring subtraction: compute it in its own statement (`startX = centerX - 0x5000;`).
   A mask the original keeps in a high register across a loop (`mov r8, rX` before the loop,
