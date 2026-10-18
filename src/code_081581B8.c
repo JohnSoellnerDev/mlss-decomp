@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -283,28 +284,14 @@ struct TransObj *obj_init_find_type13(struct TransObj *obj)
     game = gGamePtr;
     i = 0;
     block = (u32 *)(game + 0x1898);
-    for (; i <= 0xFF; block += 4, i += 4)
+    for (; i <= 0xFF; i++)
     {
         if (block[0] != 0 && ((u8 *)block[0])[0x25] == 0x13)
         {
             found = (void *)block[0];
             goto done;
         }
-        if (block[1] != 0 && ((u8 *)block[1])[0x25] == 0x13)
-        {
-            found = (void *)block[1];
-            goto done;
-        }
-        if (block[2] != 0 && ((u8 *)block[2])[0x25] == 0x13)
-        {
-            found = (void *)block[2];
-            goto done;
-        }
-        if (block[3] != 0 && ((u8 *)block[3])[0x25] == 0x13)
-        {
-            found = (void *)block[3];
-            goto done;
-        }
+        block++;
     }
     found = 0;
 done:

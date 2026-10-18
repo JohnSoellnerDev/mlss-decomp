@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 struct ObjCore
 {
@@ -912,19 +913,12 @@ struct SceneObj *pool_find_kind1_2(struct GameVars *game, s32 kind)
     void **p = game->unk1898;
     struct SceneObj *obj;
 
-    do
+    for (; i <= 0xFF; i++)
     {
         obj = p[0];
         if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[1];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[2];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[3];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        p += 4;
-        i += 4;
-    } while (i <= 0xFF);
+        p++;
+    }
     return 0;
 }
 

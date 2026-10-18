@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -41,6 +42,7 @@ void obj_set_offset(void *grid, s32 x, s32 y);
 void obj_child_ram_call(void *grid, s32 *args, u32 kind);
 void obj_upload_tiles(void *grid);
 
+struct AvgSample { s32 v; s32 pad[2]; };
 struct AvgEntry
 {
     u32 v00;
@@ -287,36 +289,22 @@ struct GridObj *init_vt_08cdeb58(struct GridObj *obj, u32 a1, u32 a2, u32 a3, u3
 s32 avg_fields_sdiv15_a(void *obj)
 {
     s32 sum = 0;
-    struct AvgEntry *e = (struct AvgEntry *)((u8 *)obj + 8);
+    struct AvgSample *e = (struct AvgSample *)((u8 *)obj + 8);
     s32 i;
 
-    for (i = 14; i >= 0; i -= 5)
-    {
-        sum += e->v00;
-        sum += e->v0C;
-        sum += e->v18;
-        sum += e->v24;
-        sum += e->v30;
-        e++;
-    }
+    for (i = 0; i < 15; i++)
+        sum += e[i].v;
     return sum / 15;
 }
 
 s32 avg_fields_sdiv15_b(void *obj)
 {
     s32 sum = 0;
-    struct AvgEntry *e = (struct AvgEntry *)obj;
+    struct AvgSample *e = (struct AvgSample *)obj;
     s32 i;
 
-    for (i = 14; i >= 0; i -= 5)
-    {
-        sum += e->v00;
-        sum += e->v0C;
-        sum += e->v18;
-        sum += e->v24;
-        sum += e->v30;
-        e++;
-    }
+    for (i = 0; i < 15; i++)
+        sum += e[i].v;
     return sum / 15;
 }
 

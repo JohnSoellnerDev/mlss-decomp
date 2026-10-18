@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -261,38 +262,13 @@ void spawn_trail_part(struct HeroBody *body)
         child->startX = child->x;
         child->startY = child->y;
         child->unkAE = 0;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = *(void **)((u8 *)child + 0xC);
-        *node = head;
-        *(void **)((u8 *)child + 0xC) = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = *(void **)((u8 *)child + 0xC);
-        *node = head;
-        *(void **)((u8 *)child + 0xC) = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = *(void **)((u8 *)child + 0xC);
-        *node = head;
-        *(void **)((u8 *)child + 0xC) = node;
-        i = 0xF;
-        do {
+        for (i = 0; i < 19; i++)
+        {
             node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
             head = *(void **)((u8 *)child + 0xC);
             *node = head;
             *(void **)((u8 *)child + 0xC) = node;
-            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-            head = *(void **)((u8 *)child + 0xC);
-            *node = head;
-            *(void **)((u8 *)child + 0xC) = node;
-            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-            head = *(void **)((u8 *)child + 0xC);
-            *node = head;
-            *(void **)((u8 *)child + 0xC) = node;
-            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-            head = *(void **)((u8 *)child + 0xC);
-            *node = head;
-            *(void **)((u8 *)child + 0xC) = node;
-            i -= 4;
-        } while (i >= 0);
+        }
         child->state = trail_follow_partner;
         body->state = begin_tile_update;
         set_slot_value(0x8C, -1);

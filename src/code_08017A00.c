@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 extern u8 gSys[];
@@ -103,7 +104,6 @@ ASM_FUNC("asm/code_08017A00/poll_keys.s", void poll_keys(void))
 void update_key_state(u32 keys, u32 slot)
 {
     struct KeyRecord *rec;
-    u8 *cnt;
     const u16 *tbl;
     u32 k;
     u32 old;
@@ -120,55 +120,30 @@ void update_key_state(u32 keys, u32 slot)
     rec->released = old & ~k;
     fired = 0;
     held = rec->held;
-    i = 0;
-    cnt = rec->counters;
     tbl = gKeyRepeatMaskPairs;
-    for (; i < 8; i += 2)
+    for (i = 0; i < 8; i++)
     {
-        hit = tbl[0] & k;
+        hit = tbl[i] & k;
         if (hit != 0)
         {
             if ((held & hit) == 0)
             {
                 fired |= hit;
-                cnt[0] = rec->delay;
+                rec->counters[i] = rec->delay;
             }
             else
             {
-                remaining = cnt[0] - 1;
-                cnt[0] = remaining;
+                remaining = rec->counters[i] - 1;
+                rec->counters[i] = remaining;
                 if ((remaining << 24) == 0)
                 {
                     fired |= hit;
-                    cnt[0] = rec->interval;
+                    rec->counters[i] = rec->interval;
                 }
             }
         }
         else
-            cnt[0] = hit;
-        hit = tbl[1] & k;
-        if (hit != 0)
-        {
-            if ((held & hit) == 0)
-            {
-                fired |= hit;
-                cnt[1] = rec->delay;
-            }
-            else
-            {
-                remaining = cnt[1] - 1;
-                cnt[1] = remaining;
-                if ((remaining << 24) == 0)
-                {
-                    fired |= hit;
-                    cnt[1] = rec->interval;
-                }
-            }
-        }
-        else
-            cnt[1] = hit;
-        cnt += 2;
-        tbl += 2;
+            rec->counters[i] = hit;
     }
     rec->fired = fired;
     rec->held = k;

@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -565,13 +566,8 @@ void focus_follow_spawn_orbit_child_b(struct HeroBody *body)
         child->centerX = child->posX;
         child->centerY = child->posY;
         child->timerE = 0;
-        for (i = 7; i >= 0; i -= 4)
-        {
+        for (i = 0; i < 8; i++)
             push_sprite_node(child);
-            push_sprite_node(child);
-            push_sprite_node(child);
-            push_sprite_node(child);
-        }
         child->state = orbit_nodes_b;
         body->state = pose_update_if_active_b;
     }
@@ -635,13 +631,8 @@ void focus_follow_spawn_orbit_child_c(struct HeroBody *body)
         child->centerX = child->posX;
         child->centerY = child->posY;
         child->timerE = 0;
-        for (i = 7; i >= 0; i -= 4)
-        {
+        for (i = 0; i < 8; i++)
             push_sprite_node(child);
-            push_sprite_node(child);
-            push_sprite_node(child);
-            push_sprite_node(child);
-        }
         child->state = orbit_nodes_c;
         body->state = pose_update_if_active_c;
     }

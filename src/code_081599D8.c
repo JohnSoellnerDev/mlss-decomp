@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -585,19 +586,12 @@ struct SceneObj *sub_08159F18(struct GameVars *game, s32 kind)
     void **p = game->unk1898;
     struct SceneObj *obj;
 
-    do
+    for (; i <= 0xFF; i++)
     {
         obj = p[0];
         if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[1];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[2];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        obj = p[3];
-        if (obj != 0 && obj->unk25 == kind) return obj;
-        p += 4;
-        i += 4;
-    } while (i <= 0xFF);
+        p++;
+    }
     return 0;
 }
 
@@ -647,42 +641,16 @@ END_NONMATCH
 s32 pool_first_free_slot(struct GameVars *game)
 {
     void **p;
-    s32 slot;
     s32 i;
 
     i = 0;
     p = game->unk1898;
-    do
+    for (; i <= 0xFF; i++)
     {
         if (p[0] == 0)
             return i;
-        slot = i + 1;
-        if (p[1] == 0)
-            goto found;
-        slot = i + 2;
-        if (p[2] == 0)
-            goto found;
-        slot = i + 3;
-        if (p[3] == 0)
-            goto found;
-        slot = i + 4;
-        if (p[4] == 0)
-            goto found;
-        slot = i + 5;
-        if (p[5] == 0)
-            goto found;
-        slot = i + 6;
-        if (p[6] == 0)
-            goto found;
-        slot = i + 7;
-        if (p[7] != 0)
-            goto next;
-    found:
-        return slot;
-    next:
-        p += 8;
-        i += 8;
-    } while (i <= 0xFF);
+        p++;
+    }
     return -1;
 }
 

@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 struct PartSprite
@@ -419,39 +420,13 @@ void part_fly_drop(struct Part *obj)
         child->targetB = child->posB;
         child->velA = 0;
         timer = &obj->timer;
-        node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-        head = child->spriteNodes;
-        node->next = head;
-        child->spriteNodes = node;
-        node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-        head = child->spriteNodes;
-        node->next = head;
-        child->spriteNodes = node;
-        node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-        head = child->spriteNodes;
-        node->next = head;
-        child->spriteNodes = node;
-        i = 0xF;
-        do
+        for (i = 0; i < 19; i++)
         {
             node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
             head = child->spriteNodes;
             node->next = head;
             child->spriteNodes = node;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            i -= 4;
-        } while (i >= 0);
+        }
         child->state = part_update_nodes;
         sprite_set_action(obj, 0xF, 0, 0);
         *timer = 1;
@@ -487,39 +462,13 @@ void part_spawn_timed(struct Part *obj)
             child->targetA = child->posA;
             child->targetB = child->posB;
             child->velA = 0;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
-            node->next = head;
-            child->spriteNodes = node;
-            i = 0xF;
-            do
+            for (i = 0; i < 19; i++)
             {
                 node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
                 head = child->spriteNodes;
                 node->next = head;
                 child->spriteNodes = node;
-                node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-                head = child->spriteNodes;
-                node->next = head;
-                child->spriteNodes = node;
-                node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-                head = child->spriteNodes;
-                node->next = head;
-                child->spriteNodes = node;
-                node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-                head = child->spriteNodes;
-                node->next = head;
-                child->spriteNodes = node;
-                i -= 4;
-            } while (i >= 0);
+            }
             child->state = part_update_nodes;
         }
         else
