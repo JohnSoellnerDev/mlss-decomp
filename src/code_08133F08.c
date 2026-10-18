@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct PartSprite
 {
@@ -11,12 +12,14 @@ struct PartSprite
     u8 frame20;
     u8 filler21[0x2C - 0x21];
     s16 unk2C;
+    u8 filler2E[0x30 - 0x2E];
+    struct TileEntry *list30;
 };
 
 struct Part
 {
+    u8 filler0[0x4];
     u32 unk4;
-    u8 filler8[0x8 - 0x4];
     struct PartSprite *sprite;
     struct SpriteNode *spriteNodes;
     s32 posA;
@@ -83,6 +86,14 @@ struct SpriteNode
     s32 h;
 };
 
+struct TileEntry
+{
+    u8 filler0[0xC];
+    struct SpriteNode head;
+    u8 filler1C[0x30 - 0x1C];
+    struct TileEntry *next;
+};
+
 struct TileMap
 {
     u8 filler0[0xC];
@@ -147,6 +158,10 @@ static inline void part_child_flags(struct Part *obj, struct Part *child)
 extern u8 gClassStatusChild[];
 extern u8 gClassStatusObj[];
 extern void *gUnk_03001008;
+extern u8 *gWorkBuf;
+extern u8 gUnk_02000460[];
+extern u8 gSys[];
+extern struct TileMap *gModelCtx;
 
 void run_pending_obj_callbacks(void);
 void heap_free_a(void *p);
@@ -205,6 +220,9 @@ void part_countdown_a(struct Part *obj);
 void part_countdown_b(struct Part *obj);
 void part_anim_wait(struct Part *obj);
 void part_launch_c(struct Part *obj);
+void refresh_slot_flags(void);
+void place_layer_tile(s32 x, s32 y, s32 z, s32 flag, u32 tile);
+
 void part_track(struct Part *obj);
 u32 part_check_contact(struct Part *obj);
 void part_land_check(struct Part *obj);
@@ -222,7 +240,34 @@ void part_refresh_tiles(struct Part *obj);
 void part_spawn_timed(struct Part *obj);
 void part_update_nodes(struct Part *obj);
 
-ASM_FUNC("asm/code_08133F08/part_track.s", void part_track(struct Part *obj))
+NONMATCH("asm/code_08133F08/part_track.s", void part_track(struct Part *obj))
+{
+    s32 sx;
+    s32 sy;
+    s32 sz;
+    s32 stepA;
+    s32 stepB;
+    s32 relA;
+
+    stepA = obj->limA4 - obj->targetA;
+    stepB = obj->countA8 - obj->targetB;
+    obj->posA -= obj->velA;
+    relA = obj->posA - obj->limA4;
+    obj->posB = (stepB * relA) / stepA + obj->countA8;
+    sx = obj->posA / 0x100;
+    sy = obj->posB / 0x100;
+    sz = obj->height / 0x100;
+    offset_three_words_camera(&sx, &sy, &sz, 0);
+    if (sx < -0x20)
+    {
+        obj->posA = 0xF600;
+        obj->posB = obj->owner->unk44 - 0x600;
+        obj->height = obj->owner->unk48 + 0x2A00;
+        obj_list_remove(obj);
+        obj->state = part_land_check;
+    }
+}
+END_NONMATCH
 
 u32 part_check_contact(struct Part *obj)
 {
@@ -433,7 +478,45 @@ void part_fly_drop(struct Part *obj)
     }
 }
 
-ASM_FUNC("asm/code_08133F08/part_refresh_tiles.s", void part_refresh_tiles(struct Part *obj))
+NONMATCH("asm/code_08133F08/part_refresh_tiles.s", void part_refresh_tiles(struct Part *obj))
+{
+    struct PartSprite *sprite;
+    struct TileEntry *entry;
+    struct SpriteNode *node;
+    u32 tile;
+    s32 i;
+
+    sprite = obj->sprite;
+    if (sprite->list30 != 0)
+    {
+        tile = 0x200;
+        refresh_slot_flags();
+        for (entry = sprite->list30; entry != 0; entry = entry->next)
+        {
+            for (node = &entry->head; node != 0; node = node->next)
+            {
+                place_layer_tile(node->x / 0x100, node->y / 0x100, node->h / 0x100, 1, tile);
+                tile += 2;
+            }
+        }
+    }
+    else
+    {
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3CD0, gUnk_02000460, 0x20);
+        *(u16 *)gSys |= 0x8000;
+        gModelCtx->cells[15] = gModelCtx->cells[14];
+        gModelCtx->cells[14] = gModelCtx->cells[13];
+        for (i = 0; i < 15; i++)
+        {
+            if (gModelCtx->cells[i] == 0x1FFF)
+            {
+                gModelCtx->cells[i] = 0xFFFF;
+            }
+        }
+        obj->unk4 = 0;
+    }
+}
+END_NONMATCH
 
 void part_spawn_timed(struct Part *obj)
 {
@@ -480,3 +563,4 @@ void part_spawn_timed(struct Part *obj)
 
 
 ASM_FUNC("asm/code_08133F08/part_update_nodes.s", void part_update_nodes(struct Part *obj))
+
