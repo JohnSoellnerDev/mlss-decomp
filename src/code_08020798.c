@@ -86,6 +86,21 @@ extern struct ObjListHead gUnk_0203FFB8;
 void heap_free(void *p);
 extern u16 gUnk_0203FFC4[];
 
+struct ObjFlags12
+{
+    u8 b0 : 1;
+    u8 lo12 : 2;
+    u8 b34 : 2;
+    u8 bit5 : 1;
+    u8 b67 : 2;
+};
+
+struct Lo2Bits
+{
+    u8 lo2 : 2;
+    u8 rest : 6;
+};
+
 u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g);
 void sprite_step_e6a0(struct ObjNode *obj);
 u32 find_obj_1a2c(struct ObjNode *p, u32 mode);
@@ -230,7 +245,28 @@ ASM_FUNC("asm/code_08020798/init_obj_09a8.s", void init_obj_09a8(void))
 
 ASM_FUNC("asm/code_08020798/obj_list_pass_0a8c.s", void obj_list_pass_0a8c(void))
 
-ASM_FUNC("asm/code_08020798/sprite_update_cd0.s", void sprite_update_cd0(struct ObjNode *obj))
+void sprite_update_cd0(struct ObjNode *obj)
+{
+    s32 res;
+    u8 *base;
+
+    if (obj->flags & 0x20)
+    {
+        ((struct ObjFlags12 *)&obj->flags)->bit5 = 0;
+        ((struct ObjFlags12 *)&obj->flags)->lo12 = 0;
+        if (obj->unk54 != 0)
+        {
+            res = find_or_alloc_obj_slots(obj->unk1E >> 4, obj->unk1C, ((u32)obj->flags29 << 27) >> 31, 1, 1, &obj->slotMask, -1);
+            if (res == 2)
+                ((struct Lo2Bits *)&obj->flags13)->lo2 = 0;
+            else
+            {
+                base = gSys;
+                ((struct Lo2Bits *)&obj->flags13)->lo2 = ((((u32)base[0x888] << 26) >> 31) + 1);
+            }
+        }
+    }
+}
 
 void unlink_d54(struct ObjNode *obj)
 {
@@ -366,7 +402,38 @@ ASM_FUNC("asm/code_08020798/find_or_alloc_obj_slots.s", u32 find_or_alloc_obj_sl
 
 ASM_FUNC("asm/code_08020798/free_matching_slots_1930.s", void free_matching_slots_1930(void))
 
-ASM_FUNC("asm/code_08020798/find_obj_1a2c.s", u32 find_obj_1a2c(struct ObjNode *p, u32 mode))
+u32 find_obj_1a2c(struct ObjNode *p, u32 mode)
+{
+    struct ObjNode *cur;
+
+    cur = gUnk_0203FFB8.first;
+    if (cur == NULL)
+        return 0;
+    if (mode == 2)
+    {
+        do
+        {
+            if (cur != p && !(cur->flags & 0x20) && !(cur->flags29 & 0x10)
+                && (*(u32 *)&cur->unk1C & 0x00F0FFFF) == (*(u32 *)&p->unk1C & 0x00F0FFFF))
+                return (u32)cur;
+            cur = cur->next;
+        } while (cur != NULL);
+        return 0;
+    }
+    do
+    {
+        if (cur != p && (cur->unk1E & 0xF) == (p->unk1E & 0xF))
+        {
+            if ((mode == 0 && cur->unk18 == p->unk18)
+                || (mode == 1 && cur->unk1A == p->unk1A)
+                || (mode == 3 && cur->rangeStart == p->rangeStart)
+                || (mode == 4 && cur->unk18 == p->unk18 && cur->block44 == 0))
+                return (u32)cur;
+        }
+        cur = cur->next;
+    } while (cur != NULL);
+    return 0;
+}
 
 ASM_FUNC("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(void))
 
