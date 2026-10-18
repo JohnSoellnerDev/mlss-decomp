@@ -1,6 +1,8 @@
 #include "global.h"
 #include "ram_routines.h"
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+
 struct Sprite
 {
     u8 filler0[0x12];
@@ -187,6 +189,9 @@ void enemy_partner_in_box_check(struct Owner *owner, struct Actor *ent, void **o
 void enemy_sprite_scale_check(void *owner, struct Actor *ent, void **out);
 void enemy_state_wander_run(void);
 void enemy_contact_check_state(struct Owner *owner, struct Actor *ent);
+void enemy_begin_motion(void *owner, struct Actor *ent, void **out);
+u8 step_pos_xy_c(struct Actor *ent);
+void collide_react(struct Owner *owner, struct Actor *ent, struct Actor *bro, u32 kick, u32 speed, s32 offX, s32 offY, u32 a, u32 b);
 void enemy_run_move(void);
 void load_record_fields(struct Actor *ent, u32 mode);
 void load_hit_box_words(struct Actor *ent, u32 mode);
@@ -195,7 +200,7 @@ void obj_random_target_b(void);
 void aim_and_start_move(void);
 void obj_set_cell_coord(struct Actor *ent, u32 cell, u32 arg);
 void obj_set_sprite_link(struct Actor *ent, u32 zero);
-void start_move_to_3d(struct Actor *ent, s32 x, s32 y, s32 z, s32 speed, u8 zero);
+void start_move_to_3d(struct Actor *ent, s32 x, s32 y, s32 z, s32 speed, ByteArg zero);
 void enemy_after_step_box_check(void *owner, struct Actor *ent, void **out);
 void enemy_load_frame_wait(void *owner, struct Actor *ent, void **out);
 void enemy_enter_next_state(void *owner, struct Actor *ent);
@@ -209,7 +214,6 @@ void enemy_end_countdown(void);
 void enemy_wait_after_step(void *owner, struct Actor *ent, void **out);
 void enemy_wait_after_step_b(void *owner, struct Actor *ent, void **out);
 u16 angle_of_vector16(s32 x, s32 y);
-typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
 void start_move_to(struct Actor *ent, s32 x, s32 y, s32 speed, ByteArg zero);
 u8 obj_flags_2b5_30_set(struct Actor *ent);
 void enemy_timer_then_cell(void);
@@ -246,10 +250,99 @@ void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out
 
 void enemy_enter_contact_state(void *owner, struct Actor *ent);
 
-ASM_FUNC("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_home(void))
+NONMATCH("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_home(void *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec = (u8 *)ent->rec;
+    s32 dx;
+    s32 dy;
+    s32 facing;
+    s32 (*div)(s32, s32);
+    u32 cell;
+    u16 speed;
+
+    ((struct Bits3 *)&ent->mode)->field0 = 4;
+    ent->sprite->frame20 = rec[ent->index + 0x42];
+    dx = ent->homeX - ent->posX;
+    dy = ent->homeY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        ent->angle02 = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
+    }
+    else
+    {
+        ent->angle02 = 0xFF;
+    }
+    div = (s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt));
+    dx = *(s32 *)(ai + 0x184) - ent->posX;
+    dy = *(s32 *)(ai + 0x188) - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        facing = -1;
+    }
+    cell = div(facing, 2);
+    obj_set_cell_coord(ent, cell, 0);
+    speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x46);
+    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, (u8)0);
+    *out = enemy_wait_after_step_b;
+}
+END_NONMATCH
+
 
 void enemy_idle_handler(void);
-ASM_FUNC("asm/code_08142A38/enemy_collide_then_idle.s", void enemy_collide_then_idle(void))
+void enemy_collide_then_idle(struct Owner *owner, struct Actor *ent, void **out)
+{
+    u16 *table = ent->table;
+    u8 *rec = (u8 *)ent->rec;
+    u8 idx;
+    u32 index;
+    u32 speed;
+    u32 kick;
+    u8 offX;
+    u8 offY;
+    s32 flag;
+    struct Actor *partner;
+    s32 cell;
+
+    ent->index = rand_below(4, mt19937_next());
+    if (((struct Flags1D6 *)&ent->flags1D6)->bit4)
+    {
+        ((struct Bits3 *)&ent->mode)->field0 = 2;
+        ent->sprite->frame20 = rec[ent->index + 0x28];
+        speed = *(u16 *)(rec + ent->index * 2 + 0x2C);
+        kick = rec[rand_below(2, mt19937_next()) + 0x34];
+        offX = rec[0x36];
+        offY = rec[0x37];
+        flag = 4;
+    }
+    else
+    {
+        ((struct Bits3 *)&ent->mode)->field0 = 4;
+        ent->sprite->frame20 = table[ent->index + 4];
+        speed = table[ent->index];
+        kick = table[rand_below(2, mt19937_next()) + 0x18];
+        offX = ent->filler140[0];
+        offY = ent->filler140[1];
+        flag = 0;
+    }
+    if (find_active_entry(owner, &idx))
+    {
+        index = idx;
+    }
+    else
+    {
+        index = (u32)(owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Actor **)owner)[index + 10];
+    collide_react(owner, ent, partner, kick, speed, (s8)offX, (s8)offY, 0x22, 0);
+    cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(ent->filler1C[0x24 - 0x1C] << 29) >> 29, 2);
+    obj_set_cell_coord(ent, cell + (s8)flag, 0);
+    *out = enemy_idle_handler;
+}
 
 ASM_FUNC("asm/code_08142A38/enemy_idle_handler.s", void enemy_idle_handler(void))
 
@@ -257,9 +350,7 @@ void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
 ASM_FUNC("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(void))
 
-ASM_FUNC("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))
-
-void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
+ASM_FUNC("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
 {
     u8 **routines = &gMathRoutines;
     s16 box[8];
@@ -284,7 +375,48 @@ void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
-ASM_FUNC("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out))
+NONMATCH("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec = (u8 *)ent->rec;
+    s32 dx;
+    s32 dy;
+    s32 facing;
+    s32 (*div)(s32, s32);
+    u32 cell;
+    u16 speed;
+
+    ((struct Bits3 *)&ent->mode)->field0 = 4;
+    ent->sprite->frame20 = rec[ent->index + 0x4C];
+    dx = ent->homeX - ent->posX;
+    dy = ent->homeY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        ent->angle02 = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
+    }
+    else
+    {
+        ent->angle02 = 0xFF;
+    }
+    div = (s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt));
+    dx = *(s32 *)(ai + 0x184) - ent->posX;
+    dy = *(s32 *)(ai + 0x188) - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        facing = -1;
+    }
+    cell = div(facing, 2);
+    obj_set_cell_coord(ent, cell, 0);
+    speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x50);
+    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, (u8)0);
+    *out = enemy_wait_after_step;
+}
+END_NONMATCH
+
 
 void enemy_wait_after_step(void *owner, struct Actor *ent, void **out)
 {
@@ -394,19 +526,18 @@ void enemy_z_step_done_wait(void *owner, struct Actor *ent, void **out)
     }
 }
 
-NONMATCH("asm/code_08142A38/enemy_move_home_3d.s", void enemy_move_home_3d(void *owner, struct Actor *ent, void **out))
+void enemy_move_home_3d(void *owner, struct Actor *ent, void **out)
 {
     u8 *rec = (u8 *)ent->rec;
     u16 speed;
     u8 zero;
 
     ent->sprite->frame20 = rec[ent->index + 0x38];
-    zero = 0;
     speed = *(u16 *)(rec + ent->index * 2 + 0x3C);
+    zero = 0;
     start_move_to_3d(ent, ent->homeX, ent->homeY, ent->homeZ + ent->homeDz, speed, zero);
     out[0] = enemy_z_step_done_wait;
 }
-END_NONMATCH
 
 void enemy_wander_random_edge(void *owner, struct Actor *ent, void **out)
 {
@@ -622,18 +753,7 @@ void enemy_box_point_then_collide(void *owner, struct Actor *ent, void **out)
     out[0] = random_collide;
 }
 
-NONMATCH("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out))
-{
-    struct Actor *tgt = owner->tgtA;
-    u16 speed;
-
-    ent->homeX = ent->posX;
-    ent->homeY = ent->posY;
-    speed = *(u16 *)((u8 *)ent->rec + ent->index * 2 + 0x2A);
-    start_move_to(ent, tgt->posX + (tgt->vx << 4), tgt->posY + (tgt->vy << 4), speed, (u8)0);
-    out[0] = enemy_after_step_box_check;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out))
 
 void enemy_wait_sprite_flag_then_load(void *owner, struct Actor *ent, void **out)
 {
@@ -755,9 +875,77 @@ void enemy_sprite_scale_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
-ASM_FUNC("asm/code_08142A38/enemy_contact_check_state.s", void enemy_contact_check_state(struct Owner *owner, struct Actor *ent))
+void enemy_contact_check_state(struct Owner *owner, struct Actor *ent)
+{
+    void **slot = &ent->handler;
+    u8 idx;
+    struct Actor *partner;
+    s8 *rec;
 
-ASM_FUNC("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out))
+    ((void (*)(void *, struct Actor *, void **))*slot)(owner, ent, slot);
+    if (!find_active_entry(owner, &idx))
+    {
+        return;
+    }
+    partner = ((struct Actor **)owner)[idx + 10];
+    rec = (s8 *)ent->rec;
+    {
+        s16 box[8];
+
+        box[0] = rec[0x1A] << 4;
+        box[2] = rec[0x1B] << 4;
+        box[4] = rec[0x1C] << 4;
+        box[1] = rec[0x1D] << 4;
+        box[3] = rec[0x1E] << 4;
+        box[5] = rec[0x1F] << 4;
+        if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]))
+        {
+            ent->state = enemy_enter_next_state;
+            ent->stateNext = enemy_contact_state_handler;
+        }
+    }
+}
+
+NONMATCH("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    void **slot = &ent->handler;
+    u8 idx;
+    struct Actor *partner;
+
+    ((void (*)(void *, struct Actor *, void **))*slot)(owner, ent, slot);
+    if (!(ent->flags1D6 & 1))
+    {
+        return;
+    }
+    if (find_active_entry(owner, &idx))
+    {
+        partner = ((struct Actor **)owner)[idx + 10];
+        {
+            s16 box[8];
+            u8 *rec;
+
+            rec = (u8 *)ent->rec;
+
+            box[0] = (s8)rec[0x36] << 4;
+            box[2] = (s8)rec[0x37] << 4;
+            box[4] = (s8)rec[0x38] << 4;
+            box[1] = (s8)rec[0x39] << 4;
+            box[3] = (s8)rec[0x3A] << 4;
+            box[5] = (s8)rec[0x3B] << 4;
+            if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]))
+            {
+                ent->state = enemy_run_handler_advance;
+                ent->stateNext = enemy_enter_contact_state;
+                *slot = link_to_owner_entry;
+                ent->handlerNext = link_to_owner_entry;
+                return;
+            }
+        }
+    }
+    *(void **)(ai + 0x140) = enemy_enter_contact_state;
+}
+END_NONMATCH
 
 void enemy_run_handler_advance(void *owner, struct Actor *ent)
 {
@@ -807,4 +995,50 @@ void enemy_mark_and_enter_contact(void *owner, struct Actor *ent)
     enemy_enter_contact_state(owner, ent);
 }
 
-ASM_FUNC("asm/code_08142A38/enemy_contact_engage.s", void enemy_contact_engage(void))
+void enemy_contact_engage(struct Owner *owner, struct Actor *ent)
+{
+    u8 idx;
+    struct Actor *partner;
+    void (*fn)(void *, struct Actor *);
+
+    if (!find_active_entry(owner, &idx))
+    {
+        return;
+    }
+    partner = ((struct Actor **)owner)[idx + 10];
+    {
+        s16 box[8];
+        s16 *sensor = ent->sensor;
+
+        s32 k;
+
+        box[0] = ((k = *(s16 *)((u8 *)sensor + 8)) << 4) + 8;
+        box[3] = ((k = *(s16 *)((u8 *)sensor + 0xA)) << 4) + 8;
+        box[1] = ((k = *(s16 *)((u8 *)sensor + 0xC)) << 4) + 8;
+        box[2] = ((k = *(s16 *)((u8 *)sensor + 0xE)) << 4) + 8;
+        if (!point_in_box(box, partner, 0x7FFF, 0))
+        {
+            return;
+        }
+    }
+    load_record_fields_scaled(ent, 0);
+    *(u32 *)((u8 *)ent + 0x20C) = (*(u32 *)((u8 *)ent + 0x20C) & 0xFFFC7FFF) | 0x8000;
+    {
+        s32 t = ent->flags20D;
+
+        ent->flags20D = t | 0x40;
+    }
+    ent->dz += 1;
+    {
+        s32 t = ent->flags20E;
+
+        ent->flags20E = t | 4;
+    }
+    ((struct Flags1D6 *)&ent->flags1D6)->bit1 = 1;
+    ((struct Flags1D6 *)&ent->flags1D6)->bit0 = 0;
+    ent->state = fn = (void (*)(void *, struct Actor *))obj_state_run_advance;
+    ent->stateNext = enemy_setup_wait;
+    ent->handler = enemy_end_countdown;
+    ent->handlerNext = enemy_end_countdown;
+    fn(owner, ent);
+}
