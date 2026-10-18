@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -46,7 +47,8 @@ struct SceneObj
     u16 *idTable;
     u8 filler0CC[0xF0 - 0xCC];
     u32 dirtyMask;
-    u8 filler0F4[0xF8 - 0xF4];
+    u16 unkF4;
+    u16 unkF6;
     u8 keyFlags;
     u8 pending;
     u8 filler0FA[0xFC - 0xFA];
@@ -158,6 +160,22 @@ struct FcHalfBits
     u16 unk11 : 5;
 };
 
+struct KeyRegs
+{
+    u8 filler0[0x28];
+    u16 raw28;
+    u16 raw2A;
+    u16 raw2C;
+    u16 raw2E;
+    u8 filler30[0x3C - 0x30];
+    u16 held3C;
+    u16 held3E;
+    u16 held40;
+    u16 held42;
+    u8 filler44[0x78 - 0x44];
+    u16 enable78 : 10;
+};
+
 extern void (*gUnk_03000D80[])(void);
 void set_slot_value(u32 id, s32 value);
 void map_obj_init_display(void *p);
@@ -248,9 +266,89 @@ void create_menu_object(s32 a, u32 b);
 
 ASM_FUNC("asm/code_080286C0/camera_update.s", void camera_update(void))
 
-ASM_FUNC("asm/code_080286C0/apply_anim_state.s", void apply_anim_state(void))
+struct AnimActor
+{
+    u8 filler0[0x31C];
+    u32 anim;
+};
 
-NONMATCH("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx, s32 ty, u32 speed))
+struct AnimSrc
+{
+    u8 filler0[0x22C];
+    u32 word;
+};
+
+struct AnimObj
+{
+    u8 filler0[0x33C];
+    u8 animC;
+    u8 filler33D[0x342 - 0x33D];
+    s8 animA;
+    u8 filler343;
+    u8 animB;
+    u8 filler345[0x350 - 0x345];
+    u8 mode;
+};
+
+void register_effect_entry(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
+
+NONMATCH("asm/code_080286C0/apply_anim_state.s", void apply_anim_state(struct AnimActor *actor, struct AnimObj *obj, struct AnimSrc *src))
+{
+    u32 modeLo = 0;
+    u32 modeHi = 0;
+
+    switch (((u32)obj->mode << 28) >> 28)
+    {
+    case 1:
+        modeLo = 4;
+        break;
+    case 2:
+        modeLo = 6;
+        break;
+    case 4:
+        break;
+    case 8:
+        modeLo = 2;
+        break;
+    }
+
+    switch (((u32)obj->mode << 26) >> 30)
+    {
+    case 1:
+        modeHi = 2;
+        break;
+    case 2:
+        modeHi = 1;
+        break;
+    }
+
+    if (obj->animA == 3)
+    {
+        obj->animB = 0x19;
+    }
+    else
+    {
+        switch ((s8)(obj->animB - 7))
+        {
+        case 0:
+        case 2:
+        case 3:
+            if (obj->animA == -1)
+                obj->animB = 0;
+            break;
+        case 5:
+        case 7:
+            if (obj->animA == -1)
+                obj->animB = 0xB;
+            break;
+        }
+    }
+
+    register_effect_entry(actor->anim, ((u32)(((s32)((u32)obj->animC << 25)) >> 1)) >> 24, src->word, modeLo, modeHi, ((s8)obj->animB ^ 0x10) != 0, (u16)(s8)obj->animB);
+}
+END_NONMATCH
+
+void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx, s32 ty, u32 speed)
 {
     u16 spd = speed;
 
@@ -284,8 +382,12 @@ NONMATCH("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set
         s32 dx = (s16)obj->unk2F2 - (s16)obj->unk2EC;
         s32 dy = (s16)obj->unk2F4 - (s16)obj->unk2EE;
         s32 dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
+        s32 q;
+        u16 *dur;
 
-        obj->unk2FC = (u16)(((dist << 8) / (s16)spd) + 1);
+        q = (dist << 8) / (s16)spd;
+        dur = &obj->unk2FC;
+        *dur = (u16)(q + 1);
     }
     else
     {
@@ -295,12 +397,38 @@ NONMATCH("asm/code_080286C0/sprites_obj_set_move_target.s", void sprites_obj_set
     obj->unk2FE = arc_tan2((s16)(obj->unk2EE - obj->unk2F4), (s16)(obj->unk2F2 - obj->unk2EC)) >> 8;
     ((struct PendingBits *)&obj->pending)->low2 = mode;
 }
-END_NONMATCH
 
 void clear_obj_state_2f8(struct SceneObj *obj);
 ASM_FUNC("asm/code_080286C0/sprites_obj_step_move.s", void sprites_obj_step_move(void))
 
-ASM_FUNC("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(void))
+NONMATCH("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(struct SceneObj *obj, u16 keep))
+{
+    u32 block;
+    u32 allowed;
+    u32 old;
+
+    block = ~keep & 0x3FF;
+    old = ((struct KeyRegs *)gSys)->enable78;
+    allowed = old & block;
+    ((struct KeyRegs *)gSys)->enable78 = block;
+    if ((obj->keyFlags & 0x20) == 0)
+    {
+        ((struct KeyRegs *)gSys)->held3C = keep | ((struct KeyRegs *)gSys)->held3C;
+        poll_keys();
+        ((struct KeyRegs *)gSys)->held3E &= allowed;
+        ((struct KeyRegs *)gSys)->held40 &= allowed;
+        ((struct KeyRegs *)gSys)->held42 = allowed & ((struct KeyRegs *)gSys)->held42;
+    }
+    else
+    {
+        ((struct KeyRegs *)gSys)->held3C = ((struct KeyRegs *)gSys)->raw28 & block;
+        ((struct KeyRegs *)gSys)->held3E = ((struct KeyRegs *)gSys)->raw2A & block;
+        ((struct KeyRegs *)gSys)->held40 = ((struct KeyRegs *)gSys)->raw2C & block;
+        ((struct KeyRegs *)gSys)->held42 = ((struct KeyRegs *)gSys)->raw2E & block;
+    }
+    obj->keyFlags |= 0x20;
+}
+END_NONMATCH
 
 void free_slot_and_call_1588(s32 unused, u32 a, u32 b, s32 slot)
 {
@@ -537,7 +665,34 @@ void call_7380_for_state(struct SceneObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(void))
+NONMATCH("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(struct SceneObj *obj, u32 load, u32 p2, u32 p3, u32 p5, u32 p6))
+{
+    u32 lo;
+    u32 hi;
+    u32 e00;
+    u32 e04;
+    u8 *pal = gSys;
+
+    lo = (u16)p5;
+    hi = (p6 << 16) >> 16;
+    pal += 0x884;
+    *(u32 *)pal |= (p6 << 16) | lo;
+    if (load == 0)
+    {
+        if (obj->dirtyMask != 0)
+            flush_dirty_blocks(obj);
+    }
+    else
+    {
+        load_dirty_blocks(obj, hi, lo);
+    }
+    obj->unkF4 = lo;
+    obj->unkF6 = hi;
+    e00 = (lo & 1) ? gUnk_03000E00 : 0;
+    e04 = (lo & 1) ? gUnk_03000E04 : 0;
+    sub_08115F54(obj->child, (u8)load, (u16)p3, (u16)p2, lo, hi, e00, e04);
+}
+END_NONMATCH
 
 struct BdObj
 {
@@ -631,11 +786,52 @@ void queue_tile_dmas(struct SceneObj *obj)
     dma_copy_or_queue(obj->table->unk0C->data, (void *)0x060108C0, 0x500, 0x20, 0);
 }
 
-ASM_FUNC("asm/code_080286C0/load_table_14b8.s", void load_table_14b8(void))
+void load_table_14b8(struct SceneObj *obj)
+{
+    const u16 *p = gLookup14b8Ids;
+    s32 i;
 
-ASM_FUNC("asm/code_080286C0/load_table_13b4.s", void load_table_13b4(void))
+    for (i = 0; i < 11; p++, i++)
+        obj->table->ids2C[i] = (void *)lookup_or_alloc_14b8(0, *p, -1, 1);
+}
 
-ASM_FUNC("asm/code_080286C0/update_entry_sprites.s", void update_entry_sprites(void))
+NONMATCH("asm/code_080286C0/load_table_13b4.s", void load_table_13b4(struct SceneObj *obj))
+{
+    const u16 *p;
+    s32 i;
+
+    gUnk_03000C78 = 0;
+    p = gLookup13b4Ids;
+    for (i = 0; i < 11; p++, i++)
+        ((void **)obj->table)[i] = (void *)lookup_or_alloc_13b4(0, *p, -1, 1);
+    gUnk_03000C78 = (u32)sub_0800063C;
+}
+END_NONMATCH
+
+static inline void place_entry_sprite(struct EntrySlot *e, u16 *camX, u16 *camY)
+{
+    if ((e->sprite->flags12 & 0x20) == 0)
+    {
+        e->sprite->posX = e->x - *camX;
+        e->sprite->posY = e->y - *camY;
+    }
+}
+
+NONMATCH("asm/code_080286C0/update_entry_sprites.s", void update_entry_sprites(struct SceneObj *obj))
+{
+    struct SceneTable *t = obj->table;
+    struct EntrySlot *e = &t->entries25C[0];
+    u16 *camX;
+    u16 *camY;
+
+    camX = (u16 *)&obj->camX;
+    camY = (u16 *)&obj->camY;
+    place_entry_sprite(e, camX, camY);
+    place_entry_sprite(e + 1, camX, camY);
+    place_entry_sprite(e + 2, camX, camY);
+    place_entry_sprite(e + 3, camX, camY);
+}
+END_NONMATCH
 
 void unlink_entry_sprites(struct SceneObj *obj)
 {
@@ -724,48 +920,10 @@ void reset_0d80_table(void)
 {
     void (*handler)(void) = call_0d80_handlers;
     void (**table)(void) = gUnk_03000D80;
-    void (*zero)(void) = 0;
-    s32 end;
-    s32 rem;
-    void (**p)(void);
-    void (**q)(void);
-    s32 lim;
+    s32 i;
 
-    p = &table[1];
-    end = (s32)table - 1;
-    rem = (end - (s32)p) & 0xF;
-    if ((s32)p <= end)
-        goto one;
-    if (rem == 0)
-        goto loop;
-    lim = 12;
-    if (rem >= lim)
-        goto one;
-    lim = 8;
-    if (rem >= lim)
-        goto two;
-    if (rem <= 3)
-        goto loop;
-    *p-- = zero;
-two:
-    *p-- = zero;
-one:
-    *p-- = zero;
-    if ((s32)p < (s32)table)
-        goto done;
-loop:
-    do
-    {
-        *p = zero;
-        q = p - 1;
-        *q = zero;
-        q--;
-        *q = zero;
-        q--;
-        *q = zero;
-        p -= 4;
-    } while ((s32)p >= (s32)table);
-done:
+    for (i = 0; i < 2; i++)
+        table[i] = 0;
     set_irq_callback(2, handler);
 }
 
