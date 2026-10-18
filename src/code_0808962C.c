@@ -32,6 +32,15 @@ struct Flags77Bits
     u8 high : 1;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct ActorPart
 {
     u8 filler0[0x40];
@@ -77,7 +86,7 @@ struct ActorObj
     u8 filler44[0x4C - 0x44];
     void (*state)(struct ActorObj *);
     void (*savedState)(struct ActorObj *);
-    u8 filler54[0x58 - 0x54];
+    void (*handler54)(struct ActorObj *);
     void (*handler58)(struct ActorObj *);
     void (*handler5C)(struct ActorObj *);
     void (*handler60)(struct ActorObj *);
@@ -289,9 +298,104 @@ void set_target_from_records(struct ActorObj *obj)
     obj->state = start_motion_by_owner_slot;
 }
 
-ASM_FUNC("asm/code_0808962C/spawn_child_with_offsets.s", void spawn_child_with_offsets(struct ActorObj *obj))
+NONMATCH("asm/code_0808962C/spawn_child_with_offsets.s", void spawn_child_with_offsets(struct ActorObj *obj))
+{
+    struct ActorObj *owner;
+    struct ActorObj *child;
+    struct ActorPart *ownerPart;
+    s32 spriteType;
+    s32 ownerSlot;
+    s32 tileX;
+    s32 tileY;
+    s32 tileH;
+    s32 len;
+    s32 dx;
+    s32 v1;
 
-ASM_FUNC("asm/code_0808962C/offset_and_move_child.s", void offset_and_move_child(struct ActorObj *obj))
+    if (obj->pose->flags & 8)
+    {
+        if (obj->part->slot == 0x10)
+        {
+            ownerSlot = obj->owner->part->slot;
+            spriteType = 0x4060;
+        }
+        else
+        {
+            ownerSlot = obj->owner->part->slot;
+            spriteType = 0x4063;
+        }
+        if (ownerSlot == -1)
+        {
+            spriteType--;
+        }
+        child = obj_spawn(obj->part, spriteType, obj->baseX / 0x100 - 0xA, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 0xD, ((u32)((u32)obj->pose->unk11 << 25)) >> 31, 1);
+        obj->child = child;
+        child->flags78 = (child->flags78 & 0x1F) | 0x20;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = offset_and_move_child;
+        child->handler68 = on_arrive;
+        child->handler54 = hit_react;
+        child->unk6C = obj->unk6C;
+        obj_list_push_default(child);
+        child->handler5C = (void (*)(struct ActorObj *))contact_step_79e4;
+        child->handler60 = (void (*)(struct ActorObj *))contact_step_75bc;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->paramA8 = obj->paramA8;
+        owner = obj->owner;
+        child->owner = owner;
+        ownerPart = owner->part;
+        tileX = (ownerPart->targetX - child->baseX) / 4;
+        tileY = (ownerPart->targetY - child->baseY) / 4;
+        tileH = (ownerPart->targetH - child->baseH + 0x800) / 4;
+        len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(tileX * tileX + tileY * tileY + tileH * tileH);
+        child->dx = obj->param9C;
+        dx = child->dx;
+        v1 = dx + (len << 3);
+        child->dy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * -dx + v1 / 2, v1);
+        set_slot_value(0x89, -1);
+        sprite_set_action(obj, 5, 0, 0);
+        obj->unk6C = 0;
+        obj->state = 0;
+        obj->handler68 = 0;
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0808962C/offset_and_move_child.s", void offset_and_move_child(struct ActorObj *obj))
+{
+    struct ActorPart *rec = obj->part;
+    struct ActorObj *owner = obj->owner;
+    s16 outX;
+    s16 outY;
+    s16 outH;
+    s32 bhp;
+
+    obj->dx = (u16)obj->dx + (u16)obj->dy;
+    move_step(&outX, &outY, &outH,
+              owner->part->targetX - rec->baseX,
+              owner->part->targetY - rec->baseY,
+              owner->part->targetH - (bhp = rec->baseH + 0x500, bhp),
+              obj->dx);
+    obj->posX = obj->baseX + outX;
+    obj->posY = obj->baseY + outY;
+    obj->posH = obj->baseH + outH;
+    if (obj->dx <= -obj->param9C)
+    {
+        struct ActorObj *sprite = (struct ActorObj *)((u8 *)rec + 8);
+
+        sprite->state = (void (*)(struct ActorObj *))wait_pose_then_index;
+        sprite->handler68 = on_arrive;
+        sprite->unk6C = obj->unk6C;
+        sprite_set_action(sprite, 6, 0, 0);
+        obj->unk6C = 0;
+        obj_release(obj);
+    }
+}
+END_NONMATCH
 
 s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 arg)
 {
@@ -520,4 +624,39 @@ void drift_step(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808962C/wait_then_spawn_part.s", void wait_then_spawn_part(struct ActorObj *obj))
+void wait_then_spawn_part(struct ActorObj *obj)
+{
+    s32 timer = obj->timer - 1;
+
+    obj->timer = timer;
+    if ((s16)timer <= 0)
+    {
+        sprite_set_action(obj, 3, 0, 0);
+        if (obj->unk98 < 0)
+        {
+            s32 span;
+
+            obj->dh = 0x80;
+            span = 0x880;
+            obj->acc94 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xFFFFC440, span);
+            obj->state = bounce_step;
+            set_slot_value(0x8D, -1);
+        }
+        else
+        {
+            struct ActorObj *owner;
+            struct ActorPart *ownerPart;
+
+            obj_list_push_default(obj);
+            owner = obj->owner;
+            obj->targetX = ((ownerPart = owner->part)->targetX + obj->baseX) / 2 + 0x100;
+            obj->targetY = (ownerPart->targetY + obj->baseY) / 2;
+            obj->targetH = (ownerPart->targetH + obj->baseH) / 2;
+            obj->acc94 = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX,
+                                       obj->targetY - obj->baseY, obj->targetH - obj->baseH,
+                                       0x400, 0x200, 0x100, 0);
+            set_slot_value(0x8D, -1);
+            obj->state = drift_settle;
+        }
+    }
+}
