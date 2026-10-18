@@ -299,7 +299,29 @@ void actor_side_action_when_active(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806BCCC/actor_side_action_timer8_child.s", void actor_side_action_timer8_child(struct ActorObj *obj))
+NONMATCH("asm/code_0806BCCC/actor_side_action_timer8_child.s", void actor_side_action_timer8_child(struct ActorObj *obj))
+{
+    s32 action;
+    u32 t;
+
+    if (obj->pose->flags & (t = 8))
+    {
+        if (obj->paramA8 == 0)
+        {
+            action = obj->paramA4;
+            action += 2;
+        }
+        else
+        {
+            action = obj->paramA4;
+            action += 5;
+        }
+        sprite_set_action(obj, action, 0, 0);
+        obj->timer = t;
+        obj->state = obj_spawn_child_by_slot;
+    }
+}
+END_NONMATCH
 
 void actor_spawn_motion_child(struct ActorObj *obj)
 {
@@ -388,7 +410,70 @@ void actor_plan_arc_path(struct ActorObj *obj)
     obj->state = actor_arc_move_step;
 }
 
-ASM_FUNC("asm/code_0806BCCC/actor_arc_move_step.s", void actor_arc_move_step(struct ActorObj *obj))
+void actor_arc_move_step(struct ActorObj *obj)
+{
+    s32 centered;
+    s32 sq;
+    s32 arc;
+    s32 off;
+    s32 slot;
+    s32 none;
+    s32 next;
+    u32 kind;
+    s32 *targetXp;
+    struct ActorObj *partActor;
+    struct ActorPart *part;
+    struct ActorObj *actor;
+    u8 *node;
+    s32 pair;
+
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
+    centered = (s16)obj->timer - obj->paramA0 / 2;
+    sq = centered * centered;
+    arc = obj->param9C * sq;
+    off = (obj->dh << 8) + 0x3800;
+    obj->posH = arc + off;
+    obj->timer++;
+    if ((s16)obj->timer > obj->paramA0)
+    {
+        part = obj->part;
+        effect_spawn_at(0x1C19, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
+        partActor = (struct ActorObj *)((u8 *)obj->part + 8);
+        slot = obj->owner->part->slot;
+        none = -1;
+        kind = 0x12;
+        if (slot != none)
+        {
+            kind = 0x13;
+        }
+        pair = 0;
+        targetXp = &obj->targetX;
+        for (; pair < 6; pair += 2)
+        {
+            node = gWorld->partners[pair];
+            actor = (struct ActorObj *)(node + 8);
+            if ((node[0x7E] & 6) == 4)
+            {
+                resolve_contact_action(partActor->owner, actor, actor->posX / 0x100, actor->posH / 0x100, kind);
+                sprite_set_action(actor, 1, 0, 0);
+            }
+            next = pair + 1;
+            node = gWorld->partners[next];
+            actor = (struct ActorObj *)(node + 8);
+            if ((node[0x7E] & 6) == 4)
+            {
+                resolve_contact_action(partActor->owner, actor, actor->posX / 0x100, actor->posH / 0x100, kind);
+                sprite_set_action(actor, 1, 0, 0);
+            }
+        }
+        *targetXp = 0x1E;
+        obj->state = actor_countdown_release_partners;
+        ((struct Flags79Bits *)&obj->pose->flags)->bit5 = 1;
+        obj->posX = 0x12C00;
+        set_slot_value(0x40, -1);
+    }
+}
 
 void actor_effect_then_wait_index(struct ActorObj *obj)
 {
