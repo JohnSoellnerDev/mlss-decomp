@@ -114,7 +114,7 @@ ASM_FUNC("asm/code_0815B1DC/scene_free_objects.s", void scene_free_objects(void)
 
 ASM_FUNC("asm/code_0815B1DC/transition_scene_step.s", void transition_scene_step(void))
 
-NONMATCH("asm/code_0815B1DC/camera_follow_chars.s", void camera_follow_chars(u8 *game))
+void camera_follow_chars(u8 *game)
 {
     u32 *pa = (u32 *)(game + 0x1C98);
     u32 *pb;
@@ -125,13 +125,15 @@ NONMATCH("asm/code_0815B1DC/camera_follow_chars.s", void camera_follow_chars(u8 
     s32 bx;
     s32 x;
     s32 y;
+    s32 dx;
 
     a = *pa;
     pb = (u32 *)(game + 0x1C9C);
     b = *pb;
     ax = ((struct CamChar *)a)->x;
     bx = ((struct CamChar *)b)->x;
-    *(s32 *)(game + 0x1CA4) = bx + (ax - bx) / 2 - 0x7800;
+    dx = ax - bx;
+    *(s32 *)(game + 0x1CA4) = bx + dx / 2 - 0x7800;
     camX = (s32 *)(game + 0x1CA4);
     *(s32 *)(game + 0x1CA8) = (((struct CamChar *)*pb)->y + ((struct CamChar *)*pa)->y) / 2 - 0x8C00;
 
@@ -160,7 +162,6 @@ NONMATCH("asm/code_0815B1DC/camera_follow_chars.s", void camera_follow_chars(u8 
         *(s32 *)(game + 0x1CA8) = 0x6000;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0815B1DC/obj_spawn_by_kind.s", void obj_spawn_by_kind(void))
 
