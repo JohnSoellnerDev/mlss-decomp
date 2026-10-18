@@ -200,7 +200,6 @@ struct NodeDesc
 ASM_FUNC("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_objects_draw_obj_tiles(void))
 
 ASM_FUNC("asm/code_0807ED70/set_body_part.s", void set_body_part(void))
-
 void obj_free_parts(struct SpriteObj *obj)
 {
     struct SpriteObj *part;
@@ -233,7 +232,52 @@ extern u8 *gParty;
 void mem_copy_fast(void *dst, const void *src, u32 n);
 ASM_FUNC("asm/code_0807ED70/hero_select_index.s", void hero_select_index(void))
 
-ASM_FUNC("asm/code_0807ED70/sprite_objects_obj_show_at.s", void sprite_objects_obj_show_at(void))
+struct ShowRec
+{
+    u8 filler0[0x10];
+    s32 posY;
+    u8 filler14[0x18 - 0x14];
+    s32 posX;
+    u8 filler1C[0xB8 - 0x1C];
+    u16 unkB8;
+    u8 fillerBA[0xC3 - 0xBA];
+    s8 offY;
+    u8 fillerC4;
+    s8 offX;
+};
+
+void obj_stop(void *obj);
+void apply_partner_effect(void *a, void *b, u32 strength, s32 c, s32 x, s32 z, s32 d);
+
+static inline s32 to_whole_pixels(s32 v)
+{
+    if (v < 0)
+        v += 0xFF;
+    return v >> 8;
+}
+
+NONMATCH("asm/code_0807ED70/sprite_objects_obj_show_at.s", s32 sprite_objects_obj_show_at(void *target, struct SpriteObj *obj, u32 arg))
+{
+    void *ring;
+    struct ShowRec *rec;
+
+    ring = obj->ring;
+    if (ring == NULL)
+        return 0;
+    rec = (struct ShowRec *)obj;
+    if (obj->record == NULL)
+        rec = (struct ShowRec *)((u8 *)ring + 8);
+    apply_partner_effect(target, rec, arg, 0, to_whole_pixels(rec->posY) + rec->offY,
+                         to_whole_pixels(rec->posX) + rec->offX, 0);
+    rec->unkB8 = 0x193;
+    if (*((u8 *)ring + 0x111) & 2)
+        return 0;
+    if (*(s16 *)((u8 *)ring + 0xF6) != 0)
+        return 0;
+    obj_stop((u8 *)ring + 8);
+    return -1;
+}
+END_NONMATCH
 
 void display_flush(void)
 {
@@ -463,7 +507,28 @@ void task_draw_step_b(struct Task *task)
     }
 }
 
-ASM_FUNC("asm/code_0807ED70/oam_list_rows_a.s", void oam_list_rows_a(void))
+void oam_list_rows_a(struct OamRow *row, s32 count, u32 layer)
+{
+    u16 *dst;
+    u32 layerBits;
+    u16 attr1;
+    u16 attr2;
+
+    dst = (u16 *)(gWorkBuf + 0x37E8);
+    layerBits = layer << 9;
+    while (--count != -1)
+    {
+        attr1 = row->hw0;
+        *dst++ = *(u8 *)row - 0x50;
+        *dst++ = (attr1 & 0xFF00) | 0x100;
+        attr2 = row->hw2;
+        *dst++ = (attr2 & 0x1FF) - 0x78;
+        *dst++ = (attr2 & 0xC000) | layerBits;
+        *dst++ = row->hw4;
+        row->hw6 = 1;
+        row = row->next;
+    }
+}
 
 void oam_list_rows_b(struct OamRow *row, s32 count)
 {
