@@ -190,7 +190,38 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08069778/actor_land_and_move.s", void actor_land_and_move(struct ActorObj *obj))
+NONMATCH("asm/code_08069778/actor_land_and_move.s", void actor_land_and_move(struct ActorObj *obj))
+{
+    obj->posH += obj->paramA4;
+    obj->paramA4 -= obj->paramA8;
+    if (obj->posH <= 0)
+    {
+        obj->posH = 0;
+        sprite_set_action(obj, 3, 0, 0);
+        if (obj->dx == 0)
+        {
+            obj->targetX = obj->owner->part->targetX + (obj->param9C << 8);
+            obj->targetY = obj->owner->part->targetY;
+        }
+        else
+        {
+            obj->targetX = obj->param9C;
+            obj->targetY = obj->paramA0;
+        }
+        obj->motionSpeed = 0x100;
+        obj->targetH = obj->baseH;
+        ((struct ActorFlags79Bits *)&obj->flags79)->bit5 = 1;
+        obj->motionStart = 0;
+        start_motion(obj);
+        obj->timer = 0x14;
+        obj->state = actor_wait_index_action4;
+        if (obj->dx == 0)
+            set_slot_value(0x81, -1);
+        else
+            set_slot_value(0x81, -1);
+    }
+}
+END_NONMATCH
 
 void actor_start_motion_wait(struct ActorObj *obj)
 {
@@ -341,7 +372,22 @@ void actor_timeout_release(struct ActorObj *obj)
     task_list_remove(obj->part);
 }
 
-ASM_FUNC("asm/code_08069778/actor_wait_index_action4.s", void actor_wait_index_action4(struct ActorObj *obj))
+void actor_wait_index_action4(struct ActorObj *obj)
+{
+    if (obj->index == 0)
+    {
+        if (obj->dx == 0)
+            sound_stop_song(0x81);
+        else
+            sound_stop_song(0x81);
+        sprite_set_action(obj, 4, 0, 0);
+        if (obj->dx == 0)
+            obj->timer = 4;
+        else
+            obj->timer = 4;
+        obj->state = actor_start_motion_wait;
+    }
+}
 
 u32 unknown_part_steps_08069c48(struct ActorObj *obj)
 {
