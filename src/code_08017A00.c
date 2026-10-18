@@ -5,6 +5,7 @@ extern u32 gUnk_03000014[];
 extern u8 gUnk_02000480[];
 extern u8 gUnk_03000374[];
 extern u8 gUnk_02000C80[];
+extern u8 gUnk_02000C8C[];
 extern u8 gUnk_03001BD8[];
 extern const u16 gKeyRepeatMaskPairs[];
 extern const u8 gHeapTags[];
@@ -25,11 +26,25 @@ void copy_shadow_to_io(void);
 void flush_palette_blocks(void);
 void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
 
+struct DmaQueueEntry
+{
+    u32 unk0;
+    u32 dst;
+    u32 unk8;
+    u32 unkC;
+};
+
 struct SysArea
 {
-    u8 filler0[0x24];
+    u16 unk0;
+    u16 unk2;
+    struct DmaQueueEntry *volatile dmaQueue;
+    vu8 dmaCount;
+    u8 filler9[0x20 - 9];
+    u32 frameCount;
     u32 playFrames;
-    u8 filler28[0x888 - 0x28];
+    u8 filler28[0x884 - 0x28];
+    u32 palMask;
     u8 sysFlags;
     u8 tickFlags;
     u8 filler88A[0x88C - 0x88A];
@@ -43,6 +58,10 @@ struct SysArea
     u8 filler8A0[0x8A4 - 0x8A0];
     u16 unk8A4;
     u16 unk8A6;
+    u8 filler8A8[0x8C1 - 0x8A8];
+    u8 vblankCount;
+    u8 filler8C2[0x8C4 - 0x8C2];
+    u32 irqCallback;
 };
 
 struct DmaChannel
@@ -85,14 +104,65 @@ ASM_FUNC("asm/code_08017A00/frame_update.s", void frame_update(void))
 
 ASM_FUNC("asm/code_08017A00/vblank_irq_callback.s", void vblank_irq_callback(void))
 
-ASM_FUNC("asm/code_08017A00/flush_palette_blocks.s", void flush_palette_blocks(void))
+
+void flush_palette_blocks(void)
+{
+    struct DmaRegs *dma3;
+    u32 bits;
+    u8 *src;
+    u8 *dst;
+
+    if (((struct SysArea *)gSys)->palMask == 0)
+        return;
+    bits = ((u32)((struct SysArea *)gSys)->unk0 << 16) | ((struct SysArea *)gSys)->unk2;
+    bits &= ((struct SysArea *)gSys)->palMask;
+    if ((((struct SysArea *)gSys)->sysFlags & 0x40) == 0)
+    {
+        src = gUnk_02000080;
+        dst = (u8 *)0x05000000;
+        if (bits != 0)
+        {
+            do
+            {
+                if ((bits & 1) != 0)
+                {
+                    dma3 = (struct DmaRegs *)0x040000D4;
+                    dma3->src = (u32)src;
+                    dma3->dst = (u32)dst;
+                    dma3->ctl = 0x84000008;
+                    (void)dma3->ctl;
+                }
+                src += 0x20;
+                dst += 0x20;
+                bits >>= 1;
+            } while (bits != 0);
+        }
+    }
+    else
+    {
+        src = gUnk_02000080;
+        dst = (u8 *)0x05000000;
+        if (bits != 0)
+        {
+            do
+            {
+                if ((bits & 1) != 0)
+                    cpu_fast_set(src, dst, 8);
+                src += 0x20;
+                dst += 0x20;
+                bits >>= 1;
+            } while (bits != 0);
+        }
+    }
+    ((struct SysArea *)gSys)->unk2 = 0;
+    ((struct SysArea *)gSys)->unk0 = 0;
+}
 
 ASM_FUNC("asm/code_08017A00/dma_copy_or_queue.s", void dma_copy_or_queue(void))
 
 ASM_FUNC("asm/code_08017A00/dma_fill_or_queue.s", void dma_fill_or_queue(void))
 
 ASM_FUNC("asm/code_08017A00/dma_cancel_request.s", void dma_cancel_request(void))
-
 ASM_FUNC("asm/code_08017A00/dma_queue_drain.s", void dma_queue_drain(void))
 
 ASM_FUNC("asm/code_08017A00/copy_shadow_to_io.s", void copy_shadow_to_io(void))
@@ -165,7 +235,30 @@ void set_sys24_request(u32 value)
 
 ASM_FUNC("asm/code_08017A00/sleep_until_key.s", void sleep_until_key(void))
 
-ASM_FUNC("asm/code_08017A00/oam_affine_identity_init.s", void oam_affine_identity_init(void))
+NONMATCH("asm/code_08017A00/oam_affine_identity_init.s", void oam_affine_identity_init(void))
+{
+    u16 *base;
+    u16 *q;
+    s32 n;
+    u32 k;
+    u32 off;
+
+    off = (((u32)((struct SysArea *)gSys)->sysFlags << 28) >> 31) << 10;
+    base = (u16 *)((u8 *)gSys + 0x80 + off);
+    for (n = 0x20; n != 0; n -= 8)
+    {
+        q = base;
+        for (k = 0; k < 8; k++)
+        {
+            q[3] = 0x100;
+            q[7] = 0;
+            q[11] = 0;
+            q[15] = 0x100;
+            q += 16;
+        }
+        base = (u16 *)((u8 *)base + 0x100);
+    }
+}END_NONMATCH
 
 void irq_nop(void)
 {
@@ -195,9 +288,46 @@ void set_irq_callback(u32 kind, void *handler)
 
 ASM_FUNC("asm/code_08017A00/init_heaps.s", void init_heaps(void))
 
-ASM_FUNC("asm/code_08017A00/heap_free.s", void heap_free(void *p))
+NONMATCH("asm/code_08017A00/heap_free.s", void heap_free(void *p))
+{
+    const u8 *src;
+    struct HeapBlock *blk;
+    struct HeapBlock *prev;
+    struct HeapBlock *next;
+    struct HeapBlock *link;
+
+    if (p == 0)
+        return;
+    blk = (struct HeapBlock *)p - 1;
+    prev = blk->prev;
+    next = blk->next;
+    blk->size = blk->size | 1;
+    src = gHeapTags + 0x40;
+    ((u8 *)p)[-4] = src[0];
+    ((u8 *)p)[-3] = src[1];
+    ((u8 *)p)[-2] = src[2];
+    ((u8 *)p)[-1] = src[3];
+    if (next != 0 && (next->size & 1) != 0)
+    {
+        blk->size = blk->size + (next->size & ~1);
+        link = next->next;
+        blk->next = link;
+        if (link != 0)
+            link->prev = blk;
+    }
+    if (prev != 0 && (prev->size & 1) != 0)
+    {
+        prev->size = prev->size + (blk->size & ~1);
+        link = blk->next;
+        prev->next = link;
+        if (link != 0)
+            link->prev = prev;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08017A00/heap_alloc_raw.s", void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag))
+
 
 void heap_free_a(void *p)
 {
@@ -211,10 +341,12 @@ void heap_free_b(void *p)
 
 NONMATCH("asm/code_08017A00/heap_alloc.s", void *heap_alloc(u32 size, u32 pool, const u8 *tag, u8 clear))
 {
-    void *p = heap_alloc_raw(pool, size, tag);
+    u32 zero;
+    void *p;
+    p = heap_alloc_raw(pool, size, tag);
     if (clear != 0)
     {
-        u32 zero = 0;
+        zero = 0;
         cpu_set(&zero, p, ((size << 9) >> 11) | 0x05000000);
     }
     return p;
