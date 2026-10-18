@@ -29,6 +29,8 @@ struct World
 {
     u8 filler0[0x58];
     struct Slot *slots[8];
+    u8 filler78[4];
+    u8 *cur;
 };
 
 struct OwnerState
@@ -69,6 +71,10 @@ struct Entry
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
 
+void set_var(u8 *mid, u8 *low, u8 *flagsA, u8 *flagsB, s16 index, u32 value);
+u32 world_frame_index(struct Owner *owner);
+u32 world_frame_index_b(struct Owner *owner);
+
 void slot_set_value(struct Owner *owner, u32 idx, s32 value, u32 flag);
 void slot_set_vec(u32 idx, s32 x, s32 y, s32 z, u32 flag);
 void slot_start_motion(u32 idx, u32 flag);
@@ -83,9 +89,9 @@ void slot_set_flag6(struct Owner *owner, s32 idx, s32 flag);
 void obj_detach_active(void *obj);
 void slot_set_bias(struct Owner *owner, u32 idx, s32 value);
 void slot_read_pos(struct Owner *owner, s32 idx, s16 *x, s16 *y, s16 *z);
+void apply_pose_to_parts(void *obj);
 
 ASM_FUNC("asm/code_080F3F2C/cmd_reset_slot_node.s", void cmd_reset_slot_node(void))
-
 u32 cmd_copy_if_active(struct Owner *owner, u32 *dst, u32 *block)
 {
     u8 idx;
@@ -117,13 +123,11 @@ u32 cmd_copy_if_active(struct Owner *owner, u32 *dst, u32 *block)
 }
 
 ASM_FUNC("asm/code_080F3F2C/entry_flag_command.s", void entry_flag_command(void))
-
 ASM_FUNC("asm/code_080F3F2C/entry_value_command.s", void entry_value_command(void))
 
 ASM_FUNC("asm/code_080F3F2C/entry_mode_command.s", void entry_mode_command(void))
 
 ASM_FUNC("asm/code_080F3F2C/entry_flag_store.s", void entry_flag_store(void))
-
 NONMATCH("asm/code_080F3F2C/owner_entry_cmds_cmd_slot_set_motion.s", u32 owner_entry_cmds_cmd_slot_set_motion(struct Owner *owner, struct Obj *obj, struct Cmd *cmd))
 {
     u8 idx;
@@ -333,7 +337,6 @@ END_NONMATCH
 
 
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_set_record_state.s", void cmd_slot_set_record_state(void))
-
 NONMATCH("asm/code_080F3F2C/cmd_slot_reload_object.s", u32 cmd_slot_reload_object(struct Owner *owner, void *unused, struct Cmd *cmd))
 {
     struct Entry *entry;
@@ -419,11 +422,59 @@ NONMATCH("asm/code_080F3F2C/cmd_slot_reload_flagged.s", u32 cmd_slot_reload_flag
 END_NONMATCH
 
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_mode_owner.s", void cmd_slot_mode_owner(void))
-
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_mode_cmd.s", void cmd_slot_mode_cmd(void))
-
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_copy_tile.s", void cmd_slot_copy_tile(void))
 
 ASM_FUNC("asm/code_080F3F2C/cmd_set_var_distance.s", void cmd_set_var_distance(void))
+u32 cmd_set_var_from_source(struct Owner *owner, u8 *dst, struct Cmd *cmd, u8 *extra)
+{
+    s32 value;
 
-ASM_FUNC("asm/code_080F3F2C/cmd_set_var_from_source.s", void cmd_set_var_from_source(void))
+    switch (cmd->unk4)
+    {
+    case 0:
+        value = *((u8 *)gWorld + 0x2BB);
+        break;
+    case 1:
+        {
+            s16 *p = (s16 *)((u8 *)gWorld->cur + 0xEC);
+            if (*p >= 0)
+                value = *p;
+            else
+                value = 5 - *p;
+        }
+        break;
+    case 2:
+        if (*(s16 *)((u8 *)gWorld->cur + 0xEC) < 0)
+            value = ((u32)*((u8 *)gWorld->cur + 0x110) << 27) >> 27;
+        else
+            value = -1;
+        break;
+    case 3:
+        if (*(u8 **)((u8 *)gWorld->cur + 0x34) != 0)
+            value = *(*(u8 **)(*(u8 **)((u8 *)gWorld->cur + 0x34) + 0x28) + 0xF4);
+        else
+            value = -1;
+        break;
+    case 4:
+        value = *((u8 *)gWorld->cur + 0xF4);
+        break;
+    case 5:
+        value = *(u16 *)((u8 *)gWorld + 0x2B6);
+        break;
+    case 6:
+        value = world_frame_index(owner);
+        break;
+    case 7:
+        value = world_frame_index_b(owner);
+        break;
+    case 8:
+        value = *((u8 *)gWorld->cur + 0x113);
+        break;
+    case 9:
+        value = ((u32)*((u8 *)gWorld + 0x2C1) << 30) >> 31;
+        break;
+    }
+    set_var(extra, dst + 0x18, (u8 *)owner->state + 0x1794, dst + 0xA8, *(s16 *)cmd, value);
+    return 1;
+}
