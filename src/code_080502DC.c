@@ -516,9 +516,10 @@ void obj_teardown(u8 *obj, u32 flags)
     obj_base_teardown(obj, flags);
 }
 
-NONMATCH("asm/code_080502DC/obj_init_state.s", u32 obj_init_state(u8 *obj, u32 a, u32 b))
+u32 obj_init_state(u8 *obj, u32 a, u32 b)
 {
     struct ObjInitS *o;
+    u16 m;
 
     obj_init(obj, a, b);
     o = (struct ObjInitS *)obj;
@@ -529,7 +530,8 @@ NONMATCH("asm/code_080502DC/obj_init_state.s", u32 obj_init_state(u8 *obj, u32 a
     ((struct Bits33C *)&o->flags)->b2 = 0;
     ((struct Mid4At6 *)&o->flags)->mid4 = 0;
     o->unk23B = 0;
-    o->mask |= 0x1FE;
+    m = o->mask;
+    o->mask = m | 0x1FE;
     o->timer340 = 1;
     o->timerB342 = 0xFFFF;
     o->unk344 = -1;
@@ -537,7 +539,6 @@ NONMATCH("asm/code_080502DC/obj_init_state.s", u32 obj_init_state(u8 *obj, u32 a
     o->unk34C = 0;
     return (u32)obj;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080502DC/obj_init_from_entry.s", void obj_init_from_entry(void))
 
