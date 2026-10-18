@@ -72,6 +72,9 @@ struct Ai
     u16 unk17A;
     u16 unk17C;
     u8 unk17E;
+    u8 filler17F[0x184 - 0x17F];
+    s32 unk184;
+    s32 unk188;
 };
 
 struct StateOut
@@ -144,7 +147,6 @@ struct Enemy
 void run_state_handler(void);
 void enemy_push_by_mode(void);
 void tick_store(void);
-void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 z, u8 a);
 void start_z_move(struct Enemy *ent, s32 z, u32 a, u32 b, u32 c);
 void obj_set_cell_coord(struct Enemy *ent, u32 cell, u32 arg);
 void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -183,6 +185,7 @@ struct ByteArg
 } __attribute__((packed));
 
 void start_move_to_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, struct ByteArg arg5);
+void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 z, struct ByteArg arg4);
 
 void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -205,6 +208,7 @@ void body_contact_enemy_move_3d_step(struct Owner *owner, struct Enemy *ent, str
 void enemy_seek_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_guard_aim(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_begin_wait(struct Owner *owner, struct Enemy *ent);
+void enemy_move_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_wait_scan(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -213,7 +217,37 @@ void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *sta
 void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 
-ASM_FUNC("asm/code_08145D54/enemy_wait_sense.s", void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_wait_sense.s", void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec = ent->unk1B0;
+    s32 unused[4];
+
+    if (step_pos_xy_b(ent) == 0)
+    {
+        u32 idx = rand_below(4, mt19937_next());
+
+        ent->unk1D2 = *(u16 *)(ai + (idx << 1) + 0xD0);
+        state_out->state = tick_store;
+        state_out->unkC = enemy_push_by_mode;
+    }
+    if (ent->unk1D4 == 0)
+    {
+        if (box_hit_kind(owner, ent, 0x11, 0x1E, 3) != 0)
+        {
+            if (companion_in_sight(owner, ent) == 0)
+            {
+                return;
+            }
+            state_out->state = enemy_pick_random_index;
+        }
+        ent->unk1D4 = *(u16 *)(rec + 0x1C);
+    }
+    else
+    {
+        ent->unk1D4--;
+    }}
+END_NONMATCH
 
 void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
@@ -564,13 +598,134 @@ void enemy_begin_wait(struct Owner *owner, struct Enemy *ent)
 
 ASM_FUNC("asm/code_08145D54/enemy_wait_scan.s", void enemy_wait_scan(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-ASM_FUNC("asm/code_08145D54/enemy_start_run.s", void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_start_run.s", void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    u8 *rec = ent->unk1B0;
+    s32 flags;
 
-ASM_FUNC("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+    ent->unk2DC = 0x200;
+    ent->unk1D0 = rand_below(4, mt19937_next());
+    ent->unk2DE = rec[ent->unk1D0 + 0xE];
+    flags = ent->unk20C & -0x21;
+    flags &= 0x7F;
+    flags &= -0x41;
+    ent->unk20C = flags;
+    ((struct Flags8 *)&ent->unk210)->bit4 = 0;
+    ((struct Flags8 *)&ent->unk20D)->bit2 = 0;
+    state_out->state = enemy_run_step;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    s32 step;
+    s32 timer;
+    s32 left;
+
+    timer = ent->unk1D4 + 1;
+    ent->unk1D4 = timer;
+    if ((u16)timer > 1)
+    {
+        ent->unk1D2++;
+        if (ent->unk1D6 & 4)
+        {
+            obj_set_sprite_link(ent, 0);
+            ent->unk242 = ent->unk2DC;
+            step = ent->unk242;
+        }
+        else
+        {
+            obj_set_sprite_link(ent, 1);
+            ent->unk242 = -ent->unk2DC;
+            step = ent->unk242;
+        }
+        ent->unkC += step;
+        if (ai->unk17A > 1)
+        {
+            s32 f = ai->unk17E;
+
+            if ((f & 4) == 0)
+            {
+                f |= 4;
+            }
+            else
+            {
+                f &= -5;
+            }
+            ai->unk17E = f;
+            ai->unk17A = 0;
+        }
+        ai->unk17C = 0;
+    }
+    left = ent->unk2DE - 1;
+    ent->unk2DE = left;
+    if ((u16)left == 0)
+    {
+        obj_set_sprite_link(ent, 0);
+        state_out->state = state_out->unk8;
+    }}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08145D54/enemy_chase_partner.s", void enemy_chase_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-ASM_FUNC("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    s32 step;
+    s32 timer;
+    s32 left;
+    s32 flags;
+
+    timer = ent->unk1D4 + 1;
+    ent->unk1D4 = timer;
+    if ((u16)timer > 1)
+    {
+        ent->unk1D2++;
+        if (ent->unk1D6 & 4)
+        {
+            obj_set_sprite_link(ent, 0);
+            ent->unk242 = ent->unk2DC;
+            step = ent->unk242;
+        }
+        else
+        {
+            obj_set_sprite_link(ent, 1);
+            ent->unk242 = -ent->unk2DC;
+            step = ent->unk242;
+        }
+        ent->unkC += step;
+        if (ai->unk17A > 1)
+        {
+            flags = ai->unk17E;
+            if ((4 & flags) == 0)
+            {
+                flags = 4 | flags;
+            }
+            else
+            {
+                flags = -5 & flags;
+            }
+            ai->unk17E = flags;
+            ai->unk17A = 0;
+        }
+        ai->unk17C = 0;
+    }
+    left = ent->unk2DE - 1;
+    ent->unk2DE = left;
+    if ((u16)left == 0)
+    {
+        obj_set_sprite_link(ent, 1);
+        flags = ent->unk20C;
+        flags |= 0x20;
+        flags |= 0x80;
+        flags |= 0x40;
+        ent->unk20C = flags;
+        ((struct Flags8 *)&ent->unk210)->bit4 = 1;
+        ((struct Flags8 *)&ent->unk20D)->bit2 = 1;
+        state_out->state = enemy_face_partner;
+    }}
+END_NONMATCH
 
 void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
