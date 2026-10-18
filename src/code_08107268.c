@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 struct Sprite
@@ -168,6 +169,74 @@ struct Work
     void (*savedState)(struct Owner *);
 };
 
+struct MarkerNode
+{
+    s16 x;
+    s16 y;
+    u16 tile;
+    u16 unk6;
+    u8 filler8[4];
+    struct MarkerNode *prev;
+    struct MarkerNode *next;
+};
+
+struct MarkerPose
+{
+    u8 filler0[6];
+    u16 unk6;
+    u8 filler8[0x34 - 0x8];
+    struct MarkerNode *ring;
+};
+
+struct MarkerLink
+{
+    u16 unk0;
+    s16 y2;
+    u8 filler4[0x12 - 0x4];
+    u8 flags12;
+    u8 filler13[0x14 - 0x13];
+    u16 mask14;
+    u8 filler16[0x34 - 0x16];
+    struct MarkerNode *poseList;
+};
+
+struct MarkerData
+{
+    u8 filler0[4];
+    s8 unk4;
+    s8 unk5;
+    s8 unk6;
+};
+
+struct MarkerObj
+{
+    u32 self0;
+    u8 filler4[0xC];
+    struct MarkerLink *link;
+    u8 filler14[0x7E - 0x14];
+    u8 mode7E;
+    u8 filler7F[0xE4 - 0x7F];
+    struct MarkerData *data;
+    u8 fillerE8[0x118 - 0xE8];
+    struct MarkerPose *poseCache;
+    u8 filler11C[0x11E - 0x11C];
+    u16 flags11E;
+    u8 filler120[0x122 - 0x120];
+    u8 flags122;
+    u8 filler123[0x126 - 0x123];
+    u16 timer;
+    u8 frame;
+    u8 subframe;
+};
+
+struct MarkerPool
+{
+    u8 filler0[2];
+    u8 used;
+    u8 filler3[0x38 - 0x3];
+    struct MarkerNode *free;
+};
+
 extern struct World *gWorld;
 extern struct Work *gWorkBuf;
 extern const u16 gEffectCodeTable[];
@@ -325,7 +394,27 @@ void state_clear_menu_flag_and_end(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_menu_scroll_stop.s", void state_menu_scroll_stop(struct Owner *owner))
+NONMATCH("asm/code_08107268/state_menu_scroll_stop.s", void state_menu_scroll_stop(struct Owner *owner))
+{
+    struct World *world = gWorld;
+    u16 *scrollp = &world->scene->scroll;
+    s32 scroll = *scrollp - 1;
+    s32 step = owner->scrollStep;
+
+    if (step < 0)
+    {
+        step += 0xFF;
+    }
+    step >>= 8;
+    *scrollp = scroll - step;
+    owner->scrollStep += 0x19;
+    if ((s16)world->scene->scroll <= 0)
+    {
+        world->scene->scroll = 0;
+        owner->state = 0;
+    }
+}
+END_NONMATCH
 
 void state_menu_scroll_begin(struct Owner *owner)
 {
@@ -611,7 +700,18 @@ void state_obj_anim_5_when_active(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_map_copy_and_list.s", void state_map_copy_and_list(void))
+void state_map_copy_and_list(struct Owner *owner)
+{
+    void *src;
+
+    gUnk_0200001C = 0;
+    src = gWorld->mapSrc250;
+    copy_map_rect_add(src, 0, 0xC, 5, 6, 0xC,
+                      (void *)(*(u32 *)((gGlyphIndexTable[0x26] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x9200);
+    gWorld->listOut374 = list_add_task(&gWorld->listHead, state_init_map_tiles);
+    owner->state = state_hero_entry_timeline;
+    set_slot_value(0x36, -1);
+}
 
 void draw_obj_at_xy(struct Owner *obj)
 {
@@ -665,7 +765,26 @@ void state_load_record_when_free(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_clear_hero_flags.s", void state_clear_hero_flags(void))
+void state_clear_hero_flags(struct Owner *owner)
+{
+    struct Effect *effect = gWorld->oldEffect;
+    s32 flags = effect->flags5;
+    s32 mask = ~3;
+    s32 i;
+
+    mask &= flags;
+    flags = mask | 1;
+    effect->flags5 = flags;
+    for (i = 0; i < 8; i++)
+    {
+        u8 *entry = (u8 *)gWorld->list58[i] + 0x122;
+
+        *(s8 *)entry &= -0x41;
+    }
+    owner->state = state_wait_free_then_2199;
+    set_cur_flags_pending(0x20000000);
+    draw_fixed_labels();
+}
 
 void state_effect_mode_2(struct Owner *owner)
 {
@@ -801,7 +920,28 @@ void state_menu_open_active(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08107268/state_show_figs.s", void state_show_figs(struct Owner *owner))
+NONMATCH("asm/code_08107268/state_show_figs.s", void state_show_figs(struct Owner *owner))
+{
+    struct World *world = gWorld;
+    u32 bit = ((u32)world->figMode2C0 << 29) >> 31;
+    s32 idx = 1;
+    struct Owner *pose;
+
+    idx ^= bit;
+    pose = (struct Owner *)((u8 *)world->fig80[idx] + 8);
+    if (step_motion(pose) == 0)
+    {
+        struct Owner *active;
+        u32 mode = gWorld->figMode2C0;
+        u8 *figs = (u8 *)gWorld + 0x80;
+
+        active = (struct Owner *)((u8 *)*(struct Obj **)(figs + (mode & 4)) + 8);
+        sprite_set_action(pose, 4, 0, 0);
+        sprite_set_action(active, 9, 0, 0);
+        owner->state = figure_sync_step;
+    }
+}
+END_NONMATCH
 
 void state_fig_active_call(struct Owner *owner)
 {
@@ -1018,8 +1158,8 @@ void state_wait_then_clear(struct Owner *owner)
     }
 }
 
-void marker_flag1_update(u8 *self);
-void marker_flag2_update(u8 *self);
+void marker_flag1_update(struct MarkerObj *obj);
+void marker_flag2_update(struct MarkerObj *obj);
 void marker_flag100_update();
 void marker_cursor_update();
 void marker_flag400_update(struct Owner *owner);
@@ -1030,9 +1170,133 @@ ASM_FUNC("asm/code_08107268/marker_flag100_update.s", void marker_flag100_update
 
 void *find_lowest_order_pose(u8 *pic);
 extern void *gModelCtx;
-ASM_FUNC("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(u8 *self))
+NONMATCH("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(struct MarkerObj *obj))
+{
+    struct MarkerLink *link;
+    s32 left = obj->timer - 1;
 
-ASM_FUNC("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(u8 *self))
+    obj->timer = left;
+    if ((left << 16) == 0)
+    {
+        obj->frame++;
+        obj->timer = 0xC;
+        if ((s8)obj->frame > 7)
+        {
+            obj->frame = 0;
+        }
+    }
+    link = obj->link;
+    if (link->poseList != 0 && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
+    {
+        struct MarkerPool *pool = gModelCtx;
+        struct MarkerNode *node = pool->free;
+        struct MarkerNode *ring;
+        struct MarkerNode *ringPrev;
+        s32 base;
+        s32 adj;
+        s32 x;
+
+        pool->free = node->next;
+        pool->used++;
+        node->unk6 = 0;
+        base = link->y2 + obj->data->unk5 - obj->data->unk6;
+        adj = base - 8;
+        if ((s8)obj->frame <= 4)
+        {
+            x = adj - (s8)obj->frame;
+        }
+        else
+        {
+            x = base - 0x10;
+            x += (s8)obj->frame;
+        }
+        node->x = x & 0xFF;
+        node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
+        node->tile = 0xB899;
+        if (obj->poseCache == 0)
+        {
+            obj->poseCache = find_lowest_order_pose((u8 *)obj + 8);
+        }
+        node->prev->next = node->next;
+        node->next->prev = node->prev;
+        ring = obj->poseCache->ring;
+        node->next = ring;
+        ringPrev = ring->prev;
+        node->prev = ringPrev;
+        ring->prev = node;
+        ringPrev->next = node;
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(struct MarkerObj *obj))
+{
+    struct MarkerLink *link;
+    u16 *timer = &obj->timer;
+    s32 left = *timer - 1;
+    s32 reset;
+
+    *timer = left;
+    if ((left << 16) == 0)
+    {
+        obj->frame++;
+        if ((s8)obj->frame == 2 || (s8)obj->frame == 6)
+        {
+            reset = 6;
+        }
+        else
+        {
+            reset = 0xC;
+        }
+        *timer = reset;
+        if ((s8)obj->frame > 7)
+        {
+            obj->frame = 0;
+        }
+    }
+    link = obj->link;
+    if (link->poseList != 0 && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
+    {
+        struct MarkerPool *pool = gModelCtx;
+        struct MarkerNode *node = pool->free;
+        struct MarkerNode *ring;
+        struct MarkerNode *ringPrev;
+        s32 base;
+        s32 adj;
+        s32 x;
+
+        pool->free = node->next;
+        pool->used++;
+        node->unk6 = 0;
+        base = link->y2 + obj->data->unk5 - obj->data->unk6;
+        adj = base - 8;
+        if ((s8)obj->frame <= 4)
+        {
+            x = adj - (s8)obj->frame;
+        }
+        else
+        {
+            x = base - 0x10;
+            x += (s8)obj->frame;
+        }
+        node->x = x & 0xFF;
+        node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
+        node->tile = 0xB89A;
+        if (obj->poseCache == 0)
+        {
+            obj->poseCache = find_lowest_order_pose((u8 *)obj + 8);
+        }
+        node->prev->next = node->next;
+        node->next->prev = node->prev;
+        ring = obj->poseCache->ring;
+        node->next = ring;
+        ringPrev = ring->prev;
+        node->prev = ringPrev;
+        ring->prev = node;
+        ringPrev->next = node;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08107268/marker_cursor_update.s", void marker_cursor_update(void))
 
