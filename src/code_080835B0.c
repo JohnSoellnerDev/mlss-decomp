@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -69,12 +70,28 @@ extern u8 *gWorld;
 extern u8 gUnk_02000420[];
 extern const u8 gUnk_083BA8A0[];
 extern const u8 gUnk_083BA8AC[];
+extern u8 gGlyphIndexTable[];
+extern u32 gMapTable[];
+extern u8 gSys[];
+extern u8 gUnk_02000180[];
 u32 table_085213b8(u32 index);
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
+void psg_wave_setup(u8 *base, u32 width, u32 x, u32 y, u32 glyph, s32 ch, u32 pal, u32 zero);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+extern const u8 gSpriteObjectTag[];
 void obj_setup_map_object(struct PartObj *obj, u32 prio, u32 arg, u32 cfg, s32 a, s32 b, u32 ptr);
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
 void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y);
+
+struct SysBase
+{
+    u8 filler0[2];
+    u16 unk2;
+    u8 filler4[0x888 - 4];
+    u8 flags888;
+};
 
 struct PoseBits11
 {
@@ -118,7 +135,22 @@ ASM_FUNC("asm/code_080835B0/sprite_set_action.s", void sprite_set_action(void))
 
 ASM_FUNC("asm/code_080835B0/apply_pose_to_parts.s", void apply_pose_to_parts(void))
 
-ASM_FUNC("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y))
+NONMATCH("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y))
+{
+    s32 w;
+    s32 h;
+
+    w = gUnk_083BA8A0[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
+    h = gUnk_083BA8AC[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
+    if (x < -w || x > 0xEF || y < -h || y > 0x9F)
+    {
+        obj->unk6 = 1;
+        return;
+    }
+    obj->unk2 = (obj->unk2 & 0xFE00) | (x & 0x1FF);
+    obj->unk0 = (obj->unk0 & 0xFF00) | (y & 0xFF);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080835B0/draw_text.s", void draw_text(void))
 
@@ -468,5 +500,30 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080835B0/init_sprite_object.s", struct PartObj *init_sprite_object(struct PartObj *obj))
 
-ASM_FUNC("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
+NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
+{
+    u32 idx;
+    u32 *entry;
+    void (*copy)(u8 *, u8 *, u32);
+    u32 row;
+    u32 flags;
+
+    MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x06004000, 0x9000);
+    MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x0600F000, 0x1000);
+    idx = *(u16 *)gGlyphIndexTable;
+    entry = gMapTable + idx;
+    queue_display_entry(2, (u8 *)gMapTable + *entry, (u8 *)0x06008000, 0x2C0, 0, 0);
+    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    flags = ((struct SysBase *)gSys)->flags888;
+    row = 0x12;
+    if ((6 & flags) != 0)
+    {
+        row = 0x14;
+    }
+    idx = *(u16 *)(gGlyphIndexTable + row);
+    entry = gMapTable + idx;
+    copy((u8 *)gMapTable + *entry, gUnk_02000180, 0xC0);
+    ((struct SysBase *)gSys)->unk2 |= 0x3F00;
+}
+END_NONMATCH
 
