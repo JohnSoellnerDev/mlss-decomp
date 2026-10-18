@@ -65,6 +65,21 @@ struct SpriteFlags11
     u8 bit7 : 1;
 };
 
+struct SpriteFlags12
+{
+    u8 filler0[0x12];
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+};
+
+struct ObjFlags0
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 u32 tile_ptr_at(u8 *obj, s16 x, s16 y);
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
@@ -72,6 +87,10 @@ void find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g);
 void obj_queue_update(void *sprite);
 extern const u16 gAttachedSpriteProtoTable[];
 extern const u8 gFrameAttrTable[];
+void resolve_obj_overlap(struct TileObj *obj, void *list, u32 count);
+u32 obj_snap_to_tile_walls(struct TileObj *obj);
+void sweep_obj_motion(struct TileObj *obj);
+void obj_release_oam(void *obj);
 
 s32 obj_on_tile_18(struct TileObj *obj)
 {
@@ -95,6 +114,7 @@ s32 obj_on_tile_18(struct TileObj *obj)
 }
 
 ASM_FUNC("asm/code_0804D100/obj_tile_corners_check.s", void obj_tile_corners_check(void))
+
 ASM_FUNC("asm/code_0804D100/snap_to_tile_edge.s", void snap_to_tile_edge(void))
 
 ASM_FUNC("asm/code_0804D100/find_obj_contact.s", void find_obj_contact(void))
@@ -103,7 +123,7 @@ ASM_FUNC("asm/code_0804D100/probe_obj_cells.s", void probe_obj_cells(void))
 
 ASM_FUNC("asm/code_0804D100/obj_scan_contacts.s", void obj_scan_contacts(void))
 
-NONMATCH("asm/code_0804D100/attached_sprite_obj_setup_sprite.s", void attached_sprite_obj_setup_sprite(struct TileObj *obj))
+void attached_sprite_obj_setup_sprite(struct TileObj *obj)
 {
     u32 slot;
     u8 *sprite;
@@ -112,9 +132,7 @@ NONMATCH("asm/code_0804D100/attached_sprite_obj_setup_sprite.s", void attached_s
     s32 rest;
     u32 flip;
     u8 entry;
-    u8 *s1;
     u32 b0;
-    s32 d;
 
     b0 = obj->unk0;
     if ((b0 & 0x40) == 0)
@@ -131,27 +149,75 @@ NONMATCH("asm/code_0804D100/attached_sprite_obj_setup_sprite.s", void attached_s
     flip = entry >> 7;
     obj_load_record(sprite, anim, -1, 0, 0);
     obj_queue_update(obj->unk44);
-    d = obj->unk3E;
-    if (d != 0)
+    if (obj->unk3E != 0)
     {
-        rest = d;
-        s1 = obj->unk44;
-        while (rest >= s1[0x25])
+        rest = obj->unk3E;
+        while (rest >= obj->unk44[0x25])
         {
-            rest -= s1[0x25];
+            rest -= obj->unk44[0x25];
         }
         obj_load_record(obj->unk44, anim, rest, 0, 0);
     }
     ((struct SpriteFlags11 *)obj->unk44)->bit6 = flip;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0804D100/obj_init_from_table.s", void obj_init_from_table(void))
 
-ASM_FUNC("asm/code_0804D100/obj_advance_step.s", void obj_advance_step(void))
+void obj_advance_step(struct TileObj *obj, void *list, u32 count)
+{
+    u8 *sprite;
+    s32 rest;
+    u32 cnt;
+
+    if ((obj->unk0 & 0x40) != 0)
+    {
+        sprite = obj->unk44;
+        if (sprite[0x21] > 4)
+        {
+            if ((sprite[0x12] & 0x20) != 0)
+                ((struct ObjFlags0 *)obj)->bit6 = 0;
+        }
+        else if ((obj->unk0 & 0x38) == 0x20)
+        {
+            obj_load_record(sprite, sprite[0x21] + 5, 0, 0, 0);
+            resolve_obj_overlap(obj, list, count);
+        }
+        else
+        {
+            obj->unk8 += obj->unk2A;
+            obj->unkC += obj->unk2C;
+            cnt = obj->unk28;
+            cnt += obj->unk2E;
+            obj->unk2E = cnt;
+            if ((u16)cnt > obj->unk30)
+            {
+                obj_release_oam(obj);
+            }
+            else
+            {
+                resolve_obj_overlap(obj, list, count);
+                if ((u8)obj_snap_to_tile_walls(obj) != 0 || (obj->unk2 & 0xF) != 0)
+                {
+                    obj_load_record(obj->unk44, obj->unk44[0x21] + 5, 0, 0, 0);
+                    if (obj->unk3E != 0)
+                    {
+                        rest = obj->unk3E;
+                        while (rest >= obj->unk44[0x25])
+                        {
+                            rest -= obj->unk44[0x25];
+                        }
+                        obj_load_record(obj->unk44, obj->unk44[0x21], rest, 0, 0);
+                    }
+                    ((struct SpriteFlags12 *)obj->unk44)->mode = 2;
+                }
+                sweep_obj_motion(obj);
+            }
+        }
+    }
+}
 
 ASM_FUNC("asm/code_0804D100/update_footprint_level.s", void update_footprint_level(void))
 
 ASM_FUNC("asm/code_0804D100/find_entry_containing.s", void find_entry_containing(void))
 
-ASM_FUNC("asm/code_0804D100/resolve_obj_overlap.s", void resolve_obj_overlap(void))
+ASM_FUNC("asm/code_0804D100/resolve_obj_overlap.s", void resolve_obj_overlap(struct TileObj *obj, void *list, u32 count))
