@@ -172,6 +172,14 @@ struct WorldInputBits
     u8 hi6 : 6;
 };
 
+struct Flags77Bits
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 hi1 : 1;
+};
+
 struct World
 {
     u8 filler0[0x0C];
@@ -253,7 +261,39 @@ void visible_action_2000(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809583C/actor_init_linked.s", u32 actor_init_linked(struct HeroBody *body))
+NONMATCH("asm/code_0809583C/actor_init_linked.s", u32 actor_init_linked(struct HeroBody *body))
+{
+    struct HeroBody *partner;
+    void *anim;
+
+    ((struct WorldFlagBits *)&gWorld->flags)->moving = 1;
+    body->link = 0;
+    partner = body->partner;
+    anim = body->anim;
+    if (body->callback != 0)
+    {
+        body->callback(body);
+    }
+    body->partner = partner;
+    body->anim = anim;
+    obj_list_push_default(body);
+    ((struct Flags77Bits *)&body->flags77)->bit5 = 0;
+    ((struct Flags77Bits *)&body->flags77)->bit6 = 0;
+    body->eventA = partner_link_hook;
+    body->eventB = contact_check;
+    body->eventC = contact_check;
+    body->eventD = contact_check;
+    body->jumpInit = 0x1AA8;
+    body->rate = 0x200;
+    body->side = 0;
+    (void)*(volatile s16 *)&partner->data->slot;
+    partner->dh = 0x300;
+    body->resume = NULL;
+    body->state = partner_wait_after_connect;
+    body->scale = 0x100;
+    return 1;
+}
+END_NONMATCH
 
 void pick_random_partner(struct HeroBody *body)
 {
@@ -503,7 +543,71 @@ u32 pair_begin(struct HeroBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_0809583C/pair_place_targets.s", void pair_place_targets(struct HeroBody *body))
+NONMATCH("asm/code_0809583C/pair_place_targets.s", void pair_place_targets(struct HeroBody *body))
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
+    s16 *span;
+    u8 *mode_a;
+    u8 *mode_b;
+    s32 mode;
+
+    mode_a = &hero_a->body.mode;
+    if ((*mode_a & 6) == 2)
+    {
+        place_targets(body_a, body_a->data->targetX / 0x100, body_a->data->targetY / 0x100, body_a->data->targetH / 0x100, -1);
+        set_motion_start(body_a, 0x200);
+        mode = *mode_a & 6;
+        if (mode == 2 || mode == 4)
+        {
+            if (body_a->data->slot == -1)
+            {
+                sprite_set_action(body_a, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(body_a, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorBits *)&body_a->sprite->mirror)->flip = (span = &body_a->span.a)[0] >= span[1];
+            ((struct SpriteModeBits *)&body_a->sprite->flags)->mode = 0;
+        }
+        mode = *mode_a & 6;
+        if (mode == 2 || mode == 4)
+        {
+            body_a->state = NULL;
+            enter_finish_rebuild(body_a);
+        }
+    }
+    mode_b = &body_b->mode;
+    if ((*mode_b & 6) == 2)
+    {
+        place_targets(body_b, body_b->data->targetX / 0x100, body_b->data->targetY / 0x100, body_b->data->targetH / 0x100, -1);
+        set_motion_start(body_b, 0x200);
+        mode = *mode_b & 6;
+        if (mode == 2 || mode == 4)
+        {
+            if (body_b->data->slot == -1)
+            {
+                sprite_set_action(body_b, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(body_b, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorBits *)&body_b->sprite->mirror)->flip = (span = &body_b->span.a)[0] >= span[1];
+            ((struct SpriteModeBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        mode = *mode_b & 6;
+        if (mode == 2 || mode == 4)
+        {
+            body_b->state = NULL;
+            enter_finish_rebuild(body_b);
+        }
+    }
+    body->resume = hold_roll_handle;
+}
+END_NONMATCH
 
 void hold_roll_handle(struct HeroBody *body)
 {
@@ -796,6 +900,65 @@ void child_launch(struct HeroBody *body)
 }
 
 s32 menu_cursor_pos(s32 x, s32 y, u32 n);
-ASM_FUNC("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struct HeroBody *body))
+NONMATCH("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struct HeroBody *body))
+{
+    s16 *cursor;
+    struct HeroBody *hero_a;
+    struct HeroData *data;
+    struct ActionEntry *entry;
+    s32 argX;
+    s32 argY;
+    s32 bit7;
+    s32 limitX;
+    s32 height;
+    s32 ground;
+    s32 place_x;
+    s32 place_y;
+
+    hero_a = &gWorld->heroA->body;
+    if (body->step > 0)
+    {
+        body->step--;
+        return;
+    }
+    data = body->data;
+    entry = gWorld->curEntry;
+    if (entry->menuKind == 0xFFFF)
+    {
+        cursor = &data->cursorX;
+        *cursor = menu_cursor_pos(*cursor, data->cursorY, entry->menuKind);
+        cursor = &data->cursorX2;
+        argX = *cursor;
+        argY = data->cursorY2;
+        entry = gWorld->curEntry;
+    }
+    else
+    {
+        cursor = &data->cursorX;
+        argX = *cursor;
+        argY = data->cursorY;
+    }
+    *cursor = menu_cursor_pos(argX, argY, entry->menuKind);
+
+    bit7 = data->partBits >> 7;
+    limitX = data->targetX;
+    height = data->targetY;
+    ground = data->targetH;
+    place_part_in_slot(data->effect, data->slot, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, 0, 1);
+    data->targetX = limitX;
+    data->targetY = height;
+    data->targetH = ground;
+    ((struct PartBitsFlags *)&data->partBits)->bit7 = bit7;
+    ((struct WorldInputBits *)&gWorld->input)->lo2 = 0;
+    set_slot_value(0x2B, -1);
+    sprite_set_action(body, 5, -1, 0);
+    ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+    place_x = (body == hero_a) ? 0x36 : 0x28;
+    place_y = (body == hero_a) ? 0x5C : 0x7C;
+    place_targets(body, place_x, place_y, 0, 0x100);
+    set_step_and_offsets(body, 0x300, 0x20);
+    body->state = land_at_target_height;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0809583C/pair_partner_swap.s", void pair_partner_swap(struct HeroBody *body))
