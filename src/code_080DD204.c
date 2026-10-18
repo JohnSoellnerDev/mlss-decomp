@@ -232,7 +232,7 @@ void obj_begin_fall_to_owner_alt(struct ActorObj *obj);
 struct SpriteNode *sprite_node_take(void);
 void obj_list_push_arg(struct ActorObj *obj, u32 arg);
 void obj_fall_spawn_fx_offscreen(struct ActorObj *obj);
-u32 lookup_slot(struct ActorObj *obj, u32 slot);
+u32 lookup_slot(struct ActorObj *obj, u32 slot, ...);
 void obj_active_spawn_then_e1fc(struct ActorObj *obj);
 void obj_active_spawn_then_e278(struct ActorObj *obj);
 
@@ -260,9 +260,9 @@ NONMATCH("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child
     struct ActorObj *child;
     u16 timer;
 
-    u16 *dhp = (u16 *)&obj->dh;
-    s16 *dyp = &obj->dy;
     s16 *dxp = &obj->dx;
+    s16 *dyp = &obj->dy;
+    u16 *dhp = (u16 *)&obj->dh;
 
     *dhp = *dhp + obj->dhStep;
     obj->posX = obj->baseX + *dxp;
@@ -303,7 +303,50 @@ NONMATCH("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce_or_finish(struct ActorObj *obj))
+NONMATCH("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce_or_finish(struct ActorObj *obj))
+{
+    s16 *dxp = &obj->dx;
+    s16 *dyp = &obj->dy;
+    u16 *dhp = (u16 *)&obj->dh;
+
+    *dhp = *dhp + obj->dhStep;
+    obj->posX = obj->baseX + *dxp;
+    obj->posY = obj->baseY + *dyp;
+    obj->posH = obj->baseH + (s16)*dhp;
+    if ((s16)obj->timer > 0)
+    {
+        obj->timer = obj->timer - 1;
+        if (obj->timer == 0)
+        {
+            if (lookup_slot(obj, 0, 0) != 0)
+            {
+                return;
+            }
+            obj->dx = -obj->dx / 2;
+            obj->dy = 0;
+            obj->dh = 0;
+            if (obj->child != 0)
+            {
+                obj->child->timer = 8;
+            }
+            obj->state = obj_float_offscreen_finish;
+            sprite_set_action(obj, 0, 0, 0);
+            return;
+        }
+    }
+    if ((s16)obj->dh > 0)
+    {
+        return;
+    }
+    if (obj->posH > obj->ground)
+    {
+        return;
+    }
+    obj->posH = obj->ground;
+    sound_stop_song(0x117);
+    obj_release(obj);
+}
+END_NONMATCH
 
 void obj_drop_land_spawn_child(struct ActorObj *obj)
 {
@@ -392,7 +435,53 @@ void obj_settle_step_land_slot69(struct ActorObj *obj)
     on_arrive(obj);
 }
 
-ASM_FUNC("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(struct ActorObj *obj))
+NONMATCH("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(struct ActorObj *obj))
+{
+    s16 *dxp = &obj->dx;
+    s16 *dyp = &obj->dy;
+    void *fx;
+    struct FxTask *task;
+
+    obj->dh = obj->dh + obj->dhStep;
+    obj->posX = obj->baseX + *dxp;
+    obj->posY = obj->baseY + *dyp;
+    obj->posH = obj->baseH + obj->dh;
+    if ((s16)obj->timer > 0)
+    {
+        obj->timer = obj->timer - 1;
+    }
+    else
+    {
+        obj->timer = 2;
+        fx = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
+        obj_load_record(fx, 0, -1, 0, 0);
+        sprite_update_cd0(fx);
+        obj_load_record(fx, 0, obj->pose->record23, 0, 0);
+        ((struct FxRec *)fx)->unk0 = ((struct FxRec *)obj->pose)->unk0;
+        ((struct FxRec *)fx)->unk2 = ((struct FxRec *)obj->pose)->unk2;
+        ((struct FxRec *)fx)->unkE = ((struct FxRec *)obj->pose)->unkE;
+        ((struct FxBit12 *)fx)->bit4 = 1;
+        ((struct FxBits1F *)fx)->a = ((struct FxBits1F *)obj->pose)->a;
+        ((struct FxBits1F *)fx)->b = ((struct FxBits1F *)obj->pose)->b;
+        ((struct FxBits1F *)fx)->c = ((struct FxBits1F *)obj->pose)->c;
+        ((struct FxBits1F *)fx)->d = ((struct FxBits1F *)obj->pose)->d;
+        task = task_create_list_4c(fx_task_tick_release, fx);
+        task->counter = 0;
+        task->unk18 = 0;
+    }
+    if ((s16)obj->dh > 0)
+    {
+        return;
+    }
+    if (obj->posH > obj->ground)
+    {
+        return;
+    }
+    obj->posH = obj->ground;
+    sound_stop_song(0x117);
+    obj_release(obj);
+}
+END_NONMATCH
 
 void obj_fall_spawn_fx_offscreen(struct ActorObj *obj)
 {
