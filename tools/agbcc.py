@@ -26,9 +26,15 @@ def run(cmd, **kw):
     return r
 
 
+def game_flags(src):
+    """The game's own source files were built with -funroll-loops; the sound driver and the
+    libraries (sound_*, lib_* units) were not."""
+    return [] if os.path.basename(src).startswith(("sound_", "lib_")) else ["-funroll-loops"]
+
+
 def unit_flags(path):
-    """Extra agbcc flags of a unit, from a first-line comment like `/* agbcc: -funroll-loops */`
-    (some original source files were compiled with other options)."""
+    """Extra agbcc flags of a unit, from a first-line comment like `/* agbcc: -fno-unroll-loops */`
+    (for original source files that were compiled with other options)."""
     with open(path) as f:
         m = re.match(r"/\* agbcc: ([-\w ]+) \*/", f.readline())
     return m.group(1).split() if m else []
@@ -46,7 +52,8 @@ def main():
     run(["cpp", "-nostdinc", "-undef", "-std=gnu89",
          "-I", "include", "-I", "tools/agbcc/include", "-iquote", "include", *defs,
          "-MMD", "-MF", base + ".cpp.d", "-MT", out, src, "-o", base + ".i"], cwd=ROOT)
-    run([AGBCC, *CFLAGS, *unit_flags(os.path.join(ROOT, src)), base + ".i", "-o", base + ".agb.s"], cwd=ROOT)
+    run([AGBCC, *CFLAGS, *game_flags(src), *unit_flags(os.path.join(ROOT, src)), base + ".i", "-o", base + ".agb.s"],
+        cwd=ROOT)
     with open(os.path.join(ROOT, base + ".agb.s"), "a") as f:
         f.write("\t.text\n\t.align 2, 0\n")
     run([binutil("as"), "-mcpu=arm7tdmi", "-I", ".", "--MD", base + ".as.d", "-o", out, base + ".agb.s"],

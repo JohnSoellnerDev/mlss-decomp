@@ -1,4 +1,3 @@
-/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 

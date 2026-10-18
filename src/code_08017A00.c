@@ -1,4 +1,3 @@
-/* agbcc: -funroll-loops */
 #include "global.h"
 
 extern u8 gSys[];
