@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -326,11 +327,96 @@ void pair_wait_then_spawn_part(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809D474/place_by_heroes.s", void place_by_heroes(struct ActorBody *body))
+void place_by_heroes(struct ActorBody *body)
+{
+    struct ActorBody *heroA;
+    struct ActorBody *heroB;
+    struct ActorBody *partner;
+    s32 y;
+    s32 sum;
+
+    heroA = (struct ActorBody *)(gWorld->partners[6] + 8);
+    heroB = (struct ActorBody *)(gWorld->partners[7] + 8);
+    sprite_set_action(body, 8, 0, 0);
+    if ((6 & heroA->mode) != 2)
+    {
+        y = heroB->targetY / 0x100;
+    }
+    else if ((6 & heroB->mode) != 2)
+    {
+        y = heroA->targetY / 0x100;
+    }
+    else
+    {
+        sum = heroA->targetY + heroB->targetY;
+        if (sum < 0)
+        {
+            sum += 0x1FF;
+        }
+        y = sum >> 9;
+    }
+    partner = body->partner;
+    place_targets(body, partner->targetX / 0x100 + 0x38, y, 0, 0x100);
+    set_motion_start(body, 0x180);
+    set_slot_value(0x99, -1);
+    body->state = step_then_effect;
+}
 
 ASM_FUNC("asm/code_0809D474/hero_helper_spawn.s", void hero_helper_spawn(struct ActorBody *body))
 
-ASM_FUNC("asm/code_0809D474/hero_pair_link.s", void hero_pair_link(struct ActorBody *body))
+void hero_pair_link(struct ActorBody *body)
+{
+    struct ActorBody *heroA;
+    struct ActorBody *heroB;
+    struct ActorBody *hero;
+    struct ActorBody *child;
+    s32 wait;
+    s32 i;
+
+    wait = body->wait;
+    wait--;
+    body->wait = wait;
+    if ((s16)wait > 0)
+    {
+        heroA = (struct ActorBody *)(gWorld->partners[6] + 8);
+        heroB = (struct ActorBody *)(gWorld->partners[7] + 8);
+        if ((6 & heroA->mode) == 2 && heroA->child->state != 0)
+        {
+            return;
+        }
+        if ((6 & heroB->mode) == 2 && heroB->child->state != 0)
+        {
+            return;
+        }
+    }
+    sprite_set_action(body, 0xB, 0, 0);
+    for (i = 6; i <= 7; i++)
+    {
+        hero = (struct ActorBody *)(gWorld->partners[i] + 8);
+        if ((6 & hero->mode) == 2)
+        {
+            ((struct ModeBits *)&hero->mode)->mode = 0;
+            child = hero->child;
+            if (child != 0)
+            {
+                if (child->sprite->unk6 == 0x100)
+                {
+                    effect_spawn_at(0xE8, child->targetX / 0x100, child->targetY / 0x100, child->targetZ / 0x100, hero);
+                    partner_link_update(body, hero, 0xFF);
+                }
+                else
+                {
+                    effect_spawn_at(0xDF, child->targetX / 0x100, child->targetY / 0x100, child->targetZ / 0x100, hero);
+                }
+                if (hero->child != 0)
+                {
+                    obj_release(hero->child);
+                }
+            }
+        }
+    }
+    body->state = wait_for_index;
+}
 
 ASM_FUNC("asm/code_0809D474/slide_and_settle.s", void slide_and_settle(struct ActorBody *body))
 void lower_height_then_slide(struct ActorBody *body)
@@ -368,7 +454,22 @@ void step_then_effect(struct ActorBody *body)
 }
 
 
-ASM_FUNC("asm/code_0809D474/reset_heroes_mode.s", void reset_heroes_mode(void))
+NONMATCH("asm/code_0809D474/reset_heroes_mode.s", void reset_heroes_mode(struct ActorBody *body))
+{
+    struct ActorBody *hero;
+    s32 i;
+
+    for (i = 6; i <= 7; i++)
+    {
+        hero = (struct ActorBody *)(gWorld->partners[i] + 8);
+        if ((hero->mode & 6) == 2)
+        {
+            ((struct ModeBits *)&hero->mode)->mode = 1;
+        }
+    }
+    body->state = place_by_heroes;
+}
+END_NONMATCH
 
 
 void spawn_hero_children(struct ActorBody *body)
@@ -637,7 +738,29 @@ s32 tick_timer_or_remove(struct ActorBody *body, struct ActorBody *other)
     return 0;
 }
 
-ASM_FUNC("asm/code_0809D474/start_pair_motion.s", void start_pair_motion(struct ActorBody *body))
+void start_pair_motion(struct ActorBody *body)
+{
+    struct ActorBody *child;
+    u16 *speed;
+    BodyFunc next;
+
+    speed = &body->speed;
+    *speed = 0;
+    body->tick = gPairStartByte << 8;
+    arrange_child_nodes(body);
+    if (body->child->sprite->flags & 8)
+    {
+        sprite_set_action(body, 1, 0, 0);
+        ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 0;
+        child = body->child;
+        sprite_set_action(child, 1, 0, 0);
+        ((struct SpriteFlagBits *)&child->sprite->flags)->mode = 0;
+        next = countdown_then_next_state;
+        body->state = next;
+        body->wait = gPairCountTable[(s16)*speed];
+        next(body);
+    }
+}
 
 void arrange_child_or_remove(struct ActorBody *body);
 ASM_FUNC("asm/code_0809D474/approach_heroes_step.s", void approach_heroes_step(struct ActorBody *body))
