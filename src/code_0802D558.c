@@ -89,7 +89,7 @@ struct SceneObj
 
 extern s16 gSineTable[];
 extern s16 gCosineTable[];
-u8 *tile_ptr_at(u8 *map, s32 x, s32 y);
+u8 *tile_ptr_at(u8 *map, s16 x, s16 y);
 void pair_set_mode(struct SceneObj *obj, u32 mode, u32 flag);
 void advance_anim_frame(struct SceneObj *obj, struct SubPart *sub, u32 a, u32 b);
 void obj_shift_state_slots(void *sub);
@@ -113,7 +113,60 @@ ASM_FUNC("asm/code_0802D558/queue_sub_motion.s", void queue_sub_motion(void))
 
 ASM_FUNC("asm/code_0802D558/follow_anchor.s", void follow_anchor(void))
 
-ASM_FUNC("asm/code_0802D558/anchor_tile_matches.s", void anchor_tile_matches(void))
+NONMATCH("asm/code_0802D558/anchor_tile_matches.s", u32 anchor_tile_matches(struct SceneObj *obj, u32 mode))
+{
+    struct SubPart *anchor;
+    s32 kind;
+    s32 x;
+    s32 y;
+    s32 px;
+    s32 py;
+    u8 *map;
+    u8 *tile;
+    u32 k;
+
+    anchor = obj->subA;
+    kind = anchor->kind >> 5;
+    if (((u8)(kind ^ 1) & 1) == 0) {
+        return 0;
+    }
+    x = anchor->curX;
+    y = anchor->curY;
+    switch (kind) {
+    case 0:
+        y += 0x100;
+        break;
+    case 2:
+        x -= anchor->halfW278 >> 1;
+        break;
+    case 4:
+        y -= anchor->halfH27C;
+        break;
+    case 6:
+        x += -0x100;
+        x += anchor->halfW278 >> 1;
+        break;
+    }
+    map = obj->map;
+    px = (x < 0) ? x + 0xFFF : x;
+    py = (y < 0) ? y + 0xFFF : y;
+    tile = tile_ptr_at(map, (s16)((px << 4) >> 16), (s16)((py << 4) >> 16));
+    if (mode == 0) {
+        if ((*tile & 0x78) == 0x18) {
+            return 1;
+        }
+    } else {
+        k = *tile & 0x78;
+        if (k == 0x28) {
+            return 1;
+        }
+        if (k == 0x38) {
+            return 1;
+        }
+    }
+    return 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0802D558/set_sub_pair_mode.s", void set_sub_pair_mode(void))
 
