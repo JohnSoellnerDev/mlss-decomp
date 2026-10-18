@@ -79,6 +79,12 @@ struct Child
     u8 unk7E;
 };
 
+struct PanelInfo
+{
+    u8 filler0[0x16];
+    s16 unk16;
+};
+
 struct SlotChild
 {
     u16 unk0;
@@ -115,7 +121,7 @@ void bg_restore_while_busy(struct Obj *obj);
 void scroll_text_step(struct Obj *obj);
 void timer_window_setup(void);
 void update_voice_message(void);
-void retract_window_panel(void);
+void retract_window_panel(struct Obj *obj);
 void release_tile_slot(void *obj, u8 idx);
 void release_slot_object(u32 idx);
 void *spawn_obj_by_id(u32 id, u32 variant, u32 attr, u32 mode);
@@ -124,23 +130,128 @@ void timer_object_state_db08(struct Obj *obj);
 void battle_bg_scroll_callback(void);
 extern u16 gUnk_02000048;
 
+static inline void *world_slot4(void)
+{
+    return gWorld->slot4Tiles;
+}
+
 ASM_FUNC("asm/code_0810BB0C/draw_world_effect_rows.s", void draw_world_effect_rows(void))
 
 ASM_FUNC("asm/code_0810BB0C/draw_obj_display.s", void draw_obj_display(void))
 
-ASM_FUNC("asm/code_0810BB0C/slide_window_panel.s", void slide_window_panel(void))
+NONMATCH("asm/code_0810BB0C/slide_window_panel.s", void slide_window_panel(struct Obj *obj))
+{
+    s32 height;
+    s16 bg2;
+    s32 y;
+    s32 top;
+    s32 bottom;
+    s32 first;
+    s32 second;
+    u32 win;
+    vu16 *shadow;
+    vu32 *win0;
 
-ASM_FUNC("asm/code_0810BB0C/setup_status_panel.s", void setup_status_panel(void))
+    height = obj->unk14 + 3;
+    obj->unk14 = height;
+    if ((s16)height > 0x20)
+    {
+        obj->unk14 = 0x18;
+    }
+    else if ((s16)height > 0x18)
+    {
+        obj->unk14 = 0x20;
+        if (gWorld->timerObj != 0)
+        {
+            release_tile_slot(world_slot4(), 4);
+            release_tile_slot(world_slot4(), 5);
+            gWorld->timerObj->unk4 = timer_object_state_db08;
+        }
+        obj->unkC = (struct Obj *)battle_bg_scroll_callback;
+    }
+    bg2 = ((struct PanelInfo *)gWorld->timerObj->unkC)->unk16;
+    REG_BG2VOFS = bg2 - (obj->unk14 + 6);
+    REG_BG3VOFS = gUnk_0200001E - obj->unk14;
+    win0 = (vu32 *)REG_ADDR_WIN0V;
+    shadow = &gUnk_0200001A;
+    first = shadow[0];
+    y = (s16)obj->unk14;
+    top = y - 0x99;
+    win = first - top;
+    second = shadow[0];
+    bottom = y - 0x8E;
+    win |= (second - bottom) << 8;
+    win |= ((shadow[0] - top) | ((shadow[0] - bottom) << 8)) << 16;
+    *win0 = win;
+}
+END_NONMATCH
+
+void setup_status_panel(void)
+{
+    struct Obj *line;
+    u32 zero;
+
+    zero = 0;
+    release_slot4_tiles();
+    set_tile_slot(world_slot4(), 0, zero, 0xD, zero, 0x12, 3);
+    draw_slot_frame(world_slot4(), 1, 0, 0);
+    draw_slot_text(world_slot4(), 0, 7, 6, (void *)zero, 0x91);
+    line = raster_line_add(bg_slide_out, 0, 0);
+    line->unk14 = 0x18;
+    raster_line_add(bg_slide_timer, 2, 0)->unk8 = (struct Child *)line;
+    raster_line_add(bg_restore_while_busy, 0x18, 0)->unk8 = (struct Child *)line;
+}
 
 ASM_FUNC("asm/code_0810BB0C/create_status_objects.s", void create_status_objects(void))
 
-ASM_FUNC("asm/code_0810BB0C/retract_window_panel.s", void retract_window_panel(void))
+NONMATCH("asm/code_0810BB0C/retract_window_panel.s", void retract_window_panel(struct Obj *obj))
+{
+    u16 old;
+    s16 bg2;
+    s32 old3;
+    s32 height;
+    s32 y;
+    s32 top;
+    s32 bottom;
+    s32 first;
+    s32 second;
+    u32 win;
+    vu16 *shadow;
+    vu32 *win0;
+
+    old = obj->unk14;
+    height = old - 3;
+    obj->unk14 = height;
+    if ((s16)height <= 0)
+    {
+        obj->unk4 = 0;
+    }
+    else
+    {
+        bg2 = ((struct PanelInfo *)gWorld->timerObj->unkC)->unk16;
+        old3 = old + 3;
+        REG_BG2VOFS = bg2 - old3;
+        REG_BG3VOFS = gUnk_0200001E - obj->unk14;
+        win0 = (vu32 *)REG_ADDR_WIN0V;
+        shadow = &gUnk_0200001A;
+        first = shadow[0];
+        y = (s16)obj->unk14;
+        top = y - 0x99;
+        win = first - top;
+        second = shadow[0];
+        bottom = y - 0x8E;
+        win |= (second - bottom) << 8;
+        win |= ((shadow[0] - top) | ((shadow[0] - bottom) << 8)) << 16;
+        *win0 = win;
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(u32 index))
 {
     struct Fig *fig;
     struct Obj *marker;
-    u32 h;
+    u16 h;
 
     fig = gWorld->figs[index];
     if (fig == 0)
@@ -159,7 +270,14 @@ NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(
     }
     else
     {
-        h = (fig->unkEC == -1) ? 0x3C : 4;
+        if (fig->unkEC == -1)
+        {
+            h = 0x3C;
+        }
+        else
+        {
+            h = 4;
+        }
     }
     marker->unk12 = h;
     marker->unk14 = 0xA0;
