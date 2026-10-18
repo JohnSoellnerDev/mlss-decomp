@@ -153,17 +153,16 @@ function start, calls show the relocation (the called symbol). A worked example 
   member: `((struct SysKeys2A *)gSys)->keys`. Pointer arithmetic on the array
   (`*(u16 *)(gSys + 0x2A)`) folds the offset into the pool word (`.4byte gSys+0x2A`, load at
   `#0`). Example `textbox_update` in src/code_0805335C.c.
-- A loop unrolled four times with a jump into the middle (`movs r0, #3; bics r0, r1`, then
-  `cmp r0, #3; bge`, `cmp r0, #2; bge` before four copies of the body) comes from a source
-  file built with `-funroll-loops`. Put `/* agbcc: -funroll-loops */` as the first line of the
-  unit (tools/agbcc.py reads it; `check_unit.py` must still print OK for the other functions)
-  and write the loop as `i = n; while (--i >= 0) p[i] = 0;` (example `clear_map_rect` in
-  src/code_08084DB4.c). Loops with a constant count are unrolled too: twelve iterations come
-  out as four rounds of three bodies (`chain_then_wait_counters` in src/code_080739F0.c).
-  Never write the unrolled form by hand (Duff's device, `goto` into copies of the body): the
-  original is a plain loop. Not every original file used the option (the sound driver did
-  not), so add the line only when the unit still passes `check_unit.py` with it; if it does
-  not, the unit mixes two original files and has to be split (say so in your report).
+- The game's source files were compiled with `-funroll-loops` (tools/agbcc.py adds it for every
+  `code_*` unit; the sound driver and the libraries were built without it). Loops therefore show
+  up unrolled: four copies of the body with a jump into the middle (`movs r0, #3; bics r0, r1`,
+  then `cmp r0, #3; bge`, `cmp r0, #2; bge`), or a constant count split into rounds (twelve
+  iterations as four rounds of three bodies, fifteen as three rounds of five). Write the plain
+  loop the programmer wrote, one body with step 1: `i = n; while (--i >= 0) p[i] = 0;`
+  (`clear_map_rect` in src/code_08084DB4.c), `for (i = 0; i < 15; i++) sum += e[i].v;`
+  (`avg_fields_sdiv15_a` in src/code_08167E7C.c). Never unroll by hand (copies of the body,
+  `i += 2`, Duff's device, `goto` into the copies). A unit made from a file built without the
+  option can switch it off with the first line `/* agbcc: -fno-unroll-loops */`.
 - A constant the original loads from the pool (`ldr r1, =0x5000; subs`) while yours folds it into
   a neighbouring subtraction: compute it in its own statement (`startX = centerX - 0x5000;`).
   A mask the original keeps in a high register across a loop (`mov r8, rX` before the loop,
