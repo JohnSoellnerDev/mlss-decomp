@@ -128,7 +128,7 @@ NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj
         obj->unk10 = delta;
         pos = obj->unk08 + delta;
         obj->unk08 = pos;
-        if (pos > 0x4FFF)
+        if (obj->unk08 > 0x4FFF)
         {
             obj->unk10 = (-delta * 2) / 3;
             if ((obj->unk10 >> 8) == 0)
