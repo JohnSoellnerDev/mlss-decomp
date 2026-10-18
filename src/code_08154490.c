@@ -20,6 +20,10 @@ struct GameState {
     struct Char *charB;
     u8 filler1CA0[0x1CB0 - 0x1CA0];
     void *unk1CB0;
+    u8 filler1CB4[0x1F1C - 0x1CB4];
+    u16 unk1F1C;
+    u8 filler1F1E[2];
+    u8 unk1F20;
 };
 
 extern struct GameState *gGamePtr;
@@ -223,11 +227,91 @@ struct ModeBits {
 extern const u8 gClassE100[];
 extern u8 gGameMode;
 
-ASM_FUNC("asm/code_08154490/obj_init_e100.s", void obj_init_e100(void))
+struct E100Obj {
+    struct SubObj *unk00;
+    u8 filler04[0x2C];
+    const void *unk30;
+    struct SubObj *unk34;
+    u16 unk38;
+};
+
+struct E100Obj *obj_init_e100(struct E100Obj *obj, u32 initArg, u16 kind)
+{
+    struct SubObj *sp;
+
+    obj_init_from_record(obj, initArg);
+    obj->unk30 = gClassE100;
+    obj->unk38 = kind;
+    obj_create_sprite(obj, 0);
+    obj->unk34 = 0;
+    if (((struct ModeBits *)&gGameMode)->mode > 5) {
+        obj_set_sprite_kind(obj, 0x3B);
+        return obj;
+    }
+    obj->unk34 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    if ((u8)(gGamePtr->unk1F20 - 1) <= 4) {
+        if (gGamePtr->unk1F20 == 5)
+            obj_load_record(obj->unk34, 0xA, -1, 0, 0);
+        else
+            obj_load_record(obj->unk34, gGamePtr->unk1F20 + 0x2F, -1, 0, 0);
+    } else {
+        obj_load_record(obj->unk34, 0x30, -1, 0, 0);
+    }
+    sprite_update_cd0(obj->unk34);
+    ((struct FlagBit5 *)&obj->unk34->unk12)->bit5 = 1;
+
+    sp = obj_get_sprite(obj);
+    obj->unk34->unk00 = sp->unk00;
+    sp = obj_get_sprite(obj);
+    obj->unk34->unk02 = sp->unk02;
+    obj->unk34->unkE = 0x13;
+
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f0 = (u32)(sp->unk1F << 30) >> 30;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f2 = (sp->unk1F & 0xC) >> 2;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f4 = (sp->unk1F & 0x30) >> 4;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f6 = sp->unk1F >> 6;
+    return obj;
+}
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e0e0.s", void obj_behavior_e0e0(void))
 
-ASM_FUNC("asm/code_08154490/obj_init_e080.s", void obj_init_e080(void))
+struct SpriteMode11 {
+    u8 low2 : 2;
+    u8 mode : 2;
+    u8 high : 4;
+};
+
+struct E080Obj *obj_init_e080(struct E080Obj *obj, u32 initArg, u16 kind)
+{
+    struct SubObj *sp;
+
+    obj_init_from_record(obj, initArg);
+    obj->unk30 = gTransitionClassE080;
+    obj->unk38 = kind;
+    obj_create_sprite(obj, 0);
+    ((struct SpriteMode11 *)&obj->unk00->unk11)->mode = 1;
+    obj->unk34 = create_obj_de4(4, 0x500A, 0, -1, -1, -1, -1);
+    obj_load_record(obj->unk34, 2, -1, 0, 0);
+    sprite_update_cd0(obj->unk34);
+    ((struct FlagBit5 *)&obj->unk34->unk12)->bit5 = 1;
+    obj->unk34->unk00 = 0x78;
+    obj->unk34->unk02 = 0x50;
+    obj->unk34->unkE = 0x13;
+
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f0 = (u32)(sp->unk1F << 30) >> 30;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f2 = (sp->unk1F & 0xC) >> 2;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f4 = (sp->unk1F & 0x30) >> 4;
+    sp = obj_get_sprite(obj);
+    ((struct SubFlagBits *)&obj->unk34->unk1F)->f6 = sp->unk1F >> 6;
+    return obj;
+}
 
 struct E060Obj {
     struct SubObj *unk00;
@@ -250,13 +334,148 @@ struct E060Obj {
 };
 
 extern const s16 gCosineTable[];
-extern u8 gUnk_03001014[];
+extern u8 *gUnk_03001014;
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e060.s", void obj_behavior_e060(void))
 
-ASM_FUNC("asm/code_08154490/obj_behavior_dfe0.s", void obj_behavior_dfe0(void))
+struct DfeObj {
+    u8 filler0[4];
+    s32 unk04;
+    s32 unk08;
+    u8 filler0C[8];
+    u16 unk14;
+    u8 filler16[2];
+    u16 unk18;
+    u8 filler1A[2];
+    u16 unk1C;
+    u8 filler1E[2];
+    u16 unk20;
+    u8 filler22[2];
+    u8 unk24;
+    u8 filler25[0xB];
+    struct E0E0Table *unk30;
+    u8 filler34[4];
+    s32 unk38;
+    s32 unk3C;
+};
 
-ASM_FUNC("asm/code_08154490/obj_state_load_step.s", void obj_state_load_step(void))
+NONMATCH("asm/code_08154490/obj_behavior_dfe0.s", u32 obj_behavior_dfe0(struct DfeObj *obj, u32 unused1, u16 speed, u32 unused3, u8 mode))
+{
+    struct E0E0Table *table;
+    s32 ay;
+
+    switch (mode) {
+    case 3:
+        table = obj->unk30;
+        table->unk34((u8 *)obj + table->unk30);
+        obj->unk18 = 0xFE0C;
+        obj->unk24 = 1;
+        break;
+    case 4:
+        table = obj->unk30;
+        table->unk3C((u8 *)obj + table->unk38);
+        obj->unk24 = 2;
+        break;
+    case 5:
+        break;
+    default:
+        if (obj->unk24 == 1) {
+            obj->unk14 += obj->unk1C;
+            ay = (s16)speed + obj->unk20;
+            obj->unk18 = obj->unk18 + ay;
+            obj->unk04 += (s16)obj->unk14;
+            obj->unk08 += (s16)obj->unk18;
+            if (obj->unk08 > obj->unk3C) {
+                obj->unk04 = obj->unk38;
+                obj->unk08 = obj->unk3C;
+                obj->unk18 = 0xFE0C;
+            }
+        }
+        break;
+    }
+    return 0;
+}
+END_NONMATCH
+
+struct StateObj {
+    void *unk00;
+    s32 unk04;
+    u8 filler08[0xC];
+    s16 unk14;
+    u8 filler16[2];
+    u16 unk18;
+    u8 filler1A[0xA];
+    u8 unk24;
+    u8 filler25[0x11];
+    u16 unk36;
+};
+
+void obj_state_load_step(struct StateObj *obj)
+{
+    s32 speed;
+    s32 t;
+
+    switch (obj->unk24) {
+    case 0:
+        if (obj->unk14 == 0)
+            break;
+        obj_load_record(obj->unk00, 0, 0, 0, 0);
+        if (obj->unk04 > 229119)
+            obj->unk24 = 10;
+        else
+            obj->unk24 = 1;
+        break;
+    case 1:
+        if (obj->unk04 > 229119) {
+            obj->unk18 = -gGamePtr->unk1F1C;
+            obj_load_record(obj->unk00, 2, 0, 0, 0);
+            obj->unk36 = 0xA;
+            obj->unk24 = 2;
+            break;
+        }
+        speed = obj->unk14;
+        goto check_speed;
+    case 10:
+        speed = obj->unk14;
+check_speed:
+        if (speed != 0)
+            break;
+        obj_load_record(obj->unk00, 1, 0, 0, 0);
+        obj->unk24 = speed;
+        break;
+    case 2:
+        t = obj->unk36;
+        t -= 1;
+        obj->unk36 = t;
+        if ((s16)t > 0)
+            break;
+        obj_load_record(obj->unk00, 3, 0, 0, 0);
+        obj->unk36 = 0x3C;
+        obj->unk24 += 1;
+        break;
+    case 3:
+        t = obj->unk36;
+        t -= 1;
+        obj->unk36 = t;
+        if ((s16)t > 0)
+            break;
+        obj_load_record(obj->unk00, 4, 0, 0, 0);
+        obj->unk36 = 0xA;
+        obj->unk24 += 1;
+        break;
+    case 4:
+        t = obj->unk36;
+        t -= 1;
+        obj->unk36 = t;
+        if ((s16)t > 0)
+            break;
+        obj_load_record(obj->unk00, 0, 0, 0, 0);
+        obj->unk24 = 10;
+        break;
+    default:
+        break;
+    }
+}
 
 void obj_track_char_a(struct TrackObj *obj)
 {
@@ -291,8 +510,46 @@ void obj_track_char_a(struct TrackObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08154490/obj_create_digits.s", void obj_create_digits(void))
+NONMATCH("asm/code_08154490/obj_create_digits.s", struct DigitObj *obj_create_digits(struct DigitObj *obj))
+{
+    u32 rowGap;
 
+    obj->unk1C = 0;
+    obj->unk08 = 0;
+    obj->unk04 = 0;
+    obj->unk00 = 0;
+    obj->unk20 = 0;
+    obj->unk24 = 0;
+    obj->unk28 = 0;
+    obj->unk2C = 0;
+    obj->unk14 = 0xE800;
+    obj->unk18 = 0x1400;
+    obj->unk30 = 0;
+    obj->unk34 = 0;
+
+    obj->unk00 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
+    obj_load_record(obj->unk00, 0xA, -1, 0, 0);
+    sprite_update_cd0(obj->unk00);
+    obj->unk00->unk00 = 0xD8;
+    rowGap = 0x10;
+    obj->unk00->unk02 = rowGap;
+
+    obj->unk04 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
+    obj_load_record(obj->unk04, 0xA, -1, 0, 0);
+    sprite_update_cd0(obj->unk04);
+    obj->unk04->unk00 = 0xE0;
+    obj->unk04->unk02 = rowGap;
+
+    obj->unk08 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
+    obj_load_record(obj->unk08, 0xA, -1, 0, 0);
+    sprite_update_cd0(obj->unk08);
+    obj->unk08->unk00 = 0xE8;
+    obj->unk08->unk02 = rowGap;
+
+    obj_update_digits(obj);
+    return obj;
+}
+END_NONMATCH
 
 void obj_shake_or_countdown(struct DigitObj *obj)
 {
