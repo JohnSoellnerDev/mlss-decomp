@@ -10,7 +10,7 @@ struct FieldSub
     u16 h0A;
     u8 filler0C[0x11 - 0x0C];
     u8 flags11;
-    u8 filler12;
+    u8 flags12;
     u8 count13;
     u16 mask14;
     u8 filler16[0x1C - 0x16];
@@ -44,7 +44,7 @@ struct FieldObj
     u8 filler4D[0x20C - 0x4D];
     u8 flags20C;
     u8 flags20D;
-    u8 filler20E[0x20F - 0x20E];
+    u8 flags20E;
     u8 flags20F;
     u8 filler210[0x213 - 0x210];
     u8 change213;
@@ -58,7 +58,9 @@ struct FieldObj
     u16 h21E;
     u8 anim220;
     u8 anim221;
-    u8 filler222[0x23E - 0x222];
+    u8 unk222;
+    u8 filler223[0x23D - 0x223];
+    u8 unk23D;
     u16 v23E;
     u16 v240;
     u16 v242;
@@ -71,7 +73,10 @@ struct FieldObj
     u8 filler260[0x266 - 0x260];
     u16 v266;
     u16 pending268;
-    u8 filler26A[0x294 - 0x26A];
+    u8 filler26A[2];
+    u16 unk26C;
+    u8 unk26E;
+    u8 filler26F[0x294 - 0x26F];
     struct FieldSub *sub;
     u8 filler298[0x2B5 - 0x298];
     u8 moveFlags2B5;
@@ -125,7 +130,7 @@ struct FieldObj
     s32 unk32C;
           u8 filler330[2];
       u16 unk332;
-      u8 filler334[4];
+      void *unk334;
     struct ObjClass *klass338;
 };
 
@@ -145,6 +150,26 @@ ASM_FUNC("asm/code_08045F18/cell_motion_obj_move_toward_target.s", void cell_mot
 ASM_FUNC("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(void))
 
 ASM_FUNC("asm/code_08045F18/obj_advance_motion.s", void obj_advance_motion(void))
+
+struct ModeBits45
+{
+    u8 lo4 : 4;
+    u8 mode : 2;
+    u8 hi2 : 2;
+};
+
+struct ModeBits23
+{
+    u8 lo2 : 2;
+    u8 mode : 2;
+    u8 hi4 : 4;
+};
+
+struct ModeBits01
+{
+    u8 mode : 2;
+    u8 hi6 : 6;
+};
 
 struct MoveBits
 {
@@ -201,13 +226,187 @@ void obj_stop_motion(struct FieldObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08045F18/obj_set_motion_a_08046AA4.s", void obj_set_motion_a_08046AA4(void))
+NONMATCH("asm/code_08045F18/obj_set_motion_a_08046AA4.s", u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+{
+    u32 target;
+    u32 spd;
+    s32 now;
+    s32 goal;
+    s32 step;
+    struct FieldSub *sub;
+    s32 t;
+    u8 *flags;
+    u32 bits;
 
-ASM_FUNC("asm/code_08045F18/obj_set_motion_b.s", void obj_set_motion_b(void))
+    spd = speed;
+    if (relative == 1)
+    {
+        sub = obj->sub;
+        t = (s16)value;
+        target = (u16)(t + sub->h04);
+    }
+    else
+    {
+        target = value;
+    }
+    obj->axisACur = obj->sub->h04;
+    obj->axisATarget = target;
+    now = (s16)obj->axisACur;
+    goal = (s16)target;
+    if (now == goal)
+        return 0;
+    if (mode == 1)
+    {
+        step = speed;
+        if (now >= goal)
+            step = -speed;
+        obj->axisAStep = step;
+    }
+    else
+    {
+        obj->axisASpeed = spd;
+    }
+    obj->axisACount = 0;
+    ((struct ModeBits45 *)&obj->moveFlags2B5)->mode = mode;
+    return 1;
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_08045F18/obj_set_motion_a_08046BDC.s", void obj_set_motion_a_08046BDC(void))
+NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+{
+    u32 target;
+    u16 spd;
+    s32 now;
+    s32 goal;
+    s32 step;
+    struct FieldSub *sub;
+    s32 t;
+    u8 *flags;
+    u32 bits;
 
-ASM_FUNC("asm/code_08045F18/obj_set_motion_a_compare.s", void obj_set_motion_a_compare(void))
+    spd = speed;
+    if (relative == 1)
+    {
+        sub = obj->sub;
+        t = (s16)value;
+        target = (u16)(t + sub->h06);
+    }
+    else
+    {
+        target = value;
+    }
+    obj->axisBCur = obj->sub->h06;
+    obj->axisBTarget = target;
+    now = (s16)obj->axisBCur;
+    goal = (s16)target;
+    if (now == goal)
+        return 0;
+    if (mode == 1)
+    {
+        step = spd;
+        if (now >= goal)
+            step = -spd;
+        obj->axisBStep = step;
+    }
+    else
+    {
+        obj->axisBSpeed = speed;
+    }
+    obj->axisBCount = 0;
+    flags = &obj->moveFlags2B5;
+    bits = mode << 6;
+    *flags = (*flags & 0x3F) | bits;
+    return 1;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+{
+    u32 target;
+    u32 spd;
+    s32 now;
+    s32 goal;
+    s32 step;
+    struct FieldSub *sub;
+    s32 t;
+
+    spd = speed;
+    if (relative == 1)
+    {
+        sub = obj->sub;
+        t = (s16)value;
+        target = (u16)(t + sub->h08);
+    }
+    else
+    {
+        target = value;
+    }
+    obj->axisACur = obj->sub->h08;
+    obj->axisATarget = target;
+    now = (s16)obj->unk2FE;
+    goal = (s16)obj->unk306;
+    if (now == goal)
+        return 0;
+    if (mode == 1)
+    {
+        step = speed;
+        if (now >= goal)
+            step = -speed;
+        obj->unk30E = step;
+    }
+    else
+    {
+        obj->unk31E = spd;
+    }
+    obj->unk316 = 0;
+    ((struct ModeBits01 *)&obj->flags2B6)->mode = mode;
+    return 1;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08045F18/obj_set_motion_a_compare.s", u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+{
+    u32 target;
+    u32 spd;
+    s32 now;
+    s32 goal;
+    s32 step;
+    struct FieldSub *sub;
+    s32 t;
+
+    spd = speed;
+    if (relative == 1)
+    {
+        sub = obj->sub;
+        t = (s16)value;
+        target = (u16)(t + sub->h0A);
+    }
+    else
+    {
+        target = value;
+    }
+    obj->unk300 = obj->sub->h0A;
+    obj->unk308 = target;
+    now = (s16)obj->unk300;
+    goal = (s16)target;
+    if (now == goal)
+        return 0;
+    if (mode == 1)
+    {
+        step = speed;
+        if (now >= goal)
+            step = -speed;
+        obj->unk310 = step;
+    }
+    else
+    {
+        obj->unk320 = spd;
+    }
+    obj->unk318 = 0;
+    ((struct ModeBits23 *)&obj->flags2B6)->mode = mode;
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(void))
 
@@ -245,7 +444,30 @@ void obj_sync_sub_slot(struct FieldObj *obj, s32 slot)
 
 ASM_FUNC("asm/code_08045F18/obj_step_index.s", void obj_step_index(void))
 
-ASM_FUNC("asm/code_08045F18/obj_set_state.s", void obj_set_state(void))
+NONMATCH("asm/code_08045F18/obj_set_state.s", void obj_set_state(struct FieldObj *obj, u8 state))
+{
+    u8 *p;
+    u32 old;
+    u32 prev;
+    u32 v;
+
+    p = &obj->state214;
+    old = *p;
+    prev = (old << 29) >> 26;
+    v = (old & -0x39) | prev;
+    *p = (v & -8) | (state & 7);
+    if ((((u32)*p << 29) >> 29) > 2)
+    {
+        obj->unk02 = obj->unk24 << 5;
+    }
+    if ((*p & 7) == 3)
+    {
+        struct FieldSub *sub = obj->sub;
+        obj_load_record(sub, sub->anim21, 0, 0, 0);
+    }
+    *(u8 *)((u8 *)obj + 0x214) |= 0x40;
+}
+END_NONMATCH
 
 void obj_apply_state_a(struct FieldObj *obj)
 {
@@ -293,7 +515,54 @@ void obj_apply_state_a(struct FieldObj *obj)
     obj->klass338->fn3C((u8 *)obj + obj->klass338->thisOffset38, 1);
 }
 
-ASM_FUNC("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(void))
+NONMATCH("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(struct FieldObj *obj))
+{
+    u8 *p;
+    u32 v;
+    u32 w;
+    u32 idx;
+    u32 mode;
+    u32 f;
+    s32 a;
+    s32 b;
+
+    p = &obj->state214;
+    v = *p;
+    if (v & 0x40)
+    {
+        idx = ((u32)(v << 26)) >> 29;
+        w = (v & -8) | idx;
+        *p = w;
+        if (((u32)(w << 29) >> 29) > 2)
+            obj->unk02 = obj->unk24 << 5;
+        *(s8 *)p &= -0x41;
+    }
+    if (obj->flags215 & 1)
+    {
+        u16 prev = obj->prevId21C;
+
+        if (prev != obj->id218)
+        {
+            obj->id218 = prev;
+            obj_update_special_flag(obj);
+        }
+    }
+    f = obj->flags215;
+    mode = f & 1;
+    if (f & 4)
+        a = obj->anim221;
+    else
+        a = -1;
+    f = obj->flags215;
+    if (f & 4)
+        b = ((u32)(f << 27)) >> 31;
+    else
+        b = -1;
+    obj_refresh_anim_state(obj, mode, a, b);
+    ((struct SlotBits *)&obj->flags215)->bit0 = 0;
+    ((struct SlotBits *)&obj->flags215)->has1 = 0;
+}
+END_NONMATCH
 
 void obj_set_sprite_slot(struct FieldObj *obj, u32 slot)
 {
