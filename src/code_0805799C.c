@@ -29,6 +29,23 @@ struct ObjLists
     u32 root;
 };
 
+struct TrackObj
+{
+    u8 filler0[0x4E];
+    u16 posA[2];
+    s16 camX;
+    u16 posB[2];
+    s16 camY;
+    u8 filler5A[0x72 - 0x5A];
+    u16 baseA[2];
+    u8 filler76[0x78 - 0x76];
+    u16 baseB[2];
+    u8 filler7C[0x7E - 0x7C];
+    s16 scaleA[2];
+    u8 filler82[0x84 - 0x82];
+    s16 scaleB[2];
+};
+
 extern u8 gSceneChildClass[];
 extern u8 gMapSceneClass[];
 extern u8 gObjDigitsClass[];
@@ -256,7 +273,7 @@ ASM_FUNC("asm/code_0805799C/obj_slots_update.s", void obj_slots_update(void))
 
 ASM_FUNC("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(void))
 
-ASM_FUNC("asm/code_0805799C/calc_obj_scaled_pos.s", void calc_obj_scaled_pos(void))
+ASM_FUNC("asm/code_0805799C/calc_obj_scaled_pos.s", void calc_obj_scaled_pos(struct TrackObj *obj))
 
 ASM_FUNC("asm/code_0805799C/load_map_layout.s", void load_map_layout(void))
 
