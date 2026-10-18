@@ -247,7 +247,43 @@ u8 zone_hit_sub_offsets(u8 *owner, struct SceneSlot *slot)
     entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
     return boxes_overlap_oriented(bounds, obj, entry, bounds[4], bounds[5]) & 0xFF;
 }
-ASM_FUNC("asm/code_080FBF10/zone_hit_box_full.s", void zone_hit_box_full(void))
+NONMATCH("asm/code_080FBF10/zone_hit_box_full.s", u8 zone_hit_box_full(u8 *owner, struct SceneSlot *slot))
+{
+    s16 *bounds = slot->box;
+    struct SceneObj *obj = slot->obj;
+    u8 found;
+    s32 index;
+    struct SceneObj *entry;
+
+    if (((s8 *)bounds)[12] < 0)
+    {
+        if ((slot->flags & 2) == 0)
+        {
+            if (find_active_entry(owner, &found) == 0)
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            u32 sel = (((u32)owner[0x208]) << 29) >> 31;
+
+            found = sel;
+        }
+        index = found;
+    }
+    else
+    {
+        index = ((s8 *)bounds)[12];
+    }
+    entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
+    if ((u8)point_in_box(bounds, entry, 0x7FFF, 0) == 0)
+    {
+        return 0;
+    }
+    return boxes_overlap_oriented((s16 *)((u8 *)bounds + 0x10), obj, entry, 0x7FFF, 0x7FFF) & 0xFF;
+}
+END_NONMATCH
 
 u8 zone_hit_box_offsets(u8 *owner, struct SceneSlot *slot)
 {
@@ -671,7 +707,7 @@ struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *h
     return owner;
 }
 
-NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 mode))
+void owner_release(u8 *owner, u32 mode)
 {
     u8 *sys;
     u16 *p;
@@ -679,9 +715,8 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
     u8 *world;
 
     ((struct TaskOwner *)owner)->type = (void *)gTypeB;
-    sys = gSys;
-    sys[0x44] = 10;
-    sys[0x45] = 2;
+    gSys[0x44] = 10;
+    gSys[0x45] = 2;
     if (gWorld != NULL)
     {
         release_timer_tiles();
@@ -730,7 +765,6 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
     ((struct FlagBit6 *)(sys + 0x79))->b6 = 0;
     task_remove(owner, mode);
 }
-END_NONMATCH
 
 void world_tick(void);
 ASM_FUNC("asm/code_080FBF10/world_init.s", void world_init(void))
