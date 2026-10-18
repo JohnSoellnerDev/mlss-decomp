@@ -99,6 +99,12 @@ struct SceneObj
     u16 unkB8;
 };
 
+struct SceneSignedCount
+{
+    u8 filler0[0x75];
+    s8 count;
+};
+
 struct SceneWorld
 {
     u8 filler0[0x40];
@@ -500,7 +506,33 @@ void obj_anim_c_link_pair(struct SceneObj *obj)
 }
 
 
-ASM_FUNC("asm/code_0811229C/obj_wait_blend_then_detach.s", void obj_wait_blend_then_detach(struct SceneObj *obj))
+NONMATCH("asm/code_0811229C/obj_wait_blend_then_detach.s", void obj_wait_blend_then_detach(struct SceneObj *obj))
+{
+    s8 count;
+    s32 level;
+
+    if ((obj->sprite->flags12 & 0xE) == 0xA)
+    {
+        sprite_set_action(obj, 1, 0, 0);
+        obj_list_push_default(obj);
+        obj->callback5C = (void *)partner_link_update;
+    }
+    count = ((struct SceneSignedCount *)obj->owner)->count;
+    level = count + 2;
+    if (obj->phase != 0)
+    {
+        level = count - 2;
+    }
+    obj->unk75 = level;
+    if ((u8)obj_blend_position(obj) == 0)
+    {
+        sprite_set_action(obj, 2, 0, 0);
+        obj_list_remove(obj);
+        obj->data->modeByte--;
+        obj->state = obj_wait_scene_mode;
+    }
+}
+END_NONMATCH
 
 
 void obj_wait_scene_b4_then_anim4(struct SceneObj *obj)
@@ -527,7 +559,64 @@ void obj_wait_scene_b4_then_anim4(struct SceneObj *obj)
 }
 
 
-ASM_FUNC("asm/code_0811229C/obj_spawn_two_linked.s", void obj_spawn_two_linked(struct SceneObj *obj, void *other, s32 x, s32 y, s32 a, s32 b, void *cb))
+void obj_spawn_two_linked(struct SceneObj *obj, void *other, s32 x, s32 y, s32 a, s32 b, void *cb)
+{
+    struct SceneObj *childA;
+    struct SceneObj *childB;
+    struct SceneSprite *spriteA;
+    struct SceneSprite *spriteB;
+    u16 xh;
+    u16 yh;
+    u16 zh;
+    u16 stage;
+    s32 px;
+    s32 py;
+    s32 pz;
+
+    xh = x;
+    yh = y;
+    zh = a;
+    stage = b;
+    childA = obj_spawn_linked(obj, 0x4041, 0);
+    childB = obj_spawn_linked(obj, 0x4042, 0);
+    px = childA->posX + ((s32)(xh << 16) >> 8);
+    childA->posX = px;
+    childB->posX = px;
+    childA->dispX = px;
+    childB->dispX = px;
+    py = childA->posY + ((s32)(yh << 16) >> 8);
+    childA->posY = py;
+    childB->posY = py;
+    childA->dispY = py;
+    childB->dispY = py;
+    pz = childA->posZ + ((s32)(zh << 16) >> 8);
+    childA->posZ = pz;
+    childB->posZ = pz;
+    childA->dispZ = pz;
+    childB->dispZ = pz;
+    childA->owner = other;
+    childB->owner = other;
+    spriteB = childB->sprite;
+    spriteA = childA->sprite;
+    ((struct SceneSpriteBits *)&spriteA->flags12)->mode = 1;
+    ((struct SceneSpriteBits *)&spriteB->flags12)->mode = 1;
+    childA->state = cb;
+    childB->state = cb;
+    childB->unk75 = obj->unk75 + 1;
+    childA->unk75 = obj->unk75 - 1;
+    childB->phase = 0;
+    childA->phase = 1;
+    obj->data->modeByte += 2;
+    if (stage != 0)
+    {
+        ((struct StageBits *)&childB->unk78)->hi3 = stage - 1;
+    }
+    else
+    {
+        ((struct Flag79Low *)&childB->flags79)->bit0 = 1;
+    }
+    ((struct Flag79Low *)&childB->flags79)->bit0 = 1;
+}
 
 
 ASM_FUNC("asm/code_0811229C/obj_set_motion_from_keys.s", void obj_set_motion_from_keys(struct SceneObj *obj, u32 speed, u32 b))
