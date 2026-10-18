@@ -169,6 +169,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   A mask the original keeps in a high register across a loop (`mov r8, rX` before the loop,
   then `ands` with r8) is an `s32` local set before the loop (`mask = ~0x40;`); `&= ~0x40` on a
   `u8` narrows to `0xBF` instead (examples in src/code_08098B18.c).
+- Table reads the original adds as `lsls r0, r0, #1; adds r0, r0, rBase` (index first) are
+  array indexing, `((u16 *)(ai + 0xD0))[idx]`; hand-written `*(u16 *)(ai + (idx << 1) + 0xD0)`
+  swaps the operands of the add (example `enemy_wait_sense` in src/code_08145D54.c).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
