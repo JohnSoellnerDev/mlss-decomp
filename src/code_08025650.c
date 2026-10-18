@@ -81,7 +81,67 @@ ASM_FUNC("asm/code_08025650/obj_update_entities.s", void obj_update_entities(voi
 
 ASM_FUNC("asm/code_08025650/process_obj_entries.s", void process_obj_entries(void))
 
-ASM_FUNC("asm/code_08025650/obj_collision_mask.s", void obj_collision_mask(void))
+NONMATCH("asm/code_08025650/obj_collision_mask.s", u32 obj_collision_mask(struct Obj *owner, u32 idx))
+{
+    struct Obj *subject;
+    struct Obj *other;
+    u8 mask;
+    s32 k;
+    s32 leftS;
+    s32 yS;
+    s32 depthS;
+    s32 leftO;
+    s32 yO;
+    s32 depthO;
+    s32 lo;
+    s32 hi;
+    u32 fullO;
+
+    subject = owner->entries[idx];
+    mask = 0;
+    leftS = subject->posX - (subject->boxXSize >> 1);
+    yS = subject->posY + subject->boxYOfs;
+    depthS = subject->depth;
+    if (subject->depthDelta > 0 || (subject->depthDelta < 0 && subject->deltaDir < 0))
+        depthS += subject->depthDelta;
+    for (k = 0; k < 2; k++)
+    {
+        other = owner->entries[k];
+        fullO = other->boxXSize;
+        leftO = other->posX - (fullO >> 1);
+        if (leftO < leftS)
+        {
+            hi = leftO + fullO;
+            lo = leftS;
+        }
+        else
+        {
+            hi = subject->boxXSize + leftS;
+            lo = leftO;
+        }
+        if (hi - lo <= 0)
+            continue;
+        yO = other->posY + other->boxYOfs;
+        if (yO > yS)
+            hi = yS - (yO - other->boxYSize);
+        else
+            hi = yO - (yS - subject->boxYSize);
+        if (hi <= 0)
+            continue;
+        depthO = other->depth;
+        if (other->depthDelta > 0 || (other->depthDelta < 0 && other->deltaDir < 0))
+            depthO += other->depthDelta;
+        if (depthO <= depthS)
+            hi = depthO + other->boxDepthSize - depthS;
+        else
+            hi = depthS + subject->boxDepthSize - depthO;
+        if (hi < 0)
+            continue;
+        mask |= 1 << k;
+    }
+    return mask;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08025650/obj_test_mode.s", void obj_test_mode(void))
 
@@ -137,26 +197,26 @@ NONMATCH("asm/code_08025650/obj_build_message.s", void obj_build_message(struct 
 {
     u8 *text = 0;
     u8 *entry;
-    u8 *table;
     u32 offset;
+    u32 table;
     u8 *dst;
     u8 *src;
     u8 ch;
 
     if ((u32)(kind - 4) <= 7)
     {
-        table = gItemTable;
-        table += 0xC;
         offset = index << 4;
+        table = (u32)gItemTable;
+        table += 0xC;
     }
     else
     {
         if ((s32)kind <= 11)
             goto check;
-        table = gStringTable12;
         offset = ((index << 1) + index) << 2;
+        table = (u32)gStringTable12;
     }
-    entry = offset + table;
+    entry = (u8 *)(offset + table);
     {
         u32 lang = gSys.lang8C0;
         u32 *langs = *(u32 **)entry;
