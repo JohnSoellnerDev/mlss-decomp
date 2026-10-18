@@ -169,7 +169,7 @@ s32 obj_last_y(void *obj);
 void set_marker_position(s32 x, s32 y, s32 z);
 void place_world_object(s32 x, s32 y, s32 z, s32 w, u32 e);
 void hero_panel_digits(u8 *digits, u32 heroCtx, u8 *tblA, u8 *tblB, u32 pose, s32 hero);
-u32 to_bcd(u8 value);
+u32 to_bcd(s32 value);
 struct DisplayEntry *create_display_entry(struct Owner *owner, s32 value, u32 stat, u32 c, s32 s0, s32 s1, s32 s2, s32 s3, s32 s4, s32 s5, s32 s6, s32 s7, s32 s8);
 void draw_number_rotated(s32 value, u32 digit, s32 rightEdge, s32 rowY, u32 scaled);
 void state_obj_anim_5_when_active(struct Owner *owner);
@@ -184,7 +184,100 @@ struct Sprite *spawn_obj_by_id(s32 id, u32 a, u32 b, u32 c);
 void sprite_entry_update(void *obj);
 
 void state_tally_hero_stats(struct Owner *owner);
-ASM_FUNC("asm/code_081041E4/state_figure_land.s", void state_figure_land(void))
+struct SpriteFlags12
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 lo4 : 1;
+    u8 bit4 : 1;
+    u8 hi : 3;
+};
+
+static inline void fig_sprite_action_4(struct Figure *fig, u32 action)
+{
+    sprite_set_action((struct Owner *)((u8 *)fig + 8), 4, action, 0);
+}
+
+NONMATCH("asm/code_081041E4/state_figure_land.s", void state_figure_land(struct Owner *owner))
+{
+    struct Figure *fig;
+    struct Sprite *disp;
+    struct Task *task;
+    u32 hasAnim;
+    u32 labelId;
+    u8 lang;
+    u8 pointsRaw;
+    s32 points;
+
+    fig = owner->fig;
+    fig->stepZ += fig->accel;
+    fig->x += fig->stepX;
+    fig->y += fig->stepY;
+    fig->z += (s16)fig->stepZ;
+    if ((s16)fig->stepZ <= 0 && fig->targetZ >= fig->z)
+    {
+        fig->x = fig->targetX;
+        fig->y = fig->targetY;
+        fig->z = fig->targetZ;
+        if (fig != 0 && (fig->ctrl & 6) == 2)
+        {
+            if (fig->anim == -1)
+                fig_sprite_action_4(fig, 0x2003);
+            else
+                fig_sprite_action_4(fig, 0x2050);
+            ((struct SpriteFlags12 *)&fig->link->flags)->bit4 = 0;
+            ((struct SpriteFlags12 *)&fig->link->flags)->mode = 0;
+        }
+        ((struct SpriteFlags12 *)&fig->link->flags)->mode = 1;
+        hasAnim = fig->anim != -1;
+        disp = spawn_obj_by_id(0x7003, hasAnim, 0, 1);
+        gWorld->menuObj = (struct Widget *)disp;
+        sprite_entry_update(disp);
+        disp->x = 0x78;
+        disp->y = 0x1C;
+        lang = ((u8 *)gSys)[0x8C0];
+        if (lang <= 4)
+        {
+            switch (lang)
+            {
+            case 0:
+                labelId = 0x7004;
+                break;
+            case 1:
+                labelId = 0x7005;
+                break;
+            case 2:
+                labelId = 0x7006;
+                break;
+            case 3:
+                labelId = 0x7007;
+                break;
+            case 4:
+                labelId = 0x7008;
+                break;
+            }
+        }
+        disp = spawn_obj_by_id((u16)labelId, 0, 0, 1);
+        gWorld->obj36C = (struct Widget *)disp;
+        sprite_entry_update(disp);
+        disp->x = 0x78;
+        disp->y = 0x40;
+        ((struct SpriteFlags12 *)&disp->flags)->bit4 = 1;
+        pointsRaw = *(u8 *)&fig->points;
+        points = ((s32)pointsRaw << 24) >> 24;
+        task = list_add_task((void *)&gWorld->taskList48, task_countdown_digits);
+        task->unk12 = 0x78;
+        if (points <= 9)
+            task->unk12 = 0x74;
+        task->unk14 = 0x3A;
+        task->unk16 = to_bcd(points);
+        task->timer = 0;
+        gWorld->digitObj = (struct Widget *)task;
+        owner->state = state_tally_hero_stats;
+    }
+}
+END_NONMATCH
+
 
 
 ASM_FUNC("asm/code_081041E4/state_tally_hero_stats.s", void state_tally_hero_stats(struct Owner *owner))
@@ -340,18 +433,31 @@ void state_digit_input_wait(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step(void))
+NONMATCH("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step(struct Owner *owner))
+{
+    u32 rowY = gWorld->pose342 * 0x10 + 0x28;
+    s32 value = owner->index;
+    s32 rightEdge = number_right_edge(value, 0xB8);
+    struct Sprite *obj;
+
+    draw_digits_c0_p11(value, rightEdge, rowY, 0);
+    owner->timer++;
+    if (owner->timer > 9)
+    {
+        obj = spawn_obj_by_id(0x7003, 8, 0, 1);
+        sprite_entry_update(obj);
+        obj->x = 0xB8;
+        obj->y = rowY + 0xA;
+        obj->unkE = 0;
+        owner->sprite = obj;
+        owner->timer = 0;
+        owner->state = state_pose_draw_free;
+        sound_stop_song(0x123);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081041E4/state_add_points_to_hero.s", void state_add_points_to_hero(void))
-
-struct SpriteFlags12
-{
-    u8 lo1 : 1;
-    u8 mode : 2;
-    u8 lo4 : 1;
-    u8 bit4 : 1;
-    u8 hi : 3;
-};
 
 static inline void fig_sprite_action(struct Figure *fig, u32 action)
 {
