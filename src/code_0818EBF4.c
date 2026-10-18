@@ -177,6 +177,9 @@ struct ModelCtx
 
 extern struct ModelCtx *gModelCtx;
 
+extern s16 gSineTable[];
+extern s16 gCosineTable[];
+
 u32 block_flag_byte(struct ObjRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
 void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
@@ -184,7 +187,7 @@ void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
 ASM_FUNC("asm/code_0818EBF4/obj_zoom_model5_turn_rem6_ebf4.s", void obj_zoom_model5_turn_rem6_ebf4(void))
 
-ASM_FUNC("asm/code_0818EBF4/obj_zoom_model2_flat_ee48.s", void obj_zoom_model2_flat_ee48(void))
+ASM_FUNC("asm/code_0818EBF4/obj_zoom_model2_flat_ee48.s", void obj_zoom_model2_flat_ee48(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_0818EBF4/obj_zoom_model6_turn_rem6_f07c.s", void obj_zoom_model6_turn_rem6_f07c(void))
 
