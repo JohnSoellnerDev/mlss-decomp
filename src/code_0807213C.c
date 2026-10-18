@@ -103,7 +103,7 @@ struct ActorObj
     s32 paramA4;
     s32 paramA8;
     u16 timer;
-    u16 dx;
+    s16 dx;
     s16 dy;
     s16 dh;
 };
@@ -129,6 +129,8 @@ void wait_timer_then_place(struct ActorObj *obj);
 void link_owner_then_wait(struct ActorObj *obj);
 struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void obj_detach_active(struct ActorPose *pose);
+void sprite_entry_update(struct ActorPose *pose);
+void on_arrive(struct ActorObj *obj);
 void resolve_contact_action(struct ActorObj *owner, struct ActorObj *obj, s32 a, s32 b, u32 code);
 void wait_counter_then_finish(struct ActorObj *obj);
 void notify_when_index_zero(struct ActorObj *obj);
@@ -268,13 +270,210 @@ void timer_spawn_grandchild(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807213C/obj_fall_and_split.s", void obj_fall_and_split(struct ActorObj *obj))
+void obj_fall_and_split(struct ActorObj *obj)
+{
+    struct ActorObj *piece;
+    struct ActorObj *b;
+    struct ActorObj *c;
+    struct ActorObj *d;
 
-ASM_FUNC("asm/code_0807213C/anim_track_slot.s", void anim_track_slot(struct ActorObj *obj))
+    obj->child->child->posH = obj->posH + 0x1000;
+    obj->posH -= obj->param9C;
+    obj->param9C += obj->paramA0;
+    if (obj->posH <= 0)
+    {
+        obj->posH = 0;
+        set_slot_value(0x40, -1);
+        obj_release(obj->child->child);
+        sprite_set_action(obj, 6, 0x40B7, 0);
+        sprite_set_action(obj->child, 6, 0, 0);
+        effect_spawn_at(0x2204, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100, obj);
+        effect_spawn_at(0x220C, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100, obj);
+        obj->timer = 0x14;
 
-ASM_FUNC("asm/code_0807213C/move_by_speed_xy.s", void move_by_speed_xy(struct ActorObj *obj))
+        piece = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                          obj->posH / 0x100, 1, 1);
+        obj->child->child = piece;
+        piece->group = obj->group;
+        piece->depth = 0x7F;
+        piece->param9C = 0;
+        piece->paramA0 = 0;
+        ((struct Flags79Bits *)&piece->flags79)->bit0 = 1;
+        ((struct Flags77Bits *)&piece->flags77)->bit6 = 0;
+        ((struct Flags77Bits *)&piece->flags77)->bit5 = 0;
+        piece->handler68 = on_arrive;
+        piece->field6C = obj->field6C;
+        piece->owner = obj->owner;
+        obj_list_push_default(piece);
+        piece->handler58 = bind_part_then_step;
+        piece->handler5C = 0;
+        piece->timer = 0x3C;
+        piece->state = timer_then_step_2b35;
 
-ASM_FUNC("asm/code_0807213C/move_by_speed_then_land.s", void move_by_speed_then_land(struct ActorObj *obj))
+        b = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                      obj->posH / 0x100, 0, 1);
+        piece->child = b;
+        b->group = obj->group;
+        b->depth = 0x7F;
+        b->param9C = 1;
+        b->paramA0 = 0;
+        b->timer = 0x3C;
+        b->state = timer_then_step_2b35;
+
+        c = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                      obj->posH / 0x100, 1, 1);
+        b->child = c;
+        c->group = obj->group;
+        c->depth = 0x7F;
+        c->param9C = 0;
+        c->paramA0 = 0x33;
+        c->pose->unk4 = 0x80;
+        ((struct Flags79Bits *)&c->flags79)->bit0 = 1;
+        c->state = scroll_obj_out;
+        ((struct Flags77Bits *)&c->flags77)->bit6 = 0;
+        ((struct Flags77Bits *)&c->flags77)->bit5 = 0;
+        c->handler68 = on_arrive;
+        c->field6C = obj->field6C;
+        c->owner = obj->owner;
+        obj_list_push_default(c);
+        c->handler58 = roll_action_chance;
+        c->handler5C = 0;
+
+        d = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                      obj->posH / 0x100, 0, 1);
+        c->child = d;
+        d->group = obj->group;
+        d->depth = 0x7F;
+        d->param9C = 1;
+        d->paramA0 = 0x33;
+        d->state = scroll_obj_out;
+        d->pose->unk4 = 0x80;
+        obj->state = anim_track_slot;
+    }
+}
+
+void anim_track_slot(struct ActorObj *obj)
+{
+    struct ActorObj *slot;
+    s32 dxd;
+    s32 dyd;
+    s32 slotDx;
+    s32 slotDy;
+    s32 dist;
+    s32 duration;
+    s32 half;
+    s32 factor;
+
+    if (obj->pose->flags & 8)
+    {
+        obj->timer--;
+        if ((s16)obj->timer <= 0)
+        {
+            slot = (struct ActorObj *)(gWorld->partners[0] + 8);
+            sprite_entry_update(slot->pose);
+            slot->posX = obj->posX;
+            slot->posY = obj->posY;
+            slot->posH = obj->posH;
+            sprite_set_action(slot, 0, 0x40AA, 0);
+            slot->state = move_by_speed_xy;
+            slot->targetX = slot->part->targetX;
+            slot->targetY = slot->part->targetY;
+            slot->dx = slot->posX / 0x100;
+            slot->dy = slot->posY / 0x100;
+            slot->dh = slot->posH / 0x100;
+            slotDx = slot->targetX - (slot->dx << 8);
+            slotDy = slot->targetY - (slot->dy << 8);
+            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(slotDx * slotDx + slotDy * slotDy);
+            duration = dist / 0x66;
+            half = duration / 2;
+            factor = 0x3000 / (half * half);
+            if (factor == 1)
+            {
+                factor = 2;
+            }
+            slot->param9C = -factor;
+            slot->paramA0 = duration;
+            slot->paramA4 = slotDx;
+            slot->paramA8 = slotDy;
+            slot->timer = 0;
+
+            sprite_set_action(obj, 7, 0x40B7, 0);
+            sprite_set_action(obj->child, 7, 0, 0);
+            obj->targetX = obj->part->targetX;
+            obj->targetY = obj->part->targetY;
+            obj->dx = obj->posX / 0x100;
+            obj->dy = obj->posY / 0x100;
+            obj->dh = obj->posH / 0x100;
+            dxd = obj->targetX - (obj->dx << 8);
+            dyd = obj->targetY - (obj->dy << 8);
+            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dxd * dxd + dyd * dyd);
+            duration = dist / 0x180;
+            half = duration / 2;
+            factor = 0x3000 / (half * half);
+            if (factor == 1)
+            {
+                factor = 2;
+            }
+            obj->param9C = -factor;
+            obj->paramA0 = duration;
+            obj->paramA4 = dxd;
+            obj->paramA8 = dyd;
+            obj->timer = 0;
+            obj->state = move_by_speed_then_land;
+        }
+    }
+}
+
+void move_by_speed_xy(struct ActorObj *obj)
+{
+    s32 rel;
+    s32 h;
+    s32 offH;
+
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
+    rel = (s16)obj->timer - obj->paramA0 / 2;
+    h = rel * rel * obj->param9C;
+    offH = (obj->dh << 8) + 0x3000;
+    obj->posH = h + offH;
+    obj->timer++;
+    if ((s16)obj->timer >= obj->paramA0 / 2)
+    {
+        if (obj->posH <= 0)
+        {
+            obj->posH = obj->part->targetH;
+            obj->state = 0;
+        }
+    }
+}
+
+void move_by_speed_then_land(struct ActorObj *obj)
+{
+    s32 rel;
+    s32 h;
+    s32 offH;
+    s32 hTarget;
+
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
+    rel = (s16)obj->timer - obj->paramA0 / 2;
+    h = rel * rel * obj->param9C;
+    offH = (obj->dh << 8) + 0x3000;
+    obj->posH = h + offH;
+    obj->timer++;
+    if ((s16)obj->timer >= obj->paramA0 / 2)
+    {
+        if (obj->posH <= 0)
+        {
+            hTarget = obj->part->targetH;
+            obj->posH = hTarget;
+            effect_spawn_at(0x2214, obj->posX / 0x100, obj->posY / 0x100, hTarget / 0x100, obj);
+            sprite_set_action(obj, 0, 0x40B3, 0);
+            obj_release(obj->child);
+            obj->state = wait_for_index;
+        }
+    }
+}
 
 void scroll_obj_out(struct ActorObj *obj)
 {
