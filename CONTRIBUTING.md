@@ -153,6 +153,12 @@ function start, calls show the relocation (the called symbol). A worked example 
   member: `((struct SysKeys2A *)gSys)->keys`. Pointer arithmetic on the array
   (`*(u16 *)(gSys + 0x2A)`) folds the offset into the pool word (`.4byte gSys+0x2A`, load at
   `#0`). Example `textbox_update` in src/code_0805335C.c.
+- A loop unrolled four times with a jump into the middle (`movs r0, #3; bics r0, r1`, then
+  `cmp r0, #3; bge`, `cmp r0, #2; bge` before four copies of the body) comes from a source
+  file built with `-funroll-loops`. Put `/* agbcc: -funroll-loops */` as the first line of the
+  unit (tools/agbcc.py reads it; `check_unit.py` must still print OK for the other functions)
+  and write the loop as `i = n; while (--i >= 0) p[i] = 0;` (example `clear_map_rect` in
+  src/code_08084DB4.c).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
