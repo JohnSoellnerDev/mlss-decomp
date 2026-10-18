@@ -165,6 +165,7 @@ void update_obj_sprite_pos(void *obj, u32 camX, u32 camY);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 s32 lerp_step_08164EE0(s32 a, s32 b, s32 steps, s32 t);
 
+
 ASM_FUNC("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_step_motion(void *obj, void *region, void *list))
 
 struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, struct PosXY *dst, u32 mode)
