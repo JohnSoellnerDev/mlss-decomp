@@ -70,10 +70,21 @@ struct SpriteObj
     u16 unk06;
     u8 filler08[4];
     u16 unk0C;
-    u8 filler0E[0x12 - 0x0E];
+    u16 unk0E;
+    u8 filler10[2];
     u8 unk12;
-    u8 filler13[0x21 - 0x13];
+    u8 filler13[0x1F - 0x13];
+    u8 unk1F;
+    u8 filler20;
     u8 unk21;
+};
+
+struct Attr1F
+{
+    u8 f0 : 2;
+    u8 f2 : 2;
+    u8 f4 : 2;
+    u8 f6 : 2;
 };
 
 struct Bits12Field
@@ -193,6 +204,14 @@ struct TransObj
     s32 unk44;
 };
 
+struct LayerSetupRec
+{
+    u8 filler0[0x1C];
+    u16 unk1C;
+    u8 filler1E[2];
+};
+extern const struct LayerSetupRec gSceneLayerSetupTable[];
+
 extern const u8 gClassE940[];
 extern const u8 gClassE4e0[];
 extern const u8 gClassE520[];
@@ -243,6 +262,7 @@ void obj_sync_sprites_a(struct TransObj *obj, struct CamPos *cam);
 void obj_release_sprite(struct TransObj *obj);
 struct TransObj *obj_init_from_record(struct TransObj *obj, u32 arg);
 void obj_create_sprite(struct TransObj *obj, u32 zero);
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 
 void obj_step_pos18(struct TransObj *obj, s16 value)
 {
@@ -720,7 +740,27 @@ void obj_init_state3(struct TransObj *obj, s32 arg)
     obj->state = 3;
 }
 
-ASM_FUNC("asm/code_0815FA94/obj_set_dir_to_char_a.s", void obj_set_dir_to_char_a(void))
+void obj_set_dir_to_char_a(struct TransObj *obj)
+{
+    struct TransObj *charA;
+
+    if (obj_get_sprite(obj) != 0)
+    {
+        obj_set_sprite_kind(obj, 0x16);
+        obj_get_sprite(obj)->unk0C = 0;
+    }
+    charA = *(struct TransObj **)(gUnk_03001020 + 0x1C98);
+    if (obj->posX > charA->posX)
+    {
+        obj->speedX = 0x200;
+    }
+    else
+    {
+        obj->speedX = -0x200;
+    }
+    obj->speedY = 0;
+    obj->state = 1;
+}
 
 void set_class_e760(struct TransObj *obj, u32 arg)
 {
@@ -813,7 +853,21 @@ void clear_child_u16_0c(struct TransObj *obj)
     obj->sprite->unk0C = 0;
 }
 
-ASM_FUNC("asm/code_0815FA94/sub_081602FC.s", void sub_081602FC(void))
+void sub_081602FC(struct TransObj *obj)
+{
+    s32 speed;
+
+    if (obj->filler25 == 0)
+    {
+        speed = gSceneLayerSetupTable[*((u8 *)gUnk_03001020 + 0x1EA2)].unk1C;
+    }
+    else
+    {
+        speed = gSceneLayerSetupTable[*((u8 *)gUnk_03001020 + 0x1EA2)].unk1C - 0x64;
+    }
+    obj->speedX = speed;
+    obj->state = 2;
+}
 
 void set_pos_from_view_coord(struct TransObj *obj, u32 view)
 {
@@ -921,102 +975,19 @@ struct SceneObj *pool_find_kind1_2(struct GameVars *game, s32 kind)
     return 0;
 }
 
-void *obj_spawn_by_kind(void *game);
-NONMATCH("asm/code_0815FA94/sub_081604EC.s", void *sub_081604EC(struct GameVars *game))
-{
-    void **p;
-    s32 i;
-    s32 slot;
+ASM_FUNC("asm/code_0815FA94/sub_081604EC.s", void sub_081604EC(void))
 
-    for (i = 0, p = game->unk1898; i <= 0xFF; i += 8)
-    {
-        if (p[0] == 0)
-            goto store;
-        slot = i + 1;
-        if (p[1] == 0)
-            goto found;
-        slot = i + 2;
-        if (p[2] == 0)
-            goto found;
-        slot = i + 3;
-        if (p[3] == 0)
-            goto found;
-        slot = i + 4;
-        if (p[4] == 0)
-            goto found;
-        slot = i + 5;
-        if (p[5] == 0)
-            goto found;
-        slot = i + 6;
-        if (p[6] == 0)
-            goto found;
-        slot = i + 7;
-        if (p[7] == 0)
-        {
-found:
-            i = slot;
-            goto store;
-        }
-        p += 8;
-    }
-    slot = -1;
-    i = slot;
-store:
-    return game->unk1898[i] = obj_spawn_by_kind(game);
-}
-END_NONMATCH
-
-NONMATCH("asm/code_0815FA94/pool_first_free_slot_3.s", s32 pool_first_free_slot_3(struct GameVars *game))
+s32 pool_first_free_slot_3(struct GameVars *game)
 {
-    struct SceneObj **p;
-    s32 slot;
-    struct SceneObj *obj;
     s32 i;
 
-    i = 0;
-    p = (struct SceneObj **)game->unk1898;
-    do
+    for (i = 0; i < 0x100; i++)
     {
-        obj = p[0];
-        if (obj == 0)
+        if (game->unk1898[i] == 0)
             return i;
-        slot = i + 1;
-        obj = p[1];
-        if (obj == 0)
-            goto found;
-        slot = i + 2;
-        obj = p[2];
-        if (obj == 0)
-            goto found;
-        slot = i + 3;
-        obj = p[3];
-        if (obj == 0)
-            goto found;
-        slot = i + 4;
-        obj = p[4];
-        if (obj == 0)
-            goto found;
-        slot = i + 5;
-        obj = p[5];
-        if (obj == 0)
-            goto found;
-        slot = i + 6;
-        obj = p[6];
-        if (obj == 0)
-            goto found;
-        slot = i + 7;
-        obj = p[7];
-        if (obj != 0)
-            goto next;
-    found:
-        return slot;
-    next:
-        p += 8;
-        i += 8;
-    } while (i <= 0xFF);
+    }
     return -1;
 }
-END_NONMATCH
 
 extern void *gUnk_0300101C;
 void transition_exit(void *obj, u32 task);
@@ -1160,7 +1131,29 @@ struct TransObj *obj_init_from_record(struct TransObj *obj, u32 arg)
     return obj;
 }
 
-ASM_FUNC("asm/code_0815FA94/obj_create_sprite.s", void obj_create_sprite(struct TransObj *obj, u32 zero))
+void obj_create_sprite(struct TransObj *obj, u32 zero)
+{
+    struct SpriteObj *old;
+
+    old = obj->sprite;
+    if (old != 0)
+    {
+        return;
+    }
+    if (obj->filler27[3] == 0xFF)
+    {
+        return;
+    }
+    obj->sprite = create_obj_de4(obj->filler27[0], obj->filler27[3], 0, -1, -1, -1, -1);
+    obj->sprite->unk0E = obj->filler27[5];
+    ((struct Attr1F *)&obj->sprite->unk1F)->f0 = obj->filler27[6];
+    ((struct Attr1F *)&obj->sprite->unk1F)->f2 = obj->filler27[6];
+    ((struct Attr1F *)&obj->sprite->unk1F)->f4 = obj->filler27[6];
+    ((struct Attr1F *)&obj->sprite->unk1F)->f6 = obj->filler27[6];
+    obj->sprite->x = obj->posX >> 8;
+    obj->sprite->y = obj->posY >> 8;
+    obj_load_record(obj->sprite, obj->filler27[4], -1, 0, (u32)old);
+}
 
 struct SpriteObj *obj_get_sprite(struct TransObj *obj)
 {
