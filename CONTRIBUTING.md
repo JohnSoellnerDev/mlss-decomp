@@ -177,6 +177,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   `void (*fn)(struct Owner *, struct Enemy *, u8 *)`, called as `fn(owner, ent, slot)`. Without the
   third argument GCC puts the handler in the slot's register (example `enemy_wait_spot_owner` in
   src/code_081442FC.c).
+- A callee-saved register that is read on some path without ever being set in the function
+  (it still holds the caller's value) is an uninitialised local in the original: declare it
+  without an initialiser and leave it unassigned on that path (GCC emits no code for it).
 - Stack slots follow the declaration scopes: a local array declared in an inner `{ }` block is
   placed after the outer locals (moves a byte local from `sp+0x14` to `sp+4`; example
   `enemy_contact_check_state` in src/code_08142A38.c).
