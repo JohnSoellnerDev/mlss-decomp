@@ -47,7 +47,6 @@ void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
 void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
 ASM_FUNC("asm/code_08179A7C/spin_scroll_9a7c.s", void spin_scroll_9a7c(void))
-
 ASM_FUNC("asm/code_08179A7C/spin_scroll_9c94.s", void spin_scroll_9c94(void))
 ASM_FUNC("asm/code_08179A7C/spin_offset_9ea4.s", void spin_offset_9ea4(void))
 ASM_FUNC("asm/code_08179A7C/spin_offset_a0cc.s", void spin_offset_a0cc(void))
