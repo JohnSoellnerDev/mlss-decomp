@@ -28,6 +28,9 @@ extern const u8 gColumnTable[];
 extern const u8 gCollisionGrids[];
 extern const u8 gHeapTagObjBuf6c[];
 extern const u8 gHeapTagObjBuf74[];
+extern const u8 gHeapTagObjBuf68[];
+extern const u8 gHeapTagObjBuf70[];
+extern const u8 gHeapTagObjBuf78[];
 extern u8 gUnk_03000DE8[];
 
 void task_insert(void *node, u8 kind, u32 data);
@@ -121,7 +124,45 @@ extern u16 gUnk_02000016[];
 extern u16 gUnk_0200001C[];
 ASM_FUNC("asm/code_0805970C/obj_set_scroll_target.s", void obj_set_scroll_target(void))
 
-ASM_FUNC("asm/code_0805970C/obj_init_task_and_buffers.s", void obj_init_task_and_buffers(void))
+u8 *obj_init_task_and_buffers(u8 *obj, u8 prio, u32 arg, u16 cfg, u16 extra)
+{
+    u32 zero;
+    u32 clear;
+    u16 phase;
+
+    task_insert(obj, prio, arg);
+    *(const u8 **)(obj + 0x18) = gMapObjLoadClass;
+    clear = 0;
+    phase = 0xFFFB;
+    *(u16 *)(obj + 0x1C) = phase;
+    *(u16 *)(obj + 0x1E) = cfg;
+    *(u16 *)(obj + 0x22) = clear;
+    *(u16 *)(obj + 0x24) = clear;
+    *(u16 *)(obj + 0x7C) = extra;
+    *(void **)(obj + 0x68) = heap_alloc(0x3000, 1, gHeapTagObjBuf68, 0);
+    *(void **)(obj + 0x70) = heap_alloc(0x6000, 1, gHeapTagObjBuf70, 0);
+    *(void **)(obj + 0x78) = heap_alloc(0x200, 1, gHeapTagObjBuf78, 0);
+    zero = clear;
+    cpu_fast_set(&zero, *(void **)(obj + 0x68), 0x01000C00);
+    zero = clear;
+    cpu_fast_set(&zero, *(void **)(obj + 0x70), 0x01001800);
+    zero = clear;
+    cpu_fast_set(&zero, *(void **)(obj + 0x78), 0x01000080);
+    *(struct Block24 *)gUnk_03000DE8 = *(struct Block24 *)&gAreaEntryTable[*(u16 *)(obj + 0x1E) & 0x7FFF];
+    *(u16 *)(obj + 0x52) = clear;
+    *(u16 *)(obj + 0x50) = clear;
+    *(u16 *)(obj + 0x4E) = clear;
+    *(u16 *)(obj + 0x58) = clear;
+    *(u16 *)(obj + 0x56) = clear;
+    *(u16 *)(obj + 0x54) = clear;
+    *(u16 *)(obj + 0x5E) = clear;
+    *(u16 *)(obj + 0x5C) = clear;
+    *(u16 *)(obj + 0x5A) = clear;
+    *(u16 *)(obj + 0x64) = clear;
+    *(u16 *)(obj + 0x62) = clear;
+    *(u16 *)(obj + 0x60) = clear;
+    return obj;
+}
 
 void obj_copy_rom_block(u8 *obj);
 void obj_rebuild_map_tiles(u8 *obj);
