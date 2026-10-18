@@ -109,6 +109,20 @@ struct Enemy
     u8 unk33C;
 };
 
+struct Bits2B6
+{
+    u8 low6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Bits20D
+{
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 hi4 : 4;
+};
+
 void obj_pick_random_entry(struct Enemy *ent);
 u32 mt19937_next(void);
 u32 rand_below(u32 range, u32 rnd);
@@ -151,13 +165,16 @@ ASM_FUNC("asm/code_08137B08/obj_move_to_target.s", void obj_move_to_target(void)
 
 ASM_FUNC("asm/code_08137B08/obj_random_pose_short.s", void obj_random_pose_short(void))
 
+
 ASM_FUNC("asm/code_08137B08/obj_link_sprites.s", void obj_link_sprites(void))
+
 
 ASM_FUNC("asm/code_08137B08/obj_random_offset.s", void obj_random_offset(void))
 
 ASM_FUNC("asm/code_08137B08/obj_random_offset_step.s", void obj_random_offset_step(void))
 
 ASM_FUNC("asm/code_08137B08/obj_random_facing_target.s", void obj_random_facing_target(void))
+
 
 ASM_FUNC("asm/code_08137B08/obj_pick_move_vector.s", void obj_pick_move_vector(void))
 
@@ -253,11 +270,123 @@ void obj_velocity_from_facing(struct Enemy *obj)
     obj->unkF8 |= 0x800;
 }
 
-ASM_FUNC("asm/code_08137B08/obj_try_start_hop.s", void obj_try_start_hop(void))
+NONMATCH("asm/code_08137B08/obj_try_start_hop.s", void obj_try_start_hop(struct Enemy *obj))
+{
+    u16 hop;
+    u32 mask;
+    u32 value;
+    u8 *flags;
 
-ASM_FUNC("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(void))
+    hop = obj->unk120[obj->unk1D0];
+    if (obj->unk25C == -1)
+    {
+        if (hop != 0)
+        {
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 0;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 0;
+            obj->unk1BE = hop;
+            obj->unk1C0 = obj->unk1CC;
+            obj->unk24C = obj->posZ + obj->unk18;
+            obj->unk250 = obj->unk18;
+            obj->unk254 = (s16)obj->unk23E;
+            obj->unk25C = 0;
+            flags = &obj->unk2B5;
+            value = *flags;
+            mask = 8;
+        }
+        else
+        {
+            flags = &obj->unk2B6;
+            value = *flags | 0x80;
+            mask = 0x40;
+        }
+        *flags = value | mask;
+    }
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(void))
+NONMATCH("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(struct Enemy *obj))
+{
+    u16 a_raw;
+    u16 b_raw;
+    s32 a;
+    s32 b;
+    u8 *flags;
+    u32 value;
+    u32 mask;
+
+    a_raw = obj->unk110[obj->unk1D0];
+    b_raw = obj->unk118[obj->unk1D0];
+    if (obj->unk25C == -1)
+    {
+        a = (s16)a_raw;
+        b = (s16)b_raw;
+        if ((a | b) != 0)
+        {
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 0;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 0;
+            obj->unk24C = obj->posZ + obj->unk18;
+            obj->unk250 = obj->unk18;
+            obj->unk254 = obj->unk258 = a;
+            obj->unk248 = b;
+            obj->unk25C = 0;
+            flags = &obj->unk2B5;
+            value = *flags;
+            mask = 8;
+        }
+        else
+        {
+            flags = &obj->unk2B6;
+            value = *flags;
+            value |= 0x80;
+            mask = 0x40;
+        }
+        *flags = value | mask;
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(struct Enemy *obj))
+{
+    s32 t;
+    s32 half;
+    u8 *flags;
+    u32 value;
+    u32 mask;
+
+    if (obj->unk25C == -1)
+    {
+        if (obj->unk1CC != 0)
+        {
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 0;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 0;
+            t = obj->posZ + obj->unk18;
+            if (t < 0)
+            {
+                t += 0xFF;
+            }
+            t >>= 8;
+            obj->unk1BE = t - obj->unk1BC;
+            obj->unk1C0 = obj->unk1CC * 2;
+            obj->unk24C = (s16)obj->unk1BC << 8;
+            obj->unk250 = 0;
+            obj->unk254 = half = (s16)obj->unk23E / 2;
+            obj->unk25C = obj->unk1C0 / (half * 8);
+            flags = &obj->unk2B5;
+            value = *flags;
+            mask = 8;
+        }
+        else
+        {
+            flags = &obj->unk2B6;
+            value = *flags;
+            value |= 0x80;
+            mask = 0x40;
+        }
+        *flags = value | mask;
+    }
+}
+END_NONMATCH
 
 void obj_step_toward_target_08138FDC(struct Enemy *obj)
 {
@@ -303,7 +432,50 @@ void obj_move_interp(struct Enemy *obj)
     }
 }
 
-ASM_FUNC("asm/code_08137B08/obj_approach_step.s", void obj_approach_step(void))
+NONMATCH("asm/code_08137B08/obj_approach_step.s", void obj_approach_step(struct Enemy *obj))
+{
+    s32 dx;
+    s32 dy;
+    s32 dx4;
+    s32 dy4;
+    s32 len;
+
+    if ((obj->unk216 & 0x20) == 0)
+    {
+        obj->unk2DE++;
+        dx = obj->unk2BC - obj->unk2CC;
+        if (dx < 0)
+        {
+            dx += 3;
+        }
+        dx4 = dx >> 2;
+        dy = obj->unk2C0 - obj->unk2D0;
+        if (dy < 0)
+        {
+            dy += 3;
+        }
+        dy4 = dy >> 2;
+        if ((dx4 | dy4) != 0)
+        {
+            len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx4 * dx4 + dy4 * dy4);
+            obj->posX += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2D8 * dx4, len);
+            obj->posY += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2D8 * dy4, len);
+        }
+        obj->unk2D8 -= obj->unk248;
+        if ((s16)obj->unk2D8 > 0)
+        {
+            return;
+        }
+        ((struct Bits20D *)&obj->unk20D)->bit3 = 0;
+        if (-(s16)obj->unk2D8 < (s16)obj->unk23E)
+        {
+            return;
+        }
+        obj->posX = obj->unk2CC;
+        obj->posY = obj->unk2D0;
+    }
+}
+END_NONMATCH
 
 void obj_drift_with_cap_step(struct Enemy *obj)
 {
