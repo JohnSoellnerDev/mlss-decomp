@@ -88,14 +88,230 @@ u32 claim_effect_slot(u8 *owner, u32 unused, u32 *cmds)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EF3BC/apply_anchor_command.s", void apply_anchor_command(void))
+struct AnchorBits4 { u8 lo4 : 4; u8 b4 : 1; u8 top : 3; };
+struct AnchorBits3 { u8 lo3 : 3; u8 b3 : 1; u8 top : 4; };
+void set_sub_pair_mode(u8 *target, u32 a, u32 b, u32 c);
+void follow_anchor(u8 *target, u32 arg);
 
-ASM_FUNC("asm/code_080EF3BC/check_object_condition.s", void check_object_condition(void))
+NONMATCH("asm/code_080EF3BC/apply_anchor_command.s", u32 apply_anchor_command(u8 *obj, u8 *dst, u32 *cmds))
+{
+    u8 *list = *(u8 **)(obj + 0x14);
+    u32 mode;
+
+    if ((u8)(*(u8 *)(list + 0x12A) - 3) <= 2)
+    {
+        *(u32 *)dst = *(u32 *)(dst + 0x14);
+        return 0;
+    }
+    mode = cmds[0];
+    if (mode > 7)
+    {
+        return 1;
+    }
+    switch (mode)
+    {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+        set_sub_pair_mode(*(u8 **)(obj + 0x14), mode & 1, ((s32)mode >> 1) & 1, 0);
+        break;
+    case 4:
+        follow_anchor(*(u8 **)(obj + 0x14), 0);
+        break;
+    case 5:
+        ((struct AnchorBits4 *)(*(u8 **)(obj + 0x14) + 0x208))->b4 = 0;
+        /* fall through */
+    case 6:
+        ((struct AnchorBits3 *)(*(u8 **)(obj + 0x14) + 0x208))->b3 = (cmds[0] - 5) & 1;
+        break;
+    case 7:
+        follow_anchor(*(u8 **)(obj + 0x14), 1);
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
+
+struct Bit1Bits { u8 lo1 : 1; u8 b1 : 1; u8 rest : 6; };
+u32 pair_slot_kind(u8 *list);
+u32 sub_0803C454(u8 *list);
+u32 sub_0803C4EC(u8 *list);
+
+u32 check_object_condition(u8 *obj, u32 *dst, u32 *cmds)
+{
+    u32 op = *cmds++;
+
+    if (op > 0xB)
+    {
+        return 1;
+    }
+    switch (op)
+    {
+    case 0:
+        if (pair_slot_kind(*(u8 **)(obj + 0x14)) != 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 1:
+        if (pair_slot_kind(*(u8 **)(obj + 0x14)) > 1)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 2:
+        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 2)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 3:
+        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 4)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 4:
+        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 3)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 5:
+        if (*(u8 *)(*(u8 **)(*(u8 **)(*(u8 **)(obj + 0x14) + 0x200) + 0x368)) == 9
+            || *(u8 *)(*(u8 **)(*(u8 **)(*(u8 **)(obj + 0x14) + 0x204) + 0x368)) == 9)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 6:
+        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 2) != 0)
+        {
+            *dst = *cmds;
+        }
+        ((struct Bit1Bits *)(*(u8 **)(obj + 0x14) + 0xF8))->b1 = 0;
+        break;
+    case 7:
+        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0x2B8) & 0x40) != 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 8:
+        if ((u8)sub_0803C454(*(u8 **)(obj + 0x14)) != 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 9:
+        if ((u8)sub_0803C4EC(*(u8 **)(obj + 0x14)) != 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 10:
+        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 4) != 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    case 11:
+        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 4) == 0)
+        {
+            *dst = *cmds;
+        }
+        break;
+    }
+    return 1;
+}
 
 extern u8 *gMemRoutines;
-ASM_FUNC("asm/code_080EF3BC/apply_record_setting.s", void apply_record_setting(void))
+extern const u8 gAreaEntryTable[];
+extern u8 *gRecordPtrTable[];
+void set_flag(u32 a, u32 b, u32 value, u32 flag);
 
-ASM_FUNC("asm/code_080EF3BC/entity_setup_set_flag_bit.s", void entity_setup_set_flag_bit(void))
+NONMATCH("asm/code_080EF3BC/apply_record_setting.s", u32 apply_record_setting(u32 unused0, u32 unused1, u32 *cmds))
+{
+    if (cmds[0] != 0x3FF)
+    {
+        const u8 *area = gAreaEntryTable + cmds[0] * 24;
+        u32 *p = cmds + 1;
+        u8 *record = gRecordPtrTable[*(u16 *)(area + 0x10)];
+        u8 *base = record - ((record[7] << 8) | record[6]);
+        u32 index = *p++;
+        u8 *entry = base + index * 20;
+
+        if (((entry[0x12] >> 3) & 7) == 3)
+        {
+            u32 word = ((u32)entry[0xF] << 24) | ((u32)entry[0xE] << 16) | ((u32)entry[0xD] << 8) | entry[0xC];
+            u16 value = (word >> 10) + 0x960;
+
+            set_flag(0, 0, value, *(u8 *)p);
+        }
+    }
+    else
+    {
+        u8 *gfx = gUnk_03000FC0;
+        u32 value = 0;
+
+        if (cmds[2] != 0)
+        {
+            value = -1;
+        }
+        cmds[0] = value;
+        *(u32 *)(gfx + 0x14C) = value;
+        ((void (*)(u32, void *, u32))gMemRoutines)(cmds[0], gfx + 0x150, 0xFC);
+        *(u32 *)(gfx + 0x248) = cmds[0];
+    }
+    return 1;
+}
+END_NONMATCH
+
+struct FlagBits7 { u8 lo7 : 7; u8 b7 : 1; };
+struct FlagBits6 { u8 lo6 : 6; u8 b6 : 1; u8 top : 1; };
+struct FlagBits5 { u8 lo5 : 5; u8 b5 : 1; u8 top : 2; };
+
+static inline void set_flag_bit5(u8 *p, u32 v)
+{
+    ((struct FlagBits5 *)p)->b5 = v;
+}
+
+static inline void set_flag_bit6(u8 *p, u32 v)
+{
+    ((struct FlagBits6 *)p)->b6 = v;
+}
+
+static inline void set_flag_bit7(u8 *p, u32 v)
+{
+    ((struct FlagBits7 *)p)->b7 = v;
+}
+
+NONMATCH("asm/code_080EF3BC/entity_setup_set_flag_bit.s", u32 entity_setup_set_flag_bit(u8 *obj, u32 unused, u32 *cmds))
+{
+    u8 *list = *(u8 **)(obj + 0x14);
+    u32 idx = *cmds++;
+    u8 *entry = ((u8 **)(list + 0x28))[idx];
+    s32 kind = *cmds++;
+
+    switch (kind)
+    {
+    case 0:
+        set_flag_bit7(entry + 0x351, *cmds);
+        break;
+    case 1:
+        set_flag_bit6(list + 0x209, *cmds);
+        break;
+    case 2:
+        set_flag_bit5(list + 0x20B, *cmds);
+        break;
+    case 3:
+        set_flag_bit6(list + 0x26A, *(u8 *)cmds);
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 set_var_from_entry(u8 *owner, u8 *dst, s16 *cmd)
 {
@@ -189,7 +405,51 @@ u32 set_state_slot(u32 unused0, u32 value, u32 unused1, u32 *cmds)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(void))
+void step_status_1f8(u8 **obj);
+void sprites_obj_step_move(u8 *list);
+void decode_stream_run(u8 *record, u32 *buf, u8 *gfx, u8 *vars, u8 *extra, u32 kind);
+u32 obj_command_dispatch(u8 *owner, u32 zero, u8 *record, u32 *buf);
+u32 step_effect_slot(u8 *owner, u32 zero, u8 *record);
+
+NONMATCH("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(u8 **obj))
+{
+    u8 *counter = gEffectState + 0x548;
+    u8 *record;
+    u8 *owner;
+    u32 flags;
+    u32 buf[13];
+    u32 kind;
+
+    step_status_1f8(obj);
+    *counter = 3;
+    record = gEffectState + 0x1F8;
+    flags = *(u16 *)(gEffectState + 0x298);
+    if ((flags & 0x100) != 0)
+    {
+        sprites_obj_step_move(*(u8 **)(*obj + 0x14));
+        return;
+    }
+    if ((flags & 0x14) != 0)
+    {
+        return;
+    }
+    owner = *obj;
+    if (((flags ^ 1) & 1) != 0)
+    {
+        return;
+    }
+    kind = (u8)step_effect_slot(owner, 0, record);
+    while (kind == 0)
+    {
+        decode_stream_run(record, buf, gUnk_03000FC0, gEffectState + 0x4B0, gUnk_03000FC0 + 0x38C, kind);
+        if ((u8)obj_command_dispatch(owner, 0, record, buf) == 0)
+        {
+            break;
+        }
+        kind = (u8)step_effect_slot(owner, 0, record);
+    }
+}
+END_NONMATCH
 
 extern const u8 gEffectStateTag[];
 extern u32 gTextExtraFlagPtrs[];
@@ -251,7 +511,37 @@ ASM_FUNC("asm/code_080EF3BC/update_object_effects.s", void update_object_effects
 
 ASM_FUNC("asm/code_080EF3BC/show_text_window.s", void show_text_window(void))
 
-ASM_FUNC("asm/code_080EF3BC/update_effect_slots.s", void update_effect_slots(void))
+u32 slot_countdown(u8 *pool, u32 idx);
+
+NONMATCH("asm/code_080EF3BC/update_effect_slots.s", void update_effect_slots(u8 **task))
+{
+    u8 *slot;
+    s16 i;
+    s32 x;
+    s32 y;
+
+    i = 0;
+    slot = *(u8 **)gUnk_03000FC8;
+    for (; i <= 3; i++, slot += 0x10)
+    {
+        u8 idx = i;
+        if ((u8)slot_countdown(gUnk_03000FC8, idx) != 0)
+        {
+            if (slot[0xE] != 0)
+            {
+                u8 *list = *(u8 **)(*task + 0x14);
+                u8 **entries = (u8 **)(list + 0x28);
+                u8 *z = entries[slot[0xC]];
+                entity_camera_offset(list, slot[0xC], &x, &y);
+                y = y - z[0x283];
+                *(s16 *)(slot + 8) = x;
+                *(s16 *)(slot + 0xA) = y;
+            }
+            update_slot_bounds(gUnk_03000FC8, idx);
+        }
+    }
+}
+END_NONMATCH
 
 void apply_key_filter(u8 *list);
 void start_effect(u8 **owner, u32 arg)
