@@ -141,17 +141,18 @@ void set_mark_state(u32 a, u32 b);
 void spawn_timer_child(void);
 void world_objects_tick(u32 *owner);
 void figure_pair_begin(void);
-void state_hero_fx_dispatch(void);
+void state_hero_fx_dispatch(struct StateOwner *owner);
 void state_effect_mode_2(void);
 void state_effect_release(void);
 void state_clear_hero_flags(void);
 void state_choose_hero(struct StateOwner *owner);
 void state_update_hero_markers(void);
+void world_mode_step(void);
 void draw_obj_pose(struct WorldObj *obj);
 void motion_step(struct WorldObj *obj);
 u32 is_state_busy(void);
 void set_cur_flags(u32 flags);
-void state_check_slots(void);
+void state_check_slots(struct StateOwner *owner);
 void state_queue_texts(void);
 void clear_cur_flags(u32 bits);
 u32 hero_select_index(void);
@@ -253,6 +254,7 @@ u32 process_object_chain(void)
 }
 
 ASM_FUNC("asm/code_08100FFC/world_mode_step.s", void world_mode_step(void))
+
 
 ASM_FUNC("asm/code_08100FFC/state_update_hero_markers.s", void state_update_hero_markers(void))
 
@@ -371,7 +373,40 @@ void state_choose_hero(struct StateOwner *owner)
     ((struct ChooseBit4 *)&world->flags0C)->b4 = 0;
 }
 
-ASM_FUNC("asm/code_08100FFC/state_check_slots.s", void state_check_slots(void))
+void state_check_slots(struct StateOwner *owner)
+{
+    struct World *world;
+    struct WorldObj *obj;
+    s32 count;
+    u32 masked;
+
+    if ((u16)read_entry_half_1a0(gWorld->unk244, gWorld->curObj->unkF4) != 0)
+    {
+        return;
+    }
+    world = gWorld;
+    if (world->unk4 == 0 || world->unk5 == 0)
+    {
+        owner->state = (u32)state_wait_free_slots;
+        return;
+    }
+    owner->state = (u32)state_wait_menu_ready;
+    for (count = 0; count < 8; count++)
+    {
+        obj = world->list58[count];
+        masked = 6 & obj->ctrl7E;
+        if (masked != 6 && masked != 0 && !(obj->flags110 & 0x80))
+        {
+            break;
+        }
+    }
+    if (count == 8)
+    {
+        set_cur_flags_pending(0x100000);
+    }
+    set_cur_flags_pending(0x4000000);
+}
+
 
 NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots(u32 *owner))
 {
@@ -413,7 +448,8 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08100FFC/state_hero_fx_dispatch.s", void state_hero_fx_dispatch(void))
+ASM_FUNC("asm/code_08100FFC/state_hero_fx_dispatch.s", void state_hero_fx_dispatch(struct StateOwner *owner))
+
 
 ASM_FUNC("asm/code_08100FFC/state_play_result_effects.s", void state_play_result_effects(void))
 
