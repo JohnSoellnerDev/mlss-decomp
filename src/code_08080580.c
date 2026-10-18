@@ -175,7 +175,9 @@ struct SpriteObj
     u32 checkA;
     u8 filler84[0x94 - 0x84];
     u32 checkB;
-    u8 filler98[0xB2 - 0x98];
+    u8 filler98[0x9C - 0x98];
+    u32 unk9C;
+    u8 filler0A0[0xB2 - 0xA0];
     u16 stepZ;
 };
 
@@ -227,31 +229,17 @@ void task_init_map(struct TaskNode *task);
 
 NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
 {
-    u32 count;
-    struct SpritePart **entry;
-    s32 k;
+    u32 count = 0;
+    s32 i;
 
-    count = 0;
-    entry = gWorld->parts;
-    for (k = 7; k >= 0; k -= 4)
+    for (i = 0; i < 8; i++)
     {
-        if (((((u32)entry[0]->mode << 29) >> 30) == mode) && (entry[0]->flags110 & 0x20) == 0)
+        struct SpritePart *part = gWorld->parts[i];
+
+        if (((((u32)part->mode << 29) >> 30) == mode) && (part->flags110 & 0x20) == 0)
         {
             count++;
         }
-        if (((((u32)entry[1]->mode << 29) >> 30) == mode) && (entry[1]->flags110 & 0x20) == 0)
-        {
-            count++;
-        }
-        if (((((u32)entry[2]->mode << 29) >> 30) == mode) && (entry[2]->flags110 & 0x20) == 0)
-        {
-            count++;
-        }
-        if (((((u32)entry[3]->mode << 29) >> 30) == mode) && (entry[3]->flags110 & 0x20) == 0)
-        {
-            count++;
-        }
-        entry += 4;
     }
     return count;
 }
@@ -740,26 +728,23 @@ void sprite_load_active_tables(void)
     }
 }
 
-NONMATCH("asm/code_08080580/sprite_sum_parts.s", void sprite_sum_parts(struct SpriteObj *obj))
+void sprite_sum_parts(struct SpriteObj *obj)
 {
     s32 sumX = 0;
     s32 sumY = 0;
     s32 top = 0;
     s32 count = 0;
-    u8 **routines = &gMathRoutines;
-    struct SpritePart **entry = gWorld->parts;
-    s32 k;
+    s32 i;
 
-    for (k = 5; k >= 0; k -= 3)
+    for (i = 0; i < 6; i++)
     {
-        struct SpritePart *part;
-        struct SpriteObj *pose;
-        s32 h;
+        struct SpritePart *part = gWorld->parts[i];
+        struct SpriteObj *pose = (struct SpriteObj *)((u8 *)part + 8);
 
-        part = entry[0];
-        pose = (struct SpriteObj *)((u8 *)part + 8);
         if ((part->mode & 6) == 4)
         {
+            s32 h;
+
             sumX += pose->posX;
             sumY += pose->posY;
             h = pose->posZ + ((s32)part->unkCD << 8);
@@ -769,36 +754,9 @@ NONMATCH("asm/code_08080580/sprite_sum_parts.s", void sprite_sum_parts(struct Sp
             }
             count++;
         }
-        part = entry[1];
-        pose = (struct SpriteObj *)((u8 *)part + 8);
-        if ((part->mode & 6) == 4)
-        {
-            sumX += pose->posX;
-            sumY += pose->posY;
-            h = pose->posZ + ((s32)part->unkCD << 8);
-            if (top < h)
-            {
-                top = h;
-            }
-            count++;
-        }
-        part = entry[2];
-        pose = (struct SpriteObj *)((u8 *)part + 8);
-        if ((part->mode & 6) == 4)
-        {
-            sumX += pose->posX;
-            sumY += pose->posY;
-            h = pose->posZ + ((s32)part->unkCD << 8);
-            if (top < h)
-            {
-                top = h;
-            }
-            count++;
-        }
-        entry += 3;
     }
-    sumX = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(sumX, count);
-    sumY = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(sumY, count);
+    sumX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sumX, count);
+    sumY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sumY, count);
     obj->unk10 = sumX;
     obj->posX = sumX;
     obj->unk14 = sumY;
@@ -806,4 +764,3 @@ NONMATCH("asm/code_08080580/sprite_sum_parts.s", void sprite_sum_parts(struct Sp
     obj->zSum = top;
     obj->posZ = top;
 }
-END_NONMATCH
