@@ -38,7 +38,7 @@ struct Obj
     u8 filler1B8[0x1C0 - 0x1B8];
     s32 zSpan;
     u8 filler1C4[0x1CC - 0x1C4];
-    s32 unk1CC;
+    s32 moveFrames;
     u8 filler1D0[0x200 - 0x1D0];
     struct Obj *tgtA;
     struct Obj *tgtB;
@@ -89,6 +89,14 @@ struct State
     u8 flags;
 };
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+
+struct Lo3
+{
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
 struct Flags8
 {
     u8 bit0 : 1;
@@ -105,11 +113,12 @@ void probe_then_move(void);
 void route_or_move_ac90(void);
 void route_or_move_ad10(void);
 void step_move_set_state_4(void);
+void step_move_set_state_8(void);
 s8 wander_to_edge(struct Obj *obj, u16 steps, s32 dist);
 s8 wander_diag(struct Obj *obj, s32 x, s32 y);
 u32 angle_of_vector16(s32 x, s32 y);
 u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, u8 param4, u8 param5, u16 param6, u16 param7);
-void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, u8 zero);
+void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
 void random_cell_setup(struct Obj *obj, u32 callback);
 u8 point_in_box(s16 *bounds, struct Obj *entry, s32 zMax, s32 zMin);
 u32 boxes_overlap(s16 *bounds, struct Obj *a, struct Obj *b, s32 zAbove, s32 zBelow);
@@ -182,13 +191,46 @@ s8 zone_overlap_code(struct Obj *obj, struct Obj *zone, s32 margin)
     return result;
 }
 
-ASM_FUNC("asm/code_0813AC90/box_hit_kind.s", void box_hit_kind(void))
+NONMATCH("asm/code_0813AC90/box_hit_kind.s", u32 box_hit_kind(struct Obj *owner, struct Obj *other, u16 fmt, u16 offset, u16 kind))
+{
+    s16 box[8];
+    u32 slot;
+
+    if (kind == 0)
+        return 0;
+    load_box_oriented(box, other, fmt, offset);
+    switch (kind)
+    {
+    case 1:
+        slot = 0x200;
+        break;
+    case 2:
+        slot = 0x204;
+        break;
+    case 3:
+        if ((u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + 0x200), box[4], box[5]))
+            return 1;
+        slot = 0x204;
+        break;
+    case 4:
+        if (!(u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + 0x200), box[4], box[5]))
+            return 0;
+        slot = 0x204;
+        break;
+    default:
+        return 1;
+    }
+    if ((u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + slot), box[4], box[5]))
+        return 1;
+    return 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0813AC90/probe_body_hit.s", void probe_body_hit(void))
 
 ASM_FUNC("asm/code_0813AC90/box_overlap_xy.s", void box_overlap_xy(void))
 
-ASM_FUNC("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, u8 zero))
+ASM_FUNC("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero))
 
 ASM_FUNC("asm/code_0813AC90/start_move_to_b.s", void start_move_to_b(void))
 
@@ -202,7 +244,51 @@ ASM_FUNC("asm/code_0813AC90/collide_react.s", void collide_react(void))
 
 ASM_FUNC("asm/code_0813AC90/collide_wander_diag.s", void collide_wander_diag(void))
 
-ASM_FUNC("asm/code_0813AC90/z_approach.s", void z_approach(void))
+NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
+{
+    s32 part;
+    s32 root;
+    s32 rem;
+    u16 *rate;
+    s32 *rest;
+    s32 dz;
+    s32 limit;
+
+    part = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zTarget - obj->zStart, 4);
+    if (part != 0)
+    {
+        root = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(part * part);
+        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(part * obj->zSpeed, root);
+    }
+    rate = (u16 *)&obj->zSpeed;
+    rest = &obj->zRest;
+    rem = *rest;
+    if (rem < 0)
+        rem = -rem;
+    rem = *rate - rem;
+    *rate = rem;
+    if (*rest > 0)
+    {
+        if ((s16)rem > 0)
+            return 1;
+        dz = obj->dz;
+        limit = obj->zLimit;
+        if (dz > limit)
+            return 1;
+    }
+    else
+    {
+        if ((s16)rem > 0)
+            return 1;
+        dz = obj->dz;
+        limit = obj->zLimit;
+        if (dz < limit)
+            return 1;
+    }
+    obj->dz = limit;
+    return 0;
+}
+END_NONMATCH
 
 u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, u8 param4, u8 param5, u16 param6, u16 param7)
 {
@@ -305,11 +391,38 @@ u32 boxes_overlap(s16 *bounds, struct Obj *a, struct Obj *b, s32 zAbove, s32 zBe
 u32 boxes_overlap_oriented(s16 *box, struct Obj *a, struct Obj *b, s32 zAbove, s32 zBelow);
 void obj_box_to_stack(s16 *out, struct Obj *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Obj *obj, u32 flags, u32 offset);
-ASM_FUNC("asm/code_0813AC90/tick_store.s", void tick_store(void))
+NONMATCH("asm/code_0813AC90/tick_store.s", void tick_store(void *ctx, struct State *st, u32 *out))
+{
+    if (--st->timer == 0)
+    {
+        ((struct Flags8 *)&st->flags)->bit0 = 1;
+        ((struct Flags8 *)&st->flags)->bit1 = 0;
+        *out = st->callback;
+    }
+}
+END_NONMATCH
 
 u32 angle_of_vector16(s32 x, s32 y);
-void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, u8 zero);
-ASM_FUNC("asm/code_0813AC90/box_contacts_aim_at_target.s", void box_contacts_aim_at_target(void))
+void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
+void box_contacts_aim_at_target(struct Obj *obj, struct Obj *state, u32 *out)
+{
+    u8 *behavior = (u8 *)state + 0x58;
+    struct Obj *target = obj->tgtA;
+    s32 dx = target->x - state->x;
+    s32 dy = target->y - state->y;
+    u32 facing;
+
+    if ((dx | dy) != 0)
+        facing = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
+    else
+        facing = 0xFF;
+    state->facing = facing;
+    start_move_to(state, target->x, target->y, state->speed, (u8)0);
+    *(s32 *)(behavior + 0x184) = state->x;
+    *(s32 *)(behavior + 0x188) = state->y;
+    ((struct Lo3 *)&state->mode)->lo3 = 3;
+    *out = (u32)step_move_set_state_8;
+}
 
 void start_wander(u32 unused, struct Obj *obj, u32 *out)
 {
