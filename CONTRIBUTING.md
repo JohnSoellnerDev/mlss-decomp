@@ -184,6 +184,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   #8` into the old value's register) comes from reusing that variable: `old = obj->posX; x = old -
   0x200; ... old = x >> 8; if (old < -0x20)` (examples `obj_drift_left` in src/code_08064310.c,
   `obj_drift_left_child` in src/code_080684D4.c).
+- Literal constants always end up as the second operand of `&`/`|`; an `ands rMask, rValue` with
+  the mask register as destination comes from a mask variable set earlier
+  (`mask = 7; ... if ((mask & flags) != mask)`, example `map_check_layer3` in
+  src/code_0805AF28.c).
 - A callee-saved register that is read on some path without ever being set in the function
   (it still holds the caller's value) is an uninitialised local in the original: declare it
   without an initialiser and leave it unassigned on that path (GCC emits no code for it).
