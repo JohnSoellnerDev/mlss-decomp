@@ -149,6 +149,14 @@ function start, calls show the relocation (the called symbol). A worked example 
 - A stack frame with an area nothing in the function touches (`sub sp, #0x10` and no access to
   those bytes) is an unused local array or struct in the original: GCC 2.95 reserves space for
   arrays and structs even when they are never used. Declare it (`s32 unused[4];`).
+- `ldr r0, =gSys; ldrh r1, [r0, #0x2a]` (symbol in the pool, offset in the load) is a struct
+  member: `((struct SysKeys2A *)gSys)->keys`. Pointer arithmetic on the array
+  (`*(u16 *)(gSys + 0x2A)`) folds the offset into the pool word (`.4byte gSys+0x2A`, load at
+  `#0`). Example `textbox_update` in src/code_0805335C.c.
+- A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
+  blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
+  an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
+  src/code_0809583C.c).
 - No inline assembly, `register` variables, `asm("")` tricks, `volatile` or dummy variables that
   only exist to force a register choice or instruction order.
 - If the C does the same thing but does not match after real effort, keep it as
