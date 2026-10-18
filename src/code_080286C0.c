@@ -719,7 +719,7 @@ void set_0d80_slot(void (*fn)(void), u32 slot)
     }
 }
 
-NONMATCH("asm/code_080286C0/reset_0d80_table.s", void reset_0d80_table(void))
+void reset_0d80_table(void)
 {
     void (*handler)(void) = call_0d80_handlers;
     void (**table)(void) = gUnk_03000D80;
@@ -767,7 +767,6 @@ loop:
 done:
     set_irq_callback(2, handler);
 }
-END_NONMATCH
 
 void call_0d80_handlers(void)
 {
