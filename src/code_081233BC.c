@@ -77,28 +77,24 @@ void clear_byte_if_sys_flag(u8 *flag)
     }
 }
 
-NONMATCH("asm/code_081233BC/area_ptr_lookup.s", u32 area_ptr_lookup(u16 idx))
+u32 area_ptr_lookup(u16 idx)
 {
     const u32 *table = gAreaPtrTable;
     const u32 *row = &table[idx];
     u32 lang = gSys.lang8C0;
     u32 *entry = (u32 *)*row;
-    u32 *slot = lang + entry;
-    return *(u32 *)*slot;
+    return *(u32 *)*(lang + entry);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_081233BC/area_table_lookup_081240AC.s", u32 area_table_lookup_081240AC(u16 entry))
+u32 area_table_lookup_081240AC(u16 entry)
 {
     const u32 *table = gAreaPtrTable;
     const struct AreaEntry *ent = gAreaEntryTable;
     const u32 *row = &table[ent[entry].area];
     u32 lang = gSys.lang8C0;
     u32 *ptr = (u32 *)*row;
-    u32 *slot = lang + ptr;
-    return *(u32 *)*slot;
+    return *(u32 *)*(lang + ptr);
 }
-END_NONMATCH
 
 void state_free(void)
 {
