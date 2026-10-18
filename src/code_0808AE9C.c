@@ -173,6 +173,16 @@ struct Flags78Bits
     u8 kind : 3;
 };
 
+extern u8 gSys[];
+
+// The rotation entry of the object's sprite: sys flag bit 3 selects the bank, the OAM index the entry.
+static inline struct AffineSet *oam_affine_group_of(struct Actor *obj)
+{
+    u32 bank = ((u32)gSys[0x888] << 28) >> 31;
+    u32 index = obj->oam->index;
+    return (struct AffineSet *)((bank << 10) + ((index << 5) + (gSys + 0x80)));
+}
+
 // A spawned part takes over bits 5 and 6 of the template flags.
 static inline void copy_template_flags(struct Actor *part, struct Data *data)
 {
@@ -203,7 +213,6 @@ void pose_update_if_visible_b(struct Actor *obj);
 void part_landing_step(struct Actor *obj);
 void pose_update_if_visible_c(struct Actor *obj);
 void pose_update_if_visible_d(struct Actor *obj);
-extern u8 gSys[];
 extern u8 *gWorld;
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void sprite_node_take_link(struct Actor *obj);
@@ -409,7 +418,34 @@ void travel_then_spawn_home(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_finish(struct Actor *obj))
+NONMATCH("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_finish(struct Actor *obj))
+{
+    u16 *counter;
+    s32 ox;
+    s32 oy;
+    struct AffineSet *group;
+
+    travel_aim_at_target(obj);
+    counter = &obj->step;
+    *counter = *counter - 1;
+    if ((s16)*counter <= 0x12)
+    {
+        ox = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((obj->data->dirX << 3) + obj->data->dirX) << 1, (s16)*counter);
+        oy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((obj->data->dirY << 3) + obj->data->dirY) << 1, (s16)*counter);
+        group = oam_affine_group_of(obj);
+        group->pa = ox;
+        group->pb = oy;
+        group->pc = -oy;
+        group->pd = ox;
+        if ((s16)*counter == 1)
+        {
+            obj->data->mark = 0;
+            sound_stop_song(0x5E);
+            obj_release(obj);
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_walker.s", void wait_then_spawn_walker(void))
 
@@ -442,7 +478,37 @@ void walk_then_spawn_home(struct Actor *obj)
     obj->state = settle_aim_then_remove;
 }
 
-ASM_FUNC("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remove(struct Actor *obj))
+NONMATCH("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remove(struct Actor *obj))
+{
+    u16 *counter;
+    u16 before;
+    s32 ox;
+    s32 oy;
+    struct AffineSet *group;
+
+    travel_aim_at_target(obj);
+    counter = &obj->step;
+    before = *counter;
+    if (*(s16 *)counter != 0)
+    {
+        *counter = before - 1;
+        ox = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->data->dirX << 4, (s16)*counter);
+        oy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->data->dirY << 4, (s16)*counter);
+        group = oam_affine_group_of(obj);
+        group->pa = ox;
+        group->pb = oy;
+        group->pc = -oy;
+        group->pd = ox;
+        if ((s16)*counter <= 1)
+        {
+            sound_stop_song(0x5E);
+            obj->data->mark = 0;
+            obj_release(obj->child);
+            obj_release(obj);
+        }
+    }
+}
+END_NONMATCH
 
 void wait_then_start_motion(struct Actor *obj)
 {
