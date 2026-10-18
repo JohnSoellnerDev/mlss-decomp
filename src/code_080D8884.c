@@ -36,6 +36,21 @@ struct HighBitByte
     u8 high : 1;
 };
 
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 high3 : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct ModeBits
 {
     u8 low : 1;
@@ -178,6 +193,8 @@ void obj_release(struct ActorObj *obj);
 void owner_moves_obj_prepare_b(struct ActorObj *obj);
 void obj_retarget_c(struct ActorObj *obj);
 void obj_retarget_a(struct ActorObj *obj);
+void obj_retarget_b(struct ActorObj *obj);
+void obj_pose_update_b(struct ActorObj *obj);
 void hero_b_link_b(struct ActorObj *obj);
 void hero_b_active_a(struct ActorObj *obj);
 void hero_b_flagged_a(struct ActorObj *obj);
@@ -756,7 +773,53 @@ u32 obj_lookup_part(struct ActorObj *obj, u32 a, u32 b)
     return partner_link_update(obj, a, b);
 }
 
-ASM_FUNC("asm/code_080D8884/obj_spawn_child_a.s", void obj_spawn_child_a(void))
+void obj_spawn_child_a(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    struct ActorPart *ownerPart;
+    s16 *dxp;
+    s16 *dyp;
+    s16 *dhp;
+    s32 *limitp;
+    s32 halfX;
+    s32 halfY;
+
+    if ((obj->pose->flags12 & 8) != 0)
+    {
+        child = obj_spawn(obj->part, 0x4070, obj->baseX / 0x100, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 0xC, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->high3 = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = obj_retarget_a;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler60 = (u32 (*)(struct ActorObj *, u32, u32))obj_start_move_if_zero;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->partner = obj->partner;
+        child->tag = 0xFF;
+        sprite_set_action(child, 2, 0, 0);
+        limitp = &child->limitH;
+        ownerPart = obj->owner->part;
+        *limitp = ownerPart->targetH;
+        dxp = &child->dx;
+        dyp = &child->dy;
+        dhp = &child->dh;
+        halfX = (ownerPart->targetX - child->baseX) / 3;
+        halfY = (ownerPart->targetY - child->baseY) / 3;
+        child->partHandle = jump_velocity(dxp, dyp, dhp, halfX, halfY,
+                                          *limitp - child->baseH, 0x3C00, 0x4CC, 0xFD, 0);
+        obj->unk6C = 0;
+        sprite_set_action(obj, (obj->owner->part->slot == -1) ? 5 : 9, 0, 0);
+        ((struct PoseBits *)&obj->pose->flags12)->mode = 1;
+        obj->state = obj_pose_update_if_active;
+    }
+}
 
 
 void obj_retarget_a(struct ActorObj *obj)
@@ -864,7 +927,53 @@ void obj_timed_move_b(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/owner_moves_obj_spawn_child_b.s", void owner_moves_obj_spawn_child_b(void))
+void owner_moves_obj_spawn_child_b(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    struct ActorPart *ownerPart;
+    s16 *dxp;
+    s16 *dyp;
+    s16 *dhp;
+    s32 *limitp;
+    s32 halfX;
+    s32 halfY;
+
+    if ((obj->pose->flags12 & 8) != 0)
+    {
+        child = obj_spawn(obj->part, 0x4070, obj->baseX / 0x100, obj->baseY / 0x100,
+                          obj->baseH / 0x100 + 0xC, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->high3 = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        child->state = obj_retarget_b;
+        child->handler68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->handler60 = (u32 (*)(struct ActorObj *, u32, u32))obj_start_move_if_zero;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->partner = obj->partner;
+        child->tag = 0xFF;
+        sprite_set_action(child, 2, 0, 0);
+        limitp = &child->limitH;
+        ownerPart = obj->owner->part;
+        *limitp = ownerPart->targetH;
+        dxp = &child->dx;
+        dyp = &child->dy;
+        dhp = &child->dh;
+        halfX = (ownerPart->targetX - child->baseX) / 3;
+        halfY = (ownerPart->targetY - child->baseY) / 3;
+        child->partHandle = jump_velocity(dxp, dyp, dhp, halfX, halfY,
+                                          obj->limitH - child->baseH, 0x3C00, 0x4CC, 0xFD, 0);
+        obj->unk6C = 0;
+        sprite_set_action(obj, (obj->owner->part->slot == -1) ? 5 : 9, 0, 0);
+        ((struct PoseBits *)&obj->pose->flags12)->mode = 1;
+        obj->state = obj_pose_update_b;
+    }
+}
 
 void obj_retarget_b(struct ActorObj *obj)
 {
