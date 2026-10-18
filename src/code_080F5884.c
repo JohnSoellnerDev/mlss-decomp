@@ -86,12 +86,24 @@ void sprite_set_action(u8 *obj, u32 a, u32 b, u32 c);
 void obj_track_target(u8 *target);
 void state_update_hero_markers(void);
 void anim_dispatch(u8 *obj, s32 value, u32 a, u32 b);
-extern const u8 gPartTemplates[];
+struct PartTemplate
+{
+    u8 filler0[8];
+    u8 *sprite;
+    u8 filler0C[0x2C - 0x0C];
+};
+
+extern const struct PartTemplate gPartTemplates[];
 u32 lookup_or_alloc_13b4(u32 a, u32 key, s32 b, s32 c);
 void release_block(void *block);
 void place_part_in_slot(u32 effect, s32 slot, s32 x, s32 y, s32 z, s32 a, s32 b);
 void noop_callback_0808261C(void);
 void run_slot_script(u32 index);
+void sprite_entry_update(u8 *obj);
+void release_object(u8 *obj);
+void release_object_data(u8 *obj);
+void task_list_remove(u8 *obj);
+void process_record_ring(u8 *obj);
 
 ASM_FUNC("asm/code_080F5884/cmd_set_var_from_slot_field.s", void cmd_set_var_from_slot_field(void))
 
@@ -169,7 +181,61 @@ ASM_FUNC("asm/code_080F5884/cmd_slot_spawn_a.s", void cmd_slot_spawn_a(void))
 
 ASM_FUNC("asm/code_080F5884/cmd_slot_spawn_b.s", void cmd_slot_spawn_b(void))
 
-ASM_FUNC("asm/code_080F5884/cmd_slot_release.s", void cmd_slot_release(void))
+u32 cmd_slot_release(u32 unused0, u8 *dst, u32 *cmd)
+{
+    u32 *cursor;
+    u32 action;
+    u8 *obj;
+    u8 *p;
+    u8 flag;
+
+    cursor = cmd;
+    action = *cursor++;
+    switch (action)
+    {
+    case 0:
+        p = gWorld->slots[cursor[0]];
+        place_part_in_slot(cursor[0], *(s16 *)(p + 0xEC), *(s32 *)(p + 0xD8) / 0x100, *(s32 *)(p + 0xDC) / 0x100,
+                           *(s32 *)(p + 0xE0) / 0x100, ((u32)p[0x110] << 25) >> 31, 0);
+        run_slot_script(cursor[0]);
+        sprite_entry_update(*(u8 **)(p + 0x10));
+        break;
+    case 1:
+        obj = gWorld->slots[cursor[0]];
+        flag = obj[0x111] & 2;
+        if (flag != 0)
+        {
+            *(u32 *)dst = *(u32 *)(dst + 0x14);
+            return 0;
+        }
+        obj_stop(obj + 8);
+        *(u16 *)(obj + 0x11E) = flag;
+        break;
+    case 3:
+        release_object_data(gWorld->slots[cursor[0]]);
+        break;
+    case 2:
+        obj = gWorld->slots[cursor[0]];
+        release_object(obj);
+        task_list_remove(obj);
+        break;
+    case 4:
+        release_object(gWorld->slots[cursor[0]]);
+        break;
+    case 5:
+        obj = gWorld->slots[cursor[0]];
+        flag = obj[0x111] & 2;
+        if (flag != 0)
+        {
+            *(u32 *)dst = *(u32 *)(dst + 0x14);
+            return 0;
+        }
+        process_record_ring(obj + 8);
+        *(u16 *)(obj + 0x11E) = flag;
+        break;
+    }
+    return 1;
+}
 
 ASM_FUNC("asm/code_080F5884/cmd_slot_move_step.s", void cmd_slot_move_step(void))
 
@@ -295,7 +361,61 @@ NONMATCH("asm/code_080F5884/cmd_slot_set_bit_pair.s", u32 cmd_slot_set_bit_pair(
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F5884/cmd_world_slot.s", void cmd_world_slot(void))
+NONMATCH("asm/code_080F5884/cmd_world_slot.s", u32 cmd_world_slot(u32 unused0, u32 unused1, u32 *cmd))
+{
+    s32 idx;
+    u32 *cursor;
+    s32 kind;
+    u32 old;
+    u32 block;
+    u8 *entry;
+
+    cursor = cmd;
+    kind = *cursor++;
+    switch (kind)
+    {
+    case 0:
+    {
+        u32 field;
+
+        if (cursor[0] == 0)
+        {
+            field = (u32)gWorld->unk2EC << 22;
+        }
+        else if (cursor[0] == 1)
+        {
+            field = *(u32 *)&gWorld->unk2EC << 12;
+        }
+        else
+        {
+            field = (u32)gWorld->unk2EE << 18;
+        }
+        idx = field >> 22;
+        old = gWorld->unk2E0[cursor[0]];
+        if (old != 0)
+        {
+            release_block((void *)old);
+        }
+        block = lookup_or_alloc_13b4(*(u16 *)gPartTemplates[cursor[1]].sprite, idx, -1, 1);
+        gWorld->unk2E0[cursor[0]] = block;
+    }
+        break;
+    case 1:
+        if ((s32)cursor[0] >= 0)
+        {
+            noop_callback_0808261C();
+        }
+        break;
+    case 2:
+        entry = gWorld->slots[cursor[1]];
+        place_part_in_slot(cursor[1], cursor[0], *(s32 *)(entry + 0xD8) / 0x100, *(s32 *)(entry + 0xDC) / 0x100,
+                           *(s32 *)(entry + 0xE0) / 0x100, 1, cursor[2] == 0);
+        run_slot_script(cursor[1]);
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_080F5884/cmd_slot_table.s", void cmd_slot_table(void))
