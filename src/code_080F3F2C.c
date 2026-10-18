@@ -128,7 +128,7 @@ ASM_FUNC("asm/code_080F3F2C/entry_value_command.s", void entry_value_command(voi
 ASM_FUNC("asm/code_080F3F2C/entry_mode_command.s", void entry_mode_command(void))
 
 ASM_FUNC("asm/code_080F3F2C/entry_flag_store.s", void entry_flag_store(void))
-NONMATCH("asm/code_080F3F2C/owner_entry_cmds_cmd_slot_set_motion.s", u32 owner_entry_cmds_cmd_slot_set_motion(struct Owner *owner, struct Obj *obj, struct Cmd *cmd))
+u32 owner_entry_cmds_cmd_slot_set_motion(struct Owner *owner, struct Obj *obj, struct Cmd *cmd)
 {
     u8 idx;
     u32 flag;
@@ -148,12 +148,11 @@ NONMATCH("asm/code_080F3F2C/owner_entry_cmds_cmd_slot_set_motion.s", u32 owner_e
     if (((cmd->unk4 >> 1) & 3) == 1)
         flag = 1;
     slot_set_value(owner, idx, value, flag);
-    slot_set_vec(idx, cmd->unk8, cmd->unkC, cmd->unk10, (cmd->unk4 ^ 1) & 1);
+    slot_set_vec(idx, cmd->unk8, cmd->unkC, cmd->unk10, ((u8)cmd->unk4 ^ 1) & 1);
     slot_start_motion(idx, 1);
     obj->unkA0 |= 2;
     return 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_set_position.s", void cmd_slot_set_position(void))
 
