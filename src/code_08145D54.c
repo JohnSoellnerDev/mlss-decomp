@@ -217,7 +217,7 @@ void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *sta
 void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 
-NONMATCH("asm/code_08145D54/enemy_wait_sense.s", void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     u8 *rec = ent->unk1B0;
@@ -227,7 +227,7 @@ NONMATCH("asm/code_08145D54/enemy_wait_sense.s", void enemy_wait_sense(struct Ow
     {
         u32 idx = rand_below(4, mt19937_next());
 
-        ent->unk1D2 = *(u16 *)(ai + (idx << 1) + 0xD0);
+        ent->unk1D2 = ((u16 *)(ai + 0xD0))[idx];
         state_out->state = tick_store;
         state_out->unkC = enemy_push_by_mode;
     }
@@ -246,8 +246,8 @@ NONMATCH("asm/code_08145D54/enemy_wait_sense.s", void enemy_wait_sense(struct Ow
     else
     {
         ent->unk1D4--;
-    }}
-END_NONMATCH
+    }
+}
 
 void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
@@ -664,7 +664,8 @@ NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner 
     {
         obj_set_sprite_link(ent, 0);
         state_out->state = state_out->unk8;
-    }}
+    }
+}
 END_NONMATCH
 
 ASM_FUNC("asm/code_08145D54/enemy_chase_partner.s", void enemy_chase_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
@@ -724,7 +725,8 @@ NONMATCH("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner 
         ((struct Flags8 *)&ent->unk210)->bit4 = 1;
         ((struct Flags8 *)&ent->unk20D)->bit2 = 1;
         state_out->state = enemy_face_partner;
-    }}
+    }
+}
 END_NONMATCH
 
 void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
