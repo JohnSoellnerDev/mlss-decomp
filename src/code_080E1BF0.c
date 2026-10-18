@@ -153,9 +153,47 @@ void stream_next_halfword(struct StreamObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080E1BF0/add_offset_to_records.s", void add_offset_to_records(void))
+void add_offset_to_records(s32 dx, s32 dy, s32 dz)
+{
+    struct World *world = gWorld;
+    struct RecXYZ *first;
+    s32 n;
+    s32 i;
 
-ASM_FUNC("asm/code_080E1BF0/load_records_from_stream.s", void load_records_from_stream(void))
+    if (world->saved260 != 0)
+    {
+        first = (struct RecXYZ *)(gWorkBuf + 0x52F0);
+        n = world->count270;
+        for (i = 0; i < n; i++)
+        {
+            first[i].x += dx << 8;
+            first[i].y += dy << 8;
+            first[i].z += dz << 8;
+        }
+    }
+}
+
+void load_records_from_stream(s16 *stream)
+{
+    struct World *world;
+    struct RecXYZ *first;
+    s32 count;
+    s32 i;
+
+    world = gWorld;
+    if (world->saved260 != 0)
+    {
+        first = (struct RecXYZ *)(gWorkBuf + 0x52F0);
+        count = *stream++;
+        world->count270 = count;
+        for (i = 0; i < count; i++)
+        {
+            first[i].x = *stream++ << 8;
+            first[i].y = *stream++ << 8;
+            first[i].z = *stream++ << 8;
+        }
+    }
+}
 
 void reset_display_step(void)
 {
