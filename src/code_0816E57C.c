@@ -41,7 +41,9 @@ extern const u8 gPairClass[];
 extern const u8 gPairPartClass[];
 extern const u8 gPartClass[];
 extern const u8 gStageClass[];
+extern const u8 gHeapTagSceneBlock[];
 extern const s8 gPuffBaseTable[];
+extern const s16 gLanguageRowOffsets[];
 extern void *gUnk_03000D48;
 extern void *gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
@@ -68,6 +70,12 @@ void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void list_insert(void *list, void *node);
 void obj_update_anim_pair(struct EffectObj *obj, u32 a, u32 b);
 void obj_set_wait_60(struct EffectObj *obj);
+void obj_set_fields_18(void *obj, u32 a, u32 b, u32 c);
+extern const u8 gHeapTagHudCounterA[];
+extern const u8 gHeapTagHudCounterB[];
+extern const u8 gRowFillValuesLow[];
+extern const u8 gRowFillValuesMid[];
+extern const u8 gRowFillValuesCycle[];
 u8 obj_is_idle(u32 anim);
 void obj_start_tween(u32 anim, u32 a, u32 b, u32 c, u32 d);
 void obj_tween_step(u32 anim);
@@ -76,6 +84,8 @@ void free_if_bit0_b(void *ptr, u32 flags);
 void window_destroy(void *window, u32 flags);
 void obj_run_callbacks(void);
 void set_flags_2_3(u32 hook);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void obj_setup_slot(void *obj, u32 a, u32 b, u32 c, s32 offset, ByteArg flag);
 
 struct ClassA
 {
@@ -100,6 +110,7 @@ struct HudCounter
     struct Obj *sprite0;
     struct Obj *sprite1;
     struct Obj *slots[6][6];
+    u8 filler98[0x10];
     u32 unkA8[6];
     u32 unkC0[6];
     u32 unkD8[4];
