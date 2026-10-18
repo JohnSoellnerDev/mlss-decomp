@@ -65,7 +65,9 @@ struct World
     u8 modeByte;
     u8 filler8[0x0B - 0x08];
     u8 flags0B;
-    u8 filler0C[0x7C - 0x0C];
+    u8 filler0C[0x0D - 0x0C];
+    u8 flags0D;
+    u8 filler0E[0x7C - 0x0E];
     struct Obj *active;
     struct Fig *fig1;
     struct Fig *fig2;
@@ -81,7 +83,9 @@ struct World
     struct Obj *timerObj;
     u8 filler294[0x2BC - 0x294];
     u8 uploadState;
-    u8 filler2BD[0x2F9 - 0x2BD];
+    u8 filler2BD[0x2C0 - 0x2BD];
+    u8 figMode;
+    u8 filler2C1[0x2F9 - 0x2C1];
     u8 stateByte;
     u8 filler2FA[0x2FC - 0x2FA];
     struct Obj *slotTable[4];
@@ -90,11 +94,22 @@ struct World
     u16 counter314;
 };
 
+struct FigModeBits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 rest : 5;
+};
+
 struct PartnerState
 {
     u8 filler0[0x7E];
     u8 unk7E;
-    u8 filler7F[0xF6 - 0x7F];
+    u8 filler7F[0xE4 - 0x7F];
+    u8 *unkE4;
+    u8 fillerE8[0xEC - 0xE8];
+    s16 unkEC;
+    u8 fillerEE[0xF6 - 0xEE];
     s16 unkF6;
     u8 filler0F8[0x104 - 0xF8];
     s16 unk104;
@@ -105,6 +120,7 @@ struct PartnerState
     u8 unk111;
     u8 filler112[0x11E - 0x112];
     u16 unk11E;
+    u8 unk120;
 };
 
 struct ObjAux
@@ -119,7 +135,7 @@ struct PartnerObj
 {
     u8 filler0[0x10];
     s32 unk10;
-    u8 filler14[4];
+    s32 unk14;
     s32 unk18;
     u8 filler1C[0x28 - 0x1C];
     struct PartnerState *unk28;
@@ -134,11 +150,19 @@ struct PartnerObj
     struct ObjAux *unk6C;
     u8 filler70[0xB2 - 0x70];
     u16 unkB2;
+    u8 fillerB4[0xB8 - 0xB4];
+    u16 unkB8;
+    u16 unkBA;
+    u16 unkBC;
+    u16 unkBE;
+    u16 unkC0;
+    u8 unkC2;
 };
 
 extern struct World *gWorld;
 extern u16 gUnk_0200001A;
 extern u16 gUnk_0200001E;
+extern u16 gUnk_02000048;
 
 void slide_window_panel(void);
 void panel_slide_end(void);
@@ -185,10 +209,14 @@ void spawn_slot_marker(u32 slot);
 void update_slot_markers(void);
 void obj_release(struct Obj *obj);
 void obj_release_node(struct Obj *node);
+void obj_stop(void *obj);
+u32 mt19937_next(void);
+u32 rand_below(u32 n, u32 rnd);
+void set_slot_value(u32 id, s32 value);
 void release_tile_slot(void *obj, u8 idx);
 u8 motion_step(struct Obj *obj);
 struct Obj *raster_line_add(void *fn, u32 kind, u32 arg);
-void timer_window_setup(void);
+void timer_window_setup(struct Obj *obj);
 void update_voice_message(void);
 
 void release_slot_objects(void)
@@ -294,7 +322,42 @@ void set_mark_callbacks(void)
     }
 }
 
-ASM_FUNC("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(void))
+NONMATCH("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(u32 index, u32 value))
+{
+    struct Obj *mark = gWorld->marks[index];
+    void *callback;
+
+    if (mark != 0)
+    {
+        if ((s16)mark->unk16 != (s32)value)
+        {
+            mark->unk16 = value;
+            dma_copy_or_queue((u32)(gWorld->tileBank + (((value * 3) << 8) + 0x1880)), 0x06010DE0, 0x300, 0x20, 0);
+            if (value == 1)
+            {
+                callback = draw_counter_display;
+            }
+            else if ((s32)value > 1)
+            {
+                if (value != 2)
+                {
+                    return;
+                }
+                callback = draw_counter_display;
+            }
+            else if (value == 0)
+            {
+                callback = draw_panel_values;
+            }
+            else
+            {
+                return;
+            }
+            mark->unk4 = callback;
+        }
+    }
+}
+END_NONMATCH
 
 void queue_mark_display(void)
 {
@@ -427,7 +490,7 @@ void release_timer_tiles(void)
     }
 }
 
-ASM_FUNC("asm/code_0810D6C0/timer_window_setup.s", void timer_window_setup(void))
+ASM_FUNC("asm/code_0810D6C0/timer_window_setup.s", void timer_window_setup(struct Obj *obj))
 
 void voice_message_step(struct Obj *obj)
 {
@@ -463,9 +526,29 @@ void scroll_text_step(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
+NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
+{
+    struct Obj *timer;
+    struct Obj *child;
+    u16 *win;
 
-void timer_window_setup(void);
+    if (gWorld->timerObj == 0)
+    {
+        timer = task_create_list_4c((u32)scroll_text_step, 0);
+        gWorld->timerObj = timer;
+        gWorld->flags0B = 0x40 | gWorld->flags0B;
+        child = raster_line_add(timer_window_setup, 0x86, (u32)update_voice_message);
+        gWorld->timerObj->unkC = child;
+        child->unk16 = gUnk_0200001A;
+        win = (u16 *)&gUnk_02000048;
+        *win = 0x3F3F;
+        win++;
+        *win = 0x3F3B;
+    }
+}
+END_NONMATCH
+
+void timer_window_setup(struct Obj *obj);
 void update_voice_message(void);
 ASM_FUNC("asm/code_0810D6C0/show_slot4_text_centered.s", void show_slot4_text_centered(void))
 
@@ -566,7 +649,29 @@ s32 number_right_edge(u32 value, s32 x)
     return x + width;
 }
 
-ASM_FUNC("asm/code_0810D6C0/draw_digits_c0_p12.s", void draw_digits_c0_p12(void))
+void draw_digits_c0_p12(u32 value, u32 x, s32 y, s32 right)
+{
+    u16 *oam;
+
+    if (right != 0)
+    {
+        x = number_right_edge(value, x);
+    }
+    y &= 0xFF;
+    oam = gSys.oamPtr;
+    do
+    {
+        s32 tile = (value & 0xF) * 2 + 0xC0;
+
+        x = (x - 8) & 0x1FF;
+        oam[0] = y | 0x8000;
+        oam[1] = x;
+        oam[2] = tile | 0xC000;
+        oam += 4;
+        value >>= 4;
+    } while (value != 0);
+    gSys.oamPtr = oam;
+}
 
 void draw_digits_49_p12(u32 value, u32 x, s32 y, s32 right)
 {
@@ -616,7 +721,29 @@ void draw_digits_c0_p11(u32 value, u32 x, s32 y, s32 right)
     gSys.oamPtr = oam;
 }
 
-ASM_FUNC("asm/code_0810D6C0/draw_digits_49_p11.s", void draw_digits_49_p11(void))
+void draw_digits_49_p11(u32 value, u32 x, s32 y, s32 right)
+{
+    s16 *oam;
+
+    if (right != 0)
+    {
+        x = number_right_edge(value, x);
+    }
+    y &= 0xFF;
+    oam = (s16 *)gSys.oamPtr;
+    do
+    {
+        s32 tile = (value & 0xF) * 2 + 0x49;
+
+        x = (x - 8) & 0x1FF;
+        oam[0] = y | 0x8000;
+        oam[1] = x;
+        oam[2] = tile | 0xB000;
+        oam += 4;
+        value >>= 4;
+    } while (value != 0);
+    gSys.oamPtr = (u16 *)oam;
+}
 
 u32 status_anim_wait(void)
 {
@@ -629,7 +756,19 @@ u32 status_anim_wait(void)
     return obj_motion_start((struct Obj *)value, gWorld->active->unk40, gWorld->active->unk44, 0x3000, 0x3800);
 }
 
-ASM_FUNC("asm/code_0810D6C0/status_anim_start.s", void status_anim_start(void))
+NONMATCH("asm/code_0810D6C0/status_anim_start.s", u32 status_anim_start(void))
+{
+    struct World *world = gWorld;
+    struct Obj **entry = (struct Obj **)((u8 *)world + 0x2FC) + world->statusObj->unk10;
+    struct Obj *slot = *entry;
+    struct Obj *active = world->active;
+    s32 y = active->unk44 - 0x800;
+
+    world->statusValue = (u32)slot;
+    *entry = 0;
+    return obj_motion_start(slot, active->unk40 - 0x2000, y, 0, 0x3800);
+}
+END_NONMATCH
 
 void set_status_word(void)
 {
