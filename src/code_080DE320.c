@@ -20,8 +20,15 @@ struct ActorPart
     s32 targetH;
     u8 filler0E4[0xEC - 0xE4];
     s16 partner;
-    u8 filler0EE[0x113 - 0xEE];
+    u8 filler0EE[0xF6 - 0xEE];
+    s16 cursorAX;
+    s16 cursorAY;
+    u8 filler0FA[0xFC - 0xFA];
+    s16 cursorBX;
+    s16 cursorBY;
+    u8 filler100[0x113 - 0x100];
     u8 unk113;
+    u8 filler114[0x130 - 0x114];
 };
 
 struct ActorPoseFlagBits
@@ -129,6 +136,14 @@ struct ObjFlags79
     u8 bit5 : 1;
     u8 bit6 : 1;
     u8 bit7 : 1;
+};
+
+struct ObjFlags76
+{
+    u8 filler0[0x76];
+    u8 bit0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
 };
 
 struct FxTask
@@ -252,8 +267,53 @@ void obj_action_d_pose_mode1_then_e02c(struct ActorObj *obj);
 void obj_action_d_pose_mode1_then_e0b4(struct ActorObj *obj);
 void obj_action_9_pose_mode1_then_e104(struct ActorObj *obj);
 void obj_action_9_pose_mode1_then_e180(struct ActorObj *obj);
+void obj_rebuild_after_motion(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_080DE320/obj_pair_midpoint_move_then_f3b4.s", void obj_pair_midpoint_move_then_f3b4(void))
+NONMATCH("asm/code_080DE320/obj_pair_midpoint_move_then_f3b4.s", void obj_pair_midpoint_move_then_f3b4(struct ActorObj *obj))
+{
+    struct ActorPart *data = obj->owner->data;
+    struct ActorPart *a;
+    struct ActorPart *b;
+
+    if (data->partner == -1)
+    {
+        a = data;
+        b = data + 1;
+    }
+    else
+    {
+        a = data - 1;
+        b = data;
+    }
+    if (a->partner != 0)
+    {
+        if (b->partner != 0)
+        {
+            obj->targetX = (a->targetX + b->targetX) / 2;
+            obj->targetY = (a->targetY + b->targetY) / 2;
+        }
+        else
+        {
+            obj->targetX = a->targetX;
+            obj->targetY = a->targetY;
+        }
+    }
+    else
+    {
+        obj->targetX = b->targetX;
+        obj->targetY = b->targetY;
+    }
+    obj->targetH = obj->owner->data->targetH;
+    obj->targetX += 0x4000;
+    ((struct ObjFlags79 *)obj)->bit5 = 1;
+    obj->motionSpeed = obj->paramA0 << 8;
+    obj->motionStart = 0;
+    start_motion(obj);
+    set_slot_value(0x11C, -1);
+    sprite_set_action(obj, 2, 0, 0);
+    obj->state = obj_partner_action_timer;
+}
+END_NONMATCH
 
 void obj_timer_move_to_owner_then_f358(struct ActorObj *obj)
 {
@@ -389,6 +449,46 @@ u32 obj_random_slot_link_then_next(struct ActorObj *obj, struct ActorObj *arg)
     return 1;
 }
 
-ASM_FUNC("asm/code_080DE320/obj_spawn_linked_child_jump.s", void obj_spawn_linked_child_jump(void))
+NONMATCH("asm/code_080DE320/obj_spawn_linked_child_jump.s", void obj_spawn_linked_child_jump(struct ActorObj *obj))
+{
+    u8 *world = gWorld;
+    struct ActorObj *partner = obj->owner;
+    struct ActorObj *child;
+    u8 *entry;
+    s32 ofs;
+    s32 prod;
 
-ASM_FUNC("asm/code_080DE320/obj_rebuild_after_motion.s", void obj_rebuild_after_motion(void))
+    entry = *(u8 **)(world + 0x2DC);
+    child = obj_spawn_linked(obj, entry[2] + 0x4188, 0);
+    child->baseH += (s8)obj->unkC5 << 8;
+    child->posX = child->baseX;
+    child->posY = child->baseY;
+    child->posH = child->baseH;
+    ((struct Flags78Bits *)&child->dir)->kind = 1;
+    child->owner = obj->owner;
+    child->motionSpeed = obj->motionSpeed;
+    if (((struct ObjFlags76 *)child)->mode == 1 || ((struct ObjFlags76 *)child)->mode == 2)
+    {
+        place_targets(child, partner->baseX / 0x100 + (s8)partner->unkC3,
+                      partner->baseY / 0x100 + (s8)partner->unkC4,
+                      partner->baseH / 0x100 + (s8)partner->unkC5, -1);
+        if (partner == (struct ActorObj *)((u8 *)partner->data + 8))
+        {
+            ofs = (s8)partner->unkC5;
+        }
+        else
+        {
+            find_frame_entry(partner, 0);
+            ofs = (s8)partner->unk47;
+        }
+        ofs += partner->baseH / 0x100;
+        prod = ofs * ofs;
+        ofs += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, prod / 0x40 + 0x28);
+        child->unk92 = ofs;
+        set_motion_offsets(child, 0x480);
+    }
+    child->state = obj_rebuild_after_motion;
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_080DE320/obj_rebuild_after_motion.s", void obj_rebuild_after_motion(struct ActorObj *obj))
