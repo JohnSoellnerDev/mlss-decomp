@@ -193,6 +193,13 @@ function start, calls show the relocation (the called symbol). A worked example 
 - `asrs` kept on `(s16)(x & 0x20)` before a compare with 0 needs an `s32` local
   (`flagBit = (s16)(obj->flags & 0x20); if (flagBit == 0)`, example `obj_place_on_screen` in
   src/code_08151144.c).
+- Point-model sprite functions (`obj_zoom_*`, `obj_tilt_*`, `obj_rot*`, ...: a loop over N points that
+  scales by `zoom / 0x100`, rotates with `gCosineTable`/`gSineTable` and calls
+  `offset_words_camera` and `oam_place_points`): write the loop as `for (i = 0; i < N; i++)` and the
+  rotation with a copy of y in the shared temporary first, `t = y1; t = t * (gCosineTable[a] /
+  0x40); y2 = (t - (gSineTable[a] / 0x40) * z1) / 0x100;` - that copy is the `adds r1, r3, #0`
+  before the cosine load. Complete examples: `obj_zoom_tilt5_42d8` in src/code_08173678.c,
+  `obj_rotx_zoom12_f0c0` in src/code_0817E4F0.c.
 - A callee-saved register that is read on some path without ever being set in the function
   (it still holds the caller's value) is an uninitialised local in the original: declare it
   without an initialiser and leave it unassigned on that path (GCC emits no code for it).
