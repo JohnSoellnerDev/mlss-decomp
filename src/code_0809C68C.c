@@ -362,7 +362,25 @@ void check_offscreen_b(struct ActorBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809C68C/fx_only_c.s", void fx_only_c(struct ActorBody *body))
+void fx_only_c(struct ActorBody *body)
+{
+    struct World **world = &gWorld;
+    s32 x;
+    s32 y;
+
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        if (body->data->effect != 0)
+        {
+            x = (s16)obj_last_x(world_focus(*world)) + 0xb8;
+            y = (s16)obj_last_y(world_focus(*world)) + 0x5c;
+            place_targets(body, x, y, 0x18, -1);
+            set_motion_start(body, 0x180);
+        }
+        body->state = place_on_focus_b;
+    }
+}
 
 void free_data_done(struct ActorBody *body)
 {
