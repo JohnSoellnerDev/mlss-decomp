@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 struct FlagBits2
@@ -113,6 +114,7 @@ extern u8 *gUnk_03000D10;
 extern const u8 decompress_routine[];
 extern const u8 gHeapTags[];
 extern const u8 gDefaultTaskDesc[];
+extern const u8 sub_0800063C[];
 extern u32 gUnk_03000C84;
 extern u32 gUnk_03000C78;
 extern u8 gUnk_03000D08;
@@ -177,9 +179,49 @@ void set_slot_target(u32 idx, u32 value, u32 mode)
     SYS_AREA->songSlot[idx] = value;
 }
 
-ASM_FUNC("asm/code_0801931C/set_slot_fields.s", void set_slot_fields(u32 idx, u8 level, u8 period))
+NONMATCH("asm/code_0801931C/set_slot_fields.s", void set_slot_fields(u32 idx, u8 level, u8 period))
+{
+    if (period == 0)
+    {
+        SYS_AREA->slot89C[idx] = SYS_AREA->slot8A0[idx] = level << 8;
+        queue_player_volume(idx + 1, level);
+    }
+    else
+    {
+        u16 target = level << 8;
+        SYS_AREA->target8AC[idx] = target;
+        SYS_AREA->period8A8[idx] = period;
+        SYS_AREA->unk8AA[idx] = 0;
+        SYS_AREA->speed8B0[idx] = (target - SYS_AREA->slot89C[idx]) / period;
+        if (idx == 0)
+            SYS_AREA->rampFlags |= 0x08;
+        else
+            SYS_AREA->rampFlags |= 0x10;
+    }
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_0801931C/set_slot_fields_45.s", void set_slot_fields_45(void))
+NONMATCH("asm/code_0801931C/set_slot_fields_45.s", void set_slot_fields_45(u32 idx, u8 level, u8 period))
+{
+    if (period == 0)
+    {
+        SYS_AREA->slot8A4[idx] = level << 8;
+        queue_player_word(idx + 1, level);
+    }
+    else
+    {
+        u16 target = level << 8;
+        SYS_AREA->target8B8[idx] = target;
+        SYS_AREA->period8B4[idx] = period;
+        SYS_AREA->unk8B6[idx] = 0;
+        SYS_AREA->speed8BC[idx] = (target - (SYS_AREA->slot8A4[idx] << 8)) / period;
+        if (idx == 0)
+            SYS_AREA->rampFlags |= 0x20;
+        else
+            SYS_AREA->rampFlags |= 0x40;
+    }
+}
+END_NONMATCH
 
 void set_ramp0_target(u8 level, u8 period)
 {
@@ -280,7 +322,17 @@ void flag_88c_handler_b(void)
     }
 }
 
-ASM_FUNC("asm/code_0801931C/sound_dma_reset.s", void sound_dma_reset(void))
+// The original has four no-op words after each DMA control write (not reproducible from C).
+NONMATCH("asm/code_0801931C/sound_dma_reset.s", void sound_dma_reset(void))
+{
+    REG_TM0CNT_H &= 0xFF7F;
+    REG_SOUNDCNT_H = 0x88;
+    REG_DMA1CNT = (REG_DMA1CNT & 0x41800000) | 0x84400004;
+    REG_DMA1CNT &= 0x7FFFFFFF;
+    REG_DMA2CNT = (REG_DMA2CNT & 0x41800000) | 0x84400004;
+    REG_DMA2CNT &= 0x7FFFFFFF;
+}
+END_NONMATCH
 
 void sound_stop_all_reset(void)
 {
@@ -335,13 +387,149 @@ void reset_state_0c28(void)
     gUnk_03000C78 = 0;
 }
 
-ASM_FUNC("asm/code_0801931C/table_register.s", void table_register(void))
+NONMATCH("asm/code_0801931C/table_register.s", u32 table_register(struct RegEntry *p))
+{
+    s32 idx;
+    s32 count;
 
-ASM_FUNC("asm/code_0801931C/read_varlen_plus1.s", void read_varlen_plus1(void))
+    if (gUnk_03000C78 != (u32)sub_0800063C)
+    {
+        ((void (*)(u32, u32))gUnk_03000C84)(p->unk4, p->key);
+        p->state = 0;
+        return 0;
+    }
+    if (p->state > 1)
+        return 0;
+    idx = gUnk_03000D08;
+    count = 0;
+    if (gUnk_03000C88[idx] != 0)
+    {
+        if (gUnk_03000C88[idx]->key == p->key)
+            return 0;
+        for (;;)
+        {
+            idx++;
+            idx %= 32;
+            count++;
+            if (count > 31)
+                return 0;
+            if (gUnk_03000C88[idx] == 0)
+                break;
+            if (gUnk_03000C88[idx]->key == p->key)
+                return 0;
+        }
+    }
+    gUnk_03000C88[idx] = p;
+    p->state = 2;
+    gUnk_03000C80++;
+    return 1;
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
+// The original loop was unrolled by the compiler; the remainder entry differs slightly.
+NONMATCH("asm/code_0801931C/read_varlen_plus1.s", u32 read_varlen_plus1(u8 *p))
+{
+    u32 v = p[0];
+    s32 n = v >> 6;
+    u32 shift;
 
-ASM_FUNC("asm/code_0801931C/task_insert.s", void task_insert(void))
+    v &= 0x3F;
+
+    if (n != 0)
+    {
+        shift = 6;
+        do
+        {
+            p++;
+            v += *p << shift;
+            shift += 8;
+        } while (--n != 0);
+    }
+    return v + 1;
+}
+END_NONMATCH
+
+// The original loads the table end a second time from the literal pool; GCC keeps it in a register.
+NONMATCH("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
+{
+    s32 len = (u32)sub_0800063C - (u32)decompress_routine;
+    u8 *buf = heap_alloc(len, 0, gHeapTags + 0x48, 0);
+    gUnk_03000C84 = (u32)buf;
+    if (len < 0)
+        len += 3;
+    cpu_set(decompress_routine, buf, ((((u32)len) << 9) >> 11) | 0x04000000);
+    gUnk_03000C78 = (u32)sub_0800063C;
+    gUnk_03000D08 = 0;
+    gUnk_03000C80 = 0;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0801931C/task_insert.s", struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data))
+{
+    struct ListNode *q;
+    struct ListNode *next;
+    u8 *dst;
+    u32 cnt = 0;
+
+    task->desc = (void *)gDefaultTaskDesc;
+    if (SYS_AREA->listHead == 0)
+    {
+        SYS_AREA->listHead = task;
+        task->prev = 0;
+        task->next = 0;
+    }
+    else
+    {
+        q = SYS_AREA->listHead;
+        for (;;)
+        {
+            if (q->unk1 > prio)
+            {
+                if (q->prev == 0)
+                    SYS_AREA->listHead = task;
+                else
+                    q->prev->next = task;
+                task->prev = q->prev;
+                task->next = q;
+                q->prev = task;
+                break;
+            }
+            next = q->next;
+            if (next == 0)
+            {
+                q->next = task;
+                task->prev = q;
+                task->next = next;
+                cnt++;
+                break;
+            }
+            q = next;
+            cnt++;
+        }
+    }
+    task->unk14 = SYS_AREA->current;
+    task->unk3 = (task->unk3 & 3) | (cnt << 2);
+    task->unk0 = 0;
+    task->unk1 = prio;
+    {
+        int b = task->unk2;
+        b |= 1;
+        b |= 2;
+        b &= -0x3D;
+        b |= 4;
+        task->unk2 = b;
+    }
+    *(u16 *)&task->unk2 = *(u16 *)&task->unk2 & ~0x3C0;
+    task->unk4 = 0;
+    dst = task->unk8;
+    dst[0] = data[0];
+    dst[1] = data[1];
+    dst[2] = data[2];
+    dst[3] = data[3];
+    SYS_AREA->taskCount++;
+    return task;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0801931C/run_tasks.s", void run_tasks(void))
 
@@ -451,11 +639,70 @@ void serial_link_shutdown(void)
 
 ASM_FUNC("asm/code_0801931C/serial_frame.s", void serial_frame(void))
 
-ASM_FUNC("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
+NONMATCH("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
+{
+    u16 *hw;
+    s32 sum;
+
+    gUnk_03000D0C->buf1C[0] = gUnk_03000D0C->unkB;
+    gUnk_03000D0C->buf1C[1] = gUnk_03000D0C->unk2 ^ gUnk_03000D0C->unk3;
+    ((u16 *)gUnk_03000D0C->buf1C)[1] = 0;
+    cpu_set(gUnk_03000D10 + 2, gUnk_03000D0C->buf1C + 4, 0x04000004);
+    hw = (u16 *)gUnk_03000D0C->buf1C;
+    sum = hw[0] + hw[1] + hw[2] + hw[3] + hw[4] + hw[5] + hw[6] + hw[7] + hw[8] + hw[9];
+    hw[1] = ~sum - 0xC;
+    gUnk_03000D0C->unk4 = 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base))
 
-ASM_FUNC("asm/code_0801931C/serial_link_update.s", void serial_link_update(void))
+void serial_link_update(void)
+{
+    struct LinkState *s = gUnk_03000D0C;
+    if (s != 0)
+    {
+        u32 b0 = s->unk0;
+        if (b0 != 0)
+        {
+            if (s->unk1 != 0 && s->unk6 != 0)
+            {
+                u32 t;
+                u8 *p;
+                vu16 *sio;
+                u32 fefe;
+                s->unk18 = 0xFFFFFFFE;
+                t = s->unk28;
+                s->unk28 = s->unk24;
+                s->unk24 = t;
+                if (s->unk4 != 0)
+                {
+                    p = s->buf20;
+                    s->buf20 = s->buf1C;
+                    s->buf1C = p;
+                    s->unk4 = 0;
+                    gUnk_03000D0C->unk14 = 0;
+                }
+                gUnk_03000D0C->unk7 = ((*(vu32 *)REG_ADDR_SIOCNT) << 25) >> 31;
+                sio = (vu16 *)REG_ADDR_SIOCNT;
+                fefe = 0xFEFE;
+                sio[1] = fefe;
+                sio[0] = sio[0] | 0x80;
+                REG_TM3CNT_H = 0xC0;
+            }
+        }
+        else
+        {
+            if (s->unk9 == 0)
+            {
+                REG_IME = b0;
+                *(vu16 *)0x03007FF8 = *(vu16 *)0x03007FF8 | 0x80;
+                REG_IME = 1;
+            }
+            gUnk_03000D0C->unk9 = b0;
+        }
+    }
+}
 
 void serial_flag6_if_active(void)
 {
