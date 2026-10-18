@@ -167,6 +167,10 @@ void set_slot_value(u32 id, s32 value);
 struct HeroBody *obj_spawn(void *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void sprite_node_take_link(struct HeroBody *obj);
 void sprite_nodes_fall(struct HeroBody *body);
+s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
+void obj_free_parts(struct HeroBody *body);
+void obj_list_remove(void *obj);
+void sound_stop_song(u32 song);
 
 void reset_follow_state(struct HeroBody *body);
 void follow_focus_end(struct HeroBody *body);
@@ -230,7 +234,39 @@ void follow_spawn_child(struct HeroBody *body)
 
 ASM_FUNC("asm/code_08098B18/follow_focus_x.s", void follow_focus_x(struct HeroBody *body))
 
-ASM_FUNC("asm/code_08098B18/prepare_follow_focus.s", void prepare_follow_focus(struct HeroBody *body))
+void prepare_follow_focus(struct HeroBody *body)
+{
+    struct FollowFlagBits
+    {
+        u8 unk0 : 5;
+        u8 bit5 : 1;
+        u8 unk6 : 2;
+    };
+
+    obj_free_parts(body);
+    if (body == &gWorld->heroA->body)
+    {
+        sprite_set_action(body, 3, 0, 0);
+    }
+    else
+    {
+        sprite_set_action(body, 3, 0, 0);
+    }
+    ((struct HeroSpriteBits *)&body->sprite->flags)->mode = 1;
+    if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+    {
+        s32 value = body->data->unk108 + 0x64;
+
+        body->handle = (value != body->level)
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, value - body->level)
+            : 0x4000;
+        body->unk7E = 0;
+        ((struct FollowFlagBits *)&body->flags)->bit5 = 0;
+    }
+    body->clock = 0;
+    body->repeats = rand_below(3, mt19937_next()) + 2;
+    body->state = follow_focus_wait;
+}
 
 static inline void set_hero_anim(struct HeroBody *body, u32 anim)
 {
@@ -644,20 +680,184 @@ void anim_0d_fx_then_spawn_c(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/focus_follow_step_toward_partner.s", void focus_follow_step_toward_partner(struct HeroBody *body))
+void focus_follow_step_toward_partner(struct HeroBody *body)
+{
+    u16 *step = (u16 *)&body->step;
+    s16 out[2];
+    s16 *outY;
+    struct HeroBody *partner;
+    s32 startX;
+    s32 dist;
+    s32 dx;
+    s32 dy;
+
+    *step += 1;
+    outY = &out[1];
+    partner = body->partner;
+    startX = body->centerX - 0x5000;
+    dx = partner->targetX - startX;
+    dy = partner->targetY - body->centerY;
+    dist = step_vector((u16 *)&out[0], (u16 *)outY, dx, dy, (s16)*step << 7);
+    body->posX = body->centerX + (out[0] << 2);
+    body->posY = body->centerY + (*outY << 2);
+    if (((s16)*step << 7) >= dist)
+    {
+        set_slot_value(0xD5, -1);
+        sprite_set_action(body, 3, 0, 0);
+        *step = 0;
+        partner = body->partner;
+        body->posX = partner->targetX + 0x5000;
+        body->posY = partner->targetY;
+        body->state = start_parts_after_32;
+    }
+}
 
 ASM_FUNC("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(struct HeroBody *body))
 
 s32 obj_last_x(void *obj);
-ASM_FUNC("asm/code_08098B18/drop_to_focus.s", void drop_to_focus(struct HeroBody *body))
+void drop_to_focus(struct HeroBody *body)
+{
+    struct Hero *node;
+    struct HeroBody *part;
+    u16 *counter;
+    s32 limit;
+    s32 mode;
+    s32 clear;
+    s32 zero;
+
+    body->posX -= 0x2CC;
+    counter = (u16 *)&body->step;
+    *counter += 1;
+    if ((s16)*counter > 5)
+    {
+        *counter = 0;
+        effect_spawn_at(0xD1D, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+    }
+    if (body->sprite->unk0 < -0x30)
+    {
+        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + 0x12000;
+        body->posY = body->data->unkDC;
+        node = body->data->first;
+        zero = 0;
+        clear = ~0x40;
+        for (;;)
+        {
+            part = &node->body;
+            obj_list_remove(part);
+            mode = part->mode;
+            mode &= clear;
+            part->mode = mode;
+            part->partner = (struct HeroBody *)zero;
+            part->anim = (void *)zero;
+            if ((void *)node == (void *)body->data)
+            {
+                break;
+            }
+            node = node->next;
+        }
+    }
+    if (body->targetX >= body->data->unkD8)
+    {
+        limit = body->data->unkD8;
+        if (limit >= body->posX)
+        {
+            body->posX = limit;
+            sprite_set_action(body, -1, 0, 0);
+            sound_stop_song(0x11A);
+            body->state = 0;
+        }
+    }
+}
 
 extern u8 gSys[];
 ASM_FUNC("asm/code_08098B18/unknown_code_08099f58.s", void unknown_code_08099f58(s32 a, s32 b))
 
-ASM_FUNC("asm/code_08098B18/approach_partner.s", void approach_partner(struct HeroBody *body))
+void approach_partner(struct HeroBody *body)
+{
+    u16 *counter = (u16 *)&body->step;
+    s16 out[2];
+    s16 *outY;
+    struct HeroBody *partner;
+    s32 startX;
+    s32 limit;
+    s32 dx;
+    s32 dy;
+
+    *counter += 1;
+    outY = &out[1];
+    partner = body->partner;
+    startX = body->centerX - 0x5000;
+    dx = partner->targetX - startX;
+    dy = partner->targetY - body->centerY;
+    limit = step_vector((u16 *)&out[0], (u16 *)outY, dx, dy, (s16)*counter << 7);
+    body->posX = body->centerX + (out[0] << 2);
+    body->posY = body->centerY + (*outY << 2);
+    if (((s16)*counter << 7) >= limit)
+    {
+        set_slot_value(0xD5, -1);
+        sprite_set_action(body, 3, 0, 0);
+        *counter = 0;
+        partner = body->partner;
+        body->posX = partner->targetX + 0x5000;
+        body->posY = partner->targetY;
+        body->state = start_parts_after_16;
+    }
+}
 
 ASM_FUNC("asm/code_08098B18/start_parts_after_16.s", void start_parts_after_16(struct HeroBody *body))
 
-ASM_FUNC("asm/code_08098B18/drop_to_focus_b.s", void drop_to_focus_b(struct HeroBody *body))
+void drop_to_focus_b(struct HeroBody *body)
+{
+    struct Hero *node;
+    struct HeroBody *part;
+    u16 *counter;
+    s32 limit;
+    s32 mode;
+    s32 clear;
+    s32 zero;
+
+    body->posX -= 0x2CC;
+    counter = (u16 *)&body->step;
+    *counter += 1;
+    if ((s16)*counter > 5)
+    {
+        *counter = 0;
+        effect_spawn_at(0xD1D, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+    }
+    if (body->sprite->unk0 < -0x30)
+    {
+        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + 0x12000;
+        body->posY = body->data->unkDC;
+        node = body->data->first;
+        zero = 0;
+        clear = ~0x40;
+        for (;;)
+        {
+            part = &node->body;
+            obj_list_remove(part);
+            mode = part->mode;
+            mode &= clear;
+            part->mode = mode;
+            part->partner = (struct HeroBody *)zero;
+            part->anim = (void *)zero;
+            if ((void *)node == (void *)body->data)
+            {
+                break;
+            }
+            node = node->next;
+        }
+    }
+    if (body->targetX >= body->data->unkD8)
+    {
+        limit = body->data->unkD8;
+        if (limit >= body->posX)
+        {
+            body->posX = limit;
+            sprite_set_action(body, -1, 0, 0);
+            sound_stop_song(0x11A);
+            body->state = 0;
+        }
+    }
+}
 
 ASM_FUNC("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struct HeroBody *body))
