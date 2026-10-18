@@ -190,12 +190,15 @@ void enemy_enter_queued_state(struct Owner *owner, struct Enemy *ent);
 void enemy_chase_owner_step(struct Owner *owner, struct Enemy *ent);
 void enemy_setup_idle(void);
 void enemy_wait_timer(struct Owner *owner, struct Enemy *ent, u32 *state_out);
+void enemy_approach_bro(struct Owner *owner, struct Enemy *ent, u32 *state_out);
 void load_box_oriented(s16 *box, struct Enemy *ent, u32 a, u32 b);
 u8 step_pos_xy(struct Enemy *ent);
 u32 mt19937_next(void);
 u32 rand_below(u32 range, u32 rnd);
 void tick_store(void);
-void enemy_idle_runner(void);
+void enemy_idle_runner(struct Owner *owner, struct Enemy *ent);
+void enemy_idle_update(void);
+void obj_find_active_state(void);
 u8 point_in_box(s16 *box, void *entry, s32 a, s32 b);
 u8 boxes_overlap_oriented(s16 *box, struct Enemy *ent, void *entry, s32 zAbove, s32 zBelow);
 
@@ -244,7 +247,49 @@ void enemy_start_random_move(struct Owner *owner, struct Enemy *ent, u32 *state_
     }
 }
 
-ASM_FUNC("asm/code_081442FC/enemy_wait_spot_owner.s", void enemy_wait_spot_owner(struct Owner *owner, struct Enemy *ent))
+void enemy_wait_spot_owner(struct Owner *owner, struct Enemy *ent)
+{
+    u8 *slot = (u8 *)ent + 0x1A0;
+    void (*fn)(struct Owner *, struct Enemy *, u8 *) = *(void (**)(struct Owner *, struct Enemy *, u8 *))slot;
+    u8 idx;
+
+    fn(owner, ent, slot);
+    if (ent->unk1D4 == 0)
+    {
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            struct SensorBox *sensor = ent->sensor;
+            void *entry = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+            s16 box[8];
+            s32 sv;
+
+            box[0] = ((sv = sensor->unk10) << 4) + 8;
+            box[3] = ((sv = sensor->unk12) << 4) + 8;
+            box[1] = ((sv = sensor->unk14) << 4) + 8;
+            box[2] = ((sv = sensor->unk16) << 4) + 8;
+            if (point_in_box(box, entry, 0x7FFF, 0) != 0)
+            {
+                struct RecBox *rec = ent->rec;
+
+                box[0] = rec->unk18 << 4;
+                box[2] = rec->unk19 << 4;
+                box[4] = rec->unk1A << 4;
+                box[1] = rec->unk1B << 4;
+                box[3] = rec->unk1C << 4;
+                box[5] = rec->unk1D << 4;
+                if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) != 0)
+                {
+                    ent->unk198 = (void *)enemy_enter_queued_state;
+                    ent->unk19C = (void *)enemy_chase_owner_step;
+                }
+            }
+        }
+    }
+    else
+    {
+        ent->unk1D4--;
+    }
+}
 
 ASM_FUNC("asm/code_081442FC/enemy_chase_owner_step.s", void enemy_chase_owner_step(struct Owner *owner, struct Enemy *ent))
 
@@ -397,7 +442,72 @@ void enemy_stop_tracking(struct Owner *owner, struct Enemy *ent)
 
 ASM_FUNC("asm/code_081442FC/enemy_wait_b_runner.s", void enemy_wait_b_runner(struct Owner *owner, struct Enemy *ent))
 
-ASM_FUNC("asm/code_081442FC/enemy_idle_runner.s", void enemy_idle_runner(void))
+NONMATCH("asm/code_081442FC/enemy_idle_runner.s", void enemy_idle_runner(struct Owner *owner, struct Enemy *ent))
+{
+    u8 sel;
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *body_ai = (u8 *)ent->body + 0x58;
+    struct Partner *entry;
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    void (*fn)(struct Owner *, struct Enemy *, u8 *);
+    u8 *slot;
+    u8 *body_slot;
+
+    if (find_active_entry(owner, &sel) == 0)
+    {
+        sel = owner->flags208.bit2;
+    }
+    entry = *(struct Partner **)((u8 *)owner + sel * 4 + 0x28);
+    dx = entry->posX - ent->posX;
+    dy = entry->posY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        dir = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        dir = 0xFFFF;
+    }
+    if (dir != (s32)(((u32)ent->unk24 << 29) >> 29))
+    {
+        obj_set_stage(ent, (u8)dir);
+    }
+    slot = ai + 0x148;
+    fn = *(void (**)(struct Owner *, struct Enemy *, u8 *))slot;
+    fn(owner, ent, slot);
+    body_slot = body_ai + 0x148;
+    fn = *(void (**)(struct Owner *, struct Enemy *, u8 *))body_slot;
+    if (fn != 0)
+    {
+        fn(owner, ent, body_slot);
+    }
+    if ((ai[0x17E] & 1) != 0)
+    {
+        s8 *rec = *(s8 **)(ai + 0x158);
+        s16 box[8];
+
+        box[0] = rec[0x34] << 4;
+        box[2] = rec[0x35] << 4;
+        box[4] = rec[0x36] << 4;
+        box[1] = rec[0x37] << 4;
+        box[3] = rec[0x38] << 4;
+        box[5] = rec[0x39] << 4;
+        if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) != 0)
+        {
+            *(void **)(ai + 0x140) = (void *)enemy_idle_update;
+            *(void **)slot = (void *)obj_find_active_state;
+            *(void **)(ai + 0x14C) = (void *)obj_find_active_state;
+        }
+        else
+        {
+            ((struct Mode3 *)&ent->unk214)->mode = 3;
+            *(void **)(ai + 0x140) = (void *)enemy_setup_wait_b;
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081442FC/enemy_idle_update.s", void enemy_idle_update(void))
 
