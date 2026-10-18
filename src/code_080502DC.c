@@ -154,6 +154,66 @@ struct Mode3
     u8 rest : 5;
 };
 
+struct SpriteFlags
+{
+    u8 filler0[0x1F];
+    u8 lo2 : 2;
+    u8 b23 : 2;
+    u8 b45 : 2;
+    u8 b67 : 2;
+};
+
+struct Bits8
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
+
+struct Word20C
+{
+    u32 lo15 : 15;
+    u32 mv : 3;
+    u32 rest : 14;
+};
+
+struct Bits33C
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 mid3 : 3;
+    u8 rest : 2;
+};
+
+struct Mid4At6
+{
+    u16 lo6 : 6;
+    u16 mid4 : 4;
+    u16 rest : 6;
+};
+
+struct ObjInitS
+{
+    u8 filler0[0x23B];
+    u8 unk23B;
+    u8 filler23C[0x338 - 0x23C];
+    struct ObjVtable *vtable;
+    u8 flags;
+    u8 filler33D;
+    u16 mask;
+    s16 timer340;
+    u16 timerB342;
+    s16 unk344;
+    u32 unk348;
+    u32 unk34C;
+};
+
 extern u8 *gUnk_03000FC0;
 extern const u16 gSpriteSelectAnimTable[];
 void set_flag(u8 *flags, u32 a, u32 b, u32 c);
@@ -189,6 +249,8 @@ void sprite_update_cd0(u32 sprite);
 u8 step_pos_xy_c(u8 *obj);
 u32 zone_overlap_code(u32 owner, u8 *obj, u32 c);
 void tick_store(void);
+void unlink_d54(void *ctl);
+void obj_load_record(void *rec, u32 a, u32 b, u32 c, u32 d);
 
 extern const u8 gObjBaseClass[];
 extern const u8 gObjForwardChildClass[];
@@ -454,7 +516,28 @@ void obj_teardown(u8 *obj, u32 flags)
     obj_base_teardown(obj, flags);
 }
 
-ASM_FUNC("asm/code_080502DC/obj_init_state.s", void obj_init_state(void))
+NONMATCH("asm/code_080502DC/obj_init_state.s", u32 obj_init_state(u8 *obj, u32 a, u32 b))
+{
+    struct ObjInitS *o;
+
+    obj_init(obj, a, b);
+    o = (struct ObjInitS *)obj;
+    o->vtable = (struct ObjVtable *)gObjStateClass;
+    ((struct Bits33C *)&o->flags)->b0 = 1;
+    ((struct Bits33C *)&o->flags)->mid3 = 0;
+    ((struct Bits33C *)&o->flags)->b1 = 0;
+    ((struct Bits33C *)&o->flags)->b2 = 0;
+    ((struct Mid4At6 *)&o->flags)->mid4 = 0;
+    o->unk23B = 0;
+    o->mask |= 0x1FE;
+    o->timer340 = 1;
+    o->timerB342 = 0xFFFF;
+    o->unk344 = -1;
+    o->unk348 = 0;
+    o->unk34C = 0;
+    return (u32)obj;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080502DC/obj_init_from_entry.s", void obj_init_from_entry(void))
 
@@ -466,7 +549,38 @@ ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(voi
 
 ASM_FUNC("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(void))
 
-ASM_FUNC("asm/code_080502DC/obj_commit_sprite.s", void obj_commit_sprite(u8 *obj))
+void obj_commit_sprite(u8 *obj)
+{
+    struct SpriteObj **pslot;
+    struct SpriteObj **cslot;
+    struct SpriteObj *tmp;
+
+    if ((obj[0x33C] & 1) == 0)
+    {
+        return;
+    }
+    ((struct Bit0 *)(obj + 0x33C))->bit0 = 0;
+    ((struct ObjTimer *)obj)->unk23B = 0;
+    pslot = (struct SpriteObj **)(obj + 0x34C);
+    if (*pslot != NULL)
+    {
+        cslot = (struct SpriteObj **)(obj + 0x294);
+        unlink_d54(*cslot);
+        obj_queue_update(*pslot);
+        (*pslot)->unkE = (*cslot)->unkE;
+        ((struct SpriteFlags *)*pslot)->lo2 = ((struct SpriteFlags *)*cslot)->lo2;
+        ((struct SpriteFlags *)*pslot)->b23 = ((struct SpriteFlags *)*cslot)->b23;
+        ((struct SpriteFlags *)*pslot)->b45 = ((struct SpriteFlags *)*cslot)->b45;
+        ((struct SpriteFlags *)*pslot)->b67 = ((struct SpriteFlags *)*cslot)->b67;
+        tmp = *pslot;
+        *pslot = *cslot;
+        *cslot = tmp;
+    }
+    else
+    {
+        obj_load_record(*(void **)(obj + 0x294), 3, 0, 0, (u32)*pslot);
+    }
+}
 
 extern const u16 gSpriteSelectAnimTable[];
 u8 test_flag(u8 *table, u8 *tableB, u16 id);
@@ -499,7 +613,24 @@ void script_init_obj_refresh_sprite(u8 *obj)
     o->unk23D = 7;
 }
 
-ASM_FUNC("asm/code_080502DC/obj_init_flags.s", void obj_init_flags(void))
+u32 obj_init_flags(u8 *obj, u32 a, u32 b)
+{
+    obj_init(obj, a, b);
+    ((struct ChildObj *)obj)->vtable = (struct ObjVtable *)gObjFlagsClass;
+    ((struct Bits8 *)(obj + 0x20C))->b5 = 0;
+    ((struct Bits8 *)(obj + 0x20C))->b6 = 0;
+    ((struct Bits8 *)(obj + 0x20C))->b7 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b0 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b1 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b3 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b4 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b6 = 0;
+    ((struct Word20C *)(obj + 0x20C))->mv = 0;
+    ((struct Bits8 *)(obj + 0x20E))->b2 = 1;
+    ((struct Bits8 *)(obj + 0x20F))->b0 = 0;
+    ((struct MainObj *)obj)->unk214_13 = 0;
+    return (u32)obj;
+}
 
 void script_init_obj_sync_sprite_pos(u8 *obj)
 {
@@ -548,15 +679,17 @@ void sub_080514D4(void)
 
 NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 *obj, u32 *state))
 {
-    s16 *slot;
-    u32 idx;
     u32 entry;
+    s16 *slot;
+    u16 *tbl;
+    u32 idx;
     s16 value;
     u16 shade;
 
     slot = (s16 *)(obj + 0x100);
     idx = rand_below(2, mt19937_next());
-    entry = ((u16 *)(obj + 0x130))[idx];
+    tbl = (u16 *)(obj + 0x130);
+    entry = tbl[idx];
     idx = rand_below(4, mt19937_next());
     slot += idx;
     value = *slot;
