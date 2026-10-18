@@ -344,10 +344,11 @@ struct MenuObj *sub_081158A0(struct MenuObj *obj, u8 kind, const void *tag)
     return obj;
 }
 
-NONMATCH("asm/code_081152FC/menu_obj_init.s", struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u8 flag))
+struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u8 flag)
 {
     u32 entries;
     u16 zero;
+    u16 *src = &zero;
     u8 count;
 
     count = flag;
@@ -364,7 +365,7 @@ NONMATCH("asm/code_081152FC/menu_obj_init.s", struct MenuTable *menu_obj_init(st
     entries = (count << 3) - count;
     obj->entries2C = heap_alloc(entries << 2, 0, gMenuObjTableTag, 0);
     zero = 0;
-    cpu_set(&zero, obj->entries2C, ((entries << 1) & 0x001FFFFF) | 0x01000000);
+    cpu_set(src, obj->entries2C, ((entries << 1) & 0x001FFFFF) | 0x01000000);
     obj->unk32 = 0;
     obj->unk30 = 0;
     obj->unk34 = 0;
@@ -376,7 +377,6 @@ NONMATCH("asm/code_081152FC/menu_obj_init.s", struct MenuTable *menu_obj_init(st
     obj->unk44 = 0;
     return obj;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081152FC/sprite_alloc.s", void sprite_alloc(void))
 
