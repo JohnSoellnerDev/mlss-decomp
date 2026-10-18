@@ -24,6 +24,14 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
+struct ObjFlags79
+{
+    u8 filler0[0x79];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
 struct ActorData
 {
     u8 filler0[0xD8];
@@ -157,6 +165,7 @@ void obj_select_code_entry_world(struct ActorObj *obj);
 void obj_wait_not_busy_then_e321(struct ActorObj *obj);
 void obj_finish_now(struct ActorObj *obj);
 void obj_timer_begin_move_to_data(struct ActorObj *obj);
+void obj_timer_release_move_pair(struct ActorObj *obj);
 void obj_pose_active_action11(struct ActorObj *obj);
 void obj_pose_active_action11_notify(struct ActorObj *obj);
 static inline void copy_child_flags(struct ActorObj *obj, struct ActorObj *child)
@@ -203,13 +212,68 @@ void obj_state_spawn_child(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/obj_fall_settle_step.s", void obj_fall_settle_step(struct ActorObj *obj))
+void obj_fall_settle_step(struct ActorObj *obj)
+{
+    s32 t;
+    s32 h;
+
+    t = obj->dx * 253;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->dx = t >> 8;
+
+    t = obj->dy * 253;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->dy = t >> 8;
+
+    obj->dh = (u16)obj->dh + obj->dhStep;
+    obj->posX = obj->baseX + obj->dx;
+    obj->posY = obj->baseY + obj->dy;
+    h = obj->baseH + obj->dh;
+    obj->posH = h;
+    if (obj->dh <= 0)
+    {
+        if (h <= obj->ground)
+        {
+            obj->posH = obj->ground;
+            obj_release(obj);
+        }
+    }
+}
+
 
 ASM_FUNC("asm/code_080DECE0/obj_begin_move_pair.s", void obj_begin_move_pair(struct ActorObj *obj))
 
-ASM_FUNC("asm/code_080DECE0/obj_timer_begin_move_to_data.s", void obj_timer_begin_move_to_data(struct ActorObj *obj))
+void obj_timer_begin_move_to_data(struct ActorObj *obj)
+{
+    u32 timer = obj->timer - 1;
 
-ASM_FUNC("asm/code_080DECE0/obj_timer_release_move_pair.s", void obj_timer_release_move_pair(void))
+    obj->timer = timer;
+    if ((s32)(timer << 16) < 0)
+    {
+        set_slot_value(0x11A, -1);
+        obj_list_push_default(obj);
+        obj->handler58 = (s32 (*)(struct ActorObj *))part_unlink_clear_11a;
+        obj->handler5C = (s32 (*)(struct ActorObj *, s32, s32))part_lookup_clear_11a;
+        obj->targetX = obj->owner->data->targetX;
+        obj->targetY = obj->owner->data->targetY;
+        obj->targetH = obj->owner->data->targetH;
+        ((struct ObjFlags79 *)obj)->bit5 = 1;
+        obj->motionSpeed = 0x200;
+        obj->motionStart = 0;
+        start_motion(obj);
+        sprite_set_action(obj, 0x12, 0, 0);
+        obj->timer = 0x30;
+        obj->state = obj_timer_release_move_pair;
+    }
+}
+
+ASM_FUNC("asm/code_080DECE0/obj_timer_release_move_pair.s", void obj_timer_release_move_pair(struct ActorObj *obj))
 
 void obj_state_idle_if_unlinked(struct ActorObj *obj)
 {
@@ -396,7 +460,27 @@ void obj_finish_now(struct ActorObj *obj)
     obj_release(obj);
 }
 
-ASM_FUNC("asm/code_080DECE0/obj_load_code_entry_then_wait.s", void obj_load_code_entry_then_wait(struct ActorObj *obj))
+NONMATCH("asm/code_080DECE0/obj_load_code_entry_then_wait.s", void obj_load_code_entry_then_wait(struct ActorObj *obj))
+{
+    void (*next)(struct ActorObj *);
+    u8 *codeByte = &obj->data->codeByte;
+
+    if ((*codeByte & 0x80) == 0 || *codeByte == 0xFF)
+    {
+        next = 0;
+    }
+    else
+    {
+        u8 *entry = gItemTable + ((*codeByte & 0x7F) << 4);
+        u32 id = (entry[2] & 7) + 0x4188;
+
+        obj->codeId = id;
+        ensure_code_entry(id);
+        next = obj_wait_not_busy_action10;
+    }
+    obj->state = next;
+}
+END_NONMATCH
 
 void obj_select_code_entry_world(struct ActorObj *obj)
 {
@@ -542,11 +626,60 @@ void fx_spawn_list_step(struct FxSpawnList *fx)
 
 ASM_FUNC("asm/code_080DECE0/fx_tick_move_records.s", void fx_tick_move_records(void))
 
-ASM_FUNC("asm/code_080DECE0/spawn_random_particle.s", void spawn_random_particle(void))
+ASM_FUNC("asm/code_080DECE0/spawn_random_particle.s", u32 spawn_random_particle(struct Particle *obj, s16 *src))
 
 ASM_FUNC("asm/code_080DECE0/init_drift_particle.s", void init_drift_particle(void))
 
-ASM_FUNC("asm/code_080DECE0/step_particle.s", void step_particle(void))
+void step_particle(struct Particle *obj, s16 *params)
+{
+    s32 t;
+    s32 v;
+    s32 radius;
+
+    obj->posH = obj->posH - obj->dh;
+    obj->x = (u16)obj->x + (u16)obj->dx;
+    obj->y = (u16)obj->y + (u16)params[3];
+
+    t = obj->dh * params[4];
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->dh = t >> 8;
+
+    t = obj->dx * params[5];
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->dx = t >> 8;
+
+    radius = obj->x;
+    v = gCosineTable[*(u8 *)&obj->y];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = radius * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->posX = t >> 8;
+
+    v = gSineTable[*(u8 *)&obj->y];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = radius * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->posY = t >> 8;
+    obj->timer = (u16)obj->timer - 1;
+}
 
 ASM_FUNC("asm/code_080DECE0/orbit_point.s", void orbit_point(void))
 
