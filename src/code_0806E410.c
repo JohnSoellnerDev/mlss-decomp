@@ -64,7 +64,7 @@ struct ActorObj
     s32 param9C;
     s32 paramA0;
     s32 paramA4;
-    s32 side;
+    s32 paramA8;
     u16 timer;
     s16 dx;
     s16 dy;
@@ -230,9 +230,67 @@ void obj_aim_at_owner(struct ActorObj *obj)
     *p9c = -time;
     obj->paramA0 = ratio;
     obj->paramA4 = deltaX;
-    obj->side = deltaY;
+    obj->paramA8 = deltaY;
     obj->timer = 0;
     obj->state = obj_arc_land;
 }
 
-ASM_FUNC("asm/code_0806E410/obj_arc_land.s", void obj_arc_land(struct ActorObj *obj))
+void obj_arc_land(struct ActorObj *obj)
+{
+    struct ActorObj *owner;
+    s32 d;
+    s32 t;
+    s32 u;
+
+    owner = obj->owner;
+    owner->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+    owner->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
+    d = (s16)obj->timer - obj->paramA0 / 2;
+    t = (d * d) * obj->param9C;
+    u = ((s16)obj->dh << 8) + 0x3000;
+    owner->posH = t + u;
+    obj->timer++;
+    if ((s16)obj->timer >= obj->paramA0 / 2)
+    {
+        if (obj->owner->posH <= 0)
+        {
+            obj->owner->posH = obj->owner->part->targetH;
+            obj->param9C = obj->phase;
+            obj->owner->state = 0;
+            partner_link_update(obj, (u32)obj->owner, 0xFF);
+            sprite_entry_update(obj->kind->pose);
+            if (obj->param9C == 0)
+            {
+                sprite_set_action(obj, 0, 0x4112, 0);
+                sprite_set_action(obj, 0xE, 0, 0);
+                sprite_set_action(obj->kind, 0xE, 0, 0);
+            }
+            else
+            {
+                sprite_set_action(obj, 0, 0x4114, 0);
+                sprite_set_action(obj, 0xE, 0, 0);
+                sprite_set_action(obj->kind, 0xE, 0, 0);
+            }
+            obj->pose->unkC = 0;
+            obj->posX = 0x12C00;
+            obj->posY = obj->part->targetY;
+            obj->posH = obj->part->targetH;
+            obj->kind->posX = 0x12C00;
+            obj->kind->posY = obj->posY;
+            obj->kind->posH = obj->posH;
+            ((struct ActorFlagBits *)&obj->kind->flags)->bit3 = 1;
+            obj->byte74 = obj->owner->byte74;
+            obj->kind->byte74 = obj->owner->byte74;
+            obj->byte75 = obj->owner->byte75;
+            obj->kind->byte75 = obj->owner->byte75 + 1;
+            obj->targetX = obj->part->targetX;
+            obj->targetY = obj->part->targetY;
+            obj->phase = obj->part->targetH;
+            obj->motionSpeed = 0x180;
+            ((struct ActorModeBits *)&obj->flags)->bit5 = 1;
+            obj->motionStart = 0;
+            start_motion(obj);
+            obj->state = obj_sync_child_reset;
+        }
+    }
+}
