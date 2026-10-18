@@ -280,7 +280,32 @@ s32 to_bcd(s32 value)
     return bcd;
 }
 
-ASM_FUNC("asm/code_080835B0/unknown_code_08084840.s", void unknown_code_08084840(void))
+s32 unknown_code_08084840(s32 value, void (*out)(s32, s32, u32), u32 a2)
+{
+    s32 count = 1;
+    s32 place = 10;
+    s32 digits;
+    s32 q;
+
+    if (value > 9)
+    {
+        do
+        {
+            count++;
+            place *= 10;
+        } while (place - 1 < value);
+    }
+    digits = count;
+    while (count != 0)
+    {
+        value *= 10;
+        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(value, place);
+        value -= q * place;
+        count--;
+        out(count, q, a2);
+    }
+    return digits;
+}
 
 void sprite_set_camera_offset(struct PartObj *obj, s32 a, s32 b, s32 c)
 {
