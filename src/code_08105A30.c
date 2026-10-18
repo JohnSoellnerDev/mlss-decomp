@@ -70,6 +70,13 @@ struct CurObj
     s16 unkEC;
 };
 
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 bit0 : 1;
+    u16 rest : 15;
+};
+
 struct Pos38
 {
     u8 filler0[0x38];
@@ -224,7 +231,40 @@ void state_toggle_map_tiles(struct Owner *owner);
 void state_menu_alloc_scene(struct Owner *owner);
 void state_hero_anim_when_active(struct Owner *owner);
 
-ASM_FUNC("asm/code_08105A30/state_hero_select_confirm.s", void state_hero_select_confirm(void))
+NONMATCH("asm/code_08105A30/state_hero_select_confirm.s", void state_hero_select_confirm(struct Owner *owner))
+{
+    u8 *hero;
+    struct Obj *obj;
+    struct Entry *task;
+    s32 idx;
+
+    if (((struct SysKeys3E *)gSys)->bit0 == 0)
+    {
+        return;
+    }
+    idx = owner->posX;
+    hero = gParty + idx * 0x3C;
+    recalc_char_stats(idx);
+    obj = owner->target;
+    obj->unkF5 = hero[0x30];
+    state_assign_figure(owner);
+    if (owner->state != state_apply_hero_stats)
+    {
+        if (owner->target != obj)
+        {
+            task = list_add_task(&gWorld->listHead, state_move_to_target);
+            task->unkC = obj;
+            display_finish(1, -1);
+            gWorld->menu248->unk34 = 0x20;
+            gWorld->menu248->unk4A = 0xC;
+            owner->state = state_spawn_list_entry;
+        }
+        else
+        {
+            owner->state = state_figure_jump_start;
+        }
+    }
+} END_NONMATCH
 
 ASM_FUNC("asm/code_08105A30/state_init_map_tiles.s", void state_init_map_tiles(struct Owner *owner))
 
@@ -267,7 +307,10 @@ ASM_FUNC("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digi
 
 ASM_FUNC("asm/code_08105A30/state_build_hero_sprites.s", void state_build_hero_sprites(struct Owner *owner))
 
-ASM_FUNC("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(void))
+void obj_release(void *obj);
+s32 obj_last_x(void *obj);
+
+ASM_FUNC("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(struct Owner *owner))
 
 void set_cur_flags_pending(u32 flags);
 void state_menu_open_wait(struct Owner *owner);
@@ -379,7 +422,45 @@ void state_menu_open_wait(struct Owner *owner)
 
 ASM_FUNC("asm/code_08105A30/set_text_ptrs.s", void set_text_ptrs(void))
 
-ASM_FUNC("asm/code_08105A30/next_text_id.s", void next_text_id(void))
+u32 next_text_id(void)
+{
+    u32 text;
+    u8 step;
+
+    do
+    {
+        step = gWorld->state3A4;
+        text = gWorld->unk398[step];
+        if (step == 2)
+        {
+            gWorld->state3A4 = 0;
+        }
+        else
+        {
+            gWorld->state3A4 = step + 1;
+        }
+    } while (text == 0);
+
+    if (gWorld->state3A4 == 2)
+    {
+        if (gWorld->unk33E <= 1)
+        {
+            if (text == gLangTextA[gSys[0x8C0]])
+            {
+                text = gLangTextB[gSys[0x8C0]];
+            }
+        }
+        if (gWorld->curObj->unkEC == -2)
+        {
+            text = ((u32 *)text)[gWorld->unk3A5 + 8];
+        }
+        else
+        {
+            text = ((u32 *)text)[gWorld->unk3A5];
+        }
+    }
+    return text;
+}
 
 u8 world_list_idle(void)
 {
@@ -636,7 +717,23 @@ void state_hero_anim_notify(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08105A30/state_hero_anim_when_active.s", void state_hero_anim_when_active(struct Owner *owner))
+NONMATCH("asm/code_08105A30/state_hero_anim_when_active.s", void state_hero_anim_when_active(struct Owner *owner))
+{
+    u8 idx;
+    struct Owner *pose;
+
+    idx = gWorld->hero340;
+    pose = (struct Owner *)((u8 *)gWorld->list58[idx + 6] + 8);
+    if ((pose->sprite->flags & 8) != 0)
+    {
+        sprite_set_action(pose, idx ? 1 : 4, idx ? 0x204E : 0x2001, 0);
+        pose = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
+        sprite_set_action(pose, 3, 0, 0);
+        ((struct MsBits *)&pose->sprite->flags)->mode = 1;
+        owner->state = state_hero_sprite_check;
+        set_slot_value(0x53, -1);
+    }
+} END_NONMATCH
 
 void state_heroes_anim_stop(struct Owner *owner)
 {
