@@ -422,7 +422,32 @@ void menu_cursor_place_step(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807544C/kind_place_or_finish.s", s32 kind_place_or_finish(struct ActorObj *obj, struct ActorObj *owner))
+s32 kind_place_or_finish(struct ActorObj *obj, struct ActorObj *owner)
+{
+    s32 cursor;
+    s32 extra;
+
+    switch (obj->timer)
+    {
+    case 0:
+        cursor = menu_cursor_pos(owner->part->cursorX, owner->part->cursorY, 5);
+        extra = signed_byte_e4(owner->part);
+        popup_digit_spawn(cursor - owner->part->cursorX, owner->baseX / 0x100, owner->baseY / 0x100, extra, 1);
+        owner->part->cursorX = cursor;
+        effect_spawn_at(0xF93, owner->baseX / 0x100, owner->baseY / 0x100, owner->baseH / 0x100, owner);
+        obj_release(obj);
+        return 1;
+    case 1:
+        anim_bit1_chance(owner->part, 0xC8);
+        effect_spawn_at(0x2396, owner->baseX / 0x100, owner->baseY / 0x100, owner->baseH / 0x100, owner);
+        obj_release(obj);
+        return 1;
+    default:
+        partner_link_update(obj, (u32)owner, 0xFF);
+        obj_list_remove(obj);
+        return 0;
+    }
+}
 
 void start_move_then_wait_slot(struct ActorObj *obj)
 {
