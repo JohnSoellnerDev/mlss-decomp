@@ -164,6 +164,7 @@ void timer_reset_pos_and_cb(struct SpriteObj *obj);
 void tick_mode_and_remove_when_low(struct SpriteObj *obj);
 void remove_object_b(struct SpriteObj *obj);
 void anim0_clear_cb_if_active_b(struct SpriteObj *obj);
+void anim0_clear_cb_if_active_c(struct SpriteObj *obj);
 
 ASM_FUNC("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(void))
 
@@ -173,25 +174,173 @@ void ramp_values_then_remove(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(void))
 
 ASM_FUNC("asm/code_08078708/ramp_values_then_remove.s", void ramp_values_then_remove(struct SpriteObj *obj))
-
 ASM_FUNC("asm/code_08078708/link_actor_if_free.s", void link_actor_if_free(struct SpriteObj *obj))
 
 ASM_FUNC("asm/code_08078708/update_positions_to_target.s", s32 update_positions_to_target(struct SpriteObj *obj))
 
-s32 slot_step_or_remove(struct SpriteObj *obj);
+u32 lookup_slot(struct SpriteObj *obj, u32 slot);
+s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot);
 s32 actor_link_anim_minus1(void);
 void init_timer_slot(struct SpriteObj *obj);
-ASM_FUNC("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_child(void))
+NONMATCH("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_child(struct SpriteObj *obj))
+{
+    struct SpriteObj *child;
 
-ASM_FUNC("asm/code_08078708/tick_mode_and_remove_when_low.s", void tick_mode_and_remove_when_low(struct SpriteObj *obj))
+    if (obj->entry->flags & 8)
+    {
+        sprite_set_action(obj, 0x14, 0, 0);
+        effect_spawn_at(0x29DB, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        child = obj_spawn(obj->mainObj, 0x402B, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
+                          obj->unk40 / 0x100 + 0x50, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+        obj->child = child;
+        child->flags78 = (child->flags78 & 0x1F) | 0x80;
+        ((struct ObjFlags77 *)child)->bit6 = 0;
+        ((struct ObjFlags77 *)child)->bit5 = 0;
+        child->unk68 = on_arrive;
+        child->unk6C = obj->unk6C;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->unk58 = (void *)actor_link_anim_minus1;
+        child->unk60 = (void (*)(struct SpriteObj *))slot_step_or_remove;
+        child->unk84 = obj->owner->mainObj->unkD8;
+        child->unk88 = obj->owner->mainObj->unkDC;
+        child->unk8C = 0xC000;
+        {
+            u32 flags = child->flags79;
 
-ASM_FUNC("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj))
+            child->flags79 = flags | 0x20;
+        }
+        child->unk7C = 0x200;
+        child->unk7A = 0;
+        start_motion(child);
+        child->unk74 = obj->unk74;
+        child->callback = init_timer_slot;
+        child->timer2 = 0;
+        set_slot_value(0x86, -1);
+        obj->callback = anim0_clear_cb_if_active_c;
+    }
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_08078708/timer_spawn_child_402f.s", void timer_spawn_child_402f(void))
+void tick_mode_and_remove_when_low(struct SpriteObj *obj)
+{
+    s32 count;
+    s32 scaled;
 
-ASM_FUNC("asm/code_08078708/pick_side_random_then_anim.s", void pick_side_random_then_anim(struct SpriteObj *obj))
+    count = obj->unk8C - 1;
+    obj->unk8C = count;
+    if (count <= 0)
+    {
+        effect_spawn_at(0x29E8, obj->unk38 / 0x100, obj->unk3C / 0x100, 0, obj);
+        obj->unk8C = 0x10;
+    }
+    obj->mode += 0x4C;
+    if ((s32)obj->mode > 0x200)
+    {
+        obj->mode = 0x200;
+    }
+    obj->unk18 = obj->unk18 - obj->mode;
+    if ((s32)obj->unk18 <= 0x2000)
+    {
+        obj_list_remove(obj);
+        scaled = ((s32)obj->unkB2 << 1) + obj->unkB2;
+        scaled = scaled + (scaled << 4);
+        if (scaled <= 0x100)
+        {
+            obj->mainObj->unk124 = 0x100 - scaled;
+        }
+        else
+        {
+            obj->mainObj->unk124 = 0;
+        }
+        partner_link_update(obj, obj->owner, 0xFF);
+        set_slot_value(0x3B, -1);
+        obj->mainObj->unk124 = 0x100;
+        effect_spawn_at(0x2A0C, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        obj->callback = remove_object_b;
+    }
+}
 
-u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
+ASM_FUNC("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot))
+
+void timer_spawn_child_402f(struct SpriteObj *obj)
+{
+    s32 t;
+    struct SpriteObj *child;
+
+    t = obj->mode - 1;
+    obj->mode = t;
+    if (t <= 0)
+    {
+        obj->mode = 0x50;
+        t = obj->timer - 1;
+        obj->timer = t;
+        if ((s16)t >= 0)
+        {
+            set_slot_value(0xD5, -1);
+            effect_spawn_at(0x2A61, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+            child = obj_spawn(obj->mainObj, 0x402F, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
+                              obj->unk40 / 0x100 + 0x30, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+            child->child = obj->child;
+            obj->child = child;
+            child->flags78 = (child->flags78 & 0x1F) | 0x20;
+            ((struct ObjFlags77 *)child)->bit6 = 0;
+            ((struct ObjFlags77 *)child)->bit5 = 0;
+            child->unk68 = on_arrive;
+            child->unk6C = obj->unk6C;
+            child->owner = obj->owner;
+            child->unk74 = obj->unk74;
+            child->callback = set_anim1_mode4;
+            child->unkB2 = 0x1111;
+            child->timer = 3;
+        }
+        else
+        {
+            sprite_set_action(obj, 0x17, 0, 0);
+            obj->callback = anim0_clear_cb_if_active_b;
+        }
+    }
+}
+
+void pick_side_random_then_anim(struct SpriteObj *obj)
+{
+    u8 tries;
+    u8 parity;
+
+    if ((s32)--obj->mode <= 0)
+    {
+        obj->timer--;
+        if ((s16)obj->timer > 0)
+        {
+            sprite_set_action(obj, 2, 0, 0);
+            obj->callback = random_spawn_pos;
+        }
+        else
+        {
+            tries = 0;
+            parity = mt19937_next() & 1;
+            goto body;
+        check:
+            if (tries > 2)
+                goto side0;
+        body:
+            tries = (u8)(tries + 1);
+            parity = (u8)(parity + 1);
+            parity &= 1;
+            if (gWorld->slots[parity + 6]->child->unkF6 == 0)
+                goto check;
+            if (tries <= 2)
+                goto store;
+        side0:
+            parity = 0;
+        store:
+            obj->phase = parity;
+            sprite_set_action(obj, parity + 3, 0, 0);
+            obj->callback = snap_to_world_slot;
+        }
+        set_slot_value(0x119, -1);
+    }
+}u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
 void slot_place_and_move(struct SpriteObj *obj);
 void scroll_queue_and_cull(struct SpriteObj *obj);
 void scroll_and_cull(struct SpriteObj *obj);
@@ -274,10 +423,66 @@ void set_anim_10_spawn_child_random(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target(struct SpriteObj *obj))
+NONMATCH("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target(struct SpriteObj *obj))
+{
+    if (obj->target == 0)
+    {
+        effect_spawn_at(0x2A9D, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        sprite_set_action(obj, 0, 0x4029, 0);
+        ((struct Flags79Bit0 *)&obj->flags79)->bit0 = 0;
+        obj->flags78 = (obj->flags78 & 0x1F) | 0x20;
+        (void)*(volatile u32 *)&gUnk_03000F6C;
+        obj->unk18 = 0x1800;
+        obj->callback = 0;
+        gUnk_03000ED0 = 1;
+        set_slot_value(0x55, -1);
+    }
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_until_timer_done(void))
+NONMATCH("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_until_timer_done(struct SpriteObj *obj))
+{
+    s32 t;
+    s32 y;
+    s32 *pos;
 
+    if (obj->entry->flags & 8)
+    {
+        sprite_set_action(obj, 0, 0x4029, 0);
+        t = obj->unkA0 - 1;
+        obj->unkA0 = t;
+        if (t > 0)
+        {
+            obj->mode = (obj->mode + 1) & 1;
+            if (obj->mode == 0)
+            {
+                obj->unk84 = 0x7800;
+                pos = &obj->unk88;
+                y = 0x8000;
+            }
+            else
+            {
+                obj->unk84 = 0x7000;
+                pos = &obj->unk88;
+                y = 0x6000;
+            }
+            *pos = y;
+            pos = &obj->unk8C;
+            *pos = 0x1800;
+            obj->flags79 |= 0x20;
+            obj->unk7C = 0x300;
+            obj->unk7A = 0;
+            start_motion(obj);
+            obj->callback = set_cb_if_no_target;
+            set_slot_value(0xD7, -1);
+        }
+        else
+        {
+            obj->callback = 0;
+        }
+    }
+}
+END_NONMATCH
 void start_anim1_if_no_target(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_moving(void))
 
@@ -317,7 +522,42 @@ void start_child_at_main(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08078708/timer_reset_pos_and_cb.s", void timer_reset_pos_and_cb(struct SpriteObj *obj))
+NONMATCH("asm/code_08078708/timer_reset_pos_and_cb.s", void timer_reset_pos_and_cb(struct SpriteObj *obj))
+{
+    s32 y;
+    s32 *pos;
+
+    if (obj->entry->flags & 8)
+    {
+        obj->timer--;
+        if ((s16)obj->timer <= 0)
+        {
+            obj_list_remove(obj);
+            sprite_set_action(obj, 0, 0, 0);
+            if (gUnk_03000F6C == 0)
+            {
+                obj->unk84 = 0x7800;
+                pos = &obj->unk88;
+                y = 0x8000;
+            }
+            else
+            {
+                obj->unk84 = 0x7000;
+                pos = &obj->unk88;
+                y = 0x6000;
+            }
+            *pos = y;
+            pos = &obj->unk8C;
+            *pos = 0x1800;
+            obj->flags79 |= 0x20;
+            obj->unk7C = 0x300;
+            obj->unk7A = 0;
+            start_motion(obj);
+            obj->callback = end_without_target;
+        }
+    }
+}
+END_NONMATCH
 
 void end_without_target(struct SpriteObj *obj)
 {
