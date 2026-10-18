@@ -106,7 +106,8 @@ struct SceneObj
       u16 half27A;
       u16 half27C;
       u16 half27E;
-      u8 filler280[0x28A - 0x280];
+      u16 half280;
+      u8 filler282[0x28A - 0x282];
       u8 byte28A;
       u8 byte28B;
       u8 byte28C;
@@ -151,6 +152,7 @@ struct SceneObj
     void *sub320;
 };
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
 extern u8 gSys[];
 extern void *gCurObj;
 extern u8 gFlowState;
@@ -185,7 +187,106 @@ void link_window_open(u32 a);
 void open_screen(void *block, u32 a, const void *tag, u32 c);
 void obj_teardown_subs(struct SceneObj *obj, u32 mode);
 
-ASM_FUNC("asm/code_08026EA8/apply_display_state.s", void apply_display_state(struct SceneObj *obj))
+extern u8 *const gBgRequestPtr;
+extern u16 gUnk_02000008;
+void set_flags_2_3(void *p);
+void anim_set_gfx(void *obj, u32 half, u32 field);
+void pair_ring_pair_step(struct SceneObj *obj);
+
+struct Bit1Of291
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 rest : 6;
+};
+
+struct Bits3Of8
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 rest : 5;
+};
+
+struct Bits1C246
+{
+    u8 low2 : 2;
+    u8 f3 : 3;
+    u8 rest : 3;
+};
+
+struct SysLow10
+{
+    u8 filler0[0x78];
+    u16 low10 : 10;
+    u16 rest : 6;
+};
+
+struct BgReqBits
+{
+    u8 filler0;
+    u8 low5 : 5;
+    u8 bit5 : 1;
+    u8 rest : 2;
+};
+
+NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(struct SceneObj *obj))
+{
+    *(u16 *)0x02000000 = 0x1F40;
+    if (obj->flags291 & 2)
+    {
+        gUnk_02000008 = obj->half294;
+        ((void (*)(u32, void *, u32))gMemRoutines)(0, (void *)0x0600C000, 0x20);
+        ((void (*)(u32, void *, u32))gMemRoutines)(0, (void *)0x0600C800, 0x800);
+        ((struct Bit1Of291 *)&obj->flags291)->b1 = 0;
+    }
+    ((struct BgReqBits *)gBgRequestPtr)->bit5 = 0;
+    if (obj->flags2B8 & 1)
+    {
+        if (obj->flags2B8 & 0x10)
+        {
+            if ((((struct SysLow10 *)gSys)->low10 & 0xF0) == 0xF0)
+            {
+                pair_ring_pair_step(obj);
+            }
+            else if ((obj->flags246 & 0x1C) == 0x14)
+            {
+                ((struct Bits1C246 *)&obj->flags246)->f3 = 0;
+                pair_set_mode(obj, 0, 0);
+            }
+        }
+        ((struct Bits3Of8 *)&obj->flags2B8)->b0 = 0;
+    }
+    {
+        u32 t = obj->half20A & 0x180;
+
+        if (t == 0x100 || (t == 0 && (((struct SysLow10 *)gSys)->low10 & 0x33) == 0))
+        {
+            obj->half244 = 0xFFC8;
+        }
+    }
+    if (obj->flags12A == 0)
+    {
+        obj->flags12A = 1;
+        ((struct Bits3Of8 *)&obj->flagsF8)->b1 = 0;
+        ((struct Bits3Of8 *)&obj->flagsF8)->b2 = 0;
+    }
+    if (obj->flagsFC & 1)
+    {
+        set_slot_fields(0, obj->timer1FA >> 8, 8);
+        ((struct Bits3Of8 *)&obj->flagsFC)->b0 = 0;
+    }
+    {
+        u32 b28 = ((u8 *)gCurObj)[0x28];
+
+        if (b28 & 1)
+        {
+            anim_set_gfx(gCurObj, *(u16 *)((u8 *)gCurObj + 0x20), (((u32)b28 << 26) >> 28));
+        }
+    }
+    set_flags_2_3(gCurObj);
+}
+END_NONMATCH
 
 void apply_display_state(struct SceneObj *obj);
 ASM_FUNC("asm/code_08026EA8/set_object_mode.s", void set_object_mode(void))
@@ -354,10 +455,10 @@ END_NONMATCH
 ASM_FUNC("asm/code_08026EA8/obj_start_battle.s", void obj_start_battle(void))
 
 void pair_set_mode(void *list, u32 mode, u32 flag);
-void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, u8 v, u8 f);
+void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, s32 v, ByteArg f);
 ASM_FUNC("asm/code_08026EA8/draw_entity_sprite.s", void draw_entity_sprite(void))
 
-ASM_FUNC("asm/code_08026EA8/obj_reinit.s", void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, u8 v, u8 f))
+ASM_FUNC("asm/code_08026EA8/obj_reinit.s", void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, s32 v, ByteArg f))
 
 void scene_transition_step(struct SceneObj *obj)
 {
