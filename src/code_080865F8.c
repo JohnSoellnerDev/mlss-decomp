@@ -163,6 +163,13 @@ struct CandBits
     u8 high : 4;
 };
 
+struct PoseFlags11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct FlagBits81
 {
     u8 bit0 : 1;
@@ -215,7 +222,34 @@ ASM_FUNC("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(void))
 
 ASM_FUNC("asm/code_080865F8/contact_face.s", void contact_face(void))
 
-ASM_FUNC("asm/code_080865F8/obj_step_velocity.s", void obj_step_velocity(struct Actor *obj))
+void obj_step_velocity(struct Actor *obj)
+{
+    struct Rec *rec = obj->data;
+    s32 dx = rec->targetX - obj->baseX;
+    s32 dh;
+    s32 cellsX;
+    s32 cellsH;
+
+    if (dx < 0)
+        dx += 0x1F;
+    cellsX = dx >> 5;
+    dh = rec->targetH - obj->baseH;
+    if (dh < 0)
+        dh += 0x1F;
+    cellsH = dh >> 5;
+    *(u16 *)&obj->offX += cellsX;
+    *(u16 *)&obj->offZ += cellsH;
+    obj->offX = (obj->offX * 0xF2) / 0x100;
+    obj->offZ = (obj->offZ * 0xF2) / 0x100;
+    obj->posX += obj->offX;
+    obj->posZ += obj->offZ;
+    if (obj->offX * obj->offX + cellsX * cellsX <= 0x40 && obj->offZ * obj->offZ + cellsH * cellsH <= 0x40)
+    {
+        obj->posX = obj->data->targetX;
+        obj->posZ = obj->data->targetH;
+        obj->state = NULL;
+    }
+}
 
 ASM_FUNC("asm/code_080865F8/obj_attach.s", void obj_attach(void))
 
@@ -260,7 +294,43 @@ ASM_FUNC("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(void))
 
 ASM_FUNC("asm/code_080865F8/effect_from_table_obj.s", void effect_from_table_obj(void))
 
-ASM_FUNC("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *obj))
+NONMATCH("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *obj))
+{
+    struct Pose *pose;
+    struct Rec *cur;
+    const s16 *entry;
+    s32 targetX;
+    s32 x;
+
+    pose = obj->child->pose;
+    if (pose == NULL || pose->waitFlag21 != obj->motionSpeed || (pose->flags12 & 0x20) != 0)
+    {
+        obj_release(obj);
+        return;
+    }
+    cur = gWorld->list78;
+    for (;;)
+    {
+        if (cur == NULL)
+        {
+            obj_release(obj);
+            return;
+        }
+        if (cur != (struct Rec *)obj && cur->state != NULL)
+            break;
+        cur = cur->ringNext;
+    }
+    entry = (const s16 *)((const u8 *)gOffsetRows + (obj->motionStart << 1) + (pose->unk23 * 6 + 12));
+    targetX = obj->targetX;
+    if ((pose->flags11 & 0x40) != 0)
+        x = targetX - (entry[0] << 8);
+    else
+        x = targetX + (entry[0] << 8);
+    obj->posX = x;
+    obj->posY = obj->targetY + (entry[1] << 8);
+    obj->posZ = obj->targetH + (entry[2] << 8);
+}
+END_NONMATCH
 
 void obj_place_start(struct Actor *obj)
 {
@@ -310,10 +380,26 @@ void obj_place_step(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_080865F8/obj_finish_placement.s", void obj_finish_placement(void))
+void obj_finish_placement(struct Actor *obj)
+{
+    struct Rec *rec;
+    s32 action;
+
+    if ((obj->pose->flags12 & 8) != 0)
+    {
+        rec = obj->data;
+        place_targets(obj, rec->targetX / 0x100, rec->targetY / 0x100, rec->targetH / 0x100, 0x100);
+        set_motion_start(obj, 0x400);
+        action = (rec->slot == -1) ? 0x2002 : 0x204F;
+        sprite_set_action(obj, 0, action, 0);
+        ((struct PoseFlags11 *)&obj->pose->flags11)->bit6 = 1;
+        ((struct PoseBits *)&obj->pose->flags12)->mode = 0;
+        obj->state = NULL;
+        enter_finish_rebuild(obj);
+    }
+}
 
 ASM_FUNC("asm/code_080865F8/lookup_part.s", void lookup_part(void))
-
 ASM_FUNC("asm/code_080865F8/lookup_slot.s", s32 lookup_slot())
 
 void *find_lowest_order_pose(struct Actor *obj)
@@ -581,7 +667,31 @@ void noop_state_08087c7c(struct Actor *obj)
 
 void obj_release(struct Actor *obj);
 extern const s16 gOffsetRows[];
-ASM_FUNC("asm/code_080865F8/process_record_ring.s", void process_record_ring(void))
+NONMATCH("asm/code_080865F8/process_record_ring.s", s32 process_record_ring(struct Actor *obj))
+{
+    struct Rec *rec = obj->data;
+    struct Rec *next = rec->ringNext;
+    struct Rec *cur;
+
+    if (next != NULL)
+    {
+        do
+        {
+            cur = next;
+            if ((cur->status111 & 2) != 0)
+                task_create_list_4c(stop_unless_flagged, cur);
+            else
+                obj_stop((struct Actor *)((u8 *)cur + 8));
+            next = cur->ringNext;
+        } while (next != rec);
+    }
+    if ((rec->status111 & 2) != 0)
+        task_create_list_4c(stop_unless_flagged, rec);
+    else
+        obj_stop(obj);
+    return 1;
+}
+END_NONMATCH
 
 void set_targets_from_record(struct Actor *obj)
 {
