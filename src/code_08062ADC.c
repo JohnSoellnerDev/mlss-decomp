@@ -3,8 +3,36 @@
 
 struct ActorDesc
 {
-    u8 filler0[0x0C];
+    u8 filler0[0x04];
+    struct ActorPose *pose;
+    void *node;
     u8 order;
+};
+
+struct ChainNode
+{
+    struct ChainNode *next;
+    s32 x;
+    s32 y;
+    s32 h;
+};
+
+struct Lo5Bits
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
+struct OamAffineParams
+{
+    u8 filler0[0x6];
+    vu16 pa : 16;
+    u8 filler8[0x6];
+    vu16 pb : 16;
+    u8 filler10[0x6];
+    vu16 pc : 16;
+    u8 filler18[0x6];
+    vu16 pd : 16;
 };
 
 struct ActorPose
@@ -21,7 +49,7 @@ struct ActorObj
     u8 filler0[0x04];
     struct ActorDesc *desc;
     struct ActorPose *pose;
-    u8 filler0C[0x10 - 0x0C];
+    struct ChainNode *chainHead;
     s32 posX;
     s32 posY;
     s32 posH;
@@ -194,6 +222,7 @@ s32 chain_metric(struct ActorObj *obj);
 void obj_list_push_arg(struct ActorObj *obj, u32 arg);
 void obj_chain_cull(struct ActorObj *obj);
 void chain_link_end(struct ActorObj *obj);
+void chain_link_step(struct ActorObj *obj);
 u32 obj_lookup_action1(struct ActorObj *obj, struct ActorObj *partner);
 void obj_action_a_timer(struct ActorObj *obj);
 void obj_sync_target_place(struct ActorObj *obj);
@@ -212,6 +241,10 @@ void start_motion(struct ActorObj *obj);
 u32 lookup_slot(struct ActorObj *obj, struct ActorObj *partner);
 void resolve_contact_action(struct ActorObj *owner, struct ActorObj *obj, u32 a, u32 b, u32 code);
 u32 mt19937_next(void);
+struct ChainNode *sprite_node_alloc(s32 x, s32 y, s32 h);
+struct ActorDesc *sprite_node_take(void);
+void obj_chain_wait(struct ActorObj *obj);
+extern u8 *gWorld;
 
 void obj_wait_timer_sprite_notify(struct ActorObj *obj)
 {
@@ -395,16 +428,35 @@ void chain_link_step(struct ActorObj *obj)
     obj->state = chain_link_end;
 }
 
-struct ChainSlotEntry
+void chain_link_end(struct ActorObj *obj)
 {
-    u8 filler0[0x6];
-    u16 unk6 : 16;
-    u8 filler8[0x6];
-    u16 unkE : 16;
-    u8 filler10[0x6];
-    u16 unk16 : 16;
-    u8 filler18[0x6];
-    u16 unk1E : 16;
-};
+    u8 *base;
+    u8 *oamBase;
+    u32 bank;
+    u32 index;
+    u8 *oam;
+    s32 dirX;
+    s32 dirY;
 
-ASM_FUNC("asm/code_08062ADC/chain_link_end.s", void chain_link_end(struct ActorObj *obj))
+    chain_metric(obj);
+    obj->timer--;
+    if ((s16)obj->timer <= 0x12)
+    {
+        dirX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dx * 18, (s16)obj->timer);
+        dirY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dy * 18, (s16)obj->timer);
+        base = gSys;
+        bank = (((u32)*(base + 0x888) << 28) >> 31) << 10;
+        index = ((u32)obj->desc->order << 27) >> 22;
+        oamBase = base + 0x80;
+        oam = (u8 *)(bank + (index + (u32)oamBase));
+        ((struct OamAffineParams *)oam)->pa = dirX;
+        ((struct OamAffineParams *)oam)->pb = dirY;
+        ((struct OamAffineParams *)oam)->pc = -dirY;
+        ((struct OamAffineParams *)oam)->pd = dirX;
+        if ((s16)obj->timer == 1)
+        {
+            obj->part->sub8.timer = 0;
+            obj_release(obj);
+        }
+    }
+}
