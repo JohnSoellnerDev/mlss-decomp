@@ -158,7 +158,12 @@ function start, calls show the relocation (the called symbol). A worked example 
   file built with `-funroll-loops`. Put `/* agbcc: -funroll-loops */` as the first line of the
   unit (tools/agbcc.py reads it; `check_unit.py` must still print OK for the other functions)
   and write the loop as `i = n; while (--i >= 0) p[i] = 0;` (example `clear_map_rect` in
-  src/code_08084DB4.c).
+  src/code_08084DB4.c). Loops with a constant count are unrolled too: twelve iterations come
+  out as four rounds of three bodies (`chain_then_wait_counters` in src/code_080739F0.c).
+  Never write the unrolled form by hand (Duff's device, `goto` into copies of the body): the
+  original is a plain loop. Not every original file used the option (the sound driver did
+  not), so add the line only when the unit still passes `check_unit.py` with it; if it does
+  not, the unit mixes two original files and has to be split (say so in your report).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
