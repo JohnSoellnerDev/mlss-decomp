@@ -47,7 +47,7 @@ void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
 void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
 ASM_FUNC("asm/code_08179A7C/spin_scroll_9a7c.s", void spin_scroll_9a7c(void))
-ASM_FUNC("asm/code_08179A7C/spin_scroll_9c94.s", void spin_scroll_9c94(void))
+ASM_FUNC("asm/code_08179A7C/spin_scroll_9c94.s", void spin_scroll_9c94(struct Point1Obj *obj))
 ASM_FUNC("asm/code_08179A7C/spin_offset_9ea4.s", void spin_offset_9ea4(void))
 ASM_FUNC("asm/code_08179A7C/spin_offset_a0cc.s", void spin_offset_a0cc(void))
 
@@ -135,5 +135,5 @@ ASM_FUNC("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_aaa0.s", void obj_model
 
 ASM_FUNC("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_acd8.s", void obj_model8_zoom_vel7_oam_130_acd8(void))
 
-ASM_FUNC("asm/code_08179A7C/obj_model5_zoom_drop_af10.s", void obj_model5_zoom_drop_af10(void))
+ASM_FUNC("asm/code_08179A7C/obj_model5_zoom_drop_af10.s", void obj_model5_zoom_drop_af10(struct Point1Obj *obj))
 ASM_FUNC("asm/code_08179A7C/obj_model5_zoom_fall_oam_b0e0.s", void obj_model5_zoom_fall_oam_b0e0(void))
