@@ -146,6 +146,7 @@ void cgb_set_freq(struct SndTrack *ch);
 void cgb_update_pan(struct SndTrack *ch);
 void cgb_update_volume(struct SndTrack *ch);
 void psg_wave_load(u32 wave);
+void player_start(u32 player, u32 song);
 
 ASM_FUNC("asm/sound_0819B3C4/sound_voices_mix.s", void sound_voices_mix(void))
 
@@ -232,17 +233,18 @@ s32 lfo_pitch_value(struct SndTrack *ch)
     return 0;
 }
 
-NONMATCH("asm/sound_0819B3C4/voice_set_pitch.s", void voice_set_pitch(struct SndTrack *ch))
+void voice_set_pitch(struct SndTrack *ch)
 {
     u32 k = ch->key << 8;
+    s32 f;
 
     k = (u16)(k + ch->bend * (ch->unkF << 1));
-    k = (u16)((s8)ch->fine + k);
+    f = ch->fine;
+    k = (u16)(k + f);
     if (ch->status & 0x100)
         k = (u16)(k + lfo_pitch_value(ch));
     *(u16 *)(gUnk_03001B5A + (ch->voice << 4)) = k;
 }
-END_NONMATCH
 
 void track_note_on(struct SndTrack *ch)
 {
@@ -339,13 +341,16 @@ void sound_hw_init(void)
     *((u8 *)sound_info() + 0x4F8) = 0xFF;
 }
 
-NONMATCH("asm/sound_0819B3C4/pitch_to_psg_freq.s", u32 pitch_to_psg_freq(u32 pitch))
+u32 pitch_to_psg_freq(u32 pitch)
 {
     s32 idx = (pitch << 16) >> 24;
-    u32 fine = ((pitch << 16) & 0xFF0000) >> 16;
+    u32 mask = 0xFF0000;
+    u32 fine;
     u32 lo;
     u32 d;
 
+    mask &= pitch << 16;
+    fine = mask >> 16;
     idx -= 0x24;
     if (idx < 0)
         return 0;
@@ -353,7 +358,6 @@ NONMATCH("asm/sound_0819B3C4/pitch_to_psg_freq.s", u32 pitch_to_psg_freq(u32 pit
     d = (gPsgFreqTable[idx + 1] - lo) * fine;
     return (u16)(0x800 - (lo + (d >> 8)));
 }
-END_NONMATCH
 
 u32 key_to_cgb_value(s32 key)
 {
@@ -382,14 +386,16 @@ void psg_wave_load(u32 wave)
     *(vu8 *)0x04000070 = 0x80;
 }
 
-NONMATCH("asm/sound_0819B3C4/cgb_set_freq.s", void cgb_set_freq(struct SndTrack *ch))
+void cgb_set_freq(struct SndTrack *ch)
 {
     u32 k = ch->key << 8;
     u32 freq;
     u8 *rec;
+    s32 f;
 
     k = (u16)(k + ch->bend * ch->unkF);
-    k = (u16)(k + (s8)ch->fine);
+    f = ch->fine;
+    k = (u16)(k + f);
     if (ch->status & 0x100)
         k = (u16)(k + lfo_pitch_value(ch));
     freq = pitch_to_psg_freq(k);
@@ -397,13 +403,14 @@ NONMATCH("asm/sound_0819B3C4/cgb_set_freq.s", void cgb_set_freq(struct SndTrack 
     rec += (ch->voice & 3) * 12;
     *(u16 *)(rec + 0x4D0) = freq;
 }
-END_NONMATCH
 
-NONMATCH("asm/sound_0819B3C4/cgb_set_key_value.s", void cgb_set_key_value(struct SndTrack *ch))
+void cgb_set_key_value(struct SndTrack *ch)
 {
-    *(u16 *)((u8 *)(*(struct SoundInfo **)0x03007FF0) + 0x4F4) = (u8)key_to_cgb_value(ch->key);
+    u32 v = key_to_cgb_value(ch->key);
+    u8 *base = (u8 *)(*(struct SoundInfo **)0x03007FF0);
+    u8 w = v;
+    *(u16 *)(base + 0x4F4) = w;
 }
-END_NONMATCH
 
 void cgb_begin_release(struct SndTrack *ch)
 {
@@ -445,11 +452,12 @@ void cgb_select_wave(struct SndTrack *ch)
     }
 }
 
-NONMATCH("asm/sound_0819B3C4/cgb_update_pan.s", void cgb_update_pan(struct SndTrack *ch))
+void cgb_update_pan(struct SndTrack *ch)
 {
     u32 bit = (0x1000000u << (ch->voice & 3)) >> 24;
+    u32 old = *(vu8 *)0x04000081;
     u32 hi = bit << 4;
-    u32 v = *(vu8 *)0x04000081 & ~(bit | hi);
+    u32 v = old & ~(bit | hi);
     u32 pan = ch->unkE;
 
     if (pan <= 0x80)
@@ -461,7 +469,6 @@ NONMATCH("asm/sound_0819B3C4/cgb_update_pan.s", void cgb_update_pan(struct SndTr
     }
     *(vu8 *)0x04000081 = v;
 }
-END_NONMATCH
 
 void cgb_update_volume(struct SndTrack *ch)
 {
@@ -507,7 +514,33 @@ u32 cgb_env_level(u32 idx)
 
 ASM_FUNC("asm/sound_0819B3C4/cgb_sequencer.s", void cgb_sequencer(u32 ch))
 
-ASM_FUNC("asm/sound_0819B3C4/cgb_wave_step.s", void cgb_wave_step(void))
+NONMATCH("asm/sound_0819B3C4/cgb_wave_step.s", void cgb_wave_step(void))
+{
+    u8 *rec = (u8 *)sound_info() + 0x4E0;
+    u32 next;
+
+    switch (rec[7])
+    {
+    case 0:
+        return;
+    case 1:
+        *(vu16 *)0x04000074 = *(u16 *)(rec + 8) | 0x8000;
+        *(vu16 *)0x04000072 = gWaveVolumeCodes[rec[4] >> 2] << 8;
+        next = rec[7] + 1;
+        break;
+    case 2:
+        *(vu16 *)0x04000074 = *(u16 *)(rec + 8);
+        return;
+    case 5:
+        *(vu8 *)0x04000073 = 0;
+        next = 0;
+        break;
+    default:
+        return;
+    }
+    rec[7] = next;
+}
+END_NONMATCH
 
 void cgb_update_all(void)
 {
@@ -550,15 +583,17 @@ void track_key_off(u32 idx, struct SndTrack *ch)
     ch->status |= 2;
 }
 
-NONMATCH("asm/sound_0819B3C4/player_key_off.s", void player_key_off(u32 player))
+void player_key_off(u32 player)
 {
     s32 t;
     u32 off;
     struct SndTrack *tr;
+    struct SoundInfo **pp;
 
     t = 0;
+    pp = (struct SoundInfo **)0x03007FF0;
     off = player * 0x180;
-    tr = (struct SndTrack *)((u8 *)sound_info() + off);
+    tr = (struct SndTrack *)((u8 *)*pp + off);
     for (; t <= 11; t++, tr++)
     {
         if (tr->status & 1)
@@ -566,23 +601,70 @@ NONMATCH("asm/sound_0819B3C4/player_key_off.s", void player_key_off(u32 player))
     }
     sound_info()->playerFlags[player] &= 0xFE;
 }
-END_NONMATCH
 
 void sound_info_set_4a4(u32 idx, u32 value)
 {
     sound_info()->playerWord[idx] = value;
 }
 
-ASM_FUNC("asm/sound_0819B3C4/player_start.s", void player_start(void))
+ASM_FUNC("asm/sound_0819B3C4/player_start.s", void player_start(u32 player, u32 song))
 
 void player_enable(u32 player)
 {
     sound_info()->playerFlags[player] |= 1;
 }
 
-ASM_FUNC("asm/sound_0819B3C4/player_set_volume.s", void player_set_volume(void))
+NONMATCH("asm/sound_0819B3C4/player_set_volume.s", void player_set_volume(u32 player, u32 vol))
+{
+    u32 player2;
+    u32 block;
+    s32 t;
+    struct SndTrack *tr;
 
-ASM_FUNC("asm/sound_0819B3C4/song_play.s", void song_play(void))
+    sound_info()->volTable[player] = (vol << 8) + vol;
+    player2 = player << 1;
+    if (sound_info()->playerFlags[player] & 1)
+    {
+        t = 0;
+        block = (player2 + player) << 7;
+        for (; t <= 11; t++)
+        {
+            tr = (struct SndTrack *)((u8 *)sound_info() + block + (t << 5));
+            if (tr->status & 1)
+            {
+                if (!(tr->status & 2))
+                    ((struct VolEntry *)gReleaseTable[t])->callback(tr);
+            }
+        }
+    }
+}
+END_NONMATCH
+
+void song_play(u32 id)
+{
+    u8 *song;
+    u16 *offs;
+    u16 bits;
+    u32 cmd;
+    s32 t;
+    struct SndTrack *tr;
+
+    song = gSongTableId[id];
+    offs = (u16 *)song;
+    bits = *offs;
+    offs++;
+    tr = sound_info()->players[0].tracks;
+    for (t = 0; t <= 11; t++, tr++, bits >>= 1)
+    {
+        if (bits & 1)
+        {
+            cmd = (u32)(song + *offs);
+            offs++;
+            track_init(tr, cmd);
+            sound_info()->trackSong[t] = id;
+        }
+    }
+}
 
 void song_stop(u32 id)
 {
@@ -678,9 +760,10 @@ u32 queue_stop_all(void)
 
 NONMATCH("asm/sound_0819B3C4/queue_player_word.s", u32 queue_player_word(u32 player, u32 value))
 {
-    u32 cmd = 0xFFFF8000;
-    cmd |= player << 8;
-    return cmd_queue_push(cmd | value);
+    u32 cmd = player << 8;
+    cmd |= 0xFFFF8000;
+    cmd |= value;
+    return cmd_queue_push(cmd);
 }
 END_NONMATCH
 
