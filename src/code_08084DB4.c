@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 #include "ram_routines.h"
 
@@ -113,7 +114,21 @@ u8 *slot_block_ptr(u8 *obj, u8 idx)
     return *(u8 **)(base + off);
 }
 
-ASM_FUNC("asm/code_08084DB4/clear_map_rect.s", void clear_map_rect(void))
+void clear_map_rect(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h)
+{
+    u16 off = y * 0x280 + layer * 32 + x;
+    u16 *row = *(u16 **)(obj + 0x288) + off;
+    s32 i;
+
+    insert_span(obj, off, ((h - 1) << 5) + w);
+    while (--h >= 0)
+    {
+        i = w;
+        while (--i >= 0)
+            row[i] = 0;
+        row += 0x20;
+    }
+}
 
 ASM_FUNC("asm/code_08084DB4/copy_map_rect_add.s", void copy_map_rect_add(void))
 
