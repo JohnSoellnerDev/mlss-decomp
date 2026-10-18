@@ -130,7 +130,7 @@ struct CamObj
     u16 unk520;
     u8 filler522[2];
     void *unk524;
-    u16 unk528;
+    s16 unk528;
     u8 filler52A[2];
     s32 unk52C;
     s32 unk530;
@@ -520,7 +520,37 @@ void game_set_1f28(struct GameVars *game, s32 value)
     }
 }
 
-ASM_FUNC("asm/code_081599D8/set_win_blend_shadow.s", void set_win_blend_shadow(void))
+NONMATCH("asm/code_081599D8/set_win_blend_shadow.s", void set_win_blend_shadow(void *unused, s32 mode))
+{
+    vu16 *p;
+
+    if (mode != 0)
+    {
+        *(vu16 *)0x02000000 |= 0x400;
+        *(vu16 *)0x02000000 |= 0x2000;
+        p = (vu16 *)gUnk_02000048;
+        *p = 0x3F;
+        p++;
+        *p = 0x1F;
+        p += 3;
+        *p = 0x3F44;
+        p++;
+        *p = 0x1008;
+        p -= 9;
+        *p = 0;
+        p += 2;
+        *p = 0xA0;
+    }
+    else
+    {
+        *(vu16 *)0x02000000 &= 0xFBFF;
+        p = (vu16 *)gUnk_02000050;
+        *p = mode;
+        p += 2;
+        *p = mode;
+    }
+}
+END_NONMATCH
 
 void store_at_1cac(struct GameVars *game, void *value)
 {
@@ -577,7 +607,7 @@ NONMATCH("asm/code_081599D8/sub_08159F78.s", void *sub_08159F78(struct GameVars 
     s32 i;
     s32 slot;
 
-    for (i = 0, p = game->unk1898; i <= 0xFF; i += 8)
+    for (i = 0, p = game->unk1898; i <= 0xFF; i += 8, p += 8)
     {
         if (p[0] == 0)
             goto store;
@@ -606,7 +636,6 @@ found:
             i = slot;
             goto store;
         }
-        p += 8;
     }
     slot = -1;
     i = slot;
@@ -615,47 +644,38 @@ store:
 }
 END_NONMATCH
 
-NONMATCH("asm/code_081599D8/pool_first_free_slot.s", s32 pool_first_free_slot(struct GameVars *game))
+s32 pool_first_free_slot(struct GameVars *game)
 {
-    struct SceneObj **p;
+    void **p;
     s32 slot;
-    struct SceneObj *obj;
     s32 i;
 
     i = 0;
-    p = (struct SceneObj **)game->unk1898;
+    p = game->unk1898;
     do
     {
-        obj = p[0];
-        if (obj == 0)
+        if (p[0] == 0)
             return i;
         slot = i + 1;
-        obj = p[1];
-        if (obj == 0)
+        if (p[1] == 0)
             goto found;
         slot = i + 2;
-        obj = p[2];
-        if (obj == 0)
+        if (p[2] == 0)
             goto found;
         slot = i + 3;
-        obj = p[3];
-        if (obj == 0)
+        if (p[3] == 0)
             goto found;
         slot = i + 4;
-        obj = p[4];
-        if (obj == 0)
+        if (p[4] == 0)
             goto found;
         slot = i + 5;
-        obj = p[5];
-        if (obj == 0)
+        if (p[5] == 0)
             goto found;
         slot = i + 6;
-        obj = p[6];
-        if (obj == 0)
+        if (p[6] == 0)
             goto found;
         slot = i + 7;
-        obj = p[7];
-        if (obj != 0)
+        if (p[7] != 0)
             goto next;
     found:
         return slot;
@@ -665,7 +685,6 @@ NONMATCH("asm/code_081599D8/pool_first_free_slot.s", s32 pool_first_free_slot(st
     } while (i <= 0xFF);
     return -1;
 }
-END_NONMATCH
 
 void sub_0815A054(struct GameVars *game)
 {
@@ -840,7 +859,33 @@ void cam_pan_by_keys(struct CamObj *cam)
         cam->unk50C -= 0x400;
 }
 
-ASM_FUNC("asm/code_081599D8/cam_scroll_anim.s", void cam_scroll_anim(void))
+void cam_scroll_anim(struct CamObj *cam, u8 enable)
+{
+    cam_pan_by_keys(cam);
+    if ((cam->unk528 & 1) != 0)
+    {
+        if (enable != 0)
+        {
+            if ((s16)(cam->unk528 & 4) != 0)
+            {
+                cam->unk530 += cam->unk538;
+                if (cam->unk530 >= cam->unk534)
+                {
+                    cam->unk530 = cam->unk534;
+                    cam->unk528 &= -5;
+                }
+            }
+            else
+            {
+                cam->unk530 -= 0x20;
+                if (cam->unk530 < 0)
+                {
+                    cam->unk530 = 0;
+                }
+            }
+        }
+    }
+}
 
 void cam_follow_target(struct CamObj *cam, struct Pair *target)
 {
@@ -934,7 +979,40 @@ void cam_start_wobble(struct CamObj *cam, s32 value)
     cam->unk514 = value;
 }
 
-ASM_FUNC("asm/code_081599D8/cam_target_within_range.s", s32 cam_target_within_range(struct CamObj *cam, struct Pair *target, struct Pair *origin))
+NONMATCH("asm/code_081599D8/cam_target_within_range.s", s32 cam_target_within_range(struct CamObj *cam, struct Pair *target, struct Pair *origin))
+{
+    s32 ox;
+    s32 oy;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 acc;
+    s32 limit;
+
+    ox = origin->unk00 + cam->unk508;
+    oy = origin->unk04 + cam->unk50C;
+    dx = target->unk00 - ox;
+    dy = target->unk04 - oy;
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+    acc = cam->unk530;
+    if (acc < 0)
+    {
+        acc += 0xFF;
+    }
+    acc >>= 8;
+    limit = acc * cam->unk52C;
+    limit = limit * 3;
+    if (limit < 0)
+    {
+        limit += 3;
+    }
+    if (dist < (limit >> 2))
+    {
+        return 1;
+    }
+    return 0;
+}
+END_NONMATCH
 
 void cam_setup_relative(struct CamObj *cam, struct Pair *a, struct Pair *b, s32 factor)
 {
