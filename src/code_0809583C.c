@@ -619,7 +619,7 @@ void partner_chase_pair_step(struct HeroBody *body)
     }
 }
 
-NONMATCH("asm/code_0809583C/partner_step_wait.s", void partner_step_wait(struct HeroBody *body))
+void partner_step_wait(struct HeroBody *body)
 {
     struct World **world = &gWorld;
     struct HeroBody *hero_a;
@@ -633,17 +633,15 @@ NONMATCH("asm/code_0809583C/partner_step_wait.s", void partner_step_wait(struct 
     if (body->flags79 & 0x20)
     {
         kind = (*world)->curEntry->kind;
-        if (kind > 0xE)
+        switch (kind)
         {
+        case 0xD:
+        case 0xE:
             set_slot_value(0x9F, -1);
-        }
-        else if (kind < 0xD)
-        {
+            break;
+        default:
             set_slot_value(0x9F, -1);
-        }
-        else
-        {
-            set_slot_value(0x9F, -1);
+            break;
         }
         obj_detach_active(body->sprite);
         if ((partner->data->input & 0x300) == 0 && (partner->mode & 6) == 2)
@@ -659,7 +657,6 @@ NONMATCH("asm/code_0809583C/partner_step_wait.s", void partner_step_wait(struct 
         body->state = state_partner_action8;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0809583C/state_partner_action8.s", void state_partner_action8(struct HeroBody *body))
 
