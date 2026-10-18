@@ -344,23 +344,25 @@ void map_anim2_start_0805BCCC(struct MapLoaderObj *obj, u16 animId)
 }
 
 void map_layer3_entry(struct MapLoaderObj *obj, u32 index);
-NONMATCH("asm/code_0805AF28/map_check_layer3.s", void map_check_layer3(struct MapLoaderObj *obj))
+void map_check_layer3(struct MapLoaderObj *obj)
 {
     struct Layer3Entry *list;
     u8 variant;
     u8 k;
     u8 cur;
+    u32 mask;
 
     variant = gUnk_03000DD0[0xA];
     if (variant != 0)
     {
         list = (struct Layer3Entry *)gLayer3Table[variant][0];
         k = 0;
+        mask = 0x7FFF;
         do
         {
             u16 flags = list[k].flags;
 
-            if ((flags & 0x7FFF) != 0x7FFF)
+            if ((mask & flags) != mask)
             {
                 u32 event = (u32)flags << 17;
 
@@ -372,7 +374,6 @@ NONMATCH("asm/code_0805AF28/map_check_layer3.s", void map_check_layer3(struct Ma
         } while ((list[cur].last & 0x80) == 0);
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0805AF28/map_layer3_entry.s", void map_layer3_entry(struct MapLoaderObj *obj, u32 index))
 {
