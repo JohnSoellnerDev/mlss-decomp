@@ -280,7 +280,20 @@ void obj_effect_action_c(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08064310/obj_drift_left.s", void obj_drift_left(struct ActorObj *obj))
+NONMATCH("asm/code_08064310/obj_drift_left.s", void obj_drift_left(struct ActorObj *obj))
+{
+    s32 x = obj->posX - 0x200;
+
+    obj->posX = x;
+    if (x < 0)
+        x += 0xFF;
+    if ((x >> 8) < -0x20)
+    {
+        obj->posX = 0x10000;
+        obj->state = wait_for_index;
+    }
+}
+END_NONMATCH
 
 void obj_countdown_then_action1(struct ActorObj *obj)
 {
@@ -374,7 +387,31 @@ void obj_spawn_part_sprite(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08064310/obj_slide_step_then_cull.s", void obj_slide_step_then_cull(struct ActorObj *obj))
+void obj_slide_step_then_cull(struct ActorObj *obj)
+{
+    s32 x;
+    s32 delta;
+
+    if (obj->pose->flags & 8)
+    {
+        if (obj->dx != 0)
+        {
+            sprite_set_action(obj, 0, 0, 0);
+            obj->dx = 0;
+        }
+    }
+    if (obj->param9C == 0)
+        obj->posX += -0x219;
+    else
+        obj->posX += -0x133;
+    delta = obj->baseX - obj->paramA0;
+    obj->posY = obj->paramA4 + delta * obj->targetY / obj->targetX;
+    x = obj->posX;
+    if (x < 0)
+        x += 0xFF;
+    if ((x >> 8) < -0x20)
+        obj_release(obj);
+}
 
 void parts_obj_spawn_child_launch(struct ActorObj *obj)
 {
