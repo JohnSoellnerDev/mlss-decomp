@@ -1007,8 +1007,10 @@ static inline void clear_axis(s32 *p)
 
 NONMATCH("asm/code_081612F0/obj_clear_bounds.s", struct EffectB *obj_clear_bounds(struct EffectB *obj))
 {
-    clear_axis((s32 *)&obj->outX);
-    clear_axis((s32 *)&obj->outY);
+    obj->outX = 0;
+    obj->posX = 0;
+    obj->outY = 0;
+    obj->posY = 0;
     obj->timer = 0;
     obj->state = 0;
     obj->ofsX = 0;
