@@ -5,10 +5,11 @@ struct Enemy;
 
 struct Sprite
 {
-    u8 filler0[0x12];
-    u8 flags12;
-    u8 filler13[0x20 - 0x13];
+    u8 filler0[0x11];
+    u8 flags11;
+    u8 filler12[0x20 - 0x12];
     u8 unk20;
+    u8 unk21;
 };
 
 struct Enemy
@@ -36,8 +37,11 @@ struct Enemy
     u16 unk118[4];
     u16 unk120[4];
     u16 unk128[4];
-    s16 unk130[2];
-    u8 filler134[0x138 - 0x134];
+    u8 unk130;
+    u8 unk131;
+    u8 filler132[0x134 - 0x132];
+    u8 filler134[0x137 - 0x134];
+    u8 unk137;
     s16 unk138;
     s16 unk13A;
     s16 unk13C;
@@ -50,7 +54,7 @@ struct Enemy
     s16 unk1B8;
     s16 unk1BA;
     u16 unk1BC;
-    u16 unk1BE;
+    s16 unk1BE;
     s32 unk1C0;
     u16 unk1C4;
     u16 unk1C6;
@@ -121,6 +125,13 @@ struct TaskObj
     u8 filler0[0x14];
     void *owner14;
     const void *cb18;
+};
+
+struct Bit6Byte
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
 };
 
 struct T3dF;
@@ -222,8 +233,80 @@ void t3d_node_free(struct T3dNode *node, u32 flags);
 struct T3dF *t3d_f_init(struct T3dF *f);
 void t3d_node_update(struct T3dNode *node, struct Mat4 *m);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+u8 advance_move_step(void *ctx, struct Enemy *obj);
+void obj_step_toward_target_08138FDC(struct Enemy *obj);
+void obj_hop_landing_step(struct Enemy *obj);
+void obj_set_state(void *obj, u32 state);
+u32 mt19937_next(void);
+u32 rand_below(u32 n, u32 r);
+void tick_store(void);
+void tick_fire(void);
+void advance_handler_slot(void);
+void obj_sync_sub_slot(void *obj, u32 slot);
+void obj_set_cell_coord(void *obj, u32 cell, u32 arg);
+u8 find_active_entry(void *ctx, u8 *idx);
+void obj_start_move_to_target(struct Enemy *obj, u32 mode, s32 x, s32 y);
+void obj_move_to_target(void);
+void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty);
+void obj_move_interp(struct Enemy *ent);
+void move_handler_timed_callback(void);
+extern const u8 gFrameAttrTable[];
 
-ASM_FUNC("asm/code_08137510/fade_tick.s", void fade_tick(void))
+struct SysKeys2A
+{
+    u8 filler0[0x2A];
+    u16 keys;
+};
+
+NONMATCH("asm/code_08137510/fade_tick.s", void fade_tick(struct Fade *obj))
+{
+    u16 keys;
+    u16 key40;
+    s32 count;
+    s8 kind;
+
+    if (obj->unk2E != 0)
+    {
+        obj->unk2E -= 0x10;
+        gUnk_02000054 = *(vu16 *)&obj->unk2E >> 8;
+    }
+    keys = ((struct SysKeys2A *)gSys)->keys;
+    key40 = keys & 0x40;
+    if (key40 != 0)
+    {
+        count = obj->unk28 - 1;
+        obj->unk28 = count;
+        if ((count << 24) < 0)
+        {
+            obj->unk28 = 1;
+        }
+    }
+    else if (keys & 0x80)
+    {
+        count = obj->unk28 + 1;
+        obj->unk28 = count;
+        if ((s8)count > 1)
+        {
+            obj->unk28 = key40;
+        }
+    }
+    if ((((struct SysKeys2A *)gSys)->keys & 1) != 0)
+    {
+        kind = obj->unk28;
+        if (kind != 0)
+        {
+            if (kind == 1)
+            {
+                fade_end(obj);
+            }
+        }
+    }
+    if ((((struct SysKeys2A *)gSys)->keys & 4) != 0)
+    {
+        fade_end(obj);
+    }
+}
+END_NONMATCH
 
 void task_remove_noop(void)
 {
@@ -301,7 +384,52 @@ s8 get_s8_28(u8 *obj)
 
 ASM_FUNC("asm/code_08137510/obj_random_pose.s", void obj_random_pose(void))
 
-ASM_FUNC("asm/code_08137510/obj_pick_next_state.s", void obj_pick_next_state(void))
+void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *out)
+{
+    u8 flag;
+    u32 seed;
+    u32 pick;
+    u32 next;
+
+    flag = 0;
+    if (advance_move_step(ctx, obj) == 1)
+    {
+        obj_step_toward_target_08138FDC(obj);
+    }
+    else
+    {
+        u8 ready = 0;
+        if (obj->unk1BE == 0)
+        {
+            ready = 1;
+        }
+        flag = ready;
+    }
+    if (obj->unk2B5 & 8)
+    {
+        obj_hop_landing_step(obj);
+    }
+    else
+    {
+        flag = (flag | *(u8 *)((u8 *)obj + 0x1BE)) & 0xFF;
+    }
+    if (flag != 0)
+    {
+        seed = mt19937_next();
+        pick = rand_below(4, seed);
+        obj->unk1D2 = obj->unk128[pick];
+        if (obj->unk1D2 != 0)
+        {
+            obj_set_state(obj, ((u32)obj->unk137 << 29) >> 29);
+            next = (u32)tick_store;
+        }
+        else
+        {
+            next = out[1];
+        }
+        out[0] = next;
+    }
+}
 
 ASM_FUNC("asm/code_08137510/obj_find_active_state.s", void obj_find_active_state(void))
 
