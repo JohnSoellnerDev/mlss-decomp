@@ -155,9 +155,9 @@ struct KeyState
     u16 pressed;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -207,9 +207,9 @@ void hero_a_active_fx_anim_next(struct HeroBody *body)
     struct HeroBody *body_a;
     struct HeroBody *body_b;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     state_stack_advance_progress(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
@@ -230,7 +230,7 @@ void hero_b_slot_anim_rate_next(struct HeroBody *body)
     struct Hero *hero_b;
     struct HeroBody *body_b;
 
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_b->sprite->flags & 8) != 0)
     {
@@ -258,9 +258,9 @@ void hero_a_follow_partner_target(struct HeroBody *body)
     struct HeroBody *body_b;
     struct HeroBody *partner;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     partner = body->partner;
     state_stack_advance_progress(body_b);
@@ -291,7 +291,7 @@ void visible_place_hero_a_active_link_partner(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     partner = body->partner;
     step_motion(body_a);
@@ -322,7 +322,7 @@ void hero_a_visible_place_on_target(struct HeroBody *body)
     struct Hero *hero_a;
     struct HeroBody *body_a;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     if ((body_a->sprite->flags & 8) != 0)
     {

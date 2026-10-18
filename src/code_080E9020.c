@@ -50,7 +50,7 @@ struct Voice
     u32 unk10;
 };
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern void *gUnk_03000FB8;
 extern void *gUnk_03000FBC;
 extern void *gUnk_03000FC0;
@@ -285,7 +285,7 @@ u32 text_run_layout(u8 *obj, void *dataPtr, u32 mode)
 
 u32 lang_table_pair(u32 unused0, u8 **table)
 {
-    u8 *p = table[gUnk_0300034C[0x8C0]];
+    u8 *p = table[gSys[0x8C0]];
 
     return (p[0] << 16) | p[1];
 }
@@ -559,7 +559,7 @@ struct ObjFlags28
     u8 rest : 2;
 };
 
-extern u8 *gUnk_03000D44;
+extern u8 *gCurObj;
 
 void anim_set_gfx(u8 *obj, u32 half, u32 field);
 void set_flags_2_3(u8 *p);
@@ -570,30 +570,30 @@ u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
     switch (*modePtr)
     {
     case 0:
-        ((struct ObjFlags28 *)gUnk_03000D44)->bit0 = 0;
+        ((struct ObjFlags28 *)gCurObj)->bit0 = 0;
         {
-            u32 lo = ((u32)((u8 *)gUnk_03000D44)[0x28] << 31) >> 31;
-            u32 hi = ((u32)((u8 *)gUnk_03000D44)[0x28] << 30) >> 31;
+            u32 lo = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
+            u32 hi = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
             if ((hi | lo) == 0)
-                set_flag_2_2(gUnk_03000D44);
+                set_flag_2_2(gCurObj);
         }
         break;
     case 1:
-        ((struct ObjFlags28 *)gUnk_03000D44)->bit0 = 1;
-        anim_set_gfx(gUnk_03000D44, *(u16 *)(gUnk_03000D44 + 0x20), ((struct ObjFlags28 *)gUnk_03000D44)->field);
-        set_flags_2_3(gUnk_03000D44);
+        ((struct ObjFlags28 *)gCurObj)->bit0 = 1;
+        anim_set_gfx(gCurObj, *(u16 *)(gCurObj + 0x20), ((struct ObjFlags28 *)gCurObj)->field);
+        set_flags_2_3(gCurObj);
         break;
     case 2:
-        ((struct ObjFlags28 *)gUnk_03000D44)->bit1 = 0;
-        set_flags_2_3(gUnk_03000D44);
+        ((struct ObjFlags28 *)gCurObj)->bit1 = 0;
+        set_flags_2_3(gCurObj);
         break;
     case 3:
-        ((struct ObjFlags28 *)gUnk_03000D44)->bit1 = 1;
+        ((struct ObjFlags28 *)gCurObj)->bit1 = 1;
         {
-            u32 lo = ((u32)((u8 *)gUnk_03000D44)[0x28] << 31) >> 31;
-            u32 hi = ((u32)((u8 *)gUnk_03000D44)[0x28] << 30) >> 31;
+            u32 lo = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
+            u32 hi = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
             if ((hi | lo) == 0)
-                set_flag_2_2(gUnk_03000D44);
+                set_flag_2_2(gCurObj);
         }
         break;
     }

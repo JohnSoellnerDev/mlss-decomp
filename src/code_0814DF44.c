@@ -142,7 +142,7 @@ struct ZoneAnim
 };
 
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 u32 angle_of_vector16(s32 dx, s32 dy);
 void obj_set_cell_coord(struct CompanionObj *obj, u32 cell, u32 zero);
 void ai_set_facing_from_velocity(struct CompanionObj *owner, struct CompanionObj *obj);
@@ -229,7 +229,7 @@ void ai_seek_target(struct CompanionObj *owner, struct CompanionObj *obj, u32 *s
             u32 step;
 
             obj_set_sprite_link(obj, 1);
-            roll = sub_081DE850(4, mt19937_next());
+            roll = rand_below(4, mt19937_next());
             p = (u8 *)(roll + (u32)obj->animTable) + 0x20;
             step = 0x100;
             anim = *(s8 *)p;
@@ -329,7 +329,7 @@ NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct 
     obj_set_cell_coord(obj, cell, 0);
     obj->state = (obj->state & mask) | 1;
     ((struct SpriteFlagBits *)&obj->sprite->flags)->mode = 1;
-    roll = sub_081DE850(4, mt19937_next());
+    roll = rand_below(4, mt19937_next());
     obj->sprite->anim = tbl[roll + 20];
     dx = target->x - obj->x;
     dy = target->y - obj->y;
@@ -450,7 +450,7 @@ NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_f
     obj->facing = f;
     cell = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)f << 29) >> 29, 2);
     obj_set_cell_coord(obj, cell, 0);
-    roll = sub_081DE850(4, mt19937_next());
+    roll = rand_below(4, mt19937_next());
     obj->sprite->anim = tbl[roll + 20];
     dx = target->x - obj->x;
     dy = target->y - obj->y;
@@ -491,24 +491,24 @@ void ai_set_anim_by_mode(struct CompanionObj *obj, u8 mode)
     switch (mode)
     {
     case 0:
-        roll = sub_081DE850(4, mt19937_next());
+        roll = rand_below(4, mt19937_next());
         obj->sprite->anim = tbl[roll + 8];
         break;
     case 1:
-        roll = sub_081DE850(2, mt19937_next());
+        roll = rand_below(2, mt19937_next());
         obj->sprite->anim = tbl[roll + 12];
         break;
     case 2:
         obj_load_record(obj->sprite, 9, -1, 0, 0);
         sprite_step_e6a0(obj->sprite);
-        roll = sub_081DE850(2, mt19937_next());
+        roll = rand_below(2, mt19937_next());
         obj->sprite->anim = tbl[roll + 18];
         break;
     }
 }
 void ai_wander_random(void *parent, struct CompanionObj *obj, u32 *slot)
 {
-    if ((sub_081DE850(100, mt19937_next()) & 1) != 0)
+    if ((rand_below(100, mt19937_next()) & 1) != 0)
         wander_to_edge(obj, 0x10, 0x100);
     else
         wander_diag(obj, 0x10, 0x100);
@@ -593,7 +593,7 @@ void random_pose(void *owner, struct CompanionObj *obj, u32 *slot)
     tbl = obj->tbl;
     sprp = &obj->sprite;
     ((struct SpriteFlagBits *)&(*sprp)->flags)->mode = 1;
-    (*sprp)->anim = ((u16 *)tbl)[sub_081DE850(4, mt19937_next()) + 4];
+    (*sprp)->anim = ((u16 *)tbl)[rand_below(4, mt19937_next()) + 4];
     switch (obj->variant)
     {
     case 0:
@@ -604,7 +604,7 @@ void random_pose(void *owner, struct CompanionObj *obj, u32 *slot)
         break;
     }
     sprite_step_e6a0(obj->sprite);
-    ai->index178 = sub_081DE850(4, mt19937_next());
+    ai->index178 = rand_below(4, mt19937_next());
     *slot = (u32)obj_roll_spawn;
 }
 
@@ -624,7 +624,7 @@ void enter_idle_wait(struct CompanionObj *obj, u32 *slot)
     ((struct StateBits *)&obj->state)->low3 = 1;
     obj_load_record(*sprp, obj->variant, -1, 0, 0);
     sprite_step_e6a0(*sprp);
-    obj->timer = ((u16 *)tbl)[sub_081DE850(4, mt19937_next()) + 20];
+    obj->timer = ((u16 *)tbl)[rand_below(4, mt19937_next()) + 20];
     *slot = (u32)tick_store;
     slot[3] = (u32)entry_switch_handler;
 }

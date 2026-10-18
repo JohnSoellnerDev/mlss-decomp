@@ -107,7 +107,7 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gMathRoutines;
 extern const s32 gAimTargetX[];
 extern const s32 gAimTargetY[];
@@ -202,7 +202,7 @@ void link_actors_when_ready(struct ActorObj *obj)
 {
     struct ActorObj *partner;
 
-    partner = &gUnk_03000FD8->heroA->body;
+    partner = &gWorld->heroA->body;
     if (partner->part->unkF6 != 0 && partner->posH <= 0)
     {
         if (obj->phase == 0)
@@ -211,7 +211,7 @@ void link_actors_when_ready(struct ActorObj *obj)
             obj->phase = 1;
         }
     }
-    partner = &gUnk_03000FD8->heroB->body;
+    partner = &gWorld->heroB->body;
     if (partner->part->unkF6 != 0 && partner->posH <= 0)
     {
         if (obj->linkB == 0)

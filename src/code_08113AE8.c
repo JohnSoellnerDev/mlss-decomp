@@ -158,7 +158,7 @@ struct SpreadPos
     s16 pz;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u32 gSlotMotion[];
 extern const u16 gModeStartX[];
 extern const u16 gModeStartY[];

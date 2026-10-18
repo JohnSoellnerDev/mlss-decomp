@@ -151,9 +151,9 @@ struct KeyState
     u16 pressed;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -193,7 +193,7 @@ s32 obj_last_y(void *obj);
 
 void hero_a_z_cross_link_fx(struct HeroBody *body)
 {
-    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct Hero *heroA = gWorld->heroA;
     struct HeroBody *a = &heroA->body;
     struct HeroBody *partner = body->partner;
     s32 zz;
@@ -246,9 +246,9 @@ void hero_pair_place_finish_a_sprite(void)
     s32 y;
     s32 h;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -335,7 +335,7 @@ void hero_pair_place_finish_a_sprite(void)
 
 void hero_b_fx_anim_reset(struct HeroBody *body)
 {
-    struct HeroBody *part = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *part = &gWorld->heroB->body;
     u32 v;
 
     set_slot_value(0x62, -1);
@@ -361,7 +361,7 @@ void hero_b_active_place_action(struct HeroBody *body)
     s32 y;
     u16 height;
 
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_b->sprite->flags & 8) != 0)
     {
@@ -400,9 +400,9 @@ void hero_a_ready_place_mode(struct HeroBody *body)
     s32 y;
     u16 height;
 
-    mode = gUnk_03000FD8->modeByte;
-    gUnk_03000FD8->modeByte = mode | 0xC0;
-    hero = gUnk_03000FD8->heroA;
+    mode = gWorld->modeByte;
+    gWorld->modeByte = mode | 0xC0;
+    hero = gWorld->heroA;
     body_a = &hero->body;
     if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
     {
@@ -433,9 +433,9 @@ void hero_pair_b_follow_partner(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_b = &gWorld->heroB->body;
     partner = body->partner;
     step_motion(body_a);
     if ((hero_a->body.flags & 0x20) != 0)
@@ -475,7 +475,7 @@ void hero_a_link_partner_fx(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     partner = body->partner;
     state_stack_advance_progress(body_a);
@@ -512,7 +512,7 @@ void hero_a_sprite_place_pose6(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -550,7 +550,7 @@ void hero_a_slot_pose_anim(struct HeroBody *body)
     struct Hero *hero_a;
     struct HeroBody *body_a;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     step_motion(body_a);
     if ((hero_a->body.flags & 0x20) != 0)
@@ -582,7 +582,7 @@ void hero_a_place_pose_finish(struct HeroBody *body)
     s32 y;
     s32 h;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -644,7 +644,7 @@ void hero_b_step_place_pose_finish(struct HeroBody *body)
     s32 y;
     s32 h;
 
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     step_motion(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
@@ -703,7 +703,7 @@ void hero_a_link_partner_anim(struct HeroBody *owner)
     s32 x;
     s32 y;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     partner = owner->partner;
     ((struct HeroFlag111Bits *)&partner->data->flags111)->bit1 = 1;
@@ -746,7 +746,7 @@ void hero_a_place_at_partner_rate(struct HeroBody *owner)
     s32 y;
     s32 z;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     partner = owner->partner;
     if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)

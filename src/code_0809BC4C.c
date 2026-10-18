@@ -118,7 +118,7 @@ struct World
     void *focus;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void obj_release(void *obj);
 void release_object(void *obj);
@@ -201,7 +201,7 @@ void obj_list_push_default(struct ActorBody *obj);
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 aux);
 void draw_while_group_busy(struct ActorBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 
 void spawn_child_anim(struct ActorBody *body)
 {

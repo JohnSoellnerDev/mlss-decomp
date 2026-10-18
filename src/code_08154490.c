@@ -112,7 +112,7 @@ struct E380Obj {
 
 extern const u8 gClassE380[];
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 void obj_init_from_record(void *obj, u32 arg);
 void obj_create_sprite(void *obj, u32 zero);
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
@@ -202,7 +202,7 @@ struct E380Obj *obj_init_e380(struct E380Obj *obj, u32 initArg, u16 kind)
     obj->unk40 = 0;
     obj->unk41 = 0;
     obj->unk38 = 0;
-    obj->unk3E = sub_081DE850(0xFF, mt19937_next());
+    obj->unk3E = rand_below(0xFF, mt19937_next());
     obj_create_sprite(obj, 0);
     obj->unk38 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
     obj_load_record(obj->unk38, 0x27, -1, 0, 0);
@@ -403,12 +403,12 @@ struct RecObj {
     u32 unk10;
 };
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 
 void obj_create_sprite_record(struct RecObj *obj)
 {
     obj->unk04 = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
-    switch (gUnk_0300034C[0x8C0]) {
+    switch (gSys[0x8C0]) {
     case 0:
         obj_load_record(obj->unk04, 0x1C, -1, 0, 0);
         break;

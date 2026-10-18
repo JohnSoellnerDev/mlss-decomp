@@ -157,19 +157,19 @@ void height_step_finish(struct ActorObj *obj);
 void hit_react(struct ActorObj *obj);
 void wait_pose_then_index(struct ActorObj *obj);
 void start_motion_by_owner_slot(struct ActorObj *obj);
-s32 unknown_part_steps_0808a364(struct ActorObj *obj);
-s32 sub_0808A370(struct ActorObj *obj);
-s32 sub_0808A37C(struct ActorObj *obj);
+s32 part_step_set_target(struct ActorObj *obj);
+s32 part_step_start_move_3800(struct ActorObj *obj);
+s32 part_step_start_move_2800(struct ActorObj *obj);
 u32 approach_slot(struct ActorObj *obj, u32 other);
 u32 approach_contact(struct ActorObj *obj, u32 other, u32 kind);
 void slide_x_timed(struct ActorObj *obj);
 void on_arrive_if_posed(struct ActorObj *obj);
 s32 arm_spawn_after_motion(struct ActorObj *obj);
-s32 unknown_part_steps_0808a480(struct ActorObj *obj);
-s32 sub_0808A48C(struct ActorObj *obj);
-s32 sub_0808A4A0(struct ActorObj *obj);
-s32 sub_0808A4AC(struct ActorObj *obj);
-s32 sub_0808A4B8(struct ActorObj *obj);
+s32 part_step_start_move_3000(struct ActorObj *obj);
+s32 part_step_move_toward_owner(struct ActorObj *obj);
+s32 part_step_clear_state(struct ActorObj *obj);
+s32 part_step_noop(struct ActorObj *obj);
+s32 part_step_prep_idle(struct ActorObj *obj);
 void start_drift(struct ActorObj *obj);
 void start_move_3400(struct ActorObj *obj);
 void owner_slot_actions(struct ActorObj *obj);
@@ -180,7 +180,7 @@ void slide_left_cull(struct ActorObj *obj);
 void start_move_3000(struct ActorObj *obj);
 void move_toward_owner(struct ActorObj *obj);
 void state_clear_0808a8c8(struct ActorObj *obj);
-void sub_0808A8D0(struct ActorObj *obj);
+void noop_state_b(struct ActorObj *obj);
 void prep_idle(struct ActorObj *obj);
 void arm_timed_motion_art3(struct ActorObj *obj);
 void arm_callbacks_then_jump(struct ActorObj *obj);
@@ -374,19 +374,19 @@ void start_motion_by_owner_slot(struct ActorObj *obj)
     }
 }
 
-s32 unknown_part_steps_0808a364(struct ActorObj *obj)
+s32 part_step_set_target(struct ActorObj *obj)
 {
     obj->state = set_target_from_records;
     return 1;
 }
 
-s32 sub_0808A370(struct ActorObj *obj)
+s32 part_step_start_move_3800(struct ActorObj *obj)
 {
     obj->state = start_move_3800;
     return 1;
 }
 
-s32 sub_0808A37C(struct ActorObj *obj)
+s32 part_step_start_move_2800(struct ActorObj *obj)
 {
     obj->state = start_move_2800;
     return 1;
@@ -451,32 +451,32 @@ s32 arm_spawn_after_motion(struct ActorObj *obj)
     return 1;
 }
 
-s32 unknown_part_steps_0808a480(struct ActorObj *obj)
+s32 part_step_start_move_3000(struct ActorObj *obj)
 {
     obj->state = start_move_3000;
     return 1;
 }
 
-s32 sub_0808A48C(struct ActorObj *obj)
+s32 part_step_move_toward_owner(struct ActorObj *obj)
 {
     obj->timer = 0x10;
     obj->state = move_toward_owner;
     return 1;
 }
 
-s32 sub_0808A4A0(struct ActorObj *obj)
+s32 part_step_clear_state(struct ActorObj *obj)
 {
     obj->state = state_clear_0808a8c8;
     return 1;
 }
 
-s32 sub_0808A4AC(struct ActorObj *obj)
+s32 part_step_noop(struct ActorObj *obj)
 {
-    obj->state = sub_0808A8D0;
+    obj->state = noop_state_b;
     return 1;
 }
 
-s32 sub_0808A4B8(struct ActorObj *obj)
+s32 part_step_prep_idle(struct ActorObj *obj)
 {
     obj->state = prep_idle;
     return 1;
@@ -661,7 +661,7 @@ void state_clear_0808a8c8(struct ActorObj *obj)
     obj->state = 0;
 }
 
-void sub_0808A8D0(struct ActorObj *obj)
+void noop_state_b(struct ActorObj *obj)
 {
 }
 

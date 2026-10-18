@@ -108,7 +108,7 @@ struct ActorCands
     u32 item;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 extern u32 gUnk_03000E3C;
 
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
@@ -367,7 +367,7 @@ void set_anim_by_phase_b(struct ActorObj *obj)
 
 void wait_phase_world_update(struct ActorObj *obj)
 {
-    add_obj_target_offset(gUnk_03000FD8->item, -1, 0);
+    add_obj_target_offset(gWorld->item, -1, 0);
     obj->phase--;
     if (obj->phase <= 0)
     {
@@ -386,7 +386,7 @@ void spawn_actor_children(struct ActorObj *obj)
         sprite_set_action(obj, 3, 0, 0);
         for (i = 0; i < 2; i++)
         {
-            cand = (struct ActorCand *)gUnk_03000FD8->actors[i + 6];
+            cand = (struct ActorCand *)gWorld->actors[i + 6];
             children[i] = obj_spawn(obj->part, 0x4047, cand->obj.part->targetX / 0x100,
                                     cand->obj.part->targetY / 0x100, cand->obj.part->targetH / 0x100 + 0x28, 0, 1);
             sprite_set_action(children[i], obj->timer, 0, 0);

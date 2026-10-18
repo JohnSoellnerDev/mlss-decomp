@@ -135,8 +135,8 @@ struct World
     u8 byte2BF;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 gSys[];
 extern const s8 gHandOverJitterStart[];
 extern const s8 gHandOverDriftRange[];
 extern const u8 gHandOverLimitTable[];
@@ -155,7 +155,7 @@ void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 void schedule_pose_task(struct HeroBody *obj);
 void resolve_contact_action(struct HeroBody *a, struct HeroBody *b, u32 c, u32 d, u32 e);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 void owner_take_link_state(struct HeroBody *body);
 void body_set_pose(u32 art, struct HeroBody *body, u32 x, u32 y);
 void hero_b_shift_place_pose_next(struct HeroBody *body);
@@ -190,8 +190,8 @@ ASM_FUNC("asm/code_080BFBF8/hero_a_hand_over.s", void hero_a_hand_over(struct He
 
 void hero_b_after_hand_over(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     step_motion(body_a);
     step_motion(body_b);
@@ -209,8 +209,8 @@ void hero_b_after_hand_over(struct HeroBody *body)
 
 void hero_a_active_setup(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroData *data;
     s32 tx;
     s32 ty;
@@ -257,9 +257,9 @@ void hero_a_active_setup(struct HeroBody *body)
 
 void hero_b_take_a_position(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroData *data;
     s32 tx;
     s32 ty;
@@ -316,7 +316,7 @@ void hero_b_take_a_position(struct HeroBody *body)
 
 void hero_b_visible_place(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroData *data;
     s32 tx;
     s32 ty;
@@ -359,7 +359,7 @@ void hero_b_visible_place(struct HeroBody *body)
 
 void link_partner_and_hero_b(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
 
     partner->link = 1;

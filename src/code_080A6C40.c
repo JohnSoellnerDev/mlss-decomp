@@ -125,8 +125,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, const u8 *cb);
@@ -158,7 +158,7 @@ void hero_b_drop_node_6c40(struct HeroBody *body);
 
 void hero_b_drop_node_6c40(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
 
     sound_stop_song(0x87);
@@ -182,7 +182,7 @@ void hero_b_drop_node_6c40(struct HeroBody *body)
 
 void hero_b_sprite_step_15_6d00(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -198,7 +198,7 @@ void hero_b_sprite_step_15_6d00(struct HeroBody *body)
 
 void hero_b_ready_step_6d78(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
 
     state_stack_advance_progress(b);
@@ -222,7 +222,7 @@ void hero_b_ready_step_6d78(struct HeroBody *body)
 
 void hero_b_gate_place_pair_6e34(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero = world->heroA;
     struct HeroBody *a = &hero->body;
     struct HeroBody *b = &world->heroB->body;
@@ -320,7 +320,7 @@ void hero_b_gate_place_pair_6e34(struct HeroBody *body)
 
 void hero_b_drop_node_702c(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
 
     sound_stop_song(0x156);
@@ -343,7 +343,7 @@ void hero_b_drop_node_702c(struct HeroBody *body)
 
 void hero_b_sprite_step_18_70e8(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -359,7 +359,7 @@ void hero_b_sprite_step_18_70e8(struct HeroBody *body)
 
 void hero_b_ready_step_7160(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
 
     state_stack_advance_progress(b);
@@ -383,7 +383,7 @@ void hero_b_ready_step_7160(struct HeroBody *body)
 
 void hero_pair_place_finish_on_b_active(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero = world->heroA;
     struct HeroBody *a = &hero->body;
     struct HeroBody *b = &world->heroB->body;
@@ -481,7 +481,7 @@ void hero_pair_place_finish_on_b_active(struct HeroBody *body)
 
 void hero_b_active_link_to_partner(struct HeroBody *body)
 {
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner;
 
     partner = body->partner;
@@ -498,7 +498,7 @@ void hero_b_active_link_to_partner(struct HeroBody *body)
 
 void hero_b_active_link_to_partner_alt(struct HeroBody *body)
 {
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner;
 
     partner = body->partner;
@@ -523,13 +523,13 @@ s32 pair_start_pose_then_place(struct HeroBody *body)
     s32 pose;
     u8 *record;
     struct World *world;
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
 
     data = body->data;
     pose = data->pose;
     record = *party - (pose * 60 + 0x3C);
     data->poseValue = *(u16 *)(record + 0x2A);
-    world = gUnk_03000FD8;
+    world = gWorld;
     body_a = &world->heroA->body;
     body_b = &world->heroB->body;
     partner = body->partner;

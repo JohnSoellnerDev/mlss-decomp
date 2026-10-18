@@ -148,7 +148,7 @@ u32 obj_cb_link_or_wait(struct WaveObj *obj);
 
 extern const u8 gStepSequenceTable[];
 extern u32 gUnk_03000E3C;
-extern struct WaveWorld *gUnk_03000FD8;
+extern struct WaveWorld *gWorld;
 u32 lookup_slot(struct WaveObj *obj);
 void sprite_entry_update(struct WavePose *pose);
 void wait_timer_then_move(struct WaveObj *obj);

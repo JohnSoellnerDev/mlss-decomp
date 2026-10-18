@@ -185,7 +185,7 @@ void effect_init_sprite_pair(void *p);
 extern const u8 gTransitionClassDee0[];
 void obj_state_load_step(struct TransObj *obj);
 void obj_track_char_a(struct TransObj *obj);
-u32 sub_081DE850(u32 n, u32 r);
+u32 rand_below(u32 n, u32 r);
 void obj_release_child_free(void *p, u32 mode);
 void obj_release_child_free_c(void *p, u32 mode);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);

@@ -135,8 +135,8 @@ struct World
     u8 byte2BF;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 gSys[];
 extern const s8 gHandOverJitterStart[];
 extern const s8 gHandOverDriftRange[];
 extern const u8 gHandOverLimitTable[];
@@ -155,7 +155,7 @@ void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 void schedule_pose_task(struct HeroBody *obj);
 void resolve_contact_action(struct HeroBody *a, struct HeroBody *b, u32 c, u32 d, u32 e);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 void owner_take_link_state(struct HeroBody *body);
 void body_set_pose(u32 art, struct HeroBody *body, u32 x, u32 y);
 void hero_b_shift_place_pose_next(struct HeroBody *body);
@@ -188,7 +188,7 @@ void hero_b_active_fx(struct HeroBody *body);
 
 void hero_a_visible_place_finish(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
@@ -245,8 +245,8 @@ void hero_a_visible_place_finish(struct HeroBody *body)
 
 void hero_b_active_place_and_finish(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     struct HeroData *data;
@@ -347,7 +347,7 @@ void hero_b_active_place_and_finish(struct HeroBody *body)
 
 void hero_b_start_anim_f(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
     {
@@ -371,7 +371,7 @@ void step_end_and_partner_next(struct HeroBody *body)
 
 void hero_b_wait_visible_anim_e(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
     {
@@ -386,7 +386,7 @@ void hero_b_wait_visible_anim_e(struct HeroBody *body)
 
 void hero_b_fx_and_end(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     s32 x;
     s32 y;
     s32 z;
@@ -410,7 +410,7 @@ void hero_b_fx_and_end(struct HeroBody *body)
 
 void hero_a_wait_visible_anim_33(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -425,7 +425,7 @@ void hero_a_wait_visible_anim_33(struct HeroBody *body)
 
 void hero_b_anim_c_then_clear(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     set_slot_value(0x38, -1);
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
@@ -440,7 +440,7 @@ void hero_b_anim_c_then_clear(struct HeroBody *body)
 
 void hero_a_wait_visible_anim_24(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -455,7 +455,7 @@ void hero_a_wait_visible_anim_24(struct HeroBody *body)
 
 void hero_b_active_fx(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     s32 x;
     s32 y;
     s32 z;

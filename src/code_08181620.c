@@ -33,7 +33,7 @@ struct ModelCtx
     u32 model;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 
 u32 block_flag_byte(struct PtRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
@@ -106,12 +106,12 @@ NONMATCH("asm/code_08181620/obj_zoom_tilt10_1620.s", void obj_zoom_tilt10_1620(s
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     zoom += speed;
     speed = (speed * 7) / 8;

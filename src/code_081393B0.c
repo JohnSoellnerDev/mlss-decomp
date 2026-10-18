@@ -190,7 +190,7 @@ struct Enemy
 };
 
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 value);
+s32 rand_below(s32 n, u32 value);
 void obj_set_state(void *obj, u32 state);
 void obj_sync_sub_slot(void *obj, u32 value);
 void obj_set_cell_coord(struct Enemy *ent, u32 cell, u32 arg);
@@ -411,7 +411,7 @@ void obj_pick_random_entry(struct Enemy *ent)
     s32 pick;
     u16 value;
 
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     sprite = ent->sprite;
     value = ent->unk108[(u16)pick];
     ent->unk239 = value;
@@ -663,7 +663,7 @@ void move_handler_random_wait(void *ctx, struct Enemy *obj, EnemyFn *out)
     }
     else
     {
-        obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+        obj->unk1D2 = obj->unk128[rand_below(4, mt19937_next())];
         out[0] = obj->unk1D2 == 0 ? out[1] : tick_store;
     }
 }
@@ -716,7 +716,7 @@ void move_handler_timed_callback(void *ctx, struct Enemy *obj, EnemyFn *out)
     }
     else
     {
-        obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+        obj->unk1D2 = obj->unk128[rand_below(4, mt19937_next())];
         if (obj->unk1D2 != 0)
         {
             out[0] = tick_store;
@@ -747,7 +747,7 @@ void move_handler_timed_settle(void *ctx, struct Enemy *obj, EnemyFn *out)
     }
     else
     {
-        obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+        obj->unk1D2 = obj->unk128[rand_below(4, mt19937_next())];
         if (obj->unk1D2 != 0)
         {
             out[0] = tick_store;

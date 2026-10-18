@@ -161,14 +161,14 @@ struct World
     struct HeroNode *nodes;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 *gParty;
+extern u8 gSys[];
 extern s8 gJitterTable1[];
 extern s8 gJitterRange1[];
 
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void hero_a_step_window_c491c(struct HeroBody *body);
 void hero_a_jitter_step_5ca4(struct HeroBody *body);
 void hero_pair_place_and_finish_alt3(struct HeroBody *body);
@@ -184,7 +184,7 @@ u32 find_frame_entry(struct HeroBody *obj, u32 index);
 
 void hero_a_place_on_partner_offset(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
     s32 height;
@@ -226,7 +226,7 @@ ASM_FUNC("asm/code_080C47AC/hero_a_step_pose_c5054.s", void hero_a_step_pose_c50
 
 void hero_a_active_fx_anim_ready_b(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
     s32 x;
     s32 y;
@@ -251,9 +251,9 @@ void hero_a_active_fx_anim_ready_b(struct HeroBody *body)
 
 void hero_pair_place_and_finish_alt3(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -326,7 +326,7 @@ void hero_pair_place_and_finish_alt3(struct HeroBody *body)
 
 void hero_a_jitter_place_near_partner(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
     s32 index;
@@ -344,15 +344,15 @@ void hero_a_jitter_place_near_partner(struct HeroBody *body)
         s8 *range = gJitterRange1;
 
         if (range[0] < range[2])
-            jx = range[0] + sub_081DE850(range[2] - range[0], mt19937_next());
+            jx = range[0] + rand_below(range[2] - range[0], mt19937_next());
         else
-            jx = range[2] + sub_081DE850(range[0] - range[2], mt19937_next());
+            jx = range[2] + rand_below(range[0] - range[2], mt19937_next());
         hero_a->body.jitterX = jx;
 
         if (range[1] < range[3])
-            jy = range[1] + sub_081DE850(range[3] - range[1], mt19937_next());
+            jy = range[1] + rand_below(range[3] - range[1], mt19937_next());
         else
-            jy = range[3] + sub_081DE850(range[1] - range[3], mt19937_next());
+            jy = range[3] + rand_below(range[1] - range[3], mt19937_next());
         body_a->jitterY = jy;
     }
     effect_spawn_at(0x2FE6, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100 + 8, body_a);

@@ -136,9 +136,9 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
-extern u8 *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct KeyState gSys;
+extern u8 *gWorld;
+extern u8 *gParty;
 
 void sprite_set_action(struct Actor *obj, u32 action, u32 part, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -938,7 +938,7 @@ ASM_FUNC("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume
 
 s32 setup_slot_by_flags(struct Actor *obj)
 {
-    if ((gUnk_03000FD8[0xC] & 0x80) != 0)
+    if ((gWorld[0xC] & 0x80) != 0)
     {
         if ((obj->data->unk11E & 0x400) != 0)
             return charge_release_setup_slot_state(obj);
@@ -957,7 +957,7 @@ s32 setup_slot_by_flags(struct Actor *obj)
         struct SlotEntry *tbl;
 
         sv = &obj->data->slotValue;
-        tbl = (struct SlotEntry *)gUnk_03000FF4;
+        tbl = (struct SlotEntry *)gParty;
         tbl += ~obj->data->slot;
         *sv = tbl->v2C;
     }
@@ -1026,7 +1026,7 @@ void orbit_slots_orbit_step_a(struct Actor *obj)
             set_cur_flags_both(0x40000000);
         if ((s16)obj->timer != 8)
         {
-            if ((gUnk_0300034C.held & obj->mask) == 0)
+            if ((gSys.held & obj->mask) == 0)
             {
                 obj->timer = (s16)obj->timer * 2;
                 obj->state = orbit_slots_orbit_step_b;
@@ -1091,7 +1091,7 @@ void hold_then_orbit(struct Actor *obj)
 
     if (poll_action_end(obj) != 0)
         return;
-    held = gUnk_0300034C.held & obj->mask;
+    held = gSys.held & obj->mask;
     if (held == 0)
     {
         obj->unk9C = 1;
@@ -1107,7 +1107,7 @@ void hold_then_orbit(struct Actor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -1192,7 +1192,7 @@ void orbit_slots_orbit_step_c(struct Actor *obj)
             set_cur_flags_both(0x40000000);
         if ((s16)obj->timer != 0xC)
         {
-            if ((gUnk_0300034C.held & obj->mask) == 0)
+            if ((gSys.held & obj->mask) == 0)
             {
                 obj->timer = (s16)obj->timer * 3;
                 obj->state = orbit_slots_orbit_step_d;

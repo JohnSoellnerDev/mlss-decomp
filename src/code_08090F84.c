@@ -72,9 +72,9 @@ struct Actor
 extern const u8 gAnim278[];
 extern const u8 gAnim284[];
 extern const u8 gAnim374[];
-extern u8 *gUnk_03000FF4;
-extern u8 gUnk_0300034C[];
-extern u8 *gUnk_03000FD8;
+extern u8 *gParty;
+extern u8 gSys[];
+extern u8 *gWorld;
 
 void set_slot_value(u32 id, s32 value);
 void sprite_set_action(struct Actor *obj, u32 action, u32 arg, u32 extra);
@@ -84,7 +84,7 @@ void finish_if_pose_visible_g(struct Actor *obj);
 void on_arrive(struct Actor *obj);
 void end_action(struct Actor *obj);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 struct ActionBits
 {
     u8 bit0 : 1;
@@ -159,7 +159,7 @@ u32 random_jump_setup_list_slot_a(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim374;
-    entry = gUnk_03000FF4 + 0x3C;
+    entry = gParty + 0x3C;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
@@ -172,7 +172,7 @@ u32 random_jump_setup_list_slot_b(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim278;
-    entry = gUnk_03000FF4;
+    entry = gParty;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
@@ -308,7 +308,7 @@ u32 begin_hold_a(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim374;
-    entry = gUnk_03000FF4 + 0x3C;
+    entry = gParty + 0x3C;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
@@ -324,7 +324,7 @@ u32 begin_hold_b(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim278;
-    entry = gUnk_03000FF4;
+    entry = gParty;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
@@ -469,11 +469,11 @@ u32 random_jump_a(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim278;
-    entry = gUnk_03000FF4;
+    entry = gParty;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
-    timer = sub_081DE850(6, mt19937_next()) + 4;
+    timer = rand_below(6, mt19937_next()) + 4;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -499,11 +499,11 @@ u32 random_jump_b(struct Actor *obj)
     u8 *entry;
 
     obj->anim = gAnim374;
-    entry = gUnk_03000FF4 + 0x3C;
+    entry = gParty + 0x3C;
     obj->switch6 = 0;
     obj->switch5 = 0;
     *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
-    timer = sub_081DE850(0x16, mt19937_next()) + 10;
+    timer = rand_below(0x16, mt19937_next()) + 10;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
@@ -568,7 +568,7 @@ void random_jump_orbit_step_a(struct Actor *obj)
         sprite_set_action(obj, 0, 0x2025, 3);
     if (obj->step != 12)
     {
-        input = gUnk_0300034C;
+        input = gSys;
         if ((*(u16 *)(input + 0x3C) & obj->buttons) == 0)
         {
             obj->step *= 2;
@@ -644,11 +644,11 @@ void random_jump_orbit_hold_a(struct Actor *obj)
         end_action(obj);
         return;
     }
-    input = gUnk_0300034C;
+    input = gSys;
     held = *(u16 *)(input + 0x3C) & obj->buttons;
     if (held == 0)
     {
-        obj->timer = sub_081DE850(0x16, mt19937_next()) + 10;
+        obj->timer = rand_below(0x16, mt19937_next()) + 10;
         sprite_set_action(obj, 6, 0, 0);
         obj->pose->mode = 0;
         obj->state = orbit_timer_a;
@@ -659,7 +659,7 @@ void random_jump_orbit_hold_a(struct Actor *obj)
     {
         if (*(u8 *)(obj->data + 0x12D) == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 obj->pose->mode = 1;
@@ -786,7 +786,7 @@ void random_jump_orbit_step_c(struct Actor *obj)
         sprite_set_action(obj, 0, 0x2054, 3);
     if (obj->step != 8)
     {
-        input = gUnk_0300034C;
+        input = gSys;
         if ((*(u16 *)(input + 0x3C) & obj->buttons) == 0)
         {
             obj->step *= 3;
@@ -862,11 +862,11 @@ void random_jump_orbit_hold_b(struct Actor *obj)
         end_action(obj);
         return;
     }
-    input = gUnk_0300034C;
+    input = gSys;
     held = *(u16 *)(input + 0x3C) & obj->buttons;
     if (held == 0)
     {
-        obj->timer = sub_081DE850(6, mt19937_next()) + 8;
+        obj->timer = rand_below(6, mt19937_next()) + 8;
         sprite_set_action(obj, 6, 0, 0);
         obj->pose->mode = 0;
         obj->state = orbit_timer_b;
@@ -877,7 +877,7 @@ void random_jump_orbit_hold_b(struct Actor *obj)
     {
         if (*(u8 *)(obj->data + 0x12D) == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 obj->pose->mode = 1;
@@ -1072,7 +1072,7 @@ u32 random_jump_setup_slot_spawn(struct Actor *obj)
     obj->switch6 = 0;
     obj->switch5 = 0;
     dst = (u32 *)(obj->data + 0x114);
-    entry = gUnk_03000FF4;
+    entry = gParty;
     index = ~*(s16 *)(obj->data + 0xEC);
     entry = entry + 0x3C * index;
     *dst = *(u16 *)(entry + 0x2C);

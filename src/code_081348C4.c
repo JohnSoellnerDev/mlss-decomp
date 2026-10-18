@@ -19,7 +19,7 @@ struct ListOwner
     u8 filler0[0x3C];
     u32 owner;
 };
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 
 struct ModelCtx
 {
@@ -28,7 +28,7 @@ struct ModelCtx
     u16 unk2A;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
 
@@ -210,8 +210,8 @@ void part_spawn_timed(struct AppearObj *obj);
 void part_setup_render(struct AppearObj *obj)
 {
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000460, gWorkBuf + 0x3CD0, 0x20);
-    gUnk_03000D74->unk28 = gUnk_03000D74->unk2A;
-    gUnk_03000D74->unk2A |= 0xFFFF;
+    gModelCtx->unk28 = gModelCtx->unk2A;
+    gModelCtx->unk2A |= 0xFFFF;
     task_create_list_48(part_refresh_tiles, obj);
     obj->unk4C = part_spawn_timed;
 }
@@ -436,7 +436,7 @@ s32 obj_step_toward_target_081350A0(struct AppearObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_081348C4/sub_0813516C.s", void sub_0813516C(void))
+ASM_FUNC("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_speed(void))
 
 u32 obj_step_accum_clamp(struct AppearObj *obj)
 {
@@ -515,7 +515,7 @@ void scene_obj_list_pass(struct ObjList *head)
         list->owner + 0xA14);
     hook = (void **)&gUnk_03000D4C;
     owner = list->owner;
-    base = (u8 *)gUnk_0300034C;
+    base = (u8 *)gSys;
     *(u32 *)(base + 0x880) = ((u32 (*)(u32, u32))*hook)(owner, *(u32 *)(base + 0x880));
 }
 

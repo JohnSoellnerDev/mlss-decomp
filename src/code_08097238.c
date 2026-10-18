@@ -126,8 +126,8 @@ struct World
     struct Hero *unk7C;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 extern u8 *gWorkBuf;
 
 void sprite_set_action(struct Actor *obj, u32 action, u32 part, u32 extra);
@@ -174,7 +174,7 @@ void pair_sum_offsets(struct Actor *obj);
 void schedule_pose_task(struct Actor *partner);
 void follow_focus_settle(struct Actor *obj);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void obj_free_parts(struct Actor *obj);
 void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
@@ -186,7 +186,7 @@ ASM_FUNC("asm/code_08097238/child_hold_settle.s", void child_hold_settle(struct 
 
 void spawn_marker_child(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
+    struct Actor *heroA = &gWorld->heroA->body;
     struct Actor *marker;
 
     if ((obj->flags76 & 6) == 2) {
@@ -254,7 +254,7 @@ void release_partner_when_visible(struct Actor *obj)
 
 void motion_done_start_wait(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
+    struct Actor *heroA = &gWorld->heroA->body;
 
     if (step_motion(obj) == 0) {
         u32 action = 0x2050;
@@ -271,8 +271,8 @@ void motion_done_start_wait(struct Actor *obj)
 
 void wait_countdown_heroes_anim(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
     u16 step = obj->step;
 
     if ((s16)obj->step > 0) {
@@ -287,7 +287,7 @@ void wait_countdown_heroes_anim(struct Actor *obj)
 
 void hero_a_anim_when_visible(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
+    struct Actor *heroA = &gWorld->heroA->body;
 
     if (obj->pose->visible) {
         set_slot_value(6, -1);
@@ -299,7 +299,7 @@ void hero_a_anim_when_visible(struct Actor *obj)
 
 void hero_b_anim_and_mode(struct Actor *obj)
 {
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     set_slot_value(0x18, -1);
     sprite_set_action(heroB, 8, 0x2068, 0);
@@ -309,8 +309,8 @@ void hero_b_anim_and_mode(struct Actor *obj)
 
 void heroes_release_anim_when_visible(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     if (obj->pose->visible) {
         sprite_set_action(heroA, -1, -1, 0);
@@ -321,7 +321,7 @@ void heroes_release_anim_when_visible(struct Actor *obj)
 
 u32 pair_begin_setup(struct Actor *obj)
 {
-    u8 *entry = gUnk_03000FF4 - (obj->data->slot * 0x3C + 0x3C);
+    u8 *entry = gParty - (obj->data->slot * 0x3C + 0x3C);
     struct Hero *heroA;
     struct Hero *heroB;
     struct Actor *bodyA;
@@ -330,9 +330,9 @@ u32 pair_begin_setup(struct Actor *obj)
     const u8 *anim;
 
     obj->data->slotValue = *(u16 *)(entry + 0x2A);
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
-    heroB = gUnk_03000FD8->heroB;
+    heroB = gWorld->heroB;
     bodyB = &heroB->body;
     partner = obj->partner;
     bodyB->partner = partner;
@@ -357,8 +357,8 @@ ASM_FUNC("asm/code_08097238/state_pair_setup_motion.s", void state_pair_setup_mo
 
 void pair_end_heroes(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
     struct Hero *hero;
     u8 mode;
 
@@ -369,7 +369,7 @@ void pair_end_heroes(struct Actor *obj)
         sprite_set_action(obj, 1, 0x2056, 0);
     }
     obj->pose->mode = 1;
-    hero = gUnk_03000FD8->unk7C;
+    hero = gWorld->unk7C;
     if (obj == &hero->body) {
         mode = hero->body.flags76 & 6;
         if (mode == 2 || mode == 4) {
@@ -393,7 +393,7 @@ void pair_end_heroes(struct Actor *obj)
 
 void spawn_child_on_visible(struct Actor *obj)
 {
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroB = &gWorld->heroB->body;
     struct Actor *child;
     u32 mode;
 
@@ -419,7 +419,7 @@ void pair_finish_handle(struct Actor *obj)
     u8 bits;
 
     obj_free_parts(obj);
-    if (obj == &gUnk_03000FD8->heroA->body)
+    if (obj == &gWorld->heroA->body)
     {
         sprite_set_action(obj, 3, 0, 0);
     }
@@ -432,9 +432,9 @@ void pair_finish_handle(struct Actor *obj)
     bits = obj->flags76 & 6;
     if (bits == 2 || bits == 4)
     {
-        n = sub_081DE850(3, mt19937_next());
+        n = rand_below(3, mt19937_next());
         obj->handle = *(s32 *)(gWorkBuf + 0x5480) + n * *(s32 *)(gWorkBuf + 0x5484) != 0
-            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + sub_081DE850(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + rand_below(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
             : 0x4000;
         obj->phase = 0;
         *((s8 *)obj + 0x79) &= -0x21;
@@ -448,7 +448,7 @@ ASM_FUNC("asm/code_08097238/pair_repeat_countdown.s", void pair_repeat_countdown
 
 ASM_FUNC("asm/code_08097238/start_random_handle.s", void start_random_handle(struct Actor *obj))
 
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u32 mt19937_next(void);
 extern u8 *gWorkBuf;
 ASM_FUNC("asm/code_08097238/sprite_nodes_fall.s", void sprite_nodes_fall(struct Actor *obj))
@@ -457,8 +457,8 @@ ASM_FUNC("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(str
 
 void pair_switch_wait(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     state_stack_advance_progress(obj);
     if (obj->flags79 & 0x20) {
@@ -474,8 +474,8 @@ void pair_switch_wait(struct Actor *obj)
 
 void hero_random_walk_reset(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     if (obj == heroA) {
         sprite_set_action(obj, 1, 0x2027, 0);
@@ -493,8 +493,8 @@ void hero_random_walk_reset(struct Actor *obj)
 
 void hero_detach_wait(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     step_motion(obj);
     if (obj->flags79 & 0x20) {
@@ -519,8 +519,8 @@ void hero_detach_wait(struct Actor *obj)
 
 void hero_motion_done(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
 
     step_motion(obj);
     if (obj->flags79 & 0x20) {
@@ -545,7 +545,7 @@ void child_release_when_empty(struct Actor *obj)
 
 u32 pair_begin_setup_b(struct Actor *obj)
 {
-    u8 *entry = gUnk_03000FF4 - (obj->data->slot * 0x3C + 0x3C);
+    u8 *entry = gParty - (obj->data->slot * 0x3C + 0x3C);
     struct Hero *heroA;
     struct Hero *heroB;
     struct Actor *bodyA;
@@ -554,9 +554,9 @@ u32 pair_begin_setup_b(struct Actor *obj)
     const u8 *anim;
 
     obj->data->slotValue = *(u16 *)(entry + 0x2A);
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
-    heroB = gUnk_03000FD8->heroB;
+    heroB = gWorld->heroB;
     bodyB = &heroB->body;
     partner = obj->partner;
     bodyB->partner = partner;
@@ -584,8 +584,8 @@ void set_motion_offsets(struct Actor *obj, u32 value);
 void end_hero_follow(struct Actor *obj);
 void follow_focus_settle(struct Actor *obj)
 {
-    struct Actor *heroA = &gUnk_03000FD8->heroA->body;
-    struct Actor *heroB = &gUnk_03000FD8->heroB->body;
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
     struct Actor *focus;
     s32 mode;
 
@@ -596,7 +596,7 @@ void follow_focus_settle(struct Actor *obj)
         sprite_set_action(obj, 1, 0x2056, 0);
     }
     obj->pose->mode = 1;
-    focus = &gUnk_03000FD8->unk7C->body;
+    focus = &gWorld->unk7C->body;
     if (obj == focus) {
         mode = focus->flags76 & 6;
         if (mode == 2 || mode == 4) {

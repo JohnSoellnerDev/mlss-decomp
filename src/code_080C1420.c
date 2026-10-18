@@ -155,9 +155,9 @@ struct KeyState
     u16 pressed;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -205,7 +205,7 @@ void hero_a_active_anim_24(struct HeroBody *body)
     struct Hero *hero_a;
     struct HeroBody *body_a;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     state_stack_advance_progress(body_a);
     if ((hero_a->body.flags & 0x20) != 0)
@@ -225,7 +225,7 @@ void hero_a_active_anim_none(struct HeroBody *body)
     struct Hero *hero_a;
     struct HeroBody *body_a;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     step_motion(body_a);
     if ((hero_a->body.flags & 0x20) != 0)
@@ -268,14 +268,14 @@ u32 hero_pair_setup(struct HeroBody *body)
     u8 *entry;
     s32 pose;
 
-    party =&gUnk_03000FF4;
+    party =&gParty;
     data = body->data;
     pose = data->poseIndex;
     entry = *party - ((((pose << 4) - pose) << 2) + 0x3C);
     data->poseValue = *(u16 *)(entry + 0x2A);
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     partner = body->partner;
     body_b->partner = partner;
@@ -306,9 +306,9 @@ void hero_b_set_rate_if_idle(struct HeroBody *body)
     struct HeroBody *body_b;
     s32 state;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     state = (s32)body_a->state;
     if (state == 0)
@@ -330,9 +330,9 @@ void hero_b_active_anim_pair(struct HeroBody *body)
     struct HeroBody *body_a;
     struct HeroBody *body_b;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     state_stack_advance_progress(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
@@ -358,7 +358,7 @@ void hero_b_anim_a_and_rate(struct HeroBody *body)
     struct Hero *hero_b;
     struct HeroBody *body_b;
 
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_b->sprite->flags & 8) != 0)
     {

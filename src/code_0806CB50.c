@@ -42,7 +42,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 
 struct ActorObj
 {
@@ -280,7 +280,7 @@ void actor_spawn_lift_child(struct ActorObj *obj)
 
     if (obj->pose->flags & 8)
     {
-        world = gUnk_03000FD8;
+        world = gWorld;
         nodeA = world->partners[6];
         nodeB = world->partners[7];
         if (!(((struct NodeModeBits *)(nodeB + 0x7E))->mode == 1 || ((struct NodeModeBits *)(nodeA + 0x7E))->mode == 1))
@@ -409,11 +409,11 @@ u32 actor_link_contact_partner(struct ActorObj *obj, struct ActorObj *other, u32
     }
     if (obj->paramA8 == 0)
     {
-        p = gUnk_03000FD8->partners[2];
+        p = gWorld->partners[2];
     }
     else
     {
-        p = gUnk_03000FD8->partners[1];
+        p = gWorld->partners[1];
     }
     partner = (struct ActorObj *)(p + 8);
     resolve_contact_action(other, partner, partner->posX / 0x100, partner->posH / 0x100,
@@ -592,8 +592,8 @@ void obj_fall_and_launch(struct ActorObj *obj)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0, 0);
-        a = (struct ActorObj *)(gUnk_03000FD8->partners[6] + 8);
-        partB = *(struct ActorPart **)(gUnk_03000FD8->partners[7] + 0x30);
+        a = (struct ActorObj *)(gWorld->partners[6] + 8);
+        partB = *(struct ActorPart **)(gWorld->partners[7] + 0x30);
         if (partB->slot >= 0 || a->part->slot >= 0)
         {
             obj->dx = 1;

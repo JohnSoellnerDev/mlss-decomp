@@ -114,7 +114,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void sprite_set_action(struct Body *body, u32 action, s32 arg, u32 extra);
 void hero_b_advance_and_place(struct Body *body);
@@ -162,7 +162,7 @@ void hero_a_link_when_ready(struct Body *body)
     struct Body *partner;
     s32 linked;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     partner = body->partner;
     if (partner->state == 0 && partner->targetZ > 0x800)
     {
@@ -191,7 +191,7 @@ void hero_a_begin_step_rate6(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     if (hero->body.sprite->flags & 8)
     {
         if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
@@ -214,7 +214,7 @@ void hero_a_place_at_data_target(struct Body *body)
     s32 py;
     s32 pz;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     state_stack_advance_progress(hbody);
     if (hero->body.flags & 0x20)
@@ -253,7 +253,7 @@ void hero_a_end_anim_clear(struct Body *body)
     struct Hero *hero;
     struct Body *hbody;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     if (hbody->sprite->flags & 8)
     {
@@ -325,12 +325,12 @@ void enter_body_speed_z_step(struct Body *body)
     body->state = (u32)body_speed_z_step;
 }
 
-extern u8 *gUnk_03000FF4;
+extern u8 *gParty;
 void schedule_pose_task(struct Body *body);
 void hero_b_place_with_effect(struct Body *body);
 u32 hero_pair_setup_pose(struct Body *body)
 {
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
     struct BodyData *data = body->data;
     struct Body *partner;
     struct Body *body_a;
@@ -340,8 +340,8 @@ u32 hero_pair_setup_pose(struct Body *body)
 
     entry = *party - (data->pose * 0x3C + 0x3C);
     data->poseVal = *(u16 *)(entry + 0x2A);
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     partner = body->partner;
     body_b->partner = partner;
     body_a->partner = partner;
@@ -371,7 +371,7 @@ void hero_b_place_with_effect(struct Body *body)
     s32 pz;
     s16 *span;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     hbody = &hero->body;
     if (body->data->flags & 0x400)
     {
@@ -433,7 +433,7 @@ void hero_b_begin_step_rate2(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     step_motion(&hero->body);
     if (hero->body.flags & 0x20)
     {
@@ -452,7 +452,7 @@ void hero_b_advance_anim4(struct Body *body)
     struct Hero *hero;
     struct Body *hbody;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     hbody = &hero->body;
     state_stack_advance_progress(hbody);
     if (hero->body.flags & 0x20)
@@ -477,7 +477,7 @@ void find_frame_entry(struct Body *body, u32 index);
 void hero_b_move_to_partner_step(struct Body *body);
 void hero_b_move_to_partner_target(struct Body *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct Body *body_b = &hero_b->body;
     struct Body *partner = body->partner;
     s32 t;
@@ -531,7 +531,7 @@ void hero_b_arm_full_step(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     if (hero->body.sprite->flags & 8)
     {
         if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
@@ -552,7 +552,7 @@ void hero_b_advance_and_place(struct Body *body)
     s32 px;
     s32 py;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     hbody = &hero->body;
     state_stack_advance_progress(hbody);
     if (hero->body.flags & 0x20)
@@ -594,9 +594,9 @@ void hero_pair_place_both_finish_t399(void)
     s32 pz;
     s16 *span;
 
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
-    heroB = gUnk_03000FD8->heroB;
+    heroB = gWorld->heroB;
     bodyB = &heroB->body;
     if (bodyB->sprite->flags & 8)
     {
@@ -681,7 +681,7 @@ void hero_b_link_when_ready(struct Body *body)
     struct Body *partner;
     s32 linked;
 
-    hbody = &gUnk_03000FD8->heroB->body;
+    hbody = &gWorld->heroB->body;
     partner = body->partner;
     if (partner->state == 0 && partner->targetZ > 0x800)
     {
@@ -710,7 +710,7 @@ void hero_b_begin_step_rate6(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     if (hero->body.sprite->flags & 8)
     {
         if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
@@ -733,7 +733,7 @@ void hero_b_place_at_data_target(struct Body *body)
     s32 py;
     s32 pz;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     hbody = &hero->body;
     state_stack_advance_progress(hbody);
     if (hero->body.flags & 0x20)
@@ -772,7 +772,7 @@ void hero_b_release(struct Body *body)
     struct Hero *hero;
     struct Body *hbody;
 
-    hero = gUnk_03000FD8->heroB;
+    hero = gWorld->heroB;
     hbody = &hero->body;
     if (hbody->sprite->flags & 8)
     {
@@ -847,7 +847,7 @@ void enter_body_fall_with_speed(struct Body *body)
 void hero_a_go_to_partner(struct Body *body);
 u32 hero_pair_start(struct Body *body)
 {
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
     struct BodyData *data = body->data;
     struct Body *partner;
     struct Body *body_a;
@@ -857,8 +857,8 @@ u32 hero_pair_start(struct Body *body)
 
     entry = *party - (data->pose * 0x3C + 0x3C);
     data->poseVal = *(u16 *)(entry + 0x2A);
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     partner = body->partner;
     body_b->partner = partner;
     body_a->partner = partner;
@@ -888,7 +888,7 @@ void hero_a_go_to_partner(struct Body *body)
     s32 mask;
     s16 *span;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     partner = body->partner;
     if (body->data->flags & 0x400)

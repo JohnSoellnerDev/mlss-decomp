@@ -130,7 +130,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);

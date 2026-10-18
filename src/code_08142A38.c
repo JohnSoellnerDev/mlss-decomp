@@ -216,7 +216,7 @@ void enemy_timer_then_cell(void);
 void enemy_wait_then_wander(void);
 void enemy_hop_face_partner(void);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void wander_to_edge(struct Actor *ent, s32 steps, s32 dist);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 void load_box_oriented(s16 *box, struct Actor *ent, u32 a, u32 b);
@@ -411,9 +411,9 @@ END_NONMATCH
 void enemy_wander_random_edge(void *owner, struct Actor *ent, void **out)
 {
     u16 *table = ent->table;
-    s32 pick = sub_081DE850(4, mt19937_next());
+    s32 pick = rand_below(4, mt19937_next());
     u16 dist = table[pick];
-    s32 pick2 = sub_081DE850(2, mt19937_next());
+    s32 pick2 = rand_below(2, mt19937_next());
 
     wander_to_edge(ent, table[pick2 + 0x18], dist);
     out[0] = enemy_wait_then_wander;
@@ -438,7 +438,7 @@ void enemy_rand_setup(struct Actor *ent)
     struct Rec **slot = &ent->rec;
     u8 *rec = (u8 *)*slot;
 
-    ent->index = sub_081DE850(4, mt19937_next());
+    ent->index = rand_below(4, mt19937_next());
     ent->sprite->frame20 = rec[ent->index + 0x1A];
     ent->timerB = ((u8 *)*slot)[ent->index + 0x16];
     ent->handler = enemy_timer_then_cell;

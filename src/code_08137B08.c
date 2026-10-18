@@ -111,7 +111,7 @@ struct Enemy
 
 void obj_pick_random_entry(struct Enemy *ent);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void tick_store(void);
 void move_step_handler(void);
 void start_linked_state(void);
@@ -130,7 +130,7 @@ void obj_random_target_b(struct Owner *owner, struct Enemy *obj, u32 *out)
     s32 flags;
 
     obj_pick_random_entry(obj);
-    obj->unk1D2 = obj->unk128[sub_081DE850(4, mt19937_next())];
+    obj->unk1D2 = obj->unk128[rand_below(4, mt19937_next())];
     flags = (obj->unk1D6 | 2) & -2;
     obj->unk1D6 = flags;
     if (obj->unk1D2 != 0)

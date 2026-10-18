@@ -92,7 +92,7 @@ struct SlotChild
     u8 unk1F;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern vu16 gUnk_0200001A;
 extern u16 gUnk_0200001E;
 
@@ -142,18 +142,18 @@ NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(
     struct Obj *marker;
     u32 h;
 
-    fig = gUnk_03000FD8->figs[index];
+    fig = gWorld->figs[index];
     if (fig == 0)
     {
         return 0;
     }
-    if (gUnk_03000FD8->marks[index] != 0)
+    if (gWorld->marks[index] != 0)
     {
-        return gUnk_03000FD8->marks[index];
+        return gWorld->marks[index];
     }
-    marker = list_add_task((u8 *)gUnk_03000FD8 + 0x48, panel_slide_step);
+    marker = list_add_task((u8 *)gWorld + 0x48, panel_slide_step);
     marker->unk8 = (struct Child *)fig;
-    if (gUnk_03000FD8->figs[1] == 0)
+    if (gWorld->figs[1] == 0)
     {
         h = 0x20;
     }
@@ -165,7 +165,7 @@ NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(
     marker->unk14 = 0xA0;
     marker->unk16 = 0;
     marker->unk18 = 0xFFFF;
-    gUnk_03000FD8->marks[index] = marker;
+    gWorld->marks[index] = marker;
     return marker;
 }
 END_NONMATCH
@@ -179,7 +179,7 @@ void panel_slide_step(struct Obj *obj)
     struct Child *sub;
     u16 h;
 
-    if ((((u32)gUnk_03000FD8->modeByte << 30) >> 30) > 1)
+    if ((((u32)gWorld->modeByte << 30) >> 30) > 1)
     {
         draw_panel_values(obj);
         h = obj->unk14;
@@ -222,14 +222,14 @@ void panel_slide_end(struct Obj *obj)
             return;
         }
     }
-    slot = &gUnk_03000FD8->marks[0];
+    slot = &gWorld->marks[0];
     if (obj->unk8 == (*slot)->unk8)
     {
         *slot = 0;
     }
     else
     {
-        gUnk_03000FD8->marks[1] = 0;
+        gWorld->marks[1] = 0;
     }
     obj->unk4 = 0;
 }
@@ -245,14 +245,14 @@ void step_slot_object(struct Obj *obj)
     s32 idx;
     s32 shrunk;
 
-    if (gUnk_03000FD8->flags0B & 0x80)
+    if (gWorld->flags0B & 0x80)
     {
         idx = obj->unk16 & 1;
-        entry = gUnk_03000FD8->slotObjs[idx];
+        entry = gWorld->slotObjs[idx];
         if (entry != 0)
         {
             obj_release_node(entry->unk8);
-            gUnk_03000FD8->slotObjs[idx] = 0;
+            gWorld->slotObjs[idx] = 0;
             entry->unk4 = 0;
         }
     }

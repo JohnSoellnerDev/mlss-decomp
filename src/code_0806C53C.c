@@ -42,7 +42,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 
 struct ActorObj
 {
@@ -349,9 +349,9 @@ u32 actor_unlink_partners_and_release(struct ActorObj *obj)
     part = obj->owner->part;
     effect_spawn_at(0x1C19, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
     set_slot_value(0x40, -1);
-    cand = gUnk_03000FD8->partners[6];
+    cand = gWorld->partners[6];
     pa = cand + 8;
-    cand2 = gUnk_03000FD8->partners[7];
+    cand2 = gWorld->partners[7];
     pb = cand2 + 8;
     if ((cand[0x7E] & 6) == 2)
     {
@@ -380,7 +380,7 @@ void actor_countdown_release_partners(struct ActorObj *obj)
     {
         for (i = 0; i < 6; i += 2)
         {
-            p = gUnk_03000FD8->partners[i];
+            p = gWorld->partners[i];
             partner = (struct ActorObj *)(p + 8);
             if ((p[0x7E] & 6) == 4)
             {
@@ -394,7 +394,7 @@ void actor_countdown_release_partners(struct ActorObj *obj)
                 }
             }
             j = i + 1;
-            p = gUnk_03000FD8->partners[j];
+            p = gWorld->partners[j];
             partner = (struct ActorObj *)(p + 8);
             if ((p[0x7E] & 6) == 4)
             {

@@ -145,9 +145,9 @@ struct World
     struct DisplayEntry *entry380[6];
 };
 
-extern struct World *gUnk_03000FD8;
-extern u16 gUnk_0300034C[];
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u16 gSys[];
+extern u8 *gParty;
 extern u8 *gWorkBuf;
 
 void state_create_result_entries(struct Owner *owner);
@@ -204,7 +204,7 @@ void state_slide_back(struct Owner *owner)
 
         owner->timer = 0x40;
         owner->fig->x += -0x300;
-        world = gUnk_03000FD8;
+        world = gWorld;
         world->menuObj->unk0 -= 3;
         world->digitObj->unk12 -= 3;
         world->obj36C->unk0 -= 3;
@@ -221,7 +221,7 @@ ASM_FUNC("asm/code_081041E4/state_hero_entry_timeline.s", void state_hero_entry_
 
 void state_scroll_entry_to_focus(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Scroll *scroll = world->scrollObj37C;
     struct Owner *marker = world->obj278;
     s32 y;
@@ -244,12 +244,12 @@ void state_scroll_entry_to_focus(struct Owner *owner)
     offset_three_words(world->focus24C, &ax, &ay, &az, 0);
     if (ax <= 0xD0)
     {
-        markerX = (s32)(obj_last_x(gUnk_03000FD8->focus24C) << 16) >> 8;
+        markerX = (s32)(obj_last_x(gWorld->focus24C) << 16) >> 8;
         markerX += 0xD000;
         scroll->pos10 = markerX;
         ((struct Scroll *)marker)->pos10 = markerX;
         sprite_set_action(marker, 4, 0, 0);
-        gUnk_03000FD8->pose342 = 0;
+        gWorld->pose342 = 0;
         owner->state = state_obj_anim_5_when_active;
     }
 }
@@ -259,13 +259,13 @@ ASM_FUNC("asm/code_081041E4/hero_panel_digits.s", void hero_panel_digits(u8 *dig
 
 void state_show_hero_panel(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Owner *marker = world->obj278;
 
     if (marker->sprite->flags & 8)
     {
         s32 heroIdx = owner->posX;
-        u8 *hero = gUnk_03000FF4 + heroIdx * 0x3C;
+        u8 *hero = gParty + heroIdx * 0x3C;
         u8 *effect = gWorkBuf;
         u8 *digits = effect + 0x8E34;
         u8 heroCtx = hero[0x30];
@@ -312,7 +312,7 @@ u32 draw_digit_cycle(struct Owner *owner, s32 n)
     {
         bcd = to_bcd(*(gWorkBuf + 0x8E3D));
     }
-    rowY = gUnk_03000FD8->pose342 * 0x10 + 0x28;
+    rowY = gWorld->pose342 * 0x10 + 0x28;
     scaled = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(cycle << 6, n);
     draw_number_rotated(owner->index, bcd, number_right_edge(owner->index, 0xB8), rowY, scaled);
     return cycle | digit << 11;
@@ -323,14 +323,14 @@ void state_digit_input_wait(struct Owner *owner)
     struct Owner *marker;
 
     owner->timer = draw_digit_cycle(owner, 3);
-    marker = gUnk_03000FD8->obj278;
-    if (gUnk_0300034C[0x1F] & 1)
+    marker = gWorld->obj278;
+    if (gSys[0x1F] & 1)
     {
         owner->posY = 1;
         set_slot_value(0x60, -1);
         owner->state = state_fx_step_counter;
     }
-    else if (gUnk_0300034C[0x1F] & 2)
+    else if (gSys[0x1F] & 2)
     {
         sprite_set_action(marker, 6, 0, 0xB);
         marker->sprite->frame = 0xF0;

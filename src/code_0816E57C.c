@@ -51,7 +51,7 @@ struct KeyRam
     u16 held;
 };
 
-extern struct KeyRam gUnk_0300034C;
+extern struct KeyRam gSys;
 
 void obj_destroy_sprites(void *obj, u32 arg);
 void task_remove(void *node, u32 kind);
@@ -68,7 +68,7 @@ void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void list_insert(void *list, void *node);
 void obj_update_anim_pair(struct EffectObj *obj, u32 a, u32 b);
 void obj_set_wait_60(struct EffectObj *obj);
-u8 obj_is_idle_081642B0(u32 anim);
+u8 obj_is_idle(u32 anim);
 void obj_start_tween(u32 anim, u32 a, u32 b, u32 c, u32 d);
 void obj_tween_step(u32 anim);
 void free_if_bit0(void *ptr, u32 flags);
@@ -125,13 +125,13 @@ void obj_tween_state(struct EffectObj *obj)
         obj->unk68++;
         break;
     case 1:
-        if (obj_is_idle_081642B0(obj->unk40))
+        if (obj_is_idle(obj->unk40))
         {
             obj->unk68++;
         }
         break;
     case 2:
-        if ((gUnk_0300034C.held & 8) != 0)
+        if ((gSys.held & 8) != 0)
         {
             set_slot_value(0x37, -1);
             obj_start_tween(obj->unk40, 0, 0xFFFF6000, 0x14, 0);
@@ -139,7 +139,7 @@ void obj_tween_state(struct EffectObj *obj)
         }
         break;
     case 3:
-        if (obj_is_idle_081642B0(obj->unk40))
+        if (obj_is_idle(obj->unk40))
         {
             obj->unk54 = obj->unk58;
         }
@@ -166,7 +166,7 @@ void obj_frame_callback(void)
         list->owner + 0xA14);
     hook = &gUnk_03000D4C;
     owner = list->owner;
-    base = (u8 *)&gUnk_0300034C;
+    base = (u8 *)&gSys;
     *(u32 *)(base + 0x880) = ((u32 (*)(u32, u32))*hook)(owner, *(u32 *)(base + 0x880));
 }
 
@@ -243,7 +243,7 @@ u32 obj_flag78_test(struct EffectObj *obj)
     return 0;
 }
 
-u32 sub_0816E780(struct EffectObj *obj)
+u32 obj_flag78_is_zero(struct EffectObj *obj)
 {
     if (obj->unk78 == 0)
     {
@@ -317,7 +317,7 @@ void obj_step70_add20_sub20(struct EffectObj *obj)
     obj_step_bounce(obj);
 }
 
-void sub_0816E86C(struct EffectObj *obj)
+void obj_step70_sub20(struct EffectObj *obj)
 {
     obj->unk70 -= 0x20;
     if ((s32)obj->unk70 < -0x200)
@@ -377,7 +377,7 @@ void obj_free_flag_e924(void *p, u32 flags)
     }
 }
 
-u32 sub_0816E93C(struct EffectObj *obj)
+u32 obj_both_children_done(struct EffectObj *obj)
 {
     if (obj->unk18 == 0)
     {

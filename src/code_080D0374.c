@@ -156,8 +156,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void step_motion(struct HeroBody *body);
 void step_motion_scaled(struct HeroBody *body);
@@ -203,9 +203,9 @@ void hero_a_place_targets_anim5(struct HeroBody *body)
     struct HeroBody *body_a;
     u8 mode;
 
-    mode = gUnk_03000FD8->modeByte;
-    gUnk_03000FD8->modeByte = mode | 0xC0;
-    body_a = &gUnk_03000FD8->heroA->body;
+    mode = gWorld->modeByte;
+    gWorld->modeByte = mode | 0xC0;
+    body_a = &gWorld->heroA->body;
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
         s32 x = (body_a->targetX / 256) + body_a->ofsX;
@@ -235,9 +235,9 @@ void hero_a_place_targets_anim5(struct HeroBody *body)
 
 void hero_pair_clear_anim_mirror(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     step_motion(body_a);
@@ -263,9 +263,9 @@ void hero_pair_clear_anim_mirror(struct HeroBody *body)
 
 void hero_a_spawn_child_counted(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *child;
 
     if ((s32)body_a->unkA0 <= 0)
@@ -329,9 +329,9 @@ ASM_FUNC("asm/code_080D0374/hero_a_step_press_pose_d0878.s", void hero_a_step_pr
 
 void hero_a_child_finish_place(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -360,7 +360,7 @@ void hero_child_place_on_partner(struct HeroBody *body);
 
 void hero_a_child_wait_active(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     step_motion_scaled(body_a->child);
@@ -388,8 +388,8 @@ void hero_pair_place_both_finish_a_idle(struct HeroBody *body)
     struct HeroData *data;
     s16 *span;
 
-    body_a = &gUnk_03000FD8->heroA->body;
-    hero_b = gUnk_03000FD8->heroB;
+    body_a = &gWorld->heroA->body;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_a->sprite->flags & 8) == 0)
         return;
@@ -442,7 +442,7 @@ void hero_a_child_link_partner_fx(struct HeroBody *body);
 
 void hero_child_place_on_partner(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
     struct HeroBody *child = body_a->child;
@@ -465,7 +465,7 @@ void hero_child_place_on_partner(struct HeroBody *body)
 
 void hero_a_child_link_partner_fx(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
 
@@ -492,7 +492,7 @@ void body_place_at_partner_target(struct HeroBody *body);
 
 void hero_b_anim_and_step_rate8_alt(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     set_slot_value(0xAF, -1);
@@ -512,8 +512,8 @@ void hero_b_anim_and_step_rate8_alt(struct HeroBody *body)
 
 void body_place_at_partner_target(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
 
     state_stack_advance_progress(body_b);

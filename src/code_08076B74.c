@@ -108,7 +108,7 @@ struct ActorCands
     u32 item;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 extern u32 gUnk_03000E3C;
 
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);

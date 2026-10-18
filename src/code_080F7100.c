@@ -172,7 +172,7 @@ struct SubStartCmd
     u16 unkC;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gWorkBuf;
 
 u8 is_state_busy(void);
@@ -204,28 +204,28 @@ u32 world_frame_index(void)
 {
     s32 idx;
     u32 word;
-    if (gUnk_03000FD8->ptr310 == 0)
+    if (gWorld->ptr310 == 0)
         return -1;
-    idx = *(s16 *)((u8 *)gUnk_03000FD8->ptr310 + 0x10);
-    word = gUnk_03000FD8->table2FC[idx];
+    idx = *(s16 *)((u8 *)gWorld->ptr310 + 0x10);
+    word = gWorld->table2FC[idx];
     if (word == 0)
         return -1;
-    if (gUnk_03000FD8->cam->target != 0)
+    if (gWorld->cam->target != 0)
     {
-        if (gUnk_03000FD8->callback24 != (void *)state_hero_menu_plain)
+        if (gWorld->callback24 != (void *)state_hero_menu_plain)
             return -1;
-        return gUnk_03000FD8->cam->target->ptr28[0xF4] + 0x11;
+        return gWorld->cam->target->ptr28[0xF4] + 0x11;
     }
     if (*(u32 *)((u8 *)word + 0x9C) == 5)
         return 0x10;
-    if ((gUnk_03000FD8->unk343 & 0x80) == 0)
-        return gUnk_03000FD8->unk343 + 4;
-    if ((gUnk_03000FD8->unk344 & 0x80) == 0)
-        return gUnk_03000FD8->unk344 + 7;
-    if ((gUnk_03000FD8->unk345 & 0x80) == 0)
-        return gUnk_03000FD8->unk345 + 0x19;
-    if ((gUnk_03000FD8->unk342 & 0x80) == 0)
-        return gUnk_03000FD8->unk342;
+    if ((gWorld->unk343 & 0x80) == 0)
+        return gWorld->unk343 + 4;
+    if ((gWorld->unk344 & 0x80) == 0)
+        return gWorld->unk344 + 7;
+    if ((gWorld->unk345 & 0x80) == 0)
+        return gWorld->unk345 + 0x19;
+    if ((gWorld->unk342 & 0x80) == 0)
+        return gWorld->unk342;
     return -1;
 }
 
@@ -233,22 +233,22 @@ u32 world_frame_index_b(void)
 {
     s32 idx;
     u32 word;
-    if (gUnk_03000FD8->ptr310 == 0)
+    if (gWorld->ptr310 == 0)
         return -1;
-    idx = *(s16 *)((u8 *)gUnk_03000FD8->ptr310 + 0x10);
-    word = gUnk_03000FD8->table2FC[idx];
+    idx = *(s16 *)((u8 *)gWorld->ptr310 + 0x10);
+    word = gWorld->table2FC[idx];
     if (word == 0)
         return -1;
-    if (gUnk_03000FD8->cam->target != 0)
+    if (gWorld->cam->target != 0)
     {
-        if (gUnk_03000FD8->callback24 != (void *)state_hero_menu_plain)
+        if (gWorld->callback24 != (void *)state_hero_menu_plain)
             return -1;
-        return gUnk_03000FD8->cam->target->ptr28[0xF4] + 0x11;
+        return gWorld->cam->target->ptr28[0xF4] + 0x11;
     }
     if (*(u32 *)((u8 *)word + 0x9C) == 5)
         return 0x10;
-    if ((gUnk_03000FD8->unk344 & 0x80) == 0)
-        return gUnk_03000FD8->flags2BF >> 6;
+    if ((gWorld->unk344 & 0x80) == 0)
+        return gWorld->flags2BF >> 6;
     return -1;
 }
 
@@ -260,29 +260,29 @@ ASM_FUNC("asm/code_080F7100/record_slot_hit.s", void record_slot_hit(struct Slot
 
 void set_cur_flags_pending(u32 bits)
 {
-    struct OwnerState *st = gUnk_03000FD8->cur->state;
+    struct OwnerState *st = gWorld->cur->state;
     st->flags1788 |= bits;
     st->flags1798 |= bits;
-    if ((gUnk_03000FD8->pending2F4 & bits) != 0)
+    if ((gWorld->pending2F4 & bits) != 0)
     {
-        gUnk_03000FD8->pending2F4 ^= bits;
-        gUnk_03000FD8->flag2F8 = 1;
+        gWorld->pending2F4 ^= bits;
+        gWorld->flag2F8 = 1;
     }
 }
 
 void clear_cur_flags(u32 bits)
 {
-    gUnk_03000FD8->cur->state->flags1788 &= ~bits;
+    gWorld->cur->state->flags1788 &= ~bits;
 }
 
 void set_cur_flags(u32 bits)
 {
-    gUnk_03000FD8->cur->state->flags1788 |= bits;
+    gWorld->cur->state->flags1788 |= bits;
 }
 
 void set_cur_flags_both(u32 bits)
 {
-    struct OwnerState *st = gUnk_03000FD8->cur->state;
+    struct OwnerState *st = gWorld->cur->state;
     st->flags1788 |= bits;
     st->flags1798 |= bits;
 }
@@ -298,10 +298,10 @@ ASM_FUNC("asm/code_080F7100/slot_set_vec.s", void slot_set_vec(void))
 void obj_task_attach(struct TaskObj *obj)
 {
     s32 bits;
-    task_slot_write(gUnk_03000FD8->cur, obj->unkF4, obj->unkE8);
-    bits = gUnk_03000FD8->flags2BF;
+    task_slot_write(gWorld->cur, obj->unkF4, obj->unkE8);
+    bits = gWorld->flags2BF;
     bits |= 4;
-    gUnk_03000FD8->flags2BF = bits;
+    gWorld->flags2BF = bits;
 }
 
 ASM_FUNC("asm/code_080F7100/obj_task_attach_idx.s", void obj_task_attach_idx(void))
@@ -313,7 +313,7 @@ u32 slot_widest_span(void *unused0, s32 threshold)
     s16 i;
     for (i = 0; i <= 5; i++)
     {
-        struct Slot *s = gUnk_03000FD8->slots[i];
+        struct Slot *s = gWorld->slots[i];
         if (s != 0 && (s->flags7E & 6) == 4)
         {
             s32 span = s->unkF8 - s->unkF6;
@@ -334,7 +334,7 @@ u32 slot_find_min_key(void *unused0, s32 threshold)
     s16 i;
     for (i = 0; i <= 5; i++)
     {
-        struct Slot *s = gUnk_03000FD8->slots[i];
+        struct Slot *s = gWorld->slots[i];
         if (s != 0 && (s->flags7E & 6) == 4)
         {
             s32 key = s->unkF6;
@@ -355,7 +355,7 @@ u32 slot_find_max_key(void *unused0, s32 threshold)
     s16 i;
     for (i = 0; i <= 5; i++)
     {
-        struct Slot *s = gUnk_03000FD8->slots[i];
+        struct Slot *s = gWorld->slots[i];
         if (s != 0 && (s->flags7E & 6) == 4)
         {
             s32 key = s->unkF6;
@@ -440,8 +440,8 @@ u32 cmd_mode_switch(void *unused0, void *unused1, u32 *cmd)
 
 u32 world_state_copy(void *unused0, struct CopyNode *node)
 {
-    if (sub_obj_running(gUnk_03000FD8->ptr248) != 0 || world_entry_ready() != 0
-        || (gUnk_03000FD8->flags2BF & 0x20) != 0 || gUnk_03000FD8->word2F0 != 0)
+    if (sub_obj_running(gWorld->ptr248) != 0 || world_entry_ready() != 0
+        || (gWorld->flags2BF & 0x20) != 0 || gWorld->word2F0 != 0)
     {
         node->unk0 = node->unk14;
         return 0;
@@ -506,7 +506,7 @@ u32 cmd_world_set_byte350(void *unused0, void *unused1, u32 *block)
 {
     u16 idx = *block++ - 6;
     if (*block++ == 0)
-        gUnk_03000FD8->unk350[idx] = *block;
+        gWorld->unk350[idx] = *block;
     return 1;
 }
 
@@ -515,8 +515,8 @@ u32 cmd_effect_set(void *unused0, void *unused1, u32 *block)
     u32 first = *block++;
     if (first == 0)
     {
-        gUnk_03000FD8->effect->unk8 = *block;
-        gUnk_03000FD8->effect->unkA = first;
+        gWorld->effect->unk8 = *block;
+        gWorld->effect->unkA = first;
     }
     return 1;
 }
@@ -527,14 +527,14 @@ ASM_FUNC("asm/code_080F7100/cmd_world_bits318.s", void cmd_world_bits318(void))
 
 u32 cmd_slot_offset_row(void *unused0, void *unused1, u32 *p)
 {
-    apply_offset_row(gUnk_03000FD8->slots[p[0]]->unk10, p[1]);
+    apply_offset_row(gWorld->slots[p[0]]->unk10, p[1]);
     return 1;
 }
 
 u8 cmd_slot_copy_pos(void *unused0, void *unused1, u32 *block)
 {
-    struct Slot *dst = gUnk_03000FD8->slots[*block++];
-    struct Slot *src = gUnk_03000FD8->slots[*block++];
+    struct Slot *dst = gWorld->slots[*block++];
+    struct Slot *src = gWorld->slots[*block++];
     dst->unkD8 = src->unkD8;
     dst->unkDC = src->unkDC;
     dst->unkE0 = src->unkE0;
@@ -543,7 +543,7 @@ u8 cmd_slot_copy_pos(void *unused0, void *unused1, u32 *block)
 
 u32 cmd_slot_ring_pos(void *unused0, void *unused1, u32 *block)
 {
-    struct Slot *slot = gUnk_03000FD8->slots[block[1]];
+    struct Slot *slot = gWorld->slots[block[1]];
     u32 mode = *block++;
     switch (mode)
     {

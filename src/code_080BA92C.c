@@ -149,8 +149,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -189,7 +189,7 @@ void enter_finish_rebuild(struct HeroBody *body);
 
 void hero_pair_anim_start(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -212,7 +212,7 @@ void hero_pair_anim_start(struct HeroBody *body)
 
 void hero_b_sprite_fx_partner_target(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
 
@@ -236,7 +236,7 @@ void hero_b_sprite_fx_partner_target(struct HeroBody *body)
 
 void hero_b_active_link_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
     struct HeroData *data;
@@ -269,7 +269,7 @@ void hero_b_active_link_partner(struct HeroBody *body)
 
 void hero_b_sprite_place_height(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -291,7 +291,7 @@ void hero_b_sprite_place_height(struct HeroBody *body)
 
 void hero_pair_place_finish_b_sprite(void)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroData *data;
@@ -360,7 +360,7 @@ void hero_pair_place_finish_b_sprite(void)
 
 void hero_pair_fx_anim_a_b(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -380,7 +380,7 @@ void hero_pair_fx_anim_a_b(struct HeroBody *body)
 
 void hero_a_sprite_place_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
@@ -416,7 +416,7 @@ ASM_FUNC("asm/code_080BA92C/hero_a_partner_action_b054.s", void hero_a_partner_a
 
 void hero_a_active_fx_start_step(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -447,7 +447,7 @@ void hero_a_active_fx_start_step(struct HeroBody *body)
 
 void sprite_fx_hero_a_active_link_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *partner = body->partner;
     struct HeroData *data;
@@ -473,7 +473,7 @@ void sprite_fx_hero_a_active_link_partner(struct HeroBody *body)
 
 void hero_a_sprite_place_pose5(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
 
     if ((body_a->sprite->flags & 8) != 0)
@@ -498,7 +498,7 @@ void hero_a_sprite_place_pose5(struct HeroBody *body)
 
 void hero_pair_a_active_place_finish(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroData *data;
@@ -543,7 +543,7 @@ void hero_pair_a_active_place_finish(struct HeroBody *body)
 
 void hero_b_sprite_place_mirror(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -570,7 +570,7 @@ void hero_b_sprite_place_mirror(struct HeroBody *body)
 
 void hero_b_active_place_finish(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -612,7 +612,7 @@ void hero_b_active_place_finish(struct HeroBody *body)
 
 void hero_a_place_jump_arc(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;

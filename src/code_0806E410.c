@@ -145,7 +145,7 @@ struct ActorCands
     u8 *cand74;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 
 ASM_FUNC("asm/code_0806E410/obj_pose_release_partner.s", void obj_pose_release_partner(struct ActorObj *obj))
 

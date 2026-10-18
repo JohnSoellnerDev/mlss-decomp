@@ -146,8 +146,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -179,8 +179,8 @@ void hero_pair_confirm_85ec(struct HeroBody *body);
 
 void hero_b_settle_on_partner(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 lift;
 
@@ -223,8 +223,8 @@ void hero_b_settle_on_partner(struct HeroBody *body)
 
 void hero_a_follow_b(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
 
     step_motion(b);
     a->posX = b->posX;
@@ -249,7 +249,7 @@ void hero_a_follow_b(struct HeroBody *body)
 
 void hero_pair_link_fx(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *a = &hero_a->body;
     struct HeroBody *b = &world->heroB->body;
@@ -278,7 +278,7 @@ void hero_pair_link_fx(struct HeroBody *body)
             z = (partner->targetZ / 0x100) + partner->ofsZ;
             effect_spawn_at(0x2E47, x, y, z, partner);
         }
-        ((struct WorldFlagBits *)&gUnk_03000FD8->flags)->bit6 = 0;
+        ((struct WorldFlagBits *)&gWorld->flags)->bit6 = 0;
         set_slot_value(0x2B, -1);
         if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
         {
@@ -309,8 +309,8 @@ void hero_pair_link_fx(struct HeroBody *body)
 
 void hero_pair_settle_b(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 lift;
     u8 mode;
@@ -320,8 +320,8 @@ void hero_pair_settle_b(struct HeroBody *body)
         a->state = hero_a_pick_partner;
     }
     set_slot_value(0x2B, -1);
-    mode = gUnk_03000FD8->modeByte;
-    gUnk_03000FD8->modeByte = mode | 0x0C;
+    mode = gWorld->modeByte;
+    gWorld->modeByte = mode | 0x0C;
     if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
     {
         sprite_set_action(b, 0xC, 0x204D, 0);

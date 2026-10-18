@@ -153,9 +153,9 @@ struct World
     void *focus24C;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);

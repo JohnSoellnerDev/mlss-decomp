@@ -93,7 +93,7 @@ struct T3dModel
 
 extern u16 gUnk_02000050[];
 extern u16 gUnk_02000054;
-extern u16 gUnk_0300034C[];
+extern u16 gSys[];
 void fade_end(struct Fade *obj);
 extern const u8 gAppearCallback10Class[];
 extern const u8 gAppearCallback40Class[];

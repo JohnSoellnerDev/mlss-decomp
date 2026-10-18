@@ -188,8 +188,8 @@ struct World
     struct ActionEntry *curEntry;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 extern const u16 gEffectCodeTable[];
 
 void state_stack_advance_progress(struct HeroBody *body);
@@ -240,7 +240,7 @@ void enter_finish_rebuild(struct HeroBody *body);
 u32 search_frame_pairs(struct HeroBody *body, struct HeroBody *partner);
 void sprite_objects_obj_show_at(struct HeroBody *body, struct HeroBody *partner, u32 arg);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 seed);
+u32 rand_below(u32 range, u32 seed);
 s32 contact_check(struct HeroBody *body, struct HeroBody *other);
 u32 partner_link_hook(struct HeroBody *body, u32 a, u32 b);
 
@@ -265,26 +265,26 @@ void pick_random_partner(struct HeroBody *body)
 
     for (slot = 0; slot < 6; slot += 2)
     {
-        candidate = &gUnk_03000FD8->list[slot]->body;
+        candidate = &gWorld->list[slot]->body;
         if ((candidate->mode & 6) == 4 && candidate != body)
         {
             if (candidate->posZ < ((s32)body->candidateLimit << 8))
             {
                 count++;
-                if (sub_081DE850(count, mt19937_next()) == 0)
+                if (rand_below(count, mt19937_next()) == 0)
                 {
                     partner = candidate;
                 }
             }
         }
         index = slot + 1;
-        candidate = &gUnk_03000FD8->list[index]->body;
+        candidate = &gWorld->list[index]->body;
         if ((candidate->mode & 6) == 4 && candidate != body)
         {
             if (candidate->posZ < ((s32)body->candidateLimit << 8))
             {
                 count++;
-                if (sub_081DE850(count, mt19937_next()) == 0)
+                if (rand_below(count, mt19937_next()) == 0)
                 {
                     partner = candidate;
                 }
@@ -317,7 +317,7 @@ void partner_move_a(struct HeroBody *body)
     struct HeroBody *hero_a;
     struct HeroBody *hero_b;
     struct HeroBody *partner;
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     s32 y;
     u16 saved;
 
@@ -335,7 +335,7 @@ void partner_move_a(struct HeroBody *body)
     if (y + body->edgeTop <= 0 || y + body->edgeBottom > 0xEF)
     {
         body->state = 0;
-        ((struct WorldFlagBits *)&gUnk_03000FD8->flags)->moving = 0;
+        ((struct WorldFlagBits *)&gWorld->flags)->moving = 0;
         return;
     }
     if (search_frame_pairs(body, partner) == 0)
@@ -395,7 +395,7 @@ void move_until_offscreen(struct HeroBody *body)
     if (y + body->edgeTop <= 0 || y + body->edgeBottom > 0xEF)
     {
         body->state = 0;
-        ((struct WorldFlagBits *)&gUnk_03000FD8->flags)->moving = 0;
+        ((struct WorldFlagBits *)&gWorld->flags)->moving = 0;
     }
 }
 
@@ -472,7 +472,7 @@ void noop_after_visible_action_9(struct HeroBody *body)
 
 u32 pair_begin(struct HeroBody *body)
 {
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
     struct HeroData *data = body->data;
     struct HeroBody *partner;
     struct HeroBody *body_a;
@@ -482,8 +482,8 @@ u32 pair_begin(struct HeroBody *body)
 
     entry = *party - (data->slot * 0x3C + 0x3C);
     data->slotValue = *(u16 *)(entry + 0x2A);
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     partner = body->partner;
     body_b->partner = partner;
     body_a->partner = partner;
@@ -518,14 +518,14 @@ void hold_roll_handle(struct HeroBody *body)
 
 void move_progress_check(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
     struct ActionEntry *entry;
     s32 action;
 
     state_stack_advance_progress(body);
     if (body->flags79 & 0x20)
     {
-        entry = gUnk_03000FD8->curEntry;
+        entry = gWorld->curEntry;
         if (entry->type == 3)
         {
             hero_start_move(body);
@@ -621,7 +621,7 @@ void partner_chase_pair_step(struct HeroBody *body)
 
 NONMATCH("asm/code_0809583C/partner_step_wait.s", void partner_step_wait(struct HeroBody *body))
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     struct HeroBody *hero_a;
     struct HeroBody *partner;
     s32 action;
@@ -665,7 +665,7 @@ ASM_FUNC("asm/code_0809583C/state_partner_action8.s", void state_partner_action8
 
 void hero_start_move(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
     s32 action;
 
@@ -688,7 +688,7 @@ void hero_start_move(struct HeroBody *body)
 
 void step_motion_arrive(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
     s32 action;
 
@@ -715,7 +715,7 @@ void step_motion_arrive(struct HeroBody *body)
 
 void child_visible_check(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
     s32 action;
 
     if (body->child->sprite->flags & 8)
@@ -741,7 +741,7 @@ void child_visible_check(struct HeroBody *body)
 
 void pose_switch(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
     s32 action;
 
     if (body->sprite->flags & 8)
@@ -769,7 +769,7 @@ void pose_switch(struct HeroBody *body)
 
 void child_launch(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *hero_a = &world->heroA->body;
     struct HeroBody *partner = body->partner;
     s32 action;

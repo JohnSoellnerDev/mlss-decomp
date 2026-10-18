@@ -179,13 +179,13 @@ struct SpriteObj
     u16 stepZ;
 };
 
-extern struct TaskState *gUnk_03000FD8;
+extern struct TaskState *gWorld;
 void sprite_update_parts(struct TaskNode *task);
 u32 lookup_or_alloc_13b4(u32 a, u16 id, s32 b, u32 c);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void task_begin_obj(struct TaskNode *task);
 void obj_release(void *obj);
 void task_wait_idle(struct TaskNode *task);
@@ -225,14 +225,14 @@ void *create_map_object(void *mem, u32 prio, const void *tag, u32 cfg, u32 a, u3
 extern const u8 gMapObjTag[];
 void task_init_map(struct TaskNode *task);
 
-NONMATCH("asm/code_08080580/unknown_code_08080580.s", u32 unknown_code_08080580(u32 mode))
+NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
 {
     u32 count;
     struct SpritePart **entry;
     s32 k;
 
     count = 0;
-    entry = gUnk_03000FD8->parts;
+    entry = gWorld->parts;
     for (k = 7; k >= 0; k -= 4)
     {
         if (((((u32)entry[0]->mode << 29) >> 30) == mode) && (entry[0]->flags110 & 0x20) == 0)
@@ -340,7 +340,7 @@ void task_spawn_wait_idle(struct SpriteObj *obj)
     void *fn;
 
     *flags |= 0x10;
-    st = gUnk_03000FD8;
+    st = gWorld;
     fn = (void *)task_wait_idle;
     node = st->freeList;
     st->freeList = node->next;
@@ -384,7 +384,7 @@ void task_wait_idle(struct TaskNode *task)
 
 struct TaskNode *task_push_list_50(void *next, void *obj)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -398,7 +398,7 @@ struct TaskNode *task_push_list_50(void *next, void *obj)
 
 struct TaskNode *task_create_list_4c(void *next, void *obj)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -412,7 +412,7 @@ struct TaskNode *task_create_list_4c(void *next, void *obj)
 
 struct TaskNode *task_create_list_48(void *next, void *obj)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -426,7 +426,7 @@ struct TaskNode *task_create_list_48(void *next, void *obj)
 
 struct TaskNode *task_create_list_44(void *next)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -439,7 +439,7 @@ struct TaskNode *task_create_list_44(void *next)
 
 struct TaskNode *task_create_list_40(void *next)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -452,7 +452,7 @@ struct TaskNode *task_create_list_40(void *next)
 
 struct TaskNode *list_add_task(struct TaskNode **list, void *next)
 {
-    struct TaskState *st = gUnk_03000FD8;
+    struct TaskState *st = gWorld;
     struct TaskNode *node = st->freeList;
 
     st->freeList = node->next;
@@ -505,7 +505,7 @@ void run_task_list(struct TaskNode **list)
                 prev->next = next;
             }
             {
-                struct TaskState *st = gUnk_03000FD8;
+                struct TaskState *st = gWorld;
 
                 node->next = st->freeList;
                 st->freeList = node;
@@ -605,7 +605,7 @@ void task_slide_step(struct TaskNode *task)
     data->posB += data->step;
     oam_write_tiles(task->obj, data->posA / 0x100, data->posB / 0x100, 0xE, 0);
     {
-        u8 *flagsB = &gUnk_03000FD8->flagsB;
+        u8 *flagsB = &gWorld->flagsB;
 
         *flagsB |= 2;
     }
@@ -640,7 +640,7 @@ void task_slide_back(struct TaskNode *task)
 
     oam_write_tiles(task->obj, data->posA / 0x100, data->posB / 0x100, 0xE, 0);
     {
-        u8 *flagsB = &gUnk_03000FD8->flagsB;
+        u8 *flagsB = &gWorld->flagsB;
 
         *flagsB |= 2;
     }
@@ -667,16 +667,16 @@ void task_wait_poll_flag(struct TaskNode *task)
         void *obj;
         u8 mode;
 
-        reset_display((u32)gUnk_03000FD8->unk250);
+        reset_display((u32)gWorld->unk250);
         clear_obj_bg_vram();
-        if (gUnk_03000FD8->unk24C != 0)
+        if (gWorld->unk24C != 0)
         {
-            destroy_map_obj(gUnk_03000FD8->unk24C, 3);
+            destroy_map_obj(gWorld->unk24C, 3);
         }
-        slot = &gUnk_03000FD8->unk24C;
+        slot = &gWorld->unk24C;
         mem = heap_alloc2(0x77C, 0, gMapObjTag, 0);
-        mode = gUnk_03000FD8->unk2B8;
-        obj = create_map_object(mem, 9, gMapObjTag, mode, 0x10, 0x50, gUnk_03000FD8->unk248);
+        mode = gWorld->unk2B8;
+        obj = create_map_object(mem, 9, gMapObjTag, mode, 0x10, 0x50, gWorld->unk248);
         *slot = obj;
         task->fn = (void *)task_init_map;
     }
@@ -707,9 +707,9 @@ void sprite_load_active_tables(void)
     load_table_entries(0x17B);
     for (i = 0; i <= 7; i += 2)
     {
-        if (gUnk_03000FD8->unk1F4 != 0 && i >= 0 && i <= 5)
+        if (gWorld->unk1F4 != 0 && i >= 0 && i <= 5)
         {
-            struct SpritePart *part = gUnk_03000FD8->parts[i];
+            struct SpritePart *part = gWorld->parts[i];
             u8 m = part->mode & 6;
 
             if (m == 4 || m == 2)
@@ -723,9 +723,9 @@ void sprite_load_active_tables(void)
         {
             s32 j = i + 1;
 
-            if (gUnk_03000FD8->unk1F4 != 0 && j >= 0 && j <= 5)
+            if (gWorld->unk1F4 != 0 && j >= 0 && j <= 5)
             {
-                struct SpritePart *part = gUnk_03000FD8->parts[j];
+                struct SpritePart *part = gWorld->parts[j];
                 u8 m = part->mode & 6;
 
                 if (m == 4 || m == 2)
@@ -747,7 +747,7 @@ NONMATCH("asm/code_08080580/sprite_sum_parts.s", void sprite_sum_parts(struct Sp
     s32 top = 0;
     s32 count = 0;
     u8 **routines = &gMathRoutines;
-    struct SpritePart **entry = gUnk_03000FD8->parts;
+    struct SpritePart **entry = gWorld->parts;
     s32 k;
 
     for (k = 5; k >= 0; k -= 3)

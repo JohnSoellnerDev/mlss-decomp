@@ -154,8 +154,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -186,8 +186,8 @@ void set_motion_offsets(struct HeroBody *body, u32 offsets);
 
 void hero_a_child_place_on_b(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     u16 height;
     struct HeroBody *child;
 
@@ -210,8 +210,8 @@ void hero_a_child_place_on_b(struct HeroBody *body)
 
 void hero_a_child_fade_b_step30(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     step_motion(body_a->child);
     if ((body_a->child->flags & 0x20) != 0)

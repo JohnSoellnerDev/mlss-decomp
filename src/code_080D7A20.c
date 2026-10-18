@@ -139,9 +139,9 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 extern const u8 gRoom149Layer1[];
 
 void hero_b_start_step_14th(struct HeroBody *body);
@@ -177,7 +177,7 @@ void hero_pair_active_place_a_finish(struct HeroBody *body);
 
 void hero_b_active_place_at_partner(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
 
     state_stack_advance_progress(body_b);
@@ -206,7 +206,7 @@ void hero_b_active_place_at_partner(struct HeroBody *body)
 
 void hero_b_link_partner_child_fx(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 x;
     s32 y;
@@ -245,7 +245,7 @@ void hero_b_link_partner_child_fx(struct HeroBody *body)
 
 void hero_b_sprite_active_start_step16(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -261,9 +261,9 @@ void hero_b_sprite_active_start_step16(struct HeroBody *body)
 
 void hero_pair_active_place_a_finish(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
 
@@ -339,7 +339,7 @@ void hero_pair_active_place_a_finish(struct HeroBody *body)
 
 void hero_pair_spawn_fx_anim_next(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -365,7 +365,7 @@ void hero_pair_spawn_fx_anim_next(struct HeroBody *body)
 
 void hero_b_sprite_idle_start_step10(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -389,7 +389,7 @@ void hero_b_sprite_idle_start_step10(struct HeroBody *body)
 
 void hero_b_active_partner_anim_place(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 x;
     s32 y;

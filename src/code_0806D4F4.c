@@ -145,7 +145,7 @@ struct ActorCands
     u8 *cand74;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 
 void obj_timer_exit_left(struct ActorObj *obj)
 {

@@ -28,7 +28,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 
 struct Flags77Bits
 {
@@ -149,8 +149,8 @@ void count_dx_and_notify(struct ActorObj *obj);
 u32 lookup_part_b_then_step(struct ActorObj *obj);
 void remove_child_and_move(struct ActorObj *obj);
 void timer_then_anim5(struct ActorObj *obj);
-s32 unknown_part_steps_08072d24(struct ActorObj *obj);
-s32 sub_08072D30(struct ActorObj *obj);
+s32 arm_slot_anim_2f_then_follow(struct ActorObj *obj);
+s32 arm_slot_anim_2f_then_step_2e0d(struct ActorObj *obj);
 void slot_anim_2f_then_follow(struct ActorObj *obj);
 void slot_anim_2f_then_step_2e0d(struct ActorObj *obj);
 void slot_follow_move(struct ActorObj *obj);

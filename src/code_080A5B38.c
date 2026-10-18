@@ -28,7 +28,7 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
 // Soft-float constants as the helpers receive them: the high word in the first register.
 #define F64(hi, lo) ((((u64)(lo)) << 32) | (hi))
@@ -128,8 +128,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 extern const u8 gPartShapeRow02[];
 
 void state_stack_advance_progress(struct HeroBody *body);
@@ -155,7 +155,7 @@ void hero_a_release_node(struct HeroBody *body);
 void sprite_entry_update(struct HeroNode *node);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u64 __floatsidf(s32 n);
 u64 __adddf3(u64 a, u64 b);
 u64 __muldf3(u64 a, u64 b);
@@ -172,7 +172,7 @@ void obj_release_node(void *node);
 
 void hero_a_release_node(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
 
     set_slot_value(0xAD, -1);
@@ -194,7 +194,7 @@ void hero_a_release_node(struct HeroBody *body)
 
 void hero_a_begin_step_sprite_15_b(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -210,7 +210,7 @@ void hero_a_begin_step_sprite_15_b(struct HeroBody *body)
 
 void hero_a_prepare_step_b(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
 
     state_stack_advance_progress(a);
@@ -234,7 +234,7 @@ void hero_a_prepare_step_b(struct HeroBody *body)
 
 void hero_a_advance_place_pair_5d20(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero = world->heroA;
     struct HeroBody *a = &hero->body;
     struct HeroBody *b = &world->heroB->body;
@@ -332,7 +332,7 @@ void hero_a_advance_place_pair_5d20(struct HeroBody *body)
 
 void hero_a_drop_node_5f18(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
 
     set_slot_value(0x9C, -1);
@@ -354,7 +354,7 @@ void hero_a_drop_node_5f18(struct HeroBody *body)
 
 void hero_a_sprite_step_18_5fcc(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -370,7 +370,7 @@ void hero_a_sprite_step_18_5fcc(struct HeroBody *body)
 
 void hero_a_ready_step_6044(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
 
     state_stack_advance_progress(a);
@@ -394,7 +394,7 @@ void hero_a_ready_step_6044(struct HeroBody *body)
 
 void hero_a_advance_place_pair_6100(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero = world->heroA;
     struct HeroBody *a = &hero->body;
     struct HeroBody *b = &world->heroB->body;
@@ -492,7 +492,7 @@ void hero_a_advance_place_pair_6100(struct HeroBody *body)
 
 void hero_a_link_partner_62f8(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *a = &gWorld->heroA->body;
     struct HeroBody *partner;
 
     partner = body->partner;
@@ -509,7 +509,7 @@ void hero_a_link_partner_62f8(struct HeroBody *body)
 
 void hero_a_link_partner_6364(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *a = &gWorld->heroA->body;
     struct HeroBody *partner;
 
     partner = body->partner;
@@ -534,13 +534,13 @@ s32 hero_pair_pose_start_63d0(struct HeroBody *body)
     s32 pose;
     u8 *record;
     struct World *world;
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
 
     data = body->data;
     pose = data->pose;
     record = *party - (pose * 60 + 0x3C);
     data->poseValue = *(u16 *)(record + 0x2A);
-    world = gUnk_03000FD8;
+    world = gWorld;
     body_a = &world->heroA->body;
     body_b = &world->heroB->body;
     partner = body->partner;
@@ -564,7 +564,7 @@ s32 hero_pair_pose_start_63d0(struct HeroBody *body)
 
 void hero_b_pose_to_partner_rand_6464(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *a = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 tx;
     s32 ty;
@@ -580,13 +580,13 @@ void hero_b_pose_to_partner_rand_6464(struct HeroBody *body)
         s32 n;
         double f;
 
-        n = sub_081DE850(4, mt19937_next());
+        n = rand_below(4, mt19937_next());
         f = n;
         if (n < 0)
             f += 4294967296.0;
         f = (f * 0.1 + 0.4) * 256.0;
         body->frame = (s32)f;
-        n = sub_081DE850(4, mt19937_next());
+        n = rand_below(4, mt19937_next());
         sprite = body->sprite;
         f = n;
         if (n < 0)
@@ -600,13 +600,13 @@ void hero_b_pose_to_partner_rand_6464(struct HeroBody *body)
         s32 n;
         double f;
 
-        n = sub_081DE850(4, mt19937_next());
+        n = rand_below(4, mt19937_next());
         f = n;
         if (n < 0)
             f += 4294967296.0;
         f = (f * 0.1 + 1.5) * 256.0;
         body->frame = (s32)f;
-        n = sub_081DE850(4, mt19937_next());
+        n = rand_below(4, mt19937_next());
         sprite = body->sprite;
         f = n;
         if (n < 0)
@@ -647,7 +647,7 @@ void hero_b_pose_to_partner_rand_6464(struct HeroBody *body)
 
 void hero_b_spawn_node_66c8(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
 
     step_motion(b);

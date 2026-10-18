@@ -151,9 +151,9 @@ struct SceneObj
     void *sub320;
 };
 
-extern u8 gUnk_0300034C[];
-extern void *gUnk_03000D44;
-extern u8 gUnk_03000C24;
+extern u8 gSys[];
+extern void *gCurObj;
+extern u8 gFlowState;
 extern u32 gUnk_03000C78;
 extern const u8 gTagSign[];
 extern const u8 gTagOver[];
@@ -224,9 +224,9 @@ void object_start_kind(struct SceneObj *obj)
 {
     u8 *base;
 
-    set_flag_2_2(gUnk_03000D44);
+    set_flag_2_2(gCurObj);
     serial_link_disable();
-    base = gUnk_0300034C;
+    base = gSys;
     obj->timer1FA = *(u16 *)(base + 0x89C);
     set_slot_fields(0, 0x80, 8);
     {
@@ -240,7 +240,7 @@ void object_start_kind(struct SceneObj *obj)
     set_flag_2_2(obj->sub304);
     set_irq_callback(2, 0);
     obj->state = 2;
-    gUnk_03000C24 = 2;
+    gFlowState = 2;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     create_menu_object((s8)obj->state12C >> 2, 0);
@@ -250,9 +250,9 @@ void object_start_flag(struct SceneObj *obj)
 {
     u8 *base;
 
-    set_flag_2_2(gUnk_03000D44);
+    set_flag_2_2(gCurObj);
     serial_link_disable();
-    base = gUnk_0300034C;
+    base = gSys;
     obj->timer1FA = *(u16 *)(base + 0x89C);
     set_slot_fields(0, 0x80, 8);
     {
@@ -266,7 +266,7 @@ void object_start_flag(struct SceneObj *obj)
     set_flag_2_2(obj->sub304);
     set_irq_callback(2, 0);
     obj->state = 2;
-    gUnk_03000C24 = 2;
+    gFlowState = 2;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     create_menu_object(-1, 1);
@@ -278,7 +278,7 @@ void object_start_sign(struct SceneObj *obj)
     u8 *base;
 
     serial_link_disable();
-    base = gUnk_0300034C;
+    base = gSys;
     obj->timer1FA = *(u16 *)(base + 0x89C);
     set_slot_fields(0, 0x80, 8);
     {
@@ -295,7 +295,7 @@ void object_start_sign(struct SceneObj *obj)
     }
     set_irq_callback(2, 0);
     obj->state = 2;
-    gUnk_03000C24 = 2;
+    gFlowState = 2;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     block = heap_alloc2(0x4C, 0, gTagSign, 0);
@@ -308,7 +308,7 @@ void obj_start_scene_mode2(struct SceneObj *obj)
     u8 *base;
 
     serial_link_disable();
-    base = gUnk_0300034C;
+    base = gSys;
     obj->timer1FA = *(u16 *)(base + 0x89C);
     set_slot_fields(0, 0x80, 8);
     {
@@ -325,7 +325,7 @@ void obj_start_scene_mode2(struct SceneObj *obj)
     }
     set_irq_callback(2, 0);
     obj->state = 2;
-    gUnk_03000C24 = 2;
+    gFlowState = 2;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     f = obj->flags12D;

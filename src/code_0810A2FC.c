@@ -157,9 +157,9 @@ struct World
     u16 scroll316;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gWorkBuf;
-extern struct OamList *gUnk_03000D74;
+extern struct OamList *gModelCtx;
 extern u8 gOamTileTable[];
 extern u8 gSlotTableX[];
 extern u8 gSlotTableZ[];
@@ -195,7 +195,7 @@ struct PadState
     u16 held;
 };
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 
 NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_slot(struct Owner *owner))
 {
@@ -205,13 +205,13 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
     s32 counter;
 
     status_slots_update(owner);
-    world = gUnk_03000FD8;
+    world = gWorld;
     counter = 0x400 + world->counter314;
     world->counter314 = counter;
     if ((s32)(counter << 16) > 0x1FFF0000)
     {
         world->counter314 = 0x2000;
-        slot = gUnk_03000FD8->slots[gUnk_03000FD8->statusObj->index];
+        slot = gWorld->slots[gWorld->statusObj->index];
         if (slot->owner != 0)
         {
             next = status_wait_slot;
@@ -355,13 +355,13 @@ s32 status_cursor_step(u32 cursor, u32 count)
     s32 back;
 
     sel = cursor & 0x7F;
-    if ((gUnk_03000FD8->lock & 0xE0) == 0)
+    if ((gWorld->lock & 0xE0) == 0)
     {
-        if (gUnk_03000FD8->slots[sel] == 0 || gUnk_03000FD8->slots[sel]->owner == 0)
+        if (gWorld->slots[sel] == 0 || gWorld->slots[sel]->owner == 0)
         {
-            if (gUnk_03000FD8->active->action48 == 0)
+            if (gWorld->active->action48 == 0)
             {
-                if ((((struct PadState *)gUnk_0300034C)->held & 0x20) != 0 && count != 1)
+                if ((((struct PadState *)gSys)->held & 0x20) != 0 && count != 1)
                 {
                     back = count - 1;
                     if (sel > 0)
@@ -369,20 +369,20 @@ s32 status_cursor_step(u32 cursor, u32 count)
                         back = sel - 1;
                     }
                     sel = back;
-                    gUnk_03000FD8->scroll316 -= 1;
+                    gWorld->scroll316 -= 1;
                     set_slot_value(0x78, -1);
                 }
-                if ((((struct PadState *)gUnk_0300034C)->held & 0x10) != 0 && count != 1)
+                if ((((struct PadState *)gSys)->held & 0x10) != 0 && count != 1)
                 {
                     back = count - 1;
                     sel = (sel < back) ? sel + 1 : 0;
-                    gUnk_03000FD8->scroll316 += 1;
+                    gWorld->scroll316 += 1;
                     set_slot_value(0x78, -1);
                 }
             }
         }
     }
-    gUnk_03000FD8->statusObj->index = sel;
+    gWorld->statusObj->index = sel;
     return sel;
 }
 
@@ -398,7 +398,7 @@ s32 slot_marker_step(u32 slot)
     s32 limit;
     s32 speed;
 
-    world = gUnk_03000FD8;
+    world = gWorld;
     marker = world->slots[slot];
     if ((world->lock & 0xE0) != 0)
     {
@@ -538,18 +538,18 @@ void tile_upload_step(u16 block)
     struct World *world;
     u8 state;
 
-    world = gUnk_03000FD8;
+    world = gWorld;
     state = world->uploadState;
     if (state == 0)
     {
         dma_copy_or_queue(gWorkBuf + ((block << 9) + 0x4E70), (void *)0x060113A0, 0x100, 0x20, 0);
-        gUnk_03000FD8->uploadState = 0x26;
+        gWorld->uploadState = 0x26;
     }
     else if (state == 0x13)
     {
         dma_copy_or_queue(gWorkBuf + ((((block << 4) + 8) << 5) + 0x4E70), (void *)0x060113A0, 0x100, 0x20, 0);
     }
-    gUnk_03000FD8->uploadState = gUnk_03000FD8->uploadState - 1;
+    gWorld->uploadState = gWorld->uploadState - 1;
 }
 
 void start_voice_message(struct Owner *owner)
@@ -561,11 +561,11 @@ void start_voice_message(struct Owner *owner)
 
     owner->startY = 0x40;
     owner->timer = 0;
-    set_tile_slot(gUnk_03000FD8->slot250, 4, 0, 0xf, 0x11, 0x11, 2);
-    draw_slot_frame(gUnk_03000FD8->slot250, 5, 4, 4);
-    fill_slot(gUnk_03000FD8->slot250, 4, 0x90);
-    block = slot_block_ptr(gUnk_03000FD8->slot250, 4);
-    voice = &gUnk_03000FD8->voice29C;
+    set_tile_slot(gWorld->slot250, 4, 0, 0xf, 0x11, 0x11, 2);
+    draw_slot_frame(gWorld->slot250, 5, 4, 4);
+    fill_slot(gWorld->slot250, 4, 0x90);
+    block = slot_block_ptr(gWorld->slot250, 4);
+    voice = &gWorld->voice29C;
     voice_setup_params(voice, block, 0x11, 0, 0, 0, 1, 2, 1, 3);
     text = next_text_id();
     owner->flag18 = measure_text(3, (void *)text, 0) < 0x68;
@@ -580,7 +580,7 @@ void start_voice_message(struct Owner *owner)
             break;
         sVar = track_run(voice);
     } while (sVar != 0);
-    *(s8 *)&gUnk_03000FD8->flags0B &= -0x41;
+    *(s8 *)&gWorld->flags0B &= -0x41;
     owner->state = scroll_text_step;
     owner->timer = 0x5a;
 }
@@ -592,7 +592,7 @@ void set_world_effect(s32 kind)
     struct World *world;
     struct WorldEffect *obj;
 
-    obj = gUnk_03000FD8->effect;
+    obj = gWorld->effect;
     if (obj != 0)
     {
         obj->fn = draw_world_effect_rows;
@@ -602,7 +602,7 @@ void set_world_effect(s32 kind)
         obj = task_create_list_48(draw_world_effect_rows, 0);
         obj->kind = -1;
     }
-    world = gUnk_03000FD8;
+    world = gWorld;
     world->effect = obj;
     obj->unk14 = 0;
     obj->unk10 = 0;
@@ -624,7 +624,7 @@ void set_world_effect(s32 kind)
     }
 }
 
-void unknown_thumb_0810ba66(void)
+void update_world_effect_windows(void)
 {
     struct WorldEffect *effect;
     vu16 *win;
@@ -634,7 +634,7 @@ void unknown_thumb_0810ba66(void)
     u32 x;
     u32 y;
 
-    effect = gUnk_03000FD8->effect;
+    effect = gWorld->effect;
     kind = effect->kind & 0xF;
     if (effect->unk14 <= 0x3F)
     {

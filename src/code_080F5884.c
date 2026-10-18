@@ -41,7 +41,7 @@ struct World
     u16 unk35E;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 struct SlotByteFD
 {
@@ -108,7 +108,7 @@ NONMATCH("asm/code_080F5884/cmd_slot_link_list.s", u32 cmd_slot_link_list(u32 un
     s32 f;
     s32 bit;
 
-    world = gUnk_03000FD8;
+    world = gWorld;
     entry = world->slots[*cmd++];
     obj = entry + 8;
     mode = *cmd++;
@@ -144,7 +144,7 @@ u32 slot_cmds_cmd_slot_set_motion(u32 unused0, u32 unused1, u32 *cmd)
     s32 mode;
 
     cursor = cmd;
-    world = gUnk_03000FD8;
+    world = gWorld;
     entry = world->slots[*cursor++];
     mode = *cursor++;
     switch (mode)
@@ -195,9 +195,9 @@ NONMATCH("asm/code_080F5884/cmd_set_scroll.s", u32 cmd_set_scroll(u32 unused0, u
     s32 bits;
     u16 *a0;
 
-    gUnk_03000FD8->unk354 = obj_last_x(gUnk_03000FD8->angle);
-    gUnk_03000FD8->unk356 = obj_last_y(gUnk_03000FD8->angle);
-    world = gUnk_03000FD8;
+    gWorld->unk354 = obj_last_x(gWorld->angle);
+    gWorld->unk356 = obj_last_y(gWorld->angle);
+    world = gWorld;
     cursor = cmd;
     world->unk358 = *cursor++;
     world->unk35A = *cursor++;
@@ -212,7 +212,7 @@ NONMATCH("asm/code_080F5884/cmd_set_scroll.s", u32 cmd_set_scroll(u32 unused0, u
         bits = flags << 4;
     }
     world->unk35C = bits;
-    gUnk_03000FD8->unk35E = 0;
+    gWorld->unk35E = 0;
     a0 = (u16 *)(obj + 0xA0);
     *a0 = *a0 | (cursor[1] ? 0x500 : 0x100);
     return 0;
@@ -228,30 +228,30 @@ u32 list_slot_ops_cmd_world_mode(u32 unused0, u32 unused1, s32 *cmd)
     switch (*cmd)
     {
     case 0:
-        gUnk_03000FD8->unk350 = gUnk_03000FD8->unk351 = 0x80;
+        gWorld->unk350 = gWorld->unk351 = 0x80;
         break;
     case 1:
-        state_status_release(gUnk_03000FD8->unk310);
+        state_status_release(gWorld->unk310);
         release_marker_object();
         spawn_linked_children();
         spawn_timer_child();
-        sprite_set_action(gUnk_03000FD8->curObj + 8, 0, 0, 0);
-        gUnk_03000FD8->unk346 = 0xFF;
-        a = gUnk_03000FD8->unk80;
+        sprite_set_action(gWorld->curObj + 8, 0, 0, 0);
+        gWorld->unk346 = 0xFF;
+        a = gWorld->unk80;
         if (a != 0 && *(s16 *)(a + 0xF6) != 0)
         {
             obj_track_target(a + 8);
         }
-        a = gUnk_03000FD8->unk84;
+        a = gWorld->unk84;
         if (a != 0 && *(s16 *)(a + 0xF6) != 0)
         {
             obj_track_target(a + 8);
         }
-        gUnk_03000FD8->callback24 = state_update_hero_markers;
+        gWorld->callback24 = state_update_hero_markers;
         break;
     case 2:
-        gUnk_03000FD8->unk2B4 = 0;
-        *((s8 *)gUnk_03000FD8 + 0x2C1) &= -9;
+        gWorld->unk2B4 = 0;
+        *((s8 *)gWorld + 0x2C1) &= -9;
         break;
     }
     return 1;

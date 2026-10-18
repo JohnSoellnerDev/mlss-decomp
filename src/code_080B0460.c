@@ -106,7 +106,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void set_slot_value(u32 id, s32 value);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -120,7 +120,7 @@ void hero_b_wait_ratio_then_fx(struct HeroBody *body);
 
 void hero_b_to_partner_fast(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct Hero *hero_b = world->heroB;
@@ -169,7 +169,7 @@ ASM_FUNC("asm/code_080B0460/hero_b_step_threshold_b05dc.s", void hero_b_step_thr
 
 void hero_b_take_target_pose(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 x;
     s32 y;
@@ -201,7 +201,7 @@ ASM_FUNC("asm/code_080B0460/hero_b_wait_ratio_then_fx.s", void hero_b_wait_ratio
 
 void pair_end_place_both_a(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct Hero *hero_b = world->heroB;

@@ -118,7 +118,7 @@ struct World
     void *focus;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void obj_release(void *obj);
 void release_object(void *obj);
@@ -201,7 +201,7 @@ void obj_list_push_default(struct ActorBody *obj);
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 aux);
 void draw_while_group_busy(struct ActorBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 
 u32 part_step_start_anim_by_hero(struct ActorBody *body)
 {
@@ -325,9 +325,9 @@ void start_anim10(struct ActorBody *body)
 
 void attach_to_heroes(struct ActorBody *body)
 {
-    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct Hero *heroA = gWorld->heroA;
     struct ActorBody *bodyA = &heroA->body;
-    struct Hero *heroB = gUnk_03000FD8->heroB;
+    struct Hero *heroB = gWorld->heroB;
     struct ActorBody *bodyB = &heroB->body;
     struct ActorBody *child;
     void (*fn)(struct ActorBody *body);
@@ -479,9 +479,9 @@ void start_wander_timers(struct ActorBody *body)
             body->handleB = 0;
             ((struct ActorFlagBits *)&body->flags)->active = 0;
         }
-        a = sub_081DE850(0x14, mt19937_next()) + 0x46;
-        b = sub_081DE850(a, mt19937_next());
-        body->timerA = ((sub_081DE850(1, mt19937_next()) + 3) << 8) | (a - b);
+        a = rand_below(0x14, mt19937_next()) + 0x46;
+        b = rand_below(a, mt19937_next());
+        body->timerA = ((rand_below(1, mt19937_next()) + 3) << 8) | (a - b);
         half = a / 2;
         temp = b - half;
         if (b < half)
@@ -489,8 +489,8 @@ void start_wander_timers(struct ActorBody *body)
             temp = b + half;
         }
         b = temp;
-        body->timerB = ((sub_081DE850(1, mt19937_next()) + 3) << 8) | (a - b);
-        body->timerC = sub_081DE850(0xF, mt19937_next()) + 0x23;
+        body->timerB = ((rand_below(1, mt19937_next()) + 3) << 8) | (a - b);
+        body->timerC = rand_below(0xF, mt19937_next()) + 0x23;
         body->state = wander_step;
     }
 }
@@ -505,8 +505,8 @@ void wander_step(struct ActorBody *body)
     s32 bump;
     u16 raw;
 
-    bodyA = &gUnk_03000FD8->heroA->body;
-    bodyB = &gUnk_03000FD8->heroB->body;
+    bodyA = &gWorld->heroA->body;
+    bodyB = &gWorld->heroB->body;
     state_stack_advance_progress(body);
     if (body->flags & 0x20)
     {
@@ -517,9 +517,9 @@ void wander_step(struct ActorBody *body)
         else if (body->timerA & 0xFF00)
         {
             body->timerA = body->timerA - 0x100;
-            bump = sub_081DE850(0x14, mt19937_next()) + 0x46;
+            bump = rand_below(0x14, mt19937_next()) + 0x46;
             body->timerA = bump + body->timerA;
-            bump = sub_081DE850(0xF, mt19937_next()) + 0x23;
+            bump = rand_below(0xF, mt19937_next()) + 0x23;
             body->timerC = bump + body->timerC;
             body->partner = bodyA;
             child = obj_spawn_linked(body, 0x40C4, 0);
@@ -534,9 +534,9 @@ void wander_step(struct ActorBody *body)
         else if (body->timerB & 0xFF00)
         {
             body->timerB = body->timerB - 0x100;
-            bump = sub_081DE850(0x14, mt19937_next()) + 0x46;
+            bump = rand_below(0x14, mt19937_next()) + 0x46;
             body->timerB = bump + body->timerB;
-            bump = sub_081DE850(0xF, mt19937_next()) + 0x23;
+            bump = rand_below(0xF, mt19937_next()) + 0x23;
             body->timerC = bump + body->timerC;
             body->partner = bodyB;
             child = obj_spawn_linked(body, 0x40C4, 0);
@@ -552,7 +552,7 @@ void wander_step(struct ActorBody *body)
         }
         else if (body->timerA != 0 && body->timerB != 0)
         {
-            bump = sub_081DE850(0xF, mt19937_next()) + 0x23;
+            bump = rand_below(0xF, mt19937_next()) + 0x23;
             body->timerC = bump + body->timerC;
             body->partner = 0;
             child = obj_spawn_linked(body, 0x40C4, 0);
@@ -574,7 +574,7 @@ void set_focus_pos_a(struct ActorBody *body)
     s32 v;
     s32 minusOne;
 
-    v = (s16)obj_last_x(gUnk_03000FD8->focus) * 0x100 + 0x10000;
+    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
     body->x = v;
     body->targetX = v;
     body->z = 0x7800;
@@ -582,8 +582,8 @@ void set_focus_pos_a(struct ActorBody *body)
     body->unk78 = (body->unk78 & 0x1F) | 0x20;
     if (body->data->effect != 0)
     {
-        x = (s16)obj_last_x(gUnk_03000FD8->focus) + 0xE0;
-        y = (s16)obj_last_y(gUnk_03000FD8->focus) + 0x5C;
+        x = (s16)obj_last_x(gWorld->focus) + 0xE0;
+        y = (s16)obj_last_y(gWorld->focus) + 0x5C;
         place_targets(body, x, y, 0x3C, -1);
         set_motion_start(body, 0x140);
     }

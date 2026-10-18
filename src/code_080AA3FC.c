@@ -146,8 +146,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);

@@ -107,7 +107,7 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gMathRoutines;
 extern const s32 gAimTargetX[];
 extern const s32 gAimTargetY[];

@@ -7,7 +7,7 @@ struct ListHeadX
     u32 head3C;
 };
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
@@ -220,7 +220,7 @@ void run_frame_hooks(void)
     struct ListHeadX *list;
     u32 old;
 
-    base = (u8 *)&gUnk_0300034C;
+    base = (u8 *)&gSys;
     oam_slot = (u32 *)(base + 0x880);
     old = *oam_slot;
     update_obj_list();
@@ -237,7 +237,7 @@ void obj_toggle_1c(struct MenuObj *obj)
     obj->unk1C ^= 1;
 }
 
-void unknown_thumb_08117742(struct MenuObj *obj, u32 kind)
+void screen_obj_release(struct MenuObj *obj, u32 kind)
 {
     obj->unk18 = gScreenObjClass;
     run_pending_obj_callbacks();
@@ -252,7 +252,7 @@ void unknown_thumb_08117742(struct MenuObj *obj, u32 kind)
     task_remove(obj, kind);
 }
 
-struct MenuObj *sub_0811777C(struct MenuObj *obj, u8 kind)
+struct MenuObj *screen_child_init(struct MenuObj *obj, u8 kind)
 {
     task_insert(obj, kind);
     obj->unk18 = gScreenChildClass;

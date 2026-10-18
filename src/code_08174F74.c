@@ -38,7 +38,7 @@ struct ModelCtx
     u32 model;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 
 u32 block_flag_byte(struct ObjRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
@@ -113,12 +113,12 @@ void obj_point_shrink180_4f74(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x180 - counter;
@@ -192,12 +192,12 @@ void obj_point_shrink180_5088(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x180 - counter;
@@ -271,12 +271,12 @@ void obj_point_shrink200_519c(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x200 - counter;
@@ -350,12 +350,12 @@ void obj_point_shrink200_52b0(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x200 - counter;
@@ -427,12 +427,12 @@ void obj_point_fixed_53c4(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
 }
 
@@ -501,12 +501,12 @@ void obj_point_shrink_wide_54b8(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x180 - counter;
@@ -584,12 +584,12 @@ void obj_point_shrink_5b20(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x100 - counter;
@@ -663,12 +663,12 @@ void obj_point_shrink140_5c34(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x140 - counter;
@@ -742,12 +742,12 @@ void obj_point_shrink180_5d48(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x180 - counter;
@@ -821,12 +821,12 @@ void obj_point_shrink1c0_5e5c(struct Point1Obj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter++;
     rec->unk4 = 0x1C0 - counter;

@@ -362,7 +362,7 @@ void obj_copy_pos_to_shadow(struct TweenObj *obj)
     }
 }
 
-u32 obj_is_idle_081642B0(struct TweenObj *obj)
+u32 obj_is_idle(struct TweenObj *obj)
 {
     u32 idle = 0;
     if (obj->unk24 == 0)

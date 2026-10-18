@@ -38,7 +38,7 @@ struct ModelCtx
     u32 model;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 
 u32 block_flag_byte(struct FallRecord *rec);
 void oam_list_rows_b(u32 model, u32 h);
@@ -113,12 +113,12 @@ void obj_fall_accel_fd84(struct FallObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     height += speed;
     speed += 0x80;
@@ -197,12 +197,12 @@ void obj_rec_x_drift_fe90(struct FallObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter += 8;
     rec->unkC = (obj->flags & 0x80) ? -counter << 8 : counter << 8;
@@ -279,12 +279,12 @@ void obj_fall_accel_ffc0(struct FallObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     height += speed;
     speed += 0x80;
@@ -361,12 +361,12 @@ void obj_fall_accel_00cc(struct FallObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     height += speed;
     speed += 0x80;
@@ -445,12 +445,12 @@ void obj_rec_x_drift_01d8(struct FallObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     counter += 8;
     rec->unkC = (obj->flags & 0x80) ? -counter << 8 : counter << 8;

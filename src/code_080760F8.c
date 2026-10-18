@@ -108,7 +108,7 @@ struct ActorCands
     u32 item;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 extern u32 gUnk_03000E3C;
 
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
@@ -392,11 +392,11 @@ void pose_action5_prep_then_effect(struct ActorObj *obj)
 
 void phase_wait_idle(struct ActorObj *obj)
 {
-    add_obj_target_offset(gUnk_03000FD8->item, 1, 0);
+    add_obj_target_offset(gWorld->item, 1, 0);
     obj->phase--;
     if (obj->phase <= 0)
     {
-        set_obj_target(gUnk_03000FD8->item, 0, 0);
+        set_obj_target(gWorld->item, 0, 0);
         obj->state = 0;
     }
 }

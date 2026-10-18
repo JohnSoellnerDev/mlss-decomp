@@ -145,9 +145,9 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u8 gRoom149Layer1[];
-extern struct KeyPad gUnk_0300034C;
+extern struct KeyPad gSys;
 
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -179,9 +179,9 @@ void resolve_contact_action(struct HeroBody *a, struct HeroBody *b, u32 c, u32 d
 
 void hero_b_link_partner_after_a(struct HeroBody *owner)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = owner->partner;
 
@@ -238,7 +238,7 @@ void hero_b_link_partner_after_a(struct HeroBody *owner)
 
 void hero_b_place_at_target_h(struct HeroBody *owner)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -270,9 +270,9 @@ void hero_b_place_at_target_h(struct HeroBody *owner)
 
 void hero_pair_place_both_finish_step(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     step_motion(body_b);

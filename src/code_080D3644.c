@@ -153,9 +153,9 @@ struct World
     void *focus24C;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -195,8 +195,8 @@ void hero_pair_place_both_finish_adv(struct HeroBody *body);
 
 void hero_b_finish_child_anim9(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -214,8 +214,8 @@ void hero_b_finish_child_anim9(struct HeroBody *body)
 
 void hero_b_finish_child_anim9_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -233,7 +233,7 @@ void hero_b_finish_child_anim9_alt(struct HeroBody *body)
 
 void hero_a_anim_reset_mirror(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
 
     step_motion(body_a);
@@ -258,11 +258,11 @@ u32 hero_pair_start_with_pose(struct HeroBody *body)
     struct HeroBody *partner;
     void *anim;
 
-    record = gUnk_03000FF4 - ((((body->data->poseIndex << 4) - body->data->poseIndex) << 2) + 0x3C);
+    record = gParty - ((((body->data->poseIndex << 4) - body->data->poseIndex) << 2) + 0x3C);
     data = body->data;
     data->poseValue = *(u16 *)(record + 0x2A);
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     partner = body->partner;
     body_b->partner = partner;
     body_a->partner = partner;
@@ -286,8 +286,8 @@ ASM_FUNC("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_plac
 
 void hero_b_step16_when_a_free(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_a = gWorld->heroA;
+    struct Hero *hero_b = gWorld->heroB;
 
     if (hero_a->body.state == 0)
     {
@@ -303,7 +303,7 @@ void hero_b_step16_when_a_free(struct HeroBody *body)
 
 void hero_b_spawn_child_chain(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *child;
 

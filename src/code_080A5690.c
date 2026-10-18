@@ -28,7 +28,7 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
 // Soft-float constants as the helpers receive them: the high word in the first register.
 #define F64(hi, lo) ((((u64)(lo)) << 32) | (hi))
@@ -128,8 +128,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 extern const u8 gPartShapeRow02[];
 
 void state_stack_advance_progress(struct HeroBody *body);
@@ -155,7 +155,7 @@ void hero_a_release_node(struct HeroBody *body);
 void sprite_entry_update(struct HeroNode *node);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u64 __floatsidf(s32 n);
 u64 __adddf3(u64 a, u64 b);
 u64 __muldf3(u64 a, u64 b);

@@ -116,7 +116,7 @@ struct Actor
 u8 enemy_partner_in_sensor(u8 *owner, struct Actor *ent);
 u8 step_pos_xy_c(struct Actor *ent);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void tick_store(void);
 void enemy_wander_random_edge(void);
 void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out);
@@ -242,7 +242,7 @@ void enemy_wait_then_wander(u8 *owner, struct Actor *ent, void **out)
     }
     {
         u32 rnd = mt19937_next();
-        s32 pick = sub_081DE850(4, rnd);
+        s32 pick = rand_below(4, rnd);
         ai->timerB = table[pick + 0x14];
     }
     out[0] = tick_store;
@@ -271,7 +271,7 @@ void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out)
         index = ((u32)owner->flags208 << 30) >> 31;
     }
     partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     *(u16 *)(ai + 0x178) = pick;
     ((struct Bits3 *)&ent->mode)->field0 = 1;
     ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x28];
@@ -309,7 +309,7 @@ NONMATCH("asm/code_08141008/enemy_collide_random_kick.s", void enemy_collide_ran
     void *partner;
     u8 index;
 
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     ((struct Bits3 *)&ent->mode)->field0 = 4;
     {
         struct Sprite *sprite = ent->sprite;
@@ -317,7 +317,7 @@ NONMATCH("asm/code_08141008/enemy_collide_random_kick.s", void enemy_collide_ran
         sprite->frame20 = entry[4];
         speed = entry[0];
     }
-    pick2 = sub_081DE850(2, mt19937_next());
+    pick2 = rand_below(2, mt19937_next());
     kick = table[pick2 + 0x18];
     if (find_active_entry(owner, &idx) != 0)
     {
@@ -376,7 +376,7 @@ void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **
         return;
     }
     {
-        s32 pick = sub_081DE850(4, mt19937_next());
+        s32 pick = rand_below(4, mt19937_next());
         ((struct Behavior *)ai)->timerB = table[pick + 0x14];
     }
     out[0] = tick_store;

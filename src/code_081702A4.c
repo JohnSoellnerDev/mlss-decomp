@@ -52,7 +52,7 @@ struct KeyPad
     u16 keys;
 };
 
-extern struct KeyPad gUnk_0300034C;
+extern struct KeyPad gSys;
 
 void obj_copy_mode_fields(struct SlotObj *obj);
 void *obj_init_big(void *obj, u32 first);
@@ -121,7 +121,7 @@ struct SlotObj *obj_init_sprite_pair(struct SlotObj *obj, void *list)
 NONMATCH("asm/code_081702A4/obj_update_sprite_mode.s", void obj_update_sprite_mode(struct SlotObj *obj, struct SlotOwner *owner, u32 valB, u32 valA))
 {
     obj_copy_mode_fields(obj);
-    if ((gUnk_0300034C.keys & 1) && !(owner->state & 0x80))
+    if ((gSys.keys & 1) && !(owner->state & 0x80))
         obj->mode = 5;
     else
         obj->mode = 0;
@@ -163,7 +163,7 @@ void slot_hud_obj_run_state(struct SlotObj *obj)
     switch (obj->state)
     {
     case 0:
-        ram = (u8 *)&gUnk_0300034C;
+        ram = (u8 *)&gSys;
         *(s32 *)(ram + 0x884) = -1;
         set_slot_target(0, 3, -1);
         obj->state = 1;

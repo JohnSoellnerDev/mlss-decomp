@@ -125,8 +125,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, const u8 *cb);
@@ -160,9 +160,9 @@ ASM_FUNC("asm/code_080A7580/hero_pair_place_then_a_clear.s", void hero_pair_plac
 
 void hero_a_step_16_b_idle_alt(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *a = &gWorld->heroA->body;
 
-    if (gUnk_03000FD8->heroB->body.state == 0)
+    if (gWorld->heroB->body.state == 0)
     {
         if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
         {
@@ -176,9 +176,9 @@ void hero_a_step_16_b_idle_alt(struct HeroBody *body)
 
 void hero_a_active_anims_pair(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *b = &gWorld->heroB->body;
 
     state_stack_advance_progress(a);
     if ((a->flags & 0x20) != 0)
@@ -208,9 +208,9 @@ void hero_a_sprite_place_at_b(struct HeroBody *body)
     s32 y;
     s32 z;
 
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    hero_b = gUnk_03000FD8->heroB;
+    hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     if ((body_a->sprite->flags & 8) != 0)
     {

@@ -4,7 +4,7 @@ extern u8 *gEffectState;
 extern u8 *gUnk_03000FC0;
 extern u8 *gUnk_03000FC8;
 extern u8 *gUnk_03000FCC;
-extern u8 *gUnk_03000D44;
+extern u8 *gCurObj;
 extern const u8 gEffectPoolTag[];
 extern u8 gTaskTemplate[];
 extern u8 gClaimKindTable[];
@@ -238,7 +238,7 @@ u8 *init_effect_state(u8 *owner, u32 flag, u32 kind, u32 arg)
     *(u32 *)(state + 0x56C) = gTextHalfPtrs[0];
     gUnk_03000FCC = 0;
     gUnk_03000FC8 = 0;
-    pool = gUnk_03000D44;
+    pool = gCurObj;
     pool[0x27] = 0;
     pool[0x26] = 0;
     return owner;
@@ -318,7 +318,7 @@ void free_effect_state(void)
 
 void init_effect_pool(u32 unused, u16 value, u8 flags)
 {
-    u8 *pool = gUnk_03000D44;
+    u8 *pool = gCurObj;
 
     *(u16 *)(pool + 0x20) = value;
     ((struct EffectPoolBits *)(pool + 0x28))->mode = flags;

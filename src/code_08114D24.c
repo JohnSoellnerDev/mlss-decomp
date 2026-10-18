@@ -135,7 +135,7 @@ struct Obj
     u16 timerLong;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u32 gSlotMotion[];
 extern const u16 gModeStartX[];
 extern const u16 gModeStartY[];
@@ -292,12 +292,12 @@ void world_links_idle_step(struct Obj *obj)
     struct Obj *a;
     struct Obj *b;
 
-    a = (struct Obj *)(gUnk_03000FD8->linkA + 8);
+    a = (struct Obj *)(gWorld->linkA + 8);
     if (a->scene->mode != 0)
     {
         return;
     }
-    b = (struct Obj *)(gUnk_03000FD8->linkB + 8);
+    b = (struct Obj *)(gWorld->linkB + 8);
     if (b->scene->mode != 0)
     {
         return;
@@ -325,7 +325,7 @@ u32 obj_attach_to_scene(struct Obj *obj)
 
     if (obj->unk9C != 0)
     {
-        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+        owner = (struct Owner *)((u8 *)gWorld->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
     }
     else
     {
@@ -333,7 +333,7 @@ u32 obj_attach_to_scene(struct Obj *obj)
     }
     obj->owner = owner;
     obj->callback = callback_noop_idle;
-    scene = gUnk_03000FD8->scene;
+    scene = gWorld->scene;
     scene->mode = 2;
     scene->entry = obj->owner;
     scene->copyA4 = obj->unk9C;
@@ -350,7 +350,7 @@ u32 scene_attach_mode1(struct Obj *obj)
 
     if (obj->unk9C != 0)
     {
-        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+        owner = (struct Owner *)((u8 *)gWorld->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
     }
     else
     {
@@ -358,7 +358,7 @@ u32 scene_attach_mode1(struct Obj *obj)
     }
     obj->owner = owner;
     obj->callback = callback_noop_idle;
-    scene = gUnk_03000FD8->scene;
+    scene = gWorld->scene;
     scene->mode = 1;
     scene->entry = obj->owner;
     scene->copyA4 = obj->unk9C;
@@ -375,7 +375,7 @@ u32 scene_attach_mode3(struct Obj *obj)
 
     if (obj->unk9C != 0)
     {
-        owner = (struct Owner *)((u8 *)gUnk_03000FD8->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
+        owner = (struct Owner *)((u8 *)gWorld->entries[*(s16 *)&obj->owner->target->slot + 2] + 8);
     }
     else
     {
@@ -383,7 +383,7 @@ u32 scene_attach_mode3(struct Obj *obj)
     }
     obj->owner = owner;
     obj->callback = callback_noop_idle;
-    scene = gUnk_03000FD8->scene;
+    scene = gWorld->scene;
     scene->mode = 3;
     scene->entry = obj->owner;
     scene->copyA4 = obj->unk9C;
@@ -419,7 +419,7 @@ void obj_close_if_free(struct Obj *obj)
 
     if (done == 0)
     {
-        ((u8 *)gUnk_03000FD8)[0xC] |= 0x80;
+        ((u8 *)gWorld)[0xC] |= 0x80;
         sprite_set_action(obj, -1, -1, 0);
         obj->sprite->unk20 = 0x10;
         obj->callback = NULL;

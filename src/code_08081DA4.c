@@ -135,7 +135,7 @@ struct SpriteState
     u8 unk349;
 };
 
-extern struct SpriteState *gUnk_03000FD8;
+extern struct SpriteState *gWorld;
 extern const u8 gMapObjDescriptor[];
 
 void map_loader_map_obj_destroy(struct MapObj *obj, u32 param);
@@ -185,7 +185,7 @@ u16 *load_table_value(s32 *count, u16 code);
 extern u16 gEffectCodeTable[];
 extern u16 gSpriteLoadList[];
 extern u8 *gWorkBuf;
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 
 ASM_FUNC("asm/code_08081DA4/move_slots_toward.s", void move_slots_toward(struct SpriteObj *obj))
 
@@ -206,7 +206,7 @@ void state_draw_pose(struct SpriteTask *task)
     s32 flag;
 
     anim_bit200_step(obj->head, 0xC8);
-    flag = gUnk_03000FD8->unk2BE & 1;
+    flag = gWorld->unk2BE & 1;
     code = 0x166;
     if (flag == 0)
     {
@@ -231,12 +231,12 @@ void state_start_motion(struct SpriteTask *task)
 {
     run_obj_entry((u32)task);
     task_create_list_4c(owner_wait_entry, 0);
-    gUnk_03000FD8->unk10 = 4;
+    gWorld->unk10 = 4;
     {
-        s32 flags = gUnk_0300034C[0x888];
+        s32 flags = gSys[0x888];
 
         flags |= 0x10;
-        gUnk_0300034C[0x888] = flags;
+        gSys[0x888] = flags;
     }
     task->next = state_timed_motion;
 }
@@ -245,12 +245,12 @@ void state_start_wait(struct SpriteTask *task)
 {
     run_obj_entry((u32)task);
     task_create_list_4c(owner_wait_entry, 0);
-    gUnk_03000FD8->unk10 = 4;
+    gWorld->unk10 = 4;
     {
-        s32 flags = gUnk_0300034C[0x888];
+        s32 flags = gSys[0x888];
 
         flags |= 0x10;
-        gUnk_0300034C[0x888] = flags;
+        gSys[0x888] = flags;
     }
     task->next = state_countdown_reset;
 }
@@ -428,7 +428,7 @@ void run_slot_script(s32 index)
 {
     struct SpritePart *part;
 
-    if (gUnk_03000FD8->list1F4 == 0)
+    if (gWorld->list1F4 == 0)
     {
         return;
     }
@@ -440,7 +440,7 @@ void run_slot_script(s32 index)
     {
         return;
     }
-    part = gUnk_03000FD8->part58[index];
+    part = gWorld->part58[index];
     if (((struct SpritePartBits *)&part->flags7E)->mode == 2
         || ((struct SpritePartBits *)&part->flags7E)->mode == 1)
     {
@@ -453,7 +453,7 @@ void run_slot_script(s32 index)
 
 void state_set_flags_and_run(struct SpriteTask *task)
 {
-    set_flags_2_3(gUnk_03000FD8->unk244);
+    set_flags_2_3(gWorld->unk244);
     task->next = world_begin_scene;
     task->next(task);
 }
@@ -470,10 +470,10 @@ void state_wait_idle(struct SpriteTask *task)
 
 void state_clear_mode_bit(struct SpriteTask *task)
 {
-    if (gUnk_03000FD8->unk2BF & 0x20)
+    if (gWorld->unk2BF & 0x20)
     {
-        ((struct SpriteModeBits *)&gUnk_03000FD8->unk2BF)->bit5 = 0;
-        set_flag_2_2(gUnk_03000FD8->unk244);
+        ((struct SpriteModeBits *)&gWorld->unk2BF)->bit5 = 0;
+        set_flag_2_2(gWorld->unk244);
         task->next = state_wait_idle;
         task->next(task);
     }
@@ -485,12 +485,12 @@ void state_spawn_object(struct SpriteTask *task)
 
     if (busy == 0)
     {
-        u8 *obj = gUnk_03000FD8->unk0;
+        u8 *obj = gWorld->unk0;
 
         release_block(*(void **)(*(u8 **)(obj + 0x48) + 8));
         obj = create_obj_de4(0, 0x2091, 0, -1, -1, -1, -1);
         obj_load_record(obj, 0, -1, 0, busy);
-        gUnk_03000FD8->unk0 = obj;
+        gWorld->unk0 = obj;
         task->next = task_free_blocks;
     }
 }
@@ -517,12 +517,12 @@ void state_start_idle(struct SpriteTask *task)
 {
     run_obj_entry((u32)task);
     task_create_list_4c(owner_wait_entry, 0);
-    gUnk_03000FD8->unk10 = 4;
+    gWorld->unk10 = 4;
     {
-        s32 flags = gUnk_0300034C[0x888];
+        s32 flags = gSys[0x888];
 
         flags |= 0x10;
-        gUnk_0300034C[0x888] = flags;
+        gSys[0x888] = flags;
     }
     task->next = state_countdown_next;
 }
@@ -552,12 +552,12 @@ void state_countdown_start(struct SpriteTask *task)
         task->timer = 1;
     run_obj_entry();
     task_create_list_4c(owner_wait_entry, 0);
-    gUnk_03000FD8->unk10 = 4;
+    gWorld->unk10 = 4;
     {
-        s32 flags = gUnk_0300034C[0x888];
+        s32 flags = gSys[0x888];
 
         flags |= 0x10;
-        gUnk_0300034C[0x888] = flags;
+        gSys[0x888] = flags;
     }
     task->next = state_move_then_check;
 }
@@ -663,9 +663,9 @@ void state_wait_mode_bit1(struct SpriteTask *task)
             move_slots_toward(obj);
         }
     }
-    else if (gUnk_03000FD8->unkB & 2)
+    else if (gWorld->unkB & 2)
     {
-        ((struct SpriteStateBits *)&gUnk_03000FD8->unkB)->bit1 = 0;
+        ((struct SpriteStateBits *)&gWorld->unkB)->bit1 = 0;
     }
     else
     {
@@ -748,7 +748,7 @@ void load_table_entries_typed(u32 code)
 
 void clear_list_entries(void)
 {
-    struct ListEntry *entry = gUnk_03000FD8->list1F4;
+    struct ListEntry *entry = gWorld->list1F4;
 
     if (entry != 0 && entry->unk0 != 0)
     {
@@ -773,7 +773,7 @@ s32 unknown_code_0808320c(void)
 s32 list_remove_key(u32 key)
 {
     struct ListEntry *entry;
-    struct ListEntry *head = gUnk_03000FD8->list1F4;
+    struct ListEntry *head = gWorld->list1F4;
 
     if (head != 0)
     {
@@ -804,7 +804,7 @@ s32 set_free_list_head(void)
 {
     struct ListEntry *entry;
 
-    if (gUnk_03000FD8->unkB & 0x10)
+    if (gWorld->unkB & 0x10)
     {
         return 1;
     }
@@ -813,7 +813,7 @@ s32 set_free_list_head(void)
     {
         entry--;
     }
-    gUnk_03000FD8->list1F4 = entry;
+    gWorld->list1F4 = entry;
     return 0;
 }
 
@@ -862,7 +862,7 @@ void ensure_code_entry(u32 key)
 
 s32 is_state_busy(void)
 {
-    struct SpriteState *state = gUnk_03000FD8;
+    struct SpriteState *state = gWorld;
 
     if (state->unkB & 0x10)
     {

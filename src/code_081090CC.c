@@ -141,13 +141,13 @@ struct AnimTask
 void set_slot_value(u32 id, s32 value);
 void *find_lowest_order_pose(u8 *pic);
 void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 void sound_stop_song(u32 song);
 extern s8 gPoseKindPct[];
 extern s8 gPoseChancePct[];
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void ensure_code_entry(u32 key);
 u8 is_state_busy(void);
 struct AnimTask *task_create_list_40(void (*entry)(struct AnimTask *));
@@ -183,7 +183,7 @@ s32 anim_bit200_step(struct AnimObj *obj, s32 value)
     {
         return 0;
     }
-    party = gUnk_03000FF4;
+    party = gParty;
     actor = ~obj->index;
     entry = party + (((actor << 4) - actor) << 2);
     kind = entry[0x37];
@@ -199,7 +199,7 @@ s32 anim_bit200_step(struct AnimObj *obj, s32 value)
         value -= 0x1E;
     }
     half = value / 2;
-    if (half < sub_081DE850(100, mt19937_next()))
+    if (half < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -216,7 +216,7 @@ s32 anim_bit400_step(struct AnimObj *obj, s32 value)
     {
         return 0;
     }
-    if (value < sub_081DE850(100, mt19937_next()))
+    if (value < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -250,7 +250,7 @@ s32 anim_chance_start(struct AnimObj *obj, s32 value)
     {
         return 0;
     }
-    if (value < sub_081DE850(100, mt19937_next()))
+    if (value < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -295,7 +295,7 @@ s32 anim_set_motion_a(struct AnimObj *obj, u16 value, s32 extra)
     {
         if (obj->index < 0)
         {
-            roll = sub_081DE850(100, mt19937_next());
+            roll = rand_below(100, mt19937_next());
             if (extra < roll)
             {
                 return 0;
@@ -313,7 +313,7 @@ s32 anim_set_motion_a(struct AnimObj *obj, u16 value, s32 extra)
                 s32 margin = extra - left / 3;
                 s32 ok;
 
-                roll = sub_081DE850(100, mt19937_next());
+                roll = rand_below(100, mt19937_next());
                 ok = 1;
                 if (margin < roll)
                 {
@@ -350,7 +350,7 @@ s32 anim_set_motion_b(struct AnimObj *obj, u16 value, s32 extra)
     {
         if (obj->index < 0)
         {
-            roll = sub_081DE850(100, mt19937_next());
+            roll = rand_below(100, mt19937_next());
             if (extra < roll)
             {
                 return 0;
@@ -368,7 +368,7 @@ s32 anim_set_motion_b(struct AnimObj *obj, u16 value, s32 extra)
                 s32 margin = extra - left / 3;
                 s32 ok;
 
-                roll = sub_081DE850(100, mt19937_next());
+                roll = rand_below(100, mt19937_next());
                 ok = 1;
                 if (margin < roll)
                 {
@@ -406,7 +406,7 @@ s32 anim_set_motion_c(struct AnimObj *obj, u16 value, s32 extra)
     {
         if (obj->index < 0)
         {
-            roll = sub_081DE850(100, mt19937_next());
+            roll = rand_below(100, mt19937_next());
             if (extra < roll)
             {
                 return 0;
@@ -424,7 +424,7 @@ s32 anim_set_motion_c(struct AnimObj *obj, u16 value, s32 extra)
                 s32 margin = extra - left / 3;
                 s32 ok;
 
-                roll = sub_081DE850(100, mt19937_next());
+                roll = rand_below(100, mt19937_next());
                 ok = 1;
                 if (margin < roll)
                 {

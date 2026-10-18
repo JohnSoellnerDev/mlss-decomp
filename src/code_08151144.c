@@ -154,7 +154,7 @@ void run_pending_obj_callbacks(void);
 extern u8 *gUnk_03000FC0;
 void obj_set_active(struct Obj *obj, u32 on);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void obj_set_cell_coord(struct Obj *obj, s32 cell, u32 zero);
 extern const u8 gFrameAttrTable[];
 void obj_set_sprite_link(struct Obj *obj, u32 link);
@@ -201,7 +201,7 @@ void set_flags_2_3(u32 value);
 void scene_release_objects(struct SceneState *state);
 extern const u8 gSceneTable08cdde80[];
 extern u16 gUnk_02000004;
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u8 *gUnk_03001014;
 extern u16 gUnk_02000000;
 
@@ -231,7 +231,7 @@ void obj_random_cell(struct Obj *obj, s32 zero)
 
     kind = (u8)zero;
     tbl = obj->tbl;
-    idx = sub_081DE850(4, mt19937_next());
+    idx = rand_below(4, mt19937_next());
     cell = (u8 *)obj->cell294;
     start = tbl[idx + 4];
     cell[0x20] = start;
@@ -305,7 +305,7 @@ void obj_roll_spawn(s32 unused, struct Obj *obj, void **slot)
         ((struct Bit2Bits *)&obj->flags20D)->bit2 = 0;
         ((struct Bit5Bits *)&linked->unk216)->bit5 = 0;
         seed = mt19937_next();
-        if (sub_081DE850(1000, seed) > 0xF9)
+        if (rand_below(1000, seed) > 0xF9)
         {
             spawn_random_offset(linked, 1);
             linked->handlerB = (void *)spawn_big_handler;
@@ -510,7 +510,7 @@ void *obj_ofs_addr(struct Obj *obj)
 
 void obj_apply_flag_offsets(struct Obj *obj)
 {
-    u8 *base = gUnk_0300034C;
+    u8 *base = gSys;
 
     if (*(u16 *)(base + 0x28) & 0x10)
         obj->x += 0x400;

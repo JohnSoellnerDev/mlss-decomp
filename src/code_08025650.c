@@ -72,7 +72,7 @@ struct SysRam
     u8 lang8C0;
 };
 
-extern struct SysRam gUnk_0300034C;
+extern struct SysRam gSys;
 extern const u16 gInputSequenceKeys[];
 u8 *bank_data_5bit(u16 bank, u8 *out);
 void find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, u32 *out, s32 slot);
@@ -87,9 +87,9 @@ ASM_FUNC("asm/code_08025650/obj_test_mode.s", void obj_test_mode(void))
 
 u32 obj_sequence_step(struct Obj *obj)
 {
-    if (gUnk_0300034C.pressed != 0)
+    if (gSys.pressed != 0)
     {
-        if (gUnk_0300034C.pressed == gInputSequenceKeys[obj->seqIndex])
+        if (gSys.pressed == gInputSequenceKeys[obj->seqIndex])
         {
             obj->seqIndex++;
             if ((u8)obj->seqIndex == 10)
@@ -158,7 +158,7 @@ NONMATCH("asm/code_08025650/obj_build_message.s", void obj_build_message(struct 
     }
     entry = offset + table;
     {
-        u32 lang = gUnk_0300034C.lang8C0;
+        u32 lang = gSys.lang8C0;
         u32 *langs = *(u32 **)entry;
         text = *(u8 **)langs[lang];
     }

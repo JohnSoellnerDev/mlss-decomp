@@ -148,7 +148,7 @@ u32 obj_cb_link_or_wait(struct WaveObj *obj);
 
 extern const u8 gStepSequenceTable[];
 extern u32 gUnk_03000E3C;
-extern struct WaveWorld *gUnk_03000FD8;
+extern struct WaveWorld *gWorld;
 u32 lookup_slot(struct WaveObj *obj);
 void sprite_entry_update(struct WavePose *pose);
 void wait_timer_then_move(struct WaveObj *obj);
@@ -191,7 +191,7 @@ s32 wave_obj_dispatch_by_mode(struct WaveObj *ctl, struct WaveObj *obj)
         effect_spawn_at(0xF93, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         break;
     case 1:
-        gUnk_03000FD8->unk18 = mode;
+        gWorld->unk18 = mode;
         effect_spawn_at(0x2375, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         set_slot_value(0x2C, -1);
         break;
@@ -287,7 +287,7 @@ void obj_index_zero_count(struct WaveObj *obj)
 
 void obj_setup_motion_slot(struct WaveObj *obj)
 {
-    struct WaveObj *cand = gUnk_03000FD8->slots[6 + (obj->select & 1)];
+    struct WaveObj *cand = gWorld->slots[6 + (obj->select & 1)];
     u8 *flags;
 
     obj->targetX = cand->link->targetX + 0x2000;

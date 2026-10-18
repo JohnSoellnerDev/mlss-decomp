@@ -170,7 +170,7 @@ struct Enemy
 u8 step_pos_xy_plain(struct Enemy *ent);
 void reset_record_fields(struct Enemy *ent);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 value);
+s32 rand_below(s32 n, u32 value);
 void run_state_handler(void);
 void tick_store(void);
 void enemy_move_home(struct Owner *owner, struct Enemy *ent, u32 *out);
@@ -359,7 +359,7 @@ ASM_FUNC("asm/code_08147904/enemy_move_to_partner.s", void enemy_move_to_partner
 void enemy_start_guard(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
     struct Record *rec = ent->rec;
-    s32 pick = sub_081DE850(4, mt19937_next());
+    s32 pick = rand_below(4, mt19937_next());
 
     u8 *slot = (u8 *)(pick + (u32)rec);
 
@@ -380,9 +380,9 @@ void enemy_start_guard(struct Owner *owner, struct Enemy *ent, u32 *out)
 void enemy_wander_to_edge(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
     u16 *table = ent->wanderDist;
-    s32 pick1 = sub_081DE850(4, mt19937_next());
+    s32 pick1 = rand_below(4, mt19937_next());
     u16 dist = table[pick1];
-    s32 pick2 = sub_081DE850(2, mt19937_next());
+    s32 pick2 = rand_below(2, mt19937_next());
     u16 steps = *(u16 *)((u8 *)table + pick2 * 2 + 0x30);
 
     wander_to_edge(ent, steps, dist);
@@ -484,7 +484,7 @@ void enemy_bump_wait(struct Owner *owner, struct Enemy *ent, u32 *out)
     }
     if (step_pos_xy_c(ent) == 0)
     {
-        s32 pick = sub_081DE850(4, mt19937_next());
+        s32 pick = rand_below(4, mt19937_next());
         u16 pick_val = table[pick + 0x14];
 
         *(u16 *)(ai + 0x17A) = pick_val;
@@ -545,7 +545,7 @@ ASM_FUNC("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(struct Owne
 void enemy_pose_a(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
     struct Record *rec = ent->rec;
-    s32 pick = sub_081DE850(4, mt19937_next());
+    s32 pick = rand_below(4, mt19937_next());
     u16 *pindex = &ent->index;
 
     *pindex = pick;
@@ -593,7 +593,7 @@ void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out)
     }
     obj_set_active(body, 1);
     obj_set_sprite_link(body, 1);
-    i = sub_081DE850(4, mt19937_next());
+    i = rand_below(4, mt19937_next());
     body->sprite->unk20 = table[i + 4];
     body->unk2E4 = body->posX;
     body->unk2E8 = body->posY;

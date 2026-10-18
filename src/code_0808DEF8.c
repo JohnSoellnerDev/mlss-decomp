@@ -121,15 +121,15 @@ struct ListEntry
     u16 value2;
 };
 
-extern u8 *gUnk_03000FF4;
-extern u8 *gUnk_03000FD8;
+extern u8 *gParty;
+extern u8 *gWorld;
 struct SysState
 {
     u8 filler0[0x3C];
     u16 keysHeld;
 };
 
-extern struct SysState gUnk_0300034C;
+extern struct SysState gSys;
 extern const u8 gAnim284[];
 extern const u8 gAnim278[];
 extern const u8 gAnim374[];
@@ -197,7 +197,7 @@ void hold_then_orbit_b(struct Actor *obj)
 
     if (poll_action_end(obj) != 0)
         return;
-    keys = gUnk_0300034C.keysHeld & obj->keyMask;
+    keys = gSys.keysHeld & obj->keyMask;
     if (keys == 0)
     {
         obj->timer = 1;
@@ -214,7 +214,7 @@ void hold_then_orbit_b(struct Actor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -346,7 +346,7 @@ void enter_jump_arc_fall_a(struct Actor *obj)
     obj->dh = *dhp + *speedp;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gUnk_0300034C.keysHeld & 1)
+    if (gSys.keysHeld & 1)
     {
         t = -0x7A - *speedp;
         next = *speedp + (t * 10) / 0x100;
@@ -375,7 +375,7 @@ void jump_arc_fall_a(struct Actor *obj)
     obj->dh = *dhp + *speedp;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gUnk_0300034C.keysHeld & 1)
+    if (gSys.keysHeld & 1)
     {
         t = -0x7A - *speedp;
         next = *speedp + (t * 10) / 0x100;
@@ -405,7 +405,7 @@ void enter_jump_arc_fall_b(struct Actor *obj)
     obj->dh = *dhp + *speedp;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gUnk_0300034C.keysHeld & 2)
+    if (gSys.keysHeld & 2)
     {
         t = -0x7A - *speedp;
         next = *speedp + (t * 10) / 0x100;
@@ -434,7 +434,7 @@ void jump_arc_fall_b(struct Actor *obj)
     obj->dh = *dhp + *speedp;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gUnk_0300034C.keysHeld & 2)
+    if (gSys.keysHeld & 2)
     {
         t = -0x7A - *speedp;
         next = *speedp + (t * 10) / 0x100;
@@ -501,7 +501,7 @@ s32 jump_orbit_setup_list_slot_a(struct Actor *obj)
     struct ListEntry *entry;
 
     obj->anim = gAnim374;
-    entry = (struct ListEntry *)(gUnk_03000FF4 + 0x3C);
+    entry = (struct ListEntry *)(gParty + 0x3C);
     clear_switches(obj);
     obj->data->slotValue = entry->value;
     obj->state = jump_orbit_start_jump_arc_a;
@@ -515,7 +515,7 @@ s32 jump_orbit_setup_list_slot_b(struct Actor *obj)
     s32 (*fn)(s32);
 
     obj->anim = gAnim278;
-    list = gUnk_03000FF4;
+    list = gParty;
     clear_switches(obj);
     obj->data->slotValue = ((struct ListEntry *)list)->value;
     obj->state = jump_orbit_start_jump_arc_b;
@@ -701,7 +701,7 @@ void jump_orbit_step_a(struct Actor *obj)
         sprite_set_action(obj, 0, 0x2025, 3);
     if ((s16)*stepp != 20)
     {
-        if ((gUnk_0300034C.keysHeld & obj->keyMask) == 0)
+        if ((gSys.keysHeld & obj->keyMask) == 0)
         {
             *stepp = (s16)*stepp * 4;
             obj->state = jump_orbit_step_b;
@@ -766,7 +766,7 @@ void jump_orbit_hold_a(struct Actor *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.keysHeld & obj->keyMask;
+    keys = gSys.keysHeld & obj->keyMask;
     if (keys == 0)
     {
         obj->timer = 1;
@@ -783,7 +783,7 @@ void jump_orbit_hold_a(struct Actor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -907,7 +907,7 @@ void jump_orbit_step_c(struct Actor *obj)
         sprite_set_action(obj, 0, 0x2054, 3);
     if ((s16)*stepp != 0x20)
     {
-        if ((gUnk_0300034C.keysHeld & obj->keyMask) == 0)
+        if ((gSys.keysHeld & obj->keyMask) == 0)
         {
             *stepp = (s16)*stepp * 6;
             obj->state = jump_orbit_step_d;
@@ -972,7 +972,7 @@ void jump_orbit_hold_b(struct Actor *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.keysHeld & obj->keyMask;
+    keys = gSys.keysHeld & obj->keyMask;
     if (keys == 0)
     {
         obj->timer = 1;
@@ -989,7 +989,7 @@ void jump_orbit_hold_b(struct Actor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -1117,7 +1117,7 @@ s32 jump_orbit_setup_slot_spawn(struct Actor *obj)
 
     clear_switches(obj);
     value = &obj->data->slotValue;
-    list = gUnk_03000FF4;
+    list = gParty;
     entry = (struct ListEntry *)(list + (~obj->data->slot) * 0x3C);
     *value = entry->value2;
     obj->state = jump_orbit_dispatch_slot_spawn;
@@ -1150,7 +1150,7 @@ s32 pause_jump_b(struct Actor *obj)
     struct ListEntry *entry;
 
     obj->anim = gAnim374;
-    entry = (struct ListEntry *)(gUnk_03000FF4 + 0x3C);
+    entry = (struct ListEntry *)(gParty + 0x3C);
     clear_switches(obj);
     obj->data->slotValue = entry->value;
     sprite_set_action(obj, 4, 0x204D, 0);
@@ -1165,7 +1165,7 @@ s32 pause_jump_a(struct Actor *obj)
     struct ListEntry *entry;
 
     obj->anim = gAnim278;
-    entry = (struct ListEntry *)gUnk_03000FF4;
+    entry = (struct ListEntry *)gParty;
     clear_switches(obj);
     obj->data->slotValue = entry->value;
     sprite_set_action(obj, 4, 0x2000, 0);

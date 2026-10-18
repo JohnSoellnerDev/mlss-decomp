@@ -155,7 +155,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 gRoom149Layer0[];
 
 void sound_stop_song(u32 song);
@@ -215,7 +215,7 @@ void obj_handoff_b(struct ActorObj *obj);
 
 void hero_b_partner_place_height(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     struct ActorObj *partner = obj->owner;
     u32 mode;
 
@@ -254,7 +254,7 @@ void hero_b_partner_place_height(struct ActorObj *obj)
 
 void hero_b_follow_child_pos_then_next(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     struct ActorObj *owner = obj->owner;
     u32 mode;
 
@@ -295,9 +295,9 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
     s32 py;
     s32 pz;
 
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
-    bodyB = &gUnk_03000FD8->heroB->body;
+    bodyB = &gWorld->heroB->body;
     if (bodyB->pose->flags12 & 8)
     {
         obj_release(bodyB->child);
@@ -381,7 +381,7 @@ ASM_FUNC("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj
 
 void hero_b_unlink_a(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     struct ActorObj *owner = obj->owner;
     u32 mode;
 
@@ -411,7 +411,7 @@ void hero_b_unlink_a(struct ActorObj *obj)
 
 void hero_b_active_a(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     u32 mode;
     u16 v;
 
@@ -443,7 +443,7 @@ void hero_b_active_a(struct ActorObj *obj)
 
 void hero_b_flagged_a(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     u32 mode;
 
     step_motion(body);
@@ -481,9 +481,9 @@ void heroes_step(struct ActorObj *obj)
     s32 py;
     s32 pz;
 
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
-    bodyB = &gUnk_03000FD8->heroB->body;
+    bodyB = &gWorld->heroB->body;
     if (bodyB->pose->flags12 & 8)
     {
         set_slot_value(0x53, -1);
@@ -607,7 +607,7 @@ void obj_stop_b(struct ActorObj *obj)
 
 void hero_b_copy_pos(struct ActorObj *obj)
 {
-    struct Hero *heroB = gUnk_03000FD8->heroB;
+    struct Hero *heroB = gWorld->heroB;
     struct ActorObj *body = &heroB->body;
 
     step_motion_checked(body);
@@ -622,7 +622,7 @@ void hero_b_copy_pos(struct ActorObj *obj)
 
 void hero_b_end_a(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gUnk_03000FD8->heroB->body;
+    struct ActorObj *body = &gWorld->heroB->body;
     u32 mode;
 
     step_motion(body);

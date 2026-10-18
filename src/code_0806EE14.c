@@ -41,7 +41,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 extern u32 gUnk_03000E3C;
 extern u8 gUnk_03000E7C;
 extern u8 gUnk_03000E7D;

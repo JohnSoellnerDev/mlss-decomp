@@ -168,10 +168,10 @@ struct Work
     void (*savedState)(struct Owner *);
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern struct Work *gWorkBuf;
 extern const u16 gEffectCodeTable[];
-extern void *gUnk_03000D74;
+extern void *gModelCtx;
 
 void update_slot_markers(void);
 void *find_lowest_order_pose(u8 *pic);
@@ -194,7 +194,7 @@ void sprite_load_tables(u32 index);
 void load_table_entries(u32 value);
 u8 is_state_busy(void);
 void candidate_dispatch(void);
-s32 sub_081DE850(s32 n, u32 value);
+s32 rand_below(s32 n, u32 value);
 u32 mt19937_next(void);
 void symbol_add(u32 key, u32 count);
 void state_wait_free_then_2199(struct Owner *owner);
@@ -223,7 +223,7 @@ struct Owner *task_create_list_4c(void (*state)(struct Owner *), u32 arg);
 extern void (*gMemRoutines)(u32 a, void *b, u32 c);
 extern u8 gUnk_02000080;
 extern u8 gUnk_02000280;
-extern u16 gUnk_0300034C[];
+extern u16 gSys[];
 extern u16 gUnk_0200000C;
 extern u16 gUnk_0200001C;
 extern u16 gUnk_0200001E;
@@ -270,7 +270,7 @@ void run_sequence_of_obj_b(void *obj);
 
 void state_menu_scroll_wait(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     u16 *scrollp = &world->scene->scroll;
     s32 scroll = *scrollp - 1;
     s32 step = owner->scrollStep;
@@ -296,11 +296,11 @@ void state_menu_scroll_wait(struct Owner *owner)
 
 void menu_init_clear(void)
 {
-    gUnk_03000FD8->menu248->unk44 = 0;
+    gWorld->menu248->unk44 = 0;
     gMemRoutines(0, &gUnk_02000080, 0x200);
     gMemRoutines(0, &gUnk_02000280, 0x200);
-    gUnk_0300034C[0] = 0xFFFF;
-    gUnk_0300034C[1] = 0xFFFF;
+    gSys[0] = 0xFFFF;
+    gSys[1] = 0xFFFF;
     task_create_list_4c(state_clear_menu_flag_and_end, 0)->timer = 0x20;
 }
 
@@ -315,7 +315,7 @@ void state_clear_menu_flag_and_end(struct Owner *owner)
     }
     else
     {
-        struct World *world = gUnk_03000FD8;
+        struct World *world = gWorld;
         s32 flags = world->flags2BF;
         s32 mask = ~0x20;
 
@@ -333,7 +333,7 @@ void state_menu_scroll_begin(struct Owner *owner)
 
     if (timer != 0)
     {
-        gUnk_03000FD8->scene->scroll++;
+        gWorld->scene->scroll++;
         owner->timer--;
     }
     else
@@ -367,7 +367,7 @@ void state_wait_menu_clear(struct Owner *owner)
     }
     else
     {
-        struct World *world = gUnk_03000FD8;
+        struct World *world = gWorld;
 
         if ((world->unk27C | world->unk280) == 0)
         {
@@ -380,7 +380,7 @@ void state_wait_menu_clear(struct Owner *owner)
 
 void menu_open_setup(void)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
 
     ((struct SpriteModeBits *)&world->figMode2C0)->bit5 = 1;
     ((struct SpriteModeBits *)&world->flags2BF)->bit5 = 1;
@@ -392,7 +392,7 @@ void menu_open_setup(void)
 
 void state_hero_sprite_check(struct Owner *owner)
 {
-    struct Obj *hero = gUnk_03000FD8->list58[gUnk_03000FD8->hero33F + 6];
+    struct Obj *hero = gWorld->list58[gWorld->hero33F + 6];
 
     if (hero->link->flags & 8)
     {
@@ -412,11 +412,11 @@ void state_hero_anim_then_notify(struct Owner *owner)
     }
     else
     {
-        sprite_set_action((struct Owner *)((u8 *)gUnk_03000FD8->list58[gUnk_03000FD8->hero33F + 6] + 8), 2, 0, 0);
+        sprite_set_action((struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8), 2, 0, 0);
         owner->timer = 0x20;
         owner->state = state_marker_gfx_place;
         owner->state(owner);
-        set_slot_value(gUnk_03000FD8->hero33F ? 0x103 : 0xF3, -1);
+        set_slot_value(gWorld->hero33F ? 0x103 : 0xF3, -1);
     }
 }
 
@@ -460,11 +460,11 @@ void state_queue_texts(struct Owner *owner)
 
     ensure_code_entry(0x2038);
     ensure_code_entry(0x2067);
-    id = gUnk_03000FD8->unk340 ? 0x204E : 0x2001;
+    id = gWorld->unk340 ? 0x204E : 0x2001;
     ensure_code_entry(id);
     alloc_code_entry(0x2038);
     alloc_code_entry(0x2067);
-    alloc_code_entry(gUnk_03000FD8->unk340 ? 0x204E : 0x2001);
+    alloc_code_entry(gWorld->unk340 ? 0x204E : 0x2001);
     owner->timer = 4;
     owner->state = state_marker_show;
     owner->state(owner);
@@ -472,7 +472,7 @@ void state_queue_texts(struct Owner *owner)
 
 void add_random_symbol_200(void)
 {
-    s32 roll = sub_081DE850(100, mt19937_next());
+    s32 roll = rand_below(100, mt19937_next());
     s32 kind;
 
     kind = roll >= 0;
@@ -500,7 +500,7 @@ void chance_add_symbol(struct Chance *obj, s32 a, s32 b)
         u32 bits = ((u8 *)obj)[0x2A];
         s32 chance = ((bits << 27) >> 27) + a;
 
-        if (chance <= sub_081DE850(0x1F, mt19937_next()))
+        if (chance <= rand_below(0x1F, mt19937_next()))
         {
             return;
         }
@@ -519,7 +519,7 @@ void chance_add_symbol(struct Chance *obj, s32 a, s32 b)
 
 void copy_obj_mode_to_world(struct Owner *owner)
 {
-    gUnk_03000FD8->mode2F9 = owner->block->mode;
+    gWorld->mode2F9 = owner->block->mode;
     update_slot_markers();
 }
 
@@ -527,9 +527,9 @@ void set_world_mode_byte(u8 value)
 {
     s32 flags;
 
-    gUnk_03000FD8->mode3A5 = value;
-    flags = gUnk_03000FD8->flags0B;
-    gUnk_03000FD8->flags0B = flags | 0x40;
+    gWorld->mode3A5 = value;
+    flags = gWorld->flags0B;
+    gWorld->flags0B = flags | 0x40;
 }
 
 NONMATCH("asm/code_08107268/state_sprite_park.s", void state_sprite_park(struct Owner *owner))
@@ -566,7 +566,7 @@ void state_wait_obj_active(struct Owner *owner)
 
 void state_pose_draw_free(struct Owner *owner)
 {
-    s32 y = (gUnk_03000FD8->pose342 << 4) + 0x28;
+    s32 y = (gWorld->pose342 << 4) + 0x28;
     s32 index = owner->index;
     s32 x = number_right_edge(index, 0xB8);
 
@@ -601,7 +601,7 @@ void state_fx_step_counter(struct Owner *owner)
 
 void state_obj_anim_5_when_active(struct Owner *owner)
 {
-    struct Owner *obj = gUnk_03000FD8->obj278;
+    struct Owner *obj = gWorld->obj278;
 
     if (obj->sprite->flags & 8)
     {
@@ -622,7 +622,7 @@ void state_spawn_list_entry(struct Owner *owner)
 {
     if (!is_state_busy())
     {
-        struct Entry *entry = list_add_task(&gUnk_03000FD8->listHead, state_wait_result_then_close);
+        struct Entry *entry = list_add_task(&gWorld->listHead, state_wait_result_then_close);
 
         s32 x = owner->posX;
 
@@ -669,7 +669,7 @@ ASM_FUNC("asm/code_08107268/state_clear_hero_flags.s", void state_clear_hero_fla
 
 void state_effect_mode_2(struct Owner *owner)
 {
-    struct Effect *effect = gUnk_03000FD8->oldEffect;
+    struct Effect *effect = gWorld->oldEffect;
     s32 flags = effect->flags5;
     s32 mask = ~3;
 
@@ -682,7 +682,7 @@ void state_effect_mode_2(struct Owner *owner)
 
 void state_effect_release(struct Owner *owner)
 {
-    struct Effect *effect = gUnk_03000FD8->oldEffect;
+    struct Effect *effect = gWorld->oldEffect;
     s32 flags = effect->flags5;
     s32 mask = ~3;
 
@@ -699,7 +699,7 @@ void state_wait_menu_ready(struct Owner *owner)
 {
     if (world_list_idle())
     {
-        struct World *world = gUnk_03000FD8;
+        struct World *world = gWorld;
 
         if ((world->flags2BF & 4) == 0)
         {
@@ -730,7 +730,7 @@ void state_countdown_then_clear(struct Owner *owner)
 
 void state_active_obj_release(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
 
     if (world->task310 == 0)
     {
@@ -747,11 +747,11 @@ void state_obj_release_when_free(struct Owner *owner)
 {
     if (!is_state_busy())
     {
-        if ((gUnk_03000FD8->flags0B & 4) == 0)
+        if ((gWorld->flags0B & 4) == 0)
         {
-            pair_begin(gUnk_03000FD8->curObj + 8);
-            change_item_count(gUnk_03000FD8->unk349, -1);
-            gUnk_03000FD8->unk349 = 0xFF;
+            pair_begin(gWorld->curObj + 8);
+            change_item_count(gWorld->unk349, -1);
+            gWorld->unk349 = 0xFF;
             owner->state = state_update_hero_markers;
             set_cur_flags(8);
         }
@@ -760,7 +760,7 @@ void state_obj_release_when_free(struct Owner *owner)
 
 void state_stop_menu_obj(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
 
     if (world->task310 == 0)
     {
@@ -772,7 +772,7 @@ void state_stop_menu_obj(struct Owner *owner)
 
 void state_free_saved_list(struct Owner *owner)
 {
-    void **slot = &gUnk_03000FD8->savedList;
+    void **slot = &gWorld->savedList;
 
     if (((struct SavedList *)*slot)->unk8 != 0)
     {
@@ -794,10 +794,10 @@ void state_menu_open_active(struct Owner *owner)
 
         owner->state = state_wait_menu_ready;
         set_cur_flags_both(0x100);
-        reset_entry_part(gUnk_03000FD8->unk244, gUnk_03000FD8->curObj[0xF4],
-                         *(u32 *)(gUnk_03000FD8->curObj + 0xE8));
-        flags = gUnk_03000FD8->flags2BF;
-        gUnk_03000FD8->flags2BF = flags | 4;
+        reset_entry_part(gWorld->unk244, gWorld->curObj[0xF4],
+                         *(u32 *)(gWorld->curObj + 0xE8));
+        flags = gWorld->flags2BF;
+        gWorld->flags2BF = flags | 4;
     }
 }
 
@@ -805,7 +805,7 @@ ASM_FUNC("asm/code_08107268/state_show_figs.s", void state_show_figs(struct Owne
 
 void state_fig_active_call(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     u32 bit = ((u32)world->figMode2C0 << 29) >> 31;
     s32 idx = 1;
     struct Obj *fig;
@@ -821,7 +821,7 @@ void state_fig_active_call(struct Owner *owner)
 
 void state_call_active_callback(struct Owner *owner)
 {
-    struct Callback *obj = (struct Callback *)(gUnk_03000FD8->curObj + 8);
+    struct Callback *obj = (struct Callback *)(gWorld->curObj + 8);
 
     if (obj->fn != 0)
     {
@@ -836,7 +836,7 @@ void state_call_active_callback(struct Owner *owner)
 
 void state_call_saved_if_flag(struct Owner *owner)
 {
-    u8 *flags = gUnk_03000FD8->curObj + 0x122;
+    u8 *flags = gWorld->curObj + 0x122;
 
     if ((*flags & 0x20) == 0)
     {
@@ -847,7 +847,7 @@ void state_call_saved_if_flag(struct Owner *owner)
 
 void state_obj_wait_then_select(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     u8 *cur = world->curObj;
     s32 flags = world->flags0B;
 
@@ -873,7 +873,7 @@ void state_obj_wait_then_select(struct Owner *owner)
 
 void state_restore_saved_when_flag(struct Owner *owner)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     s32 flags = world->flags0B;
 
     if (flags & 2)
@@ -896,7 +896,7 @@ void state_place_sprite_at_obj(struct Owner *owner)
 
     if (is_state_busy() == 0)
     {
-        obj = gUnk_03000FD8->curObj;
+        obj = gWorld->curObj;
         pos = (struct Pos *)obj;
         effect_spawn_at(gEffectCodeTable[(u16)owner->index], pos->x / 0x100, pos->y / 0x100 + 2, pos->z / 0x100 - 2, obj + 8);
         owner->state = state_move;
@@ -927,7 +927,7 @@ void state_select_by_status(struct Owner *owner)
 
 void state_wait_result_then_close(struct Owner *owner)
 {
-    if (sub_obj_running(gUnk_03000FD8->menu248) != 1)
+    if (sub_obj_running(gWorld->menu248) != 1)
     {
         void *target = owner->target;
         struct Cand *cand;
@@ -945,7 +945,7 @@ void state_wait_result_then_close(struct Owner *owner)
 
 void state_cursor_anim_step(struct Owner *owner)
 {
-    s32 y = (gUnk_03000FD8->pose342 << 4) + 0x28;
+    s32 y = (gWorld->pose342 << 4) + 0x28;
     s32 index = owner->index;
     s32 x = number_right_edge(index, 0xB8);
 
@@ -953,7 +953,7 @@ void state_cursor_anim_step(struct Owner *owner)
     owner->timer++;
     if ((s16)owner->timer > 9)
     {
-        list_add_task(&gUnk_03000FD8->listHead, state_scroll_clamp_then_finish);
+        list_add_task(&gWorld->listHead, state_scroll_clamp_then_finish);
         owner->timer = 0;
         owner->state = state_add_points_to_hero;
     }
@@ -961,7 +961,7 @@ void state_cursor_anim_step(struct Owner *owner)
 
 void state_wait_free_then_2199(struct Owner *owner)
 {
-    if ((gUnk_03000FD8->flags0B & 4) == 0)
+    if ((gWorld->flags0B & 4) == 0)
     {
         if (!is_state_busy())
         {
@@ -973,8 +973,8 @@ void state_wait_free_then_2199(struct Owner *owner)
 
 void state_scroll_clamp_then_finish(struct Owner *owner)
 {
-    struct Scroll *scroll = gUnk_03000FD8->scrollObj37C;
-    struct Scroll *obj = (struct Scroll *)gUnk_03000FD8->obj278;
+    struct Scroll *scroll = gWorld->scrollObj37C;
+    struct Scroll *obj = (struct Scroll *)gWorld->obj278;
     s32 v;
     s32 t;
     s32 p4;
@@ -993,12 +993,12 @@ void state_scroll_clamp_then_finish(struct Owner *owner)
     p4 = t;
     p8 = 0;
     pc = 0;
-    offset_three_words(gUnk_03000FD8->ptr24C, &p4, &p8, &pc, 0);
+    offset_three_words(gWorld->ptr24C, &p4, &p8, &pc, 0);
     if (p4 > 0x103)
     {
         release_marker_object();
         obj_release(scroll);
-        gUnk_03000FD8->scrollObj37C = 0;
+        gWorld->scrollObj37C = 0;
         owner->state = 0;
     }
 }
@@ -1029,7 +1029,7 @@ ASM_FUNC("asm/code_08107268/update_world_objects.s", void update_world_objects(v
 ASM_FUNC("asm/code_08107268/marker_flag100_update.s", void marker_flag100_update(void))
 
 void *find_lowest_order_pose(u8 *pic);
-extern void *gUnk_03000D74;
+extern void *gModelCtx;
 ASM_FUNC("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(u8 *self))
 
 ASM_FUNC("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(u8 *self))

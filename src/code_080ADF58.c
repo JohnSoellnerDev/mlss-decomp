@@ -160,9 +160,9 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -196,7 +196,7 @@ struct HeroBody *obj_spawn_linked(struct HeroBody *parent, u32 kind, u32 value);
 void hero_b_to_partner_slow(struct HeroBody *body);
 void pair_action_pick_partner(struct HeroBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 a, u32 b);
+s32 rand_below(s32 a, u32 b);
 void obj_release(struct HeroBody *obj);
 void hero_b_to_partner_fast(struct HeroBody *body);
 void pair_finish_and_rebuild(struct HeroBody *body);

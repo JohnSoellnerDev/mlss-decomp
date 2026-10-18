@@ -153,7 +153,7 @@ struct CandMgr
     struct Rec *target;
 };
 
-extern struct CandMgr *gUnk_03000FD8;
+extern struct CandMgr *gWorld;
 
 s32 find_frame_entry(struct Actor *obj, s32 index);
 s32 contact_face(struct Actor *a, struct Actor *b);
@@ -190,7 +190,7 @@ ASM_FUNC("asm/code_08087E1C/search_frame_pairs.s", u32 search_frame_pairs(struct
 
 struct Rec *candidate_for_slot(struct Rec *obj)
 {
-    struct CandMgr *mgr = gUnk_03000FD8;
+    struct CandMgr *mgr = gWorld;
 
     if (mgr->target != NULL)
         return mgr->slots[obj->slot + 8];
@@ -199,7 +199,7 @@ struct Rec *candidate_for_slot(struct Rec *obj)
 
 struct Rec *active_candidate(struct Rec *obj)
 {
-    struct CandMgr *mgr = gUnk_03000FD8;
+    struct CandMgr *mgr = gWorld;
     struct Rec *c = mgr->cur;
 
     if (c == obj)
@@ -441,8 +441,8 @@ s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed)
 
 void mark_candidate_pair(struct Actor *obj)
 {
-    struct Rec *a = gUnk_03000FD8->candA;
-    struct Rec *b = gUnk_03000FD8->candB;
+    struct Rec *a = gWorld->candA;
+    struct Rec *b = gWorld->candB;
 
     if ((a->flags7E & 6) == 2)
     {

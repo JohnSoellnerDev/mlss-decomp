@@ -136,8 +136,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -178,7 +178,7 @@ ASM_FUNC("asm/code_080AC16C/hero_a_step_threshold_c16c.s", void hero_a_step_thre
 
 void hero_a_sprite_set_targets(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     if ((body_a->sprite->flags & 8) != 0)

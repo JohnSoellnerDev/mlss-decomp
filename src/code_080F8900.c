@@ -61,10 +61,10 @@ struct WorldSlotTable
     u8 *slots[8];
 };
 
-extern u8 *gUnk_03000FD8;
+extern u8 *gWorld;
 extern void (*gMemRoutines)(u32 a, void *b, u32 c);
 extern const u8 gTextEntryTag[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u8 *gWorkBuf;
 void state_apply_hero_stats(struct OwnerObj *owner);
 void slot_read_pos(void *obj, s32 idx, s16 *a, s16 *b, s16 *c);
@@ -115,7 +115,7 @@ ASM_FUNC("asm/code_080F8900/cmd_obj_chain.s", u32 cmd_obj_chain(struct OwnerObj 
 
 u32 cmd_world_flag_2b4(void *obj, u32 unused, u32 *p)
 {
-    u8 *world = gUnk_03000FD8;
+    u8 *world = gWorld;
     u32 v = p[0];
 
     *(u16 *)(world + 0x2B4) = v;
@@ -171,11 +171,11 @@ u32 cmd_world_flag_2f8(void *obj, u32 unused, u32 *p)
     switch (p[0])
     {
     case 0:
-        dst = gUnk_03000FD8 + 0x2F8;
+        dst = gWorld + 0x2F8;
         val = 1;
         break;
     case 1:
-        dst = gUnk_03000FD8 + 0x2F8;
+        dst = gWorld + 0x2F8;
         val = 0;
         break;
     default:
@@ -258,7 +258,7 @@ u8 cmd_restore_word0(void *obj, void *arg, u32 *p)
 {
     if (p[0] != 0)
     {
-        gUnk_03000FD8[0x2BF] |= 2;
+        gWorld[0x2BF] |= 2;
     }
     return restore_obj_word0((u8 *)obj + 0x1C, arg);
 }

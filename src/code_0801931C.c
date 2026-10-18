@@ -78,7 +78,7 @@ struct SysArea
     u16 speed8BC[2];
 };
 
-#define SYS_AREA ((struct SysArea *)gUnk_0300034C)
+#define SYS_AREA ((struct SysArea *)gSys)
 
 struct LinkState
 {
@@ -103,7 +103,7 @@ struct LinkState
     u32 unk28;
 };
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u8 gUnk_03000C28;
 extern u32 gUnk_03000C6C;
 extern u32 gUnk_03000C78;
@@ -290,7 +290,7 @@ void sound_stop_all_reset(void)
     queue_player_key_off(1);
     queue_stop_all();
     sound_dma_reset();
-    base = gUnk_0300034C;
+    base = gSys;
     ((struct FlagBits2 *)(base + 0x88C))->unk0 = 0;
 }
 
@@ -445,7 +445,7 @@ void serial_link_shutdown(void)
     REG_IME = 0;
     gUnk_03000D0C = 0;
     gUnk_03000D10 = 0;
-    gUnk_0300034C[0x888] = gUnk_0300034C[0x888] & 0x7F;
+    gSys[0x888] = gSys[0x888] & 0x7F;
     REG_IME = 1;
 }
 
@@ -472,7 +472,7 @@ ASM_FUNC("asm/code_0801931C/anim_state_step.s", void anim_state_step(void))
 
 void serial_link_enable(void)
 {
-    u8 *base = gUnk_0300034C;
+    u8 *base = gSys;
     u32 zero;
 
     if (((struct LinkModeBits *)(base + 0x888))->mode == 1)
@@ -516,7 +516,7 @@ void serial_link_enable(void)
 
 void serial_link_disable(void)
 {
-    u8 *base = gUnk_0300034C;
+    u8 *base = gSys;
 
     if (((struct LinkModeBits *)(base + 0x888))->mode == 1)
     {

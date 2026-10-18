@@ -109,9 +109,9 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 *gParty;
+extern u8 gSys[];
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -151,7 +151,7 @@ void hero_a_begin_step_sprite_15(struct HeroBody *body);
 
 void hero_a_begin_step(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
 
     step_motion(&hero->body);
     if ((hero->body.flags & 0x20) != 0)
@@ -168,7 +168,7 @@ void hero_a_begin_step(struct HeroBody *body)
 
 void hero_a_begin_step_sprite(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -184,7 +184,7 @@ void hero_a_begin_step_sprite(struct HeroBody *body)
 
 void hero_a_begin_slow_step(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
 
     state_stack_advance_progress(body_a);

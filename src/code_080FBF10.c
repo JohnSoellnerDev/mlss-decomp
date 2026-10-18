@@ -52,13 +52,13 @@ extern u8 *gWorkBuf;
 extern const u8 gTypeB[];
 extern const u8 gTaskPickTable[];
 extern const u8 gEffectIndexTable[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 void task_insert(void *node, u8 kind, void *data);
 void mt19937_seed(u32 state, u32 seed);
 
 u32 point_in_box(s16 *bounds, struct SceneObj *obj, s32 zMaxIn, s32 zMinIn);
 
-extern u8 *gUnk_03000FD8;
+extern u8 *gWorld;
 extern void (*gUnk_03000FE0)(void);
 void vcount_store(u8 *out);
 void run_task_list(u8 *list);
@@ -644,7 +644,7 @@ struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *h
     task_insert(owner, kind, (void *)arg);
     owner->type = (void *)gTypeB;
     gWorkBuf = handle;
-    sys = gUnk_0300034C;
+    sys = gSys;
     mt19937_seed(*(u32 *)(sys + 0x8D0), *(u32 *)(sys + 0x1C));
     *(u16 *)(sys + 0x78) |= 0x3FF;
     flags = sys + 0x79;
@@ -679,15 +679,15 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
     u8 *world;
 
     ((struct TaskOwner *)owner)->type = (void *)gTypeB;
-    sys = gUnk_0300034C;
+    sys = gSys;
     sys[0x44] = 10;
     sys[0x45] = 2;
-    if (gUnk_03000FD8 != NULL)
+    if (gWorld != NULL)
     {
         release_timer_tiles();
-        world = gUnk_03000FD8;
+        world = gWorld;
         set_irq_callback(2, *(void **)(world + 0x25C));
-        world = gUnk_03000FD8;
+        world = gWorld;
         list = *(u8 **)(world + 0x78);
         if (list != NULL)
         {
@@ -697,16 +697,16 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
                 list = *(u8 **)list;
             } while (list != NULL);
         }
-        if (*(void **)(gUnk_03000FD8 + 0x244) != NULL)
-            free_task_state(*(void **)(gUnk_03000FD8 + 0x244), 3);
-        if (*(void **)(gUnk_03000FD8 + 0x24C) != NULL)
-            destroy_map_obj(*(void **)(gUnk_03000FD8 + 0x24C), 3);
-        if (*(void **)(gUnk_03000FD8 + 0x248) != NULL)
-            menu_obj_free(*(void **)(gUnk_03000FD8 + 0x248), 3);
-        if (*(void **)(gUnk_03000FD8 + 0x250) != NULL)
-            restore_display(*(void **)(gUnk_03000FD8 + 0x250), 3);
-        if (*(void **)(gUnk_03000FD8 + 0x2F0) != NULL)
-            reset_obj_hook(*(void **)(gUnk_03000FD8 + 0x2F0), 3);
+        if (*(void **)(gWorld + 0x244) != NULL)
+            free_task_state(*(void **)(gWorld + 0x244), 3);
+        if (*(void **)(gWorld + 0x24C) != NULL)
+            destroy_map_obj(*(void **)(gWorld + 0x24C), 3);
+        if (*(void **)(gWorld + 0x248) != NULL)
+            menu_obj_free(*(void **)(gWorld + 0x248), 3);
+        if (*(void **)(gWorld + 0x250) != NULL)
+            restore_display(*(void **)(gWorld + 0x250), 3);
+        if (*(void **)(gWorld + 0x2F0) != NULL)
+            reset_obj_hook(*(void **)(gWorld + 0x2F0), 3);
         p = gUnk_02000010;
         *p++ = 0;
         *p++ = 0;
@@ -716,8 +716,8 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
         *p++ = 0;
         *p++ = 0;
         *p++ = 0;
-        heap_free(gUnk_03000FD8);
-        gUnk_03000FD8 = NULL;
+        heap_free(gWorld);
+        gWorld = NULL;
         run_pending_obj_callbacks();
     }
     if (gWorkBuf != NULL)
@@ -726,7 +726,7 @@ NONMATCH("asm/code_080FBF10/owner_release.s", void owner_release(u8 *owner, u32 
         gWorkBuf = NULL;
     }
     set_flags_2_3(((struct TaskOwner *)owner)->list);
-    sys = gUnk_0300034C;
+    sys = gSys;
     ((struct FlagBit6 *)(sys + 0x79))->b6 = 0;
     task_remove(owner, mode);
 }
@@ -745,13 +745,13 @@ void world_tick(void)
     void (*stateFn)(u8 *);
 
     vcount_store(&vcount);
-    world = gUnk_03000FD8;
+    world = gWorld;
     arg = world + 0x20;
     stateFn = *(void (**)(u8 *))(world + 0x24);
     stateFn(arg);
-    run_task_list(gUnk_03000FD8 + 0x4C);
+    run_task_list(gWorld + 0x4C);
     refresh_sprite_display(vcount);
-    if (*(u32 *)(gUnk_03000FD8 + 0x24C) != 0)
+    if (*(u32 *)(gWorld + 0x24C) != 0)
     {
         gUnk_03000FE0 = world_main_frame;
     }
@@ -777,7 +777,7 @@ void owner_wait_entry(u8 *owner)
 
     if ((u8)world_entry_ready() == 0)
     {
-        old = *(u8 **)(gUnk_03000FD8 + 0x2D8);
+        old = *(u8 **)(gWorld + 0x2D8);
         flag = old[3];
         level = ((s8 *)old)[3];
         if (level > 0)
@@ -790,7 +790,7 @@ void owner_wait_entry(u8 *owner)
         }
         else
         {
-            old = *(u8 **)(gUnk_03000FD8 + 0x2D8);
+            old = *(u8 **)(gWorld + 0x2D8);
             if (((s8 *)old)[3] == 0)
             {
                 slot_reset(1);

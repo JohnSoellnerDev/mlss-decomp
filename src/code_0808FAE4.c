@@ -14,7 +14,7 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
 struct ActionBits
 {
@@ -42,7 +42,7 @@ struct WorldMode
     u8 mode;
 };
 
-extern struct WorldMode *gUnk_03000FD8;
+extern struct WorldMode *gWorld;
 
 struct PoseHoldBit
 {
@@ -190,7 +190,7 @@ void hold_orbit_circle_a(struct HoldActor *obj);
 void hold_orbit_circle_b(struct HoldActor *obj);
 void orbit_end_wait_a(struct HoldActor *obj);
 void orbit_end_wait_b(struct HoldActor *obj);
-extern u8 *gUnk_03000FF4;
+extern u8 *gParty;
 extern const u8 gAnim278[];
 extern const u8 gAnim374[];
 void jump_orbit_finish_if_pose_visible_c(struct HoldActor *obj);
@@ -253,7 +253,7 @@ void hold_wait_a(struct HoldActor *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.held & obj->buttons;
+    keys = gSys.held & obj->buttons;
     if (keys == 0)
     {
         obj->timer = 1;
@@ -270,7 +270,7 @@ void hold_wait_a(struct HoldActor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8->mode & 0xF0) == 0x10)
+            if ((gWorld->mode & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;

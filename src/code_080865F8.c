@@ -171,7 +171,7 @@ struct FlagBits81
     u8 rest : 5;
 };
 
-extern struct CandMgr *gUnk_03000FD8;
+extern struct CandMgr *gWorld;
 extern const u16 gActionCodes[];
 
 void place_part_sprite(struct Actor *obj);
@@ -354,7 +354,7 @@ ASM_FUNC("asm/code_080865F8/arbitrate_candidates.s", void arbitrate_candidates(v
 
 void clear_candidate_pair(struct Actor *obj)
 {
-    struct CandMgr *mgr = gUnk_03000FD8;
+    struct CandMgr *mgr = gWorld;
     struct Rec *a = mgr->candA;
     struct Actor *objA = (struct Actor *)((u8 *)a + 8);
     struct Rec *b = mgr->candB;
@@ -466,12 +466,12 @@ s32 query_contact(struct Actor *obj, struct Actor *other, s32 kind)
     set_slot_value(0x2A, -1);
     if (other->data->slot == -1)
     {
-        mgr = gUnk_03000FD8;
+        mgr = gWorld;
         ((struct CandBits *)&mgr->status08)->low = 1;
     }
     if (other->data->slot == -2)
     {
-        mgr = gUnk_03000FD8;
+        mgr = gWorld;
         ((struct CandBits *)&mgr->status08)->low = 4;
     }
     return 0;
@@ -527,7 +527,7 @@ void place_and_start_action5(struct Actor *obj, s32 a, s32 b)
 
 void candidate_dispatch(void)
 {
-    struct CandMgr *mgr = gUnk_03000FD8;
+    struct CandMgr *mgr = gWorld;
 
     if (mgr->flags0C & 0x80)
         pair_begin_setup_b((u8 *)mgr->cand7C + 8);

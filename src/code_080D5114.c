@@ -145,9 +145,9 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u8 gRoom149Layer1[];
-extern struct KeyPad gUnk_0300034C;
+extern struct KeyPad gSys;
 
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);

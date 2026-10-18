@@ -146,8 +146,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -179,8 +179,8 @@ void hero_pair_confirm_85ec(struct HeroBody *body);
 
 void hero_pair_settle(void)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
 
     if ((b->sprite->flags & 8) != 0)
     {
@@ -219,10 +219,10 @@ void hero_a_place_at_b(struct HeroBody *body)
     s32 neg;
     u8 mode;
 
-    mode = gUnk_03000FD8->modeByte;
-    gUnk_03000FD8->modeByte = mode | 0xC0;
-    a = &gUnk_03000FD8->heroA->body;
-    b = &gUnk_03000FD8->heroB->body;
+    mode = gWorld->modeByte;
+    gWorld->modeByte = mode | 0xC0;
+    a = &gWorld->heroA->body;
+    b = &gWorld->heroB->body;
     find_frame_entry(a, 0);
     set_slot_value(0x2B, -1);
     if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
@@ -251,9 +251,9 @@ void hero_a_place_at_b(struct HeroBody *body)
 
 void hero_a_join_b(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *a = &hero_a->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     s32 x;
     s32 y;
     s32 z;

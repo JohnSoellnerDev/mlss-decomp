@@ -18,7 +18,7 @@ struct TileSlot
     u8 filler10[4];
 };
 
-extern u32 gUnk_03000F70;
+extern u32 gSavedDispcnt;
 s32 distance_step(s32 x, s32 y, s32 z);
 
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
@@ -115,7 +115,7 @@ ASM_FUNC("asm/code_08084DB4/clear_map_rect.s", void clear_map_rect(void))
 
 ASM_FUNC("asm/code_08084DB4/copy_map_rect_add.s", void copy_map_rect_add(void))
 
-ASM_FUNC("asm/code_08084DB4/unknown_code_08085850.s", void unknown_code_08085850(void))
+ASM_FUNC("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(void))
 
 void copy_slot_tiles(u8 *obj, u8 idx, void *dst, u32 off, u32 count)
 {
@@ -125,7 +125,7 @@ void copy_slot_tiles(u8 *obj, u8 idx, void *dst, u32 off, u32 count)
     dma_copy_or_queue(dst, slot->block + skip, count << 5, 0x20, 0);
 }
 
-void unknown_code_08085964(u8 *obj, u8 idx, u8 *src, u8 palette)
+void copy_into_slot(u8 *obj, u8 idx, u8 *src, u8 palette)
 {
     struct TileSlot *slot = slot_at(obj, idx);
 
@@ -147,7 +147,7 @@ void fill_slot(u8 *obj, u8 idx, u32 arg)
     ((void (*)(u32, u8 *, u32))gMemRoutines)(pattern, slot->block, ((u32)slot->size << 18) >> 13);
 }
 
-void unknown_code_080859f0(u8 *obj, u8 idx, u32 a, u32 b, u32 p5, u8 p6, u32 p7)
+void draw_slot_number(u8 *obj, u8 idx, u32 a, u32 b, u32 p5, u8 p6, u32 p7)
 {
     struct TileSlot *slot = slot_at(obj, idx);
 
@@ -196,7 +196,7 @@ ASM_FUNC("asm/code_08084DB4/reset_display.s", void reset_display(void))
 
 void restore_display(u8 *obj, u32 flags)
 {
-    *(u16 *)DISPCNT_SHADOW = gUnk_03000F70;
+    *(u16 *)DISPCNT_SHADOW = gSavedDispcnt;
     heap_free(*(void **)(obj + 0x288));
     if (flags & 1)
     {

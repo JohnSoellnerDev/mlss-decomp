@@ -164,9 +164,9 @@ struct World
     u8 unk3A5;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 *gParty;
+extern u8 gSys[];
 extern u16 gGlyphIndexTable[];
 extern u32 gMapTable[];
 
@@ -279,8 +279,8 @@ void state_apply_hero_stats(struct Owner *owner)
     u16 sVar2;
     u16 v;
 
-    obj = gUnk_03000FD8->fig80[0];
-    rec = gUnk_03000FF4 - ((struct CurObj *)obj)->unkEC * 0x3C;
+    obj = gWorld->fig80[0];
+    rec = gParty - ((struct CurObj *)obj)->unkEC * 0x3C;
     tbl = rec - 0x3C;
     ((struct MsBits *)&obj->unk7E)->mode = 1;
     obj->unkF5 = rec[-0xC];
@@ -302,10 +302,10 @@ void state_apply_hero_stats(struct Owner *owner)
     obj->unk12C = rec[-5] + 1;
     obj->unk12D = rec[-4] + 1;
 
-    obj = gUnk_03000FD8->fig80[1];
+    obj = gWorld->fig80[1];
     if (obj != 0)
     {
-        rec = gUnk_03000FF4 - ((struct CurObj *)obj)->unkEC * 0x3C;
+        rec = gParty - ((struct CurObj *)obj)->unkEC * 0x3C;
         tbl = rec - 0x3C;
         ((struct MsBits *)&obj->unk7E)->mode = 1;
         obj->unkF5 = rec[-0xC];
@@ -342,30 +342,30 @@ void state_menu_open_wait(struct Owner *owner)
     {
         owner->timer--;
     }
-    else if ((gUnk_03000FD8->flags2BF & 2) != 0 && sub_obj_running(gUnk_03000FD8->menu248) == 0)
+    else if ((gWorld->flags2BF & 2) != 0 && sub_obj_running(gWorld->menu248) == 0)
     {
-        if (gUnk_03000FD8->unk4 == 0 && (gUnk_03000FD8->figMode2C0 & 0x20) == 0)
+        if (gWorld->unk4 == 0 && (gWorld->figMode2C0 & 0x20) == 0)
         {
             menu_open_setup();
             return;
         }
-        if ((gUnk_03000FD8->flags2BF & 0x20) == 0)
+        if ((gWorld->flags2BF & 0x20) == 0)
         {
             slot_reset(1);
-            idx = ~((struct CurObj *)gUnk_03000FD8->fig80[0])->unkEC;
-            entry = (struct Sprite *)(gUnk_03000FF4 + idx * 0x3C);
-            entry->unk0E = gUnk_03000FD8->list58[idx + 6]->unkF6;
-            entry->unk14 = gUnk_03000FD8->list58[idx + 6]->unkFC;
+            idx = ~((struct CurObj *)gWorld->fig80[0])->unkEC;
+            entry = (struct Sprite *)(gParty + idx * 0x3C);
+            entry->unk0E = gWorld->list58[idx + 6]->unkF6;
+            entry->unk14 = gWorld->list58[idx + 6]->unkFC;
             if (entry->unk0E == 0)
             {
                 entry->unk0E = 1;
             }
-            if (gUnk_03000FD8->fig80[1] != 0)
+            if (gWorld->fig80[1] != 0)
             {
-                idx = ~((struct CurObj *)gUnk_03000FD8->fig80[1])->unkEC;
-                entry = (struct Sprite *)(gUnk_03000FF4 + idx * 0x3C);
-                entry->unk0E = gUnk_03000FD8->list58[idx + 6]->unkF6;
-                entry->unk14 = gUnk_03000FD8->list58[idx + 6]->unkFC;
+                idx = ~((struct CurObj *)gWorld->fig80[1])->unkEC;
+                entry = (struct Sprite *)(gParty + idx * 0x3C);
+                entry->unk0E = gWorld->list58[idx + 6]->unkF6;
+                entry->unk14 = gWorld->list58[idx + 6]->unkFC;
                 if (entry->unk0E == 0)
                 {
                     entry->unk0E = 1;
@@ -388,24 +388,24 @@ u8 world_list_idle(void)
     s32 mask;
     s32 i;
 
-    if (gUnk_03000FD8->unk40 != 0)
+    if (gWorld->unk40 != 0)
     {
         return 0;
     }
-    if (gUnk_03000FD8->unk44 != 0)
+    if (gWorld->unk44 != 0)
     {
         return 0;
     }
-    flags = gUnk_03000FD8->flags0B;
+    flags = gWorld->flags0B;
     if (flags & 2)
     {
         mask = ~2;
         mask &= flags;
-        gUnk_03000FD8->flags0B = mask;
+        gWorld->flags0B = mask;
         return 0;
     }
     i = 0;
-    list = &gUnk_03000FD8->list58[0];
+    list = &gWorld->list58[0];
     for (; i < 8; i += 4)
     {
         if (list[0]->unk111 & 1)
@@ -460,7 +460,7 @@ void state_marker_show(struct Owner *owner)
     }
     else if (!is_state_busy())
     {
-        struct Obj *hero = gUnk_03000FD8->list58[gUnk_03000FD8->hero33F + 6];
+        struct Obj *hero = gWorld->list58[gWorld->hero33F + 6];
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker;
         s32 vx;
@@ -469,7 +469,7 @@ void state_marker_show(struct Owner *owner)
         s32 flags;
         s32 mask;
 
-        sprite_set_action((u8 *)hero + 8, 0, gUnk_03000FD8->hero33F ? 0x2067 : 0x2038, 0);
+        sprite_set_action((u8 *)hero + 8, 0, gWorld->hero33F ? 0x2067 : 0x2038, 0);
         marker = spawn_obj_by_id(0x8004, 3, 2, 0);
         owner->sprite = marker;
         sprite_entry_update(marker);
@@ -493,7 +493,7 @@ void state_marker_show(struct Owner *owner)
         marker->flags = mask;
         owner->timer = gClaimKindTable[3];
         owner->state = state_marker_reset;
-        set_slot_value(gUnk_03000FD8->hero33F ? 0xFD : 0xEF, -1);
+        set_slot_value(gWorld->hero33F ? 0xFD : 0xEF, -1);
     }
 }
 
@@ -508,8 +508,8 @@ void state_marker_reset(struct Owner *owner)
     else
     {
         obj_detach_active(owner->sprite);
-        sprite_set_action((u8 *)gUnk_03000FD8->list58[gUnk_03000FD8->hero340 + 6] + 8,
-                          gUnk_03000FD8->hero340 ? 1 : 4, gUnk_03000FD8->hero340 ? 0x204E : 0x2001, 0);
+        sprite_set_action((u8 *)gWorld->list58[gWorld->hero340 + 6] + 8,
+                          gWorld->hero340 ? 1 : 4, gWorld->hero340 ? 0x204E : 0x2001, 0);
         owner->timer = 0x10;
         owner->state = state_marker_place_hero;
         owner->state(owner);
@@ -527,7 +527,7 @@ void state_marker_place_hero(struct Owner *owner)
     }
     else
     {
-        struct Obj *hero = gUnk_03000FD8->list58[gUnk_03000FD8->hero340 + 6];
+        struct Obj *hero = gWorld->list58[gWorld->hero340 + 6];
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker = owner->sprite;
         s32 vx;
@@ -574,7 +574,7 @@ void state_marker_gfx_place(struct Owner *owner)
     }
     else
     {
-        struct Obj *hero = gUnk_03000FD8->list58[gUnk_03000FD8->hero340 + 6];
+        struct Obj *hero = gWorld->list58[gWorld->hero340 + 6];
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker = owner->sprite;
         s32 vx;
@@ -624,15 +624,15 @@ void state_hero_anim_notify(struct Owner *owner)
         s32 mask;
 
         obj_release_node(owner->sprite);
-        o8 = (struct Owner *)((u8 *)gUnk_03000FD8->list58[gUnk_03000FD8->hero340 + 6] + 8);
-        sprite_set_action(o8, 3, gUnk_03000FD8->hero340 ? 0x2067 : 0x2038, 0);
+        o8 = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero340 + 6] + 8);
+        sprite_set_action(o8, 3, gWorld->hero340 ? 0x2067 : 0x2038, 0);
         flags = o8->sprite->flags;
         mask = ~6;
         mask &= flags;
         mask |= 2;
         o8->sprite->flags = mask;
         owner->state = state_hero_anim_when_active;
-        set_slot_value(gUnk_03000FD8->hero340 ? 0x102 : 0xE9, -1);
+        set_slot_value(gWorld->hero340 ? 0x102 : 0xE9, -1);
     }
 }
 
@@ -651,12 +651,12 @@ void state_heroes_anim_stop(struct Owner *owner)
         s32 flags;
         s32 mask;
 
-        sprite_set_action((u8 *)gUnk_03000FD8->list58[gUnk_03000FD8->hero33F + 6] + 8, -1, -1, 0);
-        sprite_set_action((u8 *)gUnk_03000FD8->list58[gUnk_03000FD8->hero340 + 6] + 8, -1, -1, 0);
-        flags = gUnk_03000FD8->flags0B;
+        sprite_set_action((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8, -1, -1, 0);
+        sprite_set_action((u8 *)gWorld->list58[gWorld->hero340 + 6] + 8, -1, -1, 0);
+        flags = gWorld->flags0B;
         mask = ~1;
         mask &= flags;
-        gUnk_03000FD8->flags0B = mask;
+        gWorld->flags0B = mask;
         owner->state = state_check_slots;
     }
 }
@@ -674,7 +674,7 @@ void state_menu_slide_in(struct Owner *owner)
     }
     else
     {
-        struct Sprite *menu = gUnk_03000FD8->menu368;
+        struct Sprite *menu = gWorld->menu368;
         s32 ny;
         s32 flags;
         s32 mask;
@@ -704,7 +704,7 @@ void state_menu_alloc_scene(struct Owner *owner)
     }
     else
     {
-        struct World *world = gUnk_03000FD8;
+        struct World *world = gWorld;
         u32 figIdx;
         struct Obj *fig;
         struct Pos38 *pose;

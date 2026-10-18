@@ -90,19 +90,19 @@ struct Actor
     u8 fillerAE[0xB2 - 0xAE];
     u16 dh;
 };
-extern u8 *gUnk_03000FF4;
-extern u8 *gUnk_03000FD8;
+extern u8 *gParty;
+extern u8 *gWorld;
 struct KeyState
 {
     u8 filler0[0x3C];
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
 void set_slot_value(u32 id, s32 value);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 extern const u8 gAnim278[];
 extern const u8 gAnim374[];
 void hold_decay_jump_timer_arc_a(struct Actor *obj);
@@ -197,7 +197,7 @@ void hold_decay_hold_step_a(struct Actor *obj)
     }
     if (obj->step != 12)
     {
-        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        if ((gSys.held & obj->buttons) == 0)
         {
             obj->step = obj->step * 3;
             obj->state = hold_decay_hold_release_a;
@@ -268,10 +268,10 @@ void hold_decay_hold_idle_b(struct Actor *obj)
         end_action(obj);
         return;
     }
-    pressed = gUnk_0300034C.held & obj->buttons;
+    pressed = gSys.held & obj->buttons;
     if (pressed == 0)
     {
-        obj->timer = sub_081DE850(5, mt19937_next()) + 10;
+        obj->timer = rand_below(5, mt19937_next()) + 10;
         sprite_set_action(obj, 6, 0, 0);
         ((struct PoseMode *)obj->pose)->mode = 0;
         obj->state = hold_decay_timer_start_orbit_b;
@@ -282,7 +282,7 @@ void hold_decay_hold_idle_b(struct Actor *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseMode *)obj->pose)->mode = 1;
@@ -482,7 +482,7 @@ u32 hold_decay_setup_slot_state(struct Actor *obj)
     obj->unk77_5 = 0;
     data = obj->data;
     dst = &data->slotValue;
-    base = gUnk_03000FF4;
+    base = gParty;
     base += (~data->slot) * 0x3C;
     *dst = *(u16 *)(base + 0x2C);
     obj->state = hold_decay_dispatch_slot_spawn;
@@ -525,13 +525,13 @@ u32 hold_decay_random_pause_jump_a(struct Actor *obj)
     struct Data *data;
 
     obj->anim = gAnim374;
-    base = gUnk_03000FF4;
+    base = gParty;
     base += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(5, mt19937_next()) + 10;
+    timer = rand_below(5, mt19937_next()) + 10;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
@@ -553,12 +553,12 @@ u32 hold_decay_random_pause_jump_b(struct Actor *obj)
     struct Data *data;
 
     obj->anim = gAnim278;
-    base = gUnk_03000FF4;
+    base = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(6, mt19937_next()) + 2;
+    timer = rand_below(6, mt19937_next()) + 2;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -715,12 +715,12 @@ u32 random_jump_c(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim278;
-    base = gUnk_03000FF4;
+    base = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(6, mt19937_next()) + 4;
+    timer = rand_below(6, mt19937_next()) + 4;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -745,13 +745,13 @@ u32 random_jump_d(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim374;
-    base = gUnk_03000FF4;
+    base = gParty;
     base += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(11, mt19937_next()) + 5;
+    timer = rand_below(11, mt19937_next()) + 5;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
@@ -914,12 +914,12 @@ u32 random_jump_e(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim278;
-    base = gUnk_03000FF4;
+    base = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(5, mt19937_next()) + 7;
+    timer = rand_below(5, mt19937_next()) + 7;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -944,13 +944,13 @@ u32 random_jump_f(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim374;
-    base = gUnk_03000FF4;
+    base = gParty;
     base += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(11, mt19937_next()) + 5;
+    timer = rand_below(11, mt19937_next()) + 5;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
@@ -1113,12 +1113,12 @@ u32 random_pause_jump_c(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim278;
-    base = gUnk_03000FF4;
+    base = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(4, mt19937_next()) + 2;
+    timer = rand_below(4, mt19937_next()) + 2;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -1143,13 +1143,13 @@ u32 random_pause_jump_d(struct Actor *obj)
     s32 (*fn)(u32);
 
     obj->anim = gAnim374;
-    base = gUnk_03000FF4;
+    base = gParty;
     base += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(base + 0x2A);
-    timer = sub_081DE850(11, mt19937_next()) + 5;
+    timer = rand_below(11, mt19937_next()) + 5;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);

@@ -28,7 +28,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 
 struct Flags77Bits
 {
@@ -144,8 +144,8 @@ void count_dx_and_notify(struct ActorObj *obj);
 u32 lookup_part_b_then_step(struct ActorObj *obj);
 void remove_child_and_move(struct ActorObj *obj);
 void timer_then_anim5(struct ActorObj *obj);
-s32 unknown_part_steps_08072d24(struct ActorObj *obj);
-s32 sub_08072D30(struct ActorObj *obj);
+s32 arm_slot_anim_2f_then_follow(struct ActorObj *obj);
+s32 arm_slot_anim_2f_then_step_2e0d(struct ActorObj *obj);
 void slot_anim_2f_then_follow(struct ActorObj *obj);
 void slot_anim_2f_then_step_2e0d(struct ActorObj *obj);
 void slot_follow_move(struct ActorObj *obj);
@@ -298,13 +298,13 @@ void timer_then_anim5(struct ActorObj *obj)
     }
 }
 
-s32 unknown_part_steps_08072d24(struct ActorObj *obj)
+s32 arm_slot_anim_2f_then_follow(struct ActorObj *obj)
 {
     obj->state = slot_anim_2f_then_follow;
     return 1;
 }
 
-s32 sub_08072D30(struct ActorObj *obj)
+s32 arm_slot_anim_2f_then_step_2e0d(struct ActorObj *obj)
 {
     obj->state = slot_anim_2f_then_step_2e0d;
     return 1;
@@ -312,19 +312,19 @@ s32 sub_08072D30(struct ActorObj *obj)
 
 void slot_anim_2f_then_follow(struct ActorObj *obj)
 {
-    sprite_set_action((struct ActorObj *)(gUnk_03000FD8->partners[0] + 8), 0x2F, 0, 0);
+    sprite_set_action((struct ActorObj *)(gWorld->partners[0] + 8), 0x2F, 0, 0);
     obj->state = slot_follow_move;
 }
 
 void slot_anim_2f_then_step_2e0d(struct ActorObj *obj)
 {
-    sprite_set_action((struct ActorObj *)(gUnk_03000FD8->partners[0] + 8), 0x2F, 0, 0);
+    sprite_set_action((struct ActorObj *)(gWorld->partners[0] + 8), 0x2F, 0, 0);
     obj->state = slide_to_anchor_start;
 }
 
 void slot_follow_move(struct ActorObj *obj)
 {
-    struct ActorObj *slot = (struct ActorObj *)(gUnk_03000FD8->partners[0] + 8);
+    struct ActorObj *slot = (struct ActorObj *)(gWorld->partners[0] + 8);
     s32 flags;
 
     if (slot->pose->flags & 8)
@@ -346,7 +346,7 @@ void slot_follow_move(struct ActorObj *obj)
 
 void slide_to_anchor_start(struct ActorObj *obj)
 {
-    struct ActorObj *slot = (struct ActorObj *)(gUnk_03000FD8->partners[0] + 8);
+    struct ActorObj *slot = (struct ActorObj *)(gWorld->partners[0] + 8);
     s32 flags;
 
     if (slot->pose->flags & 8)
@@ -397,7 +397,7 @@ void advance_offset_then_notify(struct ActorObj *obj)
     }
     if (obj->pose->flags & 8)
     {
-        struct ActorObj *slot = (struct ActorObj *)(gUnk_03000FD8->partners[0] + 8);
+        struct ActorObj *slot = (struct ActorObj *)(gWorld->partners[0] + 8);
 
         sprite_set_action(obj, 0x14, 0, 0);
         sprite_set_action(slot, 0, 0x40AE, 0);

@@ -201,7 +201,7 @@ void obj_timed_bounce_or_finish(struct ActorObj *obj);
 void obj_begin_fall_to_owner(struct ActorObj *obj);
 u32 obj_slot_found_recoil(struct ActorObj *obj, u32 slot);
 void obj_settle_step_land_slot69(struct ActorObj *obj);
-extern u8 *gUnk_03000FD8;
+extern u8 *gWorld;
 struct ActorObj *obj_spawn_linked(struct ActorObj *parent, u32 kind, u32 value);
 void place_targets(struct ActorObj *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct ActorObj *obj, u32 offsets);
@@ -212,10 +212,10 @@ void obj_action8_slot126_timer(struct ActorObj *obj);
 u32 obj_random_slot_link_then_next(struct ActorObj *obj, struct ActorObj *arg);
 void change_item_count(u32 item, u32 count);
 void obj_lower_height_512(struct ActorObj *obj);
-extern u8 *gUnk_03000FF4;
+extern u8 *gParty;
 u32 mt19937_next(void);
 void start_motion(struct ActorObj *obj);
-u32 sub_081DE850(u32 n, u32 r);
+u32 rand_below(u32 n, u32 r);
 void sound_stop_song(u32 song);
 struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void obj_release(struct ActorObj *obj);
@@ -345,29 +345,29 @@ u32 obj_random_slot_link_then_next(struct ActorObj *obj, struct ActorObj *arg)
     u32 base = 0;
     u8 flag;
 
-    flag = gUnk_03000FF4[0x8A];
+    flag = gParty[0x8A];
     if (flag != 0 && flag != 0xFF)
     {
         base = 0x46;
-        if (sub_081DE850(base, mt19937_next()) <= 0x45)
+        if (rand_below(base, mt19937_next()) <= 0x45)
         {
             slot = 0;
         }
     }
-    flag = gUnk_03000FF4[0x8B];
+    flag = gParty[0x8B];
     if (flag != 0 && flag != 0xFF)
     {
         base += 0x19;
-        if (sub_081DE850(base, mt19937_next()) <= 0x18)
+        if (rand_below(base, mt19937_next()) <= 0x18)
         {
             slot = 1;
         }
     }
-    flag = gUnk_03000FF4[0x8C];
+    flag = gParty[0x8C];
     if (flag != 0 && flag != 0xFF)
     {
         base += 5;
-        if (sub_081DE850(base, mt19937_next()) <= 4)
+        if (rand_below(base, mt19937_next()) <= 4)
         {
             slot = 2;
         }

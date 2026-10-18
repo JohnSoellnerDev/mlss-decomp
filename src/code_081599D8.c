@@ -194,7 +194,7 @@ struct LineTables
     u16 unk1CC[0xE4];
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 extern u8 gUnk_02000048[];
 extern u8 gUnk_02000050[];
 extern u8 *gUnk_03001014;
@@ -711,7 +711,7 @@ void irq_copy_tilemaps(void)
     {
         dma3_copy_tilemap((u8 *)gGamePtr + 0x1064);
     }
-    gUnk_0300034C.unk02 |= 0x7FFF;
+    gSys.unk02 |= 0x7FFF;
 }
 
 struct ClassObj *obj_set_class_de90(struct ClassObj *obj, u8 kind)
@@ -830,13 +830,13 @@ ASM_FUNC("asm/code_081599D8/obj_init_ext_fields.s", void obj_init_ext_fields(voi
 
 void cam_pan_by_keys(struct CamObj *cam)
 {
-    if (gUnk_0300034C.held & 0x10)
+    if (gSys.held & 0x10)
         cam->unk508 += 0x400;
-    if (gUnk_0300034C.held & 0x20)
+    if (gSys.held & 0x20)
         cam->unk508 -= 0x400;
-    if (gUnk_0300034C.held & 0x80)
+    if (gSys.held & 0x80)
         cam->unk50C += 0x400;
-    if (gUnk_0300034C.held & 0x40)
+    if (gSys.held & 0x40)
         cam->unk50C -= 0x400;
 }
 
@@ -1007,8 +1007,8 @@ void transition_exit(struct SceneObj *obj, u32 task)
         cam_free(cam, 3);
     }
     heap_free(gUnk_0300101C);
-    gUnk_0300034C.unk02 = 0xFFFF;
-    ((struct ObjBit5 *)((u8 *)&gUnk_0300034C + 0x888))->bit5 = 0;
+    gSys.unk02 = 0xFFFF;
+    ((struct ObjBit5 *)((u8 *)&gSys + 0x888))->bit5 = 0;
     set_flags_2_3(*(u32 *)((u8 *)obj + 0x14));
     obj_run_callbacks();
     obj_free_tiles((u8 *)obj + 0x1064, 2);

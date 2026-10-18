@@ -136,7 +136,7 @@ ASM_FUNC("asm/code_0805970C/obj_setup_track_layouts.s", void obj_setup_track_lay
 
 ASM_FUNC("asm/code_0805970C/copy_map_layers_12.s", void copy_map_layers_12(u8 *obj, u32 unused))
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern const u8 gMapPalettesA[];
 extern const u8 gMapPalettesB[];
 extern const u8 gRomBlockTable[];
@@ -145,7 +145,7 @@ NONMATCH("asm/code_0805970C/obj_copy_rom_block.s", void obj_copy_rom_block(u8 *o
 {
     const u8 *src;
 
-    if ((gUnk_0300034C[0x888] & 6) == 2)
+    if ((gSys[0x888] & 6) == 2)
         src = gMapPalettesB;
     else
         src = gMapPalettesA;
@@ -259,12 +259,12 @@ NONMATCH("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fix
     u8 *base;
     u32 color;
 
-    if ((gUnk_0300034C[0x888] & 6) == 2)
+    if ((gSys[0x888] & 6) == 2)
         src = gMapPalettesB;
     else
         src = gMapPalettesA;
     cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DD0[5]]], gUnk_02000080, 0x78);
-    base = gUnk_0300034C;
+    base = gSys;
     color = 0x7fff;
     *(u16 *)(base + 2) = color;
 }

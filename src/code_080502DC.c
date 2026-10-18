@@ -180,7 +180,7 @@ void obj_init(u8 *obj, u32 a, u32 b);
 void init_object_from_def(u32 d, u8 *child, u8 *obj);
 void heap_free_b(void *p);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void wander_to_edge(u8 *obj, u32 a, s32 b);
 u32 angle_of_vector16(s32 x, s32 y);
 void obj_random_enter(u32 owner, u8 *obj, u32 *state);
@@ -197,7 +197,7 @@ extern const u8 gObjFlagsClass[];
 extern const u8 gObjStateClass[];
 u8 test_flag(u8 *table, u8 *tableB, u16 id);
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
@@ -555,9 +555,9 @@ NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 
     u16 shade;
 
     slot = (s16 *)(obj + 0x100);
-    idx = sub_081DE850(2, mt19937_next());
+    idx = rand_below(2, mt19937_next());
     entry = ((u16 *)(obj + 0x130))[idx];
-    idx = sub_081DE850(4, mt19937_next());
+    idx = rand_below(4, mt19937_next());
     slot += idx;
     value = *slot;
     wander_to_edge(obj, entry, value);
@@ -589,7 +589,7 @@ void obj_random_enter(u32 owner, u8 *obj, u32 *state)
     }
     else if (flag == 0)
     {
-        idx = sub_081DE850(4, mt19937_next()) * 2;
+        idx = rand_below(4, mt19937_next()) * 2;
         tbl = (u16 *)(obj + 0x128);
         val = *(u16 *)((u8 *)tbl + idx);
         *(u16 *)(obj + 0x1D2) = val;
@@ -643,7 +643,7 @@ struct WinObj *window_create(struct WinObj *w, u8 kind, u32 a, u16 id)
     task_insert(w, kind, a);
     *(u32 *)((u8 *)w + 0x18) = (u32)gWindowStateClass;
     *(u16 *)0x02000000 = 0;
-    base = gUnk_0300034C;
+    base = gSys;
     *(u32 *)(base + 0x884) = 0;
     w->unk2A = id;
     w->unk24 = 0x200;
@@ -731,7 +731,7 @@ void obj_emit_oam(void)
     struct ListHeadX *list;
     u32 old;
 
-    base = (u8 *)&gUnk_0300034C;
+    base = (u8 *)&gSys;
     oam_slot = (u32 *)(base + 0x880);
     old = *oam_slot;
     obj_list_pass_0a8c();

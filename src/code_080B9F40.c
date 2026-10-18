@@ -126,8 +126,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -153,14 +153,14 @@ void hero_a_approach_91e0(struct HeroBody *body);
 void hero_a_step_slot_anim(struct HeroBody *body);
 void hero_b_step_slot_anim(struct HeroBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
 
 ASM_FUNC("asm/code_080B9F40/hero_pair_place_mirror.s", void hero_pair_place_mirror(struct HeroBody *body))
 
 void hero_a_rate_wait(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *a = &world->heroA->body;
     struct HeroBody *b = &world->heroB->body;
     u32 next = (u32)b->state;
@@ -179,7 +179,7 @@ void hero_a_rate_wait(struct HeroBody *body)
 
 void hero_a_rate_anim(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *a = &hero->body;
 
     if ((a->sprite->flags & 8) != 0)

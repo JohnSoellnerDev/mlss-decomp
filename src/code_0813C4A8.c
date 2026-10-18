@@ -169,7 +169,7 @@ void obj_state_run_advance(void);
 void child_box_state(void);
 void place_child_by_stage(s32 arg, struct Obj *ent, u32 *out);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void active_hit_state(struct Owner *owner, struct Actor *ent, void **out);
 void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj);
 void setup_mode4_with_cell(s32 arg, struct Actor *obj, s32 *slot);
@@ -587,7 +587,7 @@ void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out)
     }
     if (flag != 0)
     {
-        u32 idx = sub_081DE850(4, mt19937_next());
+        u32 idx = rand_below(4, mt19937_next());
         u32 off = idx << 1;
         u8 *slot = (u8 *)ent + 0x128;
         u16 value = *(u16 *)(slot + off);

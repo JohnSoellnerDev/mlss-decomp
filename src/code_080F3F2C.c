@@ -41,7 +41,7 @@ struct Owner
     struct OwnerState *state;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gWorkBuf;
 
 void slot_set_value(struct Owner *owner, u32 idx, s32 value, u32 flag);
@@ -74,7 +74,7 @@ u32 cmd_copy_if_active(struct Owner *owner, u32 *dst, u32 *block)
     cond = *block++;
     if (cond == 0)
     {
-        p = gUnk_03000FD8->slots[idx];
+        p = gWorld->slots[idx];
         entry = (u8 *)p + 8;
         active = 0;
         if (p->unkC6 != 0 || (p->flag7F7 & p->flag80) != 0)

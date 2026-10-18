@@ -119,14 +119,14 @@ u32 partner_link_update(struct ActorObj *obj, u32 partner, u32 mode);
 u32 lookup_link_slot(struct ActorObj *obj, u32 a, u32 b);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void on_arrive(struct ActorObj *obj);
-extern u8 *gUnk_03000FD8;
+extern u8 *gWorld;
 extern u8 gItemTable[];
 void set_slot_value(u32 id, s32 value);
 void sprite_load_tables(u32 index);
 void ensure_code_entry(u32 id);
 u32 is_state_busy(void);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u32 jump_velocity(s16 *dx, s16 *dy, s16 *dh, s32 dX, s32 dY, s32 dH, s32 a, s32 b, s32 c, s32 d);
 void obj_spawn_linked_child_jump(struct ActorObj *obj);
 void obj_begin_move_pair(struct ActorObj *obj);
@@ -363,7 +363,7 @@ s32 obj_enter_wait_not_busy_then_e321(struct ActorObj *obj)
 
 s32 obj_random_next_state(struct ActorObj *obj)
 {
-    u32 pick = sub_081DE850(4, mt19937_next());
+    u32 pick = rand_below(4, mt19937_next());
 
     switch (pick)
     {
@@ -414,8 +414,8 @@ void obj_select_code_entry_world(struct ActorObj *obj)
     else
     {
         index = index & 0x7F;
-        gUnk_03000FD8[0x349] = index;
-        *(u8 **)(gUnk_03000FD8 + 0x2DC) = gItemTable + (index << 4);
+        gWorld[0x349] = index;
+        *(u8 **)(gWorld + 0x2DC) = gItemTable + (index << 4);
         sprite_load_tables(index);
         obj->motionSpeed = 0x100;
         next = obj_action10_pose_mode;

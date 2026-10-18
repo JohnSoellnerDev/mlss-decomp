@@ -61,11 +61,11 @@ struct ActiveMgr
     struct PartObj *tail;
 };
 
-extern struct ActiveMgr *gUnk_03000D74;
+extern struct ActiveMgr *gModelCtx;
 extern const s16 gOffsetRows[];
 extern const u8 gMapObjDescriptor[];
 extern u8 *gWorkBuf;
-extern u8 *gUnk_03000FD8;
+extern u8 *gWorld;
 extern u8 gUnk_02000420[];
 extern const u8 gUnk_083BA8A0[];
 extern const u8 gUnk_083BA8AC[];
@@ -103,7 +103,7 @@ struct PartObj *create_map_object(struct PartObj *obj, u8 prio, u32 arg, u8 cfg,
     return obj;
 }
 
-struct PartObj *unknown_code_0808360c(struct PartObj *obj, u8 prio, u32 arg, u8 cfg, u32 ptr)
+struct PartObj *map_object_init_default(struct PartObj *obj, u8 prio, u32 arg, u8 cfg, u32 ptr)
 {
     obj_setup_map_object(obj, prio, arg, cfg, 0, 0, ptr);
     obj->descriptor = gMapObjDescriptor;
@@ -131,8 +131,8 @@ ASM_FUNC("asm/code_080835B0/refresh_sprite_state.s", void refresh_sprite_state(v
 void sprite_refresh_display(void)
 {
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000420, gWorkBuf + 0x3C90, 0x20);
-    gUnk_03000D74->unk26 = 0xFFFF;
-    gUnk_03000FD8[0xC] |= 1;
+    gModelCtx->unk26 = 0xFFFF;
+    gWorld[0xC] |= 1;
 }
 
 s32 signed_byte_e4(struct PartObj *part)
@@ -251,7 +251,7 @@ s32 to_bcd(s32 value)
 
 ASM_FUNC("asm/code_080835B0/unknown_code_08084840.s", void unknown_code_08084840(void))
 
-void sub_080849AC(struct PartObj *obj, s32 a, s32 b, s32 c)
+void sprite_set_camera_offset(struct PartObj *obj, s32 a, s32 b, s32 c)
 {
     s32 v[3];
     u32 w;
@@ -278,7 +278,7 @@ u32 block_flag_byte(struct PartObj *obj)
     return value;
 }
 
-void unknown_code_08084a0a(struct PartObj *node, struct PartObj *repl)
+void list_replace_active(struct PartObj *node, struct PartObj *repl)
 {
     struct PartObj *next = node->next;
     struct PartObj *prev = node->prev;
@@ -293,7 +293,7 @@ void unknown_code_08084a0a(struct PartObj *node, struct PartObj *repl)
     }
     else
     {
-        gUnk_03000D74->head = repl;
+        gModelCtx->head = repl;
     }
     if (next != 0)
     {
@@ -301,11 +301,11 @@ void unknown_code_08084a0a(struct PartObj *node, struct PartObj *repl)
     }
     else
     {
-        gUnk_03000D74->tail = repl;
+        gModelCtx->tail = repl;
     }
 }
 
-void sub_08084A48(struct PartObj *node, struct PartObj *other)
+void list_insert_before_active(struct PartObj *node, struct PartObj *other)
 {
     struct PartObj *prev;
 
@@ -317,7 +317,7 @@ void sub_08084A48(struct PartObj *node, struct PartObj *other)
     {
         return;
     }
-    if (node == gUnk_03000D74->head)
+    if (node == gModelCtx->head)
     {
         return;
     }
@@ -328,15 +328,15 @@ void sub_08084A48(struct PartObj *node, struct PartObj *other)
     }
     else
     {
-        gUnk_03000D74->head = node;
+        gModelCtx->head = node;
     }
     other->prev = node;
     node->prev = prev;
     node->next = other;
-    gUnk_03000D74->count++;
+    gModelCtx->count++;
 }
 
-void sub_08084A8C(struct PartObj *node)
+void list_append_active(struct PartObj *node)
 {
     struct PartObj *tail;
 
@@ -348,22 +348,22 @@ void sub_08084A8C(struct PartObj *node)
     {
         return;
     }
-    if (node == gUnk_03000D74->head)
+    if (node == gModelCtx->head)
     {
         return;
     }
-    tail = gUnk_03000D74->tail;
+    tail = gModelCtx->tail;
     if (tail != 0)
     {
         tail->next = node;
     }
     else
     {
-        gUnk_03000D74->head = node;
+        gModelCtx->head = node;
     }
     node->prev = tail;
-    gUnk_03000D74->count++;
-    gUnk_03000D74->tail = node;
+    gModelCtx->count++;
+    gModelCtx->tail = node;
 }
 
 extern const u8 gUnk_083BA8A0[];
@@ -381,22 +381,22 @@ void list_push_active(struct PartObj *node)
     {
         return;
     }
-    if (node == gUnk_03000D74->head)
+    if (node == gModelCtx->head)
     {
         return;
     }
-    head = gUnk_03000D74->head;
+    head = gModelCtx->head;
     if (head != 0)
     {
         head->prev = node;
     }
     else
     {
-        gUnk_03000D74->tail = node;
+        gModelCtx->tail = node;
     }
     node->next = head;
-    gUnk_03000D74->count++;
-    gUnk_03000D74->head = node;
+    gModelCtx->count++;
+    gModelCtx->head = node;
 }
 
 void list_remove_active(struct PartObj *node)
@@ -413,7 +413,7 @@ void list_remove_active(struct PartObj *node)
     prev = node->prev;
     if (next == prev)
     {
-        if (node != gUnk_03000D74->head)
+        if (node != gModelCtx->head)
         {
             return;
         }
@@ -424,7 +424,7 @@ void list_remove_active(struct PartObj *node)
     }
     else
     {
-        gUnk_03000D74->head = next;
+        gModelCtx->head = next;
     }
     if (next != 0)
     {
@@ -432,12 +432,12 @@ void list_remove_active(struct PartObj *node)
     }
     else
     {
-        gUnk_03000D74->tail = prev;
+        gModelCtx->tail = prev;
     }
     ((struct Bits11 *)&node->flags11)->bit4 = 0;
     node->prev = 0;
     node->next = 0;
-    gUnk_03000D74->count--;
+    gModelCtx->count--;
 }
 
 NONMATCH("asm/code_080835B0/spawn_obj_by_id.s", struct PartObj *spawn_obj_by_id(u16 id, u32 variant, u32 attr, u32 mode))

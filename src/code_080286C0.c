@@ -206,13 +206,13 @@ struct SlotInit
     u8 filler17;
 };
 
-extern u8 gUnk_03000C24;
+extern u8 gFlowState;
 extern u32 gUnk_03000C78;
 extern u8 gUnk_02000080[];
 extern const u8 gTagBtl[];
 extern const u8 gTagEndd[];
 extern const u16 gLookup13b4Ids[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u16 gUnk_02000008;
 extern u32 gUnk_03000E00;
 extern u32 gUnk_03000E04;
@@ -389,7 +389,7 @@ void start_battle_block(struct SceneObj *obj)
     obj->half2B4 = 0xFFFF;
     set_flag_2_2(obj);
     obj->state = 2;
-    gUnk_03000C24 = 1;
+    gFlowState = 1;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     {
@@ -449,7 +449,7 @@ void enter_scene_mode2(struct SceneObj *obj)
 {
     set_flag_2_2(obj);
     obj->state = 2;
-    gUnk_03000C24 = 2;
+    gFlowState = 2;
     if (gUnk_03000C78 == 0)
         gUnk_03000C78 = 0x0800063C;
     create_menu_object((s8)obj->state12C >> 2, 0);
@@ -546,7 +546,7 @@ struct BdObj
 
 void clear_bd4_bit6(struct BdObj *obj)
 {
-    u8 *p = gUnk_0300034C;
+    u8 *p = gSys;
 
     p += 0x888;
     ((struct KeyFlagBits *)p)->bit6 = 0;

@@ -131,7 +131,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -155,9 +155,9 @@ void hero_b_move_to_partner_pose(struct HeroBody *body);
 
 void hero_b_sprite_grow_a_place(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     u16 scale;
@@ -231,9 +231,9 @@ ASM_FUNC("asm/code_080A814C/hero_a_step_end_82ec.s", void hero_a_step_end_82ec(s
 
 void hero_pair_finish_b_place_a_action(void)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -319,9 +319,9 @@ void hero_pair_finish_b_place_a_action(void)
 
 void hero_b_ready_a_place_anim(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 tx;
     s32 ty;
@@ -367,7 +367,7 @@ ASM_FUNC("asm/code_080A814C/hero_a_step_reach_input.s", void hero_a_step_reach_i
 
 void hero_a_active_place_partner_aux(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
     struct HeroBody *partner = body->partner;
     s32 tx;

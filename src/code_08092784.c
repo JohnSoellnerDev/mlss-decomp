@@ -92,8 +92,8 @@ struct Obj
     u16 dh;
 };
 
-extern u8 *gUnk_03000FF4;
-extern u8 *gUnk_03000FD8;
+extern u8 *gParty;
+extern u8 *gWorld;
 extern u8 gAnim278[];
 extern u8 gAnim374[];
 extern u8 gAnim284[];
@@ -103,10 +103,10 @@ struct KeyState
     u16 held;
 };
 
-extern struct KeyState gUnk_0300034C;
+extern struct KeyState gSys;
 
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void sprite_set_action(struct Obj *obj, u32 action, u32 part, u32 extra);
 void set_slot_value(u32 id, u32 value);
 void end_action(struct Obj *obj);
@@ -206,12 +206,12 @@ s32 hold_orbit_random_pause_jump_a(struct Obj *obj)
     s32 q;
 
     obj->anim = (u32)gAnim278;
-    list = gUnk_03000FF4;
+    list = gParty;
     ((struct ObjFlagBits *)&obj->flags)->switchB = 0;
     ((struct ObjFlagBits *)&obj->flags)->switchA = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(list + 0x2A);
-    timer = sub_081DE850(8, mt19937_next()) + 8;
+    timer = rand_below(8, mt19937_next()) + 8;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
@@ -242,13 +242,13 @@ s32 hold_orbit_random_pause_jump_b(struct Obj *obj)
     s32 q;
 
     obj->anim = (u32)gAnim374;
-    list = gUnk_03000FF4;
+    list = gParty;
     list += 0x3C;
     ((struct ObjFlagBits *)&obj->flags)->switchB = 0;
     ((struct ObjFlagBits *)&obj->flags)->switchA = 0;
     data = obj->data;
     data->slotValue = *(u16 *)(list + 0x2A);
-    timer = sub_081DE850(0x16, mt19937_next()) + 0xA;
+    timer = rand_below(0x16, mt19937_next()) + 0xA;
     if (timer != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
@@ -349,7 +349,7 @@ void hold_charge_a(struct Obj *obj)
         sprite_set_action(obj, 0, 0x2025, 3);
     if (obj->step != 8)
     {
-        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        if ((gSys.held & obj->buttons) == 0)
         {
             obj->step *= 2;
             obj->state = charge_release_hold_release_a;
@@ -417,10 +417,10 @@ void charge_release_hold_idle_a(struct Obj *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.held & obj->buttons;
+    keys = gSys.held & obj->buttons;
     if (keys == 0)
     {
-        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        obj->timer = rand_below(5, mt19937_next()) + 0xA;
         sprite_set_action(obj, 6, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
         obj->state = charge_release_timer_start_orbit_a;
@@ -431,7 +431,7 @@ void charge_release_hold_idle_a(struct Obj *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -583,7 +583,7 @@ void charge_release_hold_step_a(struct Obj *obj)
         sprite_set_action(obj, 0, 0x2054, 3);
     if (obj->step != 0xC)
     {
-        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        if ((gSys.held & obj->buttons) == 0)
         {
             obj->step *= 3;
             obj->state = hold_release_b;
@@ -651,10 +651,10 @@ void charge_release_hold_idle_b(struct Obj *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.held & obj->buttons;
+    keys = gSys.held & obj->buttons;
     if (keys == 0)
     {
-        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        obj->timer = rand_below(5, mt19937_next()) + 0xA;
         sprite_set_action(obj, 6, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
         obj->state = charge_release_timer_start_orbit_b;
@@ -665,7 +665,7 @@ void charge_release_hold_idle_b(struct Obj *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -871,7 +871,7 @@ s32 charge_release_setup_slot_state(struct Obj *obj)
     ((struct ObjFlagBits *)&obj->flags)->switchA = 0;
     data = obj->data;
     slotValue = &data->slotValue;
-    list = gUnk_03000FF4;
+    list = gParty;
     index = ~data->slot;
     entry = list + index * 0x3C;
     *slotValue = *(u16 *)(entry + 0x2C);
@@ -1121,7 +1121,7 @@ void hold_charge_b(struct Obj *obj)
         sprite_set_action(obj, 0, 0x2025, 3);
     if (obj->step != 8)
     {
-        if ((gUnk_0300034C.held & obj->buttons) == 0)
+        if ((gSys.held & obj->buttons) == 0)
         {
             obj->step *= 2;
             obj->state = hold_release_c;
@@ -1189,10 +1189,10 @@ void hold_decay_hold_idle_a(struct Obj *obj)
         end_action(obj);
         return;
     }
-    keys = gUnk_0300034C.held & obj->buttons;
+    keys = gSys.held & obj->buttons;
     if (keys == 0)
     {
-        obj->timer = sub_081DE850(5, mt19937_next()) + 0xA;
+        obj->timer = rand_below(5, mt19937_next()) + 0xA;
         sprite_set_action(obj, 6, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
         obj->state = hold_decay_timer_start_orbit_a;
@@ -1203,7 +1203,7 @@ void hold_decay_hold_idle_a(struct Obj *obj)
     {
         if (obj->data->kind == 0x1E)
         {
-            if ((gUnk_03000FD8[9] & 0xF0) == 0x10)
+            if ((gWorld[9] & 0xF0) == 0x10)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;

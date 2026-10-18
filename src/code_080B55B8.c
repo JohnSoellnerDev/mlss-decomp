@@ -75,7 +75,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void step_motion_scaled(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -99,7 +99,7 @@ void hero_b_step_to_partner_6da0(struct HeroBody *body);
 
 void hero_b_go_to_a_speed(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     s32 x;
@@ -130,7 +130,7 @@ ASM_FUNC("asm/code_080B55B8/hero_b_step_scaled_flags.s", void hero_b_step_scaled
 
 void hero_b_go_to_partner_height_2(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     s32 t;
@@ -185,7 +185,7 @@ ASM_FUNC("asm/code_080B55B8/hero_b_step_done_6274.s", void hero_b_step_done_6274
 
 void hero_a_go_to_b_target(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     s32 x;
@@ -217,7 +217,7 @@ void hero_a_go_to_b_target(struct HeroBody *body)
 
 void hero_pair_anim_set(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -241,7 +241,7 @@ void hero_pair_anim_set(struct HeroBody *body)
 
 void hero_b_go_to_partner_aux(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 x;

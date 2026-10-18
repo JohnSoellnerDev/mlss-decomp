@@ -101,7 +101,7 @@ struct ScrollBlock
     u16 unk18;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u16 gTileHalfTable[];
 extern const u8 gUnk_089F46B0[];
 extern u16 gUnk_02000018;
@@ -111,7 +111,7 @@ extern u8 *gWorkBuf;
 extern u16 gUnk_0200004A;
 extern u16 gUnk_0200025C;
 extern u16 gUnk_02000040;
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 
 void reset_display_step(void);
 void add_obj_target_offset(u32 item, s32 a, s32 b);
@@ -133,7 +133,7 @@ struct WorldBit5
 NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 mode))
 {
     u16 m = mode;
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     u32 saved = world->saved260;
     u8 *base;
 
@@ -141,7 +141,7 @@ NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 m
     {
         world->tile26C = gUnk_02000050;
         world->tile26E = gUnk_0200004A;
-        base = gUnk_0300034C;
+        base = gSys;
         world->saved260 = *(u32 *)(base + 0x8C4);
         gUnk_02000050 = 0x3744;
         gUnk_0200004A = 0x3F3B;
@@ -158,7 +158,7 @@ NONMATCH("asm/code_080E0814/enter_special_mode.s", void enter_special_mode(u32 m
         *(u32 *)0x06007FE0 = 0xEEEEEEEE;
         gUnk_0200025C = m;
         *(u16 *)(base + 2) |= 0x4000;
-        ((struct WorldBit5 *)&gUnk_03000FD8->flags0B)->bit5 = 0;
+        ((struct WorldBit5 *)&gWorld->flags0B)->bit5 = 0;
     }
 }
 END_NONMATCH
@@ -239,7 +239,7 @@ void upload_obj_strip(struct ObjStripRec *obj)
 
 void set_scroll_slot(s32 x, s32 y)
 {
-    struct ScrollBlock *block = gUnk_03000FD8->scrollBlock;
+    struct ScrollBlock *block = gWorld->scrollBlock;
     if (block == 0)
     {
         block = task_create_list_40(update_scroll_shadows);
@@ -248,14 +248,14 @@ void set_scroll_slot(s32 x, s32 y)
     block->unk14 = y;
     block->unk10 = gUnk_02000018 << 8;
     block->unk18 = gUnk_0200001A << 8;
-    gUnk_03000FD8->scrollBlock = block;
+    gWorld->scrollBlock = block;
 }
 
 ASM_FUNC("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(struct StreamObj *obj))
 
 void stream_next_halfword(struct StreamObj *obj)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     u16 *stream;
 
     if (world->flags & 2)
@@ -280,7 +280,7 @@ ASM_FUNC("asm/code_080E0814/load_records_from_stream.s", void load_records_from_
 
 void reset_display_step(void)
 {
-    ((void (*)(void))gUnk_03000FD8->saved260)();
+    ((void (*)(void))gWorld->saved260)();
     REG_WIN0H = 0;
     REG_WIN1H = 0;
     ((void (*)(u32, u8 *, u32))gMemRoutines)(0xE1FFE1FF, (u8 *)0x0600F000, 0x500);

@@ -139,9 +139,9 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 extern const u8 gRoom149Layer1[];
 
 void hero_b_start_step_14th(struct HeroBody *body);
@@ -177,7 +177,7 @@ void hero_pair_active_place_a_finish(struct HeroBody *body);
 
 void hero_b_remove_child_fx(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     set_slot_value(0x15E, -1);
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
@@ -197,7 +197,7 @@ void hero_b_remove_child_fx(struct HeroBody *body)
 
 void hero_b_start_step_14th(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
 
     if ((hero->body.sprite->flags & 8) != 0)
     {
@@ -213,7 +213,7 @@ void hero_b_start_step_14th(struct HeroBody *body)
 
 void hero_b_link_list_objs(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *list_body;
     s32 i;
 
@@ -222,7 +222,7 @@ void hero_b_link_list_objs(struct HeroBody *body)
     {
         for (i = 0; i < 6; i++)
         {
-            list_body = &gUnk_03000FD8->list[i]->body;
+            list_body = &gWorld->list[i]->body;
             if ((list_body->mode & 6) == 4)
             {
                 if ((list_body->data->flags110 & 0x20) == 0)
@@ -259,7 +259,7 @@ void hero_b_link_list_objs(struct HeroBody *body)
 
 void hero_b_active_anim_place(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *body_b = &hero->body;
 
     state_stack_advance_progress(body_b);
@@ -286,9 +286,9 @@ void hero_b_active_anim_place(struct HeroBody *body)
 
 void hero_pair_active_place_both(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
 
@@ -367,10 +367,10 @@ void hero_a_mode_place_finish(struct HeroBody *body)
     struct HeroBody *body_a;
     s32 mode;
 
-    mode = gUnk_03000FD8->modeByte;
+    mode = gWorld->modeByte;
     mode |= 0xC0;
-    gUnk_03000FD8->modeByte = mode;
-    body_a = &gUnk_03000FD8->heroA->body;
+    gWorld->modeByte = mode;
+    body_a = &gWorld->heroA->body;
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
         place_targets(body_a, body_a->targetX / 0x100 + body_a->ofsX - 0x1E,
@@ -408,7 +408,7 @@ void hero_a_mode_place_finish(struct HeroBody *body)
 
 void hero_b_start_step32_then_next(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     u32 zero = (u32)body_a->state;

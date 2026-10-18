@@ -121,7 +121,7 @@ u32 mt19937_next(void);
 u8 step_pos_xy_c(struct Obj *obj);
 void wander_to_edge(struct Obj *obj, u16 a, s16 b);
 void tick_store(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void run_state_handler(void);
 void enemy_hop_phase(struct Obj *parent, struct Obj *obj, u32 *slot);
 void set_idle_slot(struct Obj *parent, struct Obj *obj, u32 *slot);
@@ -300,8 +300,8 @@ void idle_wander(struct Obj *parent, struct Obj *obj)
     }
     if (!step_pos_xy_c(obj))
     {
-        speed = tab[sub_081DE850(2, mt19937_next()) + 0x18];
-        wander_to_edge(obj, speed, ((s16 *)tab)[sub_081DE850(4, mt19937_next())]);
+        speed = tab[rand_below(2, mt19937_next()) + 0x18];
+        wander_to_edge(obj, speed, ((s16 *)tab)[rand_below(4, mt19937_next())]);
     }
 }
 
@@ -382,7 +382,7 @@ void save_home_and_wander(struct Obj *parent, struct Obj *obj)
     obj->homeDZ = obj->dz;
     set_state(parent, obj, 0);
     obj->altHandler = (u32)run_state_handler;
-    obj->index = sub_081DE850(4, mt19937_next());
+    obj->index = rand_below(4, mt19937_next());
 }
 void tick_store(void);
 u8 step_pos_xy_c(struct Obj *obj);

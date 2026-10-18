@@ -150,8 +150,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void set_slot_value(u32 id, s32 value);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
@@ -165,7 +165,7 @@ void hero_pair_find_partner(struct HeroBody *body);
 void hero_b_step_window_cb508(struct HeroBody *body);
 void hero_b_sprite_active_place_finish(struct HeroBody *body);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void step_motion(struct HeroBody *body);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 void enter_finish_rebuild(struct HeroBody *body);
@@ -177,7 +177,7 @@ void display_flush(void);
 
 void hero_pair_z_step_place_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
@@ -211,7 +211,7 @@ ASM_FUNC("asm/code_080CAD4C/hero_pair_follow_ae14.s", void hero_pair_follow_ae14
 
 void hero_a_jitter_apply_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
 
@@ -228,7 +228,7 @@ void hero_a_jitter_apply_partner(struct HeroBody *body)
     if (body_a->link != 0)
     {
         hero_pair_find_partner(body_b);
-        if ((gUnk_0300034C.held & 0xF3) != 0)
+        if ((gSys.held & 0xF3) != 0)
         {
             body_a->link = 0;
             if (body_a->partner != body_b->partner)
@@ -257,7 +257,7 @@ void hero_a_jitter_apply_partner(struct HeroBody *body)
 
 void hero_a_jitter_dx_step_anim(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;

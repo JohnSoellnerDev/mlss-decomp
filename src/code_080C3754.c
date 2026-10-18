@@ -135,7 +135,7 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void step_motion(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -157,7 +157,7 @@ void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32
 
 void hero_a_active_link_place_finish(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
 
     step_motion(body_a);
@@ -193,7 +193,7 @@ void hero_a_active_link_place_finish(struct HeroBody *body)
 
 void hero_a_active_fx_anim_ready(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     step_motion(body_a);
     if ((body_a->flags & 0x20) != 0)
@@ -211,8 +211,8 @@ void hero_a_active_fx_anim_ready(struct HeroBody *body)
 
 void hero_pair_place_and_finish_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_a->sprite->flags & 8) != 0)
     {
@@ -287,11 +287,11 @@ void hero_pair_mode_and_ready_anims(struct HeroBody *body)
     struct HeroBody *body_b;
     s32 mode;
 
-    mode = gUnk_03000FD8->modeByte;
+    mode = gWorld->modeByte;
     mode |= 0xC0;
-    gUnk_03000FD8->modeByte = mode;
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    gWorld->modeByte = mode;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     body_a->sprite->unk06 = 0x100;
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
@@ -308,8 +308,8 @@ void hero_pair_mode_and_ready_anims(struct HeroBody *body)
 
 void hero_b_visible_anim_b_rate_a_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
     {

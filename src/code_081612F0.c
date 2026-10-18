@@ -123,7 +123,7 @@ extern u32 gHeapTagOtkdB[];
 extern u32 gHeapTagMt7p[];
 extern u16 gUnk_02000050[];
 extern u32 gClassE980[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern struct EffectWorld *gUnk_03001024;
 void init_bg_gfx();
 struct EffectChild *obj_init_ex();
@@ -378,7 +378,7 @@ static inline void obj_task_teardown(struct EffectObj *obj)
 
 void obj_task_update(struct EffectObj *obj)
 {
-    u16 *flags = (u16 *)gUnk_0300034C;
+    u16 *flags = (u16 *)gSys;
     struct ChildVt4 *child;
     struct ObjVtableB *vb;
 
@@ -416,7 +416,7 @@ void update_objects_frame(void)
     struct ListHeadX *list;
     u32 old;
 
-    base = (u8 *)&gUnk_0300034C;
+    base = (u8 *)&gSys;
     oam_slot = (u32 *)(base + 0x880);
     old = *oam_slot;
     update_obj_list();
@@ -830,7 +830,7 @@ struct EffectObj *effect_create_sprites(struct EffectObj *obj)
 
     sprite = create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
     obj->unk00 = (u32)sprite;
-    switch (gUnk_0300034C[0x8C0])
+    switch (gSys[0x8C0])
     {
     case 0:
         obj_load_record((void *)obj->unk00, 0x22, -1, 0, 0);

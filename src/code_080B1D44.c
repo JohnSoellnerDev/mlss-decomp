@@ -139,8 +139,8 @@ struct KeyState
     u16 pressed;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -163,9 +163,9 @@ ASM_FUNC("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner
 
 void hero_a_walk_toward_partner(struct HeroBody *body)
 {
-    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct Hero *heroA = gWorld->heroA;
     struct HeroBody *a = &heroA->body;
-    struct HeroBody *b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 x;
     s32 y;
@@ -213,14 +213,14 @@ void hero_a_walk_toward_partner(struct HeroBody *body)
 
 void hero_a_drop_and_land_with_b(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     s32 damped;
 
     if (body_a->link != 0)
     {
-        if ((gUnk_0300034C.pressed & 3) != 0)
+        if ((gSys.pressed & 3) != 0)
         {
             body_set_pose(6, body_b, 0x16, 0);
             body_a->link = 0;
@@ -252,7 +252,7 @@ ASM_FUNC("asm/code_080B1D44/hero_a_fall_settle_211c.s", void hero_a_fall_settle_
 
 void hero_b_bind_partner_fx(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct Hero *hero_b = world->heroB;
     struct HeroBody *body_b = &hero_b->body;
@@ -309,7 +309,7 @@ ASM_FUNC("asm/code_080B1D44/hero_pair_scale_and_settle.s", void hero_pair_scale_
 
 void pair_end_place_both_b(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct Hero *hero_b = world->heroB;
     struct HeroBody *body_b = &hero_b->body;
@@ -407,12 +407,12 @@ void pair_end_place_both_b(struct HeroBody *body)
 
 void hero_a_key_toggle_step(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     s32 rate;
 
-    if ((gUnk_0300034C.pressed & body_a->pressMask) != 0)
+    if ((gSys.pressed & body_a->pressMask) != 0)
     {
         body_a->pressCount++;
         body_a->pressMask ^= 3;

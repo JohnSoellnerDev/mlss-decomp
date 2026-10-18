@@ -154,8 +154,8 @@ struct World
     void *focus;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 gSys[];
 
 void sprite_set_action(struct HeroBody *body, u32 action, u32 arg, u32 extra);
 void on_arrive(struct HeroBody *body);
@@ -174,7 +174,7 @@ void drop_child_when_empty(struct HeroBody *body);
 struct ChildList *sprite_node_take(void);
 struct ChildNode *sprite_node_alloc(s32 x, s32 y, s32 z);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void spawn_fall_particle(struct HeroBody *body);
 void follow_focus_wait(struct HeroBody *body);
 void start_parts_after_16(struct HeroBody *body);
@@ -208,7 +208,7 @@ void focus_follow_spawn_orbit_child_c(struct HeroBody *body);
 
 void follow_spawn_child(struct HeroBody *body)
 {
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
     struct HeroBody *child;
     s32 mode;
 
@@ -239,8 +239,8 @@ static inline void set_hero_anim(struct HeroBody *body, u32 anim)
 
 void follow_focus_wait(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
     s32 clock;
 
     state_stack_advance_progress(body);
@@ -250,7 +250,7 @@ void follow_focus_wait(struct HeroBody *body)
         body->clock = clock;
         if (clock <= 0)
         {
-            body->clock = sub_081DE850(4, mt19937_next()) + 4;
+            body->clock = rand_below(4, mt19937_next()) + 4;
             body->repeats--;
             spawn_fall_particle(body);
         }
@@ -272,7 +272,7 @@ void follow_focus_wait(struct HeroBody *body)
             }
         }
         {
-            struct World *world = gUnk_03000FD8;
+            struct World *world = gWorld;
             struct HeroBody *hero_a = &world->heroA->body;
             struct HeroBody *hero_b = &world->heroB->body;
 
@@ -317,8 +317,8 @@ void set_follow_handle(struct HeroBody *body)
 
 void follow_focus_end(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
 
     state_stack_advance_progress(body);
     if (body->flags & 0x20)
@@ -343,8 +343,8 @@ void follow_focus_end(struct HeroBody *body)
 
 void reset_follow_state(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
 
     if (body == hero_a)
     {
@@ -363,8 +363,8 @@ void reset_follow_state(struct HeroBody *body)
 
 void release_other_hero(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
 
     step_motion(body);
     if (body->flags & 0x20)
@@ -403,8 +403,8 @@ void release_other_hero(struct HeroBody *body)
 
 void end_hero_follow(struct HeroBody *body)
 {
-    struct HeroBody *hero_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *hero_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
 
     step_motion(body);
     if (body->flags & 0x20)
@@ -651,7 +651,7 @@ ASM_FUNC("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(s
 s32 obj_last_x(void *obj);
 ASM_FUNC("asm/code_08098B18/drop_to_focus.s", void drop_to_focus(struct HeroBody *body))
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 ASM_FUNC("asm/code_08098B18/unknown_code_08099f58.s", void unknown_code_08099f58(s32 a, s32 b))
 
 ASM_FUNC("asm/code_08098B18/approach_partner.s", void approach_partner(struct HeroBody *body))

@@ -154,8 +154,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -186,8 +186,8 @@ void set_motion_offsets(struct HeroBody *body, u32 offsets);
 
 void hero_b_match_partner(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
 
@@ -217,8 +217,8 @@ void hero_b_match_partner(struct HeroBody *body)
 
 void hero_b_partner_link_fx(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
 
@@ -248,8 +248,8 @@ void hero_b_partner_link_fx(struct HeroBody *body)
 
 void hero_pair_place_both_finish_sprite_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
     {
@@ -315,7 +315,7 @@ void hero_pair_place_both_finish_sprite_alt(struct HeroBody *body)
 
 void hero_b_anim_and_step_rate8(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     set_slot_value(0xAF, -1);
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
@@ -334,8 +334,8 @@ void hero_b_anim_and_step_rate8(struct HeroBody *body)
 
 void hero_pair_place_partner_height(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     s32 height;
 

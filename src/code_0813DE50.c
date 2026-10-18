@@ -233,7 +233,7 @@ void obj_set_cell_coord(struct Enemy *ent, u32 cell, u32 arg);
 void setup_random_offset_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void obj_state_run_hop_phase(void *ctx, struct Enemy *obj);
 void enter_state_c188(void *ctx, struct Enemy *obj);
-void sub_0813EE00(void *ctx, struct Enemy *obj);
+void enter_hop_phase(void *ctx, struct Enemy *obj);
 void obj_sub_state_then_flag(void *ctx, struct Enemy *obj);
 void refresh_cell_if_changed(void *ctx, struct Enemy *obj);
 void obj_approach_step(struct Enemy *obj);
@@ -274,7 +274,7 @@ void obj_state_run_advance(void);
 void partner_seek_countdown_then_state(void *ctx, struct Enemy *obj, EnemyFn *out);
 void cpu_set(const void *src, void *dst, u32 ctl);
 void load_record_words_128(struct Enemy *obj, s16 index);
-s32 sub_081DE850(s32 n, u32 value);
+s32 rand_below(s32 n, u32 value);
 u32 mt19937_next(void);
 
 
@@ -480,7 +480,7 @@ void random_branch_state(void *ctx, struct Enemy *obj)
     sub(ctx, obj, slot);
     if ((obj->unk1D6 & 1) != 0)
     {
-        s32 roll = sub_081DE850(0x64, mt19937_next());
+        s32 roll = rand_below(0x64, mt19937_next());
 
         if ((u32)roll < (u32)obj->rec->unk36)
         {
@@ -620,7 +620,7 @@ void timed_step_state(void *ctx, struct Enemy *obj, EnemyFn *out)
         if ((sprite->unk12 & 8) != 0)
         {
             obj_set_cell_coord(obj, (((u32)obj->unk24 << 29) >> 30) + 4, 0);
-            roll = sub_081DE850(4, mt19937_next());
+            roll = rand_below(4, mt19937_next());
             off = roll << 1;
             base = (u8 *)obj + 0x136;
             *timer = *(u16 *)(base + off);
@@ -731,7 +731,7 @@ void set_flag_0x40_then_call(void *ctx, struct Enemy *obj)
 {
     s32 flags = obj->unk2B6;
     obj->unk2B6 = 0x40 | flags;
-    sub_0813EE00(ctx, obj);
+    enter_hop_phase(ctx, obj);
 }
 
 
@@ -754,7 +754,7 @@ void partner_seek_after_countdown(void *ctx, struct Enemy *obj)
     obj->posY -= 0x40;
 }
 
-void sub_0813EE00(void *ctx, struct Enemy *obj)
+void enter_hop_phase(void *ctx, struct Enemy *obj)
 {
     EnemyFn run;
 
@@ -783,13 +783,13 @@ void random_collide(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
     u8 index;
 
     tbl = (u8 *)ent + 0x100;
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     ent->sprite->unk20 = *(u16 *)(tbl + pick * 2 + 8);
     ((struct Flags214 *)&ent->unk214)->low3 = 4;
     ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 0;
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     speed = *(u16 *)(tbl + pick * 2);
-    pick2 = sub_081DE850(2, mt19937_next());
+    pick2 = rand_below(2, mt19937_next());
     kick = *(u16 *)(tbl + pick2 * 2 + 0x30);
     if (find_active_entry(owner, &idx) != 0)
     {
@@ -833,7 +833,7 @@ void step_with_box_check(void *ctx, struct Enemy *ent, EnemyFn *out)
         ent->unk1D4 = ent->unk1D4 - 1;
     }
     if (step_pos_xy(ent) == 0) {
-        s32 pick = sub_081DE850(4, mt19937_next());
+        s32 pick = rand_below(4, mt19937_next());
         pick_val = table[pick + 0x14];
         *(u16 *)(ai + 0x17A) = pick_val;
         out[0] = tick_store;
@@ -846,7 +846,7 @@ void load_record_state(u8 *owner, struct Enemy *ent, EnemyFn *out)
 {
     struct Record *rec = ent->rec;
 
-    ent->index = sub_081DE850(4, mt19937_next());
+    ent->index = rand_below(4, mt19937_next());
     ent->sprite->unk20 = ((u8 *)rec)[ent->index + 0x22];
     ((struct Flags214 *)&ent->unk214)->low3 = 1;
     ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 1;
@@ -915,7 +915,7 @@ void enemy_hop_start_kick(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
     struct Partner *party;
 
     tbl = (u8 *)ent + 0x100;
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     ent->sprite->unk20 = *(u16 *)(tbl + pick * 2 + 8);
     ((struct Flags214 *)&ent->unk214)->low3 = 4;
     ((struct Flags12 *)&ent->sprite->unk12)->mid2 = 0;
@@ -930,9 +930,9 @@ void enemy_hop_start_kick(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
         index = ((u32)owner->flags208 << 30) >> 31;
     }
     party = *(struct Partner **)((u8 *)owner + index * 4 + 0x28);
-    pick = sub_081DE850(4, mt19937_next());
+    pick = rand_below(4, mt19937_next());
     speed = *(u16 *)(tbl + pick * 2);
-    pick = sub_081DE850(2, mt19937_next());
+    pick = rand_below(2, mt19937_next());
     kick = *(u16 *)(tbl + pick * 2 + 0x30);
     collide_react(owner, ent, party, kick, speed, (s8)tbl[0x40], (s8)tbl[0x41], 0x22, 0);
     *out = enemy_hop_wait_partner;
@@ -968,12 +968,12 @@ void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out)
     }
     {
         u32 rnd = mt19937_next();
-        s32 pick = sub_081DE850(4, rnd);
+        s32 pick = rand_below(4, rnd);
         ai->timerB = table[pick + 0x14];
     }
     out[0] = tick_store;
     out[3] = enemy_hop_start_kick;
 }
 
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 ASM_FUNC("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(void))

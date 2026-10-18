@@ -156,12 +156,12 @@ extern u8 *gUnk_03000FB8;
 void set_link_slot_mask(u32 mask);
 void serial_schedule(u32 a, u32 b, u32 c);
 void set_ramp0_target(u32 a, u32 b);
-extern struct KeyRam gUnk_0300034C;
-extern u8 *gUnk_03000D44;
-extern u8 *gUnk_03000FF4;
+extern struct KeyRam gSys;
+extern u8 *gCurObj;
+extern u8 *gParty;
 void draw_text_prim(void *a, u32 b, s32 c, s32 d, u32 e, u32 f, u32 g, u32 h, u32 i, u32 j);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 value);
+s32 rand_below(s32 n, u32 value);
 u32 compare_op(void *ctx, u32 op, u32 a, u32 b);
 u32 atan2_angle(s32 x, s32 y);
 void set_var(u32 a, void *b, void *c, u32 d, s32 e, u32 f);
@@ -379,7 +379,7 @@ u32 cmd_set_var_lang(void *ctx, struct ScriptObj *obj, struct VarCmd *cmd, u32 m
 
     if (cmd->word4 == 0)
     {
-        lang = gUnk_0300034C.lang8C0;
+        lang = gSys.lang8C0;
     }
     set_var(mid, (u8 *)obj + 0x18, 0, 0, cmd->index, lang);
     return 1;
@@ -455,7 +455,7 @@ u32 pick_random_entry(void *ctx, u32 *out, u32 *table)
 {
     s32 key = table[0];
     u32 rnd = mt19937_next();
-    s32 index = sub_081DE850(key, rnd);
+    s32 index = rand_below(key, rnd);
     u32 entry = table[index + 1];
 
     if (entry != 0)
@@ -469,7 +469,7 @@ u32 random_obj_placement(void *ctx, struct ScriptObj *obj, struct VarCmd *src, u
 {
     s32 key = src->word4;
     u32 rnd = mt19937_next();
-    s32 pick = sub_081DE850(key, rnd);
+    s32 pick = rand_below(key, rnd);
 
     set_var(mid, (u8 *)obj + 0x18, 0, 0, src->index, pick);
     return 1;
@@ -483,7 +483,7 @@ u32 call_b0c0(void *ctx, void *unused, u16 *rec)
 
 u32 copy_on_key_match_a(void *ctx, u32 *out, struct KeyMatchRecord *rec)
 {
-    u32 keys = gUnk_0300034C.keys2E;
+    u32 keys = gSys.keys2E;
     u32 mask = rec->mask;
     u32 want = mask;
     u32 kind = rec->kind + 0xB;
@@ -514,13 +514,13 @@ u32 copy_on_key_match_a(void *ctx, u32 *out, struct KeyMatchRecord *rec)
 
 u32 copy_on_key_match_b(void *ctx, u32 *out, struct KeyMatchRecord *rec)
 {
-    u32 keys = gUnk_0300034C.keys28;
+    u32 keys = gSys.keys28;
     u32 mask;
     u32 want;
     u32 kind;
 
     if (((s32)rec->flag >> 1) == 0)
-        keys = gUnk_0300034C.keys2A;
+        keys = gSys.keys2A;
     mask = rec->mask;
     want = mask;
     kind = rec->kind + 0xB;
@@ -550,7 +550,7 @@ u32 copy_on_key_match_b(void *ctx, u32 *out, struct KeyMatchRecord *rec)
 
 u32 set_var_from_keys(void *ctx, struct ScriptObj *obj, s16 *src, u32 mid)
 {
-    set_var(mid, (u8 *)obj + 0x18, 0, 0, *src, gUnk_0300034C.keys2E);
+    set_var(mid, (u8 *)obj + 0x18, 0, 0, *src, gSys.keys2E);
     return 1;
 }
 
@@ -560,11 +560,11 @@ u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupReco
 
     if (value == 0)
     {
-        value = gUnk_0300034C.keys2A;
+        value = gSys.keys2A;
     }
     else if (value == 1)
     {
-        value = gUnk_0300034C.keys28;
+        value = gSys.keys28;
     }
     else
     {
@@ -584,7 +584,7 @@ u32 set_key_mode_bits(void *ctx, void *unused, u8 *src)
         u16 f2 : 2;
         u16 hi4 : 4;
     };
-    u8 *sys = (u8 *)&gUnk_0300034C;
+    u8 *sys = (u8 *)&gSys;
 
     ((struct KeyModeBits16 *)(sys + 0x78))->f2 = *src;
     return 1;
@@ -597,13 +597,13 @@ u32 set_shadow_bits(void *ctx, void *unused, u32 *src)
     switch (op)
     {
     case 0:
-        gUnk_0300034C.oneFrame7C |= *src;
+        gSys.oneFrame7C |= *src;
         break;
     case 1:
-        gUnk_0300034C.setByGame7A |= *src;
+        gSys.setByGame7A |= *src;
         break;
     case 2:
-        gUnk_0300034C.setByGame7A &= ~*src;
+        gSys.setByGame7A &= ~*src;
         break;
     }
     return 1;
@@ -670,7 +670,7 @@ u32 binary_op_and_set_var(void *unused, u8 *obj, struct BinOpCmd *cmd, u32 a, vo
 u32 cmd_store_obj_field(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
 {
     u32 index = *args++;
-    struct FieldObj *item = (struct FieldObj *)gUnk_03000FF4 + *args++;
+    struct FieldObj *item = (struct FieldObj *)gParty + *args++;
     u32 value;
 
     switch ((s32)*args)
@@ -698,16 +698,16 @@ u32 store_obj_byte_to_var(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
     switch (mode)
     {
     case 0:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gUnk_03000D44 + 0x22));
+        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x22));
         break;
     case 1:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gUnk_03000D44 + 0x23));
+        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x23));
         break;
     case 2:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gUnk_03000D44 + 0x25));
+        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x25));
         break;
     case 3:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gUnk_03000D44 + 0x24));
+        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x24));
         break;
     }
     return 1;
@@ -715,12 +715,12 @@ u32 store_obj_byte_to_var(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
 
 u32 set_cur_obj_26_27(void *ctx, void *unused, u32 *args)
 {
-    u8 *cur = gUnk_03000D44;
+    u8 *cur = gCurObj;
     u32 first = *args++;
     u32 second;
 
     cur[0x26] = first;
-    cur = gUnk_03000D44;
+    cur = gCurObj;
     second = *args;
     cur[0x27] = second;
     return 1;
@@ -733,12 +733,12 @@ u32 set_cur_obj_29(void *ctx, void *unused, u32 *args)
 
     if (*args == 0)
     {
-        cur = gUnk_03000D44 + 0x29;
+        cur = gCurObj + 0x29;
         value = 1;
     }
     else
     {
-        cur = gUnk_03000D44 + 0x29;
+        cur = gCurObj + 0x29;
         value = 0xFF;
     }
     *cur = value;
@@ -751,7 +751,7 @@ u32 cur_obj_bbf8(void *ctx, void *unused, u32 *args)
 {
     s8 *bytes = (s8 *)args;
 
-    timer_set_time(gUnk_03000D44, bytes[0], bytes[4], bytes[8]);
+    timer_set_time(gCurObj, bytes[0], bytes[4], bytes[8]);
     return 1;
 }
 

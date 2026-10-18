@@ -119,7 +119,7 @@ void jump_obj_fall_step(struct ActorObj *obj);
 void obj_jump_arc_land(struct ActorObj *obj);
 struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 extern u32 gUnk_03000E3C;
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 void obj_link_owner_then_wait(struct ActorObj *obj);
 void obj_query_part_then_idle(struct ActorObj *obj);
 

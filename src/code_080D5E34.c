@@ -145,9 +145,9 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u8 gRoom149Layer1[];
-extern struct KeyPad gUnk_0300034C;
+extern struct KeyPad gSys;
 
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -183,7 +183,7 @@ ASM_FUNC("asm/code_080D5E34/hero_pair_b_window_5f5c.s", void hero_pair_b_window_
 
 void hero_b_link_ready_objs(struct HeroBody *owner)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 idx;
 
@@ -207,7 +207,7 @@ void hero_b_link_ready_objs(struct HeroBody *owner)
         }
         for (idx = 0; idx < 6; idx++)
         {
-            struct Hero *list_obj = gUnk_03000FD8->objList[idx];
+            struct Hero *list_obj = gWorld->objList[idx];
             struct HeroBody *list_body = &list_obj->body;
 
             if ((list_body->mode & 6) == 4)
@@ -240,9 +240,9 @@ void hero_b_link_ready_objs(struct HeroBody *owner)
 
 void hero_pair_place_both_finish_adv_alt(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);

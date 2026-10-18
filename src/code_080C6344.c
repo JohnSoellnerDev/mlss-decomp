@@ -133,7 +133,7 @@ struct World
     u8 phaseByte;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern const u8 gPhaseTable[];
 extern s8 gJitterTable1[];
 extern s8 gJitterRange1[];
@@ -153,7 +153,7 @@ void hero_a_clear_partner_flag_anim(struct HeroBody *body);
 void hero_a_place_near_partner_if_b_active(struct HeroBody *body);
 void resolve_contact_action(struct HeroBody *a, struct HeroBody *b, u32 c, u32 d, u32 e);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 
 void hero_a_sprite_active_place_target(struct HeroBody *body);
 void hero_a_active_step_fx_anim(struct HeroBody *body);
@@ -167,7 +167,7 @@ ASM_FUNC("asm/code_080C6344/hero_pair_timer_pose_6344.s", void hero_pair_timer_p
 
 void hero_a_sprite_active_place_target(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroData *data;
     s32 tx;
@@ -212,7 +212,7 @@ void hero_a_sprite_active_place_target(struct HeroBody *body)
 
 void hero_a_active_step_fx_anim(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroA;
+    struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
     s32 tx;
     s32 ty;
@@ -252,9 +252,9 @@ void hero_a_active_step_fx_anim(struct HeroBody *body)
 
 void jitter_place_a_hero_pair_place_both_finish(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
@@ -352,7 +352,7 @@ ASM_FUNC("asm/code_080C6344/hero_a_jitter_link_partner.s", void hero_a_jitter_li
 
 void hero_a_phase_place_or_next(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroData *data;
@@ -411,9 +411,9 @@ ASM_FUNC("asm/code_080C6344/hero_pair_timer_step_080c7104.s", void hero_pair_tim
 
 void hero_pair_b_advance_place_finish(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -511,9 +511,9 @@ void hero_pair_b_advance_place_finish(struct HeroBody *body)
 
 void hero_a_jitter_fx_b_step_start(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 index;
     s32 jx;
@@ -530,15 +530,15 @@ void hero_a_jitter_fx_b_step_start(struct HeroBody *body)
         s8 *range = gJitterRange1;
 
         if (range[0] < range[2])
-            jx = range[0] + sub_081DE850(range[2] - range[0], mt19937_next());
+            jx = range[0] + rand_below(range[2] - range[0], mt19937_next());
         else
-            jx = range[2] + sub_081DE850(range[0] - range[2], mt19937_next());
+            jx = range[2] + rand_below(range[0] - range[2], mt19937_next());
         hero_a->body.jitterX = jx;
 
         if (range[1] < range[3])
-            jy = range[1] + sub_081DE850(range[3] - range[1], mt19937_next());
+            jy = range[1] + rand_below(range[3] - range[1], mt19937_next());
         else
-            jy = range[3] + sub_081DE850(range[1] - range[3], mt19937_next());
+            jy = range[3] + rand_below(range[1] - range[3], mt19937_next());
         body_a->jitterY = jy;
     }
     effect_spawn_at(0x2FE6, body_a->posX / 0x100 - 4, body_a->posY / 0x100, body_a->posZ / 0x100, body_a);

@@ -41,7 +41,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 extern u32 gUnk_03000E3C;
 extern u8 gUnk_03000E7C;
 extern u8 gUnk_03000E7D;
@@ -153,7 +153,7 @@ void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActorObj *owner);
 
 void obj_link_then_finish(struct ActorObj *obj)
 {
-    struct ActorObj *partner = (struct ActorObj *)(gUnk_03000FD8->partners[obj->targetX + 5] + 8);
+    struct ActorObj *partner = (struct ActorObj *)(gWorld->partners[obj->targetX + 5] + 8);
 
     if (*(s32 *)((u8 *)partner + 0x18) == 0)
     {
@@ -310,8 +310,8 @@ void obj_land_random_target(struct ActorObj *obj)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0x40E7, 0);
-        candA = (struct ActorObj *)(gUnk_03000FD8->partners[6] + 8);
-        candB = (struct ActorObj *)(gUnk_03000FD8->partners[7] + 8);
+        candA = (struct ActorObj *)(gWorld->partners[6] + 8);
+        candB = (struct ActorObj *)(gWorld->partners[7] + 8);
         if (mt19937_next() & 1)
         {
             obj->targetY = candA->part->targetY;

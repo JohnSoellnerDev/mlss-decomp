@@ -92,7 +92,7 @@ extern const struct BgViewEntry gBgViewTable[];
 extern const u8 gMapBg3ScrollClass[];
 extern const u8 gBgSlotTable[];
 extern const u8 gColumnTable[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u8 gUnk_02000080[];
 extern const u8 gMapPalettesA[];
 extern const u8 gMapPalettesB[];

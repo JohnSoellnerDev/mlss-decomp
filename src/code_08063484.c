@@ -197,7 +197,7 @@ void chain_link_end(struct ActorObj *obj);
 u32 obj_lookup_action1(struct ActorObj *obj, struct ActorObj *partner);
 void obj_action_a_timer(struct ActorObj *obj);
 void obj_sync_target_place(struct ActorObj *obj);
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 u8 poll_spline_path(u32 buf, s32 *x, s32 *h);
 void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
 extern s32 gUnk_03000E40;

@@ -118,7 +118,7 @@ struct World
     void *focus;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 static inline void *world_focus(struct World *world)
 {
@@ -207,11 +207,11 @@ void obj_list_push_default(struct ActorBody *obj);
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 aux);
 void draw_while_group_busy(struct ActorBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 
 void release_fx_a(struct ActorBody *body)
 {
-    struct World **pw = &gUnk_03000FD8;
+    struct World **pw = &gWorld;
     struct ActorBody *partner = body->partner;
 
     step_motion(body);
@@ -239,15 +239,15 @@ void set_focus_pos_b(struct ActorBody *body)
     s32 v;
     s32 minusOne;
 
-    v = (s16)obj_last_x(gUnk_03000FD8->focus) * 0x100 + 0x10000;
+    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
     body->x = v;
     body->targetX = v;
     body->z = 0x7800;
     body->targetZ = 0x7800;
     if (body->data->effect != 0)
     {
-        x = (s16)obj_last_x(gUnk_03000FD8->focus) + 0xD2;
-        y = (s16)obj_last_y(gUnk_03000FD8->focus) + 0x7C;
+        x = (s16)obj_last_x(gWorld->focus) + 0xD2;
+        y = (s16)obj_last_y(gWorld->focus) + 0x7C;
         place_targets(body, x, y, 0x3C, -1);
         set_motion_start(body, 0x140);
     }
@@ -259,7 +259,7 @@ void set_focus_pos_b(struct ActorBody *body)
 
 void release_fx_b(struct ActorBody *body)
 {
-    struct World **pw = &gUnk_03000FD8;
+    struct World **pw = &gWorld;
     struct ActorBody *partner = body->partner;
 
     step_motion(body);
@@ -287,15 +287,15 @@ void set_focus_pos_c(struct ActorBody *body)
     s32 v;
     s32 minusOne;
 
-    v = (s16)obj_last_x(gUnk_03000FD8->focus) * 0x100 + 0x10000;
+    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
     body->x = v;
     body->targetX = v;
     body->z = 0x7800;
     body->targetZ = 0x7800;
     if (body->data->effect != 0)
     {
-        x = (s16)obj_last_x(gUnk_03000FD8->focus) + 0xD9;
-        y = (s16)obj_last_y(gUnk_03000FD8->focus) + 0x6C;
+        x = (s16)obj_last_x(gWorld->focus) + 0xD9;
+        y = (s16)obj_last_y(gWorld->focus) + 0x6C;
         place_targets(body, x, y, 0x3C, -1);
         set_motion_start(body, 0xC0);
     }
@@ -308,7 +308,7 @@ void set_focus_pos_c(struct ActorBody *body)
 void check_offscreen(struct ActorBody *body);
 void fx_only_a(struct ActorBody *body)
 {
-    struct World **pw = &gUnk_03000FD8;
+    struct World **pw = &gWorld;
 
     step_motion(body);
     if (body->flags & 0x20)
@@ -335,7 +335,7 @@ void check_offscreen(struct ActorBody *body)
 
 void fx_only_b(struct ActorBody *body)
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     s32 x;
     s32 y;
 
@@ -383,7 +383,7 @@ u32 part_step_set_anim_0b_mode1(struct ActorBody *body)
 
 void follow_focus_while_effect(struct ActorBody *body)
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     s32 x;
     s32 y;
 
@@ -403,7 +403,7 @@ void follow_focus_while_effect(struct ActorBody *body)
 
 void place_on_focus_a(struct ActorBody *body)
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     s32 x;
     s32 y;
 
@@ -423,7 +423,7 @@ void place_on_focus_a(struct ActorBody *body)
 
 void place_on_focus_b(struct ActorBody *body)
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     s32 x;
     s32 y;
 
@@ -450,7 +450,7 @@ void set_anim_0b_mode1(struct ActorBody *body)
 
 void place_on_focus_c(struct ActorBody *body)
 {
-    struct World **world = &gUnk_03000FD8;
+    struct World **world = &gWorld;
     s32 x;
     s32 y;
 

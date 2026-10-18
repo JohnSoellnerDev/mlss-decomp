@@ -159,9 +159,9 @@ struct World
     struct HeroNode *nodes;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 *gParty;
+extern u8 gSys[];
 
 void hero_b_set_rate_if_idle(struct HeroBody *body);
 void hero_b_visible_anim_b_rate_a_alt(struct HeroBody *body);
@@ -194,9 +194,9 @@ void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 
 void hero_a_place_near_partner_if_b_active(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     s32 tx;

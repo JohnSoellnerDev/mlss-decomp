@@ -166,7 +166,7 @@ struct World
     struct RasterNode *rasterCur;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 void sprite_set_action(struct SpriteObj *obj, s32 index, s32 value, s32 flags);
 void set_slot_value(s32 slot, s32 value);
 void load_table_entries(s32 count);
@@ -180,7 +180,7 @@ void obj_run_part(struct SpriteObj *obj, struct SpritePart *part);
 s32 obj_try_run_part(struct SpriteObj *obj, struct SpritePart *part);
 void popup_rise_step_b(struct Task *task);
 void set_irq_callback(u32 kind, void *cb);
-void sub_0807FFF4(void);
+void raster_irq_default(void);
 extern vu16 gUnk_02000004;
 void oam_write_tiles(u8 *digits, s32 x, s32 y, s32 kind, s32 flags);
 void oam_write_number(u8 *digits, s32 x, s32 y, s32 scale, s32 flags);
@@ -201,7 +201,7 @@ void popup_rise_step(struct Task *task)
     node->x += node->vx;
     node->y += (s16)node->vy;
     oam_write_tiles(task->data, node->x / 0x100, node->y / 0x100, node->kind, 0);
-    ((struct PopupDirtyBits *)&gUnk_03000FD8->dirty)->bit1 = 1;
+    ((struct PopupDirtyBits *)&gWorld->dirty)->bit1 = 1;
     t = node->life - 1;
     node->life = t;
     if ((u16)t == 0)
@@ -219,7 +219,7 @@ void popup_fade_step(struct Task *task)
     s32 t;
 
     oam_write_tiles(task->data, node->x / 0x100, node->y / 0x100, node->kind, 0);
-    ((struct PopupDirtyBits *)&gUnk_03000FD8->dirty)->bit1 = 1;
+    ((struct PopupDirtyBits *)&gWorld->dirty)->bit1 = 1;
     t = node->life - 1;
     node->life = t;
     life = t;
@@ -230,8 +230,8 @@ void popup_fade_step(struct Task *task)
             *out = 0;
         if (node != NULL)
         {
-            node->next = gUnk_03000FD8->nodePool;
-            gUnk_03000FD8->nodePool = node;
+            node->next = gWorld->nodePool;
+            gWorld->nodePool = node;
         }
         task->fn = life;
     }
@@ -249,7 +249,7 @@ void popup_rise_step_b(struct Task *task)
     node->x += node->vx;
     node->y += (s16)node->vy;
     oam_write_tiles(task->data, node->x / 0x100, node->y / 0x100, node->kind, 0);
-    ((struct PopupDirtyBits *)&gUnk_03000FD8->dirty)->bit1 = 1;
+    ((struct PopupDirtyBits *)&gWorld->dirty)->bit1 = 1;
     t = node->life - 1;
     node->life = t;
     if ((u16)t == 0)
@@ -267,7 +267,7 @@ void popup_fade_step_b(struct Task *task)
     s32 t;
 
     oam_write_tiles(task->data, node->x / 0x100, node->y / 0x100, node->kind, 0);
-    ((struct PopupDirtyBits *)&gUnk_03000FD8->dirty)->bit1 = 1;
+    ((struct PopupDirtyBits *)&gWorld->dirty)->bit1 = 1;
     t = node->life - 1;
     node->life = t;
     life = t;
@@ -278,8 +278,8 @@ void popup_fade_step_b(struct Task *task)
             *out = 0;
         if (node != NULL)
         {
-            node->next = gUnk_03000FD8->nodePool;
-            gUnk_03000FD8->nodePool = node;
+            node->next = gWorld->nodePool;
+            gWorld->nodePool = node;
         }
         task->fn = life;
     }
@@ -299,13 +299,13 @@ void popup_wave_step(struct Task *task)
     node->life = t;
     digits = task->data;
     oam_write_number(digits, node->x / 0x100, node->y / 0x100, ((s16)node->life * 2 + (s16)node->life) * 4, 0);
-    ((struct PopupDirtyBits *)&gUnk_03000FD8->dirty)->bit1 = 1;
+    ((struct PopupDirtyBits *)&gWorld->dirty)->bit1 = 1;
     if (node->y / 0x100 <= -16)
     {
         if (node != NULL)
         {
-            node->next = gUnk_03000FD8->nodePool;
-            gUnk_03000FD8->nodePool = node;
+            node->next = gWorld->nodePool;
+            gWorld->nodePool = node;
         }
         task->fn = 0;
     }
@@ -329,9 +329,9 @@ NONMATCH("asm/code_0807D478/raster_line_add.s", struct RasterNode *raster_line_a
     irq++;
     *irq |= 4;
     REG_IME = 1;
-    node = (struct RasterNode *)gUnk_03000FD8->taskFree;
-    gUnk_03000FD8->taskFree = (struct Task *)node->next;
-    cur = gUnk_03000FD8->rasterList;
+    node = (struct RasterNode *)gWorld->taskFree;
+    gWorld->taskFree = (struct Task *)node->next;
+    cur = gWorld->rasterList;
     prev = NULL;
     while (cur != NULL && line >= cur->line)
     {
@@ -342,11 +342,11 @@ NONMATCH("asm/code_0807D478/raster_line_add.s", struct RasterNode *raster_line_a
     if (prev != NULL)
         prev->next = node;
     else
-        gUnk_03000FD8->rasterList = node;
+        gWorld->rasterList = node;
     if (callback != NULL)
         node->unk4 = (u32)callback;
     else
-        node->unk4 = (u32)sub_0807FFF4;
+        node->unk4 = (u32)raster_irq_default;
     node->handler = handler;
     node->line = line;
     return node;
@@ -425,12 +425,12 @@ void update_active_objs(void)
     struct ObjSlot *slot;
     struct SpriteObj *link;
 
-    ((struct LevelBits *)&gUnk_03000FD8->levelD)->mid2 = 0;
-    obj = gUnk_03000FD8->objs;
+    ((struct LevelBits *)&gWorld->levelD)->mid2 = 0;
+    obj = gWorld->objs;
     while (obj != NULL)
     {
         next = obj->activeNext;
-        slot = gUnk_03000FD8->slotA;
+        slot = gWorld->slotA;
         if (slot != NULL && ((struct ModeBits *)&slot->flags7E)->mode == 1)
         {
             link = slot->link;
@@ -439,7 +439,7 @@ void update_active_objs(void)
             else if (obj_try_run_part(obj, (struct SpritePart *)link) == 0)
                 obj_run_part(obj, (struct SpritePart *)((u8 *)slot + 8));
         }
-        slot = gUnk_03000FD8->slotB;
+        slot = gWorld->slotB;
         if (slot != NULL && ((struct ModeBits *)&slot->flags7E)->mode == 1)
         {
             link = slot->link;

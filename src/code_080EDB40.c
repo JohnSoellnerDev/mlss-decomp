@@ -145,7 +145,7 @@ void obj_stop_motion(void *obj);
 void obj_set_stage(void *obj, u32 stage);
 u32 direction_octant(void *root, s32 x0, s32 y0, s32 x1, s32 y1);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void obj_sync_sub_slot(void *obj, u32 value);
 void obj_set_cell_coord(void *obj, u32 cell, u32 arg);
@@ -302,7 +302,7 @@ u32 apply_stage_command(struct OwnerObj *owner, struct Entity *obj, struct Recor
         stage = (u8)direction_octant((u8 *)owner + 0x1C, obj->unkC, obj->unk10, target->unkC, target->unk10);
         break;
     case 3:
-        stage = (u8)sub_081DE850(8, mt19937_next());
+        stage = (u8)rand_below(8, mt19937_next());
         break;
     }
     obj_set_stage(obj, stage);

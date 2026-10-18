@@ -155,7 +155,7 @@ void task_remove(void *node, u32 kind);
 extern const u8 gHeapTagProjectile[];
 extern const u8 gHeapTagCounterB[];
 extern const s16 gCounterSpriteRecordByLang[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void *obj_init_big(void *obj, u32 first);
 void obj_create_sprite_10(void *obj, u32 a, u32 kind, u32 b, u32 c, u32 d);
@@ -216,7 +216,7 @@ struct CounterGroup *obj_init_counter(struct CounterGroup *group)
     obj_create_sprite_10(group->unkC, 4, 0x5006, 0, 0xE, 2);
     group->unkC->unk1C = 0xA000;
     group->unk10 = obj_init_big(heap_alloc2(0x6C, 0, gHeapTagCounterB, 0), 0);
-    obj_create_sprite_10(group->unk10, 4, 0x5006, 0, gCounterSpriteRecordByLang[gUnk_0300034C[0x8C0]], 2);
+    obj_create_sprite_10(group->unk10, 4, 0x5006, 0, gCounterSpriteRecordByLang[gSys[0x8C0]], 2);
     group->unk10->unk18 = 0xE000;
     group->unk10->unk1C = 0xA000;
     group->unk8 = 0;
@@ -349,7 +349,7 @@ NONMATCH("asm/code_08169710/child_states_obj_run_state.s", void child_states_obj
     {
     case 0:
         {
-            u8 *slot = gUnk_0300034C;
+            u8 *slot = gSys;
             *(s32 *)(slot + 0x884) = -1;
         }
         set_slot_target(0, 3);

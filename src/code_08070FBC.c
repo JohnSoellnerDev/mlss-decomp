@@ -148,7 +148,7 @@ u32 obj_cb_link_or_wait(struct WaveObj *obj);
 
 extern const u8 gStepSequenceTable[];
 extern u32 gUnk_03000E3C;
-extern struct WaveWorld *gUnk_03000FD8;
+extern struct WaveWorld *gWorld;
 u32 lookup_slot(struct WaveObj *obj);
 void sprite_entry_update(struct WavePose *pose);
 void wait_timer_then_move(struct WaveObj *obj);
@@ -758,7 +758,7 @@ void spawn_child_and_arm(struct WaveObj *obj)
         child->state = 0;
         sprite_set_action(obj, 2, 0x40B4, 0);
         sprite_set_action(obj->link, 2, 0, 0);
-        obj_detach_active((void *)gUnk_03000FD8->slots[0]->x);
+        obj_detach_active((void *)gWorld->slots[0]->x);
         obj->state = start_move_to_part_target;
     }
 }

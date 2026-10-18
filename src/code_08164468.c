@@ -116,7 +116,7 @@ extern const u8 gClassEae8[];
 extern s16 gUnk_0300102C;
 extern const u8 gUnk_082138FA[];
 extern const u8 gObjScript08213a04[];
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern const void *gChildTableByLang[];
 extern const u8 gClassEac8[];
 extern const u8 gObjScript08213936[];
@@ -157,7 +157,7 @@ void cpu_fast_set(void *src, void *dst, u32 control);
 void obj_set_child_table(struct Obj *obj)
 {
     const void **table = gChildTableByLang;
-    const void **entry = table + gUnk_0300034C[0x8C0];
+    const void **entry = table + gSys[0x8C0];
     struct Obj *child = (struct Obj *)obj->unkC;
 
     child->unk44 = *entry;
@@ -255,7 +255,7 @@ void obj_init_single(struct Obj *obj)
 
     obj->unk0 = 1;
     sprite = obj->unk4->unk10;
-    anim = gAnimLangSingleChild[gUnk_0300034C[0x8C0]];
+    anim = gAnimLangSingleChild[gSys[0x8C0]];
     obj_load_record(sprite, anim, 0, 0, 0);
     child = obj->unk4;
     child->unk44 = gObjScript08213936;

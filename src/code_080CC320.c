@@ -150,8 +150,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void set_slot_value(u32 id, s32 value);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
@@ -165,7 +165,7 @@ void hero_pair_find_partner(struct HeroBody *body);
 void hero_b_step_window_cb508(struct HeroBody *body);
 void hero_b_sprite_active_place_finish(struct HeroBody *body);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void step_motion(struct HeroBody *body);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 void enter_finish_rebuild(struct HeroBody *body);

@@ -129,7 +129,7 @@ struct SpriteWorld
     void *trackedObj;
 };
 
-extern struct SpriteWorld *gUnk_03000FD8;
+extern struct SpriteWorld *gWorld;
 extern u8 gUnk_03000ED0;
 extern u32 gUnk_03000F6C;
 extern u8 gUnk_03000F68;
@@ -215,7 +215,7 @@ void set_pose_halfword_and_link(struct SpriteObj *obj)
     obj->entry->unkC += 0x1200;
     if (obj->target == 0)
     {
-        pa = (u8 *)gUnk_03000FD8->slots[gUnk_03000F68 + 6] + 8;
+        pa = (u8 *)gWorld->slots[gUnk_03000F68 + 6] + 8;
         if (gUnk_03000F60 != NULL)
         {
             partner = gUnk_03000F60;
@@ -460,7 +460,7 @@ void snap_to_world_slot(struct SpriteObj *obj)
 {
     if (obj->entry->flags & 8)
     {
-        struct SpriteObj *source = gUnk_03000FD8->slots[obj->phase + 6]->child;
+        struct SpriteObj *source = gWorld->slots[obj->phase + 6]->child;
 
         obj->unk10 = source->unkD8 + 0x3800;
         obj->unk14 = source->unkDC + 0x200;

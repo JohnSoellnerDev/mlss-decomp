@@ -150,7 +150,7 @@ struct CandMgr
     struct Rec *target;
 };
 
-extern struct CandMgr *gUnk_03000FD8;
+extern struct CandMgr *gWorld;
 
 s32 find_frame_entry(struct Actor *obj, s32 index);
 s32 contact_face(struct Actor *a, struct Actor *b);

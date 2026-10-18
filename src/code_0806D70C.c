@@ -145,7 +145,7 @@ struct ActorCands
     u8 *cand74;
 };
 
-extern struct ActorCands *gUnk_03000FD8;
+extern struct ActorCands *gWorld;
 
 void obj_fall_and_launch_b(struct ActorObj *obj)
 {
@@ -159,8 +159,8 @@ void obj_fall_and_launch_b(struct ActorObj *obj)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0, 0);
-        candA = (struct ActorObj *)(gUnk_03000FD8->cand70 + 8);
-        candB = (struct ActorObj *)(gUnk_03000FD8->cand74 + 8);
+        candA = (struct ActorObj *)(gWorld->cand70 + 8);
+        candB = (struct ActorObj *)(gWorld->cand74 + 8);
         if (candB->part->slot >= 0 || candA->part->slot >= 0)
         {
             obj->dx = 1;

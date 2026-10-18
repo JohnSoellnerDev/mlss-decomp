@@ -150,8 +150,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 gUnk_0300034C[];
+extern struct World *gWorld;
+extern u8 gSys[];
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -184,7 +184,7 @@ void hero_b_ratio_release_a(struct HeroBody *body);
 
 void hero_a_active_slot_pose_anim(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     step_motion_scaled(body_a);
     if ((body_a->flags & 0x20) != 0)
@@ -204,7 +204,7 @@ void hero_a_active_slot_pose_anim(struct HeroBody *body)
 
 void hero_a_place_pose_finish_2(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
@@ -261,7 +261,7 @@ void hero_a_place_pose_finish_2(struct HeroBody *body)
 
 void hero_b_link_partner_fx_rate(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
 
     ((struct HeroDataFlagBits *)&partner->data->flags111)->bit1 = 1;
@@ -290,7 +290,7 @@ void hero_b_link_partner_fx_rate(struct HeroBody *body)
 
 void hero_b_follow_partner_offset(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
 
@@ -329,7 +329,7 @@ ASM_FUNC("asm/code_080BE0A0/hero_a_timer_step_080be698.s", void hero_a_timer_ste
 
 void hero_a_place_offset_speed(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     if ((body_a->sprite->flags & 8) != 0)
@@ -353,7 +353,7 @@ void hero_a_place_offset_speed(struct HeroBody *body)
 
 void hero_a_active_slot_pose_anim_2(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     step_motion_scaled(body_a);
     if ((body_a->flags & 0x20) != 0)
@@ -373,7 +373,7 @@ void hero_a_active_slot_pose_anim_2(struct HeroBody *body)
 
 void hero_a_place_pose_finish_3(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
@@ -434,7 +434,7 @@ ASM_FUNC("asm/code_080BE0A0/hero_b_shift_place_pose_next.s", void hero_b_shift_p
 
 void hero_a_effect_link_rate_next(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     body->partner->link = 1;
     effect_spawn_at(0x2FE6, body_a->posX / 0x100 + 0x1C, body_a->posY / 0x100, body_a->posZ / 0x100 + 0x10, body_a);
@@ -454,8 +454,8 @@ void hero_a_effect_link_rate_next(struct HeroBody *body)
 
 void hero_a_height_decay_next(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     s32 remain;
     s32 newZ;
 
@@ -486,13 +486,13 @@ ASM_FUNC("asm/code_080BE0A0/hero_a_random_jitter_rate_next.s", void hero_a_rando
 
 void hero_wait_then_hand_over(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
     u8 *input;
     s32 rnd;
     s32 z;
 
-    input = gUnk_0300034C;
+    input = gSys;
     if ((*(u16 *)(input + 0x3E) & 3) != 0)
     {
         if ((body->mode & 6) == 2 || (body->mode & 6) == 4)

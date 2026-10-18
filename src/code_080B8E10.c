@@ -126,8 +126,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -153,12 +153,12 @@ void hero_a_approach_91e0(struct HeroBody *body);
 void hero_a_step_slot_anim(struct HeroBody *body);
 void hero_b_step_slot_anim(struct HeroBody *body);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
 
 void hero_b_place_at_target(struct HeroBody *body)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
     struct HeroData *data;
     s32 x;
@@ -201,7 +201,7 @@ void hero_b_place_at_target(struct HeroBody *body)
 
 void hero_b_pair_finish(void)
 {
-    struct Hero *hero = gUnk_03000FD8->heroB;
+    struct Hero *hero = gWorld->heroB;
     struct HeroBody *b = &hero->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -260,7 +260,7 @@ void hero_b_pair_finish(void)
 
 void hero_a_pick_partner(struct HeroBody *body)
 {
-    struct HeroBody *a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
     struct World *world;
     struct Hero *entry;
@@ -277,21 +277,21 @@ void hero_a_pick_partner(struct HeroBody *body)
 
     for (index = 0; index < 6; index += 2)
     {
-        entry = gUnk_03000FD8->list[index];
+        entry = gWorld->list[index];
         if ((entry->body.mode & 6) == 4 && (entry->flags110 & 0x20) == 0
             && entry != (struct Hero *)body->partner->data)
         {
             count++;
-            if (sub_081DE850(count, mt19937_next()) == 0)
+            if (rand_below(count, mt19937_next()) == 0)
                 partner = &entry->body;
         }
         next = index + 1;
-        entry = gUnk_03000FD8->list[next];
+        entry = gWorld->list[next];
         if ((entry->body.mode & 6) == 4 && (entry->flags110 & 0x20) == 0
             && entry != (struct Hero *)body->partner->data)
         {
             count++;
-            if (sub_081DE850(count, mt19937_next()) == 0)
+            if (rand_below(count, mt19937_next()) == 0)
                 partner = &entry->body;
         }
     }

@@ -30,7 +30,7 @@ struct ModelCtx
     u32 model;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 extern s16 gSineTable[];
 extern s16 gCosineTable[];
 
@@ -125,13 +125,13 @@ NONMATCH("asm/code_08186128/obj_tilt_zoom8_6128.s", void obj_tilt_zoom8_6128(str
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, flags, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
         left--;
     } while (left >= 0);
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     zoom += step;
     step = (step * 8 - step) / 8;
@@ -230,13 +230,13 @@ NONMATCH("asm/code_08186128/obj_tilt_zoom8_6560.s", void obj_tilt_zoom8_6560(str
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, flags, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
         left--;
     } while (left >= 0);
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     zoom += step;
     step = (step * 8 - step) / 8;
@@ -326,12 +326,12 @@ void obj_swing_point(struct PtObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     t = xOff;
     if (t < 0) {
@@ -443,12 +443,12 @@ void obj_bounce_turn_point(struct PtObj *obj)
         offset_words_camera(&l.x, p1, p2, 0);
         oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
         if (!saved) {
-            l.model = gUnk_03000D74->model;
+            l.model = gModelCtx->model;
             saved = 1;
         }
     }
     if (saved) {
-        gUnk_03000D74->model = l.model;
+        gModelCtx->model = l.model;
     }
     xOff += xVel;
     yOff += yVel;

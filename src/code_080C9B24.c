@@ -130,7 +130,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -156,9 +156,9 @@ void enter_finish_rebuild(struct HeroBody *body);
 
 void hero_b_active_fx_a_anim(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);
@@ -177,7 +177,7 @@ void hero_b_active_fx_a_anim(struct HeroBody *body)
 
 void hero_b_sprite_active_start_step(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -200,9 +200,9 @@ void hero_b_sprite_active_start_step(struct HeroBody *body)
 
 void hero_a_active_place_partner_fx(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
 
@@ -228,7 +228,7 @@ void hero_a_active_place_partner_fx(struct HeroBody *body)
 
 void hero_b_step_link_partner_fx(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
 
@@ -255,7 +255,7 @@ void hero_b_step_link_partner_fx(struct HeroBody *body)
 
 void hero_a_sprite_active_target_or_next(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     if ((body_a->sprite->flags & 8) != 0)

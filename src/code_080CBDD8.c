@@ -150,8 +150,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void set_slot_value(u32 id, s32 value);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
@@ -165,7 +165,7 @@ void hero_pair_find_partner(struct HeroBody *body);
 void hero_b_step_window_cb508(struct HeroBody *body);
 void hero_b_sprite_active_place_finish(struct HeroBody *body);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void step_motion(struct HeroBody *body);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 void enter_finish_rebuild(struct HeroBody *body);
@@ -177,7 +177,7 @@ void display_flush(void);
 
 void hero_b_sprite_active_place_finish(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_b = &world->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
@@ -224,7 +224,7 @@ void hero_b_sprite_active_place_finish(struct HeroBody *body)
 
 void hero_a_active_place_target_anim(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
 
     state_stack_advance_progress(body_a);
@@ -255,7 +255,7 @@ void hero_a_active_place_target_anim(struct HeroBody *body)
 
 void hero_a_sprite_active_place_finish(void)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
 
     if ((body_a->sprite->flags & 8) != 0)
@@ -317,7 +317,7 @@ void hero_pair_find_partner(struct HeroBody *body)
 
         do
         {
-            struct HeroBody *cand = &gUnk_03000FD8->objList[k]->body;
+            struct HeroBody *cand = &gWorld->objList[k]->body;
 
             if ((cand->mode & 6) == 4 && (cand->data->flags110 & 0x20) == 0)
             {
@@ -325,7 +325,7 @@ void hero_pair_find_partner(struct HeroBody *body)
 
                 count++;
                 rnd = mt19937_next();
-                if (sub_081DE850(count, rnd) == 0)
+                if (rand_below(count, rnd) == 0)
                 {
                     body->partner = cand;
                 }
@@ -333,7 +333,7 @@ void hero_pair_find_partner(struct HeroBody *body)
             {
                 s32 next = k + 1;
 
-                cand = &gUnk_03000FD8->objList[next]->body;
+                cand = &gWorld->objList[next]->body;
             }
             if ((cand->mode & 6) == 4 && (cand->data->flags110 & 0x20) == 0)
             {
@@ -341,7 +341,7 @@ void hero_pair_find_partner(struct HeroBody *body)
 
                 count++;
                 rnd = mt19937_next();
-                if (sub_081DE850(count, rnd) == 0)
+                if (rand_below(count, rnd) == 0)
                 {
                     body->partner = cand;
                 }
@@ -351,7 +351,7 @@ void hero_pair_find_partner(struct HeroBody *body)
     }
     else
     {
-        if ((gUnk_0300034C.held & 0xF0) == 0)
+        if ((gSys.held & 0xF0) == 0)
         {
             return;
         }
@@ -360,8 +360,8 @@ void hero_pair_find_partner(struct HeroBody *body)
         best = 0x7FFFFFFF;
         for (slot = 0; slot <= 5; slot++)
         {
-            struct Hero *obj = gUnk_03000FD8->objList[slot];
-            s32 keys = gUnk_0300034C.held & 0xF0;
+            struct Hero *obj = gWorld->objList[slot];
+            s32 keys = gSys.held & 0xF0;
 
             switch (keys)
             {

@@ -136,7 +136,7 @@ struct PartnerObj
     u16 unkB2;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u16 gUnk_0200001A;
 extern u16 gUnk_0200001E;
 
@@ -161,7 +161,7 @@ s32 measure_text(u32 font, void *text, u32 pad);
 u32 obj_motion_start(struct Obj *obj, s32 x, s32 y, s32 height, s32 extra);
 u32 dma_copy_or_queue(u32 src, u32 dst, u32 count, u32 width, u32 mode);
 extern u8 *gWorkBuf;
-extern struct SysState gUnk_0300034C;
+extern struct SysState gSys;
 void figure_select_action(u32 arg);
 void set_tile_slot(void *slot, u32 idx, u32 flag, u32 value, u32 p5, u32 p6, u32 p7);
 void draw_slot_frame(void *slot, u32 idx, u32 rect, u32 kind);
@@ -193,31 +193,31 @@ void update_voice_message(void);
 
 void release_slot_objects(void)
 {
-    struct Obj *slot = gUnk_03000FD8->slotObjs[0];
+    struct Obj *slot = gWorld->slotObjs[0];
 
     if (slot != 0)
     {
         obj_release_node(slot->unk8);
-        gUnk_03000FD8->slotObjs[0] = 0;
+        gWorld->slotObjs[0] = 0;
         slot->unk4 = 0;
     }
-    slot = gUnk_03000FD8->slotObjs[1];
+    slot = gWorld->slotObjs[1];
     if (slot != 0)
     {
         obj_release_node(slot->unk8);
-        gUnk_03000FD8->slotObjs[1] = 0;
+        gWorld->slotObjs[1] = 0;
         slot->unk4 = 0;
     }
 }
 
 void release_slot_object(u32 idx)
 {
-    struct Obj *slot = gUnk_03000FD8->slotObjs[idx];
+    struct Obj *slot = gWorld->slotObjs[idx];
 
     if (slot != 0)
     {
         obj_release_node(slot->unk8);
-        gUnk_03000FD8->slotObjs[idx] = 0;
+        gWorld->slotObjs[idx] = 0;
         slot->unk4 = 0;
     }
 }
@@ -227,25 +227,25 @@ struct Obj *unknown_thumb_0810d74c(u32 index)
     struct Obj *slot;
     struct Obj *node;
 
-    if (gUnk_03000FD8->flags0B & 8)
+    if (gWorld->flags0B & 8)
     {
         return 0;
     }
-    slot = gUnk_03000FD8->slotObjs[index];
+    slot = gWorld->slotObjs[index];
     if (slot != 0)
     {
         return slot;
     }
-    node = list_add_task((u8 *)gUnk_03000FD8 + 0x48, step_slot_object);
+    node = list_add_task((u8 *)gWorld + 0x48, step_slot_object);
     node->unk8 = slot;
     node->unk16 = (u32)slot;
-    gUnk_03000FD8->slotObjs[index] = node;
+    gWorld->slotObjs[index] = node;
     return node;
 }
 
 void update_slot_markers(void)
 {
-    if ((gUnk_03000FD8->fig1->unk7E & 6) == 2)
+    if ((gWorld->fig1->unk7E & 6) == 2)
     {
         update_slot_display(0);
     }
@@ -253,9 +253,9 @@ void update_slot_markers(void)
     {
         release_slot_object(0);
     }
-    if (gUnk_03000FD8->fig2 != 0)
+    if (gWorld->fig2 != 0)
     {
-        if ((gUnk_03000FD8->fig2->unk7E & 6) == 2)
+        if ((gWorld->fig2->unk7E & 6) == 2)
         {
             update_slot_display(1);
         }
@@ -268,13 +268,13 @@ void update_slot_markers(void)
 
 void set_slot_state(u32 state)
 {
-    gUnk_03000FD8->stateByte = state;
+    gWorld->stateByte = state;
     update_slot_markers();
 }
 
 void unknown_thumb_0810d818(u32 index)
 {
-    struct Obj *mark = gUnk_03000FD8->marks[index];
+    struct Obj *mark = gWorld->marks[index];
 
     if (mark != 0)
     {
@@ -284,13 +284,13 @@ void unknown_thumb_0810d818(u32 index)
 
 void set_mark_callbacks(void)
 {
-    if (gUnk_03000FD8->marks[0] != 0)
+    if (gWorld->marks[0] != 0)
     {
-        gUnk_03000FD8->marks[0]->unk4 = panel_slide_end;
+        gWorld->marks[0]->unk4 = panel_slide_end;
     }
-    if (gUnk_03000FD8->marks[1] != 0)
+    if (gWorld->marks[1] != 0)
     {
-        gUnk_03000FD8->marks[1]->unk4 = panel_slide_end;
+        gWorld->marks[1]->unk4 = panel_slide_end;
     }
 }
 
@@ -302,7 +302,7 @@ void queue_mark_display(void)
     u32 *entry = gMapTable + idx;
     u8 *text = (u8 *)gMapTable + *entry;
 
-    queue_display_entry(0, text, gUnk_03000FD8->tileBank + 0x1880, 0x900, 0, 0);
+    queue_display_entry(0, text, gWorld->tileBank + 0x1880, 0x900, 0, 0);
 }
 
 void spawn_slot_markers(void)
@@ -380,20 +380,20 @@ void spawn_linked_children(void)
 
 void clear_world_effect(void)
 {
-    struct Obj *effect = gUnk_03000FD8->effect;
+    struct Obj *effect = gWorld->effect;
 
     if (effect != 0)
     {
-        gUnk_03000FD8->effect = 0;
+        gWorld->effect = 0;
         effect->unk4 = 0;
-        release_tile_slot(gUnk_03000FD8->slot4Tiles, 2);
-        release_tile_slot(gUnk_03000FD8->slot4Tiles, 3);
+        release_tile_slot(gWorld->slot4Tiles, 2);
+        release_tile_slot(gWorld->slot4Tiles, 3);
     }
 }
 
 void copy_gauge_tiles(struct Obj *obj)
 {
-    u8 *bank = gUnk_03000FD8->tileBank;
+    u8 *bank = gWorld->tileBank;
     s32 n = (s16)obj->unk16;
     s32 width;
     void *slot;
@@ -403,7 +403,7 @@ void copy_gauge_tiles(struct Obj *obj)
     {
         n = 5;
     }
-    slot = gUnk_03000FD8->slot4Tiles;
+    slot = gWorld->slot4Tiles;
     width = (n * 11 + 8) / 8;
     value = gGaugeTableC[(u32)obj->unkC & 0xF] * width;
     copy_slot_tiles(slot, 2, bank, 0, value);
@@ -414,16 +414,16 @@ void timer_object_state_db08(struct Obj *obj)
 {
     obj->unkC->unk4 = 0;
     obj->unk4 = 0;
-    gUnk_03000FD8->timerObj = 0;
+    gWorld->timerObj = 0;
 }
 
 void release_timer_tiles(void)
 {
-    if (gUnk_03000FD8->timerObj != 0)
+    if (gWorld->timerObj != 0)
     {
-        release_tile_slot(gUnk_03000FD8->slot4Tiles, 4);
-        release_tile_slot(gUnk_03000FD8->slot4Tiles, 5);
-        gUnk_03000FD8->timerObj->unk4 = timer_object_state_db08;
+        release_tile_slot(gWorld->slot4Tiles, 4);
+        release_tile_slot(gWorld->slot4Tiles, 5);
+        gWorld->timerObj->unk4 = timer_object_state_db08;
     }
 }
 
@@ -444,7 +444,7 @@ void voice_message_step(struct Obj *obj)
 
 void scroll_text_step(struct Obj *obj)
 {
-    if (gUnk_03000FD8->flags0B & 0x40)
+    if (gWorld->flags0B & 0x40)
     {
         voice_message_step(obj);
     }
@@ -471,22 +471,22 @@ ASM_FUNC("asm/code_0810D6C0/show_slot4_text_centered.s", void show_slot4_text_ce
 
 void release_slot4_tiles(void)
 {
-    release_tile_slot(gUnk_03000FD8->slot4Tiles, 0);
-    release_tile_slot(gUnk_03000FD8->slot4Tiles, 1);
+    release_tile_slot(gWorld->slot4Tiles, 0);
+    release_tile_slot(gWorld->slot4Tiles, 1);
 }
 
 void show_slot4_text_left(void *text)
 {
     release_slot4_tiles();
-    set_tile_slot(gUnk_03000FD8->slot4Tiles, 0, 0, 0xD, 0, 0x12, 3);
-    draw_slot_frame(gUnk_03000FD8->slot4Tiles, 1, 0, 0);
-    draw_slot_text(gUnk_03000FD8->slot4Tiles, 0, 7, 6, text, 0x91);
+    set_tile_slot(gWorld->slot4Tiles, 0, 0, 0xD, 0, 0x12, 3);
+    draw_slot_frame(gWorld->slot4Tiles, 1, 0, 0);
+    draw_slot_text(gWorld->slot4Tiles, 0, 7, 6, text, 0x91);
 }
 
 void upload_obj_tiles(u32 index)
 {
     u16 idx = index;
-    u8 state = gUnk_03000FD8->uploadState;
+    u8 state = gWorld->uploadState;
 
     if (state > 0x13)
     {
@@ -505,18 +505,18 @@ void queue_obj_upload_entry(void)
     u8 *text = (u8 *)gMapTable + *entry;
 
     queue_display_entry(0, text, gWorkBuf + 0x4E70, -1, 0, 0);
-    gUnk_03000FD8->uploadState = 0;
+    gWorld->uploadState = 0;
 }
 
 void release_marker_object(void)
 {
-    struct Obj *marker = gUnk_03000FD8->markerObj;
+    struct Obj *marker = gWorld->markerObj;
 
     if (marker != 0)
     {
         marker->unk80 = 0;
         obj_release(marker);
-        gUnk_03000FD8->markerObj = 0;
+        gWorld->markerObj = 0;
     }
 }
 
@@ -537,14 +537,14 @@ void release_sprite_state(struct Obj *obj)
 
 void place_at_active(struct Obj *obj)
 {
-    struct Obj *active = gUnk_03000FD8->active;
+    struct Obj *active = gWorld->active;
 
     place_world_object(active->unk40 / 0x100 - 4, active->unk44 / 0x100, active->unkE0 / 0x100 + 0x18, obj, 0x7001);
 }
 
 void set_marker_position(s32 x, s32 y, s32 z)
 {
-    struct MarkerPos *marker = (struct MarkerPos *)gUnk_03000FD8->markerObj;
+    struct MarkerPos *marker = (struct MarkerPos *)gWorld->markerObj;
 
     marker->unk84 = x << 8;
     marker->unk10 = x << 8;
@@ -577,7 +577,7 @@ void draw_digits_49_p12(u32 value, u32 x, s32 y, s32 right)
         x = number_right_edge(value, x);
     }
     y &= 0xFF;
-    oam = (s16 *)gUnk_0300034C.oamPtr;
+    oam = (s16 *)gSys.oamPtr;
     do
     {
         s32 tile = (value & 0xF) * 2 + 0x49;
@@ -589,7 +589,7 @@ void draw_digits_49_p12(u32 value, u32 x, s32 y, s32 right)
         oam += 4;
         value >>= 4;
     } while (value != 0);
-    gUnk_0300034C.oamPtr = (u16 *)oam;
+    gSys.oamPtr = (u16 *)oam;
 }
 
 void draw_digits_c0_p11(u32 value, u32 x, s32 y, s32 right)
@@ -601,7 +601,7 @@ void draw_digits_c0_p11(u32 value, u32 x, s32 y, s32 right)
         x = number_right_edge(value, x);
     }
     y &= 0xFF;
-    oam = gUnk_0300034C.oamPtr;
+    oam = gSys.oamPtr;
     do
     {
         s32 tile = (value & 0xF) * 2 + 0xC0;
@@ -613,27 +613,27 @@ void draw_digits_c0_p11(u32 value, u32 x, s32 y, s32 right)
         oam += 4;
         value >>= 4;
     } while (value != 0);
-    gUnk_0300034C.oamPtr = oam;
+    gSys.oamPtr = oam;
 }
 
 ASM_FUNC("asm/code_0810D6C0/draw_digits_49_p11.s", void draw_digits_49_p11(void))
 
 u32 status_anim_wait(void)
 {
-    u32 value = gUnk_03000FD8->statusValue;
+    u32 value = gWorld->statusValue;
 
-    gUnk_03000FD8->modeByte = (gUnk_03000FD8->modeByte & 0x1F) | 0xA0;
+    gWorld->modeByte = (gWorld->modeByte & 0x1F) | 0xA0;
     while (value == 0)
     {
     }
-    return obj_motion_start((struct Obj *)value, gUnk_03000FD8->active->unk40, gUnk_03000FD8->active->unk44, 0x3000, 0x3800);
+    return obj_motion_start((struct Obj *)value, gWorld->active->unk40, gWorld->active->unk44, 0x3000, 0x3800);
 }
 
 ASM_FUNC("asm/code_0810D6C0/status_anim_start.s", void status_anim_start(void))
 
 void set_status_word(void)
 {
-    gUnk_03000FD8->statusObj->unk18 = 0x241;
+    gWorld->statusObj->unk18 = 0x241;
 }
 
 void status_wait_slot(struct Obj *obj)
@@ -641,10 +641,10 @@ void status_wait_slot(struct Obj *obj)
     struct Obj *slot;
 
     status_slots_update(obj);
-    slot = gUnk_03000FD8->slotTable[gUnk_03000FD8->statusObj->unk10];
+    slot = gWorld->slotTable[gWorld->statusObj->unk10];
     if (slot->unk4C == 0)
     {
-        gUnk_03000FD8->modeByte &= 0x1F;
+        gWorld->modeByte &= 0x1F;
         obj->unk4 = status_slots_update;
     }
 }
@@ -653,11 +653,11 @@ s32 set_status_entry(u32 a, u32 b, u32 c)
 {
     struct Obj *obj;
 
-    obj = gUnk_03000FD8->statusObj;
+    obj = gWorld->statusObj;
     if (obj == 0)
     {
         obj = task_create_list_4c(0, 0);
-        gUnk_03000FD8->statusObj = obj;
+        gWorld->statusObj = obj;
         obj->unk12 = a;
         obj->unk14 = c;
         obj->unkC = (struct Obj *)b;
@@ -675,9 +675,9 @@ s32 set_status_entry(u32 a, u32 b, u32 c)
 
 void hero_select_input(void)
 {
-    if (gUnk_0300034C.held & 1)
+    if (gSys.held & 1)
     {
-        if (gUnk_03000FD8->fig1->unkEC == -1)
+        if (gWorld->fig1->unkEC == -1)
         {
             figure_select_action(0);
         }
@@ -686,9 +686,9 @@ void hero_select_input(void)
             figure_select_action(1);
         }
     }
-    if (gUnk_0300034C.held & 2)
+    if (gSys.held & 2)
     {
-        if (gUnk_03000FD8->fig1->unkEC == -2)
+        if (gWorld->fig1->unkEC == -2)
         {
             figure_select_action(0);
         }
@@ -725,7 +725,7 @@ void child_slide_to_bg2(struct Obj *obj)
 
 void countdown_world_counter(struct Obj *obj)
 {
-    s16 *counter = (s16 *)&gUnk_03000FD8->counter314;
+    s16 *counter = (s16 *)&gWorld->counter314;
 
     if ((*counter -= 0x400) > 0)
     {

@@ -130,7 +130,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -156,9 +156,9 @@ void enter_finish_rebuild(struct HeroBody *body);
 
 void hero_pair_finish_place_both(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_a->sprite->flags & 8) != 0)
@@ -235,7 +235,7 @@ void hero_pair_finish_place_both(struct HeroBody *body)
 
 void hero_b_anim_start_step2(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
@@ -254,9 +254,9 @@ void hero_b_anim_start_step2(struct HeroBody *body)
 
 void hero_b_active_fx_a_step_rate(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);
@@ -276,9 +276,9 @@ void hero_b_active_fx_a_step_rate(struct HeroBody *body)
 
 void hero_a_active_place_b_anim_fx(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_a);

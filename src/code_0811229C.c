@@ -117,7 +117,7 @@ struct SceneSpriteBits
     u8 unk3 : 5;
 };
 
-extern struct SceneWorld *gUnk_03000FD8;
+extern struct SceneWorld *gWorld;
 
 void sprite_set_action(struct SceneObj *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -142,7 +142,7 @@ extern u32 gNodeChainSceneScale[];
 extern u16 gNodeChainSpriteScale[];
 struct SceneObj *obj_spawn_linked(struct SceneObj *parent, u32 kind, u32 value);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 seed);
+u32 rand_below(u32 range, u32 seed);
 extern u16 gPhaseLevelTable[];
 extern const u16 gPhaseChanceTable[];
 extern u16 gWaveSlotTable[];
@@ -368,7 +368,7 @@ void obj_random_chance_or_wait(struct SceneObj *obj)
     {
         return;
     }
-    if (sub_081DE850(0x64, mt19937_next()) < gPhaseChanceTable[obj->phase])
+    if (rand_below(0x64, mt19937_next()) < gPhaseChanceTable[obj->phase])
     {
         sprite_set_action(obj, 0xF, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
@@ -474,8 +474,8 @@ void obj_anim_c_link_pair(struct SceneObj *obj)
     {
         sprite_set_action(obj, 0xC, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
-        a = gUnk_03000FD8->unk80;
-        b = gUnk_03000FD8->unk84;
+        a = gWorld->unk80;
+        b = gWorld->unk84;
         flagsA = a->unk7E & 6;
         if (flagsA == 2)
         {

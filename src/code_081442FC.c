@@ -193,7 +193,7 @@ void enemy_wait_timer(struct Owner *owner, struct Enemy *ent, u32 *state_out);
 void load_box_oriented(s16 *box, struct Enemy *ent, u32 a, u32 b);
 u8 step_pos_xy(struct Enemy *ent);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 rnd);
+u32 rand_below(u32 range, u32 rnd);
 void tick_store(void);
 void enemy_idle_runner(void);
 u8 point_in_box(s16 *box, void *entry, s32 a, s32 b);
@@ -214,7 +214,7 @@ void enemy_start_random_move(struct Owner *owner, struct Enemy *ent, u32 *state_
         u16 kind;
 
         ((struct Mode3 *)&ent->unk214)->mode = 3;
-        roll = sub_081DE850(4, mt19937_next());
+        roll = rand_below(4, mt19937_next());
         s = *spr;
         off = (u16)roll << 1;
         kinds = (u8 *)ent + 0x108;

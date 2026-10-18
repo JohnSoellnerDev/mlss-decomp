@@ -82,7 +82,7 @@ void wait_for_index(struct ActorObj *obj);
 u32 partner_link_update(struct ActorObj *obj, u32 partner, u32 mode);
 void obj_begin_move_to_params(struct ActorObj *obj);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 s32 is_state_busy(void);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void obj_action0_to_idle(struct ActorObj *obj);
@@ -232,7 +232,7 @@ s32 sub_08061438(struct ActorObj *obj)
 
 s32 obj_choose_random_param_a8(struct ActorObj *obj)
 {
-    obj->paramA8 = sub_081DE850(3, mt19937_next());
+    obj->paramA8 = rand_below(3, mt19937_next());
     obj->state = obj_wait_ready_setup_offsets;
     return 1;
 }

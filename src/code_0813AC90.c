@@ -117,7 +117,7 @@ u32 boxes_overlap_oriented(s16 *box, struct Obj *a, struct Obj *b, s32 zAbove, s
 void obj_box_to_stack(s16 *out, struct Obj *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Obj *obj, u32 flags, u32 offset);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 
 s8 zone_point_code(struct Obj *obj, struct Obj *zone, s32 margin)
 {
@@ -216,7 +216,7 @@ u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, u8 param4, u8 p
     u8 roll;
 
     half = param3 * 0x100;
-    roll = sub_081DE850(100, mt19937_next());
+    roll = rand_below(100, mt19937_next());
     obj_box_to_stack(box, obj, param6, param7);
     xMin = box[0] * 0x100;
     xMax = box[1] * 0x100;

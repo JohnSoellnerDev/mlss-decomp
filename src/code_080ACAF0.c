@@ -136,8 +136,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -176,7 +176,7 @@ void hero_b_on_object(struct HeroBody *body);
 
 void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct Hero *hero_b = world->heroB;
@@ -248,9 +248,9 @@ void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
 
 void hero_b_active_hand_over(void)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);
@@ -264,7 +264,7 @@ void hero_b_active_hand_over(void)
 
 void hero_b_ready_chain(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
@@ -274,7 +274,7 @@ void hero_b_ready_chain(struct HeroBody *body)
 
 void hero_b_progress_end(void)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     step_motion(body_b);
@@ -293,7 +293,7 @@ void hero_b_progress_end(void)
 
 void hero_a_active_clear_anim(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     step_motion(body_a);
@@ -311,7 +311,7 @@ void hero_a_active_clear_anim(struct HeroBody *body)
 
 void hero_b_pose_anim(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
@@ -339,13 +339,13 @@ u32 pair_start_pose(struct HeroBody *body)
     s32 pose;
     u8 *record;
     struct World *world;
-    u8 **party = &gUnk_03000FF4;
+    u8 **party = &gParty;
 
     data = body->data;
     pose = data->poseIndex;
     record = *party - (pose * 60 + 0x3C);
     data->poseValue = *(u16 *)(record + 0x2A);
-    world = gUnk_03000FD8;
+    world = gWorld;
     body_a = &world->heroA->body;
     body_b = &world->heroB->body;
     partner = body->partner;

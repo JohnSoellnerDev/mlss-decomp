@@ -120,7 +120,7 @@ struct World
     void *focus24C;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 struct ActorData
 {
@@ -180,7 +180,7 @@ void anim_b_then_wait(struct ActorBody *body);
 void wait_for_index(struct ActorBody *body);
 u32 partner_link_update(struct ActorBody *obj, struct ActorBody *partner, u32 mode);
 void spawn_pending_child(struct ActorBody *body);
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 void lower_height_then_slide(struct ActorBody *body);
 void obj_detach_active(struct ActorSprite *pose);
 void place_targets(struct ActorBody *obj, s32 x, s32 y, s32 z, s32 w);
@@ -382,7 +382,7 @@ void spawn_hero_children(struct ActorBody *body)
     body->data->childCount = 0;
     for (i = 6; i <= 7; i++)
     {
-        heroBody = (struct ActorBody *)(gUnk_03000FD8->partners[i] + 8);
+        heroBody = (struct ActorBody *)(gWorld->partners[i] + 8);
         if ((heroBody->mode & 6) == 2)
         {
             child = obj_spawn_linked(body, 0x4147, 0);

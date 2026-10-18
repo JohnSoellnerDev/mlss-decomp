@@ -153,9 +153,9 @@ struct World
     void *focus24C;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -195,9 +195,9 @@ void hero_pair_place_both_finish_adv(struct HeroBody *body);
 
 void hero_pair_anim_place_b_at_partner(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     s32 tx;
@@ -237,8 +237,8 @@ void hero_pair_anim_place_b_at_partner(struct HeroBody *body)
 
 void hero_b_link_partner_step16(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     struct HeroData *data;
@@ -283,9 +283,9 @@ void hero_b_link_partner_step16(struct HeroBody *body)
 
 void hero_pair_place_both_finish_adv(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
@@ -384,7 +384,7 @@ void hero_pair_place_both_finish_adv(struct HeroBody *body)
 
 void hero_b_child_align_finish(struct HeroBody *body)
 {
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
     obj_release(body_b->child->child);
@@ -406,8 +406,8 @@ void hero_b_child_align_finish(struct HeroBody *body)
 
 void hero_b_place_at_a_height(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 tx;
     s32 ty;

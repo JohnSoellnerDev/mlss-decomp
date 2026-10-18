@@ -8,7 +8,7 @@ struct RawKeys
     u16 keys2A;
 };
 
-extern struct RawKeys gUnk_0300034C;
+extern struct RawKeys gSys;
 
 extern const u8 gStackClass[];
 extern const u8 gHeapTagStackPart1[];
@@ -182,7 +182,7 @@ void obj_step_child_speeds(struct ChildObj *obj)
     struct ChildPart *part;
     s32 v;
 
-    if (gUnk_0300034C.keys & 2)
+    if (gSys.keys & 2)
     {
         part = obj->part6C;
         v = part->unk70 + 0x20;
@@ -201,7 +201,7 @@ void obj_step_child_speeds(struct ChildObj *obj)
         obj_step_bounce(part);
     }
 
-    if (gUnk_0300034C.keys & 1)
+    if (gSys.keys & 1)
     {
         part = obj->part70;
         v = part->unk70 + 0x20;
@@ -220,7 +220,7 @@ void obj_step_child_speeds(struct ChildObj *obj)
         obj_step_bounce(part);
     }
 
-    if (gUnk_0300034C.keys & 3)
+    if (gSys.keys & 3)
         obj_set_flag88_slot97(obj);
     else
         obj_clear_flag88_slot97(obj);
@@ -394,7 +394,7 @@ void obj_step_stages(struct StageObj *obj)
     case 0:
         {
             s32 off = 0x884;
-            *(s32 *)((u8 *)&gUnk_0300034C + off) = -1;
+            *(s32 *)((u8 *)&gSys + off) = -1;
         }
         set_slot_target(0, 5, -1);
         obj->stage = 1;

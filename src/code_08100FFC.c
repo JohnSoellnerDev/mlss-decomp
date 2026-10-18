@@ -128,9 +128,9 @@ struct StateOwner
     s16 kind;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 extern u8 *gWorkBuf;
-extern u8 *gUnk_03000FF4;
+extern u8 *gParty;
 extern u16 gGlyphIndexTable[];
 extern u32 gMapTable[];
 
@@ -178,7 +178,7 @@ u32 process_object_chain(void)
     u32 shifted;
 
     modes = 0;
-    obj = gUnk_03000FD8->chain;
+    obj = gWorld->chain;
     if (obj != NULL)
     {
         do
@@ -191,7 +191,7 @@ u32 process_object_chain(void)
             obj = obj->next;
         } while (obj != NULL);
     }
-    obj = gUnk_03000FD8->chain;
+    obj = gWorld->chain;
     if (obj != NULL)
     {
         do
@@ -234,7 +234,7 @@ u32 process_object_chain(void)
             obj = obj->next;
         } while (obj != NULL);
     }
-    obj = gUnk_03000FD8->chain;
+    obj = gWorld->chain;
     if (obj != NULL)
     {
         do
@@ -246,7 +246,7 @@ u32 process_object_chain(void)
             obj = obj->next;
         } while (obj != NULL);
     }
-    world = gUnk_03000FD8;
+    world = gWorld;
     shifted = modes << 4;
     world->unk9 = (world->unk9 & 0xF) | shifted;
     return modes;
@@ -268,7 +268,7 @@ void state_hero_anim_begin(struct StateOwner *owner)
     {
         return;
     }
-    world = gUnk_03000FD8;
+    world = gWorld;
     curObj = world->curObj;
     owner->speed = 0;
     mode = curObj->mode12B;
@@ -298,7 +298,7 @@ speed_done:
         owner->speed = 1;
     }
     owner->kind = 1;
-    gUnk_03000FD8->timer2D6 = 0;
+    gWorld->timer2D6 = 0;
     *(u32 *)(gWorkBuf + 0x8E58) = (u32)state_choose_hero;
     if (owner->kind != 1)
     {
@@ -330,7 +330,7 @@ void state_choose_hero(struct StateOwner *owner)
         return;
     }
     owner->state = (u32)state_check_slots;
-    world = gUnk_03000FD8;
+    world = gWorld;
     if (world->curObj->animIndex >= 0)
     {
         clear_cur_flags(0x200);
@@ -349,13 +349,13 @@ void state_choose_hero(struct StateOwner *owner)
             }
             if (hero != 0)
             {
-                gUnk_03000FD8->heroSel33F = hero - 1;
-                gUnk_03000FD8->heroSel340 = -hero + 2;
+                gWorld->heroSel33F = hero - 1;
+                gWorld->heroSel340 = -hero + 2;
                 owner->state = (u32)state_queue_texts;
             }
             else
             {
-                world = gUnk_03000FD8;
+                world = gWorld;
                 ((struct ChooseBit0 *)&world->flags0B)->b0 = 0;
             }
             clear_cur_flags(8);
@@ -367,7 +367,7 @@ void state_choose_hero(struct StateOwner *owner)
             set_cur_flags_pending(0x80);
         }
     }
-    world = gUnk_03000FD8;
+    world = gWorld;
     ((struct ChooseBit4 *)&world->flags0C)->b4 = 0;
 }
 
@@ -384,7 +384,7 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
     {
         return;
     }
-    world = gUnk_03000FD8;
+    world = gWorld;
     if (world->flags0B & 4)
     {
         return;
@@ -402,7 +402,7 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
             return;
         }
     }
-    if (gUnk_03000FD8->menuMode == 2)
+    if (gWorld->menuMode == 2)
     {
         set_mark_state(0, 0);
         set_mark_state(1, 0);
@@ -423,16 +423,16 @@ void state_fig_flags_reset(void *owner)
 
     if (!(modes & 2))
     {
-        gUnk_03000FD8->heroSel = 0xFF;
+        gWorld->heroSel = 0xFF;
     }
     if (modes != 0)
     {
-        struct WorldObj *fig = gUnk_03000FD8->fig1;
+        struct WorldObj *fig = gWorld->fig1;
         if (fig != NULL && fig->unk54 == 0)
         {
             fig->bits11E &= 0xF3FF;
         }
-        fig = gUnk_03000FD8->fig2;
+        fig = gWorld->fig2;
         if (fig != NULL && fig->unk54 == 0)
         {
             fig->bits11E &= 0xF3FF;
@@ -456,7 +456,7 @@ NONMATCH("asm/code_08100FFC/state_setup_status_display.s", void state_setup_stat
     u32 id_b;
     u32 id_c;
 
-    world = gUnk_03000FD8;
+    world = gWorld;
     fig_kind = world->figMode & 3;
     if (fig_kind != 0)
     {

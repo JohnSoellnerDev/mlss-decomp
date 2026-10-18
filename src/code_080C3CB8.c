@@ -135,7 +135,7 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void step_motion(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -159,7 +159,7 @@ ASM_FUNC("asm/code_080C3CB8/hero_a_walk_to_partner_3cb8.s", void hero_a_walk_to_
 
 void hero_a_active_link_place_finish_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
 
     step_motion(body_a);
@@ -195,7 +195,7 @@ void hero_a_active_link_place_finish_alt(struct HeroBody *body)
 
 void hero_a_active_fx_anim_ready_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
 
     step_motion(body_a);
     if ((body_a->flags & 0x20) != 0)
@@ -213,8 +213,8 @@ void hero_a_active_fx_anim_ready_alt(struct HeroBody *body)
 
 void hero_pair_place_and_finish_alt2(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_a->sprite->flags & 8) != 0)
     {

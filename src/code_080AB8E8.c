@@ -136,8 +136,8 @@ struct World
     void *trackedObj;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -176,7 +176,7 @@ void hero_b_on_object(struct HeroBody *body);
 
 void hero_a_link_to_partner_fx(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
@@ -238,7 +238,7 @@ void hero_a_link_to_partner_fx(struct HeroBody *body)
 
 void hero_a_active_set_targets(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     state_stack_advance_progress(body_a);
@@ -264,7 +264,7 @@ void hero_a_active_set_targets(struct HeroBody *body)
 
 void hero_a_active_fx_mirror(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
 
     step_motion(body_a);
@@ -284,7 +284,7 @@ void hero_a_active_fx_mirror(struct HeroBody *body)
 
 void hero_pair_place_finish_sprite(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct Hero *hero_b = world->heroB;
@@ -356,7 +356,7 @@ void hero_pair_place_finish_sprite(struct HeroBody *body)
 
 void hero_a_on_partner(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct Hero *hero_a = world->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *body_b = &world->heroB->body;
@@ -400,7 +400,7 @@ void hero_a_on_partner(struct HeroBody *body)
 
 void hero_a_active_step_12(struct HeroBody *body)
 {
-    struct World *world = gUnk_03000FD8;
+    struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     s32 scale;
@@ -432,7 +432,7 @@ void hero_a_active_step_12(struct HeroBody *body)
 
 void hero_a_active_follow_b_aux(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
 

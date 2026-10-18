@@ -134,8 +134,8 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 extern s8 gEllipseStepScript[];
 
 struct PoseTable
@@ -292,13 +292,13 @@ void settle_members_then_orbit(struct Body *body)
     }
 }
 
-s32 unknown_part_steps_080a1068(struct Body *body)
+s32 set_state_fx_twin_chain(struct Body *body)
 {
     body->state = (u32)start_fx_then_twin_chain;
     return 1;
 }
 
-s32 sub_080A1074(struct Body *body)
+s32 set_state_fx_part_chain(struct Body *body)
 {
     body->state = (u32)start_fx_then_part_chain;
     return 1;
@@ -330,10 +330,10 @@ u32 pair_heroes_with_partner(struct Body *body)
     u8 *table;
     u32 anim;
 
-    table = gUnk_03000FF4 - (body->data->pose * 60 + 0x3C);
+    table = gParty - (body->data->pose * 60 + 0x3C);
     body->data->poseVal = ((struct PoseTable *)table)->value2A;
-    bodyA = &gUnk_03000FD8->heroA->body;
-    heroB = gUnk_03000FD8->heroB;
+    bodyA = &gWorld->heroA->body;
+    heroB = gWorld->heroB;
     bodyB = &heroB->body;
     partner = body->partner;
     bodyB->partner = partner;
@@ -360,7 +360,7 @@ void hero_pose_and_fx(struct Body *body)
     struct Body *bodyA;
     s16 *span;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     bodyA = &hero->body;
     if (body->data->flags & 0x400)
     {
@@ -399,7 +399,7 @@ void hero_step_and_set_pose(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     step_motion(&hero->body);
     if (hero->body.flags & 0x20)
     {
@@ -418,7 +418,7 @@ void hero_advance_and_pose(struct Body *body)
     struct Hero *hero;
     struct Body *hbody;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     state_stack_advance_progress(hbody);
     if (hero->body.flags & 0x20)
@@ -449,7 +449,7 @@ void hero_a_move_to_partner_target(struct Body *body)
     s32 z;
     s32 dist;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     partner = body->partner;
     if (hbody->sprite->flags & 8)
@@ -498,7 +498,7 @@ void hero_a_arm_full_step(struct Body *body)
 {
     struct Hero *hero;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     if (hero->body.sprite->flags & 8)
     {
         if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
@@ -518,7 +518,7 @@ void hero_a_advance_and_place(struct Body *body)
     s32 x;
     s32 y;
 
-    heroA = gUnk_03000FD8->heroA;
+    heroA = gWorld->heroA;
     bodyA = &heroA->body;
     state_stack_advance_progress(bodyA);
     if (heroA->body.flags & 0x20)
@@ -546,7 +546,7 @@ NONMATCH("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struc
     s32 mode;
     s32 motionY;
 
-    hero = gUnk_03000FD8->heroA;
+    hero = gWorld->heroA;
     hbody = &hero->body;
     step_motion(hbody);
     motionX = hbody->motionX;
@@ -589,8 +589,8 @@ void hero_pair_place_finish_t3cc(struct Body *body)
     struct Body *bodyB;
     s16 *span;
 
-    bodyA = &gUnk_03000FD8->heroA->body;
-    bodyB = &gUnk_03000FD8->heroB->body;
+    bodyA = &gWorld->heroA->body;
+    bodyB = &gWorld->heroB->body;
     if (bodyA->sprite->flags & 8)
     {
         if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)

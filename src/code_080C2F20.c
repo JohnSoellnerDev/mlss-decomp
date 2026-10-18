@@ -135,7 +135,7 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void step_motion(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -157,8 +157,8 @@ void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32
 
 void hero_b_visible_anim_b_rate_a(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *body_b = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
     if ((body_b->sprite->flags & 8) != 0)
     {

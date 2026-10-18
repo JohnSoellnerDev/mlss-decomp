@@ -199,7 +199,7 @@ loop:
 
 ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(void))
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u32 gUnk_03000D50;
@@ -468,7 +468,7 @@ u32 rom_table_ptr(u32 bank, u32 index)
 
 void sprite_update_cd0(struct ObjNode *obj);
 
-extern u8 gUnk_0300034C[];
+extern u8 gSys[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u32 gUnk_03000D50;

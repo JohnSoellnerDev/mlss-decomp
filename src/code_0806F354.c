@@ -41,7 +41,7 @@ struct ActorWorld
     u8 *partners[8];
 };
 
-extern struct ActorWorld *gUnk_03000FD8;
+extern struct ActorWorld *gWorld;
 extern u32 gUnk_03000E3C;
 extern u8 gUnk_03000E7C;
 extern u8 gUnk_03000E7D;
@@ -165,7 +165,7 @@ void obj_spawn_child_from_table(struct ActorObj *obj)
     s32 index;
 
     index = gStepSequenceTable[gUnk_03000E7D + gUnk_03000E7C * 6];
-    partner = (struct ActorObj *)(gUnk_03000FD8->partners[index + 6] + 8);
+    partner = (struct ActorObj *)(gWorld->partners[index + 6] + 8);
     part = obj->part;
     child = obj_spawn(part, 0x40E8, partner->part->targetX / 0x100,
                       partner->part->targetY / 0x100 + 4, partner->part->targetH / 0x100,

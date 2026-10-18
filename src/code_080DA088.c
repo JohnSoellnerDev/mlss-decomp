@@ -112,7 +112,7 @@ void obj_list_push_default(struct ActorObj *obj);
 void obj_list_remove(struct ActorObj *obj);
 s32 find_slot_by_kind(u32 kind);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 n, u32 r);
+u32 rand_below(u32 n, u32 r);
 void obj_retarget_c(struct ActorObj *obj);
 void obj_place_finish(struct ActorObj *obj);
 void obj_pose_update_b(struct ActorObj *obj);

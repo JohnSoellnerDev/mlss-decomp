@@ -127,7 +127,7 @@ struct World
     struct Hero *heroB;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void obj_release(struct Body *obj);
 void sprite_set_action(struct Body *body, u32 action, s32 arg, u32 extra);
@@ -160,9 +160,9 @@ s32 resolve_contact_action(struct Body *a, struct Body *b, u32 c, u32 d, u32 e);
 
 void hero_a_place_at_b_target(struct Body *body)
 {
-    struct Hero *heroA = gUnk_03000FD8->heroA;
+    struct Hero *heroA = gWorld->heroA;
     struct Body *body_a = &heroA->body;
-    struct Body *body_b = &gUnk_03000FD8->heroB->body;
+    struct Body *body_b = &gWorld->heroB->body;
     s32 arc;
 
     set_slot_value(0x2B, -1);
@@ -210,7 +210,7 @@ void hero_a_place_own_target_anim11(struct Body *body)
     s32 px;
     s32 py;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     if (hbody->sprite->flags & 8)
     {
         if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
@@ -244,7 +244,7 @@ void hero_a_step_scaled_fx(struct Body *body)
     s32 py;
     s32 pz;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     step_motion_scaled(hbody);
     if (hbody->flags & 0x20)
     {
@@ -282,8 +282,8 @@ void hero_pair_place_both_rebuild(void)
     s32 y;
     s32 z;
 
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     if (body_a->sprite->flags & 8)
     {
         set_slot_value(0x53, -1);
@@ -458,7 +458,7 @@ void hero_a_child_next_state_anim(struct Body *body)
     struct Body *hbody;
     struct Body *child;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     set_slot_value(0x85, -1);
     child = hbody->child;
     if ((child->mode & 6) == 2 || (child->mode & 6) == 4)
@@ -479,7 +479,7 @@ void hero_a_place_own_target_anim10(struct Body *body)
     s32 px;
     s32 py;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     if (hbody->sprite->flags & 8)
     {
         if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
@@ -513,7 +513,7 @@ void hero_a_step_scaled_fx_pose(struct Body *body)
     s32 py;
     s32 pz;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     step_motion_scaled(hbody);
     if (hbody->flags & 0x20)
     {
@@ -558,8 +558,8 @@ void hero_pair_place_both_rebuild_alt(void)
     s32 y;
     s32 z;
 
-    body_a = &gUnk_03000FD8->heroA->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
     if (body_a->sprite->flags & 8)
     {
         set_slot_value(0x53, -1);
@@ -822,7 +822,7 @@ void body_finish_object(struct Body *body)
 
 void hero_a_child_remove(void)
 {
-    obj_release(gUnk_03000FD8->heroA->body.child);
+    obj_release(gWorld->heroA->body.child);
 }
 
 void body_advance_end_if_active(struct Body *body)
@@ -852,7 +852,7 @@ void body_step_if_near_hero_a(struct Body *body)
     struct Body *hbody;
     s32 ax;
 
-    hbody = &gUnk_03000FD8->heroA->body;
+    hbody = &gWorld->heroA->body;
     ax = hbody->x;
     if (body->x < ax - 0x800
         || (hbody->z + (hbody->ofsZ << 8) < body->z && ax + 0x800 < body->x))

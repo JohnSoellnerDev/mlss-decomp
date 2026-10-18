@@ -146,8 +146,8 @@ struct KeyState
     u16 held;
 };
 
-extern struct World *gUnk_03000FD8;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern struct KeyState gSys;
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -185,9 +185,9 @@ void hero_pair_follow_step(struct HeroBody *body);
 
 void hero_pair_place_action_both(void)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroData *data;
     s32 tx;
@@ -259,9 +259,9 @@ void hero_pair_place_action_both(void)
 
 void hero_b_active_place_at_a_pose(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 tx;
     s32 ty;
@@ -308,8 +308,8 @@ void hero_b_active_place_at_a_pose(struct HeroBody *body)
 
 void hero_b_active_start_step(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gUnk_03000FD8->heroA->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroSprite *sprite;
 
@@ -342,13 +342,13 @@ void hero_a_snap_to_b_target(struct HeroBody *body)
     s32 t;
 
     {
-        u8 mode_bits = gUnk_03000FD8->modeByte;
+        u8 mode_bits = gWorld->modeByte;
 
-        gUnk_03000FD8->modeByte = mode_bits | 0xC0;
+        gWorld->modeByte = mode_bits | 0xC0;
     }
-    hero_a = gUnk_03000FD8->heroA;
+    hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    body_b = &gUnk_03000FD8->heroB->body;
+    body_b = &gWorld->heroB->body;
     if (body_b->targetX < body_a->targetX)
     {
         u16 *progress = &body_a->progress;
@@ -380,9 +380,9 @@ void hero_a_snap_to_b_target(struct HeroBody *body)
 
 void hero_a_active_follow_b(struct HeroBody *body)
 {
-    struct Hero *hero_a = gUnk_03000FD8->heroA;
+    struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gUnk_03000FD8->heroB;
+    struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 tx;
     s32 ty;

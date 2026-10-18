@@ -172,7 +172,7 @@ u8 step_pos_xyz(struct Enemy *ent);
 u8 step_pos_xy_b(struct Enemy *ent);
 u8 step_pos_xy_c(struct Enemy *ent);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 u32 angle_of_vector16(s32 x, s32 y);
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 u8 box_hit_kind(struct Owner *owner, struct Enemy *ent, u32 a, u32 b, u32 c);
@@ -219,7 +219,7 @@ void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct Stat
 {
     u8 *rec = ent->unk1B0;
 
-    ent->unk1D0 = sub_081DE850(4, mt19937_next());
+    ent->unk1D0 = rand_below(4, mt19937_next());
     ent->unk1D2 = rec[ent->unk1D0 + 0x24];
     ((struct Mode3 *)&ent->unk214)->mode = 4;
     ent->sprite->unk21 = 4;
@@ -554,7 +554,7 @@ void enemy_begin_wait(struct Owner *owner, struct Enemy *ent)
     ent->unk1E4 = ent->unk14;
     ent->unk1E8 = ent->unk18;
     ((struct Flags8 *)&ent->unk33D)->bit3 = 1;
-    ent->unk1D0 = sub_081DE850(4, mt19937_next());
+    ent->unk1D0 = rand_below(4, mt19937_next());
     ((struct Mode3 *)&ent->unk214)->mode = 1;
     ent->sprite->unk20 = ent->unk1B0[ent->unk1D0 + 6];
     ent->unk1D2 = 0;

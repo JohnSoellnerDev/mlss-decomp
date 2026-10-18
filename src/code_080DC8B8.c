@@ -87,7 +87,7 @@ struct ActorObj
 
 u32 is_state_busy(void);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 n, u32 r);
+u32 rand_below(u32 n, u32 r);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
 void obj_list_push_default(struct ActorObj *obj);
@@ -363,7 +363,7 @@ u32 sprite_state_random_chain_b(struct ActorObj *obj)
 {
     u32 r = mt19937_next();
 
-    if (sub_081DE850(1, r) != 0)
+    if (rand_below(1, r) != 0)
     {
         obj->state = obj_wait_free_then_cd90;
     }

@@ -139,9 +139,9 @@ struct World
     struct HeroLayer *layers;
 };
 
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
-extern struct KeyState gUnk_0300034C;
+extern struct World *gWorld;
+extern u8 *gParty;
+extern struct KeyState gSys;
 extern const u8 gRoom149Layer1[];
 
 void hero_b_start_step_14th(struct HeroBody *body);

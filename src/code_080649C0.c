@@ -135,11 +135,11 @@ void obj_pose_active_stop(struct ActorObj *obj);
 u32 obj_query_part_then_state(struct ActorObj *obj);
 u32 obj_lookup_slot_then_state(struct ActorObj *obj);
 void obj_pose_active_action0_next(struct ActorObj *obj);
-u32 unknown_part_steps_08064b14(struct ActorObj *obj);
-u32 sub_08064B20(struct ActorObj *obj);
-u32 sub_08064B34(struct ActorObj *obj);
-u32 sub_08064B40(struct ActorObj *obj);
-u32 sub_08064B54(struct ActorObj *obj);
+u32 parts_obj_start_wait_place_sprite(struct ActorObj *obj);
+u32 obj_start_choose_zero(struct ActorObj *obj);
+u32 obj_start_restart_action6(struct ActorObj *obj);
+u32 obj_start_choose_one(struct ActorObj *obj);
+u32 obj_start_action3_zero(struct ActorObj *obj);
 void obj_move_xh_then_cull(struct ActorObj *obj);
 void obj_restart_action6(struct ActorObj *obj);
 void parts_obj_wait_ready_place_sprite(struct ActorObj *obj);
@@ -255,33 +255,33 @@ void obj_pose_active_action0_next(struct ActorObj *obj)
     }
 }
 
-u32 unknown_part_steps_08064b14(struct ActorObj *obj)
+u32 parts_obj_start_wait_place_sprite(struct ActorObj *obj)
 {
     obj->state = parts_obj_wait_ready_place_sprite;
     return 1;
 }
 
-u32 sub_08064B20(struct ActorObj *obj)
+u32 obj_start_choose_zero(struct ActorObj *obj)
 {
     obj->param9C = 0;
     obj->state = obj_wait_ready_choose_state;
     return 1;
 }
 
-u32 sub_08064B34(struct ActorObj *obj)
+u32 obj_start_restart_action6(struct ActorObj *obj)
 {
     obj->state = obj_restart_action6;
     return 1;
 }
 
-u32 sub_08064B40(struct ActorObj *obj)
+u32 obj_start_choose_one(struct ActorObj *obj)
 {
     obj->param9C = 1;
     obj->state = obj_wait_ready_choose_state;
     return 1;
 }
 
-u32 sub_08064B54(struct ActorObj *obj)
+u32 obj_start_action3_zero(struct ActorObj *obj)
 {
     obj->param9C = 0;
     obj->state = obj_action3_restart_spawn;

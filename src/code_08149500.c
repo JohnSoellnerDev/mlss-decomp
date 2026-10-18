@@ -190,7 +190,7 @@ void enemy_deactivate_body(struct Enemy *body);
 void enemy_zone_pick(struct Owner *owner, struct Enemy *ent, u32 *stateOut);
 s8 zone_point_code(struct Owner *owner, struct Enemy *ent, u32 zero);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 void enemy_jump_partner(void);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void enemy_follow_or_hop(struct Owner *owner, struct Enemy *ent, u32 *stateOut);
@@ -423,7 +423,7 @@ void enemy_zone_pick(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     zone = zone_point_code(owner, ent, 0);
     if (zone != -1)
     {
-        idx = sub_081DE850(4, mt19937_next());
+        idx = rand_below(4, mt19937_next());
         ent->unk1D2 = *(u8 *)(idx + (u32)ent->rec + 0x2A);
         ent->index = idx;
         ((struct Mode3 *)&ent->unk214)->mode = 0;
@@ -482,9 +482,9 @@ void enemy_move_axis(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     ai = (u8 *)ent + 0x58;
     tbl = (u8 *)ent + 0x100;
     sensor = ent->sensor;
-    ent->index = sub_081DE850(4, mt19937_next());
+    ent->index = rand_below(4, mt19937_next());
     value = *(u16 *)(tbl + ent->index * 2);
-    part = *(u16 *)(tbl + sub_081DE850(2, mt19937_next()) * 2 + 0x30);
+    part = *(u16 *)(tbl + rand_below(2, mt19937_next()) * 2 + 0x30);
     sensorVal = (u16)sensor[5];
     if (find_active_entry(owner, &idx) != 0)
     {
@@ -539,7 +539,7 @@ void enemy_fall_landing_step(struct Owner *owner, struct Enemy *ent, u32 *stateO
         if (ent->unk18 <= ent->unk2D4)
         {
             ent->unk18 = ent->unk2D4;
-            if (sub_081DE850(0x64, mt19937_next()) & 1)
+            if (rand_below(0x64, mt19937_next()) & 1)
             {
                 *stateOut = (u32)enemy_move_axis;
             }
@@ -705,7 +705,7 @@ void enemy_pick_entry_sprite(struct Owner *owner, struct Enemy *ent, u32 *stateO
     struct Record *rec;
 
     rec = ent->rec;
-    ent->index = sub_081DE850(4, mt19937_next());
+    ent->index = rand_below(4, mt19937_next());
     obj_set_sprite_link(ent, 1);
     ((struct Mode2At1 *)&ent->sprite->unk12)->mode = 1;
     ((struct Mode3 *)&ent->unk214)->mode = 1;

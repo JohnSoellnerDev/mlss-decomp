@@ -119,7 +119,7 @@ void obj_list_remove(struct HeroBody *body);
 void change_item_count(u32 item, u32 count);
 void set_slot_value(u32 id, s32 value);
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 n, u32 seed);
+s32 rand_below(s32 n, u32 seed);
 extern u16 gUnk_0200004A;
 extern u16 gUnk_02000052;
 extern const u16 gActionCodes[];
@@ -131,7 +131,7 @@ struct ModelCtx
     u16 unk2A;
 };
 
-extern struct ModelCtx *gUnk_03000D74;
+extern struct ModelCtx *gModelCtx;
 extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
 
@@ -154,7 +154,7 @@ struct Hero
     struct HeroBody body;
 };
 
-extern struct World *gUnk_03000FD8;
+extern struct World *gWorld;
 
 void on_arrive(struct HeroBody *body);
 void task_create_list_48(void (*fn)(), struct HeroBody *body);
@@ -296,8 +296,8 @@ ASM_FUNC("asm/code_0809A420/trail_follow_partner.s", void trail_follow_partner(s
 void begin_tile_update(struct HeroBody *body)
 {
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000460, gWorkBuf + 0x3CD0, 0x20);
-    gUnk_03000D74->unk28 = gUnk_03000D74->unk2A;
-    gUnk_03000D74->unk2A |= 0xFFFF;
+    gModelCtx->unk28 = gModelCtx->unk2A;
+    gModelCtx->unk2A |= 0xFFFF;
     task_create_list_48(update_layer_tiles, body);
     body->state = update_pose_if_shown;
 }
@@ -574,7 +574,7 @@ void init_random_timer(struct HeroBody *body)
     body->unkA8 = 0;
     sprite_set_action(body, 0, 0x40C0, 0);
     ((struct ModeByte *)&body->sprite->flags)->mode = 1;
-    body->unk1C = sub_081DE850(0, mt19937_next()) + 0x14;
+    body->unk1C = rand_below(0, mt19937_next()) + 0x14;
     body->unk1E = 0;
     body->unk74 = 0x7F;
     body->state = hide_and_reset_slot;
@@ -585,8 +585,8 @@ ASM_FUNC("asm/code_0809A420/seek_hero.s", void seek_hero(struct HeroBody *body))
 
 void fall_and_release(struct HeroBody *body)
 {
-    struct HeroBody *heroA = &gUnk_03000FD8->heroA->body;
-    struct HeroBody *heroB = &gUnk_03000FD8->heroB->body;
+    struct HeroBody *heroA = &gWorld->heroA->body;
+    struct HeroBody *heroB = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
 
     body->z += (s16)body->unkB2;
@@ -594,7 +594,7 @@ void fall_and_release(struct HeroBody *body)
     if (body->sprite->unk2 >= partner->sprite->unk2 + 0x20)
     {
         obj_detach_active(body->sprite);
-        if (gUnk_03000FD8->unkC & 0x80)
+        if (gWorld->unkC & 0x80)
         {
             struct HeroBody *other = heroB;
 
@@ -613,7 +613,7 @@ void fall_and_release(struct HeroBody *body)
 
 void place_at_focus_y(struct HeroBody *body)
 {
-    struct World **pworld = &gUnk_03000FD8;
+    struct World **pworld = &gWorld;
     struct World *world = *pworld;
     u32 flags;
 
@@ -675,8 +675,8 @@ void random_timers_init(struct HeroBody *body)
     {
         sprite_set_action(body, 0, 0x40BE, 0);
         ((struct ModeByte *)&body->sprite->flags)->mode = 0;
-        body->unkAE = sub_081DE850(0x28, mt19937_next()) + 0x1E;
-        body->unkA8 = sub_081DE850(0xA, mt19937_next()) + 0x32;
+        body->unkAE = rand_below(0x28, mt19937_next()) + 0x1E;
+        body->unkA8 = rand_below(0xA, mt19937_next()) + 0x32;
         body->state = update_pose_timers;
     }
 }

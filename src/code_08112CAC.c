@@ -117,7 +117,7 @@ struct SceneSpriteBits
     u8 unk3 : 5;
 };
 
-extern struct SceneWorld *gUnk_03000FD8;
+extern struct SceneWorld *gWorld;
 
 void sprite_set_action(struct SceneObj *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -142,7 +142,7 @@ extern u32 gNodeChainSceneScale[];
 extern u16 gNodeChainSpriteScale[];
 struct SceneObj *obj_spawn_linked(struct SceneObj *parent, u32 kind, u32 value);
 u32 mt19937_next(void);
-u32 sub_081DE850(u32 range, u32 seed);
+u32 rand_below(u32 range, u32 seed);
 extern u16 gPhaseLevelTable[];
 extern const u16 gPhaseChanceTable[];
 extern u16 gWaveSlotTable[];
@@ -306,7 +306,7 @@ void obj_phase_countdown(struct SceneObj *obj)
 
 void obj_place_scene_target(struct SceneObj *obj)
 {
-    if (gUnk_03000FD8->unk40 == 0)
+    if (gWorld->unk40 == 0)
     {
         place_targets(obj, obj->data->targetX / 0x100, obj->data->targetY / 0x100, obj->data->targetZ / 0x100, 0x100);
         set_motion_start(obj, 0x400);
@@ -356,12 +356,12 @@ void obj_anim1_for_slot(struct SceneObj *obj)
 
 void world_set_link_callback(void (*cb)(struct SceneObj *obj))
 {
-    struct SceneObj *linked = gUnk_03000FD8->unk80;
+    struct SceneObj *linked = gWorld->unk80;
     if ((linked->unk7E & 6) == 2)
     {
         linked->link54 = cb;
     }
-    linked = gUnk_03000FD8->unk84;
+    linked = gWorld->unk84;
     if (linked != 0 && (linked->unk7E & 6) == 2)
     {
         linked->link54 = cb;
@@ -503,7 +503,7 @@ void obj_idle_anim_b_part(struct SceneObj *obj)
     {
         sprite_set_action(obj, 0xB, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
-        if (gUnk_03000FD8->unk40 == 0)
+        if (gWorld->unk40 == 0)
         {
             if (obj->phase == 0)
             {
@@ -590,7 +590,7 @@ void obj_detach_from_scene(struct SceneObj *obj)
 {
     sprite_set_action(obj, -1, -1, 0);
     obj->state = 0;
-    partner_link_update(gUnk_03000FD8->unk58 + 8, obj, 0xFF);
+    partner_link_update(gWorld->unk58 + 8, obj, 0xFF);
 }
 
 
@@ -607,7 +607,7 @@ void obj_release_when_idle_c(struct SceneObj *obj)
 
 void obj_wait_world_then_flags(struct SceneObj *obj)
 {
-    if (gUnk_03000FD8->unk40 == 0)
+    if (gWorld->unk40 == 0)
     {
         if (((u8)(obj->phase ^ 1) & 1) != 0)
         {

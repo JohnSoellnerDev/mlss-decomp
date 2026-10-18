@@ -142,13 +142,13 @@ struct AnimTask
 void set_slot_value(u32 id, s32 value);
 void *find_lowest_order_pose(u8 *pic);
 void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
-extern struct World *gUnk_03000FD8;
-extern u8 *gUnk_03000FF4;
+extern struct World *gWorld;
+extern u8 *gParty;
 void sound_stop_song(u32 song);
 extern s8 gPoseKindPct[];
 extern s8 gPoseChancePct[];
 u32 mt19937_next(void);
-s32 sub_081DE850(s32 range, u32 seed);
+s32 rand_below(s32 range, u32 seed);
 void ensure_code_entry(u32 key);
 u8 is_state_busy(void);
 struct AnimTask *task_create_list_40(void (*entry)(struct AnimTask *));
@@ -382,7 +382,7 @@ s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance)
     {
         return 0;
     }
-    if (chance < sub_081DE850(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -397,7 +397,7 @@ s32 anim_roll_bit4000(struct AnimObj *obj, s32 chance)
     {
         return 0;
     }
-    if (chance < sub_081DE850(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -412,7 +412,7 @@ s32 anim_roll_bit2000(struct AnimObj *obj, s32 chance)
     {
         return 0;
     }
-    if (chance < sub_081DE850(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -427,7 +427,7 @@ s32 anim_roll_bit1000(struct AnimObj *obj, s32 chance)
     {
         return 0;
     }
-    if (chance < sub_081DE850(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
@@ -472,19 +472,19 @@ void state_figure_begin(struct AnimTask *owner)
     struct AnimObj *obj = owner->obj;
     u32 (*math)(u32);
 
-    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
     if (obj->unk4C != 0)
     {
-        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
         owner->state = 0;
         return;
     }
     set_slot_value(0x2B, -1);
     math = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt);
     obj->stepB2 = ((s32)math(0xB37D29) - 0xB3) / 2;
-    if (obj == (struct AnimObj *)(gUnk_03000FD8->active + 8))
+    if (obj == (struct AnimObj *)(gWorld->active + 8))
     {
-        sprite_set_action(obj, (*(gUnk_03000FD8->active + 0x7F) & 8) ? 5 : 0xA, 0, 0);
+        sprite_set_action(obj, (*(gWorld->active + 0x7F) & 8) ? 5 : 0xA, 0, 0);
     }
     else
     {
@@ -498,10 +498,10 @@ void state_figure_move(struct AnimTask *owner)
 {
     struct AnimObj *obj = owner->obj;
 
-    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
     if (obj->unk4C != 0)
     {
-        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
         owner->state = 0;
         return;
     }
@@ -511,7 +511,7 @@ void state_figure_move(struct AnimTask *owner)
     {
         return;
     }
-    if ((u8 *)obj != gUnk_03000FD8->active + 8)
+    if ((u8 *)obj != gWorld->active + 8)
     {
         sprite_set_action(obj, 6, 0, 0);
     }
@@ -524,10 +524,10 @@ void state_figure_limit(struct AnimTask *owner)
 {
     struct AnimObj *obj = owner->obj;
 
-    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
     if (obj->unk4C != 0)
     {
-        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
         owner->state = 0;
         return;
     }
@@ -540,7 +540,7 @@ void state_figure_limit(struct AnimTask *owner)
     obj->unk58 = 0;
     ((struct AnimFlags77 *)&obj->flags77)->low3 = 0;
     obj->unk18 = *(s32 *)(obj->anim + 0xE0);
-    if ((u8 *)obj != gUnk_03000FD8->active + 8)
+    if ((u8 *)obj != gWorld->active + 8)
     {
         sprite_set_action(obj, 8, 0, 0);
     }
@@ -551,16 +551,16 @@ void state_figure_end(struct AnimTask *owner)
 {
     struct AnimObj *obj = owner->obj;
 
-    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 1;
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
     if (obj->unk4C != 0)
     {
-        ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
         owner->state = 0;
         return;
     }
-    if (obj == (struct AnimObj *)(gUnk_03000FD8->active + 8))
+    if (obj == (struct AnimObj *)(gWorld->active + 8))
     {
-        u32 flagBits = (u32)*(gUnk_03000FD8->active + 0x7F) >> 3;
+        u32 flagBits = (u32)*(gWorld->active + 0x7F) >> 3;
         u32 action = 1;
 
         action &= ~flagBits;
@@ -574,7 +574,7 @@ void state_figure_end(struct AnimTask *owner)
         }
         sprite_set_action(obj, 0, 0, 0);
     }
-    ((struct WorldFlags *)&gUnk_03000FD8->flags0B)->bit2 = 0;
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
     owner->state = 0;
 }
 
