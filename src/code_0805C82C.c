@@ -64,6 +64,11 @@ struct MapAnimChunk
     u16 x;
     u16 y;
 };
+struct SysHeadPal
+{
+    u8 filler0[2];
+    u16 palDirty;
+};
 
 
 void heap_free_b(void *p);
@@ -105,9 +110,71 @@ void map_layer3_entry(u8 *obj, u32 index);
 void update_scanline_offsets();
 void bg3_line_scroll_frame(void);
 extern const void *gAnimListTable[];
+extern const u8 gHeapTagBgViewSmall[];
+extern const u8 gHeapTagBgViewLarge[];
+extern u16 gUnk_02000010[];
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+extern const u8 gHeapTagDisplayBufA[];
+extern const u8 gHeapTagDisplayBufB[];
 
-ASM_FUNC("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display_b(void))
+NONMATCH("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display_b(u8 *obj))
+{
+    u8 *flagp = obj + 0x584;
+    u8 flag = *flagp;
+    u8 *indexp;
+    u8 *table;
+    u32 i;
 
+    if (flag == 0)
+    {
+        s32 value;
+        u8 entry;
+
+        indexp = obj + 0x585;
+        *indexp = 2;
+        *(u16 *)(obj + 0x58A) = 3;
+        *(u16 *)(obj + 0x58C) = 2;
+        *(u16 *)(obj + 0x590) = 6;
+        *(u16 *)(obj + 0x592) = 4;
+        obj[0x588] = 2;
+        obj[0x596] = 8;
+        *(u16 *)(obj + 0x58E) = flag;
+        *(u16 *)(obj + 0x594) = flag;
+        obj[0x597] = 2;
+        *flagp = 1;
+        table = obj + 0x60;
+        value = *(s16 *)(table + (*indexp << 1));
+        if (value > 0x97)
+        {
+            obj[0x586] = 0xA0;
+            obj[0x587] = 0;
+        }
+        else
+        {
+            obj[0x586] = 0;
+            entry = table[*indexp << 1];
+            obj[0x587] = (u8)(-104 - entry);
+        }
+        gUnk_03000E08 = heap_alloc(0x500, 1, gHeapTagDisplayBufA, 0);
+        gUnk_03000E0C = heap_alloc(0x500, 0, gHeapTagDisplayBufB, 0);
+        i = 0;
+        do
+        {
+            u32 off = i << 2;
+            u16 v = *(u16 *)(obj + 0x5A + (*indexp << 1));
+
+            *(u16 *)((u8 *)gUnk_03000E08 + off) = v;
+            *(u16 *)((u8 *)gUnk_03000E0C + off) = v;
+            v = *(u16 *)(table + (*indexp << 1));
+            *(u16 *)((u8 *)gUnk_03000E08 + off + 2) = v;
+            *(u16 *)((u8 *)gUnk_03000E0C + off + 2) = v;
+            i = (u16)(i + 1);
+        } while (i <= 0x9F);
+        update_scanline_offsets(obj);
+        set_0d80_slot(bg3_line_scroll_frame, 0);
+    }
+}
+END_NONMATCH
 ASM_FUNC("asm/code_0805C82C/update_scanline_offsets.s", void update_scanline_offsets(void))
 
 void bg3_line_scroll_frame(void)
@@ -298,7 +365,59 @@ void map_anim2_upload(void *unused, u16 slot, u8 count, u16 index)
     dma_copy_or_queue((void *)src, (void *)(0x06004000 + slot * 0x20), count * 0x20, 0x20, 0);
 }
 
-ASM_FUNC("asm/code_0805C82C/init_bg_view.s", void init_bg_view(void))
+NONMATCH("asm/code_0805C82C/init_bg_view.s", u32 init_bg_view(u8 *obj, u8 mode))
+{
+    u32 fill;
+    u16 *tiles;
+    const u8 *pattern;
+    u32 x;
+    u32 y;
+
+    if (obj[0xA] != 0)
+        return 0;
+    *(void **)(obj + 4) = heap_alloc(0x200, 1, gHeapTagBgViewSmall, 0);
+    fill = gBgViewTable[mode].unk0;
+    cpu_fast_set(&fill, *(void **)(obj + 4), 0x01000080);
+    dma_copy_or_queue(*(void **)(obj + 4), (void *)0x06003E00, 0x200, 0x20, 2);
+    *(void **)obj = heap_alloc(0x500, 1, gHeapTagBgViewLarge, 0);
+    fill = 0;
+    cpu_fast_set(&fill, *(void **)obj, 0x01000140);
+    pattern = gBgViewTable[mode].unk4;
+    y = 0;
+    tiles = *(u16 **)obj;
+    do
+    {
+        u32 nextY;
+        u32 rowBase;
+        u32 fold;
+        u32 mirror;
+
+        x = 0;
+        nextY = y + 1;
+        rowBase = y << 5;
+        fold = (y << 4) - y;
+        mirror = (0x13 - y) << 5;
+        do
+        {
+            u32 x2 = x - 0x1D;
+
+            tiles[rowBase + x] = (u16)(0xF1F0 + pattern[fold + x]);
+            tiles[rowBase - x2] = (u16)(0xF5F0 + pattern[fold + x]);
+            tiles[mirror + x] = (u16)(0xF9F0 + pattern[fold + x]);
+            tiles[mirror - x2] = (u16)(0xFDF0 + pattern[fold + x]);
+            x = (u16)(x + 1);
+        } while (x <= 0xE);
+        y = (u16)nextY;
+    } while (y <= 9);
+    dma_copy_or_queue(tiles, (void *)0x06003000, 0x500, 0x20, 2);
+    gUnk_02000008 = 0x600;
+    gUnk_02000010[0] = 0;
+    gUnk_02000010[1] = 0;
+    obj[0xB] = mode;
+    *(u16 *)(obj + 8) = 0;
+    obj[0xA] = 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0805C82C/map_view_transition_step.s", void map_view_transition_step(void))
 
@@ -331,14 +450,82 @@ void anim_slots_load(struct MapLoaderObj *obj);
 void map_anim_slots_update(u8 *obj);
 ASM_FUNC("asm/code_0805C82C/map_obj_loader_step.s", void map_obj_loader_step(void))
 
-ASM_FUNC("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(u8 *obj))
+static inline const u8 *map_palette_set(void)
+{
+    if ((gSys[0x888] & 6) == 2)
+        return gMapPalettesB;
+    return gMapPalettesA;
+}
+
+NONMATCH("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(u8 *obj))
+{
+    const u8 *set = map_palette_set();
+    const u8 *palette;
+    u16 row;
+    u16 col;
+    u8 count;
+    u32 rowOff;
+    u32 next;
+
+    palette = set + ((const u32 *)set)[gRomBlockTable[gUnk_03000DD0[5]]];
+    row = 0;
+    do
+    {
+        next = row + 1;
+
+        count = 0;
+        rowOff = row << 5;
+        for (col = 1; col <= 0xF; col++)
+        {
+            const u8 *cell = palette + (col * 2 + rowOff);
+
+            if (cell[0] != 0 || cell[1] != 0)
+                count++;
+        }
+        if (count != 0)
+            cpu_fast_set(palette + rowOff, gUnk_02000080 + rowOff, 8);
+        row = next;
+    } while ((u16)next <= 0xE);
+    ((struct SysHeadPal *)gSys)->palDirty = 0x7FFF;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0805C82C/load_layer_columns.s", void load_layer_columns(void))
 
 ASM_FUNC("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(void))
 
-ASM_FUNC("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index))
+NONMATCH("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index))
+{
+    u8 *recTbl = *(u8 **)(obj + 0xA8);
+    u16 top;
+    u16 bottom;
+    u16 *rec;
 
+    if ((flags & 0x10) == 0)
+    {
+        u32 base = a << 11;
+        u32 yl = c & 0xF;
+        u32 xl = (flags & 0xF) << 1;
+
+        top = base + (yl << 6) + xl;
+        bottom = base + (((yl << 1) + 1) << 5) + xl;
+    }
+    else
+    {
+        u32 base = a << 11;
+        u32 yl = c & 0xF;
+        u32 xl = (flags & 0xF) << 1;
+
+        top = base + (yl << 6) + xl + 0x400;
+        bottom = base + (((yl << 1) + 1) << 5) + xl + 0x400;
+    }
+    rec = (u16 *)(recTbl + (index << 3));
+    *(u16 *)(*(u8 **)(obj + 0x94) + (top << 1)) = rec[0];
+    *(u16 *)(*(u8 **)(obj + 0x94) + (top << 1) + 2) = rec[1];
+    *(u16 *)(*(u8 **)(obj + 0x94) + (bottom << 1)) = rec[2];
+    *(u16 *)(*(u8 **)(obj + 0x94) + (bottom << 1) + 2) = rec[3];
+}
+END_NONMATCH
 ASM_FUNC("asm/code_0805C82C/map_anim_slots_update.s", void map_anim_slots_update(u8 *obj))
 
 void anim_slots_clear(struct MapLoaderObj *obj)
