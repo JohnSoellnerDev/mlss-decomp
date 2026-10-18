@@ -173,7 +173,38 @@ s32 anim_roll_bit2000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit4000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance);
 
-ASM_FUNC("asm/code_08109714/anim_end_mode.s", void anim_end_mode(void))
+void anim_end_mode(struct AnimObj *obj)
+{
+    if (*(u32 *)((u8 *)obj + 0x120) & 0x38000)
+    {
+        obj->bits &= 0xF3FF;
+        if (obj->index < 0)
+        {
+            u32 fig = obj->unk12C;
+            u32 bits = obj->bits;
+            u32 next;
+
+            if (fig != 0x13)
+            {
+                next = bits;
+                if (fig == 0x14)
+                {
+                    next |= 0x400;
+                }
+            }
+            else
+            {
+                next = 0x800 | bits;
+            }
+            obj->bits = next;
+            obj->unk128 = 0xFF;
+            obj->unk126 = 1;
+            obj->unk12A = 1;
+            ((struct AnimFlags *)&obj->flags)->bit6 = 1;
+        }
+        *(u32 *)((u8 *)obj + 0x120) &= 0xFFFC7FFF;
+    }
+}
 
 void state_hero_marker_end(struct AnimTask *owner)
 {
