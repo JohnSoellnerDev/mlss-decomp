@@ -288,47 +288,24 @@ void count_frames_then_timer(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080739F0/chain_then_wait_counters.s", void chain_then_wait_counters(struct ActorObj *obj))
+void chain_then_wait_counters(struct ActorObj *obj)
 {
     struct ActorObj *grandchild = obj->child->child;
     u8 nonzero;
     s32 i;
-    u16 *a;
-    u16 *b;
     step_child_chain(obj->child);
     step_child_chain_b(grandchild);
     nonzero = 0;
-    i = 0;
-    a = gUnk_03000E80;
-    b = gUnk_03000E98;
-    do {
-        if (a[0] != 0) {
+    for (i = 0; i < 12; i++)
+    {
+        if (gUnk_03000E80[i] != 0)
             nonzero++;
-        }
-        if (b[0] != 0) {
+        if (gUnk_03000E98[i] != 0)
             nonzero++;
-        }
-        if (a[1] != 0) {
-            nonzero++;
-        }
-        if (b[1] != 0) {
-            nonzero++;
-        }
-        if (a[2] != 0) {
-            nonzero++;
-        }
-        if (b[2] != 0) {
-            nonzero++;
-        }
-        a += 3;
-        b += 3;
-        i += 3;
-    } while (i != 12);
-    if (nonzero == 0) {
-        obj->state = finish_child_chain;
     }
+    if (nonzero == 0)
+        obj->state = finish_child_chain;
 }
-END_NONMATCH
 
 void link_owner_then_wait(struct ActorObj *obj)
 {
