@@ -79,6 +79,13 @@ struct Flag0
     u8 rest : 7;
 };
 
+struct SchedBits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 hi5 : 5;
+};
+
 struct GfxBits
 {
     u8 lo2 : 2;
@@ -95,7 +102,7 @@ struct AnimTick
     u8 mode;
 };
 
-extern struct SysBlock gSys;
+extern u8 gSys[];
 extern u16 gUnk_03000D3C;
 extern u8 gUnk_03000D18[];
 extern u8 gUnk_03000D28[];
@@ -139,41 +146,106 @@ void set_flag_2_2(void *p);
 struct AnimTask *anim_task_create(void *obj, u32 prio, const void *data);
 void task_insert(void *node, u8 kind, u32 data);
 
-ASM_FUNC("asm/code_0801ABFC/serial_schedule.s", void serial_schedule(void))
-
-ASM_FUNC("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
-
-NONMATCH("asm/code_0801ABFC/serial_enter_phase_1.s", void serial_enter_phase_1(void))
+NONMATCH("asm/code_0801ABFC/serial_schedule.s", void serial_schedule(u16 a, u16 b, u32 c))
 {
-    u8 *p = (u8 *)&gSys + 0x888;
+    if ((gSys[0x888] & 6) == 2)
+    {
+        if (a != 0)
+        {
+            ((struct SchedBits *)gUnk_03000D28)->lo2 = 1;
+            ((struct SchedBits *)gUnk_03000D28)->bit2 = c & 1;
+            *(u16 *)(gUnk_03000D28 + 2) = b;
+            *(u16 *)(gUnk_03000D28 + 4) = a;
+        }
+        else
+        {
+            if ((gSys[0x88B] & 1) != 0)
+            {
+                ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
+            }
+            ((struct Bits28 *)gUnk_03000D28)->lo2 = 2;
+            *(u16 *)(gUnk_03000D28 + 4) = b;
+        }
+    }
+}
+END_NONMATCH
 
-    if ((*p & 6) == 2)
+NONMATCH("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
+{
+    if ((gSys[0x888] & 6) == 2)
+    {
+        u32 flags;
+        u8 *t;
+        u32 lo;
+        s32 n;
+
+        t = gUnk_03000D28;
+        flags = t[0];
+        lo = (flags << 30) >> 30;
+        switch (lo)
+        {
+        case 1:
+            n = *(u16 *)(t + 4);
+            n--;
+            *(u16 *)(t + 4) = n;
+            if ((u16)n == 0)
+            {
+                if (gSys[0x88B] & lo)
+                {
+                    ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
+                }
+                ((struct Bits28 *)t)->lo2 = 2;
+                *(u16 *)(t + 4) = *(u16 *)(t + 2);
+            }
+            break;
+        case 2:
+            n = *(u16 *)(t + 4);
+            if (n != 0)
+            {
+                n--;
+                *(u16 *)(t + 4) = n;
+                if ((u16)n == 0)
+                {
+                    if ((flags & 4) != 0)
+                    {
+                        ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
+                    }
+                    else
+                    {
+                        ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
+                    }
+                    t[0] = flags & -4;
+                }
+            }
+            break;
+        }
+    }
+}
+END_NONMATCH
+
+void serial_enter_phase_1(void)
+{
+    if ((gSys[0x888] & 6) == 2)
     {
         ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
         ((struct Bits28 *)gUnk_03000D28)->lo2 = 0;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0801ABFC/serial_clear_phase.s", void serial_clear_phase(void))
+void serial_clear_phase(void)
 {
-    u8 *p = (u8 *)&gSys + 0x888;
-
-    if ((*p & 6) == 2)
+    if ((gSys[0x888] & 6) == 2)
     {
         ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
         ((struct Bits28 *)gUnk_03000D28)->lo2 = 0;
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0801ABFC/serial_start_phase_2.s", void serial_start_phase_2(void))
 {
-    u8 *sys = (u8 *)&gSys;
-
-    if ((sys[0x888] & 6) == 2)
+    if ((gSys[0x888] & 6) == 2)
     {
-        if ((sys[0x88B] & 1) != 0)
+        if ((gSys[0x88B] & 1) != 0)
         {
             ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
         }
@@ -226,29 +298,65 @@ u32 serial_slot_bits(u32 index, u32 unused1, u32 bits)
     return bits;
 }
 
-ASM_FUNC("asm/code_0801ABFC/serial_rx_error.s", void serial_rx_error(void))
+struct SerialRx
+{
+    u8 filler0[8];
+    u32 word8;
+};
 
-NONMATCH("asm/code_0801ABFC/init_vt_08cdd748_reset.s", void init_vt_08cdd748_reset(struct AnimTask *obj, u32 kind))
+NONMATCH("asm/code_0801ABFC/serial_rx_error.s", u32 serial_rx_error(void))
+{
+    u32 rx = ((struct SerialRx *)gUnk_03000D18)->word8;
+    u32 payload = rx >> 4;
+    u32 check = rx & 0xF;
+    u32 sum = payload >> 24;
+    u8 i = 6;
+    u32 mask = 0xF;
+
+    do
+    {
+        i--;
+        sum ^= (payload >> (i << 2)) & mask;
+    } while (i != 0);
+    return (sum ^ check) != 0;
+}
+END_NONMATCH
+
+void init_vt_08cdd748_reset(struct AnimTask *obj, u32 kind)
 {
     obj->unk18 = gObjHandler;
     {
-        u8 flags = gSys.flags88A;
+        u8 *p = gSys;
 
-        flags |= 8;
-        gSys.flags88A = flags;
+        p[0x88A] |= 8;
     }
     *(u16 *)0x02000000 = 0;
     *(u16 *)0x02000050 = 0;
     task_remove(obj, kind);
 }
-END_NONMATCH
 
 void save_slot_store(void)
 {
     store_save_slot();
 }
 
-ASM_FUNC("asm/code_0801ABFC/link_window_open.s", void link_window_open(void))
+NONMATCH("asm/code_0801ABFC/link_window_open.s", void link_window_open(u32 mode))
+{
+    u8 buf[8];
+    void *block;
+    u32 arg;
+
+    block = heap_alloc2(0x324, 0, gHeapTagLinkWindow, 0);
+    arg = -1;
+    if (mode == 0)
+    {
+        arg = 0x73;
+    }
+    buf[0] = 1;
+    *(u8 *)(buf + 4) = 0;
+    init_scene_obj(block, 8, gHeapTagLinkWindow, arg);
+}
+END_NONMATCH
 
 void serial_free_buffers(void)
 {
@@ -288,7 +396,7 @@ void serial_realloc_buffers(void)
 
 void start_scene_or_textbox(void)
 {
-    if (gSys.keys28 == 0x307)
+    if (((struct SysBlock *)gSys)->keys28 == 0x307)
     {
         void *block = heap_alloc2(0x4C, 0, gHeapTagTextboxScene, 0);
 
@@ -304,7 +412,7 @@ void start_scene_or_textbox(void)
 
 void update_link_slot(void)
 {
-    if ((gSys.keys2A & gUnk_03000D3C) != 0)
+    if ((((struct SysBlock *)gSys)->keys2A & gUnk_03000D3C) != 0)
     {
         set_slot_value(0x50, -1);
     }
@@ -319,15 +427,60 @@ ASM_FUNC("asm/code_0801ABFC/init_vt_08cdd758.s", void init_vt_08cdd758(void))
 
 ASM_FUNC("asm/code_0801ABFC/poll_spline_path.s", void poll_spline_path(void))
 
-ASM_FUNC("asm/code_0801ABFC/vec4_normalize.s", void vec4_normalize(void))
+void vec4_normalize(s32 *v)
+{
+    s32 len;
+
+    len = ((s32 (*)(s32))gMathRoutines)(v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3]);
+    if (len != 0)
+    {
+        v[0] = (v[0] << 16) / len / 0x100;
+        v[1] = (v[1] << 16) / len / 0x100;
+        v[2] = (v[2] << 16) / len / 0x100;
+        v[3] = (v[3] << 16) / len / 0x100;
+    }
+}
 
 ASM_FUNC("asm/code_0801ABFC/rotate_vec.s", void rotate_vec(void))
 
-ASM_FUNC("asm/code_0801ABFC/vec3_normalize_0801B540.s", void vec3_normalize_0801B540(void))
+void vec3_normalize_0801B540(s32 *v)
+{
+    s32 len;
 
-ASM_FUNC("asm/code_0801ABFC/store_record.s", void store_record(void))
+    len = ((s32 (*)(s32))gMathRoutines)(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (len != 0)
+    {
+        v[0] = (v[0] << 16) / len / 0x100;
+        v[1] = (v[1] << 16) / len / 0x100;
+        v[2] = (v[2] << 16) / len / 0x100;
+    }
+}
 
-ASM_FUNC("asm/code_0801ABFC/quat_mul_pure_fixed.s", void quat_mul_pure_fixed(void))
+void store_record(u32 *dst, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u16 g, u16 h, u16 i)
+{
+    dst[0] = a;
+    dst[1] = b;
+    dst[2] = c;
+    dst[3] = d;
+    dst[4] = e;
+    dst[5] = f;
+    ((u16 *)dst)[12] = g;
+    ((u16 *)dst)[13] = h;
+    ((u16 *)dst)[14] = i;
+}
+
+void quat_mul_pure_fixed(s32 *q, s32 a, s32 b, s32 c)
+{
+    s32 q0 = q[0];
+    s32 q1 = q[1];
+    s32 q2 = q[2];
+    s32 q3 = q[3];
+
+    q[0] = (q3 * a + q1 * c - q2 * b) / 0x100;
+    q[1] = (q3 * b - q0 * c + q2 * a) / 0x100;
+    q[2] = (q3 * c + q0 * b - q1 * a) / 0x100;
+    q[3] = (-q0 * a - q1 * b - q2 * c) / 0x100;
+}
 
 ASM_FUNC("asm/code_0801ABFC/sub_0801B684.s", void sub_0801B684(void))
 
@@ -370,7 +523,7 @@ void anim_push_frame(u8 *rec)
     u32 flags;
 
     rec[0x1C]++;
-    q = gSys.oamCur880;
+    q = ((struct SysBlock *)gSys)->oamCur880;
     *q = rec[0x1D];
     q++;
     *q = rec[0x1C];
@@ -378,7 +531,7 @@ void anim_push_frame(u8 *rec)
     flags = (rec[0x20] << 12) | (rec[0x21] << 10) | *(u16 *)(rec + 0x1E);
     *q = flags;
     q += 2;
-    gSys.oamCur880 = q;
+    ((struct SysBlock *)gSys)->oamCur880 = q;
 }
 
 ASM_FUNC("asm/code_0801ABFC/set_blend_shadow.s", void set_blend_shadow(u32 unused, u32 mode, u32 a, u32 b))
