@@ -119,6 +119,7 @@ void map_obj_orbit_dh_hold(struct MapObj *obj);
 void map_obj_slide_by_angle(struct MapObj *obj);
 void map_obj_slide_drop(struct MapObj *obj);
 void map_obj_orbit_dh_turn(struct MapObj *obj);
+void map_obj_aim_down(struct MapObj *obj);
 void obj_orbit_place(struct MapObj *obj, s32 x, s32 y, s32 h, s32 amp, s32 timer, s32 param);
 void obj_set_sprite_offsets(struct MapObj *obj, s32 x, s32 y, s32 h, s32 amp);
 
@@ -128,10 +129,53 @@ extern const u32 gObjectTilesets[];
 extern const u8 gMapObjLoaderClass[];
 extern const s16 gCosineTable[];
 extern const s16 gSineTable[];
+extern u8 gUnk_03000E15;
+
+static inline void map_obj_release_chain(struct MapObj *obj)
+{
+    struct MapObj *sprite = obj->sprite;
+    struct MapObj *sub = sprite->sprite;
+
+    sub->param9C = 1;
+    sub->sprite->param9C = 1;
+    obj_release(sprite);
+    obj_release(obj);
+}
 
 ASM_FUNC("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn(struct MapObj *obj))
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_orbit_out.s", void map_obj_orbit_out(struct MapObj *obj))
+void map_obj_orbit_out(struct MapObj *obj)
+{
+    s32 *ang;
+    const s16 *ct;
+    s32 step;
+    s32 mask;
+
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, 0x22, (s16)obj->timer, obj->param9C);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, 0x22);
+    step = obj->radius / 0x100;
+    ct = gCosineTable;
+    ang = &obj->angle;
+    mask = 0xFF;
+    obj->targetX += step * (ct[(u8)*ang] / 0x40);
+    step = obj->radius / 0x100;
+    obj->targetY += step * (gSineTable[*ang & mask] / 0x40);
+    if (obj->param9C <= 0x37)
+    {
+        obj->param9C++;
+    }
+    obj->timer = (obj->timer + 2) & mask;
+    if (obj->targetX <= 0x4000)
+    {
+        if (obj->targetY <= 0x4000)
+        {
+            obj->targetX = 0x4000;
+            obj->targetY = 0x4000;
+            obj->wait = 0;
+            obj->state = map_obj_aim_down;
+        }
+    }
+}
 
 void map_obj_aim_down(struct MapObj *obj)
 {
@@ -175,7 +219,29 @@ void map_obj_orbit_wait(struct MapObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_fall.s", void map_obj_fall(struct MapObj *obj))
+NONMATCH("asm/code_0805E7C4/map_obj_fall.s", void map_obj_fall(struct MapObj *obj))
+{
+    s32 *ang;
+    const s16 *ct;
+    s32 step;
+    s32 mask;
+
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, 0x22, (s16)obj->timer, obj->param9C);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, 0x22);
+    step = obj->radius / 0x100;
+    ct = gCosineTable;
+    ang = &obj->angle;
+    mask = 0xFF;
+    obj->targetX += step * (ct[(u8)*ang] / 0x40);
+    step = obj->radius / 0x100;
+    obj->targetY += step * (gSineTable[*ang & mask] / 0x40);
+    obj->timer = (obj->timer + 4) & mask;
+    if (obj->targetY > 0xF000)
+    {
+        map_obj_release_chain(obj);
+    }
+}
+END_NONMATCH
 
 void map_obj_slide_left(struct MapObj *obj)
 {
@@ -234,7 +300,37 @@ void map_obj_orbit_dy_reset(struct MapObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_slide_by_angle.s", void map_obj_slide_by_angle(struct MapObj *obj))
+NONMATCH("asm/code_0805E7C4/map_obj_slide_by_angle.s", void map_obj_slide_by_angle(struct MapObj *obj))
+{
+    s32 dxs;
+    s32 dys;
+    s32 a;
+    s32 b;
+    s32 t;
+    s32 q;
+    s32 *ty;
+    s32 ang;
+
+    ang = obj->angle;
+    obj->targetX -= ang;
+    dxs = (s16)obj->dx << 8;
+    a = dxs - obj->targetX;
+    b = dxs - obj->radius;
+    dys = (s16)obj->dy << 8;
+    t = dys - obj->wait;
+    ty = &obj->targetY;
+    q = (t * a) / b;
+    *ty = dys - q;
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, 0x22, (s16)obj->timer, obj->param9C);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, 0x22);
+    obj->timer = (obj->timer + 4) & 0xFF;
+    if (obj->targetX < obj->owner->part->targetX - 0x3000)
+    {
+        obj->state = map_obj_orbit_dh_down;
+        obj->dh = 0x30;
+    }
+}
+END_NONMATCH
 
 void map_obj_orbit_dh_down(struct MapObj *obj)
 {
@@ -264,7 +360,49 @@ void map_obj_orbit_dh_reset(struct MapObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_slide_drop.s", void map_obj_slide_drop(struct MapObj *obj))
+NONMATCH("asm/code_0805E7C4/map_obj_slide_drop.s", void map_obj_slide_drop(struct MapObj *obj))
+{
+    s32 ang;
+    s32 dxs;
+    s32 dys;
+    s32 a;
+    s32 b;
+    s32 t;
+    s32 q;
+    s32 *ty;
+
+    ang = obj->angle;
+    obj->targetX += ang;
+    dxs = (s16)obj->dx << 8;
+    a = dxs - obj->targetX;
+    b = dxs - obj->radius;
+    dys = (s16)obj->dy << 8;
+    t = dys - obj->wait;
+    ty = &obj->targetY;
+    q = (t * a) / b;
+    *ty = dys - q;
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, obj->dh, (s16)obj->timer, obj->param9C);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, obj->dh);
+    obj->timer = (obj->timer + 4) & 0xFF;
+    if (obj->targetX > (((s16)obj->dx - 0x18) << 8))
+    {
+        gUnk_03000E15 = 2;
+        obj->targetH -= 0x120;
+        if (obj->dh > 0)
+        {
+            obj->dh--;
+        }
+        else
+        {
+            map_obj_release_chain(obj);
+        }
+    }
+    if (obj->targetX > ((s16)obj->dx << 8))
+    {
+        map_obj_release_chain(obj);
+    }
+}
+END_NONMATCH
 
 void map_obj_slide_fast_left(struct MapObj *obj)
 {
@@ -334,7 +472,18 @@ void map_obj_orbit_dh_turn(struct MapObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_slide_in_x.s", void map_obj_slide_in_x(struct MapObj *obj))
+NONMATCH("asm/code_0805E7C4/map_obj_slide_in_x.s", void map_obj_slide_in_x(struct MapObj *obj))
+{
+    obj->targetX -= obj->dx;
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, 0x22, (s16)obj->timer, obj->param9C / 0x100);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, 0x22);
+    obj->timer = (obj->timer + 4) & 0xFF;
+    if (obj->targetX <= 0x7FF)
+    {
+        obj->state = map_obj_drift_y;
+    }
+}
+END_NONMATCH
 
 void map_obj_drift_y(struct MapObj *obj)
 {
