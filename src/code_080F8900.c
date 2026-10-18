@@ -383,7 +383,7 @@ void reset_root_params(struct OwnerObj *obj, u32 a)
     reset_obj_params_b((u8 *)obj + 0x1C, obj->state, a, 0, 1, 0xFF);
 }
 
-NONMATCH("asm/code_080F8900/unknown_thumb_080f970e.s", void unknown_thumb_080f970e(struct SlotTable *table, u8 idx))
+void unknown_thumb_080f970e(struct SlotTable *table, u8 idx)
 {
     u32 off = (u8)idx << 4;
     u8 *base = table->entries;
@@ -401,7 +401,6 @@ NONMATCH("asm/code_080F8900/unknown_thumb_080f970e.s", void unknown_thumb_080f97
     obj->unk2 = sum1;
     obj->unkE = 0x7FFF - sum1;
 }
-END_NONMATCH
 
 u32 slot_countdown_step(struct SlotTable *table, u8 idx)
 {
