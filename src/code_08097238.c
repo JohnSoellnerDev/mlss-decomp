@@ -3,7 +3,9 @@
 
 struct Pose
 {
-    u8 filler0[0x12];
+    u8 filler0[0x2];
+    s16 unk2;
+    u8 filler4[0x12 - 0x4];
     u8 unk12_0 : 1;
     u8 mode : 2;
     u8 visible : 1;
@@ -22,7 +24,7 @@ struct SpriteNode
     s32 z;
     s16 vx;
     s16 vy;
-    s16 vz;
+    u16 vz;
 };
 
 struct SlotList
@@ -99,6 +101,12 @@ struct Actor
     u8 offZ;
 };
 
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
 struct Hero
 {
     u8 filler0[0x08];
@@ -116,19 +124,32 @@ struct Partner
     s16 unk108;
 };
 
+struct MapEntry
+{
+    u8 filler0[0x2];
+    u8 kind;
+};
+
 struct World
 {
-    u8 filler0[0x58];
+    u8 filler0[0xC];
+    u8 flags;
+    u8 filler0D[0x58 - 0xD];
     struct Partner *partners[6];
     struct Hero *heroA;
     struct Hero *heroB;
     u8 filler78[0x7C - 0x78];
     struct Hero *unk7C;
+    u8 filler80[0x24C - 0x80];
+    void *unk24C;
+    u8 filler250[0x2DC - 0x250];
+    struct MapEntry *curEntry;
 };
 
 extern struct World *gWorld;
 extern u8 *gParty;
 extern u8 *gWorkBuf;
+extern u8 gSys[];
 
 void sprite_set_action(struct Actor *obj, u32 action, u32 part, u32 extra);
 u8 step_motion(struct Actor *obj);
@@ -180,10 +201,65 @@ void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
 
 
-ASM_FUNC("asm/code_08097238/pair_children_end.s", void pair_children_end(struct Actor *obj))
+s32 find_frame_entry(struct Actor *obj, s32 index);
+
+static inline void child_place(struct Actor *child, struct Actor *src, struct Actor *partner)
+{
+    s32 px = src->targetX / 0x100 + (s8)src->offX + 4;
+    s32 py = src->targetY / 0x100 + (s8)src->offY;
+    s32 offZ;
+
+    place_targets(child, px, py, src->targetZ / 0x100 + (s8)src->offZ - 8, -1);
+    if (src == (struct Actor *)((u8 *)src->data + 8)) {
+        offZ = (s8)src->offZ;
+    } else {
+        find_frame_entry(src, 0);
+        offZ = (s8)src->candidateLimit;
+    }
+    offZ += partner->targetZ / 0x100;
+    offZ += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, (offZ * offZ) / 0x40 + 0x28);
+    child->unk92 = offZ;
+    set_motion_offsets(child, 0x480);
+}
+
+void pair_children_end(struct Actor *obj)
+{
+    struct Actor *child;
+
+    state_stack_advance_progress(obj);
+    if (obj->flags79 & 0x20) {
+        struct Actor *last = obj->child;
+
+        while (last->child != 0) {
+            last = last->child;
+        }
+        obj_release(last);
+        set_slot_value(0xAE, -1);
+        child = obj->child;
+        while (child != 0) {
+            struct Actor *partner = child->partner;
+
+            if ((child->flags76 & 6) == 2 || (child->flags76 & 6) == 4) {
+                sprite_set_action(child, 1, gWorld->curEntry->kind + 0x4188, 0);
+                child->pose->mode = 1;
+            }
+            if (obj == partner) {
+                if ((child->flags76 & 6) == 2 || (child->flags76 & 6) == 4) {
+                    child_place(child, obj, partner);
+                }
+            } else {
+                if ((child->flags76 & 6) == 2 || (child->flags76 & 6) == 4) {
+                    child_place(child, partner, partner);
+                }
+            }
+            child->state = child_hold_settle;
+            child = child->child;
+        }
+        obj->state = 0;
+    }
+}
 
 ASM_FUNC("asm/code_08097238/child_hold_settle.s", void child_hold_settle(struct Actor *obj))
-
 void spawn_marker_child(struct Actor *obj)
 {
     struct Actor *heroA = &gWorld->heroA->body;
@@ -444,16 +520,131 @@ void pair_finish_handle(struct Actor *obj)
     obj->state = pair_repeat_countdown;
 }
 
-ASM_FUNC("asm/code_08097238/pair_repeat_countdown.s", void pair_repeat_countdown(struct Actor *obj))
+static inline void slot_action_one(struct Actor *obj, u32 action)
+{
+    sprite_set_action(obj, 1, action, 0);
+}
 
-ASM_FUNC("asm/code_08097238/start_random_handle.s", void start_random_handle(struct Actor *obj))
+static inline void slot_set_minus_one(u32 id)
+{
+    set_slot_value(id, -1);
+}
+
+void pair_repeat_countdown(struct Actor *obj)
+{
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
+
+    state_stack_advance_progress(obj);
+    if (obj->repeats != 0) {
+        if (--obj->clock <= 0) {
+            obj->clock = rand_below(4, mt19937_next()) + 2;
+            obj->repeats--;
+            spawn_fall_particle(obj);
+        }
+    }
+    if (obj->flags79 & 0x20) {
+        if (obj == heroA && heroB->state == hero_random_walk) {
+            heroB->state = pair_finish_handle;
+        }
+        if (obj == heroB && heroA->state == hero_random_walk) {
+            heroA->state = pair_finish_handle;
+        }
+        {
+            struct Actor *curA = &gWorld->heroA->body;
+            struct Actor *curB = &gWorld->heroB->body;
+
+            if (obj == curA) {
+                slot_action_one(obj, 0x2027);
+            }
+            if (obj == curB) {
+                slot_action_one(obj, 0x2056);
+            }
+        }
+        obj->pose->mode = 0;
+        obj->time = obj->targetX;
+        obj->clock = 0;
+        obj->handle = 0;
+        obj->state = hero_random_walk;
+        slot_set_minus_one(0x3F);
+    }
+}
+
+void start_random_handle(struct Actor *obj)
+{
+    u8 bits = obj->flags76 & 6;
+
+    if (bits == 2 || bits == 4) {
+        s32 n = rand_below(3, mt19937_next());
+
+        obj->handle = *(s32 *)(gWorkBuf + 0x5480) + n * *(s32 *)(gWorkBuf + 0x5484) != 0
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + rand_below(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
+            : 0x4000;
+        obj->phase = 0;
+        *((s8 *)obj + 0x79) &= -0x21;
+    }
+    obj->state = pair_switch_wait;
+}
 
 s32 rand_below(s32 range, u32 seed);
 u32 mt19937_next(void);
 extern u8 *gWorkBuf;
-ASM_FUNC("asm/code_08097238/sprite_nodes_fall.s", void sprite_nodes_fall(struct Actor *obj))
+struct SpriteNode *sprite_node_release(struct SpriteNode *node);
 
-ASM_FUNC("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(struct Actor *obj))
+NONMATCH("asm/code_08097238/sprite_nodes_fall.s", void sprite_nodes_fall(struct Actor *obj))
+{
+    struct SpriteNode *link = obj->slots->head;
+    struct SpriteNode *node;
+
+    for (node = link->next; node != 0; node = link->next) {
+        s32 z;
+
+        node->x += node->vx;
+        node->y += node->vy;
+        z = node->z += (s16)node->vz;
+        node->vz -= 0x66;
+        if (z > 0) {
+            link = node;
+        } else {
+            node->z = 0;
+            node->vx /= 2;
+            node->vy /= 2;
+            node->vz = -(s16)node->vz / 2;
+            if ((s16)node->vz <= 0xFF) {
+                link->next = sprite_node_release(node);
+            }
+        }
+    }
+}
+END_NONMATCH
+
+struct SpriteNode *sprite_node_alloc_default(void);
+
+NONMATCH("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(struct Actor *obj))
+{
+    u16 *counter = (u16 *)(gParty + 0x88);
+
+    if (*counter != 0) {
+        struct SpriteNode *node;
+        struct SpriteNode *sentinel;
+
+        (*counter)--;
+        node = sprite_node_alloc_default();
+        node->x = obj->targetX + 0x600;
+        node->y = obj->targetY;
+        node->z = obj->targetZ + ((s8)obj->offZ - 0x16) * 0x100;
+        node->vx = rand_below(0x180, mt19937_next());
+        node->vx += 0x180;
+        node->vy = 0x4C - rand_below(0x99, mt19937_next());
+        node->vz = rand_below(0x180, mt19937_next());
+        node->vz += 0x280;
+        sentinel = obj->child->slots->head;
+        node->next = sentinel->next;
+        sentinel->next = node;
+        set_slot_value(0x2C, -1);
+    }
+}
+END_NONMATCH
 
 void pair_switch_wait(struct Actor *obj)
 {
@@ -578,7 +769,6 @@ u32 pair_begin_setup_b(struct Actor *obj)
 }
 
 ASM_FUNC("asm/code_08097238/pair_sum_offsets.s", void pair_sum_offsets(struct Actor *obj))
-
 void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
 void end_hero_follow(struct Actor *obj);
