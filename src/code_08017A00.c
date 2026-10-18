@@ -197,28 +197,27 @@ void irq_nop(void)
 {
 }
 
-NONMATCH("asm/code_08017A00/set_irq_callback.s", void set_irq_callback(u32 kind, void *handler))
+void set_irq_callback(u32 kind, void *handler)
 {
     u32 h = (u32)handler;
-    u32 off;
-    u32 base;
+    u32 a;
+    u32 b;
     if (h == 0)
         h = (u32)irq_nop;
     REG_IME = 0;
     if (kind == 2)
     {
-        base = (u32)gSys;
-        off = 0x8C4;
+        a = (u32)gSys;
+        b = 0x8C4;
     }
     else
     {
-        base = (u32)gUnk_03000014;
-        off = kind << 2;
+        b = (u32)gUnk_03000014;
+        a = kind << 2;
     }
-    *(u32 *)(off + base) = h;
+    *(u32 *)(a + b) = h;
     REG_IME = 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08017A00/init_heaps.s", void init_heaps(void))
 
