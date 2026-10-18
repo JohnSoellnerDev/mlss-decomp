@@ -1,3 +1,4 @@
+/* agbcc: -funroll-loops */
 #include "global.h"
 
 struct ObjNode
@@ -166,50 +167,15 @@ void sort_node_list(struct NodeListHead *list, struct NodeRec *end)
 
 void init_node_flags(struct NodeRec *node, s32 count)
 {
-    s32 rem;
-    s32 lim;
-    u16 flag;
-    struct NodeRec *q;
-
     count--;
     node->key = 0;
     node++;
-    if (count == 0)
-        return;
-    flag = 1;
-    rem = -count & 3;
-    if (rem == 0)
-        goto loop;
-    lim = 3;
-    if (rem >= lim)
-        goto one;
-    lim = 2;
-    if (rem >= lim)
-        goto two;
-    node->unk6 = flag;
-    count--;
-    node++;
-two:
-    node->unk6 = flag;
-    count--;
-    node++;
-one:
-    node->unk6 = flag;
-    count--;
-    node++;
-    if (count == 0)
-        return;
-loop:
-    do
+    while (count != 0)
     {
-        node[0].unk6 = flag;
-        node[1].unk6 = flag;
-        node[2].unk6 = flag;
-        q = node + 3;
-        q->unk6 = flag;
-        count -= 4;
-        node += 4;
-    } while (count != 0);
+        node->unk6 = 1;
+        count--;
+        node++;
+    }
 }
 
 ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(void))
