@@ -32,6 +32,12 @@ struct Flags77Bits
     u8 high : 1;
 };
 
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 top3 : 3;
+};
+
 struct ActorPart
 {
     u8 filler0[0x40];
@@ -196,8 +202,32 @@ void finish_child_and_move(struct ActorObj *obj);
 void spawn_child_4059(struct ActorObj *obj);
 void spawn_child_4059_b(struct ActorObj *obj);
 void release_then_move(struct ActorObj *obj);
+void pose_update_if_visible_f(struct ActorObj *obj);
+void pose_update_if_visible_g(struct ActorObj *obj);
+void remove_if_no_index(struct ActorObj *obj);
+void obj_list_push_arg(struct ActorObj *obj, u32 arg);
 
-ASM_FUNC("asm/code_0808AAB8/spawn_child_405a.s", void spawn_child_405a(struct ActorObj *obj))
+void spawn_child_405a(struct ActorObj *obj)
+{
+    s32 mode_clear;
+    struct ActorPart *rec;
+
+    if (obj->pose->flags & 8)
+    {
+        set_cur_flags_both(0x40000000);
+        sprite_set_action(obj, 6, 0, 0);
+        set_slot_value(0x9D, -1);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        mode_clear = ~6;
+        rec = obj->part;
+        obj->child = obj_spawn(rec, 0x405A, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100,
+                               ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        sprite_set_action(obj->child, 0, 0, 0);
+        obj->child->pose->flags = (obj->child->pose->flags & mode_clear) | 2;
+        obj->child->tag = 0xFF;
+        obj->state = await_child_pose;
+    }
+}
 
 void finish_child_and_move(struct ActorObj *obj)
 {
@@ -219,9 +249,75 @@ void finish_child_and_move(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808AAB8/spawn_child_4059.s", void spawn_child_4059(struct ActorObj *obj))
+void spawn_child_4059(struct ActorObj *obj)
+{
+    struct ActorObj *owner;
+    struct ActorObj *child;
+    struct ActorPart *rec;
 
-ASM_FUNC("asm/code_0808AAB8/spawn_child_4059_b.s", void spawn_child_4059_b(struct ActorObj *obj))
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 6, 0, 0);
+        set_slot_value(0x85, -1);
+        obj->state = pose_update_if_visible_g;
+        owner = obj->owner;
+        rec = obj->part;
+        child = obj_spawn(rec, 0x4059, obj->posX / 0x100 - 0xC, obj->posY / 0x100,
+                          obj->posH / 0x100 + 0x32, 1, 1);
+        obj->child = child;
+        child->tag = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->top3 = 1;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->paramA8 = obj->paramA8;
+        child->targetX = owner->part->targetX;
+        child->targetY = owner->part->targetY;
+        child->targetH = owner->part->targetH;
+        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
+        child->motionSpeed = 0x300;
+        child->motionStart = 0;
+        start_motion(child);
+        child->unk6C = obj->unk6C;
+        obj_list_push_arg(child, 0);
+        child->state = remove_if_no_index;
+    }
+}
+
+void spawn_child_4059_b(struct ActorObj *obj)
+{
+    struct ActorObj *owner;
+    struct ActorObj *child;
+    struct ActorPart *rec;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xA, 0, 0);
+        obj->state = pose_update_if_visible_f;
+        set_slot_value(0x85, -1);
+        owner = obj->owner;
+        rec = obj->part;
+        child = obj_spawn(rec, 0x4059, obj->posX / 0x100 - 0xC, obj->posY / 0x100,
+                          obj->posH / 0x100 + 0x32, 1, 1);
+        obj->child = child;
+        child->tag = 0xFF;
+        ((struct Flags78Bits *)&child->flags78)->top3 = 1;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->paramA8 = obj->paramA8;
+        child->targetX = owner->part->targetX;
+        child->targetY = owner->part->targetY;
+        child->targetH = owner->part->targetH;
+        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
+        child->motionSpeed = 0x300;
+        child->motionStart = 0;
+        start_motion(child);
+        child->unk6C = obj->unk6C;
+        obj_list_push_arg(child, 0);
+        child->state = remove_if_no_index;
+    }
+}
 
 void release_then_move(struct ActorObj *obj)
 {
