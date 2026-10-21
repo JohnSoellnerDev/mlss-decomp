@@ -732,7 +732,7 @@ void obj_drift_point_f3c4(struct Point1Obj *obj)
     *words = speed_y;
 }
 
-NONMATCH("asm/code_0817E4F0/obj_accel_tilt5_f4e4.s", void obj_accel_tilt5_f4e4(struct Point1Obj *obj))
+void obj_accel_tilt5_f4e4(struct Point1Obj *obj)
 {
     struct Point1Local l;
     u32 *words;
@@ -791,7 +791,9 @@ NONMATCH("asm/code_0817E4F0/obj_accel_tilt5_f4e4.s", void obj_accel_tilt5_f4e4(s
         l.y = y0;
         z0 = vz * zoom / 0x100;
         l.z = z0;
-        y1 = (y0 * (gCosineTable[12] / 0x40) - (gSineTable[12] / 0x40) * z0) / 0x100;
+        pos = y0;
+        pos = pos * (gCosineTable[12] / 0x40);
+        y1 = (pos - (gSineTable[12] / 0x40) * z0) / 0x100;
         l.y = y1;
         z1 = (z0 * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * y0) / 0x100;
         l.z = z1;
@@ -858,7 +860,6 @@ NONMATCH("asm/code_0817E4F0/obj_accel_tilt5_f4e4.s", void obj_accel_tilt5_f4e4(s
     *words++ = offset_y;
     *words = offset_y_speed;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0817E4F0/obj_zoom_tilt4_f6dc.s", void obj_zoom_tilt4_f6dc(struct Point1Obj *obj))
 {
