@@ -653,6 +653,7 @@ END_NONMATCH
 
 NONMATCH("asm/code_0814AEAC/hop_fall.s", void hop_fall(struct Obj *parent, struct Obj *obj))
 {
+    s32 startSpeed = 0x200;
     s32 t;
     s32 q;
     s32 scale;
@@ -663,9 +664,9 @@ NONMATCH("asm/code_0814AEAC/hop_fall.s", void hop_fall(struct Obj *parent, struc
         obj->zNextAdj = obj->z + 0xA00;
         obj->zNext = obj->z + obj->dz;
         obj->zScale = obj->zNextAdj - obj->zNext;
-        obj->zspeed = 0x200;
-        obj->speed2 = 0x200;
-        t = obj->zScale * 2 + 0x200;
+        obj->zspeed = startSpeed;
+        obj->speed2 = startSpeed;
+        t = obj->zScale * 2 + startSpeed;
         q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((t >> 1) - 0x40000, t);
         obj->stepLen = -q;
         if (obj->stepLen == 0)
@@ -708,6 +709,7 @@ u32 distance_xy(struct Obj *a, struct Obj *b);
 void hop_fall(struct Obj *parent, struct Obj *obj);
 NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_state(struct Obj *parent, struct Obj *obj, u8 state))
 {
+    s32 chaseInit = 0x580;
     u16 *tab;
     s32 chaseSpeed;
     s32 zs;
@@ -742,7 +744,7 @@ NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_sta
     {
         u8 zero;
 
-        chaseSpeed = 0x580;
+        chaseSpeed = chaseInit;
         tgtp = &parent->tgtA;
         zero = 0;
         target = (struct Obj *)*tgtp;
