@@ -100,7 +100,31 @@ struct SpinTask *sub_080E3870(s32 n)
     return task;
 }
 
-ASM_FUNC("asm/code_080E3870/copy_scroll_and_start_dma.s", void copy_scroll_and_start_dma(void))
+static inline u32 scroll_bank_offset(void)
+{
+    u32 bank = ((u32)gWorld->flagsB << 26) >> 31;
+    return ((bank << 2) + bank) << 9;
+}
+
+void copy_scroll_and_start_dma(void)
+{
+    void (*copy)(u8 *, u8 *, u32);
+    u8 **bufp;
+    u8 *dmaBase;
+    if (gWorld->unk260 != 0)
+        ((void (*)(void))gWorld->unk260)();
+    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    bufp = &gWorkBuf;
+    copy(*bufp + (scroll_bank_offset() + 0x3EF0), (u8 *)REG_ADDR_BG0HOFS, 0x10);
+    dmaBase = (u8 *)REG_ADDR_DMA0SAD;
+    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0xC5FF;
+    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0x7FFF;
+    (void)*(vu16 *)(dmaBase + 0xA);
+    *(vu32 *)dmaBase = (u32)(gWorkBuf + (scroll_bank_offset() + 0x3EF0));
+    *(vu32 *)(dmaBase + 4) = REG_ADDR_BG0HOFS;
+    *(vu32 *)(dmaBase + 8) = 0xA6600004;
+    (void)*(vu32 *)(dmaBase + 8);
+}
 
 void apply_bg_scroll_shadows(void)
 {
@@ -230,7 +254,6 @@ NONMATCH("asm/code_080E3870/unknown_thumb_080e4860.s", u8 *unknown_thumb_080e486
     u8 *aligned;
     u8 *src;
     u32 size;
-    u32 gap;
     if (buf == 0)
     {
         gUnk_03000F88 = gUnk_08000AF0 + 0x80;
@@ -241,8 +264,7 @@ NONMATCH("asm/code_080E3870/unknown_thumb_080e4860.s", u8 *unknown_thumb_080e486
     size = (u32)var_block_routine - (u32)src;
     cpu_set(src, aligned, (size << 10) >> 11);
     gUnk_03000F88 = aligned;
-    gap = (u32)rect_fill_routine - (u32)src;
-    gUnk_03000F8C = aligned + gap;
+    gUnk_03000F8C = aligned + ((u8 *)rect_fill_routine - src);
     return aligned + size;
 }
 END_NONMATCH
