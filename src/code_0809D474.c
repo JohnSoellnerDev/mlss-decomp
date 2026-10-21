@@ -461,7 +461,7 @@ NONMATCH("asm/code_0809D474/reset_heroes_mode.s", void reset_heroes_mode(struct 
     for (i = 6; i <= 7; i++)
     {
         hero = (struct ActorBody *)(gWorld->partners[i] + 8);
-        if ((hero->mode & 6) == 2)
+        if ((6 & hero->mode) == 2)
         {
             ((struct ModeBits *)&hero->mode)->mode = 1;
         }
