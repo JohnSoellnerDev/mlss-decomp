@@ -461,10 +461,86 @@ void obj_init_pair(struct PairObj *obj, u32 kind)
     }
 }
 
-ASM_FUNC("asm/code_08162C68/create_obj_group_5001.s", void create_obj_group_5001(void))
+extern u8 gTweenGroup5001Tag[];
+void obj_refresh_triples(u32 *table);
+
+NONMATCH("asm/code_08162C68/create_obj_group_5001.s", u32 *create_obj_group_5001(u32 *table))
+{
+    s32 row;
+    s32 col;
+    s32 slot;
+    s32 off;
+    u32 *entries;
+    u32 *entry;
+    u32 *cls;
+    struct BigObj *obj;
+    s32 attr40 = 0x40;
+    u32 attr4 = 4;
+
+    lookup_or_alloc_13b4(4, 0x5001, -1, 1);
+    lookup_or_alloc_14b8(4, 0x5001, -1, 1);
+    find_or_alloc_obj_slots(4, 0x5001, 0, 0, 0, &slot, -1);
+    entries = (u32 *)((u8 *)table + 4);
+    for (row = 0; row <= 1; row++)
+    {
+        for (col = 0; col <= 2; col++)
+        {
+            off = (row * 3 + col) << 2;
+            entry = (u32 *)((u8 *)entries + off);
+            obj = obj_init_big(heap_alloc2(0x6C, 0, gTweenGroup5001Tag, 0), 0);
+            *entry = (u32)obj;
+            obj->unk10 = (u32)create_obj_de4(4, 0x5001, 0, -1, -1, -1, -1);
+            obj_load_record((void *)obj->unk10, row + 0x10, -1, 0, 0);
+            sprite_update_cd0((void *)obj->unk10);
+            *(u8 *)(obj->unk10 + 0x1F) = (((((((*(u8 *)(obj->unk10 + 0x1F) & 0x3F) | attr40) & -0x31) | 0x10) & -0xD) | attr4) & -4) | 1;
+            *(u16 *)(obj->unk10 + 0xE) = 0;
+            obj->unk14 = 0;
+            cls = (u32 *)((u8 *)gObjGroup5001Classes + off);
+            set_pair_child_table((struct PairChild *)*entry, (u8 *)*cls);
+        }
+    }
+    obj_refresh_triples(table);
+    return table;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08162C68/init_obj_table_classes.s", void init_obj_table_classes(void))
-ASM_FUNC("asm/code_08162C68/create_obj_group_500b.s", void create_obj_group_500b(void))
+extern u8 gTweenGroup500bTag[];
+void obj_refresh_children(struct BigObj *obj);
+
+NONMATCH("asm/code_08162C68/create_obj_group_500b.s", struct BigObj *create_obj_group_500b(struct BigObj *obj))
+{
+    s32 idx;
+    s32 off;
+    s32 found;
+    u32 *cells;
+    u32 *cls;
+    struct BigObj *child;
+    u32 k40 = 0x40;
+
+    lookup_or_alloc_13b4(4, 0x500B, -1, 1);
+    lookup_or_alloc_14b8(4, 0x500B, -1, 1);
+    find_or_alloc_obj_slots(4, 0x500A, 0, 0, 0, &found, -1);
+    cells = (u32 *)obj;
+    for (idx = 0; idx <= 3; idx++)
+    {
+        off = idx << 2;
+        child = obj_init_big(heap_alloc2(0x6C, 0, gTweenGroup500bTag, 0), 0);
+        cells[idx] = (u32)child;
+        child->unk10 = (u32)create_obj_de4(4, 0x500B, 0, -1, -1, -1, -1);
+        obj_load_record((void *)child->unk10, 0, -1, 0, 0);
+        sprite_update_cd0((void *)child->unk10);
+        *(u8 *)(child->unk10 + 0x1F) = (((((((*(u8 *)(child->unk10 + 0x1F) & 0x3F) | k40) & -0x31) | 0x10) & -0xD) | 4) & -4) | 1;
+        *(u16 *)(child->unk10 + 0xE) = 0;
+        child->unk14 = 0;
+        cls = (u32 *)((u8 *)gObjGroup500bClasses + off);
+        set_pair_child_table((struct PairChild *)cells[idx], (u8 *)*cls);
+    }
+    obj_load_record((void *)((struct BigObj *)obj->unkC)->unk10, gAnimLangChildC[gSys[0x8C0]], 0, 0, 0);
+    obj_refresh_children(obj);
+    return obj;
+}
+END_NONMATCH
 
 extern u32 gObjGroup500bClasses[];
 extern s16 gAnimLangChildC[];
