@@ -56,7 +56,7 @@ struct ActorObj
     s32 link;
     u8 filler70[0x77 - 0x70];
     u8 flags77;
-    u8 filler78;
+    u8 flags78;
     u8 flags79;
     s16 motionStart;
     s16 motionSpeed;
@@ -84,13 +84,21 @@ struct ActorFlags79
     u8 unk6 : 2;
 };
 
-struct ActorFlags77
+struct ObjFlags77
 {
-    u8 unk0 : 5;
+    u8 filler0[0x77];
+    u8 lo5 : 5;
     u8 bit5 : 1;
     u8 bit6 : 1;
-    u8 unk7 : 1;
+    u8 bit7 : 1;
 };
+
+// The child takes over bits 5 and 6 of the parent's flag byte at +0x77.
+static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *child)
+{
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
 
 struct ActorCand
 {
@@ -332,7 +340,98 @@ void slide_finish_then_fire(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807544C/place_steps_spawn_random_child.s", void place_steps_spawn_random_child(struct ActorObj *obj))
+NONMATCH("asm/code_0807544C/place_steps_spawn_random_child.s", void place_steps_spawn_random_child(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    u8 roll;
+    s32 kind;
+    s32 idx;
+    s32 dx;
+    s32 dy;
+    s32 x0;
+    s32 y0;
+    s32 sx;
+    s32 sy;
+    s32 y;
+    s32 xStart;
+
+    roll = (u32)mt19937_next() % 100;
+    kind = 0;
+    if (roll <= 9)
+    {
+        kind = 1;
+    }
+    else if (roll <= 0x45)
+    {
+        kind = 2;
+    }
+
+    x0 = obj->part->targetX - 0x3000;
+    y0 = obj->part->targetY + 0x100;
+
+    idx = mt19937_next() & 3;
+    xStart = -0x4000;
+    if (idx < 0)
+    {
+        dx = 0x3000;
+        dy = 0x6C00;
+    }
+    else if (idx <= 1)
+    {
+        dx = 0x3600;
+        dy = 0x5C00;
+    }
+    else if (idx <= 3)
+    {
+        dx = 0x2800;
+        dy = 0x7C00;
+    }
+    else
+    {
+        dx = 0x3000;
+        dy = 0x6C00;
+    }
+
+    sx = x0 - dx;
+    sy = y0 - dy;
+    y = y0 + ((x0 - xStart) * sy) / sx;
+
+    if (kind == 0)
+    {
+        child = obj_spawn(obj->part, 0x4188, xStart / 0x100, y / 0x100, 0, 0, 1);
+    }
+    else if (kind == 1)
+    {
+        child = obj_spawn(obj->part, 0x40B1, xStart / 0x100, y / 0x100, 0, 0, kind);
+    }
+    else
+    {
+        child = obj_spawn(obj->part, 0x4055, xStart / 0x100, y / 0x100, 0, 0, 1);
+    }
+
+    child->flags78 = (child->flags78 & 0x1F) | 0x20;
+    child->child = obj->child;
+    obj->child = child;
+    copy_flags77_bits(obj, child);
+    child->callback = on_arrive;
+    child->link = obj->link;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+    child->handler58 = (s32 (*)(struct ActorObj *, u32))kind_place_or_finish;
+    child->state = slide_step_to_target;
+    child->targetX = sx;
+    child->targetY = sy;
+    child->phase = x0 / 0x100;
+    child->linkB0 = y0 / 0x100;
+    child->targetH = 0x200;
+    child->timer = kind;
+    child->paramA0 = 0;
+    child->pose->unkC = 0;
+    child->paramA4 = 0x100;
+    child->pose->unk6 = 0x100;
+    child->pose->unk4 = 0x100;
+}
+END_NONMATCH
 
 void slide_step_to_target(struct ActorObj *obj)
 {
