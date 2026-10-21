@@ -154,6 +154,8 @@ void obj_accel_tilt9_e4f0(struct Point1Obj *obj)
 
 NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e71c.s", void obj_angle_zoom4_e71c(struct Point1Obj *obj))
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 vel;
@@ -167,14 +169,14 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e71c.s", void obj_angle_zoom4_e71c(s
     s32 *p2;
     u32 *pslot;
     s32 vx;
-    s32 t;
-    s32 pos;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
-    s32 y2;
     s32 z2;
+    s32 t;
+    s32 pos;
+    s32 y1;
+    s32 y2;
     s32 idx;
 
     words = obj->data;
@@ -200,14 +202,18 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e71c.s", void obj_angle_zoom4_e71c(s
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
+        t = z1;
         idx = angle & 0xFF;
-        z2 = (z1 * (gCosineTable[idx] / 0x40) - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        t = t * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[12] / 0x40);
-        y2 = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        pos = y1;
+        pos = pos * (gCosineTable[12] / 0x40);
+        y2 = (pos - (gSineTable[12] / 0x40) * z2) / 0x100;
         l.y = y2;
         l.z = ((z2 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
         l.y = y2 - 0x800;
@@ -255,6 +261,8 @@ END_NONMATCH
 
 NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e998.s", void obj_angle_zoom4_e998(struct Point1Obj *obj))
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 vel;
@@ -268,14 +276,14 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e998.s", void obj_angle_zoom4_e998(s
     s32 *p2;
     u32 *pslot;
     s32 vx;
-    s32 t;
-    s32 pos;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
-    s32 y2;
     s32 z2;
+    s32 t;
+    s32 pos;
+    s32 y1;
+    s32 y2;
     s32 idx;
 
     words = obj->data;
@@ -301,14 +309,18 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e998.s", void obj_angle_zoom4_e998(s
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
+        t = z1;
         idx = angle & 0xFF;
-        z2 = (z1 * (gCosineTable[idx] / 0x40) - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        t = t * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[12] / 0x40);
-        y2 = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        pos = y1;
+        pos = pos * (gCosineTable[12] / 0x40);
+        y2 = (pos - (gSineTable[12] / 0x40) * z2) / 0x100;
         l.y = y2;
         l.z = ((z2 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
         l.y = y2 - 0x800;
@@ -355,7 +367,7 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0817E4F0/obj_angle_zoom8_ec14.s", void obj_angle_zoom8_ec14(void))
 
-NONMATCH("asm/code_0817E4F0/obj_turn_zoom12_ee84.s", void obj_turn_zoom12_ee84(struct Point1Obj *obj))
+void obj_turn_zoom12_ee84(struct Point1Obj *obj)
 {
     struct Point1Local l;
     u32 *words;
@@ -404,12 +416,17 @@ NONMATCH("asm/code_0817E4F0/obj_turn_zoom12_ee84.s", void obj_turn_zoom12_ee84(s
         l.y = y0;
         z0 = vz * zoom / 0x100;
         l.z = z0;
-        z1 = (z0 * (gCosineTable[16] / 0x40) - x0 * (gSineTable[16] / 0x40)) / 0x100;
+        pos = z0;
+        pos = pos * (gCosineTable[16] / 0x40);
+        z1 = (pos - (gSineTable[16] / 0x40) * x0) / 0x100;
         l.z = z1;
-        x1 = (x0 * (gCosineTable[16] / 0x40) + z0 * (gSineTable[16] / 0x40)) / 0x100;
+        x1 = (x0 * (gCosineTable[16] / 0x40) + (gSineTable[16] / 0x40) * z0) / 0x100;
         l.x = x1;
-        l.y = (y0 * (gCosineTable[12] / 0x40) - z1 * (gSineTable[12] / 0x40)) / 0x100;
-        l.z = (z1 * (gCosineTable[12] / 0x40) + y0 * (gSineTable[12] / 0x40)) / 0x100;
+        pos = y0;
+        pos = pos * (gCosineTable[12] / 0x40);
+        l.y = (pos - (gSineTable[12] / 0x40) * z1) / 0x100;
+        l.z = ((z1 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y0)) / 0x100;
+
         if (obj->flags & 0x80) {
             pos = obj->posX;
             t = x1;
@@ -463,7 +480,6 @@ NONMATCH("asm/code_0817E4F0/obj_turn_zoom12_ee84.s", void obj_turn_zoom12_ee84(s
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 
 void obj_rotx_zoom12_f0c0(struct Point1Obj *obj)
 {
@@ -863,6 +879,8 @@ void obj_accel_tilt5_f4e4(struct Point1Obj *obj)
 
 NONMATCH("asm/code_0817E4F0/obj_zoom_tilt4_f6dc.s", void obj_zoom_tilt4_f6dc(struct Point1Obj *obj))
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 vel;
@@ -876,14 +894,14 @@ NONMATCH("asm/code_0817E4F0/obj_zoom_tilt4_f6dc.s", void obj_zoom_tilt4_f6dc(str
     s32 *p2;
     u32 *pslot;
     s32 vx;
-    s32 t;
-    s32 pos;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
-    s32 y2;
     s32 z2;
+    s32 t;
+    s32 pos;
+    s32 y1;
+    s32 y2;
     s32 idx;
 
     words = obj->data;
@@ -909,14 +927,18 @@ NONMATCH("asm/code_0817E4F0/obj_zoom_tilt4_f6dc.s", void obj_zoom_tilt4_f6dc(str
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
+        t = z1;
         idx = angle & 0xFF;
-        z2 = (z1 * (gCosineTable[idx] / 0x40) - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        t = t * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[12] / 0x40);
-        y2 = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        pos = y1;
+        pos = pos * (gCosineTable[12] / 0x40);
+        y2 = (pos - (gSineTable[12] / 0x40) * z2) / 0x100;
         l.y = y2;
         l.z = ((z2 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
         l.y = y2 - 0x800;
