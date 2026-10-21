@@ -50,6 +50,18 @@ struct Voice
     u32 unk10;
 };
 
+struct CounterEntry
+{
+    u8 filler0[0xE];
+    u16 unkE;
+    u8 filler10[2];
+    u16 unk12;
+    u16 unk14;
+    u16 unk16;
+    u16 unk18;
+    u8 filler1A[0x22];
+};
+
 extern u8 gSys[];
 extern u8 gItemTable[];
 extern u8 *gParty;
@@ -1069,4 +1081,125 @@ u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
     return 1;
 }
 
-ASM_FUNC("asm/code_080E9020/update_obj_counters.s", void update_obj_counters(void))
+NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 a, u32 b, u32 *p))
+{
+    struct CounterEntry *e;
+    u32 sel;
+    u32 mode;
+    s16 n;
+    u16 counter;
+    s32 t;
+
+    if ((*p & 2) == 0)
+    {
+        e = (struct CounterEntry *)(gParty + *p * 0x3C);
+        p++;
+        sel = *p++;
+        switch (sel)
+        {
+        case 0:
+            counter = e->unkE;
+            mode = *p++;
+            switch (mode)
+            {
+            case 0:
+                t = (s16)counter + *p;
+                counter = (u16)t;
+                if ((s32)(s16)t > (s32)e->unk12)
+                    counter = e->unk12;
+                break;
+            case 1:
+                t = (s16)counter - *p;
+                counter = (u16)t;
+                if ((s16)t <= 0)
+                    counter = 1;
+                break;
+            }
+            e->unkE = counter;
+            break;
+        case 1:
+            counter = e->unk14;
+            mode = *p++;
+            switch (mode)
+            {
+            case 0:
+                t = (s16)counter + *p;
+                counter = (u16)t;
+                if ((s32)(s16)t > (s32)e->unk18)
+                    counter = e->unk18;
+                break;
+            case 1:
+                t = (s16)counter - *p;
+                counter = (u16)t;
+                if ((s16)t < 0)
+                    counter = 0;
+                break;
+            }
+            e->unk14 = counter;
+            break;
+        }
+    }
+    else
+    {
+        e = (struct CounterEntry *)gParty;
+        p++;
+        sel = *p++;
+        switch (sel)
+        {
+        case 0:
+            mode = *p++;
+            switch (mode)
+            {
+            case 0:
+                for (n = 2; n > 0; n--, e++)
+                {
+                        t = e->unkE + *p;
+                    counter = (u16)t;
+                    if ((s32)(s16)t > (s32)e->unk12)
+                        counter = e->unk12;
+                    e->unkE = counter;
+                }
+                break;
+            case 1:
+                for (n = 2; n > 0; n--, e++)
+                {
+                        t = e->unkE - *p;
+                    counter = (u16)t;
+                    if ((s16)t <= 0)
+                        counter = 1;
+                    e->unkE = counter;
+                }
+                break;
+            }
+            break;
+        case 1:
+            mode = *p++;
+            switch (mode)
+            {
+            case 0:
+                for (n = 2; n > 0; n--, e++)
+                {
+                        t = e->unk14 + *p;
+                    counter = (u16)t;
+                    if ((s32)(s16)t > (s32)e->unk18)
+                        counter = e->unk18;
+                    e->unk14 = counter;
+                }
+                break;
+            case 1:
+                for (n = 2; n > 0; n--, e++)
+                {
+                        t = e->unk14 - *p;
+                    counter = (u16)t;
+                    if ((s16)t < 0)
+                        counter = 0;
+                    e->unk14 = counter;
+                }
+                break;
+            }
+            break;
+        }
+    }
+    return 1;
+}
+END_NONMATCH
