@@ -127,8 +127,10 @@ ASM_FUNC("asm/code_0817683C/obj_zoom_spin4_size180_6b24.s", void obj_zoom_spin4_
 
 ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_6e14.s", void obj_zoom_spin5_6e14(void))
 
-NONMATCH("asm/code_0817683C/obj_zoom_spin5_7104.s", void obj_zoom_spin5_7104(struct Point1Obj *obj))
+void obj_zoom_spin5_7104(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 vel;
     s32 angle;
@@ -174,10 +176,12 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin5_7104.s", void obj_zoom_spin5_7104(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[32] / 0x40);
@@ -224,11 +228,12 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin5_7104.s", void obj_zoom_spin5_7104(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
 
-NONMATCH("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(struct Point1Obj *obj))
+void obj_zoom_spin5_736c(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 vel;
     s32 angle;
@@ -274,10 +279,12 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[32] / 0x40);
@@ -324,10 +331,11 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(struct Point1Obj *obj))
+void obj_zoom_spin6_75d4(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct Point1Local l;
     s32 vel;
     s32 angle;
@@ -373,10 +381,12 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[32] / 0x40);
@@ -423,7 +433,6 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
 void spawn_obj_zoom_spin6_75d4(u32 x, u32 y, u32 z, u32 flag)
 {
