@@ -375,9 +375,65 @@ void obj_setup_aux_1045(struct UnitObj *obj)
     ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 2;
 }
 
-ASM_FUNC("asm/code_08049014/obj_setup_aux_1054.s", void obj_setup_aux_1054(void))
+void obj_setup_aux_1054(struct UnitObj *obj)
+{
+    struct SpriteObj *aux;
+    u32 low;
+    u32 high;
+    u32 v;
 
-ASM_FUNC("asm/code_08049014/obj_setup_aux_8004.s", void obj_setup_aux_8004(void))
+    obj->auxId370 = 0x1054;
+    setup_obj_10bc(obj->aux36C, 0, 0x1054, 1, -1, -1, -1, -1);
+    obj_load_record(obj->aux36C, 0, -1, 0, 0);
+    obj_queue_update(obj->aux36C);
+    ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
+    obj->auxOfs372 = 0;
+    obj->auxOfs373 = 0xF0;
+    obj->auxOfs374 = 0xFC;
+    ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
+    aux = obj->aux36C;
+    low = ((u32)obj->sub->flags1F << 30) >> 30;
+    aux->flags1F = (aux->flags1F & 0xFC) | low;
+    aux = obj->aux36C;
+    high = obj->sub->flags1F & 0xC;
+    v = aux->flags1F;
+    v = (v & -0xD) | high;
+    aux->flags1F = v;
+    obj->aux36C->posX = obj->auxOfs372 + obj->sub->posX;
+    obj->aux36C->posY = obj->auxOfs373 + obj->sub->posY;
+    obj->aux36C->unkE = obj->auxOfs374 + obj->sub->unkE;
+    ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 0;
+}
+
+void obj_setup_aux_8004(struct UnitObj *obj)
+{
+    struct SpriteObj *aux;
+    u32 low;
+    u32 high;
+    u32 v;
+
+    obj->auxId370 = 0x8004;
+    setup_obj_10bc(obj->aux36C, 0, 0x8004, 1, -1, -1, -1, -1);
+    obj_load_record(obj->aux36C, 0, -1, 0, 0);
+    obj_queue_update(obj->aux36C);
+    ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
+    obj->auxOfs372 = 0;
+    obj->auxOfs373 = 0xE0;
+    obj->auxOfs374 = 0xFC;
+    ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
+    aux = obj->aux36C;
+    low = ((u32)obj->sub->flags1F << 30) >> 30;
+    aux->flags1F = (aux->flags1F & 0xFC) | low;
+    aux = obj->aux36C;
+    high = obj->sub->flags1F & 0xC;
+    v = aux->flags1F;
+    v = (v & -0xD) | high;
+    aux->flags1F = v;
+    obj->aux36C->posX = obj->auxOfs372 + obj->sub->posX;
+    obj->aux36C->posY = obj->auxOfs373 + obj->sub->posY;
+    obj->aux36C->unkE = obj->auxOfs374 + obj->sub->unkE;
+    ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 0;
+}
 
 void attach_sprite_setup(struct UnitObj *obj)
 {
