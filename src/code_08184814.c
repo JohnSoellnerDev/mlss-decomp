@@ -330,7 +330,99 @@ void obj_grow_zoom_point(struct Point1Obj *obj)
 
 // Four points turned about the X axis by 90 degrees (table index 64) and then about the Z axis
 // by 45 degrees (table index 32). The zoom grows by the step, the step decays by 7/8.
-ASM_FUNC("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(struct Point1Obj *obj))
+NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    struct ObjRecord *rec;
+    s32 zoom;
+    s32 step;
+    u32 *words;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 x2;
+    s32 y2;
+    s32 z2;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    step = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 4; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        t = y1;
+        t = t * (gCosineTable[64] / 0x40);
+        y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
+        l.y = y2;
+        z2 = (z1 * (gCosineTable[64] / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
+        l.z = z2;
+        t = x1;
+        t = t * (gCosineTable[32] / 0x40);
+        x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
+        l.x = x2;
+        l.y = (y2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * x1) / 0x100;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += step;
+    step = (step * 7) / 8;
+    words = obj->data;
+    *words++ = zoom;
+    *words = step;
+}
+END_NONMATCH
 // Single point drifting up at a constant speed. Record size 0x60 x 0xC0.
 void obj_drift_y_60c0(struct Point1Obj *obj)
 {
