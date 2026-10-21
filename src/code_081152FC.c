@@ -148,6 +148,7 @@ struct MenuTable
 extern struct MenuWorld *gWorld;
 extern u16 gSys[];
 extern u8 gUnk_02000080[];
+extern u8 gUnk_02000280[];
 extern const u8 gMenuVtable[];
 extern const u8 gClassDd28[];
 extern const u8 gTagSdrw[];
@@ -157,6 +158,57 @@ extern const u8 gMenuObjBufTag[];
 extern const u8 gMenuObjBuf2Tag[];
 extern const u8 gMenuObjTableTag[];
 extern const u8 menu_obj_routine[];
+extern const u8 gMenuDescSmall[];
+extern const u8 gMenuDescLarge[];
+
+struct EntryRef
+{
+    u8 filler0[0xA];
+    u16 id;
+};
+
+struct TableEntry
+{
+    u8 byte0;
+    u8 byte1;
+    u8 byte2;
+    u8 used3;
+    u8 byte4;
+    u8 byte5;
+    u16 unk6;
+    u16 unk8;
+    u8 filler0A[0xC - 0xA];
+    void *tiles0C;
+    void *buf10;
+    void *buf14;
+    u8 byte18;
+    u8 byte19;
+    u8 filler1A[0x1C - 0x1A];
+};
+
+struct TableBits0
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 mid3 : 3;
+    u8 hi2 : 2;
+};
+
+struct TableNib
+{
+    u8 lo4 : 4;
+    u8 hi4 : 4;
+};
+
+extern const struct EntryRef *const gEntryLookup0[];
+extern const struct EntryRef *const gEntryLookup1[];
+extern const struct EntryRef *const gEntryLookup2[];
+extern const struct EntryRef *const gEntryLookup3[];
+extern const struct EntryRef *const gEntryLookup6[];
+extern const struct EntryRef *const gEntryLookup7[];
+extern const struct EntryRef *const gEntryLookup8[];
+extern const struct EntryRef *const gEntryLookup9[];
+extern const struct EntryRef *const gEntryLookupA[];
 
 u8 step_motion(void *obj);
 void sound_stop_song(u32 song);
@@ -167,9 +219,15 @@ void task_remove(void *node, u32 kind);
 void menu_obj_free(void *obj, u32 kind);
 void obj_release(void *obj);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+u32 sub_obj_running(void *menu);
+void screen_obj_setup(void *obj, u8 prio, const void *arg);
+void open_screen(void *obj, u8 kind, const void *arg, u16 flags);
+void create_menu_object(s32 a, u32 b);
+void sub_08115F54(struct MenuTable *obj, u8 mode, u16 pos, u32 speed, u32 arg5, u32 arg6, s32 arg7, s32 arg8);
 void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
 void cpu_set(const void *src, void *dst, u32 ctl);
 void heap_free_a(void *p);
+void obj_draw_tile_rows(void *obj, u32 a, const void *tiles, u32 b, u32 c, u32 d, u32 e);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, void *obj);
 u32 partner_link_update(struct MenuObj *obj, u32 arg, u32 flags);
 void place_targets(struct MenuObj *obj, s32 x, s32 y, s32 z, s32 w);
@@ -301,7 +359,91 @@ void obj_start_if_free(struct MenuObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_081152FC/menu_obj_step.s", void menu_obj_step(void))
+struct SysPad
+{
+    u8 filler0[0x2A];
+    u16 keys;
+    u8 filler2C[0x2E - 0x2C];
+    u16 repeat;
+};
+
+static inline void menu_obj_release(struct MenuObj *obj)
+{
+    if (obj != 0) {
+        obj->vtable = gMenuVtable;
+        if (obj->child20 != 0) {
+            task_remove(obj->child20, 3);
+        }
+        if (obj->child24 != 0) {
+            menu_obj_free(obj->child24, 3);
+        }
+        task_remove(obj, 3);
+    }
+}
+
+NONMATCH("asm/code_081152FC/menu_obj_step.s", void menu_obj_step(struct MenuObj *obj))
+{
+    struct SysPad *pad;
+    u32 keys;
+    s32 cursor;
+    s32 t;
+    void *node;
+
+    switch (obj->state1D) {
+    case 0:
+        pad = (struct SysPad *)gSys;
+        keys = pad->keys;
+        if ((keys & 1) != 0) {
+            cursor = *(s8 *)&obj->cursor1C;
+            switch (cursor) {
+            case 0:
+                obj->state1D = 1;
+                sub_08115F54((struct MenuTable *)obj->child24, 4, 0, 0x10, 0x7FFF, 0xFFFF, cursor, cursor);
+                break;
+            case 1:
+                menu_obj_release(obj);
+                node = heap_alloc2(0x54, 0, gMenuDescSmall, 0);
+                screen_obj_setup(node, 8, gMenuDescSmall);
+                break;
+            case 2:
+                menu_obj_release(obj);
+                node = heap_alloc2(0x164, 0, gMenuDescLarge, 0);
+                open_screen(node, 8, gMenuDescLarge, 0xFFFF);
+                break;
+            }
+            break;
+        }
+        if ((keys & 4) != 0) {
+            menu_obj_release(obj);
+            break;
+        }
+        if ((pad->repeat & 0x40) != 0) {
+            t = obj->cursor1C - 1;
+            obj->cursor1C = t;
+            if ((t << 24) < 0) {
+                obj->cursor1C = 2;
+            }
+        }
+        if ((pad->repeat & 0x80) != 0) {
+            t = obj->cursor1C + 1;
+            obj->cursor1C = t;
+            if ((s8)t > 2) {
+                obj->cursor1C = 0;
+            }
+        }
+        break;
+    case 1:
+        if ((u8)sub_obj_running(obj->child24) == 0) {
+            obj->state1D = 2;
+        }
+        break;
+    case 2:
+        menu_obj_release(obj);
+        create_menu_object(-1, 0);
+        break;
+    }
+}
+END_NONMATCH
 
 void owner_method_noop(void)
 {
@@ -380,10 +522,186 @@ struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u
 
 ASM_FUNC("asm/code_081152FC/sprite_alloc.s", void sprite_alloc(void))
 
-ASM_FUNC("asm/code_081152FC/menu_entry_refresh.s", void menu_entry_refresh(void))
+static inline struct TableEntry *menu_entry_at(struct MenuTable *obj, u32 offset)
+{
+    return (struct TableEntry *)(offset + (u32)obj->entries2C);
+}
 
-ASM_FUNC("asm/code_081152FC/sub_08115F54.s", void sub_08115F54(void))
+NONMATCH("asm/code_081152FC/menu_entry_refresh.s", u32 menu_entry_refresh(struct MenuTable *obj, u8 index, u8 show))
+{
+    u32 offset;
+    struct TableEntry *e;
+    struct TableEntry *table;
+    u32 bit;
 
-ASM_FUNC("asm/code_081152FC/find_entry_code.s", void find_entry_code(void))
+    table = obj->entries2C;
+    offset = ((index << 3) - index) << 2;
+    e = (struct TableEntry *)(offset + (u32)table);
+    if (e->used3 == 0) {
+        return 0;
+    }
+    bit = (1 << (((u32)e->byte1 << 28) >> 28)) << ((((u32)e->byte0 << 29) >> 31) << 4);
+    obj->flags28 ^= bit;
+    obj->u4C = ((((u32)e->byte0 << 29) >> 31) << 8) + (((u32)e->byte1 << 28) >> 24);
+    if (show != 0) {
+        cpu_set(menu_entry_at(obj, offset)->tiles0C, gUnk_02000080 + (obj->u4C << 1), 0x04000008);
+        e = menu_entry_at(obj, offset);
+        if ((e->byte0 & 4) != 0) {
+            gSys[0] |= 1 << (((u32)e->byte1 << 28) >> 28);
+        } else {
+            gSys[1] |= 1 << (((u32)e->byte1 << 28) >> 28);
+        }
+    }
+    table = obj->entries2C;
+    offset = ((index << 3) - index) << 2;
+    e = (struct TableEntry *)(offset + (u32)table);
+    if (((((u32)e->byte0 << 26) >> 29) & 6) != 0) {
+        if (menu_entry_at(obj, offset)->buf14 != 0) {
+            heap_free_a(menu_entry_at(obj, offset)->buf14);
+        }
+        if (menu_entry_at(obj, offset)->buf10 != 0) {
+            heap_free_a(menu_entry_at(obj, offset)->buf10);
+        }
+    }
+    if (menu_entry_at(obj, offset)->tiles0C != 0) {
+        heap_free_a(menu_entry_at(obj, offset)->tiles0C);
+    }
+    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->lo2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->bit2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->mid3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte1)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte1)->hi4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte2)->lo4 = 0;
+    menu_entry_at(obj, offset)->used3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte4)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte4)->hi4 = 0;
+    menu_entry_at(obj, offset)->byte5 = 0;
+    menu_entry_at(obj, offset)->unk6 = 0;
+    menu_entry_at(obj, offset)->unk8 = 0;
+    menu_entry_at(obj, offset)->byte18 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte19)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, offset)->byte19)->hi4 = 0;
+    return 1;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_081152FC/sub_08115F54.s", void sub_08115F54(struct MenuTable *obj, u8 mode, u16 pos, u32 speed, u32 arg5, u32 arg6, s32 arg7, s32 arg8))
+{
+    u8 *flags;
+    u32 v36;
+    u32 v38;
+    u16 speed16;
+    u32 scale;
+
+    scale = speed << 16;
+    speed16 = speed;
+    v36 = (u16)arg5;
+    v38 = (u16)arg6;
+    if (obj->unk34 != 0) {
+        return;
+    }
+    flags = &obj->unk32;
+    *flags = mode;
+    if (v38 == 0) {
+        *flags |= 1;
+    }
+    if (v36 == 0) {
+        *flags |= 2;
+    }
+    obj->unk44 = 0;
+    obj->unk30 = pos;
+    obj->unk34 = speed16;
+    obj->unk46 = scale >> 20;
+    if ((*flags & 4) != 0) {
+        obj->unk48 = 1;
+        obj->unk4A = 0;
+    } else {
+        obj->unk48 = 0xFF;
+        obj->unk4A = speed16;
+    }
+    obj->unk36 = v36;
+    obj->unk38 = v38;
+    obj->unk3C = arg7;
+    obj->unk40 = arg8;
+    cpu_set(gUnk_02000080, obj->buf1C, 0x04000100);
+    if ((*flags & 4) != 0) {
+        return;
+    }
+    obj_draw_tile_rows(obj, 0, gUnk_02000080, 0, obj->unk36, pos, 1);
+    obj_draw_tile_rows(obj, 0, gUnk_02000280, 0, obj->unk38, pos, 1);
+    gSys[1] |= obj->unk36;
+    gSys[0] |= obj->unk38;
+}
+END_NONMATCH
+
+u32 find_entry_code(u32 unused, u32 key)
+{
+    const struct EntryRef *const *base;
+    u32 shifted = key << 16;
+    u16 id = shifted >> 16;
+    u16 sel = (shifted >> 28) - 1;
+    s32 count;
+    u32 table;
+    s32 i;
+
+    switch (sel) {
+    case 3:
+        base = gEntryLookup0;
+        count = 0x30;
+        table = 0;
+        break;
+    case 1:
+        base = gEntryLookup1;
+        count = 0x1A;
+        table = 1;
+        break;
+    case 10:
+        base = gEntryLookup9;
+        count = 1;
+        table = 9;
+        break;
+    case 2:
+        base = gEntryLookup2;
+        count = 9;
+        table = 2;
+        break;
+    case 7:
+        base = gEntryLookup7;
+        count = 0xB;
+        table = 7;
+        break;
+    case 8:
+        base = gEntryLookup8;
+        count = 1;
+        table = 8;
+        break;
+    case 0:
+        base = gEntryLookup3;
+        count = 1;
+        table = 3;
+        break;
+    case 9:
+        base = gEntryLookupA;
+        count = 2;
+        table = 0xA;
+        break;
+    case 4:
+        base = gEntryLookup6;
+        count = 1;
+        table = 6;
+        break;
+    default:
+        base = 0;
+        count = 0;
+        table = 0;
+        break;
+    }
+    for (i = 0; i < count; i++) {
+        if (base[i]->id == id) {
+            return (u16)((table << 12) | i);
+        }
+    }
+    return 0xFFFF;
+}
 
 ASM_FUNC("asm/code_081152FC/menu_table_update.s", void menu_table_update(void))
