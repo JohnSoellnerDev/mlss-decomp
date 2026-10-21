@@ -190,20 +190,21 @@ void obj_update_children(u8 *obj)
     *slotPtr = slot;
 }
 
-NONMATCH("asm/code_0816AFFC/child_states_obj_list_pass_store.s", void child_states_obj_list_pass_store(void))
+void child_states_obj_list_pass_store(void)
 {
-    struct ObjList *list = &gUnk_0203FFB8;
+    struct ObjList *list;
+    u32 (**hook)(u32, u32);
+    u8 *base;
     u32 head;
-    u32 *out;
 
     obj_list_pass_0a8c();
-    gUnk_03000D48(list->head3C, list->head3C + 0xA14);
+    gUnk_03000D48(gUnk_0203FFB8.head3C, gUnk_0203FFB8.head3C + 0xA14);
+    list = &gUnk_0203FFB8;
+    hook = &gUnk_03000D4C;
     head = list->head3C;
-    out = (u32 *)&gSys;
-    out = (u32 *)((u8 *)out + 0x880);
-    *out = gUnk_03000D4C(head, *out);
+    base = (u8 *)&gSys;
+    *(u32 *)(base + 0x880) = (*hook)(head, *(u32 *)(base + 0x880));
 }
-END_NONMATCH
 
 void obj_clear_flag490_8(u8 *obj)
 {
