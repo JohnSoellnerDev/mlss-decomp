@@ -436,7 +436,12 @@ void obj_start_scene_mode2(struct SceneObj *obj)
 
 ASM_FUNC("asm/code_08026EA8/obj_reset_sprites_and_state.s", void obj_reset_sprites_and_state(void))
 
-NONMATCH("asm/code_08026EA8/obj_set_draw_attrs.s", void obj_set_draw_attrs(struct SceneObj *obj, u16 value, u8 idx, u8 flag, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10))
+static inline void set_flags2a8_bit5(u8 *flags, u32 v)
+{
+    ((struct Bits2A8 *)flags)->bit5 = v;
+}
+
+void obj_set_draw_attrs(struct SceneObj *obj, u16 value, u8 idx, u8 flag, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10)
 {
     obj->half2AC = value;
     obj->byte2AE = a5;
@@ -445,12 +450,11 @@ NONMATCH("asm/code_08026EA8/obj_set_draw_attrs.s", void obj_set_draw_attrs(struc
     ((struct Bits2A9 *)&obj->flags2A9)->bit1 = a8;
     ((struct Bits2A9 *)&obj->flags2A9)->bit0 = a9;
     ((struct Bits2A8 *)&obj->flags2A8)->idx = idx;
-    ((struct Bits2A8 *)&obj->flags2A8)->bit5 = flag;
+    set_flags2a8_bit5(&obj->flags2A8, flag);
     ((struct Bits2A9 *)&obj->flags2A9)->field2 = a4;
     ((struct Bits2A9 *)&obj->flags2A9)->bit5 = a10;
     ((struct Bits2A8 *)&obj->flags2A8)->bit6 = 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08026EA8/obj_start_battle.s", void obj_start_battle(void))
 
