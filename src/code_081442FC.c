@@ -33,6 +33,13 @@ struct Mode3
     u8 rest : 5;
 };
 
+struct SpriteMode12
+{
+    u8 bit0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 struct OwnerFlags
 {
     u8 unk0 : 1;
@@ -329,13 +336,214 @@ void enemy_go_dormant(struct Owner *owner, struct Enemy *ent)
     ent->unk1A0[0] = enemy_start_move;
 }
 
-ASM_FUNC("asm/code_081442FC/enemy_start_move.s", void enemy_start_move(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+NONMATCH("asm/code_081442FC/enemy_start_move.s", void enemy_start_move(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *table = (u8 *)ent + 0x100;
+    u8 side;
+    u8 idx;
+    u8 active;
+    struct Partner *bro;
+    u32 speed;
+    u32 off;
+    u32 slot;
+    s32 dir;
+    u32 cell;
 
-ASM_FUNC("asm/code_081442FC/enemy_walk.s", void enemy_walk(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+    side = rand_below(4, mt19937_next());
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        active = idx;
+    }
+    else
+    {
+        active = owner->flags208.bit1;
+    }
+    bro = *(struct Partner **)((u8 *)owner + active * 4 + 0x28);
+    slot = rand_below(2, mt19937_next());
+    speed = *(u16 *)(table + (slot << 1) + 0x30);
+    off = side << 1;
+    collide_react(owner, ent, bro, speed, *(u16 *)(table + off), *(s8 *)(table + 0x40), *(s8 *)(table + 0x41), 0x22, 0);
+    if ((ent->unk242 | ent->unk244) != 0)
+    {
+        dir = (((s32)((u16)angle_of_vector16((s16)ent->unk242, (s16)ent->unk244) + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        dir = -1;
+    }
+    ((struct Mode3 *)&ent->unk24)->mode = dir;
+    ((struct Mode3 *)&ent->unk214)->mode = 3;
+    {
+        int b = ent->sprite->flags12;
 
-ASM_FUNC("asm/code_081442FC/enemy_wait_timer.s", void enemy_wait_timer(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+        b = b & -7;
+        ent->sprite->flags12 = b;
+    }
+    ent->sprite->unk20 = *(u16 *)(table + off + 8);
+    cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+    obj_set_cell_coord(ent, cell, 0);
+    *(u16 *)(ai + 0x178) = side;
+    *state_out = (u32)enemy_walk;
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_081442FC/enemy_approach_bro.s", void enemy_approach_bro(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+void enemy_walk(struct Owner *owner, struct Enemy *ent, u32 *state_out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct RecBox *rec = ent->rec;
+
+    if (ent->unk1D4 == 0)
+    {
+        s16 box[8];
+        u8 idx;
+        u16 v;
+
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            struct Partner *bro = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+
+            load_box_oriented(box, ent, 0x11, 0x1C);
+            if (boxes_overlap_oriented(box, ent, bro, box[4], box[5]) != 0)
+            {
+                ent->unk1D2 = *(u8 *)(ent->unk1D0 + (u32)rec + 0x26);
+                ent->sprite->unk20 = *(u8 *)(ent->unk1D0 + (u32)rec + 0x22);
+                ((struct Mode3 *)&ent->unk214)->mode = 1;
+                *state_out = (u32)enemy_wait_timer;
+                return;
+            }
+        }
+        v = *(u16 *)((u8 *)rec + 0x1A);
+        *(u16 *)(ai + 0x17C) = v;
+    }
+    else
+    {
+        ent->unk1D4--;
+    }
+    if (step_pos_xy(ent) == 0)
+    {
+        u32 pick = rand_below(4, mt19937_next());
+        u32 off = pick << 1;
+        u8 *cell = ai + 0xD0;
+        u16 v = *(u16 *)(cell + off);
+
+        *(u16 *)(ai + 0x17A) = v;
+        *state_out = (u32)tick_store;
+        state_out[3] = (u32)enemy_start_move;
+    }
+}
+
+NONMATCH("asm/code_081442FC/enemy_wait_timer.s", void enemy_wait_timer(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+{
+    u8 *table = (u8 *)ent + 0x100;
+    u8 idx;
+
+    if (find_active_entry(owner, &idx) == 0)
+    {
+        u32 pick = rand_below(4, mt19937_next());
+        u16 v = *(u16 *)(table + (pick << 1) + 0x28);
+
+        ent->unk1D2 = v;
+        *state_out = (u32)tick_store;
+        state_out[3] = (u32)enemy_start_move;
+    }
+    else
+    {
+        s32 left = ent->unk1D2 - 1;
+
+        ent->unk1D2 = left;
+        if ((u16)left == 0)
+        {
+            ent->unk1D0 = rand_below(4, mt19937_next());
+            *state_out = (u32)enemy_approach_bro;
+        }
+        else
+        {
+            struct Partner *bro = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+            s32 (*div)(s32, s32) = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+            s32 dx = bro->posX - ent->posX;
+            s32 dy = bro->posY - ent->posY;
+            s32 dir;
+            s32 cell;
+
+            if ((dx | dy) != 0)
+            {
+                dir = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+            }
+            else
+            {
+                dir = -1;
+            }
+            idx = div(dir, 2);
+            cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+            if (cell != idx)
+            {
+                obj_set_cell_coord(ent, idx, ent->sprite->unk23);
+            }
+        }
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_081442FC/enemy_approach_bro.s", void enemy_approach_bro(struct Owner *owner, struct Enemy *ent, u32 *state_out))
+{
+    u8 *hit = (u8 *)ent->rec;
+    u8 *ai = (u8 *)ent + 0x58;
+    struct Enemy *body = ent->body;
+    u8 idx;
+    u8 active;
+    struct Partner *bro;
+    s32 dx;
+    s32 dy;
+    s32 ax;
+    s32 ay;
+
+    ((struct Flags8 *)&ent->unk20D)->bit2 = 0;
+    obj_set_or_add_pos(body, ent->posX, ent->posY, ent->unk14 + ent->unk18 + 0x1800, 1, 0);
+    if (probe_body_hit(owner, body, body->posX, body->posY, body->unk14 + body->unk18, 1, 0) != 0)
+    {
+        enemy_start_move(owner, ent, state_out);
+        return;
+    }
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        active = idx;
+    }
+    else
+    {
+        active = owner->flags208.bit1;
+    }
+    bro = *(struct Partner **)((u8 *)owner + active * 4 + 0x28);
+    dx = bro->posX - ent->posX;
+    dy = bro->posY - ent->posY;
+    ent->unk248 = *(u16 *)(hit + (*(u16 *)(ai + 0x178) << 1) + 0x36);
+    ax = dx;
+    if (ax < 0)
+    {
+        ax = -ax;
+    }
+    ay = dy;
+    if (ay < 0)
+    {
+        ay = -ay;
+    }
+    if (ax > ay)
+    {
+        ent->sprite->unk21 = 4;
+        ((struct Flags8 *)&ent->sprite->unk11)->bit6 = (u32)dx >> 31;
+    }
+    else
+    {
+        ent->sprite->unk21 = (dy < 0) ? 3 : 5;
+        ((struct Flags8 *)&ent->sprite->unk11)->bit6 = 0;
+    }
+    obj_refresh_sub_attr(ent);
+    ((struct Mode3 *)&ent->unk214)->mode = 1;
+    ((struct SpriteMode12 *)&ent->sprite->flags12)->mode = 1;
+    ent->sprite->unk20 = *(u8 *)(hit + *(u16 *)(ai + 0x178) + 0x2A);
+    *state_out = (u32)enemy_ready_check;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081442FC/enemy_chase_step.s", void enemy_chase_step(void))
 
