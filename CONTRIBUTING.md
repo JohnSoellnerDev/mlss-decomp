@@ -237,6 +237,11 @@ function start, calls show the relocation (the called symbol). A worked example 
   #0x80`) but `&gCosineTable[64]` gives one pool word `gCosineTable+0x80`, take the base into its
   own pointer first: `cb = gCosineTable; cs = cb + 64;`, pointers declared first
   (`obj_tilt45_model4` in src/code_0818AA98.c, `obj_turn_zoom4_6310` in src/code_08186128.c).
+  The same base pointer for the sine table, set between the two loads of a rotation and reused for
+  the constant angle of the next one (`cs = &gCosineTable[angle & 0xFF]; ... sb = gSineTable;
+  sn = sb + (angle & 0xFF); ... sb[64]`), matched the whole `turn_rem6` family
+  (`obj_zoom_model4_turn_rem6_0f3c` in src/code_08190F3C.c, seven more in src/code_0818F50C.c and
+  src/code_08192854.c).
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
