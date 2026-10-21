@@ -53,6 +53,16 @@ void heap_free_b(void *p);
 void task_remove(void *node, u32 kind);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void *init_slot_table(void *state);
+extern const u8 gBgLayerTag[];
+extern const u8 gBgBufferTag[];
+extern u16 gUnk_02000010[];
+void *init_text_obj(void *holder, u32 arg1, u32 size, u32 arg3);
+void flags_vars_setup_bg_layer(void *holder, u32 zero, u32 flags, void *block, u32 a4, u32 a5, void *a6, void *a7, void *a8);
+u8 text_layer_step(u8 *owner);
+u32 entry_table_value(u8 *obj, u32 idx);
+u32 obj_collision_mask(u8 *owner, u32 idx);
+void update_box_and_scroll(u8 *owner);
+void update_owner_objects(u8 *owner);
 
 u32 claim_effect_slot(u8 *owner, u32 unused, u32 *cmds)
 {
@@ -324,7 +334,83 @@ u32 set_var_from_entry(u8 *owner, u8 *dst, s16 *cmd)
     return 1;
 }
 
-ASM_FUNC("asm/code_080EF3BC/set_var_from_source.s", void set_var_from_source(void))
+struct SignedId7 { s8 id : 7; u8 top : 1; };
+
+u32 set_var_from_source(u8 *owner, u8 *dst, s16 *cmd, u8 *vars)
+{
+    u8 *list = *(u8 **)(owner + 0x14);
+    u32 off = *(u32 *)((u8 *)cmd + 8) << 2;
+    u8 *slots = list + 0x28;
+    u8 *entry = *(u8 **)(slots + off);
+    u32 kind = *(u32 *)((u8 *)cmd + 4);
+    s32 value;
+    s32 y;
+
+    switch (kind)
+    {
+    case 0:
+        value = *(s32 *)(entry + 0xC) / 0x100;
+        break;
+    case 1:
+        value = *(s32 *)(entry + 0x10) / 0x100;
+        break;
+    case 2:
+        value = (*(s32 *)(entry + 0x14) + *(s32 *)(entry + 0x18)) / 0x100;
+        break;
+    case 3:
+        value = ((u32)*(u8 *)(entry + 0x24) << 29) >> 29;
+        break;
+    case 4:
+    {
+        u8 *a = *(u8 **)(*(u8 **)(owner + 0x14) + 0x200);
+        u8 *b = *(u8 **)(*(u8 **)(owner + 0x14) + 0x204);
+        if (((struct SignedId7 *)(a + 0x33C))->id == *(u32 *)((u8 *)cmd + 8))
+        {
+            value = a[0x54];
+        }
+        else if (((struct SignedId7 *)(b + 0x33C))->id == *(u32 *)((u8 *)cmd + 8))
+        {
+            value = b[0x54];
+        }
+        else
+        {
+            value = 0xFF;
+        }
+        break;
+    }
+    case 5:
+        value = *(u8 *)entry;
+        break;
+    case 6:
+    {
+        s32 t = ((s32)*(u16 *)(entry + 0x23E)) << 16;
+
+        value = t >> 24;
+        if (value == 0)
+        {
+            value = ((t >> 20) & 0xC) | 0x40;
+        }
+        break;
+    }
+    case 7:
+        entity_camera_offset(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8), &value, &y);
+        break;
+    case 8:
+        entity_camera_offset(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8), &y, &value);
+        break;
+    case 9:
+        value = *(u8 *)(*(u8 **)(entry + 0x294) + 0x23);
+        break;
+    case 10:
+        value = (u8)entry_table_value(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8));
+        break;
+    case 11:
+        value = obj_collision_mask(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8));
+        break;
+    }
+    set_var(vars, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], value);
+    return 1;
+}
 
 u32 set_state_rect(u32 unused0, u32 unused1, u32 *cmds)
 {
@@ -495,7 +581,56 @@ u8 *init_effect_state(u8 *owner, u32 flag, u32 kind, u32 arg)
 void update_object_states(u8 **task);
 void step_bobbing_offset(u8 **task);
 void advance_motion_slots(u8 **task);
-ASM_FUNC("asm/code_080EF3BC/update_object_effects.s", void update_object_effects(void))
+NONMATCH("asm/code_080EF3BC/update_object_effects.s", void update_object_effects(u8 **obj))
+{
+    u8 *counter;
+    u8 *slot;
+    u8 *owner;
+    u32 buf[13];
+    u32 kind;
+
+    counter = gEffectState + 0x548;
+    update_object_states(obj);
+    *counter = 0;
+    slot = gEffectState;
+    do
+    {
+        u16 flags = *(u16 *)(slot + 0xA0);
+
+        if ((flags & 0x100) != 0)
+        {
+            sprites_obj_step_move(*(u8 **)(*obj + 0x14));
+        }
+        else if ((flags & 0x14) == 0)
+        {
+            owner = *obj;
+            if ((((u16)flags ^ 1) & 1) == 0)
+            {
+                kind = (u8)step_effect_slot(owner, 0, slot);
+                while (kind == 0)
+                {
+                    decode_stream_run(slot, buf, gUnk_03000FC0, gEffectState + 0x4B0, gUnk_03000FC0 + 0x38C, kind);
+                    if ((u8)obj_command_dispatch(owner, 0, slot, buf) == 0)
+                    {
+                        break;
+                    }
+                    kind = (u8)step_effect_slot(owner, 0, slot);
+                }
+            }
+        }
+        (*counter)++;
+        slot += 0xA8;
+    } while (*counter <= 2);
+    update_owner_objects(*obj);
+    step_bobbing_offset(obj);
+    advance_motion_slots(obj);
+    if (*(u8 *)(*(u8 **)(gUnk_03000FCC + 4) + 0x1B2) != 0)
+    {
+        *(u8 *)(*(u8 **)(gUnk_03000FCC + 4) + 0x1B2) = text_layer_step(gUnk_03000FCC);
+        update_box_and_scroll(gUnk_03000FCC);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080EF3BC/show_text_window.s", void show_text_window(void))
 
@@ -570,7 +705,28 @@ void start_effect(u8 **owner, u32 arg)
 
 ASM_FUNC("asm/code_080EF3BC/register_effect_entry.s", void register_effect_entry(void))
 
-ASM_FUNC("asm/code_080EF3BC/update_setup_bg_layer.s", void update_setup_bg_layer(void))
+void update_setup_bg_layer(u32 unused, u16 scrOff, u16 chrOff)
+{
+    u8 *b = gEffectState;
+    u32 scr = scrOff;
+    u32 chr = chrOff;
+    u16 *p = gUnk_02000010;
+    u8 *block;
+    u32 zero = 0;
+
+    *p = zero;
+    p++;
+    *p = zero;
+    p -= 5;
+    *p = (((scr >> 11) & 0x1F) << 8) | (((chr >> 14) & 3) << 2);
+    gUnk_03000FCC = init_text_obj(heap_alloc2(8, 0, gBgLayerTag, zero), 0x06000020 + chr, 0x4AE0, 6);
+    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, (void *)(0x06000000 + scr), 0x800);
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, (void *)(0x06000000 + chr), 0x20);
+    block = heap_alloc_raw(1, 0x800, gBgBufferTag);
+    *(u8 **)(gEffectState + 0x4AC) = block;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, block, 0x800);
+    flags_vars_setup_bg_layer(gUnk_03000FCC, 0, 0xF, *(u8 **)(gEffectState + 0x4AC), 2, 0x180, b + 0x540, b + 0x538, b + 0x528);
+}
 
 ASM_FUNC("asm/code_080EF3BC/reset_effect_state.s", void reset_effect_state(void))
 
