@@ -1081,7 +1081,99 @@ void obj_tilt_model5_d798(struct Point1Obj *obj)
     *words = hub_speed;
 }
 
-ASM_FUNC("asm/code_0817CB70/obj_spin_model4_d990.s", void obj_spin_model4_d990(void))
+NONMATCH("asm/code_0817CB70/obj_spin_model4_d990.s", void obj_spin_model4_d990(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    struct ObjRecord *rec;
+    s32 zoom;
+    s32 shrink;
+    s32 angle;
+    s32 hub;
+    u32 *words;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 vy;
+    s32 vz;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 x2;
+    s32 z2;
+    s32 y3;
+    s32 z3;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    shrink = *words++;
+    angle = *words++;
+    hub = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 4; i++) {
+        vx = *words++;
+        l.x = vx;
+        vy = *words++;
+        l.y = vy;
+        vz = *words++;
+        l.z = vz;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (vy * zoom) / 0x100;
+        l.y = y1;
+        z1 = (vz * zoom) / 0x100;
+        l.z = z1;
+        pos = z1;
+        pos = pos * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (pos - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        y3 = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        l.y = y3;
+        z3 = (z2 * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * y1) / 0x100;
+        l.z = z3;
+        y3 += hub;
+        l.y = y3;
+        l.x = obj->posX + x2 / 0x100;
+        l.y = obj->posY + y3 / 0x100;
+        l.z = obj->posZ + z3 / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    t = pos;
+    zoom -= shrink;
+    shrink += 0x28;
+    angle += 8;
+    hub -= 0x200;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = shrink;
+    *words++ = angle;
+    *words = hub;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0817CB70/obj_zoom_model8_dbf0.s", void obj_zoom_model8_dbf0(void))
 
@@ -1241,7 +1333,7 @@ void obj_fixed_point_df7c(struct Point1Obj *obj)
 }
 
 
-NONMATCH("asm/code_0817CB70/obj_perm_spin8_e08c.s", void obj_perm_spin8_e08c(struct Point1Obj *obj))
+void obj_perm_spin8_e08c(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -1293,17 +1385,15 @@ NONMATCH("asm/code_0817CB70/obj_perm_spin8_e08c.s", void obj_perm_spin8_e08c(str
         l.y = y1;
         z1 = (vz * zoom) / 0x100;
         l.z = z1;
-        pos = y1;
-        pos = pos * (gCosineTable[64] / 0x40);
-        y2 = (pos - (gSineTable[64] / 0x40) * z1) / 0x100;
+        t = y1;
+        t = t * (gCosineTable[64] / 0x40);
+        y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
         l.y = y2;
-        pos = z1;
-        pos = pos * (gCosineTable[64] / 0x40);
-        z2 = (pos + (gSineTable[64] / 0x40) * y1) / 0x100;
+        z2 = (z1 * (gCosineTable[64] / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
         l.z = z2;
-        t = x1;
-        t = t * (gCosineTable[angle & 0xFF] / 0x40);
-        x2 = (t - (gSineTable[angle & 0xFF] / 0x40) * y2) / 0x100;
+        pos = x1;
+        pos = pos * (gCosineTable[angle & 0xFF] / 0x40);
+        x2 = (pos - (gSineTable[angle & 0xFF] / 0x40) * y2) / 0x100;
         l.x = x2;
         y3 = (y2 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
         l.y = y3;
@@ -1320,7 +1410,7 @@ NONMATCH("asm/code_0817CB70/obj_perm_spin8_e08c.s", void obj_perm_spin8_e08c(str
     if (saved) {
         gModelCtx->model = l.model;
     }
-    t = 0;
+    t = pos;
     zoom += vel;
     vel = (vel * 7) / 8;
     angle += 3;
@@ -1329,7 +1419,6 @@ NONMATCH("asm/code_0817CB70/obj_perm_spin8_e08c.s", void obj_perm_spin8_e08c(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
 // Model of 9 points tilted about the X axis, with a flag-dependent X offset.
 // The data block holds the zoom, the height and its speed, the Y offset and its speed, and
