@@ -1206,7 +1206,7 @@ NONMATCH("asm/code_0818F50C/obj_zoom_model3_turn_rem6_0aac.s", void obj_zoom_mod
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0818F50C/obj_zoom_model4_turn45_0d00.s", void obj_zoom_model4_turn45_0d00(struct Point1Obj *obj))
+void obj_zoom_model4_turn45_0d00(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -1254,9 +1254,7 @@ NONMATCH("asm/code_0818F50C/obj_zoom_model4_turn45_0d00.s", void obj_zoom_model4
         t = t * (gCosineTable[32] / 0x40);
         z2 = (t - (gSineTable[32] / 0x40) * x1) / 0x100;
         l.z = z2;
-        t = x1;
-        t = t * (gCosineTable[32] / 0x40);
-        x2 = (t + (gSineTable[32] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[64] / 0x40);
@@ -1298,4 +1296,4 @@ NONMATCH("asm/code_0818F50C/obj_zoom_model4_turn45_0d00.s", void obj_zoom_model4
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
+
