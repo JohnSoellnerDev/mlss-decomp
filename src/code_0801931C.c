@@ -696,7 +696,92 @@ NONMATCH("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struc
 END_NONMATCH
 
 void task_remove(struct ListNode *task, u32 flags);
-ASM_FUNC("asm/code_0801931C/anim_state_step.s", void anim_state_step(void))
+struct AnimObj
+{
+    u8 state;
+    u8 filler1[3];
+    u32 unk4;
+    u8 filler8[0x18 - 0x8];
+    void *handler;
+    u8 timer;
+    u8 filler1D;
+    u16 keys;
+    u16 prevKeys;
+    u8 filler22[2];
+    u32 unk24;
+    u32 unk28;
+    void (*fn)(void);
+};
+
+NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct AnimObj *p))
+{
+    u32 mask;
+    u16 old;
+    u16 keys;
+    u32 start;
+    u32 cnt;
+
+    switch (p->state)
+    {
+    case 0:
+        p->timer--;
+        *(vu16 *)&gUnk_02000054 = (s8)p->timer;
+        if ((s8)p->timer == 0)
+        {
+            p->timer = 0x32;
+            p->state++;
+        }
+        break;
+    case 1:
+        p->timer--;
+        if (p->timer == 0)
+        {
+            p->timer = 0x10;
+            p->state++;
+        }
+        break;
+    case 2:
+        p->timer--;
+        *(vu16 *)&gUnk_02000054 = 0x10 - (s8)p->timer;
+        if ((s8)p->timer == 0)
+        {
+            if (p != 0)
+            {
+                u8 *sys;
+                p->handler = (void *)gObjHandler;
+                sys = gSys;
+                sys[0x88A] |= 8;
+                *(vu16 *)0x02000000 = 0;
+                *(vu16 *)0x02000050 = 0;
+                task_remove((struct ListNode *)p, 3);
+            }
+            if (p->fn != 0)
+                p->fn();
+            return;
+        }
+        break;
+    }
+
+    old = p->keys;
+    p->prevKeys = old;
+    keys = ~REG_KEYINPUT & 0xF0;
+    p->keys = keys;
+    mask = 0xF0;
+    if ((keys & ~old & mask) == mask)
+    {
+        start = p->unk24;
+        p->unk28 = start;
+        cnt = p->unk4;
+        p->unk24 = cnt;
+        if (start != 0 && cnt - start <= 3)
+        {
+            u8 *sys = gSys;
+            ((struct LinkModeBits *)&sys[0x888])->mode = 1;
+            ((struct LinkStateBits *)&gUnk_03000D18)->b1_3 = 0;
+        }
+    }
+}
+END_NONMATCH
 
 void serial_link_enable(void)
 {
@@ -799,4 +884,65 @@ ok:
     return 0;
 }
 
-ASM_FUNC("asm/code_0801931C/serial_make_packet.s", void serial_make_packet(void))
+struct LinkRam
+{
+    u8 phase;
+    u8 filler1[0xB];
+    u32 rx2;
+};
+
+u32 serial_slot_bits(u32 index, u32 unused1, u32 bits);
+
+static inline u32 fold_nibbles(u32 acc, u32 word)
+{
+    u8 i;
+    for (i = 6; i != 0; i--)
+        acc ^= (word >> (i << 2)) & 0xF;
+    return acc;
+}
+
+NONMATCH("asm/code_0801931C/serial_make_packet.s", u32 serial_make_packet(u8 kind, u32 unused1, u32 unused2, u32 packet))
+{
+    u32 word;
+    u8 phase;
+    u32 k = kind - 2;
+
+    switch (k)
+    {
+    case 0:
+        word = 0x10000010;
+        packet = (fold_nibbles(1, word) & 0xF) | word;
+        break;
+    case 1:
+        word = ((((struct LinkRam *)&gUnk_03000D18)->rx2 & 0xFFFFFF) << 4) | 0x20000000;
+        packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+        break;
+    case 2:
+        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
+        if ((phase & 0x30) == 0)
+        {
+            word = ((serial_slot_bits(0, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+        }
+        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
+        if ((phase & 0x30) == 0x10)
+        {
+            word = ((serial_slot_bits(1, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+        }
+        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
+        if ((phase & 0x30) == 0x20)
+        {
+            word = ((serial_slot_bits(2, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+        }
+        break;
+    case 3:
+    case 4:
+        word = 0x10000010;
+        packet = (fold_nibbles(1, word) & 0xF) | word;
+        break;
+    }
+    return packet;
+}
+END_NONMATCH
