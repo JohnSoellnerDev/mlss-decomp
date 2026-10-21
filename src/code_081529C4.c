@@ -53,14 +53,84 @@ struct SceneStateRow
     u8 filler1A[6];
 };
 
+struct Pair
+{
+    s32 unk00;
+    s32 unk04;
+};
+
+struct ModeTable
+{
+    u8 filler0[0x30];
+    s16 off30;
+    u8 filler32[0x34 - 0x32];
+    void (*fn34)(void *);
+};
+
+struct ModeObj
+{
+    u8 filler0[0x18];
+    u16 unk18;
+    u8 filler1A[0x24 - 0x1A];
+    u8 unk24;
+    u8 unk25;
+    u8 filler26[0x30 - 0x26];
+    struct ModeTable *table;
+    u8 filler34[0x36 - 0x34];
+    u16 unk36;
+    u16 unk38;
+    u8 filler3A[0x42 - 0x3A];
+    u8 unk42;
+};
+
 extern const struct SceneStateRow gSceneStateTable_083CCAC0[];
 extern struct GameState *gGamePtr;
+
+void *obj_get_sprite(void *obj);
+void obj_add_value(void *obj, s32 value);
+u32 obj_tick_state(void *obj, void *ctx, s16 speed, u32 arg3);
 
 ASM_FUNC("asm/code_081529C4/scene_release_objects.s", void scene_release_objects(void))
 
 ASM_FUNC("asm/code_081529C4/transition_scene_update.s", void transition_scene_update(void))
 
-ASM_FUNC("asm/code_081529C4/game_update_camera.s", void game_update_camera(void))
+void game_update_camera(struct GameState *game)
+{
+    struct Pair pos;
+    s32 *p;
+    s32 ofsX;
+
+    if (game->flags & 8)
+    {
+        cam_update(game->camTarget, 1);
+        if (((game->charA->unk36 ^ 1) & 1) != 0)
+        {
+            ofsX = game->camTarget->ofsX >> 8;
+            if (ofsX > 10)
+            {
+                obj_set_sprite_kind(game->charA, 0);
+            }
+            else if (ofsX > 4)
+            {
+                obj_set_sprite_kind(game->charA, 4);
+            }
+            else if (ofsX > -5)
+            {
+                obj_set_sprite_kind(game->charA, 5);
+            }
+            else
+            {
+                obj_set_sprite_kind(game->charA, 6);
+            }
+        }
+    }
+
+    pos = *(struct Pair *)&game->charA->x;
+    p = &pos.unk00;
+    p[0] -= game->camX;
+    p[1] -= game->camY;
+    obj_place_on_screen(game->camTarget, p);
+}
 
 void game_clamp_camera(struct GameState *game)
 {
@@ -121,7 +191,54 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_081529C4/scene_update_screen.s", void scene_update_screen(void))
 
-ASM_FUNC("asm/code_081529C4/obj_mode_switch.s", void obj_mode_switch(void))
+NONMATCH("asm/code_081529C4/obj_mode_switch.s", u32 obj_mode_switch(struct ModeObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode))
+{
+    switch (mode)
+    {
+    case 1:
+    {
+        struct ModeTable *table = obj->table;
+
+        table->fn34((u8 *)obj + table->off30);
+        break;
+    }
+    case 2:
+        break;
+    case 5:
+    {
+        void *sprite;
+
+        if (((obj->unk36 ^ 1) & 1) != 0)
+        {
+            obj->unk36 = obj->unk36 | 1;
+            obj->unk38 = 0x64;
+            sprite = obj_get_sprite(obj);
+            obj->unk42 = ((u8 *)sprite)[0x21];
+            if (obj->unk25 == 0)
+            {
+                obj_set_sprite_kind(obj, 0x28);
+            }
+            else
+            {
+                obj_set_sprite_kind(obj, 0x29);
+            }
+            obj_add_value(gGamePtr->mainObj, -3);
+        }
+        break;
+    }
+    case 13:
+        obj->unk24 = 8;
+        break;
+    case 12:
+        obj->unk18 = 0xFC18;
+        obj->unk24 = 2;
+        break;
+    default:
+        return obj_tick_state(obj, ctx, speed, arg3);
+    }
+    return 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081529C4/obj_tick_state.s", u32 obj_tick_state(void *obj, void *ctx, s16 speed, u32 arg3))
 
