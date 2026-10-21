@@ -102,6 +102,7 @@ struct AnimTick
     u8 mode;
 };
 
+
 extern u8 gSys[];
 extern u16 gUnk_03000D3C;
 extern u16 gUnk_02000050;
@@ -375,7 +376,109 @@ void set_link_slot_mask(u16 mask)
 
 ASM_FUNC("asm/code_0801ABFC/init_vt_08cdd758.s", void init_vt_08cdd758(void))
 
-ASM_FUNC("asm/code_0801ABFC/poll_spline_path.s", void poll_spline_path(void))
+struct SplinePoint
+{
+    s16 x;
+    s16 y;
+};
+
+struct SplinePath
+{
+    struct SplinePoint *points;
+    u16 count;
+    u8 filler6[2];
+    s32 speed;
+    s32 pos;
+};
+
+NONMATCH("asm/code_0801ABFC/poll_spline_path.s", u32 poll_spline_path(struct SplinePath *obj, s32 *out_x, s32 *out_y))
+{
+    s32 sum_x;
+    s32 sum_y;
+    s32 i;
+    s32 point;
+    s32 dist;
+    s32 weight;
+    s32 d;
+    s32 t;
+    s32 speed;
+    s32 pos;
+    s32 n;
+    s32 last;
+    s32 bound;
+    u32 result;
+
+    if (obj->points != 0)
+    {
+        sum_x = 0;
+        sum_y = 0;
+        i = -2;
+        n = obj->count;
+        bound = n + 1;
+        pos = obj->pos;
+        speed = obj->speed;
+        if (i <= bound)
+        {
+          do
+          {
+            point = i;
+            if (i < 0)
+            {
+                point = 0;
+            }
+            last = n - 1;
+            if (i > last)
+            {
+                point = last;
+            }
+            dist = pos - (i << 16);
+            if (dist < 0)
+            {
+                dist = -dist;
+            }
+            if (dist <= 0xFFFF)
+            {
+                d = dist >> 8;
+                weight = ((((3 * d) * d) * d >> 8) - (6 * d) * d + 0x40000) / 6;
+            }
+            else if (dist <= 0x1FFFF)
+            {
+                t = (dist - 0x20000) >> 8;
+                weight = (((0 - t) * t) * t) / 6 >> 8;
+            }
+            else
+            {
+                weight = 0;
+            }
+            sum_x += weight * obj->points[point].x;
+            sum_y += weight * obj->points[point].y;
+            i++;
+          } while (i <= n + 1);
+        }
+        *out_x = sum_x / 0x100;
+        *out_y = sum_y / 0x100;
+        pos = n * speed + pos;
+        obj->pos = pos;
+        if (pos < (n << 16))
+        {
+            result = 1;
+        }
+        else
+        {
+            obj->pos = n << 16;
+            *out_x = obj->points[n - 1].x << 8;
+            *out_y = obj->points[n - 1].y << 8;
+            obj->points = 0;
+            result = 0;
+        }
+    }
+    else
+    {
+        result = 0;
+    }
+    return result;
+}
+END_NONMATCH
 
 void vec4_normalize(s32 *v)
 {
