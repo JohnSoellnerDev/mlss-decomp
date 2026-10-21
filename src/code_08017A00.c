@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 extern u8 gSys[];
 extern u32 gUnk_03000014[];
@@ -102,7 +103,42 @@ ASM_FUNC("asm/code_08017A00/agb_main.s", void agb_main(void))
 
 ASM_FUNC("asm/code_08017A00/frame_update.s", void frame_update(void))
 
-ASM_FUNC("asm/code_08017A00/vblank_irq_callback.s", void vblank_irq_callback(void))
+NONMATCH("asm/code_08017A00/vblank_irq_callback.s", void vblank_irq_callback(void))
+{
+    struct DmaRegs *dma3;
+    u8 flags;
+    u32 off;
+
+    serial_link_update();
+    if ((((struct SysArea *)gSys)->busy & 6) == 0)
+        flag_88c_handler_b();
+    copy_shadow_to_io();
+    flags = ((struct SysArea *)gSys)->sysFlags;
+    if ((flags & 0x40) == 0)
+    {
+        off = (((((u32)flags << 28) >> 31) ^ (((u32)flags << 26) >> 31)) << 10);
+        dma3 = (struct DmaRegs *)0x040000D4;
+        dma3->src = (u32)gSys + 0x80 + off;
+        dma3->dst = 0x07000000;
+        dma3->ctl = 0x84000100;
+        (void)dma3->ctl;
+    }
+    else
+    {
+        off = (((((u32)flags << 28) >> 31) ^ (((u32)flags << 26) >> 31)) << 10);
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)gSys + 0x80 + off, (u8 *)0x07000000, 0x400);
+    }
+    flush_palette_blocks();
+    dma_queue_drain();
+    ((void (*)(void))((struct SysArea *)gSys)->irqCallback)();
+    flag_88c_handler_a();
+    ((struct SysArea *)gSys)->vblankCount++;
+    ((struct SysArea *)gSys)->frameCount++;
+    REG_IME = 0;
+    *(u16 *)0x03007FF8 |= 1;
+    REG_IME = 1;
+}
+END_NONMATCH
 
 
 void flush_palette_blocks(void)
@@ -242,23 +278,26 @@ NONMATCH("asm/code_08017A00/oam_affine_identity_init.s", void oam_affine_identit
     s32 n;
     u32 k;
     u32 off;
+    u16 v;
 
     off = (((u32)((struct SysArea *)gSys)->sysFlags << 28) >> 31) << 10;
     base = (u16 *)((u8 *)gSys + 0x80 + off);
+    v = 0x100;
     for (n = 0x20; n != 0; n -= 8)
     {
         q = base;
         for (k = 0; k < 8; k++)
         {
-            q[3] = 0x100;
+            q[3] = v;
             q[7] = 0;
             q[11] = 0;
-            q[15] = 0x100;
+            q[15] = v;
             q += 16;
         }
-        base = (u16 *)((u8 *)base + 0x100);
+        base += 0x80;
     }
-}END_NONMATCH
+}
+END_NONMATCH
 
 void irq_nop(void)
 {
