@@ -698,4 +698,41 @@ void set_motion_start(struct Actor *obj, u32 value)
     ((struct FlagsBits *)&obj->flags)->rebuild = 0;
 }
 
-ASM_FUNC("asm/code_08087E1C/set_motion_offsets.s", void set_motion_offsets(struct Actor *obj, u32 value))
+NONMATCH("asm/code_08087E1C/set_motion_offsets.s", void set_motion_offsets(struct Actor *obj, u32 value))
+{
+    u16 *hs;
+    s32 outA;
+    s32 outB;
+    s32 lo;
+    s32 hi;
+    u32 clamped;
+    s32 step;
+    s32 dx;
+    s32 dy;
+    s32 sum;
+    s32 root;
+    u32 start;
+    struct HalfPair *th;
+
+    th = (struct HalfPair *)&obj->targetH;
+    lo = th->lo << 8;
+    hi = th->hi << 8;
+    hs = &obj->heightStep;
+    step = (s16)*hs;
+    clamped = clamp_reflect_offsets(&outA, &outB, lo, hi, step << 8);
+    *hs = clamped;
+    step = (s16)clamped;
+    dx = (obj->targetX >> 16) - (s16)obj->targetX;
+    dy = (obj->targetY >> 16) - (s16)obj->targetY;
+    sum = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(outA * ((outA * (step - th->lo)) / 0x40), outB * (outB / 0x40));
+    root = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + sum * sum);
+    if (root != 0)
+        start = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((value << 6) + root / 2, root);
+    else
+        start = 0x4000;
+    obj->motionStart = start;
+    ((struct FlagsBits *)&obj->flags)->rebuild = 0;
+    obj->offsetA = outA;
+    obj->heightLimit = outB;
+}
+END_NONMATCH
