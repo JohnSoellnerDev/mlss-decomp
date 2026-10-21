@@ -37,6 +37,54 @@ struct SubBits11
     u8 bit7 : 1;
 };
 
+struct Flags213Bits
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
+struct SubBits1F
+{
+    u8 filler0[0x1F];
+    u8 lo2 : 2;
+    u8 mid2 : 2;
+    u8 hi4 : 4;
+};
+
+struct SubBits12
+{
+    u8 filler0[0x12];
+    u8 bit0 : 1;
+    u8 pair12 : 2;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 hi3 : 3;
+};
+
+struct Flags213Dirty
+{
+    u8 bit0 : 1;
+    u8 dirty : 4;
+    u8 hi3 : 3;
+};
+
+struct Flags298Bits
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 f2 : 2;
+    u8 f4 : 2;
+    u8 f6 : 2;
+};
+
+struct Flags299Bits
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 rest : 6;
+};
+
 struct FieldVtable
 {
     u8 filler0[0x38];
@@ -231,10 +279,9 @@ struct TaskObj *obj_update_oam_task_insert(struct TaskObj *obj, u8 kind)
 
 ASM_FUNC("asm/code_0803F510/obj_init.s", void obj_init(void))
 
-NONMATCH("asm/code_0803F510/obj_refresh_dirty.s", void obj_refresh_dirty(struct FieldObj *obj))
+void obj_refresh_dirty(struct FieldObj *obj)
 {
     s32 dirty;
-    s32 flags;
 
     if (!(obj->flags216 & 0x20))
     {
@@ -252,27 +299,20 @@ NONMATCH("asm/code_0803F510/obj_refresh_dirty.s", void obj_refresh_dirty(struct 
         {
             dirty |= 8;
         }
-        dirty = (dirty & 0xF) << 1;
-        flags = obj->flags213;
-        flags &= ~0x1E;
-        obj->flags213 = flags | dirty;
+        ((struct Flags213Dirty *)&obj->flags213)->dirty = dirty & 0xF;
         obj->unk50 = obj->sub->posX;
         obj->unk52 = obj->sub->posY;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0803F510/motion_obj_set_move_target.s", void motion_obj_set_move_target(void))
 
-NONMATCH("asm/code_0803F510/obj_init_motion.s", void obj_init_motion(struct FieldObj *obj, s32 goal, s32 step, s32 speed))
+void obj_init_motion(struct FieldObj *obj, s32 goal, s32 step, s32 speed)
 {
     s32 *p248;
     s32 *p254;
     u16 *p23E;
     s32 dir;
-    u32 bits;
-    s32 flags;
-    u8 *pf;
 
     p248 = &obj->unk248;
     if (step == -1)
@@ -311,13 +351,8 @@ NONMATCH("asm/code_0803F510/obj_init_motion.s", void obj_init_motion(struct Fiel
     {
         dir = 1;
     }
-    pf = &obj->flags213;
-    dir <<= 5;
-    flags = *pf;
-    flags = ~0x20 & flags;
-    *pf = flags | dir;
+    ((struct Flags213Bits *)&obj->flags213)->bit5 = dir;
 }
-END_NONMATCH
 
 void motion_obj_step_motion(struct FieldObj *obj)
 {
@@ -353,18 +388,111 @@ void motion_obj_step_motion(struct FieldObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0803F510/obj_update_state.s", void obj_update_state(void))
+NONMATCH("asm/code_0803F510/obj_update_state.s", void obj_update_state(struct FieldObj *obj))
+{
+    s32 a;
+    s32 b;
+    s32 y;
+
+    if (obj->flags20C & 1)
+    {
+        if (!(obj->flags216 & 0x20))
+        {
+            if (obj->counter25C >= 0)
+            {
+                a = obj->unk14 + obj->unk18;
+                b = obj->unk3C + obj->unk40;
+                obj->state4 = (a < b) ? 3 : 2;
+            }
+            else
+            {
+                if (obj->unk242 != 0 || (y = obj->unk244) != 0)
+                {
+                    obj->state4 = 1;
+                }
+                else
+                {
+                    obj->state4 = y;
+                }
+            }
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0803F510/obj_create_sub.s", void obj_create_sub(void))
 
-ASM_FUNC("asm/code_0803F510/obj_update_special_flag.s", void obj_update_special_flag(void))
+void obj_update_special_flag(struct FieldObj *obj)
+{
+    u32 special;
+    u32 flags;
+    u8 *pf;
+
+    special = 0;
+    if ((u16)(obj->id218 - 0x1001) <= 1 || obj->id218 == 0x1028)
+    {
+        special = 1;
+    }
+    pf = &obj->flags216;
+    special <<= 7;
+    flags = (*pf & 0x7F) | special;
+    *pf = flags;
+    setup_obj_10bc(obj->sub, 0, obj->id218, (flags >> 1) & 1, -1, -1, -1, obj->extra21E);
+}
 
 ASM_FUNC("asm/code_0803F510/obj_refresh_anim_state.s", void obj_refresh_anim_state(void))
 
-ASM_FUNC("asm/code_0803F510/obj_copy_sub_fields.s", void obj_copy_sub_fields(void))
+void obj_copy_sub_fields(struct FieldObj *obj)
+{
+    u32 v;
+
+    v = ((struct SubBits11 *)obj->sub)->bit6;
+    ((struct Flags298Bits *)&obj->flags298)->bit1 = v;
+    v = ((struct SubBits1F *)obj->sub)->lo2;
+    ((struct Flags298Bits *)&obj->flags298)->f2 = v;
+    v = ((struct SubBits1F *)obj->sub)->mid2;
+    ((struct Flags298Bits *)&obj->flags298)->f4 = v;
+    v = ((struct SubBits12 *)obj->sub)->pair12;
+    ((struct Flags298Bits *)&obj->flags298)->f6 = v;
+    v = ((struct SubBits12 *)obj->sub)->bit3;
+    ((struct Flags299Bits *)&obj->flags299)->bit0 = v;
+    v = ((struct SubBits12 *)obj->sub)->bit4;
+    ((struct Flags299Bits *)&obj->flags299)->bit1 = v;
+    obj->unk29B = obj->sub->unk21;
+    obj->unk29C = obj->sub->unk23;
+    obj->unk29E = obj->sub->unk2A;
+    obj->unk2A0 = obj->sub->unk2C;
+    obj->unk2A2 = obj->sub->unk4;
+    obj->unk2A4 = obj->sub->unk6;
+    ((struct Flags298Bits *)&obj->flags298)->bit0 = 1;
+}
 
 ASM_FUNC("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion_state(void))
 
-ASM_FUNC("asm/code_0803F510/obj_sync_sub_state.s", void obj_sync_sub_state(void))
+void obj_sync_sub_state(struct FieldObj *obj, u8 force)
+{
+    u32 b;
+    u8 want;
+    u32 dir;
+    u8 t;
+
+    b = obj->flags216;
+    if (!(b & 0xC))
+    {
+        want = obj->sub->unk21;
+        dir = 0;
+    }
+    else
+    {
+        t = gFrameAttrTable[((((b << 28) >> 30) << 4)) + ((((b << 27) >> 31) << 3)) + (((u32)obj->unk24 << 29) >> 29)];
+        want = t & 0x7F;
+        dir = t >> 7;
+    }
+    if (obj->sub->unk21 != want || ((struct SubBits11 *)obj->sub)->bit6 != dir || force != 0)
+    {
+        obj_load_record(obj->sub, want, 0, 0, 0);
+        ((struct SubBits11 *)obj->sub)->bit6 = dir;
+    }
+}
 
 ASM_FUNC("asm/code_0803F510/obj_update_screen_pos.s", void obj_update_screen_pos(void))
