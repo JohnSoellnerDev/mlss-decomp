@@ -415,7 +415,69 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(void))
 
-ASM_FUNC("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(void))
+struct Flags11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 hi1 : 1;
+};
+
+NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struct FieldObj *obj, s32 pos, u32 extra))
+{
+    u32 cell;
+    u32 high;
+    u32 low;
+    s32 t;
+    u8 entry;
+
+    cell = 0;
+    high = 0;
+    if ((obj->flags216 & 0xC) != 0)
+    {
+        if ((obj->flags216 & 0x10) == 0)
+        {
+            if ((obj->flags216 & 0xC) == 4)
+            {
+                t = pos / 4;
+                cell = (t << 1) + t;
+                pos -= t << 2;
+                pos <<= 1;
+            }
+            else
+            {
+                t = pos / 8;
+                cell = (t << 2) + t;
+                pos -= t << 3;
+            }
+        }
+        else
+        {
+            if ((obj->flags216 & 0xC) == 4)
+            {
+                t = pos / 4;
+                cell = t << 2;
+                pos -= cell;
+                pos <<= 1;
+            }
+            else
+            {
+                t = pos / 8;
+                cell = t << 3;
+                pos -= cell;
+            }
+        }
+        low = pos & 7;
+        ((struct MoveBits *)&obj->unk24)->lo3 = low;
+        ((struct MoveBits *)&obj->unk4C)->lo3 = low;
+        entry = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4)
+            + ((((u32)obj->flags216 << 27) >> 31) << 3) + pos];
+        pos = entry & 0x7F;
+        high = entry >> 7;
+    }
+    obj_load_record(obj->sub, cell + pos, extra, 0, 0);
+    ((struct Flags11 *)&obj->sub->flags11)->bit6 = high;
+}
+END_NONMATCH
 
 struct SlotBits
 {
