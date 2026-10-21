@@ -220,19 +220,11 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e71c.s", void obj_angle_zoom4_e71c(s
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t + pos;
         }
         l.y = obj->posY + l.y / 0x100;
@@ -327,19 +319,11 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e998.s", void obj_angle_zoom4_e998(s
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t + pos;
         }
         l.y = obj->posY + l.y / 0x100;
@@ -365,7 +349,111 @@ NONMATCH("asm/code_0817E4F0/obj_angle_zoom4_e998.s", void obj_angle_zoom4_e998(s
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0817E4F0/obj_angle_zoom8_ec14.s", void obj_angle_zoom8_ec14(void))
+void obj_angle_zoom8_ec14(struct Point1Obj *obj)
+{
+    s16 *cb;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    struct Point1Local l;
+    s32 zoom;
+    s32 vel;
+    s32 angle;
+    struct ObjRecord *rec;
+    u32 *words;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 x1;
+    s32 z1;
+    s32 x2;
+    s32 z2;
+    s32 t;
+    s32 pos;
+    s32 y1;
+    s32 y2;
+
+    words = obj->data;
+    zoom = *words++;
+    vel = *words++;
+    angle = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 8; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        z2 = z1;
+        cb = gCosineTable;
+        cs = cb + (angle & 0xFF);
+        z2 = z2 * (*cs / 0x40);
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
+        z2 = (z2 - (*sn / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
+        l.x = x2;
+        pos = y1;
+        pos = pos * (cb[12] / 0x40);
+        y2 = (pos - (sb[12] / 0x40) * z2) / 0x100;
+        l.y = y2;
+        l.z = ((z2 * (cb[12] / 0x40)) + ((sb[12] / 0x40) * y1)) / 0x100;
+
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = x2;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = x2;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += vel;
+    vel = (vel * 7) / 8;
+    rec->unk4 = 0x100;
+    rec->unk6 = 0x100;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = vel;
+    *words = angle;
+}
 
 void obj_turn_zoom12_ee84(struct Point1Obj *obj)
 {
@@ -945,19 +1033,11 @@ NONMATCH("asm/code_0817E4F0/obj_zoom_tilt4_f6dc.s", void obj_zoom_tilt4_f6dc(str
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
-            }
-            pos >>= 8;
+            pos = x2 / 0x100;
             l.x = t + pos;
         }
         l.y = obj->posY + l.y / 0x100;
