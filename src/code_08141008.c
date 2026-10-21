@@ -103,7 +103,7 @@ struct Actor
     u8 filler246[0x294 - 0x246];
     struct Sprite *sprite;
     u8 filler298[0x2D8 - 0x298];
-    u16 moveSpeed;
+    s16 moveSpeed;
     u8 filler2DA[0x2DE - 0x2DA];
     u16 unk2DE;
     u8 filler2E0[0x2EC - 0x2E0];
@@ -153,11 +153,126 @@ u8 step_pos_xy(struct Actor *ent);
 void start_move_to_3d(struct Actor *ent, s32 x, s32 y, s32 z, u32 speed, ByteArg zero);
 u8 enemy_sensor_hit(struct Actor *ent, struct Actor *target);
 void enemy_kick_after_probe(void);
+void enemy_start_return_home(void *owner, struct Actor *ent, void **out);
 u8 step_pos_xyz(struct Actor *ent);
 
-ASM_FUNC("asm/code_08141008/enemy_approach_partner.s", void enemy_approach_partner(void))
+void enemy_approach_partner(struct Owner *owner, struct Actor *ent, void **out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u16 *table = ent->table;
+    struct EnemyRec *rec = ent->rec;
+    u8 *sensor = ent->sensor;
+    u8 idx;
+    u32 index;
+    struct Actor *partner;
+    s32 dx;
+    s32 dy;
+    u16 hit;
+    s32 pick;
+    u16 timerVal;
+    u16 speed;
+    s32 flagsVal;
 
-ASM_FUNC("asm/code_08141008/enemy_init_group_random.s", void enemy_init_group_random(void))
+    if ((ent->flags1D6 & 0x10) == 0)
+    {
+        if (z_approach(ent) != 0)
+        {
+            return;
+        }
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            index = idx;
+        }
+        else
+        {
+            index = ((u32)owner->flags208 << 30) >> 31;
+        }
+        partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
+        dx = partner->posX - ent->posX;
+        dy = partner->posY - ent->posY;
+        if ((dx | dy) != 0)
+        {
+            u16 angle = angle_of_vector16(dx, dy);
+            ent->angle = (u32)(angle + 0x10) >> 8;
+        }
+        else
+        {
+            ent->angle = 0xFF;
+        }
+        ((struct Bits3 *)&ent->mode)->field0 = 3;
+        hit = *(u16 *)(sensor + 8);
+        if (hit != 0)
+        {
+            flagsVal = ent->flags20D;
+            flagsVal |= 0x40;
+            ent->flags20D = flagsVal;
+            hit = enemy_sensor_hit(ent, partner);
+            if (hit != 0)
+            {
+                pick = rand_below(4, mt19937_next());
+                timerVal = table[pick + 0x14];
+                *(u16 *)(ai + 0x17A) = timerVal;
+                out[0] = tick_store;
+                out[3] = enemy_kick_after_probe;
+                return;
+            }
+            ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x32];
+            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1B];
+            start_move_to(ent, partner->posX, partner->posY, speed, (u8)hit);
+        }
+        else
+        {
+            ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x32];
+            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1B];
+            start_move_to(ent, partner->posX, partner->posY, speed, (u8)hit);
+        }
+        *(u8 *)(ai + 0x17E) |= 0x10;
+    }
+    else
+    {
+        if (step_pos_xy_plain(ent) == 0)
+        {
+            timerVal = ((u8 *)rec)[ent->index + 0x3E];
+            *(u16 *)((u8 *)ent + 0x1D2) = timerVal;
+            out[0] = tick_store;
+            out[3] = enemy_kick_after_probe;
+        }
+    }
+}
+
+NONMATCH("asm/code_08141008/enemy_init_group_random.s", void enemy_init_group_random(struct Owner *owner, struct Actor *ent))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    u8 *sensor = ent->sensor;
+    u8 n;
+    s32 pick;
+    u16 timerVal;
+
+    ent->flags33E |= 0x10;
+    for (n = 1; n < sensor[0] + 1; n++)
+    {
+        struct Actor *sibling = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[n];
+        ((struct Bits4 *)&sibling->flags33E)->bit4 = 0;
+        obj_set_sprite_link(sibling, 0);
+        obj_set_active(sibling, 0);
+    }
+    pick = rand_below(4, mt19937_next());
+    *(u16 *)(ai + 0x178) = pick;
+    timerVal = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x16];
+    *(u16 *)(ai + 0x17A) = timerVal;
+    ent->speed2 = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[3];
+    ent->moveSpeed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[3];
+    ent->landZ = ent->posZ + ent->dz;
+    ent->phase = 0;
+    ent->hopStep = ((u8 *)rec)[1];
+    ent->flags20E |= 4;
+    ent->flags20D |= 0x20;
+    *(void **)(ai + 0x140) = enemy_state_run_move;
+    *(void **)(ai + 0x148) = enemy_timer_then_cell;
+    *(void **)(ai + 0x150) = enemy_prepare_move_to_partner;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08141008/enemy_state_run_move.s", void enemy_state_run_move(struct Owner *owner, struct Actor *ent))
 
@@ -216,7 +331,60 @@ void enemy_step_or_bump_update(struct Owner *owner, struct Actor *ent)
     }
 }
 
-ASM_FUNC("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare_move_to_partner(struct Owner *owner, struct Actor *ent, void **out))
+NONMATCH("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare_move_to_partner(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    u8 *sensor = ent->sensor;
+    u8 idx;
+    u32 index;
+    struct Actor *partner;
+    s16 box[8];
+    u16 speed;
+    s32 dx;
+    s32 dy;
+
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
+    for (idx = 0; idx < sensor[1]; idx++)
+    {
+        obj_box_to_stack(box, ent, 0x22, idx * 8 + 2);
+        if (point_in_box(box, partner, 0x7FFF, 0))
+        {
+            return;
+        }
+    }
+    if (*out == enemy_switch_to_free_partner)
+    {
+        speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[7];
+    }
+    else
+    {
+        speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[3];
+    }
+    ent->moveSpeed = speed;
+    dx = partner->posX - ent->posX;
+    dy = partner->posY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        u16 angle = angle_of_vector16(dx, dy);
+        ent->angle = (u32)(angle + 0x10) >> 8;
+    }
+    else
+    {
+        ent->angle = 0xFF;
+    }
+    start_move_to(ent, partner->posX, partner->posY, ent->moveSpeed, (u8)0);
+    step_pos_xy_plain(ent);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_run(void))
 
@@ -456,8 +624,227 @@ void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **
     out[3] = enemy_collide_random_kick;
 }
 
-ASM_FUNC("asm/code_08141008/enemy_turn_to_partner.s", void enemy_turn_to_partner(struct Owner *owner, struct Actor *ent, void **out))
+void enemy_turn_to_partner(struct Owner *owner, struct Actor *ent, void **out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    u8 idx;
+    u32 index;
+    struct Actor *partner;
+    u32 (*math)(u32, u32);
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    u8 facing;
+    s32 pick;
+    u32 zero;
+    u16 timerVal;
+    u16 *slot;
 
-ASM_FUNC("asm/code_08141008/enemy_start_partner_walk.s", void enemy_start_partner_walk(void))
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
+    math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+    dx = partner->posX - ent->posX;
+    dy = partner->posY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        u16 angle = angle_of_vector16(dx, dy);
+        dir = (((s32)(angle + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        dir = -1;
+    }
+    facing = math(dir, 2);
+    if (MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2) != facing)
+    {
+        obj_set_cell_coord(ent, facing, 0);
+    }
+    pick = rand_below(4, mt19937_next());
+    slot = (u16 *)(ai + 0x178);
+    zero = 0;
+    *slot = pick;
+    timerVal = ((u8 *)rec)[*slot + 0x26];
+    *(u16 *)(ai + 0x17A) = timerVal;
+    ((struct Bits3 *)&ent->mode)->field0 = 1;
+    ent->sprite->frame20 = ((u8 *)rec)[*slot + 0x22];
+    obj_load_record(ent->sprite, 3, -1, 0, zero);
+    sprite_step_e6a0(ent->sprite);
+    *out = enemy_wait_sprite_timer;
+}
 
-ASM_FUNC("asm/code_08141008/enemy_partner_walk_step.s", void enemy_partner_walk_step(struct Owner *owner, struct Actor *ent, void **out))
+NONMATCH("asm/code_08141008/enemy_start_partner_walk.s", void enemy_start_partner_walk(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    u16 *ip = (u16 *)((u8 *)ent + 0x1D0);
+    u8 idx;
+    u32 index;
+    struct Actor *partner;
+    u16 timerVal;
+    u16 speed;
+
+    timerVal = ((u8 *)rec)[*ip + 0x2E];
+    ent->timerB = timerVal;
+    obj_load_record(ent->sprite, 3, -1, 0, 0);
+    sprite_step_e6a0(ent->sprite);
+    ent->sprite->frame20 = ((u8 *)rec)[*ip + 0x2A];
+    ((struct Bits1 *)&ent->sprite->flags12)->field1 = 0;
+    ((struct Bits3 *)&ent->mode)->field0 = 1;
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
+    ((struct Bits3 *)&ent->mode)->field0 = 1;
+    obj_load_record(ent->sprite, 3, -1, 0, 0);
+    sprite_step_e6a0(ent->sprite);
+    speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1D];
+    start_move_to(ent, partner->posX, partner->posY, speed, (u8)0);
+    *(s32 *)(ai + 0x184) = ent->posX;
+    *(s32 *)(ai + 0x188) = ent->posY;
+    *(s32 *)(ai + 0x18C) = ent->posZ;
+    *(s32 *)(ai + 0x190) = ent->dz;
+    ((struct Bits1 *)(ai + 0x17E))->bit0 = 0;
+    ((struct Bits4 *)(ai + 0x17E))->bit4 = 0;
+    *out = enemy_partner_walk_step;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08141008/enemy_partner_walk_step.s", void enemy_partner_walk_step(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    struct Actor *partner;
+    u8 idx;
+    s16 box[8];
+    u32 (*math)(u32, u32);
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    u32 facing;
+    u32 speed;
+    s32 timerVal;
+    s32 flags;
+    s32 bit;
+    u8 zero;
+    s32 x;
+    s32 y;
+    s32 inside;
+
+    if (ent->flags1D6 & 1)
+    {
+        if (ent->sprite->flags12 & 8)
+        {
+            timerVal = ent->timerB - 1;
+            ent->timerB = timerVal;
+            if ((timerVal << 16) == 0)
+            {
+                ent->timerB = (s8)((u8 *)rec)[ent->index + 0x2E];
+                ((struct Bits3 *)&ent->mode)->field0 = 3;
+                math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+                dx = partner->posX - ent->posX;
+                dy = partner->posY - ent->posY;
+                if ((dx | dy) != 0)
+                {
+                    u16 angle = angle_of_vector16(dx, dy);
+                    dir = (((s32)(angle + 0x1000)) >> 13) & 7;
+                }
+                else
+                {
+                    dir = -1;
+                }
+                facing = math(dir, 2);
+                obj_set_cell_coord(ent, facing, 0);
+                ((struct Bits1 *)(ai + 0x17E))->bit0 = 0;
+            }
+        }
+        return;
+    }
+    timerVal = ent->timerB - 1;
+    ent->timerB = timerVal;
+    if ((timerVal << 16) == 0)
+    {
+        obj_box_to_stack(box, ent, 0x22, 0);
+        inside = point_in_box(box, ent, 0x7FFF, 0);
+        if (!inside)
+        {
+            *out = enemy_start_return_home;
+            return;
+        }
+        if (find_active_entry(owner, &idx) == 0)
+        {
+            *out = enemy_start_return_home;
+            return;
+        }
+        partner = ((struct Actor **)((u8 *)owner + 0x28))[idx];
+        if (partner->posZ != ent->posZ)
+        {
+            if (partner != owner->tgtB && owner->tgtB->posZ != ent->posZ)
+            {
+                *out = enemy_start_return_home;
+                return;
+            }
+            partner = owner->tgtB;
+        }
+        if (*(u8 *)(ai + 0x17E) & 0x10)
+        {
+            ((struct Bits3 *)&ent->mode)->field0 = 3;
+            math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+            dx = partner->posX - ent->posX;
+            dy = partner->posY - ent->posY;
+            if ((dx | dy) != 0)
+            {
+                u16 angle = angle_of_vector16(dx, dy);
+                dir = (((s32)(angle + 0x1000)) >> 13) & 7;
+            }
+            else
+            {
+                dir = -1;
+            }
+            obj_set_cell_coord(ent, math(dir, 2), 0);
+            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x19];
+        }
+        else
+        {
+            ((struct Bits3 *)&ent->mode)->field0 = 1;
+            obj_load_record(ent->sprite, 3, -1, 0, 0);
+            sprite_step_e6a0(ent->sprite);
+            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1D];
+        }
+        dx = partner->posX - ent->posX;
+        dy = partner->posY - ent->posY;
+        if ((dx | dy) != 0)
+        {
+            u16 angle = angle_of_vector16(dx, dy);
+            facing = (u32)(angle + 0x10) >> 8;
+        }
+        else
+        {
+            facing = 0xFF;
+        }
+        zero = 0;
+        ent->angle = facing;
+        x = partner->posX + (partner->vx << 4);
+        y = partner->posY + (partner->vy << 4);
+        start_move_to(ent, x, y, speed, zero);
+        flags = *(u8 *)(ai + 0x17E);
+        bit = (((((u32)flags >> 4) ^ 1) & 1)) << 4;
+        *(u8 *)(ai + 0x17E) = (flags & -0x11) | bit;
+        timerVal = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x2E];
+        *(u16 *)(ai + 0x17A) = timerVal;
+    }
+    step_pos_xy_plain(ent);
+}
+END_NONMATCH
