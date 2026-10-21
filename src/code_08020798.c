@@ -101,6 +101,16 @@ struct Lo2Bits
     u8 rest : 6;
 };
 
+struct Flags13Bits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 rest : 4;
+};
+
+extern u16 gUnk_0203FFC0;
+
 u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g);
 void sprite_step_e6a0(struct ObjNode *obj);
 u32 find_obj_1a2c(struct ObjNode *p, u32 mode);
@@ -521,7 +531,95 @@ u32 find_obj_1a2c(struct ObjNode *p, u32 mode)
     return 0;
 }
 
-ASM_FUNC("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(void))
+static inline u8 *find_block_kind(u32 kind, u8 sub, u16 id)
+{
+    struct BlockRec *rec = gUnk_0203FFB8.firstBlock;
+
+    do
+    {
+        if (rec->kind == kind && rec->sub == sub && rec->id == id)
+            return (u8 *)rec - (rec->size - 0x10);
+        rec = rec->next;
+    } while (rec != NULL);
+    return NULL;
+}
+
+NONMATCH("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(struct ObjNode *obj, u32 payload, u8 *table, s32 arg4, s32 size, s32 sizeB, s32 direct, s32 arg8))
+{
+    struct BlockRec *rec;
+    u8 *found;
+    u8 *link;
+    u32 w;
+    u32 sub;
+    u32 id;
+    struct ObjNode *other;
+
+    if (direct == 0)
+    {
+        sub = ((u32)obj->unk1E << 28) >> 28;
+        id = obj->unk18;
+        found = find_block_kind(2, sub, id);
+        if (found == NULL)
+        {
+            found = alloc_list_entry(2, size + 0x10, sub, id);
+            obj->block48 = (u32)found;
+            obj->block50 = payload;
+            obj->block4C = (u32)(found + 0x10);
+            fill_record_08f4((struct RecordSource *)obj);
+            ((struct Flags13Bits *)&obj->flags13)->bit2 = 1;
+        }
+        else
+        {
+            obj->block48 = (u32)found;
+            obj->block50 = *(u32 *)(found + 4);
+            obj->block4C = (u32)(found + 0x10);
+            ((struct Flags13Bits *)&obj->flags13)->bit2 = 0;
+        }
+    }
+    else
+    {
+        obj->block4C = payload;
+        obj->block48 = 0;
+        obj->block50 = 0;
+    }
+    if (sizeB != 0)
+    {
+        w = table[2] | (table[3] << 8);
+        if (w == 0)
+        {
+            sub = ((u32)obj->unk1E << 28) >> 28;
+            id = obj->unk1A;
+            found = find_block_kind(3, sub, id);
+            if (found == NULL)
+            {
+                found = alloc_list_entry(3, sizeB, sub, id);
+                ((struct Flags13Bits *)&obj->flags13)->bit3 = 1;
+            }
+            else
+                ((struct Flags13Bits *)&obj->flags13)->bit3 = 0;
+            link = found;
+        }
+        else
+            link = table - w;
+        obj->block44 = (u32)link;
+    }
+    else if (arg8 == 0)
+    {
+        other = (struct ObjNode *)find_obj_1a2c(obj, 4);
+        if (other == NULL)
+        {
+            obj->rangeStart = gUnk_0203FFC0;
+            gUnk_0203FFC0 += size;
+        }
+        else
+            obj->rangeStart = other->rangeStart;
+        obj->block44 = 0;
+    }
+    obj->unk38 = table;
+    obj->unk54 = arg4;
+    obj->unk58 = 0;
+}
+END_NONMATCH
 
 void obj_release_blocks(struct ObjNode *obj)
 {
