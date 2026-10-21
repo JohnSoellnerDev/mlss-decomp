@@ -140,7 +140,46 @@ void enemy_pose_move(struct Obj *parent, struct Obj *obj, u32 *slot);
 void behavior_fall_step(struct Obj *parent, struct Obj *obj, u32 *slot);
 
 u8 find_active_entry(struct Obj *owner, u8 *idx);
-ASM_FUNC("asm/code_0814AEAC/enemy_box_reset.s", void enemy_box_reset(struct Obj *parent, struct Obj *obj, u32 *slot))
+NONMATCH("asm/code_0814AEAC/enemy_box_reset.s", void enemy_box_reset(struct Obj *parent, struct Obj *obj, u32 *slot))
+{
+    s16 box[8];
+    u8 idx;
+    u8 *ai;
+    u8 *tab;
+    struct Sensor *sensor;
+    struct Obj *partner;
+    u32 ownerIdx;
+    u16 timerIdx;
+
+    ai = (u8 *)obj + 0x58;
+    tab = obj->boxTab;
+    sensor = obj->sensor;
+    if (find_active_entry(parent, &idx) != 0)
+    {
+        ownerIdx = idx;
+    }
+    else
+    {
+        ownerIdx = ((u32)parent->flags208 << 30) >> 31;
+    }
+    partner = *(struct Obj **)((u8 *)parent + ownerIdx * 4 + 0x28);
+    obj->zNext = obj->z + obj->dz;
+    obj->zNextAdj = partner->z + (sensor->unk8 << 8);
+    timerIdx = *(u16 *)(ai + 0x178);
+    obj->zspeed = *(u16 *)(tab + timerIdx * 2 + 0x2C);
+    ((struct ModeBits *)&obj->mode)->low3 = 4;
+    slot[0] = (u32)behavior_fall_step;
+    obj_box_to_stack(box, obj, 0x12, 0);
+    if ((u8)point_in_box(box, obj, 0x7FFF, 0) != 0)
+    {
+        slot[1] = (u32)enemy_tile_move;
+    }
+    else
+    {
+        slot[1] = (u32)enemy_pose_move;
+    }
+}
+END_NONMATCH
 
 void enemy_axis_limit_step(struct Obj *parent, struct Obj *obj, u32 *slot);
 void start_drop_slot(struct Obj *parent, struct Obj *obj, u32 *slot);
@@ -553,7 +592,7 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
             (*(u16 *)(beh + 0x17C))++;
         }
         f = *(beh + 0x17E);
-        *(beh + 0x17E) = (f & -5) | ((((f >> 2) ^ 1) & 1) << 2);
+        ((struct Bit2Byte *)(beh + 0x17E))->bit2 = ((f >> 2) ^ 1) & 1;
     }
     if (*(u16 *)(beh + 0x17C) > 0x1D)
     {
