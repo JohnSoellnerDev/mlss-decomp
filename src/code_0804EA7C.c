@@ -412,6 +412,76 @@ void obj_reset_movement(struct Obj *obj)
     motion_obj_set_move_target(obj, 0x40, 0x20, -1);
 }
 
-ASM_FUNC("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(void))
+NONMATCH("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(struct Obj *obj))
+{
+    u32 mode;
+
+    if ((*(u32 *)&obj->unk20C & (u32)gUnk_02000001) == (u32)gUnk_02000001) {
+        mode = ((u32)obj->unk33E << 30) >> 30;
+        switch (mode) {
+        case 1:
+            if ((s32)obj->unk18 <= 0) {
+                obj->flags2 = 0x80;
+                obj->unk18 = 0;
+                obj->unk340 = 3;
+                obj->unk33E = (obj->unk33E & -4) | 2;
+            } else {
+                obj->flags2 += 0x10;
+            }
+            break;
+        case 2: {
+            u32 cnt = obj->unk340 - 1;
+
+            obj->unk340 = cnt;
+            if ((cnt << 24) == 0) {
+                obj->unk340 = 0x3C;
+                obj->unk33E |= 3;
+            }
+            break;
+        }
+        case 3: {
+            u32 cnt = obj->unk340 - 1;
+            s32 sc;
+            u32 flags;
+
+            obj->unk340 = cnt;
+            sc = (s8)cnt;
+            if (sc == 0) {
+                u32 m2 = ((u32)obj->unk33E << 29) >> 31;
+
+                ((struct Bit5 *)((u8 *)obj + 0x20D))->b5 = m2;
+                obj->flags2 = obj->unk33F;
+                obj->unk23A = sc;
+                flags = obj->unk33C | 1;
+                obj->unk33C = flags;
+                if ((flags & 0x80) != 0) {
+                    ((struct Lo3Bits *)&obj->unk33D)->lo3 = (flags << 25) >> 29;
+                } else {
+                    ((struct Lo3Bits *)&obj->unk214)->lo3 = (flags << 25) >> 29;
+                }
+                ((struct Bits33C *)&obj->unk33C)->b3 = 0;
+                ((struct Bits33E *)&obj->unk33E)->mode = 0;
+            } else {
+                s32 bits = cnt & mode;
+
+                switch (bits) {
+                case 0:
+                case 2:
+                    obj->unk23A = 0;
+                    break;
+                case 1:
+                    obj->unk23A = 0xFF;
+                    break;
+                case 3:
+                    obj->unk23A = 1;
+                    break;
+                }
+            }
+            break;
+        }
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0804EA7C/obj_refresh_child_sprite.s", void obj_refresh_child_sprite(void))
