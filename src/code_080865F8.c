@@ -218,6 +218,21 @@ void enter_finish_rebuild(struct Actor *obj);
 void obj_release(struct Actor *obj);
 u32 arc_tan2(s32 x, s32 y);
 extern const s16 gOffsetRows[];
+struct Actor *obj_spawn(struct Rec *rec, s32 type, s32 x, s32 y, s32 h, s32 a, s32 b);
+void obj_list_push_default(struct Actor *obj);
+void run_sequence_of_obj(struct Actor *obj);
+void actor_init_linked(struct Actor *obj);
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
 
 void sub_08087FCC(struct Actor *obj, s32 divisor);
 
@@ -314,7 +329,53 @@ void obj_step_velocity(struct Actor *obj)
 
 ASM_FUNC("asm/code_080865F8/obj_attach.s", void obj_attach(void))
 
-ASM_FUNC("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(void))
+NONMATCH("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(struct Actor *obj, struct Actor *owner, s32 entry))
+{
+    struct SlotEntry *ent;
+    s32 bits;
+    s32 st;
+    u8 bit7;
+    s32 mask;
+    u8 *p110;
+
+    if ((obj->mode & 6) != 4)
+        return;
+    *((u8 *)gWorld + 0x2BF) |= 1;
+    obj->owner = owner;
+    ((struct ObjFlags77 *)obj)->bit3 = 0;
+    ((struct ObjFlags77 *)obj)->bit4 = 0;
+    ent = &obj->data->table->entries[entry];
+    bits = (ent->flags8 & 0x60) ^ 0x60;
+    ((struct ObjFlags77 *)obj)->bit6 = (bits >> 5) & 1;
+    ((struct ObjFlags77 *)obj)->bit5 = (bits >> 6) & 1;
+    obj->link = (struct Actor *)ent;
+    p110 = &obj->data->status110;
+    entry &= 0x1F;
+    st = *p110;
+    st &= -0x20;
+    st |= entry;
+    *p110 = st;
+    obj->activeNext = (struct Actor *)on_arrive;
+    obj->field54 = (s32)set_targets_from_record;
+    obj->unk9C = ent->offE;
+    obj->unkA0 = ent->off10;
+    obj->unkA4 = ((s32)(ent->unk12 << 17)) >> 17;
+    bit7 = obj->unkCC & 0x80;
+    if (bit7 != 0)
+    {
+        obj->unkCC = obj->unkCC & 0x7F;
+    }
+    else
+    {
+        obj->unkC8 = bit7;
+        mask = obj->unkCC & -0x80;
+        obj->unkCC = mask;
+        obj->unkCA = bit7;
+    }
+    run_sequence_of_obj(obj);
+    obj->state = poll_link_routine;
+}
+END_NONMATCH
 
 void obj_arrive_check(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(struct Actor *obj))
@@ -406,7 +467,53 @@ void obj_track_target(struct Actor *obj);
 void start_placement(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(void))
 
-ASM_FUNC("asm/code_080865F8/effect_from_table_obj.s", void effect_from_table_obj(void))
+NONMATCH("asm/code_080865F8/effect_from_table_obj.s", struct Actor *effect_from_table_obj(struct Actor *obj, s32 code))
+{
+    struct Actor *child;
+    void (*fn)(struct Actor *);
+    struct Pose *cpose;
+    s32 bitA;
+    s32 bitB;
+    const u16 *table;
+
+    child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
+    table = &((const u16 *)gOffsetRows)[code];
+    child->mode |= 0x40;
+    child->unk44 = table[0];
+    child->unk45 = table[1];
+    child->unk46 = table[2];
+    child->unk47 = table[3];
+    child->unk48 = table[4];
+    child->unk49 = table[5];
+    child->owner = obj->owner;
+    child->targetX = obj->posX;
+    child->targetY = obj->posY;
+    child->targetH = obj->posZ;
+    child->motionSpeed = obj->pose->waitFlag21;
+    child->child = obj;
+    child->motionStart = code;
+    cpose = child->pose;
+    bitB = obj->pose->flags11;
+    bitB &= 0x40;
+    bitA = cpose->flags11;
+    bitA &= -0x41;
+    cpose->flags11 = bitA | bitB;
+    child->flags |= 1;
+    child->link = obj->link;
+    fn = effect_follow;
+    child->state = fn;
+    obj_list_push_default(child);
+    fn(child);
+    child->baseX = child->posX;
+    child->baseY = child->posY;
+    child->baseH = child->posZ;
+    obj->field58 = child->field58;
+    obj->field5C = child->field5C;
+    obj->field60 = child->field60;
+    obj->field64 = child->field64;
+    return child;
+}
+END_NONMATCH
 
 void effect_follow(struct Actor *obj)
 {
@@ -516,7 +623,80 @@ void obj_finish_placement(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_080865F8/lookup_part.s", void lookup_part(void))
+static inline void clear_slot_2a(void)
+{
+    set_slot_value(0x2A, -1);
+}
+
+NONMATCH("asm/code_080865F8/lookup_part.s", s32 lookup_part(struct Actor *obj, struct Actor *owner, s32 kind))
+{
+    struct CandMgr *mgr;
+    struct Rec *rec;
+    struct Actor *cur;
+    s32 code;
+    s32 found;
+    s32 res;
+
+    if (kind != 3)
+        return 1;
+    if ((obj->mode & 6) == 4 && obj->link != NULL)
+    {
+        if ((((u8 *)obj->link)[9] & 0x80) == 0)
+            return 1;
+    }
+    clear_slot_2a();
+    if (owner->data->slot == -1)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 1;
+    }
+    if (owner->data->slot == -2)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 4;
+    }
+    if (owner->data->slot == -1)
+        code = 0x04021010;
+    else
+        code = 0x04021011;
+    res = resolve_contact_action(owner, obj, 0, 0, code);
+    if (res > 0)
+        return res;
+    rec = obj->data;
+    if (rec == NULL)
+        return 0;
+    found = 0;
+    if ((void *)obj != (u8 *)rec + 8)
+    {
+        cur = rec->field38;
+        if (cur != NULL)
+        {
+            if (obj == cur)
+                goto set;
+            do
+            {
+                cur = cur->child;
+                if (cur == NULL)
+                    goto check;
+            } while (obj != cur);
+            found = 1;
+        }
+    check:
+        if (!found)
+            return 0;
+    }
+set:
+    obj->index = 0;
+    if (*((u8 *)gWorld + 0x2F9) == 1)
+    {
+        obj->state = wait_pose_flag;
+        return 0;
+    }
+    obj->owner = owner;
+    actor_init_linked(obj);
+    return -1;
+}
+END_NONMATCH
 
 s32 lookup_slot(struct Actor *obj, struct Actor *other)
 {
@@ -592,7 +772,60 @@ void *find_lowest_order_pose(struct Actor *obj)
     return best;
 }
 
-ASM_FUNC("asm/code_080865F8/arbitrate_candidates.s", void arbitrate_candidates(void))
+NONMATCH("asm/code_080865F8/arbitrate_candidates.s", void arbitrate_candidates(struct Actor *obj))
+{
+    struct CandMgr *mgr;
+    struct Pose *op;
+    struct Actor *a;
+    struct Actor *b;
+    struct Rec *ca;
+    struct Rec *cb;
+    struct Pose *w;
+    s32 at;
+    s32 bt;
+    s32 mask;
+
+    op = obj->pose;
+    mgr = gWorld;
+    ca = mgr->candA;
+    a = (struct Actor *)((u8 *)ca + 8);
+    cb = mgr->candB;
+    b = (struct Actor *)((u8 *)cb + 8);
+    if ((a->mode & 6) == 2)
+        a->pose->unkE = op->unkE - 2;
+    if ((b->mode & 6) == 2)
+        b->pose->unkE = op->unkE - 2;
+    if ((a->mode & 6) == 2)
+    {
+        if ((b->mode & 6) == 2)
+        {
+            at = (s8)ca->unk7C + (s8)ca->unk7D;
+            bt = (s8)cb->unk7C + (s8)cb->unk7D;
+            if (at < bt)
+                w = b->pose;
+            else if (bt < at)
+                w = a->pose;
+            else if (a->posY < b->posY)
+                w = a->pose;
+            else
+                w = b->pose;
+            w->unkE += 1;
+        }
+        if ((a->mode & 6) == 2 && a->state != NULL)
+            return;
+    }
+    if ((b->mode & 6) == 2 && b->state != NULL)
+        return;
+    *((u8 *)a + 0x74) = 0;
+    *((u8 *)a + 0x75) = 0;
+    *((u8 *)b + 0x74) = 0;
+    *((u8 *)b + 0x75) = 0;
+    mask = -5;
+    a->flags &= mask;
+    b->flags &= mask;
+    obj->routine4 = NULL;
+}
+END_NONMATCH
 
 void clear_candidate_pair(struct Actor *obj)
 {
