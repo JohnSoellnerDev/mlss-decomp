@@ -71,14 +71,16 @@ static inline void set_flag_bit0(u8 *p, u32 v)
 NONMATCH("asm/code_080F2448/cmd_set_global_flag.s", u32 cmd_set_global_flag(u32 unused0, u32 unused1, u8 *cmd))
 {
     u8 *flag = gEffectState + 0x55A;
+    u32 one = 1;
 
-    set_flag_bit0(flag, *cmd & 1);
+    set_flag_bit0(flag, *cmd & one);
     return 1;
 }
 END_NONMATCH
 
-NONMATCH("asm/code_080F2448/cmd_stop_move.s", u32 cmd_stop_move(u8 *owner, u32 unused, u32 *cmd))
+u32 cmd_stop_move(u8 *owner, u32 unused, u32 *cmd)
 {
+    u32 zero;
     u32 off = (cmd[0] << 2) + 0x28;
     u8 **slot = (u8 **)(*(u8 **)(owner + 0x14) + off);
     u8 *obj = *slot;
@@ -93,14 +95,52 @@ NONMATCH("asm/code_080F2448/cmd_stop_move.s", u32 cmd_stop_move(u8 *owner, u32 u
     {
         obj_stop_motion(*slot);
     }
-    *flags = 0;
+    zero = 0;
+    *flags = zero;
     *(u32 *)(obj + 0x58) = *(u32 *)(block + 4);
-    *(u32 *)(block + 0x10) = 0;
+    *(u32 *)(block + 0x10) = zero;
     return 1;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080F2448/cmd_find_slot.s", void cmd_find_slot(void))
+u32 cmd_find_slot(u8 *owner, u8 *obj_ref, u32 *out, u32 *rec, u32 kind_arg, u32 count_arg)
+{
+    u8 kind;
+    u16 count;
+    u32 *entry;
+    u8 *obj;
+    s32 next;
+    s16 n;
+
+    kind = kind_arg;
+    count = count_arg;
+    entry = (u32 *)(*(u32 *)(owner + 0x14) + 0x28);
+    if (obj_ref != 0)
+    {
+        kind = obj_ref[0x54] + 4;
+    }
+    if (rec[0] == 0)
+    {
+        entry += rec[1];
+        count = 1;
+    }
+    n = count;
+    if ((s16)n > 0)
+    {
+        do
+        {
+            obj = (u8 *)*entry;
+            if ((*(u16 *)(obj + 0xF8) & 1) != 0 && obj[0xFC] == kind)
+            {
+                *out = *(u32 *)((u8 *)out + 0x14);
+                return 0;
+            }
+            next = ((u32)n << 16) - 0x10000;
+            entry++;
+            n = next >> 16;
+        } while (next > 0);
+    }
+    return 1;
+}
 
 NONMATCH("asm/code_080F2448/cmd_set_clear_flag4.s", u32 cmd_set_clear_flag4(u8 *owner, u32 unused, u32 *cmd))
 {
