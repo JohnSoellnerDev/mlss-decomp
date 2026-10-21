@@ -44,6 +44,12 @@ struct Flags213Bits
     u8 hi2 : 2;
 };
 
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
 struct SubBits1F
 {
     u8 filler0[0x1F];
@@ -468,7 +474,84 @@ void obj_copy_sub_fields(struct FieldObj *obj)
     ((struct Flags298Bits *)&obj->flags298)->bit0 = 1;
 }
 
-ASM_FUNC("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion_state(void))
+NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion_state(struct FieldObj *obj, u32 force))
+{
+    s32 flag;
+    s32 moving;
+    u32 pair;
+    u32 idx;
+    u32 t;
+    u32 b216;
+    struct FieldVtable *vt;
+    u8 *tbl;
+    u32 k7;
+
+    k7 = 7;
+    if ((*(u32 *)((u8 *)obj + 0x20C) & (u32)gUnk_02000001) == (u32)gUnk_02000001)
+    {
+        b216 = obj->flags216;
+        if (!(b216 & 0x20))
+        {
+            if ((((u32)obj->state214 << 29) >> 29) > 2)
+            {
+                tbl = (u8 *)gSpriteFacingTable;
+                idx = obj->unk02 >> 4;
+                if ((b216 & 0xC) != 4)
+                {
+                    idx += 0x10;
+                }
+                t = tbl[idx] & k7;
+                ((struct Lo3Bits *)&obj->unk24)->lo3 = t;
+            }
+            flag = force;
+            moving = 0;
+            switch (((u32)obj->state214 << 29) >> 29)
+            {
+            case 0:
+            case 1:
+            case 4:
+                if (((u32)obj->unk24 << 29) != ((u32)obj->unk4C << 29))
+                {
+                    flag = 1;
+                }
+                if ((obj->state214 & 7) == 0)
+                {
+                    moving = 1;
+                }
+                break;
+            case 2:
+            case 3:
+            case 5:
+                if (obj->state4 != obj->unk2C)
+                {
+                    flag = 1;
+                }
+                else if (((u32)obj->unk24 << 29) != ((u32)obj->unk4C << 29))
+                {
+                    flag = 1;
+                }
+                if (obj->unk242 == 0 && obj->unk244 == 0)
+                {
+                    moving = 1;
+                }
+                else if ((obj->state214 & 7) == 5)
+                {
+                    moving = 1;
+                }
+                break;
+            }
+            if (flag != 0)
+            {
+                pair = ((struct SubBits12 *)obj->sub)->pair12;
+                vt = obj->vt338;
+                vt->fn3C((u8 *)obj + vt->off38, 1);
+                ((struct SubBits12 *)obj->sub)->pair12 = pair;
+            }
+            ((struct SubBits12 *)obj->sub)->bit4 = moving;
+        }
+    }
+}
+END_NONMATCH
 
 void obj_sync_sub_state(struct FieldObj *obj, u8 force)
 {
