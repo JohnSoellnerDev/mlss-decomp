@@ -250,6 +250,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   change the symbols instead: give the struct its size (`03002200 gScene ram size=…`) and
   remove the symbol in between; pool words inside a sized symbol are written as `NAME+0xOFF`.
   Then `python3 configure.py` (rewrites `asm/`) and check `tools/bin/ninja expected` is OK.
+- A routine that is copied to RAM and starts its block is called as `base + (routine - block)` with
+  two names for one address. GCC keeps both pool words, so config/symbols.txt gives the routine a
+  second name with `dup=NAME` (`path_step_main_routine`, `fill_rect_4bpp_clip_routine`); the
+  disassembler writes the first of the two words with it. Use that name for the routine in C.
 - Shared structs and prototypes go into headers in `include/` (one per subsystem, e.g.
   `include/scene.h`); things only one unit uses can stay in its `.c` file.
 
