@@ -18,6 +18,14 @@ struct SysFlags888
     struct SysBits888 bits;
 };
 
+struct DmaChannel
+{
+    vu32 src;
+    vu32 dst;
+    vu16 cntL;
+    vu16 cntH;
+};
+
 struct SysSlots
 {
     u8 filler0[0x898];
@@ -70,7 +78,58 @@ u32 slot_bit_test(u32 a);
 void set_slot_fields(u32 a, u32 b, u32 c);
 void sound_dma_reset(void);
 
-ASM_FUNC("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
+NONMATCH("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
+{
+    s32 v;
+    u8 *buf;
+    u8 *counter;
+    u32 zero;
+    s32 i;
+    struct DmaChannel *dma;
+    struct DmaChannel *dma2;
+
+    buf = (u8 *)gUnk_03000FFC;
+    zero = 0;
+    cpu_fast_set(&zero, buf, 0x01000800);
+    buf[0] = 0x4D;
+    buf[1] = 0x41;
+    buf[2] = 0x4C;
+    buf[3] = 0x52;
+    buf[4] = 0x50;
+    buf[5] = 0x47;
+    buf[6] = 0;
+    buf[7] = 0;
+    v = (buf[8] | 7) & -9;
+    v &= -17;
+    v &= -33;
+    buf[8] = v;
+    v = buf[8];
+    for (i = 9; i <= 0xE; i++)
+        v += buf[i];
+    buf[0xF] = v;
+    counter = ptr_03000ffc_plus_1ff8();
+    *(u32 *)counter = 0x4E20;
+    *(u32 *)(counter + 4) = 3;
+    v = counter[0];
+    for (i = 1; i <= 6; i++)
+        v += counter[i];
+    counter[7] = v;
+    slot_reset(0);
+    slot_reset(1);
+    dma = (struct DmaChannel *)0x040000BC;
+    v = dma->cntH;
+    *(u16 *)&dma->cntH = v & 0xC5FF;
+    v = dma->cntH;
+    *(u16 *)&dma->cntH = v & 0x7FFF;
+    dma->cntH;
+    dma2 = (struct DmaChannel *)0x040000C8;
+    v = dma2->cntH;
+    *(u16 *)&dma2->cntH = v & 0xC5FF;
+    v = dma2->cntH;
+    *(u16 *)&dma2->cntH = v & 0x7FFF;
+    dma2->cntH;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08124F38/save_blocks_write.s", void save_blocks_write(void))
 
@@ -142,7 +201,14 @@ u32 stash_sound_slots(u8 *dst, u32 value)
     return active;
 }
 
-ASM_FUNC("asm/code_08124F38/checksum_bytes_sum.s", void checksum_bytes_sum(void))
+u32 checksum_bytes_sum(u8 *data, u16 len)
+{
+    s32 i;
+    s32 sum = 0;
+    for (i = 0; i < len; i++)
+        sum += data[i];
+    return sum;
+}
 
 struct ScreenObj *open_screen(struct ScreenObj *obj, u8 kind, u32 arg, u16 flags)
 {
