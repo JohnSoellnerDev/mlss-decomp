@@ -332,6 +332,7 @@ void obj_grow_zoom_point(struct Point1Obj *obj)
 // by 45 degrees (table index 32). The zoom grows by the step, the step decays by 7/8.
 NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(struct Point1Obj *obj))
 {
+    s16 *cs;
     struct Point1Local l;
     struct ObjRecord *rec;
     s32 zoom;
@@ -376,10 +377,11 @@ NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        t = t * (gCosineTable[64] / 0x40);
+        cs = &gCosineTable[64];
+        t = t * (*cs / 0x40);
         y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
         l.y = y2;
-        z2 = (z1 * (gCosineTable[64] / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
+        z2 = (z1 * (*cs / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
         l.z = z2;
         t = x1;
         t = t * (gCosineTable[32] / 0x40);
