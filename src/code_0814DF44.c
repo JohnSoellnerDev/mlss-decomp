@@ -117,7 +117,9 @@ struct CompanionObj
     u8 filler217[0x242 - 0x217];
     s16 vx;
     s16 vy;
-    u8 filler246[0x272 - 0x246];
+    u8 filler246[0x248 - 0x246];
+    u32 stepLen;
+    u8 filler24C[0x272 - 0x24C];
     u16 size272;
     u16 size274;
     u16 size276;
@@ -126,7 +128,9 @@ struct CompanionObj
     u16 size27C;
     u8 filler27E[0x294 - 0x27E];
     struct Sprite *sprite;
-    u8 filler298[0x338 - 0x298];
+    u8 filler298[0x2C8 - 0x298];
+    u32 unk2C8;
+    u8 filler2CC[0x338 - 0x2CC];
     u8 *methods;
     u8 filler33C[0x33D - 0x33C];
     u8 flags33D;
@@ -214,7 +218,7 @@ void init_size_and_pose(struct CompanionObj *obj);
 void companion_chase_tick(void *parent, struct CompanionObj *obj);
 void tick_store(void);
 void obj_roll_spawn(void);
-void ai_hold_at_home(void);
+void ai_hold_at_home(void *parent, struct CompanionObj *obj, u32 *slot);
 void run_e93c_then_handler(void *parent, struct CompanionObj *obj, u32 *slot);
 u32 cpu_set(void *src, void *dst, u32 control);
 void sprite_step_e6a0(struct Sprite *spr);
@@ -231,6 +235,8 @@ void obj_advance_axes(void *obj);
 void obj_clear_flags_2b5_30(void *obj);
 void obj_clear_flags_2b5_c0(void *obj);
 void obj_set_sprite_link(void *obj, u32 v);
+void obj_set_active(void *obj, u32 v);
+void obj_set_or_add_pos(void *obj, s32 x, s32 y, s32 z, u32 a, u32 b);
 void obj_roll_spawn(void);
 void obj_load_kind_record(void);
 void random_pose(void *owner, struct CompanionObj *obj, u32 *slot);
@@ -467,7 +473,56 @@ void ai_set_box_for_state(void *parent, struct CompanionObj *obj, u32 *slot)
     }
 }
 
-ASM_FUNC("asm/code_0814DF44/ai_hold_at_home.s", void ai_hold_at_home(void))
+void ai_hold_at_home(void *parent, struct CompanionObj *obj, u32 *slot)
+{
+    s16 *tbl;
+    struct Behavior *beh;
+    struct Sprite **sprp;
+    s32 timer;
+    s32 anim;
+    s32 speed;
+    u32 roll;
+
+    beh = (struct Behavior *)((u8 *)obj + 0x58);
+    tbl = obj->tbl;
+    if (obj->sprite->state == 0)
+    {
+        obj->size272 = 0xC00;
+        obj->size274 = 0x600;
+        obj->size276 = 0x800;
+    }
+    else
+    {
+        if (obj->sprite->state > 1)
+            return;
+        obj->size272 = 0xC00;
+        obj->size274 = 0x800;
+        obj->size276 = 0x800;
+    }
+    sprp = &obj->sprite;
+    if ((*sprp)->state > 1)
+        return;
+    timer = (*sprp)->timer;
+    anim = (s8)(*sprp)->anim;
+    if (anim < 0)
+        anim = -anim;
+    if (timer > anim)
+        return;
+    ((struct StateBits *)&obj->state)->low3 = 0;
+    obj_load_record(*sprp, 9, -1, 0, 0);
+    obj->size272 = 0xE00;
+    obj->size274 = 0x100;
+    obj->size276 = 0x800;
+    if ((u8)obj_inside_area(obj) == 0)
+    {
+        roll = rand_below(4, mt19937_next());
+        speed = tbl[roll + 4];
+        start_move_to(obj, beh->homeX, beh->homeY, speed, (u8)0);
+        *slot = (u32)step_xy_or_handler;
+    }
+    else
+        *slot = (u32)ai_choose_move_target;
+}
 
 void obj_load_anim_table(struct CompanionObj *obj)
 {
@@ -858,7 +913,66 @@ void init_size_and_pose(struct CompanionObj *obj)
     ((struct FlagBits *)&obj->flags20F)->bit2 = 1;
 }
 
-ASM_FUNC("asm/code_0814DF44/spawn_random_offset.s", void spawn_random_offset(void))
+void spawn_random_offset(struct CompanionObj *obj, u8 mode)
+{
+    u16 *tbl;
+    u8 *ai;
+    struct CompanionObj *sub;
+    s32 variant;
+    u32 vx;
+    u32 step;
+    u32 pick;
+    u32 *pa;
+    u32 *pb;
+    s32 zOff;
+
+    ai = (u8 *)obj->child + 0x58;
+    tbl = (u16 *)obj->tbl;
+    if (mode == 0)
+    {
+        pick = rand_below(4, mt19937_next());
+        pb = &obj->unk2C8;
+        pa = &obj->stepLen;
+        step = tbl[pick + 12];
+        *pa = step;
+        *pb = step;
+        vx = tbl[rand_below(4, mt19937_next()) + 16];
+    }
+    else if (mode == 1)
+    {
+        vx = tbl[rand_below(4, mt19937_next())];
+    }
+    variant = *(s16 *)(ai + 0x166);
+    switch (variant)
+    {
+    case 0:
+        sub = obj->child;
+        if ((sub->sprite->mirror & 0x40) != 0)
+        {
+            obj_set_or_add_pos(obj, sub->x - 0x1400, sub->y, sub->z + sub->dz + 0xB00, 1, variant);
+            obj->vx = -vx;
+            obj->vy = variant;
+        }
+        else
+        {
+            zOff = 0xB00;
+            obj_set_or_add_pos(obj, sub->x + 0x1400, sub->y, sub->z + zOff + sub->dz, 1, variant);
+            obj->vx = vx;
+            obj->vy = variant;
+        }
+        break;
+    case 1:
+        zOff = 0xB00;
+        obj_set_or_add_pos(obj, obj->child->x, obj->child->y + 0x800, obj->child->z + zOff + obj->child->dz, variant, 0);
+        obj->vx = 0;
+        obj->vy = vx;
+        break;
+    }
+    obj->sprite->anim = 0x10;
+    ((struct StateBits *)&obj->state)->low3 = 1;
+    obj_set_active(obj, 1);
+    obj_set_sprite_link(obj, 1);
+}
 
 NONMATCH("asm/code_0814DF44/box_fx8_div_and_dispatch.s", u32 box_fx8_div_and_dispatch(void *self, struct CompanionObj *obj, struct BoxVol *box))
 {
