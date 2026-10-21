@@ -347,7 +347,79 @@ void state_scroll_entry_to_focus(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_081041E4/state_select_pose.s", void state_select_pose(void))
+void state_select_pose(struct Owner *owner)
+{
+    struct Owner *marker = gWorld->obj278;
+    struct Scroll *scroll = gWorld->scrollObj37C;
+    s32 pose = gWorld->pose342 & 0x7F;
+    u8 *base;
+    u16 *keys;
+
+    base = (u8 *)gSys;
+    keys = (u16 *)(base + 0x42);
+    if (*keys & 0x40)
+    {
+        set_slot_value(0x5F, -1);
+        pose--;
+    }
+    if (*keys & 0x80)
+    {
+        set_slot_value(0x5F, -1);
+        pose++;
+    }
+    if (pose < 0)
+    {
+        s32 px;
+        s32 py;
+
+        pose = 5;
+        px = marker->baseX / 0x100;
+        py = marker->baseY / 0x100;
+        set_marker_position(px, py, 0x20 - (s16)obj_last_y(gWorld->focus24C));
+    }
+    if (pose > 5)
+    {
+        s32 px;
+        s32 py;
+
+        pose = 0;
+        px = marker->baseX / 0x100;
+        py = marker->baseY / 0x100;
+        set_marker_position(px, py, 0x70 - (s16)obj_last_y(gWorld->focus24C));
+    }
+    if (pose != gWorld->pose342)
+    {
+        s32 pz;
+        s32 px;
+        s32 py;
+        s32 focusY;
+        s32 rowY;
+
+        gWorld->pose342 = pose;
+        focusY = (s16)obj_last_y(gWorld->focus24C);
+        rowY = pose << 4;
+        rowY += 0x30;
+        pz = 0xA0 - (focusY + rowY);
+        px = marker->baseX / 0x100;
+        py = marker->baseY / 0x100;
+        place_world_object(px, py, pz, 5, 0x7001);
+    }
+    if (gSys[0x1F] & 0x40)
+        sprite_set_action((struct Owner *)scroll, 1, 0, 0);
+    else if (gSys[0x1F] & 0x80)
+        sprite_set_action((struct Owner *)scroll, 2, 0, 0);
+    else if (gSys[0x20] & 0xC0)
+        sprite_set_action((struct Owner *)scroll, 0, 0, 0);
+    if (gSys[0x1F] & 1)
+    {
+        if (scroll->sprite8->action != 0)
+            sprite_set_action((struct Owner *)scroll, 0, 0, 0);
+        sprite_set_action(marker, 6, 0, 0);
+        set_slot_value(0x60, -1);
+        owner->state = state_show_hero_panel;
+    }
+}
+
 ASM_FUNC("asm/code_081041E4/hero_panel_digits.s", void hero_panel_digits(u8 *digits, u32 heroCtx, u8 *tblA, u8 *tblB, u32 pose, s32 hero))
 
 void state_show_hero_panel(struct Owner *owner)
@@ -457,7 +529,72 @@ NONMATCH("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_081041E4/state_add_points_to_hero.s", void state_add_points_to_hero(void))
+static inline void hero_add_points(u16 *counter, u16 points)
+{
+    s32 sum = points + *counter;
+
+    *counter = sum;
+    if ((u16)sum > 0x3E7)
+        *counter = 0x3E7;
+}
+
+NONMATCH("asm/code_081041E4/state_add_points_to_hero.s", void state_add_points_to_hero(struct Owner *owner))
+{
+    u8 pose = gWorld->pose342;
+    s32 poseX2 = pose << 1;
+    s32 rowSlot = (poseX2 + 5) << 3;
+    s32 value = owner->index;
+    s32 rightEdge = number_right_edge(value, 0xB8);
+    s32 timer;
+
+    draw_digits_c0_p11(value, rightEdge, rowSlot, 0);
+    timer = (u16)owner->timer + 1;
+    owner->timer = timer;
+    if ((s16)timer > 9)
+    {
+        u16 packed = owner->index;
+        struct DisplayEntry *entry;
+        struct Hero *hero;
+        u16 stat;
+        u8 *effect;
+        s32 valueNow;
+
+        owner->index = (packed & 0xF) + ((s16)packed >> 4) * 10;
+        gWorld->entry380[pose]->unk4 = 0;
+        valueNow = owner->index;
+        effect = (u8 *)gWorkBuf + 0x8E1C;
+        stat = *(u16 *)(effect + poseX2);
+        entry = create_display_entry(owner, valueNow, stat, 0x999, 0, 0, 0x20, 0xC,
+                                     (owner->index <= 9) ? 0xBC : 0xC0, rowSlot, 0xA8,
+                                     (pose << 4) + 0x2A, 0xA8);
+        gWorld->entry380[pose] = entry;
+        hero = (struct Hero *)(gParty + owner->posX * 0x3C);
+        switch (gWorld->pose342)
+        {
+        case 0:
+            hero_add_points(&hero->c10, owner->index);
+            break;
+        case 1:
+            hero_add_points(&hero->c16, owner->index);
+            break;
+        case 2:
+            hero_add_points(&hero->c1A, owner->index);
+            break;
+        case 3:
+            hero_add_points(&hero->c22, owner->index);
+            break;
+        case 4:
+            hero_add_points(&hero->c1E, owner->index);
+            break;
+        case 5:
+            hero_add_points(&hero->c26, owner->index);
+            break;
+        }
+        owner->timer = 1;
+        owner->state = state_entry_countdown;
+    }
+}
+END_NONMATCH
 
 static inline void fig_sprite_action(struct Figure *fig, u32 action)
 {
