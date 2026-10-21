@@ -6,6 +6,13 @@ struct ObjListHeadX
     void *buf3C;
 };
 
+struct SysBits88A
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
 struct ModelCtx;
 
 struct SceneObj
@@ -64,10 +71,10 @@ void run_pending_obj_callbacks(void)
 
 ASM_FUNC("asm/code_08021FE8/init_scene_obj.s", void init_scene_obj(void))
 
-NONMATCH("asm/code_08021FE8/obj_teardown_subs.s", void obj_teardown_subs(struct SceneObj *obj, u32 param))
+void obj_teardown_subs(struct SceneObj *obj, u32 param)
 {
     struct SceneObj *sub;
-    u32 flags;
+    u8 *sys;
 
     obj->cls18 = gSceneObjClass;
     if (obj->sub314 != 0)
@@ -112,10 +119,9 @@ NONMATCH("asm/code_08021FE8/obj_teardown_subs.s", void obj_teardown_subs(struct 
     free_effect_state(obj->sub31C);
     run_pending_obj_callbacks();
     set_irq_callback(2, 0);
-    flags = -0x21 & gSys[0x88A];
-    gSys[0x88A] = flags;
+    sys = gSys;
+    ((struct SysBits88A *)&sys[0x88A])->bit5 = 0;
     task_remove(obj, param);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08021FE8/scene_obj_state_dispatch.s", void scene_obj_state_dispatch(void))
