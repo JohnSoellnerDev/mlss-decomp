@@ -158,6 +158,13 @@ struct Flags8
     u8 bit7 : 1;
 };
 
+struct Mid5Half
+{
+    u16 lo5 : 5;
+    u16 mid5 : 5;
+    u16 rest : 6;
+};
+
 void obj_set_state(void *obj, u32 state);
 void obj_finish_move_step(void *obj);
 void obj_stop_motion(void *obj);
@@ -180,7 +187,34 @@ extern u8 *gEffectState;
 void set_flag_f8_40(void *host);
 void camera_track_entity(void *list, u32 field, u32 zero);
 
-ASM_FUNC("asm/code_080EDB40/set_host_flags.s", void set_host_flags(void))
+static inline void set_u8_bit6(u8 *p, u32 v)
+{
+    ((struct Flags8 *)p)->bit6 = v;
+}
+
+static inline void set_bit6_f8(void *host, u32 v)
+{
+    ((struct Flags8 *)((u8 *)host + 0xF8))->bit6 = v;
+}
+
+u32 set_host_flags(struct OwnerObj *owner, void *unused1, u32 *args)
+{
+    if (args[0] != 0xFF)
+    {
+        ((struct Mid5Half *)((u8 *)owner->list + 0xFA))->mid5 = args[0];
+        set_flag_f8_40(owner->list);
+    }
+    else
+    {
+        u32 bit2 = ((u32)*(u8 *)((u8 *)owner->list + 0x208) << 29) >> 31;
+        ((struct Mid5Half *)((u8 *)owner->list + 0xFA))->mid5 = bit2;
+        set_bit6_f8(owner->list, args[1]);
+    }
+    if ((*(u8 *)((u8 *)owner->list + 0xF8) & 0x40) != 0)
+        camera_track_entity(owner->list, ((u32)*(u16 *)((u8 *)owner->list + 0xFA) << 22) >> 27, 0);
+    *(u32 *)(gEffectState + 0x530) = ((u32)*(u16 *)((u8 *)owner->list + 0xFA) << 22) >> 27;
+    return 1;
+}
 
 NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct OwnerObj *owner, void *unused, u32 *args))
 {
@@ -194,11 +228,10 @@ NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct Own
     ((struct Flags8 *)&entry->unk215)->bit1 = 0;
     ((struct SubFlags *)&entry->sub294->unk12)->mid = 0;
     {
-        s32 flags = entry->sub294->unk11;
-        s32 bit = ((u32)flags << 25) >> 31;
-
+        u32 old = entry->sub294->unk11;
+        u32 bit = (old << 25) >> 31;
         bit = args[2] ^ bit;
-        ((struct Flags8 *)&entry->sub294->unk11)->bit6 = bit;
+        set_u8_bit6(&entry->sub294->unk11, bit);
     }
     return 1;
 }
