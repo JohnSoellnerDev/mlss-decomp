@@ -203,6 +203,13 @@ function start, calls show the relocation (the called symbol). A worked example 
   0x40); y2 = (t - (gSineTable[a] / 0x40) * z1) / 0x100;` - that copy is the `adds r1, r3, #0`
   before the cosine load. Complete examples: `obj_zoom_tilt5_42d8` in src/code_08173678.c,
   `obj_rotx_zoom12_f0c0` in src/code_0817E4F0.c.
+  Check every rotation separately: where the original copies the coordinate (`adds r1, r3, #0`)
+  before the cosine table load, use that copy form; where the copy sits directly before the `muls`
+  after the load, write the product without the temporary
+  (`x2 = (x1 * (gCosineTable[a] / 0x40) + (gSineTable[a] / 0x40) * z1) / 0x100;`). Functions with
+  several rotations mix both forms (`obj_zoom_model4_turn45_0d00` in src/code_0818F50C.c). The copy
+  only survives when the temporary is used again later (GCC's CSE otherwise replaces it by the
+  original variable), which is why `t` is reused for `obj->posX` in the flag branches.
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
