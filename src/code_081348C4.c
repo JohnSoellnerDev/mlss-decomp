@@ -14,6 +14,7 @@ extern const s32 gZoneTable[];
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
+extern u8 *gWorld;
 
 struct ListOwner
 {
@@ -176,6 +177,15 @@ struct Pair7A
     u16 b;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 void init_appear_obj_base(struct AnimSub *sub);
 void list_drain(struct ObjList *list);
 s8 blend_fade_step(struct ObjCallback8 *obj);
@@ -334,7 +344,81 @@ u32 obj_randomize_timer(struct AppearObj *obj)
 void appear_motion_obj_fall_step(struct AppearObj *obj);
 void appear_motion_obj_orbit_step(struct AppearObj *obj);
 void obj_orbit_step_fixed(struct AppearObj *obj);
-ASM_FUNC("asm/code_081348C4/obj_pick_follow_mode.s", void obj_pick_follow_mode(void))
+NONMATCH("asm/code_081348C4/obj_pick_follow_mode.s", u32 obj_pick_follow_mode(struct AppearObj *obj))
+{
+    s32 mode;
+    s32 slot;
+    s32 *p84;
+
+    if (obj->unk9C == 0)
+    {
+        obj->unk9C = 0x200;
+        obj->unkA0 = mt19937_next() & 3;
+        obj->unkA4 = mt19937_next() & 1;
+    }
+    obj->unkAC = 0;
+    if (obj->unkA4 != 0)
+    {
+        obj->unk9C = -obj->unk9C;
+    }
+    mode = obj->unkA0;
+    switch (mode)
+    {
+    case 0:
+    case 1:
+        slot = mode + 6;
+        obj->unk2C = (void *)(((u32 *)(gWorld + 0x58))[slot] + 8);
+        ((struct ObjFlags77 *)obj)->bit6 = 0;
+        ((struct ObjFlags77 *)obj)->bit5 = 0;
+        obj_list_push_default(obj);
+        obj->unkAC = 8;
+        obj->unkA4 = obj->unk38;
+        obj->unkA8 = obj->unk3C;
+        {
+            u8 *q;
+
+            q = *(u8 **)((u8 *)obj->unk2C + 0x28);
+            obj->unk84 = *(s32 *)(q + 0xD8);
+            obj->unk88 = *(s32 *)(q + 0xDC);
+        }
+        obj->unkAE = obj->unk9C;
+        obj->unk4C = appear_motion_obj_fall_step;
+        set_slot_value(0xDB, -1);
+        break;
+    case 2:
+        ((struct ObjFlags77 *)obj)->bit6 = 0;
+        ((struct ObjFlags77 *)obj)->bit5 = 0;
+        obj_list_push_default(obj);
+        p84 = &obj->unk84;
+        {
+            u8 *a;
+            u8 *b;
+
+            a = *(u8 **)(gWorld + 0x70);
+            b = *(u8 **)(gWorld + 0x74);
+            *p84 = (*(s32 *)(a + 0x40) + *(s32 *)(b + 0x40)) / 2;
+            obj->unk88 = (*(s32 *)(a + 0x44) + *(s32 *)(b + 0x44)) / 2;
+        }
+        obj->unk8C = (obj->unk38 - obj->unk84) / 0x100;
+        obj->unkAC = 8;
+        obj->unk98 = 0;
+        obj->unk4C = appear_motion_obj_orbit_step;
+        set_slot_value(0xDB, -1);
+        break;
+    case 3:
+        ((struct ObjFlags77 *)obj)->bit6 = 0;
+        ((struct ObjFlags77 *)obj)->bit5 = 0;
+        obj_list_push_default(obj);
+        obj->unk84 = obj->unk38 / 0x100 - 0x54;
+        obj->unkAC = 8;
+        obj->unk98 = 0;
+        obj->unk4C = obj_orbit_step_fixed;
+        set_slot_value(0xDB, -1);
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 void obj_list_push_default(struct AppearObj *obj);
 void appear_motion_obj_fall_step(struct AppearObj *obj)
