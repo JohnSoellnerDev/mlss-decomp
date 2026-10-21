@@ -19,7 +19,9 @@ struct SceneObj
     u8 filler1D7[0x20C - 0x1D7];
     u8 unk20C;
     u8 unk20D;
-    u8 filler20E[0x352 - 0x20E];
+    u8 filler20E[0x216 - 0x20E];
+    u8 unk216;
+    u8 filler217[0x352 - 0x217];
     u8 unk352;
 };
 
@@ -104,6 +106,12 @@ struct Bit4Bits
     u8 b4 : 1;
     u8 hi3 : 3;
 };
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+u16 angle_of_vector16(s32 x, s32 y);
 void owner_release(u8 *owner, u32 mode);
 u32 world_entry_ready(void);
 void set_slot_target(u32 idx, u32 value, u32 mode);
@@ -339,7 +347,102 @@ u8 zone_hit_box_offsets(u8 *owner, struct SceneSlot *slot)
     return boxes_overlap_oriented(bounds, obj, entry, bounds[4], bounds[5]) & 0xFF;
 }
 
-ASM_FUNC("asm/code_080FBF10/zone_facing_entry.s", void zone_facing_entry(void))
+NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owner, struct SceneSlot *slot))
+{
+    s16 *bounds = slot->box;
+    struct SceneObj *obj = slot->obj;
+    u8 found;
+    s32 index;
+    struct SceneObj *entry;
+    u16 angle;
+    u32 oct;
+    u32 v;
+    u8 flags;
+
+    if (((s8 *)bounds)[12] < 0)
+    {
+        if ((slot->flags & 2) == 0)
+        {
+            if (find_active_entry(owner, &found) == 0)
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            u32 sel = (((u32)owner[0x208]) << 29) >> 31;
+
+            found = sel;
+        }
+        index = found;
+    }
+    else
+    {
+        index = ((s8 *)bounds)[12];
+    }
+    entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
+    angle = angle_of_vector16(obj->x - entry->x, obj->y - entry->y);
+    oct = ((u32)angle << 16) >> 29;
+    switch (oct)
+    {
+    case 0:
+        v = (((u32)entry->unk24 << 29) >> 29) - 2;
+        goto above4;
+    case 1:
+        v = ((u32)entry->unk24 << 29) >> 29;
+        goto atmost2;
+    case 2:
+        flags = entry->unk24;
+        if ((flags & 7) == 0)
+        {
+            goto fail;
+        }
+        if ((((u32)flags << 29) >> 29) > 3)
+        {
+            goto fail;
+        }
+    ok:
+        return 1;
+    case 3:
+        v = (((u32)entry->unk24 << 29) >> 29) - 2;
+        goto atmost2;
+    case 4:
+        v = (((u32)entry->unk24 << 29) >> 29) - 3;
+        goto atmost2;
+    case 5:
+        v = (((u32)entry->unk24 << 29) >> 29) - 4;
+    atmost2:
+        if (v > 2)
+        {
+            goto fail;
+        }
+        goto ok;
+    case 6:
+        v = ((u32)entry->unk24 << 29) >> 29;
+    above4:
+        if (v <= 4)
+        {
+            goto fail;
+        }
+        goto ok;
+    case 7:
+        flags = entry->unk24;
+        if ((((u32)flags << 29) >> 29) > 5)
+        {
+            goto ok;
+        }
+        if ((flags & 7) == 0)
+        {
+            goto ok;
+        }
+        goto fail;
+    default:
+        goto fail;
+    }
+fail:
+    return 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080FBF10/boxes_overlap.s", u32 boxes_overlap(s16 *bounds, struct SceneObj *a, struct SceneObj *b, s32 zAbove, s32 zBelow))
 
