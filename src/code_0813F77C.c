@@ -179,8 +179,9 @@ void enemy_hop_prepare_fall(u32 r0, struct Enemy *ent, EnemyFn *out)
     *out = enemy_hop_fall_then_next;
 }
 
-NONMATCH("asm/code_0813F77C/enemy_hop_fall_to_tile.s", void enemy_hop_fall_to_tile(u32 r0, struct Enemy *ent, EnemyFn *out))
+void enemy_hop_fall_to_tile(u32 r0, struct Enemy *ent, EnemyFn *out)
 {
+    u8 zero = 0;
     s32 h0;
     s32 h1;
     s32 h2;
@@ -195,13 +196,12 @@ NONMATCH("asm/code_0813F77C/enemy_hop_fall_to_tile.s", void enemy_hop_fall_to_ti
     }
     idx = rand_below(4, mt19937_next());
     speed = ((u16 *)(ent->rec + 0x58))[idx];
-    start_move_to_3d(ent, ent->x, ent->y, h0 + 0x3000, speed, (u8)0);
+    start_move_to_3d(ent, ent->x, ent->y, h0 + 0x3000, speed, zero);
     ((struct Mode3 *)&ent->unk214)->mode = 4;
     cell = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
     obj_set_cell_coord(ent, cell, 0);
     *out = enemy_after_fall_check_box;
 }
-END_NONMATCH
 
 void enemy_hop_return_home(u32 r0, struct Enemy *ent, EnemyFn *out)
 {
