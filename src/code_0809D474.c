@@ -112,6 +112,12 @@ struct ModeBits
     u8 high : 2;
 };
 
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
 struct World
 {
     u8 filler0[0x58];
@@ -199,7 +205,47 @@ void sound_stop_song(u32 song);
 
 ASM_FUNC("asm/code_0809D474/orbit_parts_falling.s", void orbit_parts_falling(void))
 
-ASM_FUNC("asm/code_0809D474/spawn_small_child.s", void spawn_small_child(struct ActorBody *body))
+NONMATCH("asm/code_0809D474/spawn_small_child.s", void spawn_small_child(struct ActorBody *body))
+{
+    struct ActorBody *child;
+    struct SpriteNode *node;
+    s32 minusOne;
+
+    if ((body->sprite->flags & 8) != 0)
+    {
+        minusOne = -1;
+        set_slot_value(0x8B, minusOne);
+        set_slot_value(0x8C, minusOne);
+        sprite_set_action(body, 7, 0, 0);
+        effect_spawn_at(0x1E47, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+        child = obj_spawn(body->data, 0x403D, body->targetX / 0x100 - 0x15, body->targetY / 0x100 + 1,
+                          body->targetZ / 0x100, 1, 1);
+        child->child = body->child;
+        body->child = child;
+        child->flags |= 1;
+        child->height = 0;
+        child->node = sprite_node_take();
+        child->node->sprite = child->sprite;
+        child->node->link = &child->parts;
+        child->unk6C = body->unk6C;
+        child->partner = body->partner;
+        child->baseX = child->x;
+        child->baseY = child->y;
+        child->vspeed = 2;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        node->next = child->parts;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        node->next = child->parts;
+        child->parts = node;
+        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+        node->next = child->parts;
+        child->parts = node;
+        child->state = orbit_parts_gentle;
+        body->state = pose_update_a;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0809D474/orbit_parts_gentle.s", void orbit_parts_gentle(struct ActorBody *body))
 
@@ -417,7 +463,47 @@ void hero_pair_link(struct ActorBody *body)
     body->state = wait_for_index;
 }
 
-ASM_FUNC("asm/code_0809D474/slide_and_settle.s", void slide_and_settle(struct ActorBody *body))
+void slide_and_settle(struct ActorBody *body)
+{
+    struct ActorData *data;
+    u16 value;
+    s32 limit;
+    u32 flagMask;
+
+    body->x = body->data->unk18;
+    body->y = body->data->unk1C;
+    body->z = body->data->unk20;
+    body->sprite->unk6 += 4;
+    value = body->sprite->unk6;
+    if ((s16)body->sprite->unk6 > (limit = 0x100))
+    {
+        body->sprite->unk6 = limit;
+        body->state = 0;
+        return;
+    }
+    data = body->data;
+    flagMask = (data->poseOfs == -1) ? 1 : 2;
+    if ((((struct SysKeys3E *)gSys)->keys & flagMask) == 0)
+    {
+        return;
+    }
+    if ((*(u16 *)((u8 *)data + 0x11E) & 0x300) != 0)
+    {
+        return;
+    }
+    body->sprite->unk6 = value - 0x18;
+    if ((s16)body->sprite->unk6 <= 0)
+    {
+        body->sprite->unk6 = 2;
+    }
+    effect_spawn_at(0xDF, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
+    place_targets(body, body->x / 0x100, body->y / 0x100, body->z / 0x100, limit);
+    ((struct ModeBits *)&body->data->mode7E)->mode = 0;
+    sprite_set_action((struct ActorBody *)((u8 *)body->data + 8), 5, 0, 0);
+    ((struct ModeBits *)&body->data->mode7E)->mode = 1;
+    body->data->unk20 = (body->z += 0x200);
+    body->state = lower_height_then_slide;
+}
 void lower_height_then_slide(struct ActorBody *body)
 {
     s32 h;
