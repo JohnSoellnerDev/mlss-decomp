@@ -294,13 +294,15 @@ ASM_FUNC("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(void))
 
 ASM_FUNC("asm/code_080865F8/effect_from_table_obj.s", void effect_from_table_obj(void))
 
-NONMATCH("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *obj))
+void effect_follow(struct Actor *obj)
 {
     struct Pose *pose;
     struct Rec *cur;
     const s16 *entry;
     s32 targetX;
     s32 x;
+    s32 rowOff;
+    const u8 *base;
 
     pose = obj->child->pose;
     if (pose == NULL || pose->waitFlag21 != obj->motionSpeed || (pose->flags12 & 0x20) != 0)
@@ -320,7 +322,9 @@ NONMATCH("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *o
             break;
         cur = cur->ringNext;
     }
-    entry = (const s16 *)((const u8 *)gOffsetRows + (obj->motionStart << 1) + (pose->unk23 * 6 + 12));
+    base = (const u8 *)gOffsetRows + (obj->motionStart << 1);
+    rowOff = pose->unk23 * 6 + 12;
+    entry = (const s16 *)(base + rowOff);
     targetX = obj->targetX;
     if ((pose->flags11 & 0x40) != 0)
         x = targetX - (entry[0] << 8);
@@ -330,7 +334,6 @@ NONMATCH("asm/code_080865F8/effect_follow.s", void effect_follow(struct Actor *o
     obj->posY = obj->targetY + (entry[1] << 8);
     obj->posZ = obj->targetH + (entry[2] << 8);
 }
-END_NONMATCH
 
 void obj_place_start(struct Actor *obj)
 {
@@ -669,11 +672,11 @@ void obj_release(struct Actor *obj);
 extern const s16 gOffsetRows[];
 NONMATCH("asm/code_080865F8/process_record_ring.s", s32 process_record_ring(struct Actor *obj))
 {
+    struct Rec *next;
     struct Rec *rec = obj->data;
-    struct Rec *next = rec->ringNext;
     struct Rec *cur;
 
-    if (next != NULL)
+    if ((next = rec->ringNext) != NULL)
     {
         do
         {
@@ -682,8 +685,7 @@ NONMATCH("asm/code_080865F8/process_record_ring.s", s32 process_record_ring(stru
                 task_create_list_4c(stop_unless_flagged, cur);
             else
                 obj_stop((struct Actor *)((u8 *)cur + 8));
-            next = cur->ringNext;
-        } while (next != rec);
+        } while ((next = cur->ringNext) != rec);
     }
     if ((rec->status111 & 2) != 0)
         task_create_list_4c(stop_unless_flagged, rec);
