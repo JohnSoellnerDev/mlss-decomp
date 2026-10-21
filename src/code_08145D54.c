@@ -350,7 +350,48 @@ void enemy_face_companion(struct Owner *owner, struct Enemy *ent, struct StateOu
     ((struct Field12 *)&ent->sprite->unk12)->mid = 1;
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_start_chase.s", void enemy_start_chase(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_start_chase(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    struct Ai *ai = (struct Ai *)&ent->filler58;
+    u8 *rec = ent->unk1B0;
+    u8 idx;
+    u32 k;
+    struct Partner *partner;
+    struct ByteArg zero = { 0 };
+    u16 speed;
+    u8 zSrc;
+    s32 zTarget;
+    s32 o242;
+    s32 o244;
+    s32 tx;
+    s32 ty;
+
+    k = find_active_entry(owner, &idx) ? idx : ((u32)owner->unk208 << 30) >> 31;
+    partner = *(struct Partner **)((u8 *)owner + k * 4 + 0x28);
+    speed = ((u16 *)(rec + 0x2C))[ai->unk178];
+    o242 = 0x242;
+    tx = partner->posX + *(s16 *)((u8 *)partner + o242) * 6;
+    o244 = 0x244;
+    ty = partner->posY + *(s16 *)((u8 *)partner + o244) * 6;
+    start_move_to(ent, tx, ty, speed, zero);
+    zSrc = rec[ai->unk178 + 0x28];
+    zTarget = ent->unk14 + ent->unk18 + (zSrc << 8);
+    start_z_move(ent, zTarget, speed, 0, 0);
+    ((struct Mode3 *)&ent->unk214)->mode = 0;
+    if ((ent->unk242 | ent->unk244) != 0)
+    {
+        ent->unk2 = ((u32)(u16)angle_of_vector16(ent->unk242, ent->unk244) + 0x10) >> 8;
+    }
+    else
+    {
+        ent->unk2 = 0xff;
+    }
+    ai->unk184 = ent->unkC;
+    ai->unk188 = ent->unk10;
+    ((struct Flags8 *)&ent->unk20F)->bit2 = 1;
+    state_out->state = enemy_approach_z;
+
+}
 
 void enemy_start_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
