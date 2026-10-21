@@ -127,7 +127,7 @@ ASM_FUNC("asm/code_0815CA80/obj_cmd_motion.s", void obj_cmd_motion(void))
 
 ASM_FUNC("asm/code_0815CA80/obj_cmd_move_spawn.s", void obj_cmd_move_spawn(void))
 
-NONMATCH("asm/code_0815CA80/obj_init_e8a0.s", u32 obj_init_e8a0(struct InitObj *obj, u32 rec, u16 param))
+u32 obj_init_e8a0(struct InitObj *obj, u32 rec, u16 param)
 {
     struct ChildSprite *child;
 
@@ -145,30 +145,12 @@ NONMATCH("asm/code_0815CA80/obj_init_e8a0.s", u32 obj_init_e8a0(struct InitObj *
     obj->child38 = (struct ChildSprite *)child;
     obj_load_record(child, 0x27, -1, 0, 0);
     obj->child38->unkE = obj->unk2C;
-    {
-        s32 bits;
-        s32 cur;
-
-        bits = obj->unk2D & 3;
-        cur = ((u8 *)obj->child38)[0x1F];
-        cur = (cur & -4) | bits;
-        ((u8 *)obj->child38)[0x1F] = cur;
-        bits = (obj->unk2D & 3) << 2;
-        cur = ((u8 *)obj->child38)[0x1F];
-        cur = (cur & -13) | bits;
-        ((u8 *)obj->child38)[0x1F] = cur;
-        bits = (obj->unk2D & 3) << 4;
-        cur = ((u8 *)obj->child38)[0x1F];
-        cur = (cur & -0x31) | bits;
-        ((u8 *)obj->child38)[0x1F] = cur;
-        bits = obj->unk2D << 6;
-        cur = ((u8 *)obj->child38)[0x1F];
-        cur = (cur & 0x3F) | bits;
-        ((u8 *)obj->child38)[0x1F] = cur;
-    }
+    obj->child38->g0 = obj->unk2D;
+    obj->child38->g2 = obj->unk2D;
+    obj->child38->g4 = obj->unk2D;
+    obj->child38->g6 = obj->unk2D;
     return (u32)obj;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0815CA80/obj_cmd_home.s", void obj_cmd_home(void))
 
