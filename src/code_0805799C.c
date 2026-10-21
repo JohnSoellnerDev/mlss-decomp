@@ -46,6 +46,12 @@ struct TrackObj
     s16 scaleB[2];
 };
 
+struct MapStateScroll
+{
+    u8 filler0[0xC];
+    u16 scroll;
+};
+
 extern u8 gSceneChildClass[];
 extern u8 gMapSceneClass[];
 extern u8 gObjDigitsClass[];
@@ -76,11 +82,15 @@ ASM_FUNC("asm/code_0805799C/oam_draw_unit_markers.s", void oam_draw_unit_markers
 
 NONMATCH("asm/code_0805799C/set_obj_digits.s", u8 *set_obj_digits(u8 *obj, u8 kind, u32 unused2, u32 value, u8 small))
 {
+    u8 *p;
+
     task_insert(obj, kind);
     ((struct MapObj *)obj)->unk18 = gObjDigitsClass;
-    obj[0x21] = value % 10;
+    p = obj + 0x21;
+    *p = value % 10;
     value = value / 10;
-    obj[0x20] = value % 10;
+    p--;
+    *p = value % 10;
     value = value / 10;
     obj[0x1F] = value % 10;
     value = value / 10;
@@ -89,8 +99,9 @@ NONMATCH("asm/code_0805799C/set_obj_digits.s", u8 *set_obj_digits(u8 *obj, u8 ki
     obj[0x1D] = value % 10;
     value = value / 10;
     obj[0x1C] = value % 10;
+    p += 2;
     obj[0x23] = small % 10;
-    obj[0x22] = (u8)(small / 10) % 10;
+    *p = (u8)(small / 10) % 10;
     return obj;
 }
 END_NONMATCH
@@ -267,13 +278,52 @@ ASM_FUNC("asm/code_0805799C/clamp_camera_to_map.s", void clamp_camera_to_map(voi
 
 ASM_FUNC("asm/code_0805799C/map_obj_slots_obj_state_step.s", void map_obj_slots_obj_state_step(void))
 
-ASM_FUNC("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mode(void))
+NONMATCH("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mode(struct TrackObj *obj, u8 kind, s16 dx, s16 dy))
+{
+    s32 v;
+    u16 *pos;
+
+    switch (kind)
+    {
+    case 0:
+        if ((((struct MapStateScroll *)gUnk_03000DD0)->scroll & 0xC000) != 0x8000)
+        {
+            return;
+        }
+        pos = obj->baseA;
+        break;
+    case 1:
+        if ((((struct MapStateScroll *)gUnk_03000DD0)->scroll & 0x3000) != 0x2000)
+        {
+            return;
+        }
+        pos = &obj->baseA[1];
+        break;
+    default:
+        return;
+    }
+    v = dx;
+    pos[0] = v + pos[0];
+    pos += 3;
+    v = dy;
+    pos[0] = v + pos[0];
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0805799C/obj_slots_update.s", void obj_slots_update(void))
 
 ASM_FUNC("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(void))
 
-ASM_FUNC("asm/code_0805799C/calc_obj_scaled_pos.s", void calc_obj_scaled_pos(struct TrackObj *obj))
+void calc_obj_scaled_pos(struct TrackObj *obj)
+{
+    u16 i;
+
+    for (i = 0; i < 2; i++)
+    {
+        obj->posA[i] = obj->baseA[i] + ((obj->camX * obj->scaleA[i]) >> 2);
+        obj->posB[i] = obj->baseB[i] + ((obj->camY * obj->scaleB[i]) >> 2);
+    }
+}
 
 ASM_FUNC("asm/code_0805799C/load_map_layout.s", void load_map_layout(void))
 
