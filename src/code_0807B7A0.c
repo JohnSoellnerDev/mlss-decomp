@@ -88,6 +88,30 @@ struct PoolBits77
     u8 bit7 : 1;
 };
 
+struct RecFlags11
+{
+    u8 lo2 : 2;
+    u8 mid2 : 2;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
+
+struct RecFlags12
+{
+    u8 lo4 : 4;
+    u8 b4 : 1;
+    u8 hi3 : 3;
+};
+
+struct RecFlags29
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 rest : 6;
+};
+
 struct PoolObj
 {
     struct PoolObj *next;
@@ -140,6 +164,7 @@ struct SpriteEnt
     u8 flags13;
     u16 mask14;
     u16 unk16;
+    u8 filler18[0x1C - 0x18];
     u16 half1C;
     u8 byte1E;
     u8 filler1F[0x54 - 0x1F];
@@ -165,7 +190,7 @@ struct SpriteWorld
     u8 unkD;
     u8 unkE[0x12 - 0xE];
     u16 unk12;
-    u8 unk14[0x16 - 0x14];
+    u16 unk14;
     u16 scrollX;
     u16 scrollY;
     u8 unk1A[0x1C - 0x1A];
@@ -226,6 +251,21 @@ struct Bit0Byte
     u8 rest : 7;
 };
 
+struct SpriteFlags12
+{
+    u8 bit0 : 1;
+    u8 mid : 2;
+    u8 rest3 : 2;
+    u8 bit5 : 1;
+    u8 top : 2;
+};
+
+struct SpriteFlags13
+{
+    u8 lo2 : 2;
+    u8 rest : 6;
+};
+
 extern struct SpriteWorld *gWorld;
 extern const u8 gRomMotionTable[];
 
@@ -233,9 +273,10 @@ void heap_free(void *p);
 void obj_release_node(void *node);
 void obj_list_remove(void *node);
 void set_state_word_1780(void *resource, u32 value);
-void sprite_entry_update(void *entPtr);
+void sprite_entry_update(struct SpriteEnt *ent);
 void alloc_slot_for_node(void);
 void obj_bind_slots(void *rec);
+void obj_release_slots(void *rec);
 void list_remove_active(void *node);
 u32 sprite_node_release(u32 p);
 void sprite_update_cd0(void *sprite);
@@ -272,7 +313,7 @@ NONMATCH("asm/code_0807B7A0/update_sprite_list.s", void update_sprite_list(void)
             obj->posY = 0x50;
             if (0x20 & flags)
             {
-                sprite_entry_update(obj);
+                sprite_entry_update((struct SpriteEnt *)obj);
                 node->callback(node);
             }
             goto next;
@@ -373,7 +414,98 @@ ASM_FUNC("asm/code_0807B7A0/alloc_slot_refresh_for_node.s", void alloc_slot_refr
 ASM_FUNC("asm/code_0807B7A0/refresh_slots_for_mask.s", void refresh_slots_for_mask(void))
 
 
-ASM_FUNC("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(void *entPtr))
+NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(struct SpriteEnt *ent))
+{
+    if (ent == NULL)
+    {
+        return;
+    }
+    if (!(ent->flags12 & 0x20))
+    {
+        return;
+    }
+    list_push_active(ent);
+    if ((*(u32 *)&ent->half1C & 0x00F0FFFF) != 0x600000)
+    {
+        u16 oldMask = ent->mask14;
+        u32 link = ((u32)ent->flags13 << 30) >> 30;
+        u32 shifted;
+        u16 key;
+        u32 found;
+        u16 newMask;
+        struct SpriteEnt *node;
+        struct SpriteNode *n;
+        struct SpriteWorld *world;
+
+        sprite_update_cd0(ent);
+        if (link != 0)
+        {
+            ((struct SpriteFlags13 *)&ent->flags13)->lo2 = link;
+        }
+        newMask = ent->mask14;
+        if (oldMask != newMask)
+        {
+            gWorld->unk12 = gWorld->unk12 | newMask;
+        }
+        shifted = (u32)ent->byte1E << 28;
+        if (((ent->half1C | ((shifted >> 16) + 0x1000)) - 0x2000) <= 1)
+        {
+            if (gWorld->slot220 == NULL)
+            {
+                gWorld->slot220 = ent;
+            }
+            else if (gWorld->slot220 != ent)
+            {
+                gWorld->slot224 = ent;
+            }
+        }
+        else
+        {
+            void (*cb)(void *);
+
+            key = ((shifted >> 16) + 0x1000) | ent->unk16;
+            found = find_entry_code(gWorld->table248, key);
+            if ((found << 16) == 0xFFFF0000)
+            {
+                return;
+            }
+            node = gModelCtx->list30;
+            if (node != NULL)
+            {
+                do
+                {
+                    if (!(node->flags12 & 0x20) && node != ent && node->mask14 == ent->mask14
+                        && ((struct SpriteFlags13 *)&node->flags13)->lo2 != 0)
+                    {
+                        return;
+                    }
+                    node = node->next68;
+                } while (node != NULL);
+            }
+            cb = (void (*)(void *))alloc_slot_for_node;
+            world = gWorld;
+            n = world->freeNodes;
+            world->freeNodes = n->next;
+            n->next = world->list4C;
+            n->callback = cb;
+            n->timer = 0;
+            world->list4C = n;
+            n->entry = (struct SpriteEntry *)ent;
+        }
+    }
+    else
+    {
+        if (ent->ptr54 == 0)
+        {
+            return;
+        }
+        ((struct SpriteFlags12 *)&ent->flags12)->bit5 = 0;
+        ((struct SpriteFlags12 *)&ent->flags12)->mid = 0;
+        ent->mask14 = 0x7800;
+        ((struct SpriteFlags13 *)&ent->flags13)->lo2 = 0;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/obj_bind_slots.s", void obj_bind_slots(void *rec))
 
@@ -425,7 +557,128 @@ none:
     return obj;
 }
 
-ASM_FUNC("asm/code_0807B7A0/obj_release.s", void obj_release(void))
+NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj))
+{
+    if (obj != NULL)
+    {
+        ((struct StateBits *)&obj->flags76)->kind = 0;
+        obj_list_remove(obj);
+        if (obj->link68 != 0 && obj->link68 != (u32)obj_release)
+        {
+            ((void (*)(void *))obj->link68)(obj);
+        }
+        if (obj->ring != NULL)
+        {
+            struct PoolObj *ringHead = (struct PoolObj *)((u8 *)obj->ring + 8);
+
+            if (obj == ringHead)
+            {
+                struct PoolObj *child = obj->sibling;
+
+                if (child != NULL)
+                {
+                    do
+                    {
+                        struct PoolObj *next = child->sibling;
+
+                        if (child->flags79 & 8)
+                        {
+                            obj_release(child);
+                        }
+                        child = next;
+                    } while (child != NULL);
+                }
+            }
+            else
+            {
+                struct PoolObj *prev = ringHead;
+
+                while (prev->sibling != NULL && obj != prev->sibling)
+                {
+                    prev = prev->sibling;
+                }
+                if (prev->sibling != NULL)
+                {
+                    prev->sibling = obj->sibling;
+                    obj->sibling = NULL;
+                }
+            }
+        }
+        {
+            u32 node = (u32)obj->buffer;
+
+            if (node != 0)
+            {
+                do
+                {
+                    node = sprite_node_release(node);
+                } while (node != 0);
+            }
+        }
+        if (obj->unk4 != NULL)
+        {
+            ((struct PoolObj *)obj->unk4)->unk4 = NULL;
+            obj->unk4 = NULL;
+        }
+        {
+            struct PoolRecord *rec = obj->record;
+
+            rec->unk20 = 0x10;
+            rec->unk4 = 0x100;
+            rec->unk6 = 0x100;
+            rec->unk8 = 0x100;
+            rec->unkA = 0x100;
+            rec->unkC = 0;
+            ((struct RecFlags11 *)&rec->flags11)->mid2 = 0;
+            ((struct RecFlags11 *)&rec->flags11)->b4 = 0;
+            ((struct RecFlags11 *)&rec->flags11)->b5 = 0;
+            ((struct RecFlags11 *)&rec->flags11)->b6 = 0;
+            ((struct RecFlags11 *)&rec->flags11)->b7 = 0;
+            ((struct RecFlags12 *)&rec->flags12)->b4 = 0;
+            ((struct RecFlags29 *)&rec->flags29)->b1 = 0;
+            rec->unk5C = 0;
+            rec->unk60 = 0;
+            obj_bind_slots(rec);
+            list_remove_active(rec);
+        }
+        {
+            struct PoolObj *prev = NULL;
+            struct PoolObj *cur = gWorld->list78;
+
+            for (;;)
+            {
+                if (cur == NULL)
+                {
+                    break;
+                }
+                if (cur == obj)
+                {
+                    if (prev != NULL)
+                    {
+                        prev->next = obj->next;
+                    }
+                    else
+                    {
+                        gWorld->list78 = obj->next;
+                    }
+                    break;
+                }
+                prev = cur;
+                cur = cur->next;
+            }
+        }
+        {
+            u32 pos = (u32)obj - 0x1000;
+
+            if (pos - (u32)gWorkBuf <= 0xCFF)
+            {
+                ((struct PoolFlags *)&obj->flags76)->mode = 0;
+            }
+        }
+        obj->unk54 = 0;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/draw_sprite_nodes.s", void draw_sprite_nodes(void))
 
