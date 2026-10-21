@@ -72,6 +72,26 @@ struct SysRam
     u8 lang8C0;
 };
 
+struct Desc
+{
+    u8 filler0[0xC];
+    s32 posX;
+    s32 posY;
+    s32 tag;
+    s32 unk18;
+    u8 filler1C[0x54 - 0x1C];
+    u8 unk54;
+};
+
+struct HitEntry
+{
+    u8 flags;
+    u8 gx;
+    u8 gy;
+    u8 tag;
+    u8 filler4[8];
+};
+
 extern struct SysRam gSys;
 extern const u16 gInputSequenceKeys[];
 u8 *bank_data_5bit(u16 bank, u8 *out);
@@ -143,7 +163,97 @@ NONMATCH("asm/code_08025650/obj_collision_mask.s", u32 obj_collision_mask(struct
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08025650/obj_test_mode.s", void obj_test_mode(void))
+struct TestRec
+{
+    u16 h0;
+    u16 h2;
+};
+
+struct TestTab
+{
+    u8 filler0[4];
+    u16 h4;
+    u16 h6;
+};
+
+extern u8 gUnk_02000100[];
+
+NONMATCH("asm/code_08025650/obj_test_mode.s", u32 obj_test_mode(struct Obj *obj, u32 mode))
+{
+    struct TestTab *tab;
+    struct TestRec *rec;
+
+    if (obj->testLevel <= 1)
+        return 0;
+    if (mode > 7)
+        return 0;
+    {
+        {
+            switch (mode)
+            {
+            case 0:
+                rec = (struct TestRec *)obj->record;
+                if ((rec->h0 & 0x300) == 0)
+                {
+                    tab = (struct TestTab *)obj->sub200->table;
+                    if (rec->h2 & tab->h4)
+                        return 1;
+                }
+                break;
+            case 1:
+                rec = (struct TestRec *)obj->record;
+                if ((rec->h0 & 0x300) == 0)
+                {
+                    tab = (struct TestTab *)obj->sub204->table;
+                    if (rec->h2 & tab->h4)
+                        return 1;
+                }
+                break;
+            case 2:
+                rec = (struct TestRec *)obj->record;
+                tab = (struct TestTab *)obj->sub204->table;
+                if (rec->h0 & tab->h6)
+                    break;
+                tab = (struct TestTab *)obj->sub200->table;
+                if (rec->h2 & tab->h6)
+                    return 1;
+                break;
+            case 3:
+                rec = (struct TestRec *)obj->record;
+                tab = (struct TestTab *)obj->sub200->table;
+                if (rec->h0 & tab->h6)
+                    break;
+                tab = (struct TestTab *)obj->sub204->table;
+                if (rec->h2 & tab->h6)
+                    return 1;
+                break;
+            case 4:
+                rec = (struct TestRec *)obj->record;
+                if (rec->h2 & 8)
+                    return 1;
+                break;
+            case 5:
+                rec = (struct TestRec *)obj->record;
+                if ((*(u32 *)rec & 0xFFFF0300) == 0x40000)
+                    return 1;
+                break;
+            case 6:
+                rec = (struct TestRec *)obj->record;
+                if ((*(u32 *)rec & 0x01000200) == 0x01000200)
+                    return 1;
+                if ((*(u32 *)rec & (u32)gUnk_02000100) == (u32)gUnk_02000100)
+                    return 1;
+                break;
+            case 7:
+                if ((gSys.keys28 & 0x300) == 0x300)
+                    return 1;
+                break;
+            }
+        }
+    }
+    return 0;
+}
+END_NONMATCH
 
 u32 obj_sequence_step(struct Obj *obj)
 {
@@ -177,7 +287,67 @@ u32 obj_sequence_step(struct Obj *obj)
 
 ASM_FUNC("asm/code_08025650/obj_fill_sprite_entry.s", void obj_fill_sprite_entry(void))
 
-ASM_FUNC("asm/code_08025650/obj_find_hit_entry.s", void obj_find_hit_entry(void))
+NONMATCH("asm/code_08025650/obj_find_hit_entry.s", u32 obj_find_hit_entry(struct Obj *obj, struct Desc *desc))
+{
+    struct HitEntry *e;
+    s32 i;
+    s32 t;
+    u16 px;
+    u16 py;
+    s16 tag;
+    s32 x1;
+    s32 y1;
+    s32 xa;
+    s32 xb;
+    s32 ya;
+    s32 x0;
+    s32 y0;
+
+    if (obj->entryCount != 0)
+    {
+        e = (struct HitEntry *)obj->entryBytes;
+        t = desc->posX;
+        if (t < 0)
+            t += 0xFF;
+        px = t >> 8;
+        t = desc->posY;
+        if (t < 0)
+            t += 0xFF;
+        py = t >> 8;
+        t = desc->tag;
+        if (t < 0)
+            t += 0x7FF;
+        tag = t >> 11;
+        for (i = 0; i < obj->entryCount; e++, i++)
+        {
+            if (e->flags & 2)
+                continue;
+            if (desc->unk18 != 0)
+                continue;
+            if (tag != e->tag)
+                continue;
+            if (desc->unk54 != 1 && !(e->flags & 1))
+                continue;
+            x0 = e->gx << 4;
+            x1 = x0 + 0xF;
+            y0 = e->gy << 4;
+            y1 = y0 + 0xF;
+            xa = x0 + 4;
+            xb = x1 - 4;
+            ya = y0 + 7;
+            if ((s16)px >= xa && (s16)px <= xb && (s16)py >= ya && (s16)py <= y1)
+                return i;
+            xa -= 8;
+            xb += 8;
+            ya -= 8;
+            y1 += 8;
+            if ((s16)px >= xa && (s16)px <= xb && (s16)py >= ya && (s16)py <= y1)
+                return i | 0x80;
+        }
+    }
+    return -1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08025650/obj_draw_desc_entries.s", void obj_draw_desc_entries(void))
 
