@@ -60,6 +60,8 @@ struct SpriteObj
     u8 unk75;
     u8 filler76[0x79 - 0x76];
     u8 flags79;
+    u8 filler7A[0xC5 - 0x7A];
+    s8 unkC5;
 };
 
 struct SpriteHead
@@ -120,6 +122,12 @@ struct SpriteLo2Bits
     u8 lo2 : 2;
 };
 
+struct SpriteBit4Bits
+{
+    u8 lo4 : 4;
+    u8 bit4 : 1;
+};
+
 struct SpriteBit2Bits
 {
     u8 lo2 : 2;
@@ -152,7 +160,9 @@ struct SpriteState
     u8 unkD;
     u8 filler0E[2];
     u8 unk10;
-    u8 filler11[0x58 - 0x11];
+    u8 filler11[0x12 - 0x11];
+    u16 unk12;
+    u8 filler14[0x58 - 0x14];
     struct SpritePart *part58[6];
     u8 filler70[0x1F0 - 0x70];
     u32 unk1F0;
@@ -241,10 +251,102 @@ extern const u16 gActionCodes[];
 ASM_FUNC("asm/code_08081DA4/move_slots_toward.s", void move_slots_toward(struct SpriteObj *obj))
 
 void state_start_wait(struct SpriteTask *task);
-ASM_FUNC("asm/code_08081DA4/state_show_and_scale.s", void state_show_and_scale(void))
+static inline void show_part_scaled(struct SpriteObj *obj, s32 index)
+{
+    struct SpritePart *part = gWorld->part58[index];
+    struct SpriteObj *slotObj = (struct SpriteObj *)((u8 *)part + 8);
+    s32 objSize;
+    s32 slotSize;
+    s32 scale;
+    s32 ratio;
+    s16 kind;
+
+    if ((part->flags7E & 6) == 4)
+    {
+        objSize = obj->head->size108;
+        slotSize = slotObj->head->size108;
+        kind = *(s16 *)&obj->head->unkEC;
+        scale = (kind == -1) ? 0x78 : 0x8C;
+        ratio = (scale * objSize) / slotSize;
+        anim_bit100_step(slotObj->head, ratio);
+        sprite_set_action(slotObj, 0, -1, 0);
+    }
+}
+
+void state_show_and_scale(struct SpriteTask *task)
+{
+    struct SpriteObj *obj = task->obj;
+    s32 flag;
+    s32 anim;
+    s32 slot;
+
+    flag = gWorld->unk2BE & 1;
+    anim = 0x2054;
+    if (flag == 0)
+    {
+        anim -= 0x2F;
+    }
+    sprite_set_action(obj, 3, anim, 0);
+    ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
+    effect_spawn_at(0x1E0, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+    for (slot = 0; slot <= 5; slot += 2)
+    {
+        show_part_scaled(obj, slot);
+        show_part_scaled(obj, slot + 1);
+    }
+    task->timer = 0x1E;
+    task->next = state_start_wait;
+}
 
 void state_start_motion(struct SpriteTask *task);
-ASM_FUNC("asm/code_08081DA4/state_random_step.s", void state_random_step(void))
+NONMATCH("asm/code_08081DA4/state_random_step.s", void state_random_step(struct SpriteTask *task))
+{
+    struct SpriteObj *obj = task->obj;
+    s32 speed;
+    s32 left;
+    s32 first;
+    s32 second;
+    s32 code;
+    s16 *timer;
+    s32 (*fn)(s32, s32);
+    s32 three;
+
+    sprite_sum_parts(obj);
+    speed = rand_below(3, mt19937_next()) + 1;
+    if (gWorld->unkD & 1)
+    {
+        speed <<= 1;
+    }
+    timer = &obj->head->timerF6;
+    if (*timer <= speed)
+    {
+        left = 0;
+    }
+    else
+    {
+        left = (u16)*timer - speed;
+    }
+    *timer = left;
+    number_popup(speed, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100 + obj->unkC5, 1, 0xB, 0);
+    code = gActionCodes[5];
+    if ((1 & gWorld->unk2BE) != 0)
+    {
+        code++;
+    }
+    sprite_set_action(obj, 0, code, 0);
+    ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
+    task->timer = 4;
+    fn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    three = 3;
+    first = fn((obj->head->unkD8 + obj->unk38 * three) / 0x100, 4);
+    fn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    second = fn((obj->head->unkDC + obj->unk3C * three) / 0x100, 4);
+    place_targets(obj, first, second, 0, 0x100);
+    set_step_and_offsets(obj, 0x700, obj->unk40 / 0x100 + 0x18);
+    task->timer--;
+    task->next = state_start_motion;
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_08081DA4/state_timed_motion.s", void state_timed_motion(struct SpriteTask *task))
@@ -823,7 +925,79 @@ void state_wait_mode_bit1(struct SpriteTask *task)
 
 ASM_FUNC("asm/code_08081DA4/init_sprite_pools.s", void init_sprite_pools(void))
 
-ASM_FUNC("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_display(void))
+NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_display(void))
+{
+    u32 mask;
+    u8 *dst;
+    u8 *src;
+    u16 *keys;
+    struct DispEntry *ent;
+    s32 kind;
+    s32 code;
+    s32 i;
+
+    if ((u8)sub_obj_running(gWorld->unk248) != 0)
+    {
+        keys = (u16 *)&gSys[0x884];
+        mask = *(u16 *)gSys & keys[1];
+        mask &= gWorld->unk12;
+        dst = gUnk_02000280;
+        src = *(u8 **)((u8 *)gWorld->unk248 + 0x1C) + 0x200;
+        if (mask != 0)
+        {
+            do
+            {
+                if ((mask & 1) != 0)
+                {
+                    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(dst, src, 0x20);
+                }
+                mask >>= 1;
+                dst += 0x20;
+                src += 0x20;
+            } while (mask != 0);
+        }
+    }
+    gWorld->unk12 = 0;
+    ent = gWorld->list1F8;
+    if (ent != 0)
+    {
+        kind = ent->flag8;
+        if (kind == 0)
+        {
+            code = (((u32)*(u8 *)ent) << 30) >> 30;
+            if (code == 1)
+            {
+                MEM_ROUTINE(void (*)(u8 *, u32, s32), iwram_copy)((u8 *)ent->value + ent->arg2, ent->val, (((s16)ent->head) >> 2) << 5);
+            }
+            else if (code == 2)
+            {
+                dma_copy_or_queue((u8 *)ent->value + ent->arg2, (void *)ent->val, (((s16)ent->head) >> 2) << 5, 0x20, kind);
+            }
+            if (ent == (struct DispEntry *)(gWorkBuf + 0x3668))
+            {
+                gWorld->list1F8 = 0;
+            }
+            else
+            {
+                gWorld->list1F8 = gWorld->list1F8 - 1;
+            }
+        }
+        else if (kind == 1)
+        {
+            table_register((u8 *)ent + 8);
+        }
+    }
+    ((struct SpriteBit4Bits *)&gWorld->unkB)->bit4 = 0;
+    for (i = 0; i < 0x20; i++)
+    {
+        if (gUnk_03000C88[i] != 0)
+        {
+            ((struct SpriteBit4Bits *)&gWorld->unkB)->bit4 = 1;
+            break;
+        }
+    }
+}
+END_NONMATCH
 
 void unknown_code_08082f54(u16 *list)
 {
