@@ -48,7 +48,7 @@ void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
 void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
 
-NONMATCH("asm/code_08182EB8/obj_spring_turn_points_2eb8.s", void obj_spring_turn_points_2eb8(struct PtObj *obj))
+void obj_spring_turn_points_2eb8(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
     s32 *pt;
@@ -61,6 +61,8 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_2eb8.s", void obj_spring_turn
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 x;
     s32 y;
     s32 z;
@@ -98,10 +100,12 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_2eb8.s", void obj_spring_turn
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -157,11 +161,10 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_2eb8.s", void obj_spring_turn
     *pt++ = angle;
     *pt = angVel;
 }
-END_NONMATCH
 
 
 
-NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3120.s", void obj_spring_turn_points_3120(struct PtObj *obj))
+void obj_spring_turn_points_3120(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
     s32 *pt;
@@ -174,6 +177,8 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3120.s", void obj_spring_turn
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 x;
     s32 y;
     s32 z;
@@ -211,10 +216,12 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3120.s", void obj_spring_turn
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -270,10 +277,9 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3120.s", void obj_spring_turn
     *pt++ = angle;
     *pt = angVel;
 }
-END_NONMATCH
 
 
-NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3388.s", void obj_spring_turn_points_3388(struct PtObj *obj))
+void obj_spring_turn_points_3388(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
     s32 *pt;
@@ -286,6 +292,8 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3388.s", void obj_spring_turn
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 x;
     s32 y;
     s32 z;
@@ -323,10 +331,12 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3388.s", void obj_spring_turn
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -382,10 +392,9 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_3388.s", void obj_spring_turn
     *pt++ = angle;
     *pt = angVel;
 }
-END_NONMATCH
 
 
-NONMATCH("asm/code_08182EB8/obj_spring_turn_points_35f0.s", void obj_spring_turn_points_35f0(struct PtObj *obj))
+void obj_spring_turn_points_35f0(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
     s32 *pt;
@@ -398,6 +407,8 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_35f0.s", void obj_spring_turn
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 x;
     s32 y;
     s32 z;
@@ -435,10 +446,12 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_35f0.s", void obj_spring_turn
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -494,7 +507,6 @@ NONMATCH("asm/code_08182EB8/obj_spring_turn_points_35f0.s", void obj_spring_turn
     *pt++ = angle;
     *pt = angVel;
 }
-END_NONMATCH
 
 
 void obj_scroll_point_3858(struct PtObj *obj)
@@ -681,9 +693,11 @@ void obj_scroll_bounce_point_3978(struct PtObj *obj)
 }
 
 
-NONMATCH("asm/code_08182EB8/obj_grow_turn_points_3ac0.s", void obj_grow_turn_points_3ac0(struct PtObj *obj))
+void obj_grow_turn_points_3ac0(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
+    s16 *cs;
+    s16 *sn;
     s32 *pt;
     s32 zoom;
     s32 angle;
@@ -731,10 +745,12 @@ NONMATCH("asm/code_08182EB8/obj_grow_turn_points_3ac0.s", void obj_grow_turn_poi
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -791,13 +807,14 @@ NONMATCH("asm/code_08182EB8/obj_grow_turn_points_3ac0.s", void obj_grow_turn_poi
     *pt++ = angle;
     *pt = angVel;
 }
-END_NONMATCH
 
 
 
-NONMATCH("asm/code_08182EB8/obj_damped_zoom_turn_points_3d24.s", void obj_damped_zoom_turn_points_3d24(struct PtObj *obj))
+void obj_damped_zoom_turn_points_3d24(struct PtObj *obj)
 {
     struct { s32 x; s32 y; s32 z; u32 model; } l;
+    s16 *cs;
+    s16 *sn;
     s32 *pt;
     s32 zoom;
     s32 step;
@@ -847,10 +864,12 @@ NONMATCH("asm/code_08182EB8/obj_damped_zoom_turn_points_3d24.s", void obj_damped
         z1 = (z * zoom) / 0x100;
         l.z = z1;
         y2 = z1;
-        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -909,7 +928,6 @@ NONMATCH("asm/code_08182EB8/obj_damped_zoom_turn_points_3d24.s", void obj_damped
     *pt++ = angle;
     *pt = height;
 }
-END_NONMATCH
 
 
 
