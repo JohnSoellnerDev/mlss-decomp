@@ -114,7 +114,9 @@ struct Enemy
     s16 hitTop;
     s16 hitLeft;
     s16 hitRight;
-    u8 filler140[0x198 - 0x140];
+    u8 unk140;
+    u8 unk141;
+    u8 filler142[0x198 - 0x142];
     EnemyFn unk198;
     EnemyFn unk19C;
     EnemyFn unk1A0[2];
@@ -327,7 +329,77 @@ void obj_orbit_circle_step(struct Enemy *obj)
     obj->vy = obj->posY - obj->prevY;
 }
 
-ASM_FUNC("asm/code_081393B0/obj_pick_dir_toward_owner.s", u32 obj_pick_dir_toward_owner(struct Owner *owner, struct Enemy *obj))
+NONMATCH("asm/code_081393B0/obj_pick_dir_toward_owner.s", u32 obj_pick_dir_toward_owner(struct Owner *owner, struct Enemy *obj))
+{
+    struct HitBox *hit = (struct HitBox *)((u8 *)obj + 0x100);
+    struct Partner *ent;
+    s32 px;
+    s32 py;
+    u8 flag;
+    u16 margin;
+    s32 roll;
+    s32 t;
+
+    if ((obj->unk140 | obj->unk141) == 0)
+    {
+        return 0xFF;
+    }
+    ent = owner_entry(owner, 0xFF);
+    t = obj->posX;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    px = t >> 8;
+    t = obj->posY;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    py = t >> 8;
+    flag = *(u8 *)((u8 *)obj + 0x136) & 1;
+    margin = *(s16 *)((u8 *)hit + 0x30) * flag;
+    if (ent == NULL)
+    {
+        return 0xFF;
+    }
+    roll = (s16)rand_below(0x64, mt19937_next());
+    if ((s8)obj->unk140 > roll)
+    {
+        if (obj->posX >= ent->posX)
+        {
+            if (px - (s16)margin <= hit->hitLeft)
+            {
+                return 0xFF;
+            }
+            return 2;
+        }
+        if (px + (s16)margin >= hit->hitRight)
+        {
+            return 0xFF;
+        }
+        return 3;
+    }
+    roll = roll - (s8)obj->unk140;
+    if ((s8)obj->unk141 <= (s16)roll)
+    {
+        return 0xFF;
+    }
+    if (obj->posY >= ent->posY)
+    {
+        if (py - (s16)margin <= hit->hitBottom)
+        {
+            return 0xFF;
+        }
+        return 0;
+    }
+    if ((s16)margin + py >= hit->hitTop)
+    {
+        return 0xFF;
+    }
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/load_record_fields.s", void load_record_fields(struct Enemy *obj, s16 index))
 
