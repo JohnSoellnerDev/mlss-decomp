@@ -65,7 +65,11 @@ struct Rec
     s32 x;
     s32 y;
     s32 h;
-    u8 filler24[0x7E - 0x24];
+    u8 filler24[0x40 - 0x24];
+    s32 baseX;
+    s32 baseY;
+    s32 baseH;
+    u8 filler4C[0x7E - 0x4C];
     u8 flags7E;
     u8 filler7F[0x81 - 0x7F];
     u8 flags81;
@@ -182,7 +186,109 @@ void state_stack_fall_step(struct Actor *obj);
 s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
 s32 move_step(u16 *outX, u16 *outY, u16 *outH, s32 dx, s32 dy, s32 dh, s32 speed);
 void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
+void on_arrive(struct Actor *obj);
+void snap_to_target(struct Actor *obj);
 
-ASM_FUNC("asm/code_08088F78/approach_target.s", void approach_target(void))
+void approach_target(struct Actor *obj)
+{
+    struct Actor *owner;
+    struct Rec *target;
+    s16 *dxPtr;
+    s16 *dyPtr;
+    s16 *dhPtr;
+    s32 targetX;
+    s32 targetY;
+    s32 targetH;
+    s32 x;
+    s32 y;
+    s32 h;
+    s32 xTile;
+    s32 yTile;
+    s32 hTile;
+    s32 bxTile;
+    s32 byTile;
+    s32 bhTile;
+    s32 distPos;
+    s32 distBase;
+    s32 near;
 
-ASM_FUNC("asm/code_08088F78/snap_to_target.s", void snap_to_target(void))
+    owner = obj->owner;
+    dxPtr = &obj->dx;
+    x = *dxPtr + obj->baseX;
+    obj->x = x;
+    dyPtr = &obj->dy;
+    y = obj->baseY + *dyPtr;
+    obj->y = y;
+    dhPtr = &obj->dh;
+    h = obj->baseH + *dhPtr;
+    obj->h = h;
+
+    target = owner->data;
+    targetX = target->targetX;
+    xTile = (x - targetX) / 0x10;
+    targetY = target->targetY;
+    yTile = (y - targetY) / 0x10;
+    targetH = target->targetH;
+    hTile = (h - targetH) / 0x10;
+    bxTile = (obj->baseX - targetX) / 0x10;
+    byTile = (obj->baseY - targetY) / 0x10;
+    bhTile = (obj->baseH - targetH) / 0x10;
+
+    near = 0;
+    distPos = xTile * xTile + yTile * yTile + hTile * hTile;
+    distBase = bxTile * bxTile + byTile * byTile + bhTile * bhTile;
+    if (distPos < distBase)
+        near = 1;
+    if (!near)
+    {
+        struct Rec *rec = obj->data;
+
+        move_step(dxPtr, dyPtr, dhPtr, rec->targetX - obj->baseX, rec->targetY - obj->baseY, rec->targetH - obj->baseH, 0x500);
+        obj->state = snap_to_target;
+    }
+}
+
+void snap_to_target(struct Actor *obj)
+{
+    struct Rec *rec;
+    s32 targetX;
+    s32 *targetYPtr;
+    s32 *targetHPtr;
+    s32 dxTile;
+    s32 dyTile;
+    s32 dhTile;
+    s32 bxTile;
+    s32 byTile;
+    s32 bhTile;
+    s32 distPos;
+    s32 distBase;
+    s32 near;
+
+    rec = obj->data;
+    obj->x = obj->baseX + obj->dx;
+    obj->y = obj->baseY + obj->dy;
+    obj->h = obj->baseH + obj->dh;
+
+    dxTile = (rec->x - rec->targetX) / 0x10;
+    targetX = rec->targetX;
+    targetYPtr = &rec->targetY;
+    dyTile = (rec->y - *targetYPtr) / 0x10;
+    targetHPtr = &rec->targetH;
+    dhTile = (rec->h - *targetHPtr) / 0x10;
+    bxTile = (rec->baseX - targetX) / 0x10;
+    byTile = (rec->baseY - *targetYPtr) / 0x10;
+    bhTile = (rec->baseH - *targetHPtr) / 0x10;
+
+    near = 0;
+    distPos = dxTile * dxTile + dyTile * dyTile + dhTile * dhTile;
+    distBase = bxTile * bxTile + byTile * byTile + bhTile * bhTile;
+    if (distPos < distBase)
+        near = 1;
+    if (!near)
+    {
+        obj->x = targetX;
+        obj->y = *targetYPtr;
+        obj->h = *targetHPtr;
+        on_arrive(obj);
+    }
+}
