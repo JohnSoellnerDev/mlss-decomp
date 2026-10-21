@@ -393,7 +393,59 @@ void obj_timer_action6_or_8(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08062ADC/obj_begin_chain.s", void obj_begin_chain(struct ActorObj *obj))
+NONMATCH("asm/code_08062ADC/obj_begin_chain.s", void obj_begin_chain(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    struct ChainNode *node;
+    struct ChainNode **slot;
+    struct ActorPart *data;
+    u8 *world;
+    s32 order;
+    s32 i;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xC, 0, 0);
+        child = obj_spawn(obj->part, 0x40D9, obj->posX / 0x100 - 8, obj->posY / 0x100,
+                          obj->posH / 0x100 + 0x18, ((u32)obj->pose->flip << 25) >> 31, 1);
+        obj->child = child;
+        child->dx = 0;
+        child->flags79 |= 1;
+        child->targetX = child->baseX;
+        child->targetY = child->baseY;
+        child->targetH = child->baseH;
+        child->tag = 0;
+        child->unk76 |= 6;
+        child->owner = obj->owner;
+        child->param9C = obj->param9C;
+        child->paramA0 = obj->paramA0;
+        child->paramA4 = obj->paramA4;
+        child->paramA8 = obj->paramA8;
+        child->desc = sprite_node_take();
+        child->desc->pose = child->pose;
+        child->desc->node = &child->chainHead;
+        world = gWorld;
+        order = ((struct Lo5Bits *)(world + 7))->lo5;
+        ((struct Lo5Bits *)(world + 7))->lo5 = order - 1;
+        ((struct Lo5Bits *)&child->desc->order)->lo5 = order;
+        slot = &child->chainHead;
+        for (i = 0; i < 11; i++)
+        {
+            node = sprite_node_alloc(child->posX, child->posY, child->posH);
+            *slot = node;
+            slot = &node->next;
+        }
+        *slot = 0;
+        child->state = chain_link_step;
+        data = obj->owner->part;
+        obj->targetX = data->targetX;
+        obj->targetY = data->targetY;
+        obj->targetH = data->targetH;
+        set_slot_value(0x10B, -1);
+        obj->state = obj_chain_wait;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08062ADC/chain_metric.s", s32 chain_metric(struct ActorObj *obj))
 
