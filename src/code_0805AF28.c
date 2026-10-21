@@ -381,12 +381,14 @@ NONMATCH("asm/code_0805AF28/map_layer3_entry.s", void map_layer3_entry(struct Ma
     u16 idx;
     u16 flags;
     struct Layer3Entry *entry;
+    struct Layer3Entry *list;
 
     idx = index;
     variant = gUnk_03000DD0[0xA];
     if (variant != 0)
     {
-        entry = &((struct Layer3Entry *)gLayer3Table[variant][0])[idx];
+        list = (struct Layer3Entry *)gLayer3Table[variant][0];
+        entry = (struct Layer3Entry *)((u32)idx * 20 + (u32)list);
         if (entry->rect0 != NULL)
             map_put_rect(obj, 0, entry->rect0);
         if (entry->rect1 != NULL)
