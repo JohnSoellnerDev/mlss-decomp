@@ -116,6 +116,13 @@ struct Bits2B6
     u8 bit7 : 1;
 };
 
+struct Bits1D6
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 rest : 6;
+};
+
 struct Bits20D
 {
     u8 lo3 : 3;
@@ -163,7 +170,36 @@ void obj_random_target_b(struct Owner *owner, struct Enemy *obj, u32 *out)
 
 ASM_FUNC("asm/code_08137B08/obj_move_to_target.s", void obj_move_to_target(void))
 
-ASM_FUNC("asm/code_08137B08/obj_random_pose_short.s", void obj_random_pose_short(void))
+void obj_random_pose_short(struct Owner *owner, struct Enemy *obj, u32 *out)
+{
+    s16 *posA;
+    u16 *table;
+    s16 *posB;
+    struct Sprite *sprite;
+    u32 pick;
+    u16 palette;
+    u16 v;
+
+    table = obj->unk100;
+    v = obj->unk1C4;
+    posA = &obj->unk1B8;
+    *posA = v;
+    v = obj->unk1C6;
+    posB = &obj->unk1BA;
+    *posB = v;
+    pick = rand_below(4, mt19937_next());
+    sprite = obj->sprite;
+    palette = obj->unk108[(u16)pick];
+    obj->unk239 = palette;
+    sprite->unk20 = palette;
+    table += (u16)pick;
+    obj->unk23E = *table;
+    obj_start_move_quarter(obj, 0, *posA << 8, *posB << 8);
+    obj_move_interp(obj);
+    ((struct Bits1D6 *)&obj->unk1D6)->bit0 = 0;
+    ((struct Bits1D6 *)&obj->unk1D6)->bit1 = 1;
+    out[0] = (u32)move_step_handler;
+}
 
 
 ASM_FUNC("asm/code_08137B08/obj_link_sprites.s", void obj_link_sprites(void))
@@ -312,8 +348,8 @@ NONMATCH("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(struc
     s32 a;
     s32 b;
     u8 *flags;
-    u32 value;
-    u32 mask;
+    u8 value;
+    u8 mask;
 
     a_raw = obj->unk110[obj->unk1D0];
     b_raw = obj->unk118[obj->unk1D0];
@@ -366,7 +402,8 @@ NONMATCH("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(s
                 t += 0xFF;
             }
             t >>= 8;
-            obj->unk1BE = t - obj->unk1BC;
+            t -= obj->unk1BC;
+            obj->unk1BE = t;
             obj->unk1C0 = obj->unk1CC * 2;
             obj->unk24C = (s16)obj->unk1BC << 8;
             obj->unk250 = 0;
