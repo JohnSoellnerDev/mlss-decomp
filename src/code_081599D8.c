@@ -600,7 +600,7 @@ NONMATCH("asm/code_081599D8/sub_08159F78.s", void *sub_08159F78(struct GameVars 
     s32 i;
     s32 slot;
 
-    for (i = 0, p = game->unk1898; i <= 0xFF; i += 8, p += 8)
+    for (i = 0, p = game->unk1898; i <= 0xFF; p += 8, i += 8)
     {
         if (p[0] == 0)
             goto store;
@@ -1017,7 +1017,69 @@ ASM_FUNC("asm/code_081599D8/irq_hblank_fx_bg.s", void irq_hblank_fx_bg(void))
 
 ASM_FUNC("asm/code_081599D8/irq_hblank_fx_blend.s", void irq_hblank_fx_blend(void))
 
-ASM_FUNC("asm/code_081599D8/obj_overlap_box.s", void obj_overlap_box(void))
+NONMATCH("asm/code_081599D8/obj_overlap_box.s", s32 obj_overlap_box(struct SceneObj *a, struct SceneObj *b))
+{
+    s32 aw;
+    s32 ah;
+    s32 bw;
+    s32 bh;
+    s32 d;
+    s32 ax;
+    s32 bx;
+    s32 ay;
+    s32 by;
+    u32 dxp;
+    u32 dyp;
+
+    aw = a->unk28 >> 1;
+    ah = a->unk29 >> 1;
+    bw = b->unk28 >> 1;
+    bh = b->unk29 >> 1;
+    ax = a->unk04;
+    bx = b->unk04;
+    if (ax > bx)
+    {
+        d = ax - bx;
+        dxp = ((u32)d << 8) >> 16;
+    }
+    else if (ax < bx)
+    {
+        d = bx - ax;
+        dxp = ((u32)d << 8) >> 16;
+    }
+    else
+    {
+        dxp = 0;
+    }
+    ay = (a->unk08 >> 8) - ah;
+    by = (b->unk08 >> 8) - bh;
+    ay = (s16)ay;
+    by = (s16)by;
+    if (ay > by)
+    {
+        d = ay - by;
+        dyp = ((u32)d << 16) >> 16;
+    }
+    else if (ay < by)
+    {
+        d = by - ay;
+        dyp = ((u32)d << 16) >> 16;
+    }
+    else
+    {
+        dyp = 0;
+    }
+    if ((s16)dxp > aw + bw)
+    {
+        return 0;
+    }
+    if ((s16)dyp > ah + bh)
+    {
+        return 0;
+    }
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081599D8/transition_scene_init.s", void transition_scene_init(void))
 
