@@ -220,7 +220,50 @@ void obj_halt(struct Obj *obj, u8 flag)
     }
 }
 
-ASM_FUNC("asm/code_08151144/edge_facing_ok.s", void edge_facing_ok(void))
+NONMATCH("asm/code_08151144/edge_facing_ok.s", u32 edge_facing_ok(struct Obj *obj, s32 x, s32 y, u8 dir, u8 s0, u8 s1))
+{
+    s32 edge;
+
+    edge = obj->width283 << 8;
+    if (x <= edge)
+    {
+        if (y <= edge)
+        {
+            if ((((u32)obj->unk24 << 29) >> 29) == dir)
+            {
+                return 1;
+            }
+            if ((((u32)obj->unk24 << 29) >> 29) == s0)
+            {
+                return 1;
+            }
+            if ((((u32)obj->unk24 << 29) >> 29) != s1)
+            {
+                return 0;
+            }
+            return 1;
+        }
+        if ((((u32)obj->unk24 << 29) >> 29) == s0)
+        {
+            return 1;
+        }
+        return 0;
+    }
+    if (y <= edge)
+    {
+        if ((((u32)obj->unk24 << 29) >> 29) == s1)
+        {
+            return 1;
+        }
+        return 0;
+    }
+    if ((((u32)obj->unk24 << 29) >> 29) == dir)
+    {
+        return 1;
+    }
+    return 0;
+}
+END_NONMATCH
 
 void obj_random_cell(struct Obj *obj, s32 zero)
 {
@@ -515,19 +558,16 @@ ASM_FUNC("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(str
 NONMATCH("asm/code_08151144/obj_set_flag_08.s", void obj_set_flag_08(struct Obj *obj, s32 on))
 {
     s32 m;
-    s32 f;
 
     if (on == 0)
     {
-        f = obj->flags;
-        m = -9;
-        m &= f;
+        s32 f = obj->flags;
+        m = -9 & f;
     }
     else
     {
-        f = obj->flags;
-        m = 8;
-        m |= f;
+        s32 f = obj->flags;
+        m = 8 | f;
     }
     obj->flags = m;
 }
@@ -590,22 +630,17 @@ NONMATCH("asm/code_08151144/obj_point_in_iris.s", u32 obj_point_in_iris(struct O
     s32 ay;
     s32 dx;
     s32 dy;
-    s32 dist;
     s32 scale;
     s32 limit;
+    s32 dist;
 
     ax = anchor[0] + obj->x;
     ay = anchor[1] + obj->y;
     dx = target[0] - ax;
     dy = target[1] - ay;
     dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-    scale = obj->base;
-    if (scale < 0)
-    {
-        scale += 0xFF;
-    }
-    scale >>= 8;
-    limit = obj->field30.radius * scale;
+    scale = obj->base / 0x100;
+    limit = scale * obj->field30.radius;
     limit = (limit << 1) + limit;
     if (limit < 0)
     {
