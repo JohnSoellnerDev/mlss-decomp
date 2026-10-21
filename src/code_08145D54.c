@@ -598,15 +598,18 @@ void enemy_begin_wait(struct Owner *owner, struct Enemy *ent)
 
 ASM_FUNC("asm/code_08145D54/enemy_wait_scan.s", void enemy_wait_scan(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-NONMATCH("asm/code_08145D54/enemy_start_run.s", void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
     u8 *rec = ent->unk1B0;
     s32 flags;
+    u8 low;
 
     ent->unk2DC = 0x200;
     ent->unk1D0 = rand_below(4, mt19937_next());
     ent->unk2DE = rec[ent->unk1D0 + 0xE];
-    flags = ent->unk20C & -0x21;
+    low = ent->unk20C;
+    flags = -0x21;
+    flags &= low;
     flags &= 0x7F;
     flags &= -0x41;
     ent->unk20C = flags;
@@ -614,7 +617,6 @@ NONMATCH("asm/code_08145D54/enemy_start_run.s", void enemy_start_run(struct Owne
     ((struct Flags8 *)&ent->unk20D)->bit2 = 0;
     state_out->state = enemy_run_step;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 {
@@ -643,17 +645,19 @@ NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner 
         ent->unkC += step;
         if (ai->unk17A > 1)
         {
-            s32 f = ai->unk17E;
+            u8 *flag = &ai->unk17E;
+            s32 f = *flag;
+            s32 g;
 
-            if ((f & 4) == 0)
+            if (f & 4)
             {
-                f |= 4;
+                g = f & -5;
             }
             else
             {
-                f &= -5;
+                g = f | 4;
             }
-            ai->unk17E = f;
+            *flag = g;
             ai->unk17A = 0;
         }
         ai->unk17C = 0;
