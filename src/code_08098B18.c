@@ -154,8 +154,17 @@ struct World
     void *focus;
 };
 
+struct LayerCtx
+{
+    u8 filler0[0x0C];
+    u16 cells[16];
+};
+
 extern struct World *gWorld;
 extern u8 gSys[];
+extern struct LayerCtx *gModelCtx;
+extern u8 *gWorkBuf;
+extern u8 gUnk_02000460[];
 
 void sprite_set_action(struct HeroBody *body, u32 action, u32 arg, u32 extra);
 void on_arrive(struct HeroBody *body);
@@ -171,6 +180,8 @@ s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
 void obj_free_parts(struct HeroBody *body);
 void obj_list_remove(void *obj);
 void sound_stop_song(u32 song);
+void refresh_slot_flags(void);
+void place_layer_tile(s32 x, s32 y, s32 z, s32 flag, u32 tile);
 
 void reset_follow_state(struct HeroBody *body);
 void follow_focus_end(struct HeroBody *body);
@@ -850,4 +861,39 @@ void drop_to_focus_b(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struct HeroBody *body))
+NONMATCH("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struct HeroBody *body))
+{
+    struct HeroSprite *sprite = body->sprite;
+    struct TileNode *tile;
+    u32 dest;
+    s32 i;
+
+    if (sprite->tiles != 0)
+    {
+        refresh_slot_flags();
+        dest = 0x200;
+        tile = &sprite->tiles->first;
+        while (tile != 0)
+        {
+            place_layer_tile(tile->x / 0x100, tile->y / 0x100, tile->z / 0x100, 0, dest);
+            dest += 2;
+            tile = tile->next;
+        }
+    }
+    else
+    {
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3CD0, gUnk_02000460, 0x20);
+        *(u16 *)gSys |= 0x8000;
+        gModelCtx->cells[15] = gModelCtx->cells[14];
+        gModelCtx->cells[14] = gModelCtx->cells[13];
+        for (i = 0; i < 15; i++)
+        {
+            if (gModelCtx->cells[i] == 0x1FFF)
+            {
+                gModelCtx->cells[i] = 0xFFFF;
+            }
+        }
+        body->list = 0;
+    }
+}
+END_NONMATCH
