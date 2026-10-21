@@ -516,6 +516,7 @@ void obj_point1_zoom_step_half_3170(struct Point1Obj *obj)
 
 NONMATCH("asm/code_08192854/obj_point1_zoom_step35_32b8.s", void obj_point1_zoom_step35_32b8(struct Point1Obj *obj))
 {
+    s32 flagBit = 0x80;
     struct Point1Local l;
     s32 zoom;
     u32 *words;
@@ -549,7 +550,7 @@ NONMATCH("asm/code_08192854/obj_point1_zoom_step35_32b8.s", void obj_point1_zoom
         l.x = vx;
         l.y = *words++;
         l.z = *words++;
-        if (obj->flags & 0x80) {
+        if (obj->flags & flagBit) {
             pos = obj->posX;
             t = vx;
             if (t < 0) {
