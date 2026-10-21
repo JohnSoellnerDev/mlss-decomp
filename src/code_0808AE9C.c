@@ -179,8 +179,10 @@ extern u8 gSys[];
 static inline struct AffineSet *oam_affine_group_of(struct Actor *obj)
 {
     u32 bank = ((u32)gSys[0x888] << 28) >> 31;
-    u32 index = obj->oam->index;
-    return (struct AffineSet *)((bank << 10) + ((index << 5) + (gSys + 0x80)));
+    u32 off;
+    bank <<= 10;
+    off = (obj->oam->index << 5) + (u32)(gSys + 0x80);
+    return (struct AffineSet *)(bank + off);
 }
 
 // A spawned part takes over bits 5 and 6 of the template flags.
@@ -418,7 +420,7 @@ void travel_then_spawn_home(struct Actor *obj)
     }
 }
 
-NONMATCH("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_finish(struct Actor *obj))
+void settle_aim_then_finish(struct Actor *obj)
 {
     u16 *counter;
     s32 ox;
@@ -445,7 +447,6 @@ NONMATCH("asm/code_0808AE9C/settle_aim_then_finish.s", void settle_aim_then_fini
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_walker.s", void wait_then_spawn_walker(void))
 
@@ -478,7 +479,7 @@ void walk_then_spawn_home(struct Actor *obj)
     obj->state = settle_aim_then_remove;
 }
 
-NONMATCH("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remove(struct Actor *obj))
+void settle_aim_then_remove(struct Actor *obj)
 {
     u16 *counter;
     u16 before;
@@ -508,7 +509,6 @@ NONMATCH("asm/code_0808AE9C/settle_aim_then_remove.s", void settle_aim_then_remo
         }
     }
 }
-END_NONMATCH
 
 void wait_then_start_motion(struct Actor *obj)
 {
