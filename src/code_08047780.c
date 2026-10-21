@@ -640,20 +640,19 @@ void obj_release_entry(struct FieldObj *obj, u8 mode)
 
 u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
 
-NONMATCH("asm/code_08047780/obj_alloc_entry.s", void obj_alloc_entry(struct FieldObj *obj, u8 mode))
+void obj_alloc_entry(struct FieldObj *obj, u8 mode)
 {
     if (obj->entryKey != 0xFFFF)
     {
         s32 shift = 0;
         s32 mask = obj->sub->mask14;
 
-        while (((mask >> shift) & 1) == 0)
+        while (((((u8)(mask >> shift)) ^ 1) & 1) != 0)
             shift++;
         obj->entry = sprite_alloc(obj->entryTable, mode, obj->entryKey, (u8)(shift + 0x10), 0xFFFF, 0xFFFF);
         set_u8_bits(&obj->flags216, 0x40);
     }
 }
-END_NONMATCH
 
 void obj_request_entry(struct FieldObj *obj, u32 key)
 {
