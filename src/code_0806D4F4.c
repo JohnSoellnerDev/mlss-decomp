@@ -181,4 +181,52 @@ void obj_timer_exit_left(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806D4F4/obj_wave_drift.s", void obj_wave_drift(struct ActorObj *obj))
+NONMATCH("asm/code_0806D4F4/obj_wave_drift.s", void obj_wave_drift(struct ActorObj *obj))
+{
+    s32 left;
+    s32 x;
+    s32 limit;
+
+    left = --obj->timer << 16;
+    if (left <= 0)
+    {
+        if (obj->phase > 0x80)
+        {
+            effect_spawn_at(0x20F5, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        }
+        else
+        {
+            effect_spawn_at(0x20EC, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        }
+        obj->timer = 10;
+    }
+
+    if (obj->dx != 0)
+    {
+        x = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x5000;
+    }
+    else
+    {
+        x = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x3000;
+    }
+    obj->posX = x;
+    obj->posY = (gSineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetY + 0x6C00;
+    obj->phase += obj->paramA4;
+    limit = obj->paramA0 << 8;
+    if (obj->phase > limit || obj->phase < -limit)
+    {
+        if (obj->dx != 0)
+        {
+            x = 0x7800;
+        }
+        else
+        {
+            x = 0x5800;
+        }
+        obj->posX = x;
+        obj->posY = 0x6C00;
+        obj->timer = 0x2D;
+        obj->state = obj_timer_clear_slot_action6_alt;
+    }
+}
+END_NONMATCH
