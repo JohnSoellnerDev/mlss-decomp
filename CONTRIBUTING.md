@@ -218,6 +218,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   (`s16 *cs; s16 *sn;`). The declaration position of the pointers decides which of the equally
   ranked values gets a register first (example `obj_spring_turn_points_2eb8` in
   src/code_08182EB8.c).
+  Sometimes the index needs its own variable as well, computed right after the copy of the
+  coordinate: `y2 = z1; idx = angle & 0xFF; cs = &gCosineTable[idx];` with `s32 idx`
+  (`obj_zoom_spin8_0308` in src/code_0817FD84.c).
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
