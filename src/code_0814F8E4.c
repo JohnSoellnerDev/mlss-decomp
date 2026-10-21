@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Bits3
 {
@@ -116,7 +117,7 @@ struct Owner
 void reset_record_fields(struct Obj *obj);
 void cpu_set(void *src, void *dst, u32 control);
 void obj_init_from_link(struct Obj *link);
-void obj_start_walk(void *owner, struct Obj *obj, u16 mode, u8 flag);
+void obj_start_walk(struct Owner *owner, struct Obj *obj, u16 mode, u8 flag);
 void obj_after_run(void);
 void obj_set_sprite_link(struct Obj *obj, u32 link);
 void obj_set_or_add_pos(struct Obj *obj, s32 x, s32 y, s32 z, u32 a, u32 b);
@@ -138,7 +139,13 @@ void zone_move_handler(void);
 void zone_entry_handler(struct Owner *parent, struct Obj *obj);
 void run_state_handler(void);
 void start_wander_b(void);
-void obj_seek_entry(void);
+void obj_seek_entry(struct Owner *owner, struct Obj *obj, void **slot);
+void obj_run_step(void *owner, struct Obj *obj, void **handler_slot);
+u32 obj_near(void *obj, void *other);
+u16 angle_of_vector16(s32 x, s32 y);
+u8 probe_body_hit(struct Owner *owner, struct Obj *body, s32 x, s32 y, s32 z, u32 a, u32 b);
+u8 step_pos_xy_c(struct Obj *obj);
+void wander_to_edge(struct Obj *obj, u16 a, s16 b);
 
 NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struct Owner *parent, struct Obj *obj))
 {
@@ -250,7 +257,115 @@ ASM_FUNC("asm/code_0814F8E4/load_anim_tables_plain.s", void load_anim_tables_pla
 
 ASM_FUNC("asm/code_0814F8E4/obj_target_in_reach.s", void obj_target_in_reach(void))
 
-ASM_FUNC("asm/code_0814F8E4/obj_seek_entry.s", void obj_seek_entry(void))
+void obj_seek_entry(struct Owner *owner, struct Obj *obj, void **slot)
+{
+    struct Obj *target;
+    u8 *beh;
+    u16 *table;
+    u8 idx;
+    s32 roll;
+    s32 dir;
+    s32 q;
+    s32 (*divFn)(s32, s32);
+    s32 dx;
+    s32 dy;
+    s32 aimX;
+    s32 aimY;
+    s32 z;
+    u8 blocked;
+    u8 stepped;
+    s32 idx2;
+    s32 idx3;
+    u16 wanderA;
+    s16 wanderB;
+
+    beh = (u8 *)obj + 0x58;
+    table = (u16 *)obj->tbl;
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        target = *(struct Obj **)((idx << 2) + (u8 *)owner + 0x28);
+        if ((u8)obj_near(obj, target) != 0)
+        {
+            roll = rand_below(100, mt19937_next());
+            if ((roll & 1) != 0)
+            {
+                divFn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+                dx = target->x - obj->x;
+                dy = target->y - obj->y;
+                if ((dx | dy) != 0)
+                    dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+                else
+                    dir = -1;
+                q = divFn(dir, 2);
+                switch (q)
+                {
+                case 0:
+                    aimX = obj->x - 0x600;
+                    aimY = obj->y - 0x1500;
+                    break;
+                case 1:
+                    aimX = obj->x + 0x1200;
+                    aimY = obj->y - 0x600;
+                    break;
+                case 2:
+                    aimX = obj->x + 0x500;
+                    aimY = obj->y;
+                    break;
+                case 3:
+                    aimX = obj->x - 0x1200;
+                    aimY = obj->y;
+                    break;
+                }
+            }
+            else
+            {
+                dx = target->x - obj->x;
+                dy = target->y - obj->y;
+                if ((dx | dy) != 0)
+                    dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+                else
+                    dir = -1;
+                switch (dir)
+                {
+                case 0:
+                    aimX = obj->x - 0x600;
+                    aimY = obj->y - 0x1500;
+                    break;
+                case 1:
+                    aimX = obj->x + 0x1200;
+                    aimY = obj->y;
+                    break;
+                case 2:
+                    aimX = obj->x + 0x500;
+                    aimY = obj->y + 0xA00;
+                    break;
+                case 3:
+                    aimX = obj->x - 0x1200;
+                    aimY = obj->y;
+                    break;
+                }
+            }
+            z = obj->z + obj->dz + 0x300;
+            blocked = probe_body_hit(owner, obj->linked, aimX, aimY, z, 1, 0);
+            if (blocked == 0)
+            {
+                obj_start_walk(owner, obj, 0, 1);
+                *(u16 *)(beh + 0x17C) = blocked;
+                *slot = (void *)obj_run_step;
+                return;
+            }
+        }
+    }
+    stepped = step_pos_xy_c(obj);
+    if (stepped == 0)
+    {
+        idx2 = rand_below(2, mt19937_next());
+        wanderA = table[idx2 + 0x18];
+        idx3 = rand_below(4, mt19937_next());
+        wanderB = ((s16 *)table)[idx3];
+        wander_to_edge(obj, wanderA, wanderB);
+    }
+}
 
 void obj_run_step(void *owner, struct Obj *obj, void **handler_slot)
 {
@@ -324,10 +439,136 @@ void obj_init_from_link(struct Obj *obj)
 }
 
 
-ASM_FUNC("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(void *owner, struct Obj *obj, u16 mode, u8 flag))
+NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner *owner, struct Obj *obj, u16 mode, u8 flag))
+{
+    struct Obj *entry;
+    u16 *table;
+    u8 slot;
+    s32 idx;
+    s32 k;
+    s32 dx;
+    s32 dy;
+    s32 ax;
+    s32 ay;
+    u32 cell;
 
+    table = (u16 *)obj->tbl;
+    idx = rand_below(4, mt19937_next());
+    obj->cell->unk20 = table[idx + 4];
+    ((struct Bits3 *)&obj->flags214)->lo3 = 1;
+    if (flag != 0)
+    {
+        if (find_active_entry(owner, &slot) != 0)
+            k = slot;
+        else
+            k = ((u32)owner->flags208 << 30) >> 31;
+        entry = *(struct Obj **)((k << 2) + (u8 *)owner + 0x28);
+        dx = entry->x - obj->x;
+        dy = entry->y - obj->y;
+        ax = dx;
+        if (dx < 0)
+            ax = -dx;
+        ay = dy;
+        if (dy < 0)
+            ay = -dy;
+        if (ax > ay)
+        {
+            ((struct Spr *)obj->cell)->record21 = 1;
+            ((struct Bits *)&((struct Spr *)obj->cell)->flags11)->b6 = (u32)dx >> 31;
+            ((struct Bits3 *)&obj->flags24)->lo3 = dx < 0 ? 6 : 2;
+        }
+        else
+        {
+            ((struct Spr *)obj->cell)->record21 = ((~dy) >> 31) & 2;
+            ((struct Bits3 *)&obj->flags24)->lo3 = ((~dy) >> 31) & 4;
+        }
+    }
+    switch (mode)
+    {
+    case 0:
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 4;
+        break;
+    case 1:
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 8;
+        break;
+    case 2:
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 0xC;
+        break;
+    default:
+        return;
+    }
+    obj_set_cell_coord(obj, cell, 0);
+    ((struct Mode12 *)&obj->cell->flags12)->mode = 1;
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_0814F8E4/obj_place_linked.s", void obj_place_linked(void))
+void obj_place_linked(struct Obj *obj, u8 flag)
+{
+    struct Obj *linked;
+    s32 x;
+    s32 y;
+    s32 cls;
+
+    linked = obj->linked;
+    if (flag != 0)
+    {
+        cls = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8];
+        switch (cls)
+        {
+        case 1:
+            x = obj->x + 0x1200;
+            y = obj->y - 0x600;
+            break;
+        case 0:
+            x = obj->x - 0x600;
+            y = obj->y - 0x1500;
+            break;
+        case 2:
+            x = obj->x + 0x500;
+            y = obj->y;
+            break;
+        case 3:
+            x = obj->x - 0x1200;
+            y = obj->y;
+            break;
+        }
+    }
+    else
+    {
+        cls = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8];
+        switch (cls)
+        {
+        case 0:
+            x = obj->x - 0x600;
+            y = obj->y - 0x1500;
+            break;
+        case 1:
+            x = obj->x + 0x1200;
+            y = obj->y;
+            break;
+        case 2:
+            x = obj->x + 0x500;
+            y = obj->y + 0xA00;
+            break;
+        case 3:
+            x = obj->x - 0x1200;
+            y = obj->y;
+            break;
+        }
+    }
+    obj_set_or_add_pos(linked, x, y, obj->z + obj->dz + 0x600, 1, 0);
+    if (flag != 0)
+    {
+        obj_load_record(linked->cell, 0xC, -1, 0, 0);
+    }
+    else
+    {
+        obj_load_record(linked->cell, 0xD, -1, 0, flag);
+    }
+    sprite_step_e6a0(linked->cell);
+    obj_set_active(linked, 1);
+    obj_set_sprite_link(linked, 1);
+}
 
 
 u32 depth_scale_a(s16 depth)
