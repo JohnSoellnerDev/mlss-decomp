@@ -136,8 +136,9 @@ void map_obj_spawn_child(struct ActorObj *obj);
 void obj_timer_down_action7_then_idle(struct ActorObj *obj);
 void obj_arc_step_timer(struct ActorObj *obj);
 
-NONMATCH("asm/code_08061058/obj_arc_step_timer.s", void obj_arc_step_timer(struct ActorObj *obj))
+void obj_arc_step_timer(struct ActorObj *obj)
 {
+    s32 hOffset = 0x1000;
     s32 t;
     s32 t2;
 
@@ -145,7 +146,7 @@ NONMATCH("asm/code_08061058/obj_arc_step_timer.s", void obj_arc_step_timer(struc
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
     t = (s16)obj->timer - obj->paramA0 / 2;
     t2 = t * t;
-    obj->posH = obj->param9C * t2 + ((s16)obj->dh * 0x100 + 0x1000);
+    obj->posH = obj->param9C * t2 + ((s16)obj->dh * 0x100 + hOffset);
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {
@@ -156,6 +157,5 @@ NONMATCH("asm/code_08061058/obj_arc_step_timer.s", void obj_arc_step_timer(struc
         obj->state = obj_timer_down_action7_then_idle;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08061058/obj_timer_end_build_anim_record.s", void obj_timer_end_build_anim_record(void))
