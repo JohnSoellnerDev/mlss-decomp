@@ -484,9 +484,7 @@ NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion
     u32 b216;
     struct FieldVtable *vt;
     u8 *tbl;
-    u32 k7;
 
-    k7 = 7;
     if ((*(u32 *)((u8 *)obj + 0x20C) & (u32)gUnk_02000001) == (u32)gUnk_02000001)
     {
         b216 = obj->flags216;
@@ -500,7 +498,7 @@ NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion
                 {
                     idx += 0x10;
                 }
-                t = tbl[idx] & k7;
+                t = tbl[idx];
                 ((struct Lo3Bits *)&obj->unk24)->lo3 = t;
             }
             flag = force;
