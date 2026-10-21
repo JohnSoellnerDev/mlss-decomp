@@ -67,9 +67,18 @@ struct ActorObj
     s16 dh;
 };
 
+struct PoseModeBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 extern u32 gUnk_03000E3C;
 
 void obj_release(struct ActorObj *obj);
+void jump_obj_fall_step(struct ActorObj *obj);
+void obj_jump_setup(struct ActorObj *obj);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 arg, u32 extra);
 void sound_stop_song(u32 song);
 void set_slot_value(u32 id, s32 value);
@@ -132,7 +141,57 @@ void jump_obj_pose_active_clear_state(struct ActorObj *obj);
 u32 obj_pair_link_state(struct ActorObj *obj);
 u32 actor_lookup_or_remove(struct ActorObj *obj, u32 slot);
 
-ASM_FUNC("asm/code_0806A47C/obj_jump_arc_land.s", void obj_jump_arc_land(void))
+NONMATCH("asm/code_0806A47C/obj_jump_arc_land.s", void obj_jump_arc_land(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    s32 x;
+    s32 variant;
+
+    child = obj->child;
+    if (child->param9C != 0)
+    {
+        obj->param9C = 0x300;
+        obj->paramA0 = 0x66;
+        obj->state = jump_obj_fall_step;
+        obj_release(child);
+    }
+    else
+    {
+        x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
+        obj->posX = x;
+        obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
+        obj->posH = ((s16)obj->timer - obj->paramA0 / 2) * ((s16)obj->timer - obj->paramA0 / 2) * obj->param9C
+            + (obj->targetH << 8) + (obj->dh << 8);
+        child->posX = x;
+        child->posY = obj->posY;
+        child->posH = obj->posH;
+        obj->timer++;
+        if ((s16)obj->timer == obj->paramA0 / 2)
+        {
+            if (obj->targetY == 1)
+                variant = 0x2000;
+            else
+                variant = 0x204D;
+            sprite_set_action(obj, 6, variant, 0);
+            ((struct PoseModeBits *)&obj->pose->flags)->mode = 1;
+        }
+        if ((s16)obj->timer > obj->paramA0 / 2 && obj->posH < obj->owner->part->targetH + 0x1800)
+        {
+            obj_release(obj->child);
+            obj->timer = 10;
+            obj->posY = obj->owner->part->targetY;
+            obj->posX = obj->owner->part->targetX;
+            if (obj->targetY == 1)
+                variant = 0x2000;
+            else
+                variant = 0x204D;
+            sprite_set_action(obj, 7, variant, 0);
+            ((struct PoseModeBits *)&obj->pose->flags)->mode = 1;
+            obj->state = obj_jump_setup;
+        }
+    }
+}
+END_NONMATCH
 
 void obj_jump_setup(struct ActorObj *obj)
 {
@@ -191,4 +250,45 @@ void obj_jump_setup(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806A47C/obj_jump_arc_fly.s", void obj_jump_arc_fly(struct ActorObj *obj))
+NONMATCH("asm/code_0806A47C/obj_jump_arc_fly.s", void obj_jump_arc_fly(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    struct ActorPart *part;
+    s32 variant;
+
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
+    obj->posH = ((s16)obj->timer - obj->paramA0 / 2) * ((s16)obj->timer - obj->paramA0 / 2) * obj->param9C
+        + (obj->targetH << 8) + (obj->dh << 8);
+    obj->timer++;
+    child = obj->child;
+    child->posX = obj->posX;
+    child->posY = obj->posY;
+    child->posH = obj->posH;
+    if ((s16)obj->timer == obj->paramA0 / 2)
+    {
+        if (obj->targetY == 1)
+            variant = 0x2000;
+        else
+            variant = 0x204D;
+        sprite_set_action(obj, 6, variant, 0);
+        ((struct PoseModeBits *)&obj->pose->flags)->mode = 1;
+    }
+    if ((s16)obj->timer > obj->paramA0)
+    {
+        if (obj->targetY == 1)
+        {
+            sprite_set_action(obj, 8, 0x4071, 0);
+            part = obj->part;
+            effect_spawn_at(0x1D82, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
+        }
+        else
+        {
+            sprite_set_action(obj, 0xA, 0x4071, 0);
+            part = obj->part;
+            effect_spawn_at(0x1D90, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
+        }
+        obj->state = jump_obj_pose_active_idle;
+    }
+}
+END_NONMATCH
