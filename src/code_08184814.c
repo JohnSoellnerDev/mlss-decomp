@@ -330,9 +330,14 @@ void obj_grow_zoom_point(struct Point1Obj *obj)
 
 // Four points turned about the X axis by 90 degrees (table index 64) and then about the Z axis
 // by 45 degrees (table index 32). The zoom grows by the step, the step decays by 7/8.
-NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(struct Point1Obj *obj))
+void obj_turn_zoom4_5830(struct Point1Obj *obj)
 {
+    s16 *cb;
+    s16 *sb;
     s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct Point1Local l;
     struct ObjRecord *rec;
     s32 zoom;
@@ -377,17 +382,22 @@ NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        cs = &gCosineTable[64];
+        cb = gCosineTable;
+        cs = cb + 64;
         t = t * (*cs / 0x40);
-        y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
+        sb = gSineTable;
+        sn = sb + 64;
+        y2 = (t - (*sn / 0x40) * z1) / 0x100;
         l.y = y2;
-        z2 = (z1 * (*cs / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
+        z2 = (z1 * (*cs / 0x40) + (*sn / 0x40) * y1) / 0x100;
         l.z = z2;
         t = x1;
-        t = t * (gCosineTable[32] / 0x40);
-        x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
+        cs2 = cb + 32;
+        t = t * (*cs2 / 0x40);
+        sn2 = sb + 32;
+        x2 = (t - (*sn2 / 0x40) * y2) / 0x100;
         l.x = x2;
-        l.y = (y2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * x1) / 0x100;
+        l.y = (y2 * (*cs2 / 0x40) + (*sn2 / 0x40) * x1) / 0x100;
 
         if (obj->flags & 0x80) {
             t = obj->posX;
@@ -424,7 +434,6 @@ NONMATCH("asm/code_08184814/obj_turn_zoom4_5830.s", void obj_turn_zoom4_5830(str
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 // Single point drifting up at a constant speed. Record size 0x60 x 0xC0.
 void obj_drift_y_60c0(struct Point1Obj *obj)
 {
