@@ -104,6 +104,8 @@ struct AnimTick
 
 extern u8 gSys[];
 extern u16 gUnk_03000D3C;
+extern u16 gUnk_02000050;
+extern u16 gUnk_02000054;
 extern u8 gUnk_03000D18[];
 extern u8 gUnk_03000D28[];
 extern u8 gUnk_03000D40;
@@ -135,7 +137,7 @@ void textbox_open_scene(void *block, u32 n, const void *tag);
 void scene_create(void *block, u32 n, const void *tag);
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 u32 read_varlen_plus1(const void *p);
-void set_blend_shadow(u32 unused, u32 mode, u32 a, u32 b);
+void set_blend_shadow(u32 unused, s32 mode, u32 a, u32 b);
 extern const u8 gFontGlyphParts[];
 void copy_shadow_to_io(void);
 extern const u8 gHeapTagAnimTask[];
@@ -170,58 +172,7 @@ NONMATCH("asm/code_0801ABFC/serial_schedule.s", void serial_schedule(u16 a, u16 
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
-{
-    if ((gSys[0x888] & 6) == 2)
-    {
-        u32 flags;
-        u8 *t;
-        u32 lo;
-        s32 n;
-
-        t = gUnk_03000D28;
-        flags = t[0];
-        lo = (flags << 30) >> 30;
-        switch (lo)
-        {
-        case 1:
-            n = *(u16 *)(t + 4);
-            n--;
-            *(u16 *)(t + 4) = n;
-            if ((u16)n == 0)
-            {
-                if (gSys[0x88B] & lo)
-                {
-                    ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
-                }
-                ((struct Bits28 *)t)->lo2 = 2;
-                *(u16 *)(t + 4) = *(u16 *)(t + 2);
-            }
-            break;
-        case 2:
-            n = *(u16 *)(t + 4);
-            if (n != 0)
-            {
-                n--;
-                *(u16 *)(t + 4) = n;
-                if ((u16)n == 0)
-                {
-                    if ((flags & 4) != 0)
-                    {
-                        ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
-                    }
-                    else
-                    {
-                        ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
-                    }
-                    t[0] = flags & -4;
-                }
-            }
-            break;
-        }
-    }
-}
-END_NONMATCH
+ASM_FUNC("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
 
 void serial_enter_phase_1(void)
 {
@@ -310,15 +261,18 @@ NONMATCH("asm/code_0801ABFC/serial_rx_error.s", u32 serial_rx_error(void))
     u32 payload = rx >> 4;
     u32 check = rx & 0xF;
     u32 sum = payload >> 24;
-    u8 i = 6;
+    u32 i = 6;
     u32 mask = 0xF;
+    u32 diff;
 
     do
     {
         i--;
         sum ^= (payload >> (i << 2)) & mask;
+        i = (u8)i;
     } while (i != 0);
-    return (sum ^ check) != 0;
+    diff = sum ^ check;
+    return ((0 - diff) | diff) >> 31;
 }
 END_NONMATCH
 
@@ -347,11 +301,7 @@ NONMATCH("asm/code_0801ABFC/link_window_open.s", void link_window_open(u32 mode)
     u32 arg;
 
     block = heap_alloc2(0x324, 0, gHeapTagLinkWindow, 0);
-    arg = -1;
-    if (mode == 0)
-    {
-        arg = 0x73;
-    }
+    arg = mode == 0 ? 0x73 : -1;
     buf[0] = 1;
     *(u8 *)(buf + 4) = 0;
     init_scene_obj(block, 8, gHeapTagLinkWindow, arg);
@@ -482,7 +432,19 @@ void quat_mul_pure_fixed(s32 *q, s32 a, s32 b, s32 c)
     q[3] = (-q0 * a - q1 * b - q2 * c) / 0x100;
 }
 
-ASM_FUNC("asm/code_0801ABFC/sub_0801B684.s", void sub_0801B684(void))
+void sub_0801B684(s32 *q, s32 *p)
+{
+    s32 a = q[0];
+    s32 b = q[1];
+    s32 c = q[2];
+    s32 d = q[3];
+    s32 e = p[0];
+
+    q[0] = (e * d + p[3] * a + p[2] * b - p[1] * c) / 0x100;
+    q[1] = (d * p[1] - a * p[2] + b * p[3] + c * e) / 0x100;
+    q[2] = (d * p[2] + a * p[1] - b * e + c * p[3]) / 0x100;
+    q[3] = (d * p[3] - a * e - b * p[1] - c * p[2]) / 0x100;
+}
 
 u32 *sub_0801B73C(u32 *rec, u32 a, u32 b, u32 c, u32 d)
 {
@@ -534,7 +496,28 @@ void anim_push_frame(u8 *rec)
     ((struct SysBlock *)gSys)->oamCur880 = q;
 }
 
-ASM_FUNC("asm/code_0801ABFC/set_blend_shadow.s", void set_blend_shadow(u32 unused, u32 mode, u32 a, u32 b))
+void set_blend_shadow(u32 unused, s32 mode, u32 a, u32 b)
+{
+    switch (mode)
+    {
+    case 0:
+        gUnk_02000050 = 0xFF;
+        gUnk_02000054 = 0x10 - (s32)(a << 4) / (s32)b;
+        break;
+    case 1:
+        gUnk_02000050 = 0xFF;
+        gUnk_02000054 = (s32)(a << 4) / (s32)b;
+        break;
+    case 2:
+        gUnk_02000050 = 0xBF;
+        gUnk_02000054 = 0x10 - (s32)(a << 4) / (s32)b;
+        break;
+    case 3:
+        gUnk_02000050 = 0xBF;
+        gUnk_02000054 = (s32)(a << 4) / (s32)b;
+        break;
+    }
+}
 
 void anim_tick(struct AnimTick *obj)
 {
