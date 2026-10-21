@@ -64,7 +64,7 @@ struct Actor
     s32 paramA4;
     s32 paramA8;
     u16 timer;
-    u16 dx;
+    s16 dx;
     s16 dy;
     s16 dh;
 };
@@ -177,7 +177,47 @@ void obj_wait_free_action2_arc(struct Actor *obj);
 void obj_pose_then_spawn_arc(struct Actor *obj);
 void obj_spawn_child_412b(struct Actor *obj);
 
-ASM_FUNC("asm/code_08067338/part_arc_move.s", void part_arc_move(struct Actor *obj))
+void part_arc_move(struct Actor *obj)
+{
+    s32 offset;
+    s32 dist;
+    s32 half;
+    s32 curve;
+
+    obj->x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dx << 8);
+    obj->y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dy << 8);
+    offset = (s16)obj->timer - obj->paramA0 / 2;
+    obj->h = (offset * offset) * obj->param9C + ((s32)obj->targetH << 8) + ((s32)obj->dh << 8);
+    obj->timer++;
+    if (obj->h < 0)
+    {
+        obj->h = 0;
+        set_slot_value(0x7C, -1);
+        if (base_to_px(obj->x) < -0x20)
+        {
+            obj_release(obj);
+        }
+        else
+        {
+            obj->dx = base_to_px(obj->baseX);
+            obj->dy = base_to_px(obj->baseY);
+            obj->dh = 0;
+            obj->targetH = 2;
+            dist = ((s32 (*)(s32))gMathRoutines)(0x400000) / 0x299;
+            half = dist / 2;
+            curve = (obj->targetH << 8) / (half * half);
+            if (curve == 1)
+            {
+                curve = 2;
+            }
+            obj->param9C = -curve;
+            obj->paramA0 = dist;
+            obj->paramA4 = -0x800;
+            obj->paramA8 = 0;
+            obj->timer = 0;
+        }
+    }
+}
 
 u32 obj_link_place_remove(struct Actor *obj, struct Actor *other)
 {
@@ -362,6 +402,68 @@ void obj_wait_slot_then_follow(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08067338/obj_follow_owner_step.s", void obj_follow_owner_step(struct Actor *obj))
+NONMATCH("asm/code_08067338/obj_follow_owner_step.s", void obj_follow_owner_step(struct Actor *obj))
+{
+    u32 index = obj->index;
+    if (index == 0)
+    {
+        obj->timer--;
+        if ((s16)obj->timer < 0)
+        {
+            s32 dxT;
+            s32 dyT;
+            s32 dist;
+            s32 px;
+            s32 half;
+            s32 curve;
+
+            sprite_set_action(obj, 5, 0, 0);
+            obj->targetH = obj->param9C;
+            obj->targetX = obj->owner->data->targetX;
+            obj->targetY = obj->owner->data->targetY;
+            obj->dx = base_to_px(obj->baseX);
+            obj->dy = base_to_px(obj->baseY);
+            obj->dh = base_to_px(obj->baseH);
+            dxT = obj->targetX - ((s32)obj->dx << 8);
+            dyT = obj->targetY - ((s32)obj->dy << 8);
+            dist = ((s32 (*)(s32))gMathRoutines)(dxT * dxT + dyT * dyT);
+            if (dist < 0)
+            {
+                dist += 0xFF;
+            }
+            px = dist >> 8;
+            half = (s32)(px + ((u32)dist >> 31)) >> 1;
+            curve = 0x3000 / (half * half);
+            if (curve == 1)
+            {
+                curve = 2;
+            }
+            obj->param9C = -curve;
+            obj->targetX = obj->paramA0;
+            obj->paramA0 = px;
+            obj->paramA4 = dxT;
+            obj->paramA8 = dyT;
+            obj->timer = index;
+            obj->state = part_arc_land_spawn;
+        }
+        else
+        {
+            u32 rnd;
+            u8 *fp;
+
+            rnd = mt19937_next();
+            obj->targetX = obj->owner->data->targetX + ((rnd & 0x1D) << 8) + 0x2600;
+            obj->targetY = obj->owner->data->targetY;
+            obj->targetH = obj->baseH;
+            fp = &obj->flags;
+            *fp |= 0x20;
+            obj->motionSpeed = 0x200;
+            obj->motionStart = index;
+            start_motion(obj);
+            obj->state = obj_restart_follow;
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08067338/part_arc_land_spawn.s", void part_arc_land_spawn(struct Actor *obj))
