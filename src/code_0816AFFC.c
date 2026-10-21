@@ -504,7 +504,71 @@ void sub_0816C520(u8 *obj, u16 mask)
     *(u16 *)(obj + 0x6C) |= mask;
 }
 
-ASM_FUNC("asm/code_0816AFFC/obj_update_anim_pair.s", void obj_update_anim_pair(void))
+NONMATCH("asm/code_0816AFFC/obj_update_anim_pair.s", void obj_update_anim_pair(u8 *obj, u32 phase, u32 flag))
+{
+    s32 vals[2];
+    s32 idx;
+    s32 off;
+    u8 phase8;
+    s32 timer;
+    s32 count;
+    s32 v1;
+    s32 (*divFn)(s32, s32);
+
+    phase8 = phase;
+    if ((u8)flag != 0)
+    {
+        timer = *(s32 *)(obj + 0x1C) + 1;
+        *(s32 *)(obj + 0x1C) = timer;
+        if (timer > 59)
+        {
+            *(s32 *)(obj + 0x1C) = 0;
+            count = *(s32 *)(obj + 0x18) - 1;
+            *(s32 *)(obj + 0x18) = count;
+            if (count < 0)
+                *(s32 *)(obj + 0x18) = 0;
+        }
+    }
+    divFn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    v1 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(*(s32 *)(obj + 0x18), 0x64);
+    vals[0] = divFn(v1, 0xA);
+    vals[1] = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(*(s32 *)(obj + 0x18), 0xA);
+
+    if (phase8 != 0)
+    {
+        *(s32 *)(obj + 0x10) = vals[0];
+        *(s32 *)(obj + 8) = vals[0];
+        obj_load_record(*(void **)(*(u8 **)obj + 0x10), vals[0] + 0x1B, 0, 0, 0);
+        obj_set_fields_18(*(u8 **)obj, *(s32 *)(*(u8 **)obj + 0x18), 0x3000, 0);
+        *(s32 *)(obj + 0x14) = vals[1];
+        *(s32 *)(obj + 0xC) = vals[1];
+        obj_load_record(*(void **)(*(u8 **)(obj + 4) + 0x10), vals[1] + 0x1B, 0, 0, 0);
+        obj_set_fields_18(*(u8 **)(obj + 4), *(s32 *)(*(u8 **)(obj + 4) + 0x18), 0x3000, 0);
+    }
+    else
+    {
+        for (idx = 0; idx < 2; idx++)
+        {
+            off = idx * 4;
+            if (obj_is_done(*(u8 **)(obj + off)))
+            {
+                if (*(s32 *)(obj + 8 + off) != vals[idx])
+                {
+                    *(s32 *)(obj + 0x10 + off) = *(s32 *)(obj + 8 + off);
+                    *(s32 *)(obj + 8 + off) = *(s32 *)(obj + 8 + off) - 1;
+                    if (*(s32 *)(obj + 8 + off) < 0)
+                        *(s32 *)(obj + 8 + off) = 9;
+                    obj_load_record(*(void **)(*(u8 **)(obj + off) + 0x10), *(s32 *)(obj + 8 + off) + 0x1B, 0, 0, 0);
+                    obj_set_fields_18(*(u8 **)(obj + off), *(s32 *)(*(u8 **)(obj + off) + 0x18), 0x2000, 0);
+                    obj_setup_slot(*(u8 **)(obj + off), *(s32 *)(*(u8 **)(obj + off) + 0x18), 0x3000, 0, 6, (u8)1);
+                }
+            }
+            else
+                obj_script_step(*(u8 **)(obj + off));
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0816AFFC/obj_create_group.s", void obj_create_group(void))
 
