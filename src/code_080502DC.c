@@ -271,7 +271,41 @@ extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
 
-ASM_FUNC("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(void))
+NONMATCH("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(u8 *obj))
+{
+    struct ChildObj *child;
+    struct VtSlot *entry;
+    u32 bit;
+    u32 mid;
+
+    ((struct Bit0 *)(obj + 0x20C))->bit0 = 0;
+    ((struct Mid2At1 *)(obj + 0x33C))->mode = 2;
+    if ((obj[0x33E] & 3) != 0)
+    {
+        ((struct Lo4Bits *)(obj + 0x33E))->lo2 = 0;
+        *(u32 *)(obj + 0x18) = 0;
+        bit = ((u32)obj[0x33E] << 29) >> 31;
+        ((struct Bits8 *)(obj + 0x20D))->b5 = bit;
+        obj[2] = obj[0x33F];
+        obj[0x23A] = 0;
+        mid = ((u32)obj[0x33C] << 25) >> 29;
+        ((struct Mode3 *)(obj + 0x33D))->mode = mid;
+        ((struct Bits8 *)(obj + 0x33C))->b3 = 0;
+    }
+    entry = (struct VtSlot *)((struct ChildObj *)obj)->vtable;
+    entry = (struct VtSlot *)((u8 *)entry + 0x80);
+    entry->fn(obj + entry->offset, 1);
+    child = ((struct ChildObj *)obj)->child;
+    if (child != NULL && (((u8 *)child)[0x20F] & 2))
+    {
+        ((struct Bit0 *)((u8 *)child + 0x20C))->bit0 = 0;
+        child = ((struct ChildObj *)obj)->child;
+        entry = (struct VtSlot *)child->vtable;
+        entry = (struct VtSlot *)((u8 *)entry + 0x80);
+        entry->fn((u8 *)child + entry->offset, 1);
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flags_from_child(u8 *obj))
 {
@@ -601,7 +635,59 @@ ASM_FUNC("asm/code_080502DC/obj_apply_pending_sprite.s", void obj_apply_pending_
 
 ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(void))
 
-ASM_FUNC("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(void))
+NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 *obj))
+{
+    u8 *flags;
+    u8 f;
+    u32 one;
+    u32 k;
+    struct SpriteObj **pslot;
+    struct SpriteObj **cslot;
+    struct SpriteObj *tmp;
+
+    flags = obj + 0x33C;
+    f = *flags;
+    one = 1;
+    if (f & one)
+    {
+        return;
+    }
+    f |= 1;
+    *flags = f;
+    pslot = (struct SpriteObj **)(obj + 0x34C);
+    if (*pslot != NULL)
+    {
+        ((struct Bits33C *)flags)->mid3 = 0;
+        cslot = (struct SpriteObj **)(obj + 0x294);
+        unlink_d54(*cslot);
+        obj_queue_update(*pslot);
+        (*pslot)->unkE = (*cslot)->unkE;
+        ((struct SpriteFlags *)*pslot)->lo2 = ((struct SpriteFlags *)*cslot)->lo2;
+        ((struct SpriteFlags *)*pslot)->b23 = ((struct SpriteFlags *)*cslot)->b23;
+        ((struct SpriteFlags *)*pslot)->b45 = ((struct SpriteFlags *)*cslot)->b45;
+        ((struct SpriteFlags *)*pslot)->b67 = ((struct SpriteFlags *)*cslot)->b67;
+        tmp = *pslot;
+        *pslot = *cslot;
+        *cslot = tmp;
+        if (obj[0x20F] & 2)
+        {
+            return;
+        }
+        unlink_d54(tmp);
+    }
+    else
+    {
+        obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2 + 1], 1, 0, 0);
+        set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 0);
+        ((struct Mid4At6 *)flags)->mid4 = 0;
+        obj[0x23B] = 0;
+        k = 0x1FE;
+        *(u16 *)(obj + 0x33E) = *(u16 *)(obj + 0x33E) | k;
+        *(u16 *)(obj + 0x340) = one;
+        *(u16 *)(obj + 0x342) = 0xFFFF;
+    }
+}
+END_NONMATCH
 
 void obj_commit_sprite(u8 *obj)
 {
@@ -639,7 +725,70 @@ void obj_commit_sprite(u8 *obj)
 extern const u16 gSpriteSelectAnimTable[];
 u8 test_flag(u8 *table, u8 *tableB, u16 id);
 void obj_commit_sprite(u8 *obj);
-ASM_FUNC("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(void))
+extern const u8 gObjAnimOffsetTable[];
+extern const u8 gObjAnimWaveTable[];
+
+NONMATCH("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(u8 *obj, u32 index))
+{
+    u8 *flags;
+    u16 *mask;
+    u16 *counter;
+    u32 m;
+    u32 nv;
+    u32 k;
+    s32 step;
+    u8 v;
+    u8 r;
+
+    flags = obj + 0x33C;
+    if (*flags & 1)
+    {
+        mask = (u16 *)(obj + 0x33E);
+        m = *mask;
+        k = 0x1FE;
+        if ((k & m) == k)
+        {
+            v = gObjAnimOffsetTable[(index >> 3) & 3];
+            obj[0x23B] = v;
+        }
+        else
+        {
+            step = ((s32)m << 23) >> 24;
+            if (step >= 0)
+            {
+                nv = (m & 0xFE01) | (((step + 1) & 0xFF) << 1);
+                *mask = nv;
+                v = gObjAnimWaveTable[((s32)nv << 23) >> 24];
+                obj[0x23B] = v;
+                if (v == 0)
+                {
+                    *mask = *mask | k;
+                    if (*flags & 4)
+                    {
+                        if (*(s16 *)(obj + 0x342) == 0)
+                        {
+                            obj_commit_sprite(obj);
+                        }
+                    }
+                }
+            }
+        }
+        counter = (u16 *)(obj + 0x342);
+        if ((s16)*counter > 0)
+        {
+            *counter = *counter - 1;
+        }
+    }
+    else if (*flags & 4)
+    {
+        r = test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360));
+        if (r == 0)
+        {
+            obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[((*flags >> 3) & 7) * 2 + 1], 0, 0, 0);
+        }
+    }
+}
+END_NONMATCH
 
 void obj_clear_mask_if_timer(u8 *obj)
 {
