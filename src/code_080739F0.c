@@ -158,13 +158,14 @@ void wait_scene_objects_then_timer(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080739F0/orbit_step_action1.s", void orbit_step_action1(struct ActorObj *obj))
+void orbit_step_action1(struct ActorObj *obj)
 {
     struct ActorPart *part = obj->part;
     s32 radius = part->radiusB0;
     s32 *tx = &obj->targetX;
-    s32 *phase = &obj->paramA4;
     s16 *tab = gCosineTable;
+    s32 *phase = &obj->paramA4;
+    s32 *ty;
     s32 ph;
     s32 s;
     s32 sv;
@@ -178,25 +179,24 @@ NONMATCH("asm/code_080739F0/orbit_step_action1.s", void orbit_step_action1(struc
     if (s < 0) {
         s += 0x3F;
     }
-    sv = s >> 6;
-    obj->posX = *tx + sv * radius;
-    tx = &obj->targetY;
+    obj->posX = *tx + (s >> 6) * radius;
+    ty = &obj->targetY;
+    tab = gSineTable;
     ph = *phase;
     if (ph < 0) {
         ph += 0xFF;
     }
     ph >>= 8;
-    tab = gSineTable;
     s = tab[ph & 0xFF];
     if (s < 0) {
         s += 0x3F;
     }
     sv = s >> 6;
-    obj->posY = *tx - (radius / 3) * sv;
-    if (part->countA8 == 0) {
-        next = *phase + 0xE0;
-    } else {
+    obj->posY = *ty - sv * (radius / 3);
+    if (part->countA8 != 0) {
         next = *phase + 0x100;
+    } else {
+        next = *phase + 0xE0;
     }
     *phase = next;
     if (obj->pose->flags & 8) {
@@ -204,15 +204,15 @@ NONMATCH("asm/code_080739F0/orbit_step_action1.s", void orbit_step_action1(struc
         obj->state = orbit_step_action2;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080739F0/orbit_step_action2.s", void orbit_step_action2(struct ActorObj *obj))
+void orbit_step_action2(struct ActorObj *obj)
 {
     struct ActorPart *part = obj->part;
     s32 radius = part->radiusB0;
     s32 *tx = &obj->targetX;
-    s32 *phase = &obj->paramA4;
     s16 *tab = gCosineTable;
+    s32 *phase = &obj->paramA4;
+    s32 *ty;
     s32 ph;
     s32 s;
     s32 sv;
@@ -226,35 +226,77 @@ NONMATCH("asm/code_080739F0/orbit_step_action2.s", void orbit_step_action2(struc
     if (s < 0) {
         s += 0x3F;
     }
-    sv = s >> 6;
-    obj->posX = *tx + sv * radius;
-    tx = &obj->targetY;
+    obj->posX = *tx + (s >> 6) * radius;
+    ty = &obj->targetY;
+    tab = gSineTable;
     ph = *phase;
     if (ph < 0) {
         ph += 0xFF;
     }
     ph >>= 8;
-    tab = gSineTable;
     s = tab[ph & 0xFF];
     if (s < 0) {
         s += 0x3F;
     }
     sv = s >> 6;
-    obj->posY = *tx - (radius / 3) * sv;
-    if (part->countA8 == 0) {
-        next = *phase + 0xE0;
-    } else {
+    obj->posY = *ty - sv * (radius / 3);
+    if (part->countA8 != 0) {
         next = *phase + 0x100;
+    } else {
+        next = *phase + 0xE0;
     }
     *phase = next;
-    if (part->radiusB0 == 0) {
+    if (obj->part->radiusB0 == 0) {
         sprite_set_action(obj, 2, 0, 0);
         obj->state = orbit_step_finish;
     }
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(void))
+NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct ActorObj *obj))
+{
+    s32 *tx = &obj->targetX;
+    s16 *tab = gCosineTable;
+    s32 *phase = &obj->paramA4;
+    s32 *ty;
+    s32 ph;
+    s32 s;
+    s32 k;
+    s32 next;
+    ph = *phase;
+    if (ph < 0) {
+        ph += 0xFF;
+    }
+    ph >>= 8;
+    s = tab[ph & 0xFF];
+    if (s < 0) {
+        s += 0x3F;
+    }
+    k = 0x90;
+    obj->posX = *tx + (s >> 6) * k;
+    ty = &obj->targetY;
+    tab = gSineTable;
+    ph = *phase;
+    if (ph < 0) {
+        ph += 0xFF;
+    }
+    ph >>= 8;
+    s = tab[ph & 0xFF];
+    if (s < 0) {
+        s += 0x3F;
+    }
+    k = 0x30;
+    obj->posY = *ty - (s >> 6) * k;
+    if (obj->part->countA8 != 0) {
+        next = *phase + 0x100;
+    } else {
+        next = *phase + 0xE0;
+    }
+    *phase = next;
+    if (obj->pose->flags & 8) {
+        obj_release(obj);
+    }
+}
+END_NONMATCH
 
 u32 lookup_then_finish(struct ActorObj *obj)
 {
@@ -511,16 +553,14 @@ void wait_timer_then_stop(struct ActorObj *obj)
 
 NONMATCH("asm/code_080739F0/action_by_owner_slot_then_wait.s", void action_by_owner_slot_then_wait(struct ActorObj *obj))
 {
-    s32 action = obj->owner->part->slot;
-    u16 t;
-    if (action == -1) {
+    u32 action;
+    if (obj->owner->part->slot == -1) {
         action = 0xC;
     } else {
         action = 0xD;
     }
     sprite_set_action(obj, action, 0, 0);
-    t = 4;
-    obj->timer = t;
+    obj->timer = 4;
     obj->state = wait_timer_then_settle;
 }
 END_NONMATCH
