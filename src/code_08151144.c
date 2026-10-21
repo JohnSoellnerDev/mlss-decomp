@@ -205,6 +205,17 @@ extern u16 gUnk_02000004;
 extern u8 gSys[];
 extern u8 *gUnk_03001014;
 extern u16 gUnk_02000000;
+void init_obj_09a8(u32 a, u32 b, u32 c, u32 d);
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+void scene_init_kind2(void *obj, u32 kind, const void *table);
+void obj_scene_init(void *obj, u32 kind, const void *table);
+void scene_build_hud(void *obj, u32 kind, const void *table);
+void obj_init_screen(void *obj, u32 kind, const void *table);
+extern const u8 gHeapTagSceneKind0[];
+extern const u8 gHeapTagSceneKind1[];
+extern const u8 gHeapTagSceneKind2[];
+extern const u8 gHeapTagSceneKind3[];
+extern const u8 gHeapTagSceneKind4[];
 
 void obj_halt(struct Obj *obj, u8 flag)
 {
@@ -455,7 +466,68 @@ void obj_air_step(s32 unused, struct Obj *obj, void **slot)
     }
 }
 
-ASM_FUNC("asm/code_08151144/scene_setup.s", void scene_setup(void))
+NONMATCH("asm/code_08151144/scene_setup.s", void scene_setup(s32 kind))
+{
+    s32 v;
+    s32 bits;
+    void *buf;
+    s32 mask;
+    s32 lo;
+    s32 m1;
+    s32 f;
+    u8 *gm;
+
+    switch (kind)
+    {
+    case 0:
+        init_obj_09a8(0, 0, 0, 0xBF);
+        v = game_var_read(0x1E);
+        lo = 0x1F;
+        gm = &gGameMode;
+        mask = -0x20;
+        m1 = (gm[0] & mask) | (v & lo);
+        gm[0] = m1;
+        if ((m1 & lo) != 0)
+        {
+            if ((u16)read_var(0x1CD9) == 0)
+            {
+                bits = 1;
+            }
+            else
+            {
+                bits = (u16)read_var(0x1CD9) & lo;
+            }
+            gm[0] = (gm[0] & mask) | bits;
+        }
+        gGameMode |= 0x60;
+        *(u16 *)&gGameMode &= ~0x380;
+        ((u8 *)&gGameMode)[1] = ((((u8 *)&gGameMode)[1] & -0x7D) | 0x20) & 0x7F;
+        buf = heap_alloc2(0x1F34, 1, gHeapTagSceneKind0, 0);
+        scene_init_display(buf, 8, gHeapTagSceneKind0);
+        break;
+    case 1:
+        init_obj_09a8(0, 0, 0, 0);
+        buf = heap_alloc2(0x70, 0, gHeapTagSceneKind1, 0);
+        obj_scene_init(buf, 8, gHeapTagSceneKind1);
+        break;
+    case 2:
+        init_obj_09a8(0, 0, 0, 0);
+        buf = heap_alloc2(0x70, 0, gHeapTagSceneKind2, 0);
+        scene_init_kind2(buf, 8, gHeapTagSceneKind2);
+        break;
+    case 3:
+        init_obj_09a8(0, 0, 0, 0);
+        buf = heap_alloc2(0x54, 0, gHeapTagSceneKind3, 0);
+        scene_build_hud(buf, 8, gHeapTagSceneKind3);
+        break;
+    case 4:
+        init_obj_09a8(0, 0, 0, 0);
+        buf = heap_alloc2(0x494, 0, gHeapTagSceneKind4, 0);
+        obj_init_screen(buf, 8, gHeapTagSceneKind4);
+        break;
+    }
+}
+END_NONMATCH
 
 void store_byte_base_53c(s32 index, u8 value)
 {
@@ -553,7 +625,65 @@ void obj_place_on_screen(struct Obj *obj, struct CamXY *cam)
     dma_copy_or_queue(obj->rows, gUnk_03001014 + 4, 0x1C8, 0x10, 1);
 }
 
-ASM_FUNC("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(struct Obj *obj, s32 *pos))
+NONMATCH("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(struct Obj *obj, s32 *pos))
+{
+    s32 cx;
+    s32 cy;
+    s32 radius;
+    s32 y;
+    s32 dy;
+    s32 half;
+    s32 left;
+    s32 right;
+    s32 i;
+    s32 k;
+
+    cx = (pos[0] + obj->x) >> 8;
+    cy = (pos[1] + obj->y) >> 8;
+    if (obj->flags & 1)
+    {
+        radius = obj->field30.radius;
+        for (y = 0; y <= 0xE3; y++)
+        {
+            if (y > cy - radius && y < cy + radius)
+            {
+                dy = y - cy;
+                half = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(radius * radius - dy * dy);
+                left = cx - half;
+                if (left <= 0)
+                {
+                    left = 1;
+                }
+                else if (left > 0xEF)
+                {
+                    left = 0xEF;
+                }
+                right = cx + half;
+                if (right <= 0)
+                {
+                    right = 1;
+                }
+                else if (right > 0xEF)
+                {
+                    right = 0xEF;
+                }
+                ((u16 *)obj->rows)[y] = ((left << 8) | right);
+            }
+            else
+            {
+                ((u16 *)obj->rows)[y] = 0;
+            }
+        }
+    }
+    else
+    {
+        for (i = 0; i < 0xE4; i++)
+        {
+            ((u16 *)obj->rows)[i] = 0;
+        }
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08151144/obj_set_flag_08.s", void obj_set_flag_08(struct Obj *obj, s32 on))
 {
