@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct ScrollNode
 {
@@ -59,12 +60,15 @@ struct SpriteObj
     s32 unk6C;
     u8 filler70[0x74 - 0x70];
     u8 unk74;
-    u8 filler75[0x77 - 0x75];
+    u8 filler75;
+    u8 flags76;
     u8 flags77;
     u8 flags78;
     u8 flags79;
     u16 unk7A;
     u16 unk7C;
+    u8 flags7E;
+    u8 filler7F;
     u32 target;
     s32 unk84;
     s32 unk88;
@@ -134,6 +138,9 @@ extern u8 gUnk_03000ED0;
 extern u32 gUnk_03000F6C;
 extern u8 gUnk_03000F68;
 extern struct SpriteObj *gUnk_03000F60;
+extern s16 gUnk_03000EC8[];
+extern s16 gUnk_03000ECC[];
+extern u8 gSys[];
 
 void sprite_set_action(struct SpriteObj *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -173,8 +180,85 @@ void link_actor_if_free(struct SpriteObj *obj);
 void ramp_values_then_remove(struct SpriteObj *obj);
 ASM_FUNC("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(void))
 
-ASM_FUNC("asm/code_08078708/ramp_values_then_remove.s", void ramp_values_then_remove(struct SpriteObj *obj))
-ASM_FUNC("asm/code_08078708/link_actor_if_free.s", void link_actor_if_free(struct SpriteObj *obj))
+static inline s32 scale_by_18(s32 h)
+{
+    return ((h << 3) + h) << 1;
+}
+
+NONMATCH("asm/code_08078708/ramp_values_then_remove.s", void ramp_values_then_remove(struct SpriteObj *obj))
+{
+    s32 t;
+    s32 resX;
+    s32 resY;
+    u32 link;
+    u16 *oam;
+
+    update_positions_to_target(obj);
+    t = obj->timer - 1;
+    obj->timer = t;
+    if ((s16)t <= 18)
+    {
+        resX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000EC8[obj->mode]), (s16)obj->timer);
+        resY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000ECC[obj->mode]), (s16)obj->timer);
+        link = (((u32)gSys[0x888] << 28) >> 31) << 10;
+        oam = (u16 *)(gSys + 0x80 + link + (((u32)obj->desc->order << 27) >> 22));
+        oam[3] = resX;
+        oam[7] = resY;
+        oam[11] = -resY;
+        oam[15] = resX;
+        if ((s16)obj->timer == 1)
+            obj_release(obj);
+    }
+}
+END_NONMATCH
+NONMATCH("asm/code_08078708/link_actor_if_free.s", void link_actor_if_free(struct SpriteObj *obj))
+{
+    struct SpriteObj *linkA;
+    struct SpriteObj *linkB;
+    struct SpriteObj *actorA;
+    struct SpriteObj *actorB;
+    struct SpriteObj *partner;
+    s32 a0;
+    s32 t;
+
+    linkA = gWorld->slots[6];
+    actorA = (struct SpriteObj *)((u8 *)linkA + 8);
+    linkB = gWorld->slots[7];
+    actorB = (struct SpriteObj *)((u8 *)linkB + 8);
+    if (obj->mode == 0)
+    {
+        a0 = obj->unkA0;
+        if (a0 == 0 || a0 == 2)
+        {
+            if ((linkA->flags7E & 0x80) || actorA->unk18 <= 0x1000)
+                goto timer;
+            partner_link_update(obj, actorA, 0xFF);
+            goto timer;
+        }
+        if ((linkA->flags7E & 0x80) || actorA->unk18 != 0)
+            goto timer;
+        partner_link_update(obj, actorA, 0xFF);
+        goto timer;
+    }
+    a0 = obj->unkA0;
+    if (a0 > 2)
+        goto out_of_range;
+    if (a0 < 1)
+        goto out_of_range;
+    if ((linkB->flags7E & 0x80) || actorB->unk18 <= 0x1000)
+        goto timer;
+    partner_link_update(obj, actorB, 0xFF);
+    goto timer;
+out_of_range:
+    if (!(actorB->flags76 & 0x80) && actorB->unk18 == 0)
+        partner_link_update(obj, actorB, 0xFF);
+timer:
+    t = obj->timer;
+    obj->timer = t - 1;
+    if ((s16)t <= 0)
+        obj_release(obj);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08078708/update_positions_to_target.s", s32 update_positions_to_target(struct SpriteObj *obj))
 
@@ -431,7 +515,6 @@ NONMATCH("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target
         sprite_set_action(obj, 0, 0x4029, 0);
         ((struct Flags79Bit0 *)&obj->flags79)->bit0 = 0;
         obj->flags78 = (obj->flags78 & 0x1F) | 0x20;
-        (void)*(volatile u32 *)&gUnk_03000F6C;
         obj->unk18 = 0x1800;
         obj->callback = 0;
         gUnk_03000ED0 = 1;
@@ -467,7 +550,7 @@ NONMATCH("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_un
                 y = 0x6000;
             }
             *pos = y;
-            pos = &obj->unk8C;
+            pos++;
             *pos = 0x1800;
             obj->flags79 |= 0x20;
             obj->unk7C = 0x300;
@@ -547,7 +630,7 @@ NONMATCH("asm/code_08078708/timer_reset_pos_and_cb.s", void timer_reset_pos_and_
                 y = 0x6000;
             }
             *pos = y;
-            pos = &obj->unk8C;
+            pos++;
             *pos = 0x1800;
             obj->flags79 |= 0x20;
             obj->unk7C = 0x300;
