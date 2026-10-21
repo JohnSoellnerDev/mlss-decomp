@@ -278,22 +278,24 @@ END_NONMATCH
 
 NONMATCH("asm/code_08178064/obj_zoom_spin5_size200_84cc.s", void obj_zoom_spin5_size200_84cc(struct Point1Obj *obj))
 {
-    s16 *cs;
-    s16 *sn;
     struct Point1Local l;
-    s32 zoom;
     s32 speed;
     s32 base;
     s32 counter;
     s32 angle;
     struct ObjRecord *rec;
     u32 *words;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
     u32 h;
     u32 saved;
     s32 left;
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s32 zoom;
     s32 vx;
     s32 vy;
     s32 vz;
@@ -335,19 +337,22 @@ NONMATCH("asm/code_08178064/obj_zoom_spin5_size200_84cc.s", void obj_zoom_spin5_
         l.y = y1;
         z1 = (vz * zoom) / 0x100;
         l.z = z1;
-        sn = &gSineTable[angle & 0xFF];
-        cs = &gCosineTable[angle & 0xFF];
         t = z1;
+        cs = &gCosineTable[angle & 0xFF];
         t = t * (*cs / 0x40);
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
         z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        cb = gCosineTable;
+        cs = cb + 32;
+        t = t * (*cs / 0x40);
+        y2 = (t - (sb[32] / 0x40) * z2) / 0x100;
         l.y = y2;
-        z3 = ((z2 * (gCosineTable[32] / 0x40)) + (y1 * (gSineTable[32] / 0x40))) / 0x100;
+        z3 = ((z2 * (*cs / 0x40)) + ((sb[32] / 0x40) * y1)) / 0x100;
         l.z = z3;
 
         if (obj->flags & 0x80) {
@@ -402,8 +407,6 @@ END_NONMATCH
 
 NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8754.s", void obj_zoom_spin6_shrink_8754(struct Point1Obj *obj))
 {
-    s16 *cs;
-    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 speed;
@@ -412,6 +415,10 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8754.s", void obj_zoom_spin6_s
     s32 counter;
     struct ObjRecord *rec;
     u32 *words;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
     u32 h;
     u32 saved;
     s32 left;
@@ -462,16 +469,19 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8754.s", void obj_zoom_spin6_s
         t = z1;
         cs = &gCosineTable[angle & 0xFF];
         t = t * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
         z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        cb = gCosineTable;
+        cs = cb + 32;
+        t = t * (*cs / 0x40);
+        y2 = (t - (sb[32] / 0x40) * z2) / 0x100;
         l.y = y2;
-        z3 = ((z2 * (gCosineTable[32] / 0x40)) + (y1 * (gSineTable[32] / 0x40))) / 0x100;
+        z3 = ((z2 * (*cs / 0x40)) + ((sb[32] / 0x40) * y1)) / 0x100;
         l.z = z3;
 
         if (obj->flags & 0x80) {
@@ -527,8 +537,6 @@ END_NONMATCH
 
 NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_89c0.s", void obj_zoom_spin6_shrink_89c0(struct Point1Obj *obj))
 {
-    s16 *cs;
-    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 speed;
@@ -537,6 +545,10 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_89c0.s", void obj_zoom_spin6_s
     s32 counter;
     struct ObjRecord *rec;
     u32 *words;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
     u32 h;
     u32 saved;
     s32 left;
@@ -587,16 +599,19 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_89c0.s", void obj_zoom_spin6_s
         t = z1;
         cs = &gCosineTable[angle & 0xFF];
         t = t * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
         z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        cb = gCosineTable;
+        cs = cb + 32;
+        t = t * (*cs / 0x40);
+        y2 = (t - (sb[32] / 0x40) * z2) / 0x100;
         l.y = y2;
-        z3 = ((z2 * (gCosineTable[32] / 0x40)) + (y1 * (gSineTable[32] / 0x40))) / 0x100;
+        z3 = ((z2 * (*cs / 0x40)) + ((sb[32] / 0x40) * y1)) / 0x100;
         l.z = z3;
 
         if (obj->flags & 0x80) {
@@ -652,8 +667,6 @@ END_NONMATCH
 
 NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8c30.s", void obj_zoom_spin6_shrink_8c30(struct Point1Obj *obj))
 {
-    s16 *cs;
-    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 speed;
@@ -662,6 +675,10 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8c30.s", void obj_zoom_spin6_s
     s32 counter;
     struct ObjRecord *rec;
     u32 *words;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
     u32 h;
     u32 saved;
     s32 left;
@@ -712,16 +729,19 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8c30.s", void obj_zoom_spin6_s
         t = z1;
         cs = &gCosineTable[angle & 0xFF];
         t = t * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
         z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        cb = gCosineTable;
+        cs = cb + 32;
+        t = t * (*cs / 0x40);
+        y2 = (t - (sb[32] / 0x40) * z2) / 0x100;
         l.y = y2;
-        z3 = ((z2 * (gCosineTable[32] / 0x40)) + (y1 * (gSineTable[32] / 0x40))) / 0x100;
+        z3 = ((z2 * (*cs / 0x40)) + ((sb[32] / 0x40) * y1)) / 0x100;
         l.z = z3;
 
         if (obj->flags & 0x80) {
@@ -777,8 +797,6 @@ END_NONMATCH
 
 NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8ea0.s", void obj_zoom_spin6_shrink_8ea0(struct Point1Obj *obj))
 {
-    s16 *cs;
-    s16 *sn;
     struct Point1Local l;
     s32 zoom;
     s32 speed;
@@ -787,6 +805,10 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8ea0.s", void obj_zoom_spin6_s
     s32 counter;
     struct ObjRecord *rec;
     u32 *words;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
     u32 h;
     u32 saved;
     s32 left;
@@ -837,16 +859,19 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8ea0.s", void obj_zoom_spin6_s
         t = z1;
         cs = &gCosineTable[angle & 0xFF];
         t = t * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
         z2 = (t - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
+        cb = gCosineTable;
+        cs = cb + 32;
+        t = t * (*cs / 0x40);
+        y2 = (t - (sb[32] / 0x40) * z2) / 0x100;
         l.y = y2;
-        z3 = ((z2 * (gCosineTable[32] / 0x40)) + (y1 * (gSineTable[32] / 0x40))) / 0x100;
+        z3 = ((z2 * (*cs / 0x40)) + ((sb[32] / 0x40) * y1)) / 0x100;
         l.z = z3;
 
         if (obj->flags & 0x80) {
