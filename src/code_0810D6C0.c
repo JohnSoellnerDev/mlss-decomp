@@ -951,7 +951,8 @@ void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 streng
 NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode))
 {
     s32 delta;
-    s16 vel;
+    s32 vel;
+    s32 v2;
     s32 scaled;
     s32 modeVal;
     s32 link;
@@ -1001,11 +1002,11 @@ NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(stru
     apply_partner_effect(obj, partner, delta, modeVal, partner->unk10 / 0x100, partner->unk18 / 0x100, 0);
     if ((partner->unk28->unk111 & 2) == 0)
     {
-        vel = partner->unk28->unkF6;
-        if (vel == 0)
+        v2 = partner->unk28->unkF6;
+        if (v2 == 0)
         {
             obj_stop(partner);
-            partner->unk28->unk11E = vel;
+            partner->unk28->unk11E = v2;
             return 1;
         }
     }
