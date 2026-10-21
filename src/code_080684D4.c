@@ -177,7 +177,51 @@ void obj_wait_free_action2_arc(struct Actor *obj);
 void obj_pose_then_spawn_arc(struct Actor *obj);
 void obj_spawn_child_412b(struct Actor *obj);
 
-ASM_FUNC("asm/code_080684D4/obj_child_arc_land.s", void obj_child_arc_land(struct Actor *obj))
+void obj_child_arc_land(struct Actor *obj)
+{
+    s32 off;
+    s32 curve;
+    s32 dhk;
+    u32 id;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    obj->pose->unkC += obj->targetH;
+    obj->x = obj->paramA4 * (s16)obj->timer / obj->paramA0 + ((s16)obj->dx << 8);
+    obj->y = obj->paramA8 * (s16)obj->timer / obj->paramA0 + ((s16)obj->dy << 8);
+    off = (s16)obj->timer - obj->paramA0 / 2;
+    curve = (off * off) * obj->param9C;
+    dhk = ((s16)obj->dh << 8) + 0x3000;
+    obj->h = curve + dhk;
+    obj->timer++;
+    if (base_to_px(obj->h) <= 8)
+    {
+        obj->h = 8;
+        obj->y = obj->owner->data->targetY + 2;
+        id = 0x10A5;
+        x = base_to_px(obj->baseX);
+        y = base_to_px(obj->baseY);
+        h = base_to_px(obj->baseH);
+        effect_spawn_at(id, x, y, h, obj);
+        sprite_set_action(obj, 1, 0, 0);
+        ((struct ObjFlags79Bit0 *)obj)->bit0 = 1;
+        switch (obj->targetH)
+        {
+        case 0:
+            obj->targetX = 0x99;
+            break;
+        case 1:
+            obj->targetX = 0x180;
+            break;
+        default:
+            obj->targetX = 0x300;
+            break;
+        }
+        obj->state = obj_drift_by_target_x;
+        set_slot_value(0x3B, -1);
+    }
+}
 
 void obj_wait_free_action5(struct Actor *obj)
 {
@@ -200,7 +244,51 @@ void obj_wait_free_action5(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_080684D4/obj_spawn_child_append.s", void obj_spawn_child_append(struct Actor *obj))
+NONMATCH("asm/code_080684D4/obj_spawn_child_append.s", void obj_spawn_child_append(struct Actor *obj))
+{
+    struct Actor *child;
+    struct Actor *last;
+    struct ActorData *part;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 8, 0, 0);
+        {
+            u32 id = 0x10B5;
+            s32 x = base_to_px(obj->baseX);
+            s32 y = base_to_px(obj->baseY);
+            s32 h = base_to_px(obj->baseH);
+            effect_spawn_at(id, x, y, h, obj);
+        }
+        part = obj->data;
+        child = obj_spawn(part, 0x4107, base_to_px(obj->baseX) - 0x12, base_to_px(obj->baseY),
+                          base_to_px(obj->baseH) + 4, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        /* the walk always ends at NULL, so the store below goes to address 0x30, as in the original */
+        last = obj->child;
+        if (last != 0)
+        {
+            do
+            {
+                last = last->child;
+            } while (last != 0);
+        }
+        last->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        inherit_flags_77(obj, child);
+        child->callback68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        obj_list_push_default(child);
+        child->cb58 = obj_link_owner_callback;
+        child->cb5C = obj_contact_callback;
+        child->tag = obj->tag;
+        child->state = obj_drift_left_child;
+        obj->dx = obj->paramA0;
+        set_slot_value(0x85, -1);
+        obj->state = obj_timer_dx_steps;
+    }
+}
+END_NONMATCH
 
 void obj_timer_dx_steps(struct Actor *obj)
 {
