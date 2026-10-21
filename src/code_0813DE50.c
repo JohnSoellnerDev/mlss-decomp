@@ -263,6 +263,18 @@ void load_record_state(u8 *owner, struct Enemy *ent, EnemyFn *out);
 void random_collide(struct Owner *owner, struct Enemy *obj, EnemyFn *out);
 void step_with_box_check(void *ctx, struct Enemy *ent, EnemyFn *out);
 void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out);
+void start_move_to_3d(struct Enemy *obj, s32 x, s32 y, s32 z, u32 speed, ByteArg flag);
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
+u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z);
+void obj_random_orbit_offset(struct Enemy *obj, struct Partner *partner);
+void obj_settle_on_tiles(struct Enemy *obj, u32 flag);
+void enemy_hop_prepare_fall(void);
+void enemy_hop_fall_then_next(void);
+void enemy_xyz_step_done(void);
+void enemy_hop_land_on_partner(void);
+void enemy_hop_land_next(void);
+void enemy_hop_fall_to_tile(void);
+void enemy_after_fall_check_box(void);
 u8 enemy_partner_in_sensor(void *ctx, struct Enemy *ent);
 u8 step_pos_xy_c(struct Enemy *ent);
 void collide_react(struct Owner *owner, struct Enemy *ent, struct Partner *bro, u32 speed, u32 a, s32 b, s32 c, u32 d, u32 e);
@@ -331,7 +343,74 @@ void child_box_state(void *ctx, struct Enemy *obj)
 }
 
 
-ASM_FUNC("asm/code_0813DE50/move_toward_partner.s", void move_toward_partner(void *ctx, struct Enemy *obj, EnemyFn *slot))
+NONMATCH("asm/code_0813DE50/move_toward_partner.s", void move_toward_partner(void *ctx, struct Enemy *obj, EnemyFn *slot))
+{
+    struct Partner *partner;
+    struct Enemy *sprite = obj->body;
+    s32 dx;
+    s32 dy;
+    s32 t;
+    s32 q;
+    s32 prod;
+    s32 px;
+    s32 py;
+    s32 dist;
+    u32 rnd;
+    s32 idx;
+    s32 sign;
+    s32 ux;
+    s32 tx;
+    s32 ty;
+
+    partner = owner_entry(ctx, 0xFF);
+    dx = partner->posX - sprite->posX;
+    t = dx;
+    if (dx < 0)
+    {
+        t = dx + 3;
+    }
+    q = t >> 2;
+    prod = dx * q;
+    if (prod < 0)
+    {
+        prod += 3;
+    }
+    px = prod >> 2;
+
+    dy = partner->posY - sprite->posY;
+    t = dy;
+    if (dy < 0)
+    {
+        t = dy + 3;
+    }
+    q = t >> 2;
+    prod = dy * q;
+    if (prod < 0)
+    {
+        prod += 3;
+    }
+    py = prod >> 2;
+
+    dist = ((s32 (*)(s32))gMathRoutines)(px + py);
+    rnd = mt19937_next();
+    idx = rand_below(2, rnd);
+    sign = *(s16 *)((u8 *)sprite + 0x130 + (idx << 1));
+
+    ux = ((partner->posX - sprite->posX) << 6) / dist;
+    tx = ux * sign + sprite->posX;
+    ty = (((partner->posY - sprite->posY) << 6) / dist) * sign + sprite->posY;
+
+    obj_start_hop(sprite, 0, tx, ty);
+    obj_approach_step(sprite);
+
+    sprite->unk20D |= 8;
+    *(u32 *)&sprite->unk20C &= 0xFFFC7FFF;
+    *(u32 *)&sprite->unk20C |= 0x8000;
+    ((struct Flags1D6 *)&obj->unk1D6)->bit0 = 0;
+    ((struct Flags1D6 *)&obj->unk1D6)->bit1 = 1;
+    *slot = bounce_and_check;
+}
+END_NONMATCH
 
 
 void bounce_and_check(void *ctx, struct Enemy *obj, EnemyFn *out)
@@ -717,7 +796,96 @@ void probe_zone_point(void *ctx, struct Enemy *obj, EnemyFn *out)
     }
 }
 
-ASM_FUNC("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owner *ctx, struct Enemy *body, EnemyFn *out))
+NONMATCH("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owner *ctx, struct Enemy *body, EnemyFn *out))
+{
+    struct Partner *partner;
+    u16 hit16;
+    u8 flag;
+    u8 *map;
+    s32 zero;
+    s32 height;
+    s32 outB;
+    s32 outC;
+    s32 t;
+    s32 qx;
+    s32 qy;
+    s32 dist;
+    s32 x;
+    s32 y;
+    u8 hit;
+    u8 *table;
+    u8 subHit;
+    struct Sprite *sprite;
+
+    zero = 0;
+    flag = 1;
+    partner = owner_entry(ctx, 0xFF);
+    obj_random_orbit_offset(body, partner);
+    hit16 = zero;
+
+    t = (body->vecX << 8) - body->posX;
+    if (t < 0)
+    {
+        t += 3;
+    }
+    qx = t >> 2;
+    t = (body->vecY << 8) - body->posY;
+    if (t < 0)
+    {
+        t += 3;
+    }
+    qy = t >> 2;
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(qx * qx + qy * qy);
+    *(s32 *)((u8 *)body + 0x1CC) = dist << 2;
+    body->unk1D2 = body->unk128[body->index];
+
+    x = body->vecX << 8;
+    body->posX = x;
+    y = body->vecY << 8;
+    body->posY = y;
+    body->posZ = -1;
+    body->unk18 = zero;
+
+    map = *(u8 **)((u8 *)ctx + 0x304);
+    tile_query(map, x, y, &height, &outB, &outC, (u8)0, flag);
+    body->posZ = height;
+    hit = probe_body_hit(ctx, body, body->posX, body->posY, height + body->unk18, 1, &hit16);
+    if ((u8)hit == 0)
+    {
+        table = *(u8 **)((u8 *)body + 0x338) + 0x68;
+        subHit = (*(u8 (**)(struct Enemy *))(table + 4))((struct Enemy *)((u8 *)body + *(s16 *)table));
+        if ((u8)subHit == 0)
+        {
+            if (((*(u8 *)&hit16 ^ 1) & 1) != 0)
+            {
+                if ((u8)position_blocked(ctx, body, body->posX, body->posY, body->posZ + body->unk18) == 0)
+                {
+                    obj_set_cell_coord(body, 0xC, 0);
+                    ((struct Flags214 *)&body->unk214)->low3 = flag;
+                    sprite = body->sprite;
+                    ((struct Flags12 *)&sprite->unk12)->mid2 = 1;
+                    obj_set_sprite_link(body, 1);
+                    obj_settle_on_tiles(body, 1);
+                    *(u8 *)((u8 *)body + 0x217) |= flag;
+                    body->unk20E |= 4;
+                    *out = face_partner;
+                    return;
+                }
+            }
+        }
+    }
+    if (*(u16 *)((u8 *)body + 0x58 + 0x17A) != 0)
+    {
+        *out = tick_store;
+    }
+    else
+    {
+        out[0] = out[1];
+        ((struct Flags1D6 *)((u8 *)body + 0x58 + 0x17E))->bit0 = 1;
+        ((struct Flags1D6 *)((u8 *)body + 0x58 + 0x17E))->bit1 = 0;
+    }
+}
+END_NONMATCH
 
 
 
@@ -1133,7 +1301,116 @@ void init_state_from_box(void *ctx, struct Enemy *obj)
     }
 }
 
-ASM_FUNC("asm/code_0813DE50/enemy_hop_state_runner.s", void enemy_hop_state_runner(u8 *owner, struct Enemy *ent))
+NONMATCH("asm/code_0813DE50/enemy_hop_state_runner.s", void enemy_hop_state_runner(u8 *owner, struct Enemy *ent))
+{
+    struct Record *rec = ent->rec;
+    EnemyFn *slot = ent->unk1A0;
+    EnemyFn handler = slot[0];
+    EnemyFn sub;
+    s32 factor;
+    s32 height;
+    s32 mask;
+    s32 gap;
+    s32 speed;
+    s32 frame;
+    s32 step;
+    s32 tol;
+    s32 land;
+    s32 newLand;
+    s32 z;
+    s32 sinv;
+    s32 *landp;
+    u32 *phasep;
+
+    handler(owner, ent, slot);
+    sub = slot[0];
+    if (sub == enemy_hop_prepare_fall)
+    {
+        return;
+    }
+    if (sub == enemy_hop_fall_then_next)
+    {
+        return;
+    }
+    if (sub == enemy_hop_jump_to_partner)
+    {
+        return;
+    }
+    if (sub == enemy_xyz_step_done)
+    {
+        return;
+    }
+    if (sub == enemy_hop_land_on_partner)
+    {
+        return;
+    }
+    if (sub == enemy_hop_land_next)
+    {
+        return;
+    }
+    if (sub == enemy_hop_fall_to_tile)
+    {
+        return;
+    }
+    if (sub == enemy_after_fall_check_box)
+    {
+        return;
+    }
+
+    landp = &ent->unk2EC;
+    phasep = &ent->unk2F4;
+    factor = rec->unk22;
+    land = *landp;
+    height = land - ent->posZ;
+    mask = 0xFF;
+    sinv = gSineTable[*(u8 *)phasep];
+    if (sinv < 0)
+    {
+        sinv += 0x3F;
+    }
+    sinv >>= 6;
+    ent->unk18 = height + factor * sinv;
+
+    speed = *(s16 *)&ent->unk2F8;
+    frame = ent->sprite->unk20;
+    speed = frame * speed + 8;
+    if (speed < 0)
+    {
+        speed += 0xF;
+    }
+    *phasep = ((speed >> 4) + *phasep) & mask;
+
+    step = rec->unk26;
+    tol = rec->unk24 << 12;
+    land = *landp;
+    gap = land - ent->posZ;
+    if (gap > tol)
+    {
+        newLand = land - step;
+        *landp = newLand;
+        z = ent->posZ;
+        if (newLand - z > tol)
+        {
+            return;
+        }
+    }
+    else
+    {
+        if (gap >= tol)
+        {
+            return;
+        }
+        newLand = land + step;
+        *landp = newLand;
+        z = ent->posZ;
+        if (newLand - z < tol)
+        {
+            return;
+        }
+    }
+    *landp = z + tol;
+}
+END_NONMATCH
 
 extern const u8 gFrameAttrTable[];
 void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out);
@@ -1210,4 +1487,89 @@ void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out)
 
 s32 rand_below(s32 range, u32 seed);
 
-ASM_FUNC("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct Record *rec = ent->rec;
+    u8 idx;
+    u32 partnerIdx;
+    struct Partner *partner;
+    s32 partnerTop;
+    s32 entTop;
+    s32 stepH;
+    s32 jumpDz;
+    s32 dx;
+    s32 dy;
+    s32 absDx;
+    s32 absDy;
+    struct Sprite *sprite;
+    u8 cell;
+    u16 speed;
+
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        partnerIdx = idx;
+    }
+    else
+    {
+        partnerIdx = ((u32)owner->flags208 << 30) >> 31;
+    }
+    partner = *(struct Partner **)((u8 *)owner + 0x28 + (partnerIdx << 2));
+
+    *(u16 *)(ai + 0x178) = rand_below(4, mt19937_next());
+    stepH = *(u8 *)((u8 *)ent->rec + *(u16 *)(ai + 0x178) + 0x34);
+
+    partnerTop = partner->posZ + partner->unk18;
+    entTop = ent->posZ + ent->unk18;
+    if (entTop > partnerTop)
+    {
+        jumpDz = stepH << 12;
+    }
+    else
+    {
+        jumpDz = partnerTop + (stepH << 12) - entTop;
+    }
+
+    speed = *(u16 *)((u8 *)ent->rec + (*(u16 *)(ai + 0x178) << 1) + 0x2C);
+    start_move_to_3d(ent, 0, 0, jumpDz, speed, (u8)1);
+
+    dx = partner->posX - ent->posX;
+    absDx = dx;
+    if (dx < 0)
+    {
+        absDx = -dx;
+    }
+    dy = partner->posY - ent->posY;
+    absDy = dy;
+    if (dy < 0)
+    {
+        absDy = -dy;
+    }
+
+    if (absDx > absDy)
+    {
+        ((struct Flags12b *)&ent->unk24)->low3 = (dx < 0) ? 6 : 2;
+    }
+    else if (dy < 0)
+    {
+        ((struct Flags12b *)&ent->unk24)->low3 = 0;
+    }
+    else
+    {
+        ((struct Flags12b *)&ent->unk24)->low3 = 4;
+    }
+
+    ((struct Flags214 *)&ent->unk214)->low3 = 1;
+    cell = gFrameAttrTable[(((u32)ent->unk216 << 28) >> 30) * 0x10 + (((u32)ent->unk24 << 29) >> 29) + 8];
+    obj_set_cell_coord(ent, cell, 0);
+
+    sprite = ent->sprite;
+    sprite->unk20 = *(u8 *)((u8 *)rec + *(u16 *)(ai + 0x178) + 0x28);
+
+    *(s32 *)(ai + 0x184) = ent->posX;
+    *(s32 *)(ai + 0x188) = ent->posY;
+    *(s32 *)(ai + 0x18C) = ent->posZ;
+    *(s32 *)(ai + 0x190) = ent->unk18;
+    *out = enemy_xyz_step_done;
+}
+END_NONMATCH
