@@ -262,29 +262,26 @@ u32 sub_0803C454(struct PairObj *obj)
 
 NONMATCH("asm/code_0803C438/sub_0803C47C.s", u32 sub_0803C47C(struct PairObj *obj))
 {
-    s32 flags;
-    struct PairSub *a = obj->subA;
-    if ((u16)(a->state - 0x2A) <= 1)
+    s32 mask;
+    if ((u16)(obj->subA->state - 0x2A) <= 1)
     {
         return 1;
     }
-    flags = obj->half20A;
-    flags &= ~0x180;
-    obj->half20A = flags;
+    mask = ~0x180;
+    obj->half20A = mask & obj->half20A;
     return 0;
 }
 END_NONMATCH
 
 NONMATCH("asm/code_0803C438/sub_0803C4B4.s", u32 sub_0803C4B4(struct PairObj *obj))
 {
-    s32 flags;
+    s32 mask;
     if ((u16)(obj->subA->state - 0x27) <= 1)
     {
         return 1;
     }
-    flags = obj->half20A;
-    flags &= ~0x180;
-    obj->half20A = flags;
+    mask = ~0x180;
+    obj->half20A = mask & obj->half20A;
     return 0;
 }
 END_NONMATCH
@@ -449,7 +446,8 @@ NONMATCH("asm/code_0803C438/mark_link_entry.s", void mark_link_entry(struct Pair
             layer3_entries_by_attr(obj->map304, (u16)link);
             {
                 u32 v = *mask;
-                *mask = (v & -16) | (((((u32)v << 28) >> 28) | bit) & 0xF);
+                s32 keep = -16;
+                *mask = (v & keep) | (((((u32)v << 28) >> 28) | bit) & 0xF);
             }
             set_slot_value(0x53, -1);
         }
