@@ -31,12 +31,21 @@ struct ObjLists
 
 struct TrackObj
 {
-    u8 filler0[0x4E];
+    u8 filler0[0x1E];
+    u16 selector;
+    u8 filler20[0x4E - 0x20];
     u16 posA[2];
     s16 camX;
     u16 posB[2];
     s16 camY;
-    u8 filler5A[0x72 - 0x5A];
+    u16 dstA[2];
+    s16 velX;
+    u16 dstB[2];
+    s16 velY;
+    s16 stepA[2];
+    u16 deltaX;
+    s16 stepB[2];
+    u16 deltaY;
     u16 baseA[2];
     u8 filler76[0x78 - 0x76];
     u16 baseB[2];
@@ -44,6 +53,12 @@ struct TrackObj
     s16 scaleA[2];
     u8 filler82[0x84 - 0x82];
     s16 scaleB[2];
+    u8 filler88[0x8A - 0x88];
+    u8 flags[2];
+    u8 filler8C;
+    u8 phase[2];
+    u8 filler8F;
+    u8 rate[2];
 };
 
 struct MapStateScroll
@@ -77,6 +92,10 @@ extern u8 gUnk_0203FFF8[];
 void set_irq_callback(u32 kind, void *cb);
 u8 *ptr_03000ffc_plus_1ff8(void);
 u32 eeprom_save_slots(void *rec, u32 mode);
+extern const u8 gColumnTable[];
+extern s16 gWaveX[];
+extern s16 gWaveY[];
+void scroll_map_slot(struct TrackObj *obj, u32 slot, s16 a, s16 b);
 
 ASM_FUNC("asm/code_0805799C/oam_draw_unit_markers.s", void oam_draw_unit_markers(void))
 
@@ -310,9 +329,64 @@ NONMATCH("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mo
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0805799C/obj_slots_update.s", void obj_slots_update(void))
+ASM_FUNC("asm/code_0805799C/obj_slots_update.s", void obj_slots_update(struct TrackObj *obj))
 
-ASM_FUNC("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(void))
+NONMATCH("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(struct TrackObj *obj))
+{
+    u16 i;
+
+    for (i = 0; i < 2; i++)
+    {
+        u8 *cols;
+        u16 entry;
+        u16 *dst;
+        u16 val;
+
+        cols = (u8 *)gColumnTable;
+        entry = *(u16 *)(cols + (((2 - i) << 1) + (obj->selector << 3)));
+
+        if (entry != 0xFFFF)
+        {
+            u8 *sa;
+            u8 *sb;
+            s32 jump;
+            u32 off;
+
+            jump = obj->flags[i] & 0x80;
+            off = i << 1;
+            sa = (u8 *)obj->stepA;
+            sb = (u8 *)obj->stepB;
+            if (jump != 0)
+            {
+                s32 prodB;
+                u8 sum;
+
+                sum = obj->rate[i] + obj->phase[i];
+                obj->phase[i] = sum;
+                *(s16 *)(sa + off) = gWaveX[obj->flags[i] & 0xF] * (sum >> 2);
+                *(s16 *)(sb + off) = prodB = gWaveY[obj->flags[i] & 0xF] * (obj->phase[i] >> 2);
+                if (*(s16 *)(sa + off) != 0 || (prodB << 16) != 0)
+                {
+                    scroll_map_slot(obj, i, *(s16 *)(sa + off), *(s16 *)(sb + off));
+                    obj->phase[i] = 0;
+                }
+            }
+            *(s16 *)(sa + off) = 0;
+            dst = (u16 *)(sb + off);
+            val = 0;
+        }
+        else
+        {
+            obj->posA[i] = *(u16 *)&obj->camX;
+            obj->posB[i] = *(u16 *)&obj->camY;
+            obj->dstA[i] = obj->posA[i];
+            dst = &obj->dstB[i];
+            val = obj->posB[i];
+        }
+        *dst = val;
+    }
+}
+END_NONMATCH
 
 void calc_obj_scaled_pos(struct TrackObj *obj)
 {
@@ -333,4 +407,4 @@ ASM_FUNC("asm/code_0805799C/load_map_tilemap_layers.s", void load_map_tilemap_la
 
 ASM_FUNC("asm/code_0805799C/draw_metatile_2x2.s", void draw_metatile_2x2(void))
 
-ASM_FUNC("asm/code_0805799C/scroll_map_slot.s", void scroll_map_slot(void))
+ASM_FUNC("asm/code_0805799C/scroll_map_slot.s", void scroll_map_slot(struct TrackObj *obj, u32 slot, s16 a, s16 b))
