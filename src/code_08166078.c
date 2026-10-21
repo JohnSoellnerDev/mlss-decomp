@@ -143,6 +143,7 @@ void obj_flush_tiles(u8 *obj)
     dma_copy_or_queue(*(void **)(obj + 0x20), *(void **)(obj + 0x38), 0x3000, 0x20, 0);
 }
 
+// Same result as the original; the original also keeps a dead test on p[1] first, which GCC drops.
 NONMATCH("asm/code_08166078/state_clamp_pair.s", s32 state_clamp_pair(u32 unused, u8 *p))
 {
     s32 v;
@@ -234,7 +235,7 @@ void rom_offset_call_c(u8 *obj)
     }
 }
 
-NONMATCH("asm/code_08166078/tilemap_write_entry.s", void tilemap_write_entry(u8 *obj, u32 index, u32 tile, u32 pal, u32 hi))
+void tilemap_write_entry(u8 *obj, u32 index, u32 tile, u32 pal, u32 hi)
 {
     u32 value;
     u16 *table;
@@ -244,14 +245,13 @@ NONMATCH("asm/code_08166078/tilemap_write_entry.s", void tilemap_write_entry(u8 
     pal <<= 16;
     hi <<= 16;
     table = *(u16 **)(obj + 0x18);
-    dst = table + index;
+    dst = (u16 *)((index << 1) + (u32)table);
     value |= pal >> 11;
     value |= hi >> 6;
     *dst = value;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08166078/palette_fade16.s", void palette_fade16(u8 *obj, u32 red, u32 green, u32 blue))
+void palette_fade16(u8 *obj, u32 red, u32 green, u32 blue)
 {
     u16 table[16];
     u32 red_end;
@@ -277,20 +277,21 @@ NONMATCH("asm/code_08166078/palette_fade16.s", void palette_fade16(u8 *obj, u32 
         r_a = lerp_step_08164EE0(0, red_end, 0x10, step);
         g_a = lerp_step_08164EE0(0, g_end, 0x10, step);
         b_a = lerp_step_08164EE0(0, b_end, 0x10, step);
-        g_a = (g_a << 5) | r_a;
+        g_a <<= 5;
+        g_a |= r_a;
         *out = (b_a << 10) | g_a;
         next = step + 1;
         r_b = lerp_step_08164EE0(0, red_end, 0x10, next);
         g_b = lerp_step_08164EE0(0, g_end, 0x10, next);
         b_b = lerp_step_08164EE0(0, b_end, 0x10, next);
-        g_b = (g_b << 5) | r_b;
+        g_b <<= 5;
+        g_b |= r_b;
         out[1] = (b_b << 10) | g_b;
         out += 2;
         step += 2;
     } while ((s32)step <= 15);
     cpu_fast_set(table, *(void **)(obj + 0x18), 8);
 }
-END_NONMATCH
 
 void rom_offset_call_d(u8 *obj, u32 a, u16 b)
 {
@@ -332,11 +333,13 @@ void rom_offset_call_g(u8 *obj, u32 a, u32 b, u16 c)
     fn(*(void **)(obj + 4), a, b, c);
 }
 
+// The original subtracts two symbol names that sit at the same ROM address; only one exists in
+// config/symbols.txt, so the difference folds to 0 here.
 NONMATCH("asm/code_08166078/rom_offset_call_h.s", void rom_offset_call_h(u8 *obj, u32 a, u16 b))
 {
     void (*fn)(void *, u32, u32);
 
-    fn = (void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20));
+    fn =(void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)fill_rect_4bpp_clip - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b);
 }
 END_NONMATCH
@@ -372,12 +375,13 @@ void obj_free_pair_bufs(u8 *obj, u32 flag)
         heap_free_b(obj);
 }
 
+// Same bits as the original; only the registers of the value and the mask are swapped.
 NONMATCH("asm/code_08166078/obj_refresh_flags.s", void obj_refresh_flags(u8 *obj, s32 value))
 {
     u32 flags;
+    u32 mask;
     u8 *sprite;
     u32 v;
-    u32 b;
 
     flags = (u32)*(u16 *)(obj + 0x6C) << 16;
     if (flags != 0)
@@ -399,30 +403,29 @@ NONMATCH("asm/code_08166078/obj_refresh_flags.s", void obj_refresh_flags(u8 *obj
         v |= 0xC0;
         v |= 0x30;
         v |= 0xC;
-        v |= 3;
-        sprite[0x1F] = v;
+        mask = 3;
     }
     else
     {
         sprite = *(u8 **)(obj + 0x10);
-        b = sprite[0x1F];
-        v = 0x3F;
-        v &= b;
+        v = 0x3F & sprite[0x1F];
         v |= 0x80;
         v &= -0x31;
         v |= 0x20;
         v &= -0xD;
         v |= 8;
         v &= -4;
-        v |= 2;
-        sprite[0x1F] = v;
+        mask = 2;
     }
+    sprite[0x1F] = v | mask;
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08166078/obj_update_anim_state.s", void obj_update_anim_state(u8 *obj))
+void obj_update_anim_state(u8 *obj)
 {
     s32 idx;
+    const u8 *frame;
+    void *rec;
 
     if (!(*(u16 *)(obj + 0x56) == *(u16 *)(obj + 0x58) && *(u16 *)(obj + 0x52) == *(u16 *)(obj + 0x54)))
     {
@@ -431,9 +434,9 @@ NONMATCH("asm/code_08166078/obj_update_anim_state.s", void obj_update_anim_state
         {
             if (idx < 0)
                 goto skip_record;
-            obj_load_record(*(void **)(obj + 0x10),
-                            (gFrameRecordOffsets + 4)[*(u16 *)(obj + 0x52)] + (gKeyRecOffsets + 1)[idx],
-                            0, 0, 0);
+            rec = *(void **)(obj + 0x10);
+            frame = gFrameRecordOffsets + 4;
+            obj_load_record(rec, frame[*(u16 *)(obj + 0x52)] + (gKeyRecOffsets + 1)[idx], 0, 0, 0);
             if (*(u16 *)(obj + 0x56) == 0)
                 *(u8 *)(*(u8 **)(obj + 0x10) + 0x12) |= 0x10;
         }
@@ -457,7 +460,6 @@ skip_record:
     }
     obj_set_anim_from_offset(obj);
 }
-END_NONMATCH
 
 u32 obj_create_four_children(u8 *obj, u8 *list)
 {
