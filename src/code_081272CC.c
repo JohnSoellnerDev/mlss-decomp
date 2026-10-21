@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct TaskObj
 {
@@ -46,6 +47,7 @@ struct SysPal
 };
 
 extern u8 gSys[];
+extern u32 gUnk_03000FFC;
 extern const u8 gSaveScreenChildClass[];
 extern u8 gUnk_0203FFB8[];
 extern u32 gUnk_03000D48;
@@ -153,6 +155,41 @@ u32 draw_slot_two_values(struct SaveScreen *obj, void *oam)
     return draw_two_values(oam, a1, a2, (1 << idx) & *flags);
 }
 
-ASM_FUNC("asm/code_081272CC/save_slot_info.s", void save_slot_info(void *out, u8 slot))
+NONMATCH("asm/code_081272CC/save_slot_info.s", void save_slot_info(void *out, u8 slot))
+{
+    u8 *base = (u8 *)gUnk_03000FFC;
+    u32 off = slot * 0x6F8;
+    u8 *at = base + off;
+    u32 t;
+    u8 *pt;
+    u8 *fr;
+    u8 *s;
+    u32 w;
+    u32 status;
+
+    ((u8 *)out)[0x14] = at[0x60];
+    ((u8 *)out)[0x15] = at[0x9C];
+    *(long long *)out = *(long long *)(at + 0xA8);
+    *(long long *)((u8 *)out + 8) = *(long long *)(at + 0xB0);
+    *(u16 *)((u8 *)out + 0x10) = *(u16 *)(at + 0xB8);
+    t = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(*(u32 *)(fr = (pt = base + 0x700) + off), 216000);
+    if (t > 0x63)
+    {
+        ((u8 *)out)[0x17] = 0x3B;
+        ((u8 *)out)[0x16] = 0x63;
+    }
+    else
+    {
+        ((u8 *)out)[0x16] = t;
+        t = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(*(u32 *)fr, 0xE10);
+        ((u8 *)out)[0x17] = MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(t, 0x3C);
+    }
+    s = base + slot * 0x6F8;
+    w = ((((u32)s[0x14] << 28) >> 31) * 12) + slot * 0x6F8;
+    *(u16 *)((u8 *)out + 0x12) = *(u16 *)(base + w + 0x18);
+    status = ((s32)(s[0x14] << 26) < 0 || (s32)(s[0x16] << 29) < 0) ? 2 : ((u32)s[0x14] << 28) >> 31;
+    ((u8 *)out)[0x18] = status;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081272CC/draw_text_line.s", void draw_text_line(void))
