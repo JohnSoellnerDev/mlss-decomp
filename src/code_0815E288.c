@@ -71,6 +71,7 @@ struct Group9
 
 extern const u8 gClassE440[];
 extern const u8 gTransitionTagPhaz[];
+extern const u8 gClassE460[];
 
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
@@ -79,7 +80,7 @@ void sprite_update_cd0(void *sprite);
 void heap_free_b(void *p);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 s32 transition_scene_step(u8 *game);
-void *transition_children_obj_init_scan_pool(void *obj, u8 *game);
+void *transition_children_obj_init_scan_pool(struct Obj *obj, u8 *game);
 void obj_reset_e920(struct Obj *obj);
 void obj_init_e4a0(struct Obj *obj);
 void obj_release_slots(void *sprite);
@@ -88,7 +89,6 @@ extern const u8 gReleaseVtableE920[];
 extern const u8 gClassE4a0[];
 
 ASM_FUNC("asm/code_0815E288/sprite_group5_init.s", void sprite_group5_init(void))
-
 ASM_FUNC("asm/code_0815E288/sprite_group5_update.s", void sprite_group5_update(void))
 
 ASM_FUNC("asm/code_0815E288/obj_create_group_e4a0.s", void obj_create_group_e4a0(void))
@@ -219,7 +219,115 @@ s32 transition_spawn_child(struct Obj *obj, u8 *game)
     return 1;
 }
 
-ASM_FUNC("asm/code_0815E288/transition_children_obj_init_scan_pool.s", void *transition_children_obj_init_scan_pool(void *obj, u8 *game))
+struct Entry25
+{
+    u8 filler0[0x25];
+    u8 type25;
+};
+
+NONMATCH("asm/code_0815E288/transition_children_obj_init_scan_pool.s", void *transition_children_obj_init_scan_pool(struct Obj *obj, u8 *game))
+{
+    void **pool;
+    void **slot;
+    void *e;
+    void *found;
+    u16 i;
+    struct Obj9 *spr;
+    void **q;
+
+    obj->unk00 = 0;
+    obj->klass04 = (void *)gClassE460;
+    obj->unk10 = 0;
+    obj->unk14 = 0;
+    *(void **)&obj->filler18 = 0;
+    pool = (void **)(game + 0x1898);
+    slot = pool;
+    for (i = 0; i <= 0xFF; i += 4)
+    {
+        e = slot[0];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xC)
+        {
+            found = e;
+            goto hit1;
+        }
+        e = slot[1];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xC)
+        {
+            found = e;
+            goto hit1;
+        }
+        e = slot[2];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xC)
+        {
+            found = e;
+            goto hit1;
+        }
+        e = slot[3];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xC)
+        {
+            found = e;
+            goto hit1;
+        }
+        slot += 4;
+    }
+    found = 0;
+hit1:
+    obj->unk08 = found;
+    slot = (void **)(game + 0x1898);
+    for (i = 0; i <= 0xFF; i += 4)
+    {
+        e = slot[0];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xD)
+        {
+            found = e;
+            goto hit2;
+        }
+        e = slot[1];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xD)
+        {
+            found = e;
+            goto hit2;
+        }
+        e = slot[2];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xD)
+        {
+            found = e;
+            goto hit2;
+        }
+        e = slot[3];
+        if (e != 0 && ((struct Entry25 *)e)->type25 == 0xD)
+        {
+            found = e;
+            goto hit2;
+        }
+        slot += 4;
+    }
+    found = 0;
+hit2:
+    obj->child0C = found;
+    spr = *(struct Obj9 **)(game + 0x1E8C);
+    q = &spr->unk04;
+    if (spr->unk04 != 0)
+        sprite_update_cd0(spr->unk04);
+    if (q[1] != 0)
+        sprite_update_cd0(q[1]);
+    if (spr->unk0C != 0)
+        sprite_update_cd0(spr->unk0C);
+    if (spr->unk10 != 0)
+        sprite_update_cd0(spr->unk10);
+    if (spr->unk14 != 0)
+        sprite_update_cd0(spr->unk14);
+    if (spr->unk18 != 0)
+        sprite_update_cd0(spr->unk18);
+    if (spr->unk1C != 0)
+        sprite_update_cd0(spr->unk1C);
+    if (spr->unk20 != 0)
+        sprite_update_cd0(spr->unk20);
+    if (spr->unk24 != 0)
+        sprite_update_cd0(spr->unk24);
+    return obj;
+}
+END_NONMATCH
 ASM_FUNC("asm/code_0815E288/transition_children_transition_step_d.s", void transition_children_transition_step_d(void))
 
 ASM_FUNC("asm/code_0815E288/transition_step_e.s", void transition_step_e(void))
