@@ -431,6 +431,75 @@ void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *out)
     }
 }
 
-ASM_FUNC("asm/code_08137510/obj_find_active_state.s", void obj_find_active_state(void))
+NONMATCH("asm/code_08137510/obj_find_active_state.s", void obj_find_active_state(void *ctx, struct Enemy *obj, u32 *out))
+{
+    u8 idx;
+    struct Enemy *entry;
+    u8 *bahn;
+    u8 *flagp;
+    u8 kind;
+    s32 bound;
+    s32 flags;
+
+    bahn = (u8 *)obj + 0x58;
+    if (find_active_entry(ctx, &idx) == 0)
+    {
+        idx = ((u32)((u8 *)ctx)[0x208] << 29) >> 31;
+    }
+    entry = (struct Enemy *)((u32 *)((u8 *)ctx + 0x28))[idx];
+    kind = gFrameAttrTable[(((u32)obj->unk216 << 28) >> 30 << 4) + (((u32)obj->unk24 << 29) >> 29) + 8];
+    switch (kind)
+    {
+    case 0:
+    case 2:
+        if (obj->posX > entry->posX)
+        {
+            bound = 0x80000000;
+        }
+        else if (obj->posX < entry->posX)
+        {
+            bound = 0xFFFFF;
+        }
+        else
+        {
+            goto x_equal;
+        }
+        obj_start_move_to_target(obj, 1, bound, 0);
+        goto moving;
+    x_equal:
+        flagp = bahn + 0x17E;
+        goto arrived;
+    case 1:
+    default:
+        if (obj->posY > entry->posY)
+        {
+            obj_start_move_to_target(obj, 1, 0, 0x80000000);
+            goto moving;
+        }
+        if (obj->posY < entry->posY)
+        {
+            goto high_y;
+        }
+        flagp = bahn + 0x17E;
+        break;
+    }
+
+arrived:
+    flags = *flagp;
+    flags = (flags & -3) | 1;
+    *flagp = flags;
+    out[0] = out[1];
+    return;
+
+high_y:
+    obj_start_move_to_target(obj, 1, 0, 0xFFFFF);
+
+moving:
+    obj_step_toward_target_08138FDC(obj);
+    out[0] = (u32)obj_move_to_target;
+    flagp = bahn + 0x17E;
+    *flagp = (*flagp | 2) & -2;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08137510/obj_begin_glide.s", void obj_begin_glide(void))
