@@ -794,18 +794,23 @@ void load_table_14b8(struct SceneObj *obj)
         obj->table->ids2C[i] = (void *)lookup_or_alloc_14b8(0, *p, -1, 1);
 }
 
-NONMATCH("asm/code_080286C0/load_table_13b4.s", void load_table_13b4(struct SceneObj *obj))
+void load_table_13b4(struct SceneObj *obj)
 {
     const u16 *p;
     s32 i;
+    u8 *base;
 
     gUnk_03000C78 = 0;
     p = gLookup13b4Ids;
     for (i = 0; i < 11; p++, i++)
-        ((void **)obj->table)[i] = (void *)lookup_or_alloc_13b4(0, *p, -1, 1);
+    {
+        void *v = (void *)lookup_or_alloc_13b4(0, *p, -1, 1);
+
+        base = (u8 *)obj->table;
+        *(void **)(base + (i << 2)) = v;
+    }
     gUnk_03000C78 = (u32)sub_0800063C;
 }
-END_NONMATCH
 
 static inline void place_entry_sprite(struct EntrySlot *e, u16 *camX, u16 *camY)
 {
