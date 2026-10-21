@@ -138,6 +138,7 @@ NONMATCH("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032
 {
     s32 w;
     s32 h;
+    s32 mask;
 
     w = gUnk_083BA8A0[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
     h = gUnk_083BA8AC[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
@@ -146,7 +147,8 @@ NONMATCH("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032
         obj->unk6 = 1;
         return;
     }
-    obj->unk2 = (obj->unk2 & 0xFE00) | (x & 0x1FF);
+    mask = 0x1FF;
+    obj->unk2 = (x & mask) | (obj->unk2 & 0xFE00);
     obj->unk0 = (obj->unk0 & 0xFF00) | (y & 0xFF);
 }
 END_NONMATCH
@@ -502,14 +504,18 @@ NONMATCH("asm/code_080835B0/spawn_obj_by_id.s", struct PartObj *spawn_obj_by_id(
     s32 flags;
     u32 low;
     u32 top;
+    u32 sh2;
+    u32 sh4;
 
     obj = create_obj_de4(0, id, mode, -1, -1, -1, -1);
     obj_load_record(obj, variant, -1, 0, 0);
     low = attr & 3;
     flags = obj->unk1F;
     flags = (flags & -4) | low;
-    flags = (flags & -13) | (low << 2);
-    flags = (flags & -49) | (low << 4);
+    sh2 = low << 2;
+    flags = (flags & -13) | sh2;
+    sh4 = low << 4;
+    flags = (flags & -49) | sh4;
     top = attr << 6;
     obj->unk1F = (flags & 0x3F) | top;
     if (mode == 1)
@@ -531,6 +537,8 @@ NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
     void (*copy)(u8 *, u8 *, u32);
     u32 row;
     u32 flags;
+    u32 mask;
+    u32 t;
 
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x06004000, 0x9000);
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x0600F000, 0x1000);
@@ -539,8 +547,10 @@ NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
     queue_display_entry(2, (u8 *)gMapTable + *entry, (u8 *)0x06008000, 0x2C0, 0, 0);
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
     flags = ((struct SysBase *)gSys)->flags888;
+    mask = 6;
+    t = mask & flags;
     row = 0x12;
-    if ((6 & flags) != 0)
+    if (t != 0)
     {
         row = 0x14;
     }
