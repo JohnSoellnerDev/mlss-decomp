@@ -178,7 +178,22 @@ void obj_set_child_table(struct Obj *obj)
     child->unk40 = 0;
 }
 
-ASM_FUNC("asm/code_08164468/obj_load_scaled_anims.s", void obj_load_scaled_anims(void))
+void obj_load_scaled_anims(struct Obj *obj, u32 value)
+{
+    s32 (*div)(s32, s32);
+    s32 (*scale)(s32, s32);
+    s32 anim;
+
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    scale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424);
+    anim = div(scale(value, 0x3E8), 0x64);
+    obj_load_record(obj->unk8->unk10, anim, 0, 0, 0);
+    anim = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(
+        MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 0x64), 0xA);
+    obj_load_record(obj->unk4->unk10, anim, 0, 0, 0);
+    anim = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 0xA);
+    obj_load_record(((struct Obj *)obj->unk0)->unk10, anim, 0, 0, 0);
+}
 
 void obj_init_children_sprites(struct Obj *obj)
 {
@@ -233,15 +248,21 @@ ASM_FUNC("asm/code_08164468/obj_triples_done.s", void obj_triples_done(void))
 
 NONMATCH("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_class(struct Obj *obj))
 {
-    u32 base = (u32)&obj->unk4;
     s32 group = 0;
+    u32 base = (u32)&obj->unk4;
+    s32 next;
 
-    for (; group <= 1; group++)
+    while (1)
     {
-        struct Obj **entry = (struct Obj **)((((group << 1) + group) << 2) + base);
-        struct Obj **first = entry;
-        struct Obj *child = *entry++;
+        struct Obj *child;
+        struct Obj **first;
+        struct Obj **entry;
+        s32 twice = group << 1;
 
+        next = group + 1;
+        entry = (struct Obj **)(((twice + group) << 2) + base);
+        first = entry;
+        child = *entry++;
         child->unk44 = gObjScript08213a04;
         child->unk48 = 0;
         child->unk40 = 0;
@@ -253,6 +274,11 @@ NONMATCH("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_cla
         child->unk44 = gObjScript08213a04;
         child->unk48 = 0;
         child->unk40 = 0;
+        group = next;
+        if (group > 1)
+        {
+            break;
+        }
     }
 }
 END_NONMATCH
