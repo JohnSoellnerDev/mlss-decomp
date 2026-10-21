@@ -98,6 +98,12 @@ struct Hero
     struct ActorObj body;
 };
 
+struct LinkBlock
+{
+    u8 filler0[0x7E];
+    u8 flags;
+};
+
 struct World
 {
     u8 filler0[0x70];
@@ -113,7 +119,15 @@ extern const s32 gAimTargetX[];
 extern const s32 gAimTargetY[];
 extern const s32 gSpawnTargetX[];
 extern const s32 gSpawnTargetY[];
+extern void (*gUnk_03000ED4)(struct ActorObj *);
+extern void (*gUnk_03000ED8)(struct ActorObj *);
+extern u32 gUnk_03000EDC[];
+extern u32 gUnk_03000F1C[];
+extern u8 gUnk_03000F5C;
+extern u8 gUnk_03000F5D;
 
+void set_slot_fields(u32 a, u32 b, u32 c);
+void actor_link_anim_steps(struct ActorObj *obj);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 arg2, u32 arg3);
 s32 resolve_contact_action(struct ActorObj *owner, struct ActorObj *obj, s32 a, s32 b, u32 code);
 void set_slot_value(u32 id, s32 value);
@@ -179,7 +193,69 @@ void link_actor_pair_start(struct ActorObj *obj);
 void countdown_phase_then_wait(struct ActorObj *obj);
 void countdown_spawn_pair_link(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start(struct ActorObj *obj))
+NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start(struct ActorObj *obj))
+{
+    struct Hero *linkA;
+    struct Hero *linkB;
+    struct ActorObj *actorA;
+    struct ActorObj *actorB;
+    struct ActorObj *child;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 0xC, 0, 0);
+    }
+    obj->wait--;
+    if (obj->wait <= 0)
+    {
+        obj->wait = 0x20;
+        linkA = gWorld->heroA;
+        linkB = gWorld->heroB;
+        actorA = &linkA->body;
+        actorB = &linkB->body;
+        ((struct LinkBlock *)linkA)->flags &= 0x7F;
+        ((struct LinkBlock *)linkB)->flags &= 0x7F;
+        gUnk_03000ED4 = actorA->state;
+        gUnk_03000ED8 = actorB->state;
+        actorA->pose->flags |= 0x10;
+        actorB->pose->flags |= 0x10;
+        actorA->state = actor_link_anim_steps;
+        actorB->state = actor_link_anim_steps;
+        gUnk_03000F5C = 0;
+        gUnk_03000F5D = 0;
+
+        child = actorA->child;
+        if (child != NULL)
+        {
+            do
+            {
+                child->pose->flags |= 0x10;
+                gUnk_03000EDC[gUnk_03000F5C++] = (u32)child->state;
+                child->state = actor_link_anim_steps;
+                child = child->child;
+            } while (child != NULL);
+        }
+
+        child = actorB->child;
+        if (child != NULL)
+        {
+            do
+            {
+                child->pose->flags |= 0x10;
+                gUnk_03000F1C[gUnk_03000F5D++] = (u32)child->state;
+                child->state = actor_link_anim_steps;
+                child = child->child;
+            } while (child != NULL);
+        }
+
+        set_slot_fields(1, 0, 0);
+        set_slot_value(0x54, -1);
+        *((u8 *)gWorld->trackedObj + 0x770) = 1;
+        obj->phase = 0xA;
+        obj->state = countdown_phase_then_wait;
+    }
+}
+END_NONMATCH
 
 void countdown_phase_then_wait(struct ActorObj *obj)
 {
