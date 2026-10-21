@@ -154,6 +154,13 @@ struct Mode3
     u8 rest : 5;
 };
 
+struct Mid2At1
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 struct SpriteFlags
 {
     u8 filler0[0x1F];
@@ -266,7 +273,53 @@ extern u8 gUnk_0203FFB8[];
 
 ASM_FUNC("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(void))
 
-ASM_FUNC("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flags_from_child(void))
+NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flags_from_child(u8 *obj))
+{
+    u8 **childSlot;
+    u8 *child;
+    u32 link;
+    u32 t;
+
+    link = obj[0x33C] & 6;
+    if (link != 0)
+    {
+        if ((*(u16 *)(obj + 0x212) & 0x180) == 0)
+        {
+            if (link == 4)
+            {
+                ((struct Bit0 *)(obj + 0x20C))->bit0 = 1;
+                childSlot = (u8 **)(obj + 0x344);
+                child = *childSlot;
+                if (child != NULL)
+                {
+                    if (child[0x20F] & 2)
+                    {
+                        ((struct Bit0 *)(child + 0x20C))->bit0 = 1;
+                        child = *childSlot;
+                        t = child[0x33C];
+                        if (2 & t)
+                        {
+                            t = t << 27;
+                            ((struct Mode3 *)(child + 0x214))->mode = t >> 29;
+                            child = *childSlot;
+                            ((struct Bit1 *)(child + 0x33C))->bit1 = 0;
+                        }
+                    }
+                }
+                if (obj[0x33C] & 0x80)
+                {
+                    t = obj[0x33D];
+                    t = t << 29;
+                    ((struct Mode3 *)(obj + 0x214))->mode = t >> 29;
+                    ((struct Bits8 *)(obj + 0x33C))->b7 = 0;
+                }
+                ((struct Bit0 *)(obj + 0x33C))->bit0 = 1;
+            }
+            ((struct Mid2At1 *)(obj + 0x33C))->mode = 0;
+        }
+    }
+}
+END_NONMATCH
 
 u32 obj_attach_child(u8 *obj, u32 a, u32 b, u32 d, u8 *child)
 {
@@ -680,22 +733,27 @@ void sub_080514D4(void)
 
 NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 *obj, u32 *state))
 {
-    u32 entry;
     s16 *slot;
-    u16 *tbl;
-    u32 idx;
+    u16 entry;
+    u32 off;
+    u8 *base;
     s16 value;
     u16 shade;
+    u16 *pa;
+    u16 *pb;
+    u16 xa;
 
     slot = (s16 *)(obj + 0x100);
-    idx = rand_below(2, mt19937_next());
-    tbl = (u16 *)(obj + 0x130);
-    entry = tbl[idx];
-    idx = rand_below(4, mt19937_next());
-    slot += idx;
+    off = rand_below(2, mt19937_next()) << 1;
+    base = obj + 0x130;
+    entry = *(u16 *)(base + off);
+    slot += rand_below(4, mt19937_next());
     value = *slot;
     wander_to_edge(obj, entry, value);
-    if (*(u16 *)(obj + 0x242) | *(u16 *)(obj + 0x244))
+    pa = (u16 *)(obj + 0x242);
+    pb = (u16 *)(obj + 0x244);
+    xa = *pa;
+    if (xa | *pb)
     {
         shade = ((u16)angle_of_vector16(*(s16 *)(obj + 0x242), *(s16 *)(obj + 0x244)) + 0x10) >> 8;
     }
