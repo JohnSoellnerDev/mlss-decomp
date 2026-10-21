@@ -216,9 +216,70 @@ void wait_pose_flag(struct Actor *obj);
 void set_motion_start(struct Actor *obj, s32 a);
 void enter_finish_rebuild(struct Actor *obj);
 void obj_release(struct Actor *obj);
+u32 arc_tan2(s32 x, s32 y);
 extern const s16 gOffsetRows[];
 
-ASM_FUNC("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(void))
+void sub_08087FCC(struct Actor *obj, s32 divisor);
+
+NONMATCH("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 h))
+{
+    s32 *p94;
+    s32 *p98;
+    s32 pz;
+    s32 zt;
+    s32 f1;
+    s32 f2;
+    s32 neg;
+
+    x <<= 8;
+    y <<= 8;
+    z <<= 8;
+    h <<= 8;
+    obj->targetX = x;
+    obj->targetY = y;
+    obj->offX = (x - obj->posX) / 4;
+    obj->offY = (y - obj->posY) / 4;
+    if (h < z || h < obj->posZ)
+    {
+        obj->targetH = z;
+        obj->offZ = (z - obj->posZ) / 4;
+        obj->unk94 = 0;
+    }
+    else
+    {
+        obj->targetH = h;
+        obj->offZ = 0;
+        p94 = &obj->unk94;
+        p98 = &obj->unk98;
+        pz = obj->posZ;
+        zt = obj->targetH;
+        neg = 0;
+        if (zt < pz)
+        {
+            if (zt < z)
+            {
+                zt = pz + z - zt;
+                neg = 1;
+            }
+            else
+                zt = pz;
+        }
+        else if (zt < z)
+            zt = z;
+        f1 = ((s32 (*)(s32))gMathRoutines)((zt - z) << 8);
+        f2 = ((s32 (*)(s32))gMathRoutines)((zt - pz) << 8);
+        *p94 = f1 + f2;
+        *p98 = f2;
+        if (neg)
+        {
+            *p94 = -*p94;
+            *p98 = -*p98;
+        }
+    }
+    obj->progress = 0x4000;
+    sub_08087FCC(obj, 0x20);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080865F8/contact_face.s", void contact_face(void))
 
@@ -258,7 +319,60 @@ ASM_FUNC("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(void))
 void obj_arrive_check(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(struct Actor *obj))
 
-ASM_FUNC("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Actor *obj))
+NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Actor *obj))
+{
+    struct Rec *rec;
+    s32 newX;
+    s32 newY;
+    s32 newH;
+    s32 tgtX;
+    s32 tgtY;
+    s32 tgtH;
+    s32 dxq;
+    s32 dyq;
+    s32 dhq;
+    s32 bxq;
+    s32 byq;
+    s32 bhq;
+    s32 d2;
+    s32 b2;
+    s32 flags;
+    struct Pose *pose;
+
+    newX = obj->baseX + obj->offX;
+    obj->posX = newX;
+    newY = obj->baseY + obj->offY;
+    obj->posY = newY;
+    newH = obj->baseH + obj->offZ;
+    obj->posZ = newH;
+    rec = obj->data;
+    tgtX = rec->targetX;
+    dxq = (newX - tgtX) / 0x10;
+    tgtY = rec->targetY;
+    dyq = (newY - tgtY) / 0x10;
+    tgtH = rec->targetH;
+    dhq = (newH - tgtH) / 0x10;
+    bxq = (obj->baseX - tgtX) / 0x10;
+    byq = (obj->baseY - tgtY) / 0x10;
+    bhq = (obj->baseH - tgtH) / 0x10;
+    d2 = dxq * dxq + dyq * dyq + dhq * dhq;
+    b2 = bxq * bxq + byq * byq + bhq * bhq;
+    if (d2 >= b2)
+    {
+        obj->posX = tgtX;
+        obj->posY = rec->targetY;
+        obj->posZ = rec->targetH;
+        sprite_set_action(obj, -1, -1, 0);
+        pose = obj->pose;
+        flags = pose->flags11;
+        flags &= -0x41;
+        pose->flags11 = flags;
+        obj->field58 = 0;
+        obj->state = obj->savedState;
+        obj->savedState = NULL;
+    }
+}
+END_NONMATCH
 
 s32 obj_stop(struct Actor *obj)
 {
@@ -403,7 +517,46 @@ void obj_finish_placement(struct Actor *obj)
 }
 
 ASM_FUNC("asm/code_080865F8/lookup_part.s", void lookup_part(void))
-ASM_FUNC("asm/code_080865F8/lookup_slot.s", s32 lookup_slot())
+
+s32 lookup_slot(struct Actor *obj, struct Actor *other)
+{
+    s32 otherX;
+    s32 otherH;
+    s32 objX;
+    s32 objH;
+    s32 target;
+    s32 limit;
+    s32 wrapped;
+    struct CandMgr *mgr;
+
+    if (other != other->data->field38)
+        return 1;
+    otherX = other->posX / 0x100;
+    otherH = (-other->posZ) / 0x100;
+    objX = obj->posX / 0x100;
+    objH = (-obj->posZ) / 0x100;
+    target = (u16)arc_tan2((s16)(objX - otherX), (s16)(objH - otherH));
+    wrapped = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((-other->unkA0) << 8, 0x168);
+    limit = wrapped & 0xFFFF;
+    if ((other->data->pose10->flags11 & 0x40) != 0)
+        target = (target + 0x8000) & 0xFFFF;
+    if (target < limit)
+        target += 0xFFFF;
+    if (target - limit > 0x8000)
+        return -1;
+    set_slot_value(0x7D, -1);
+    if (other->data->slot == -1)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 1;
+    }
+    if (other->data->slot == -2)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 4;
+    }
+    return 0;
+}
 
 void *find_lowest_order_pose(struct Actor *obj)
 {
