@@ -66,9 +66,91 @@ struct Bits43
     u8 hi5 : 5;
 };
 
-ASM_FUNC("asm/code_080E76A4/clear_active_slot_rects.s", void clear_active_slot_rects(void))
+struct SlotRectU
+{
+    u16 x;
+    u16 y;
+    u8 cols;
+    u8 rows;
+    u8 filler4[0x4C - 6];
+};
 
-ASM_FUNC("asm/code_080E76A4/clear_slot_rect.s", void clear_slot_rect(void))
+// Slot record (0x4C-byte stride): the slot rectangle sits at +0x34, as in the state's slots.
+struct SlotRec
+{
+    u8 filler0[8];
+    u32 unk8;
+    u8 filler0C[0x2C - 0xC];
+    u32 unk2C;
+    u8 filler30[0x34 - 0x30];
+    struct SlotRectU rect;
+};
+
+struct FlagBits8
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 hi5 : 5;
+};
+
+void free_list_move(void *head, void *block);
+
+ASM_FUNC("asm/code_080E76A4/clear_active_slot_rects.s", void clear_active_slot_rects(struct ObjWithState *obj))
+
+NONMATCH("asm/code_080E76A4/clear_slot_rect.s", void clear_slot_rect(struct ObjWithState *obj, u16 slot))
+{
+    struct ObjState *st;
+    struct SlotRec *rec;
+    struct ObjState *cells;
+    u8 inactive;
+    u16 col;
+    u8 colEnd;
+    u8 rowEnd;
+    u16 x;
+    u16 y;
+    u32 one;
+
+    st = obj->state;
+    inactive = ((st->slotMask >> slot) ^ 1) & 1;
+    if (inactive == 0)
+    {
+        rec = (struct SlotRec *)((u8 *)st + slot * 0x4C);
+        col = (s16)rec->rect.x >> 3;
+        y = (s16)rec->rect.y >> 3;
+        colEnd = rec->rect.cols + col + 1;
+        rowEnd = rec->rect.rows + y + 1;
+        free_list_move(obj->head, (void *)(rec->unk2C - st->unk194));
+        rec->unk2C = 0;
+        if (y < rowEnd)
+        {
+            cells = obj->state;
+            for (; y < rowEnd; y++)
+            {
+                for (x = col; x < colEnd; x++)
+                {
+                    ((u16 *)cells->map)[(y << 5) + x] = cells->fillValue;
+                }
+            }
+        }
+        one = 1;
+        obj->state->slotMask &= ~(one << slot);
+        obj->state->unk1B4 &= obj->state->slotMask;
+        rec->unk8 = 0;
+        if (obj->state->slotMask == 0)
+        {
+            if (((((u32)obj->state->flags) << 29) >> 31) & one)
+            {
+                *(u16 *)0x02000000 ^= 0x2000;
+                *obj->state->hofs = 0;
+                *obj->state->vofs = 0;
+                obj->state->prevY = 0;
+                obj->state->prevX = 0;
+                ((struct FlagBits8 *)&obj->state->flags)->bit2 = 0;
+            }
+        }
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080E76A4/copy_map_rects.s", void copy_map_rects(struct ObjWithState *obj, u8 mask))
 {
