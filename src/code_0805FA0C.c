@@ -184,7 +184,43 @@ void obj_pose_active_action5_then_spawn(struct ActorObj *obj);
 
 void obj_orbit_place(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp, s32 timer, s32 param);
 void obj_set_sprite_offsets(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp);
-ASM_FUNC("asm/code_0805FA0C/map_obj_drift_x.s", void map_obj_drift_x(void))
+extern u8 gUnk_03000E15;
+
+static inline void obj_release_chain(struct ActorObj *obj)
+{
+    struct ActorObj *child = obj->child;
+    struct ActorObj *grandchild = child->child;
+
+    grandchild->param9C = 1;
+    grandchild->child->param9C = 1;
+    obj_release(child);
+    obj_release(obj);
+}
+
+NONMATCH("asm/code_0805FA0C/map_obj_drift_x.s", void map_obj_drift_x(struct ActorObj *obj))
+{
+    obj->targetX += obj->dx;
+    obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, obj->dy, (s16)obj->timer, obj->param9C / 0x100);
+    obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, obj->dy);
+    obj->timer = (obj->timer + 2) & 0xFF;
+    if (obj->targetX > obj->paramA0 - 0x3000)
+    {
+        gUnk_03000E15 = 2;
+        if (obj->dy > 0)
+        {
+            obj->dy--;
+        }
+        else
+        {
+            obj_release_chain(obj);
+        }
+    }
+    if (obj->targetX > obj->paramA0)
+    {
+        obj_release_chain(obj);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0805FA0C/obj_orbit_place.s", void obj_orbit_place(struct ActorObj *obj, s32 x, s32 y, s32 h, s32 amp, s32 timer, s32 param))
 
