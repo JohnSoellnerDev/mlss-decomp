@@ -66,6 +66,8 @@ void sub_080E5740(void)
 
 ASM_FUNC("asm/code_080E5590/sub_080E5760.s", void sub_080E5760(void))
 
+ASM_FUNC("asm/code_080E5590/sub_080E57D4.s", void sub_080E57D4(void))
+
 static inline void dma_ctrl_stop(u8 *base)
 {
     *(vu16 *)(base + 0xA) &= 0xC5FF;

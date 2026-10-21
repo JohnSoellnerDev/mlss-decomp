@@ -3789,6 +3789,7 @@
 080E5728 sub_080E5728 thumb
 080E5740 sub_080E5740 thumb
 080E5760 sub_080E5760 thumb
+080E57D4 sub_080E57D4 thumb
 080E5804 stop_dma_channel thumb
 080E5894 start_dma_window thumb
 080E5954 clip_edges_to_lines thumb
