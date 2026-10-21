@@ -14,6 +14,7 @@ extern const u32 gPhase4ChildETable[];
 extern u32 (*gUnk_03000D48)();
 extern u32 (*gUnk_03000D4C)();
 extern void path_step_main(void);
+extern void path_step_main_routine(void);
 extern void path_step_loop(void);
 
 void obj_destroy_sprites(void *obj, u32 flags);
@@ -187,7 +188,7 @@ void obj_set_dir_to_point(u32 unused0, struct GridObj *obj, s32 x, s32 y)
 
 // Matches except for the routine offset: the original subtracts two different symbols at the same
 // ROM address (config/symbols.txt has only path_step_main there). With one symbol the term folds to 0.
-NONMATCH("asm/code_08167E7C/obj_copy_end_points.s", void obj_copy_end_points(struct GridObj *obj))
+void obj_copy_end_points(struct GridObj *obj)
 {
     struct GridObj *a;
     struct GridObj *b;
@@ -220,10 +221,9 @@ NONMATCH("asm/code_08167E7C/obj_copy_end_points.s", void obj_copy_end_points(str
         table[42] = bx;
         table[43] = by1;
         table[44] = by;
-        ((void (*)(void *))(*(u32 *)((u8 *)table + 0x234) + ((u32)path_step_main - (u32)path_step_main)))(table);
+        ((void (*)(void *))(*(u32 *)((u8 *)table + 0x234) + ((u32)path_step_main_routine - (u32)path_step_main)))(table);
     }
 }
-END_NONMATCH
 
 void obj_set_mode_if_flag8(struct GridObj *obj)
 {
@@ -371,11 +371,10 @@ u32 path_step_loop_call(struct GridObj *obj, u32 a1, u32 a2, u32 a3, u32 a4)
     return (-r | r) >> 31;
 }
 
-NONMATCH("asm/code_08167E7C/path_step_main_call.s", void path_step_main_call(struct GridObj *obj))
+void path_step_main_call(struct GridObj *obj)
 {
-    ((void (*)(void *))(*(u32 *)((u8 *)obj + 0x234)))(obj);
+    ((void (*)(void *))(*(u32 *)((u8 *)obj + 0x234) + ((u32)path_step_main_routine - (u32)path_step_main)))(obj);
 }
-END_NONMATCH
 
 void path_free(struct GridObj *obj, u32 free_flag)
 {
