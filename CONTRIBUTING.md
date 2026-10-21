@@ -173,6 +173,18 @@ function start, calls show the relocation (the called symbol). A worked example 
   A mask the original keeps in a high register across a loop (`mov r8, rX` before the loop,
   then `ands` with r8) is an `s32` local set before the loop (`mask = ~0x40;`); `&= ~0x40` on a
   `u8` narrows to `0xBF` instead (examples in src/code_08098B18.c).
+- A constant loaded into a register right before its single use, with the other operand in the
+  destination (`asrs r1, r0, #6; movs r0, #0x90; muls r1, r0`) or with the constant as the
+  destination (`ldrh r1, [r2]; movs r0, #2; orrs r0, r1`): put the constant in a variable that is
+  set once at the start of the function (`k = 0x90; k2 = 0x30;`, `s32 bit = 2; ... flags |= bit;`).
+  GCC moves such a single assignment down to its use; one variable assigned twice stays where it
+  is written (`orbit_step_finish` in src/code_080739F0.c, `cmd_slot_set_stream` in
+  src/code_080F8900.c).
+- A byte argument on the stack built as `add r4, sp, #4; movs r0, #0; strb r0, [r4]`: pass a
+  `u8 zero = 0;` local declared first (`enemy_hop_fall_to_tile` in src/code_0813F77C.c).
+- A bit cleared in a byte at a large offset of `gSys`, address built from two pool words
+  (`ldr r1, =gSys; ldr r0, =0x88A; adds r1, r1, r0`): `u8 *sys = gSys;
+  ((struct SysBits88A *)&sys[0x88A])->bit5 = 0;` (`obj_teardown_subs` in src/code_08021FE8.c).
 - Table reads the original adds as `lsls r0, r0, #1; adds r0, r0, rBase` (index first) are
   array indexing, `((u16 *)(ai + 0xD0))[idx]`; hand-written `*(u16 *)(ai + (idx << 1) + 0xD0)`
   swaps the operands of the add (example `enemy_wait_sense` in src/code_08145D54.c).
