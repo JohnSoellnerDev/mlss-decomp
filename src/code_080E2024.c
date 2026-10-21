@@ -119,21 +119,53 @@ void sprite_set_action(void *obj, u32 a, u32 b, u32 c);
 void effect_spawn_at(u16 cmd, s16 b, s16 c, s16 d, void *owner);
 void release_or_update_rec(struct StreamObj *obj);
 
-ASM_FUNC("asm/code_080E2024/fall_and_bounce.s", void fall_and_bounce(void))
+NONMATCH("asm/code_080E2024/fall_and_bounce.s", void fall_and_bounce(struct PosObj *obj, struct FallParams *params))
+{
+    s32 y;
+    s32 vy;
+    u16 limit;
+    s32 reversed;
+
+    obj->x = obj->x + obj->vx;
+    y = obj->y + obj->vy;
+    obj->y = y;
+    obj->z = obj->z + obj->vz;
+    vy = params->gravity + (u16)obj->vy;
+    obj->vy = vy;
+    if (y < 0)
+    {
+        return;
+    }
+    limit = params->limit;
+    if ((s16)vy < params->limit)
+    {
+        obj->bounce = 0;
+        return;
+    }
+    reversed = -obj->vy;
+    reversed = reversed * 3;
+    if (reversed < 0)
+    {
+        reversed += 3;
+    }
+    reversed >>= 2;
+    obj->vy = limit + reversed;
+    obj->y = 0;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080E2024/advance_z.s", void advance_z(struct PosObj *obj, struct FallParams *params))
 {
     s32 vz = obj->vz;
-    s32 z = obj->z + vz;
-    obj->z = z;
+    obj->z += vz;
     if (vz < 0)
     {
-        if (z >= -32768)
+        if (obj->z >= -32768)
         {
             return;
         }
     }
-    else if ((params->limit << 8) >= z)
+    else if ((params->limit << 8) >= obj->z)
     {
         return;
     }
@@ -281,20 +313,18 @@ void release_or_update_rec(struct StreamObj *obj)
     }
 }
 
-NONMATCH("asm/code_080E2024/run_command_stream.s", void run_command_stream(struct StreamObj *obj))
+void run_command_stream(struct StreamObj *obj)
 {
     if ((s16)obj->unk10 == 0)
     {
         u16 *stream;
-        u16 next;
         do
         {
             stream = obj->stream;
             effect_spawn_at(stream[0], obj->unk12, obj->unk14, obj->unk16, obj->rec);
-            next = stream[1];
-            obj->unk10 = next;
+            obj->unk10 = stream[1];
             obj->stream = stream + 2;
-        } while (next == 0);
+        } while (obj->unk10 == 0);
     }
     {
         u16 timer = obj->unk10;
@@ -308,7 +338,6 @@ NONMATCH("asm/code_080E2024/run_command_stream.s", void run_command_stream(struc
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E2024/unknown_thumb_080e237c.s", void unknown_thumb_080e237c(void))
 
