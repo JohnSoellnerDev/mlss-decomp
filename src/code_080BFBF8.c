@@ -50,6 +50,12 @@ struct HeroDataFlagBits
     u8 unk2 : 6;
 };
 
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
 struct HeroData
 {
     u8 filler0[0xD8];
@@ -186,7 +192,58 @@ void hero_b_anim_c_then_clear(struct HeroBody *body);
 void hero_a_wait_visible_anim_24(struct HeroBody *body);
 void hero_b_active_fx(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080BFBF8/hero_a_hand_over.s", void hero_a_hand_over(struct HeroBody *body))
+void hero_a_hand_over(struct HeroBody *body)
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
+    struct HeroBody *partner = body->partner;
+
+    state_stack_advance_progress(body_a);
+    if ((body_a->flags & 0x20) != 0)
+    {
+        partner->link = 0;
+        set_slot_value(0x30, -1);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            if (body_a->data->poseIndex == -1)
+                sprite_set_action(body_a, 5, 0x2000, 0);
+            else
+                sprite_set_action(body_a, 5, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            s32 x = body_a->targetX / 0x100 + body_a->ofsX;
+            s32 y = body_a->targetY / 0x100 + body_a->ofsY;
+            u16 offset;
+            place_targets(body_a, x, y, 8, -1);
+            offset = 0x18;
+            body_a->unk92 = offset;
+            set_motion_offsets(body_a, 0x400);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xF);
+            body_a->progress = 0;
+            ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            s32 x = body_a->targetX / 0x100 + body_a->ofsX;
+            s32 y = body_a->targetY / 0x100 + body_a->ofsY;
+            place_targets(body_b, x, y, 0, -1);
+            set_motion_start(body_b, 0x400);
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xC);
+            body_b->progress = 0;
+            ((struct HeroFlagBits *)&body_b->flags)->active = 0;
+        }
+        body->state = hero_b_after_hand_over;
+    }
+}
 
 void hero_b_after_hand_over(struct HeroBody *body)
 {
@@ -389,6 +446,84 @@ void link_partner_and_hero_b(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080BFBF8/hero_b_follow_partner.s", void hero_b_follow_partner(struct HeroBody *body))
 
-ASM_FUNC("asm/code_080BFBF8/hero_b_step_and_release.s", void hero_b_step_and_release(struct HeroBody *body))
+NONMATCH("asm/code_080BFBF8/hero_b_step_and_release.s", void hero_b_step_and_release(struct HeroBody *body))
+{
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    struct HeroBody *partner = body->partner;
+    u32 lo;
+    u32 hi;
+    u32 *link;
+    s32 reached;
+    s32 ratio;
+    s32 z;
+
+    step_motion(body_b);
+    lo = hero_b->body.wideLo;
+    hi = hero_b->body.wideHi;
+    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(hi << 14, lo);
+    reached = 1;
+    if (hero_b->body.step > ratio)
+        reached = 0;
+    else if (hero_b->body.progress < ratio)
+        reached = 0;
+    link = &partner->link;
+    if (reached != 0)
+    {
+        if (*link != 0)
+        {
+            *link = 0;
+            body_set_pose(6, body_b, 0x2E, 8);
+            ((struct HeroDataFlagBits *)&partner->data->flags111)->bit1 = 0;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->poseIndex == -1)
+                sprite_set_action(body_b, 6, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 6, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+    }
+    if (*link != 0)
+    {
+        z = body_b->posZ + body_b->ofsZ;
+        if (partner->targetZ < z)
+        {
+            if ((partner->mode & 6) == 2 || (partner->mode & 6) == 4)
+                partner->state = hero_a_join_partner_next;
+        }
+    }
+    if ((((struct SysKeys3E *)gSys)->keys & 3) != 0)
+    {
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+            body->state = hero_b_active_place_and_finish;
+        set_slot_value(0xD0, -1);
+    }
+    if ((body_b->flags & 0x20) != 0)
+    {
+        set_slot_value(0x2E, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 0, -1, 0);
+            ((struct HeroMirrorBits *)&body_b->sprite->mirror)->flip = 0;
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xC);
+            body_a->progress = 0;
+            ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+        }
+        body_a->timer &= 0xFFF;
+        body->state = hero_pair_timer_step_06f0;
+    }
+}
+END_NONMATCH
+
+
+
+
 
 ASM_FUNC("asm/code_080BFBF8/hero_pair_timer_step_06f0.s", void hero_pair_timer_step_06f0(struct HeroBody *body))
