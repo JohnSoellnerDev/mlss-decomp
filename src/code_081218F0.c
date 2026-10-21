@@ -57,7 +57,35 @@ ASM_FUNC("asm/code_081218F0/unknown_thumb_08121e42.s", void unknown_thumb_08121e
 
 ASM_FUNC("asm/code_081218F0/screen_view_update.s", void screen_view_update(void))
 
-ASM_FUNC("asm/code_081218F0/unknown_thumb_081225d0.s", void unknown_thumb_081225d0(void))
+NONMATCH("asm/code_081218F0/unknown_thumb_081225d0.s", void unknown_thumb_081225d0(void *unused, u16 *map, s32 x, s32 y, s32 w, s32 h, u16 start, u8 mode))
+{
+    u16 i;
+    u16 j;
+    u16 *row;
+
+    x = x >> 3;
+    y = y >> 3;
+    w = w + x;
+    h = h + y;
+
+    for (i = y; i < h; i++)
+    {
+        row = map + i * 32;
+
+        for (j = x; j < w; j++)
+        {
+            if (mode == 0)
+            {
+                row[j] = mode;
+            }
+            else
+            {
+                row[j] = start++;
+            }
+        }
+    }
+}
+END_NONMATCH
 
 u32 sub_08122654(u32 unused, u32 x)
 {
@@ -159,11 +187,11 @@ NONMATCH("asm/code_081218F0/unknown_thumb_08122818.s", void unknown_thumb_081228
     mag = t;
     if (v <= 0)
     {
-        gUnk_02000044[idx] = mag;
+        *(u16 *)((u8 *)gUnk_02000044 + (idx << 1)) = mag;
     }
     else
     {
-        gUnk_02000044[idx] = ((0xA0 - mag) << 8) | 0xA0;
+        *(u16 *)((u8 *)gUnk_02000044 + (idx << 1)) = ((0xA0 - mag) << 8) | 0xA0;
     }
 }
 END_NONMATCH
@@ -204,5 +232,4 @@ ASM_FUNC("asm/code_081218F0/draw_member_status.s", void draw_member_status(void)
 ASM_FUNC("asm/code_081218F0/draw_two_values.s", void draw_two_values(void))
 
 ASM_FUNC("asm/code_081218F0/draw_stat.s", void draw_stat(void))
-
 ASM_FUNC("asm/code_081218F0/draw_party_stats.s", void draw_party_stats(void))
