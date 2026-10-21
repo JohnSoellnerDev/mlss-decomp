@@ -145,35 +145,33 @@ s32 obj_anim_e620(struct Anim *obj)
     return 0;
 }
 
-NONMATCH("asm/code_0815E288/obj_create_group_e714.s", struct Group9 *obj_create_group_e714(struct Group9 *group))
+struct Group9 *obj_create_group_e714(struct Group9 *group)
 {
     s32 index;
     s32 next;
     s32 none;
     u32 zero;
-    void **parts;
     void *child;
 
     index = 0;
     none = -1;
-    parts = group->parts04;
-    zero = 0;
     do
     {
         child = create_obj_de4(4, 0x5005, 0, none, none, none, none);
-        parts[index] = child;
+        group->parts04[index] = child;
+        zero = 0;
         if (index > 3)
         {
+            ((struct Part *)child)->unk00 = ((index + 1) << 4) + 0x28;
             next = index + 1;
-            ((struct Part *)child)->unk00 = (next << 4) + 0x28;
         }
         else
         {
             ((struct Part *)child)->unk00 = (index << 4) + 0x28;
             next = index + 1;
         }
-        ((struct Part *)parts[index])->unk02 = 0x3C;
-        obj_load_record(parts[index], index + 0xA, -1, 0, zero);
+        ((struct Part *)group->parts04[index])->unk02 = 0x3C;
+        obj_load_record(group->parts04[index], index + 0xA, -1, 0, zero);
         group->unk28[index] = zero;
         group->unk3A[index] = (index << 2) + index;
         group->unk4C[index] = zero;
@@ -182,7 +180,6 @@ NONMATCH("asm/code_0815E288/obj_create_group_e714.s", struct Group9 *obj_create_
     group->unk00 = 0x3E8;
     return group;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0815E288/obj_timer_e7c8.s", void obj_timer_e7c8(void))
 
