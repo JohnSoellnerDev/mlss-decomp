@@ -94,13 +94,11 @@ NONMATCH("asm/code_0801D358/build_gradient_table.s", void build_gradient_table(s
     u16 *p = g->buf4;
     s32 i;
 
-    for (i = 0; i <= 0x27F; i += 4)
+    for (i = 0; i <= 0x27F; i++)
     {
-        p[0] = (((g->level & 0x7FFF) >> 5) + i) | 0xFFFFF000;
-        p[1] = (((g->level & 0x7FFF) >> 5) + (i + 1)) | 0xFFFFF000;
-        p[2] = (((g->level & 0x7FFF) >> 5) + (i + 2)) | 0xFFFFF000;
-        p[3] = (((g->level & 0x7FFF) >> 5) + (i + 3)) | 0xFFFFF000;
-        p += 4;
+        s32 entry = (((g->level & 0x7FFF) >> 5) + i) | 0xFFFFF000;
+        *p = entry;
+        p++;
     }
     dma_copy_or_queue(g->buf4, (void *)(0x06000000 + g->vramOff), 0x500, 0x20, 0);
 }
