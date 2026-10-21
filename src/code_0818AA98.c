@@ -717,7 +717,7 @@ void obj_pulse_model6_b(struct Point1Obj *obj)
     *words = vel;
 }
 
-NONMATCH("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(struct Point1Obj *obj))
+void obj_spin_model6(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
@@ -732,6 +732,8 @@ NONMATCH("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(struct Poin
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 vx;
     s32 x1;
     s32 y1;
@@ -766,10 +768,12 @@ NONMATCH("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(struct Poin
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         z2 = z1;
-        z2 = z2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (z2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        z2 = z2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (z2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[64] / 0x40);
@@ -819,7 +823,6 @@ NONMATCH("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(struct Poin
     *words++ = angle;
     *words = size;
 }
-END_NONMATCH
 
 // One point that rises: y grows by vy, vy slows above 384 and y snaps to 256 when falling
 // near the bottom. The position is also stored as halfwords in the object record.
@@ -927,6 +930,8 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
+    s16 *sn;
     s32 vx;
     s32 x1;
     s32 y1;
@@ -960,10 +965,12 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         z2 = z1;
-        z2 = z2 * (gCosineTable[angle & 0xFF] / 0x40);
-        z2 = (z2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        z2 = z2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (z2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -1109,6 +1116,7 @@ NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct 
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cs;
     s32 vx;
     s32 y1;
     s32 z1;
@@ -1140,10 +1148,11 @@ NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct 
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        t = t * (gCosineTable[64] / 0x40);
+        cs = &gCosineTable[64];
+        t = t * (*cs / 0x40);
         y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
         l.y = y2;
-        l.z = ((z1 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        l.z = ((z1 * (*cs / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
         t = x1;
         t = t * (gCosineTable[32] / 0x40);
         x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
