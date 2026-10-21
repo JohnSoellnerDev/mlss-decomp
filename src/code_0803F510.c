@@ -390,6 +390,7 @@ void motion_obj_step_motion(struct FieldObj *obj)
 
 NONMATCH("asm/code_0803F510/obj_update_state.s", void obj_update_state(struct FieldObj *obj))
 {
+    s32 nextState = 2;
     s32 a;
     s32 b;
     s32 y;
@@ -402,7 +403,7 @@ NONMATCH("asm/code_0803F510/obj_update_state.s", void obj_update_state(struct Fi
             {
                 a = obj->unk14 + obj->unk18;
                 b = obj->unk3C + obj->unk40;
-                obj->state4 = (a < b) ? 3 : 2;
+                obj->state4 = (a < b) ? 3 : nextState;
             }
             else
             {
