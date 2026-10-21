@@ -1464,7 +1464,84 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08107268/marker_cursor_update.s", void marker_cursor_update(struct MarkerObj *obj))
 
-ASM_FUNC("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update(struct MarkerObj *obj))
+NONMATCH("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update(struct MarkerObj *obj))
+{
+    s32 bankStep = 0x10000;
+    struct MarkerLink *link;
+    struct MarkerPool *pool;
+    struct MarkerNode *sprA;
+    struct MarkerNode *sprB;
+    struct MarkerNode *ring;
+    struct MarkerNode *ringPrev;
+    s32 left = obj->timer - 1;
+    s32 bank;
+    s32 bit;
+    s32 t;
+    s32 pos;
+    s32 x;
+    s32 linkX;
+    s32 linkY;
+    s32 bankAttr;
+    u16 mask;
+
+    obj->timer = left;
+    if ((left << 16) == 0)
+    {
+        obj->frame++;
+        if ((s8)obj->frame > 9)
+        {
+            obj->frame = 0;
+        }
+        obj->timer = gTable400Timer[(s8)obj->frame];
+    }
+    link = obj->link;
+    if (link->poseList != 0 && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
+    {
+        bank = 0;
+        mask = link->mask14;
+        if ((mask & 1) == 0)
+        {
+            bit = 1;
+            do
+            {
+                t = (bank << 16) + bankStep;
+                bank = (u32)t >> 16;
+                pos = t >> 16;
+                if (pos > 15)
+                {
+                    break;
+                }
+            } while (((mask >> pos) & bit) == 0);
+        }
+        pool = gModelCtx;
+        sprA = pool->free;
+        linkX = (s16)link->unk0;
+        linkY = link->y2;
+        x = linkY + (s8)gTable400Y[(s8)obj->frame];
+        sprB = sprA->next;
+        pool->free = sprB->next;
+        pool->used += 2;
+        sprB->unk6 = 0;
+        sprA->unk6 = 0;
+        sprA->x = x & 0xFF;
+        sprA->y = ((linkX - 0xC) & 0x1FF) | 0x4000;
+        bankAttr = (bank << 16) >> 4;
+        sprA->tile = bankAttr | 0x8BA;
+        sprB->x = (x & 0xFF) | 0xFFFF8000;
+        sprB->y = (linkX + 4) & 0x1FF;
+        sprB->tile = bankAttr | 0x8BE;
+
+        sprA->prev->next = sprB->next;
+        sprB->next->prev = sprA->prev;
+        ring = link->poseList;
+        sprB->next = ring;
+        ringPrev = ring->prev;
+        sprA->prev = ringPrev;
+        ringPrev->next = sprA;
+        sprB->next->prev = sprB;
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08107268/marker_flag800_update.s", void marker_flag800_update(struct MarkerObj *obj))
 {
