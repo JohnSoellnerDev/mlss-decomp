@@ -133,6 +133,8 @@ void hero_a_link_when_ready(struct Body *body);
 void hero_a_begin_step_rate6(struct Body *body);
 void hero_a_place_at_data_target(struct Body *body);
 void hero_pair_step_and_place(struct Body *body);
+void hero_a_end_anim_clear(struct Body *body);
+void hero_b_release(struct Body *body);
 void hero_b_begin_step_rate2(struct Body *body);
 void hero_b_advance_anim4(struct Body *body);
 void hero_b_move_to_partner_target(struct Body *body);
@@ -246,7 +248,118 @@ void hero_a_place_at_data_target(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_pair_step_and_place.s", void hero_pair_step_and_place(struct Body *body))
+NONMATCH("asm/code_080A1DC8/hero_pair_step_and_place.s", void hero_pair_step_and_place(struct Body *body))
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    struct Body *bodyB;
+    struct BodyData *data;
+    s32 ratio;
+    s32 mx;
+    s32 my;
+    s32 reached;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s16 *span;
+
+    hero = gWorld->heroA;
+    hbody = &hero->body;
+    bodyB = &gWorld->heroB->body;
+    step_motion(hbody);
+    mx = hero->body.motionX;
+    my = hero->body.motionY;
+    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(my << 14, mx);
+    reached = 0;
+    if (hero->body.stepLen <= ratio)
+    {
+        reached = 1;
+        if (hero->body.progress < ratio)
+            reached = 0;
+    }
+    if (reached)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->pose == -1)
+            {
+                sprite_set_action(hbody, 6, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 6, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            data = bodyB->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetZ;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyB, px, py, pz, -1);
+            set_motion_start(bodyB, 0x400);
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            if (bodyB->data->pose == -1)
+            {
+                sprite_set_action(bodyB, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyB, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorByte *)&bodyB->sprite->unk11)->mirror = (span = &bodyB->spanA)[0] >= span[1];
+            ((struct SpriteModeByte *)&bodyB->sprite->flags)->mode = 0;
+        }
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        {
+            bodyB->state = 0;
+            enter_finish_rebuild(bodyB);
+        }
+    }
+    if (hbody->flags & 0x20)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->pose == -1)
+            {
+                sprite_set_action(hbody, 8, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 8, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        px = hbody->x;
+        if (px < 0)
+            px += 0xff;
+        px >>= 8;
+        py = hbody->y;
+        if (py < 0)
+            py += 0xff;
+        py >>= 8;
+        pz = hbody->z;
+        if (pz < 0)
+            pz += 0xff;
+        pz >>= 8;
+        effect_spawn_at(0x1E, px, py, pz, hbody);
+        body->state = (u32)hero_a_end_anim_clear;
+    }
+}
+END_NONMATCH
 
 void hero_a_end_anim_clear(struct Body *body)
 {
@@ -580,7 +693,72 @@ void hero_b_advance_and_place(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_b_step_end_fx.s", void hero_b_step_end_fx(struct Body *body))
+NONMATCH("asm/code_080A1DC8/hero_b_step_end_fx.s", void hero_b_step_end_fx(struct Body *body))
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    s32 ratio;
+    s32 mx;
+    s32 my;
+    s32 reached;
+    s32 px;
+    s32 py;
+    s32 pz;
+
+    hero = gWorld->heroB;
+    hbody = &hero->body;
+    step_motion(hbody);
+    mx = hero->body.motionX;
+    my = hero->body.motionY;
+    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(my << 14, mx);
+    if (hero->body.stepLen > ratio)
+        reached = 0;
+    else
+    {
+        reached = 1;
+        if (hero->body.progress < ratio)
+            reached = 0;
+    }
+    if (reached)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->pose == -1)
+            {
+                sprite_set_action(hbody, 6, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 6, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+    }
+    if (hbody->flags & 0x20)
+    {
+        set_slot_value(0x2E, -1);
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            sprite_set_action(hbody, 0, 0x2005, 0);
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        px = hbody->x;
+        if (px < 0)
+            px += 0xff;
+        px >>= 8;
+        py = hbody->y;
+        if (py < 0)
+            py += 0xff;
+        py >>= 8;
+        pz = hbody->z;
+        if (pz < 0)
+            pz += 0xff;
+        pz >>= 8;
+        effect_spawn_at(0x33, px, py, pz, hbody);
+        body->state = (u32)hero_pair_place_both_finish_t399;
+    }
+}
+END_NONMATCH
 void hero_pair_place_both_finish_t399(void)
 {
     struct Hero *heroA;
@@ -765,7 +943,118 @@ void hero_b_place_at_data_target(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A1DC8/hero_pair_meet.s", void hero_pair_meet(struct Body *body))
+NONMATCH("asm/code_080A1DC8/hero_pair_meet.s", void hero_pair_meet(struct Body *body))
+{
+    struct Hero *hero;
+    struct Body *hbody;
+    struct Body *bodyA;
+    struct BodyData *data;
+    s32 ratio;
+    s32 mx;
+    s32 my;
+    s32 reached;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s16 *span;
+
+    bodyA = &gWorld->heroA->body;
+    hero = gWorld->heroB;
+    hbody = &hero->body;
+    step_motion(hbody);
+    mx = hero->body.motionX;
+    my = hero->body.motionY;
+    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(my << 14, mx);
+    reached = 0;
+    if (hero->body.stepLen <= ratio)
+    {
+        reached = 1;
+        if (hero->body.progress < ratio)
+            reached = 0;
+    }
+    if (reached)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->pose == -1)
+            {
+                sprite_set_action(hbody, 6, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 6, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            data = bodyA->data;
+            t = data->targetX;
+            if (t < 0)
+                t += 0xff;
+            px = t >> 8;
+            t = data->targetY;
+            if (t < 0)
+                t += 0xff;
+            py = t >> 8;
+            t = data->targetZ;
+            if (t < 0)
+                t += 0xff;
+            pz = t >> 8;
+            place_targets(bodyA, px, py, pz, -1);
+            set_motion_start(bodyA, 0x400);
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            if (bodyA->data->pose == -1)
+            {
+                sprite_set_action(bodyA, 0, 0x2002, 0);
+            }
+            else
+            {
+                sprite_set_action(bodyA, 0, 0x204F, 0);
+            }
+            ((struct SpriteMirrorByte *)&bodyA->sprite->unk11)->mirror = (span = &bodyA->spanA)[0] >= span[1];
+            ((struct SpriteModeByte *)&bodyA->sprite->flags)->mode = 0;
+        }
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        {
+            bodyA->state = 0;
+            enter_finish_rebuild(bodyA);
+        }
+    }
+    if (hbody->flags & 0x20)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->pose == -1)
+            {
+                sprite_set_action(hbody, 8, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 8, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+        }
+        px = hbody->x;
+        if (px < 0)
+            px += 0xff;
+        px >>= 8;
+        py = hbody->y;
+        if (py < 0)
+            py += 0xff;
+        py >>= 8;
+        pz = hbody->z;
+        if (pz < 0)
+            pz += 0xff;
+        pz >>= 8;
+        effect_spawn_at(0x1E, px, py, pz, hbody);
+        body->state = (u32)hero_b_release;
+    }
+}
+END_NONMATCH
 
 void hero_b_release(struct Body *body)
 {
