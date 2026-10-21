@@ -928,7 +928,43 @@ void wait_then_act5_b(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808C6F0/dispatch_slot_by_flags.s", s32 dispatch_slot_by_flags(struct Actor *obj))
+s32 dispatch_slot_by_flags(struct Actor *obj)
+{
+    if ((gWorld[0xC] & 0x80) != 0)
+    {
+        if ((gWorld[0xC] & 0x10) != 0)
+        {
+            if ((obj->data->unk11E & 0x400) != 0)
+                return dispatch_slot_random_jump_b(obj);
+            if ((obj->data->unk11E & 0x800) != 0)
+                return dispatch_slot_random_pause_jump(obj);
+            return dispatch_slot_random_jump_a(obj);
+        }
+        if ((obj->data->unk11E & 0x400) != 0)
+            return charge_release_dispatch_slot_random_jump(obj);
+        if ((obj->data->unk11E & 0x800) != 0)
+            return hold_decay_dispatch_slot_pause_jump(obj);
+        return random_jump_dispatch_slot_random_jump(obj);
+    }
+    if ((gWorld[0xC] & 0x10) != 0)
+    {
+        if ((obj->data->unk11E & 0x400) != 0)
+            return dispatch_slot_list(obj);
+        if ((obj->data->unk11E & 0x800) != 0)
+            return dispatch_slot_begin_hold(obj);
+        return dispatch_slot_jump(obj);
+    }
+    if ((obj->data->unk11E & 0x400) != 0)
+        return jump_orbit_dispatch_slot_pause_jump(obj);
+    if ((obj->data->unk11E & 0x800) != 0)
+        return dispatch_slot_hold(obj);
+    if (obj->data->slot == -1)
+        jump_orbit_setup_list_slot_b(obj);
+    else if (obj->data->slot == -2)
+        jump_orbit_setup_list_slot_a(obj);
+    obj->callback = on_arrive;
+    return 1;
+}
 
 ASM_FUNC("asm/code_0808C6F0/try_park_in_slot.s", s32 try_park_in_slot(struct Actor *obj))
 
@@ -1133,7 +1169,68 @@ void hold_then_orbit(struct Actor *obj)
     obj->timer++;
 }
 
-ASM_FUNC("asm/code_0808C6F0/orbit_position_a.s", void orbit_position_a(struct Actor *obj))
+void orbit_position_a(struct Actor *obj)
+{
+    struct Actor *child;
+    s32 *angle;
+    s32 *speed;
+    const s16 *cb;
+    const s16 *ct;
+    const s16 *st;
+    s32 q;
+    s32 idx;
+    s32 cs;
+    s32 sn;
+    s32 baseH;
+
+    if (poll_action_end(obj) != 0)
+        return;
+    child = obj->child;
+    ((struct ActBits *)&child->flags76)->mode = 1;
+    angle = &child->unkA0;
+    speed = &child->unkA4;
+    *angle += *speed;
+    q = MATH_ROUTINE(MathFunc, iwram_div)(*angle, 0x168);
+    cb = gCosineTable;
+    idx = q & 0xFF;
+    ct = cb + idx;
+    cs = *ct / 0x40;
+    child->x = obj->baseX + cs * 0x16;
+    baseH = obj->baseH + 0x1600;
+    st = &gSineTable[idx];
+    sn = *st / 0x40;
+    child->h = baseH + sn * 0x16;
+    *speed = (obj->pose->dir & 0x40) != 0 ? *speed + 0xC00 : *speed - 0xC00;
+    if ((s16)obj->timer == 2)
+        sprite_set_action(obj, 2, 0x2025, 1);
+    if ((s16)obj->timer == 3)
+        sprite_set_action(obj, 2, 0x2025, 2);
+    if ((s16)obj->timer == 4)
+        sprite_set_action(obj, 2, 0x2025, 3);
+    if ((s16)obj->timer == 5)
+        sprite_set_action(obj, 2, 0x2025, 4);
+    if ((s16)obj->timer == 6)
+        sprite_set_action(obj, 2, 0x2025, 5);
+    if ((s16)obj->timer == 7)
+    {
+        u8 *p;
+
+        p = &child->flags76;
+        *p = *p | 6;
+        sprite_set_action(obj, 3, 0, 0);
+        ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
+        ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
+        obj->timer = 0;
+        obj->state = finish_orbit;
+        if (obj->data != NULL)
+            ((struct DataLockBits *)&obj->data->lock)->locked = 1;
+    }
+    else
+    {
+        ((struct PoseFlagBits *)&obj->pose->flags)->hold = 1;
+        obj->timer++;
+    }
+}
 
 void finish_orbit(struct Actor *obj)
 {
