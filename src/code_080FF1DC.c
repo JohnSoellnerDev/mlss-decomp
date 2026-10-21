@@ -167,7 +167,81 @@ void hero_select_frame(struct MenuOwner *owner);
 
 ASM_FUNC("asm/code_080FF1DC/hero_select_step.s", void hero_select_step(void))
 
-ASM_FUNC("asm/code_080FF1DC/hero_select_target.s", void hero_select_target(void))
+NONMATCH("asm/code_080FF1DC/hero_select_target.s", void hero_select_target(void))
+{
+    struct World *world;
+    struct Fig *active;
+    struct Fig *best;
+    struct Fig *obj;
+    s8 *cursor;
+    u8 *sys;
+    s32 i;
+    s32 dNew;
+    s32 dBest;
+    u32 *tab;
+    u32 *entry;
+    s32 flags;
+    s32 sel;
+    s32 v;
+
+    active = gWorld->active;
+    if ((u8)pick_target_by_input(active, 2) != 0)
+    {
+        best = 0;
+        i = 0;
+        sys = gSys;
+        world = gWorld;
+        cursor = &world->cursor352;
+        for (; i < 8; i++)
+        {
+            obj = world->list[i];
+            if ((obj->ctrl7E & 6) != 4)
+                continue;
+            if (obj->flags110 & 0x20)
+                continue;
+            if (*cursor == obj->slotF4)
+            {
+                best = obj;
+                break;
+            }
+            if (best != 0)
+            {
+                dNew = obj->x40 / 0x100 + obj->sub->unk4;
+                dBest = best->x40;
+                if (dBest < 0)
+                    dBest += 0xFF;
+                dBest = (dBest >> 8) + best->sub->unk4;
+                if (dNew >= dBest)
+                    continue;
+            }
+            best = obj;
+        }
+        gWorld->target1BC = (u8 *)best + 8;
+        gWorld->active->target34 = (u8 *)best + 8;
+        tab = best->tableF0;
+        entry = (u32 *)((sys[0x8C0] << 2) + tab[0]);
+        show_slot4_text_centered(*(u32 *)*entry);
+        status_anim_start();
+        set_status_entry(1, 0, 0);
+        clear_world_effect();
+        refresh_world_object(best, 0xD);
+        set_world_mode_byte(2);
+        sel = gWorld->sel347 & 0x1F;
+        flags = active->flags110;
+        flags = (flags & -0x20) | sel;
+        active->flags110 = flags;
+        v = ((u32)flags << 27) >> 27;
+        if (active == gWorld->list[6])
+            active->row74 = gAnim278 + v * 12;
+        else
+            active->row74 = gAnim374 + v * 12;
+        gWorld->mode2BD = 2;
+        set_slot_value(0x77, -1);
+        gWorld->fn24 = hero_marker_create;
+    }
+}
+END_NONMATCH
+
 
 ASM_FUNC("asm/code_080FF1DC/hero_select_cursor.s", void hero_select_cursor(struct MenuOwner *owner))
 
