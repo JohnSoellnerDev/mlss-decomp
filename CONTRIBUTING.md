@@ -209,7 +209,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   (`x2 = (x1 * (gCosineTable[a] / 0x40) + (gSineTable[a] / 0x40) * z1) / 0x100;`). Functions with
   several rotations mix both forms (`obj_zoom_model4_turn45_0d00` in src/code_0818F50C.c). The copy
   only survives when the temporary is used again later (GCC's CSE otherwise replaces it by the
-  original variable), which is why `t` is reused for `obj->posX` in the flag branches.
+  original variable): the temporary is the variable that later takes `obj->posX` in the flag
+  branches (`t` in `obj_rotx_zoom12_f0c0`, `pos` in `obj_accel_tilt5_f4e4`, both in
+  src/code_0817E4F0.c) - in the original both sit in the same register.
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
