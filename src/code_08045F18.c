@@ -274,6 +274,7 @@ END_NONMATCH
 
 NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
 {
+    s32 keepMask = 0x3F;
     u32 target;
     u16 spd;
     s32 now;
@@ -315,7 +316,7 @@ NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct Fie
     obj->axisBCount = 0;
     flags = &obj->moveFlags2B5;
     bits = mode << 6;
-    *flags = (*flags & 0x3F) | bits;
+    *flags = (*flags & keepMask) | bits;
     return 1;
 }
 END_NONMATCH
