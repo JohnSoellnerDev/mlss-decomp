@@ -142,7 +142,48 @@ struct FrameObj
     u16 zero18;
 };
 
+struct FxMove
+{
+    u8 filler0[0x4];
+    s32 active;
+    struct ActorObj *owner;
+    u16 *script;
+    u16 timer;
+    s16 x;
+    s16 y;
+    s16 h;
+};
+
+struct MoveNode
+{
+    struct MoveNode *next;
+    u8 filler4[0x4];
+    u8 record[0x8];
+    struct ActorPose *tag;
+};
+
+struct FxSpawnFlags1B
+{
+    u8 filler0[0x1B];
+    u8 lo7 : 7;
+    u8 bit7 : 1;
+};
+
+struct SpawnedBits11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 hi1 : 1;
+};
+
 extern u8 gSys[];
+extern s16 gDeltaTable[];
+extern const u8 gPairFxTag[];
+void move_record_by_table(void *obj, u32 step, u32 shape);
+struct FxSpawnList *task_create_list_44(void *next);
+void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
 extern const u16 gTileHalfTable[];
 extern const u8 gUnk_089F46B0[];
 extern u8 gUnk_02000460[];
@@ -203,6 +244,45 @@ static inline void copy_child_flags(struct ActorObj *obj, struct ActorObj *child
 {
     ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
     ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
+static inline void set_pair_target(struct ActorObj *obj)
+{
+    struct ActorData *owner_data = obj->owner->data;
+    struct ActorData *a;
+    struct ActorData *b;
+
+    if (owner_data->partner == -1)
+    {
+        a = owner_data;
+        b = (struct ActorData *)((u8 *)owner_data + 0x130);
+    }
+    else
+    {
+        a = (struct ActorData *)((u8 *)owner_data - 0x130);
+        b = owner_data;
+    }
+    if (a->partner != 0)
+    {
+        if (b->partner != 0)
+        {
+            obj->targetX = (a->targetX + b->targetX) / 2;
+            obj->targetY = (a->targetY + b->targetY) / 2;
+        }
+        else
+        {
+            obj->targetX = a->targetX;
+            obj->targetY = a->targetY;
+        }
+    }
+    else
+    {
+        obj->targetX = b->targetX;
+        obj->targetY = b->targetY;
+    }
+    obj->targetH = obj->owner->data->targetH;
+    obj->targetX += 0x4000;
+    ((struct ObjFlags79 *)obj)->bit5 = 1;
 }
 
 void obj_state_spawn_child(struct ActorObj *obj)
@@ -278,7 +358,17 @@ void obj_fall_settle_step(struct ActorObj *obj)
 }
 
 
-ASM_FUNC("asm/code_080DECE0/obj_begin_move_pair.s", void obj_begin_move_pair(struct ActorObj *obj))
+NONMATCH("asm/code_080DECE0/obj_begin_move_pair.s", void obj_begin_move_pair(struct ActorObj *obj))
+{
+    set_pair_target(obj);
+    obj->motionSpeed = obj->paramA0 << 8;
+    obj->motionStart = 0;
+    start_motion(obj);
+    set_slot_value(0x11C, -1);
+    sprite_set_action(obj, 0xD, 0, 0);
+    obj->state = obj_wait_link_then_timer;
+}
+END_NONMATCH
 
 void obj_timer_begin_move_to_data(struct ActorObj *obj)
 {
@@ -304,7 +394,27 @@ void obj_timer_begin_move_to_data(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/obj_timer_release_move_pair.s", void obj_timer_release_move_pair(struct ActorObj *obj))
+NONMATCH("asm/code_080DECE0/obj_timer_release_move_pair.s", void obj_timer_release_move_pair(struct ActorObj *obj))
+{
+    if (obj->link == 0)
+    {
+        u32 timer = obj->timer - 1;
+
+        obj->timer = timer;
+        if ((s32)(timer << 16) < 0)
+        {
+            sound_stop_song(0x11A);
+            obj_list_remove(obj);
+            set_pair_target(obj);
+            obj->motionSpeed = 0x200;
+            obj->motionStart = 0;
+            start_motion(obj);
+            sprite_set_action(obj, 0xD, 0, 0);
+            obj->state = obj_state_idle_if_unlinked;
+        }
+    }
+}
+END_NONMATCH
 
 void obj_state_idle_if_unlinked(struct ActorObj *obj)
 {
@@ -611,7 +721,58 @@ void obj_pose_active_arrive_idle(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/fx_obj_spawn.s", void fx_obj_spawn(void))
+NONMATCH("asm/code_080DECE0/fx_obj_spawn.s", void fx_obj_spawn(u32 a, u32 b, u32 c, u32 d, void *next, u32 key, u32 recArg, u32 flag,
+                  u32 count, u32 bit7Arg, u32 bit6Arg, u32 *src, u32 words))
+{
+    struct FxSpawnList *task;
+    struct ActorObj *spawned;
+    u32 keyId = key;
+    u32 total;
+    u32 *out;
+    s32 cosv;
+    s32 sinv;
+
+    task = task_create_list_44(next);
+    task->baseX = a;
+    task->baseY = b;
+    task->baseH = c;
+    task->delay = (u16)d;
+    ((struct FxSpawnFlags1B *)task)->bit7 = bit7Arg;
+    spawned = spawn_obj_by_id((u16)keyId, recArg, 2, 1);
+    ((struct SpawnedBits11 *)spawned)->bit6 = bit6Arg;
+    task->owner = spawned;
+    total = count;
+    out = heap_alloc_raw(1, (count * 3 + words) << 2, gPairFxTag);
+    task->cursor = (u16 *)out;
+    words = words - 1;
+    if (words != -1)
+    {
+        do
+        {
+            *out++ = *src++;
+            words--;
+        } while (words != -1);
+    }
+    if (flag == 0)
+    {
+        count = count - 1;
+        if (count != -1)
+        {
+            s16 *cosTab = gCosineTable;
+
+            do
+            {
+                cosv = cosTab[MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(count << 8, total) & 0xFF];
+                *out++ = cosv / 0x40;
+                *out++ = 0;
+                sinv = gSineTable[MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(count << 8, total) & 0xFF];
+                *out++ = sinv / 0x40;
+                count = count - 1;
+            } while (count != -1);
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080DECE0/effect_spawn_at.s", void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActorObj *owner))
 
@@ -656,7 +817,120 @@ void fx_spawn_list_step(struct FxSpawnList *fx)
     }
 }
 
-ASM_FUNC("asm/code_080DECE0/fx_tick_move_records.s", void fx_tick_move_records(void))
+void fx_tick_move_records(struct FxMove *fx)
+{
+    struct ActorObj *owner;
+    struct ActorObj *node;
+    struct MoveNode *list_head;
+    struct MoveNode *first;
+    struct MoveNode *cur;
+    s32 counter;
+    s32 timer;
+    s32 x;
+    s32 y;
+    s32 h;
+
+    counter = (s16)(fx->timer = fx->timer + 1);
+    if (counter == 1)
+    {
+        u16 *script = fx->script;
+
+        fx->x = script[0] + 1;
+        fx->y = script[1] + 1;
+        fx->h = script[2] + 1;
+    }
+    owner = fx->owner;
+    timer = (s16)fx->timer;
+    x = fx->x;
+    y = fx->y;
+    h = fx->h;
+    move_record_by_table(owner, x, y);
+    if (owner->data != 0 && (u8 *)owner->data + 8 == (u8 *)owner)
+    {
+        node = owner->child;
+        if (node != 0)
+        {
+            do
+            {
+                if ((node->flags79 & 8) != 0)
+                {
+                    move_record_by_table(node, x, y);
+                }
+                node = node->child;
+            } while (node != 0);
+        }
+        list_head = (struct MoveNode *)owner->data;
+        first = list_head->next;
+        if (first != 0)
+        {
+            cur = first;
+            if (cur != list_head)
+            {
+                do
+                {
+                    if (cur->tag != owner->pose)
+                    {
+                        move_record_by_table(cur->record, x, y);
+                    }
+                    cur = cur->next;
+                } while (cur != list_head);
+            }
+        }
+    }
+    if (x != 0)
+    {
+        s16 *row = &gDeltaTable[x];
+
+        if (row[2] < 0)
+        {
+            fx->x = 0;
+        }
+        else if (row[2] < timer)
+        {
+            fx->x = fx->x + 3;
+        }
+    }
+    if (y != 0)
+    {
+        s16 *row = &gDeltaTable[y];
+
+        if (row[2] < 0)
+        {
+            fx->y = 0;
+        }
+        else if (row[2] < timer)
+        {
+            fx->y = fx->y + 3;
+        }
+    }
+    if (h != 0)
+    {
+        s16 *col = &gDeltaTable[h];
+
+        if (col[0] < timer)
+        {
+            if (col[2] < 0)
+            {
+                fx->h = 0;
+            }
+            else
+            {
+                fx->h = fx->h + 2;
+            }
+        }
+        else if (col[0] == timer)
+        {
+            if ((owner->pose->flags & 0x20) == 0)
+            {
+                sprite_set_action(owner, col[1], 0, 0);
+            }
+        }
+    }
+    if (fx->x == 0 && *(s32 *)&fx->y == 0)
+    {
+        fx->active = 0;
+    }
+}
 
 u32 spawn_random_particle(struct Particle *obj, s16 *src)
 {
