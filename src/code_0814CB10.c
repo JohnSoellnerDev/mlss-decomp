@@ -293,7 +293,43 @@ void fall_landing_check_1d8(struct Enemy *parent, struct Enemy *obj, u32 *slot)
     }
 }
 
-ASM_FUNC("asm/code_0814CB10/fall_landing_entry.s", void fall_landing_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+void fall_landing_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot)
+{
+    u8 idx;
+    struct Enemy *partner;
+
+    obj->dz = obj->dz - obj->unk2DC;
+    if (obj->unk24 & 0x18000)
+    {
+        if ((u8)entry_box_check(parent, obj))
+        {
+            *slot = (u32)enemy_seek_partner_axis_alt;
+        }
+        else
+        {
+            *slot = (u32)start_axis_wander;
+        }
+        return;
+    }
+    if (!(u8)find_active_entry(parent, &idx))
+    {
+        ((struct Flags8 *)&obj->unk1D8)->bit0 = 0;
+        return;
+    }
+    partner = *(struct Enemy **)((u8 *)parent + idx * 4 + 0x28);
+    if (obj->posZ + obj->dz > partner->posZ + partner->dz + 0x2D00)
+    {
+        return;
+    }
+    if ((u8)entry_box_check(parent, obj))
+    {
+        *slot = (u32)enemy_seek_partner_axis_alt;
+    }
+    else
+    {
+        *slot = (u32)start_axis_wander;
+    }
+}
 
 void fall_landing_check_1d8_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
@@ -361,17 +397,17 @@ void aim_at_entry_move(struct Enemy *owner, struct Enemy *obj, u32 *slot);
 void entry_overlap_flags_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot);
 NONMATCH("asm/code_0814CB10/random_cell_walk.s", void random_cell_walk(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 {
-    s16 *table;
     u16 margin;
+    u8 *table;
     s16 frames;
     u8 coord;
     u32 ang;
 
-    table = (s16 *)((u8 *)obj + 0x100);
-    margin = ((u16 *)((u8 *)table + 0x30))[rand_below(2, mt19937_next())];
-    frames = table[rand_below(4, mt19937_next())];
+    table = (u8 *)obj + 0x100;
+    margin = ((u16 *)(table + 0x30))[rand_below(2, mt19937_next())];
+    frames = ((s16 *)table)[rand_below(4, mt19937_next())];
     wander_to_edge(obj, margin, frames);
-    obj->cell->unk20 = ((u16 *)((u8 *)table + 8))[rand_below(4, mt19937_next())];
+    obj->cell->unk20 = ((u16 *)(table + 8))[rand_below(4, mt19937_next())];
     coord = gFrameAttrTable[((((u32)obj->unk216 << 28) >> 30) << 4) + (((u32)*(u8 *)&obj->unk24 << 29) >> 29) + 8];
     obj_set_cell_coord(obj, coord, 0);
     ((struct BitsMode *)&obj->unk214)->low = 3;
