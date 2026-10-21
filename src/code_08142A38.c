@@ -350,7 +350,77 @@ void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
 ASM_FUNC("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(void))
 
-ASM_FUNC("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
+NONMATCH("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *dp;
+    u8 zero = 0;
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec = (u8 *)ent->rec;
+    s16 box[8];
+    u8 idx;
+    struct Actor *partner;
+    s32 dx;
+    s32 dy;
+    s32 facing;
+    u32 cell;
+    u16 speed;
+    u32 dir;
+
+    if (ent->timerB != 0)
+    {
+        s32 t = ent->timerB - 1;
+
+        ent->timerB = t;
+        if ((t << 16) != 0)
+        {
+            return;
+        }
+        if (!find_active_entry(owner, &idx))
+        {
+            out[0] = enemy_sway_then_check;
+            return;
+        }
+        partner = ((struct Actor **)owner)[idx + 10];
+        ((struct Bits3 *)&ent->mode)->field0 = 1;
+        dx = partner->posX - ent->posX;
+        dy = partner->posY - ent->posY;
+        if ((dx | dy) != 0)
+        {
+            facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+        }
+        else
+        {
+            facing = -1;
+        }
+        dp = &ent->filler1C[0x24 - 0x1C];
+        facing &= 7;
+        dir = (*dp & -8) | facing;
+        *dp = dir;
+        cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(dir << 29) >> 29, 2);
+        obj_set_cell_coord(ent, cell, 0);
+        speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x44);
+        start_move_to(ent, partner->posX + partner->vx * 20, partner->posY + partner->vy * 20, speed, zero);
+        return;
+    }
+    if (!step_pos_xy_plain(ent))
+    {
+        obj_box_to_stack(box, ent, 0x12, 0);
+        if (point_in_box(box, ent, 0x7FFF, 0))
+        {
+            ent->timerB = rec[*(u16 *)(ai + 0x178) + 0x58];
+            out[0] = tick_store;
+            out[3] = start_wander_b;
+            out[1] = enemy_collide_then_idle;
+        }
+        else
+        {
+            out[0] = contact_states_enemy_return_home;
+        }
+    }
+}
+END_NONMATCH
+
+void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
 {
     u8 **routines = &gMathRoutines;
     s16 box[8];
