@@ -415,11 +415,138 @@ NONMATCH("asm/code_080F2448/task_slot_write.s", void task_slot_write(u8 *task, u
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F2448/task_tick_objects.s", void task_tick_objects(void))
+NONMATCH("asm/code_080F2448/task_tick_objects.s", void task_tick_objects(u8 *task))
+{
+    u8 *entry;
+    s32 index;
+    u16 flags;
+    u16 *fp;
+
+    entry = *(u8 **)(task + 0x2C);
+    for (index = 1; index > 0; index--)
+    {
+        fp = (u16 *)(entry + 0xA0);
+        if (*fp & 0x800)
+        {
+            slot_clear_flag800_if_idle(task, entry);
+        }
+        if (*fp & 0x200)
+        {
+            clear_node_bit9(task, entry);
+        }
+        if (*fp & 0x100)
+        {
+            world_scroll_step(task, entry);
+        }
+        if (*fp & 0x10)
+        {
+            tick_obj_timer(task + 0x1C, entry);
+        }
+        entry += 0x100;
+    }
+    for (index = 0; index < 6; index++)
+    {
+        fp = (u16 *)(entry + 0xA0);
+        if (*fp & 0x200)
+        {
+            clear_node_bit9(task, entry);
+        }
+        if (*fp & 0x1000)
+        {
+            cmd_part_scan(task, entry, (u8)index);
+        }
+        if (*fp & 0x20)
+        {
+            cmd_update_kind(task, entry, (u8)index);
+        }
+        if (*fp & 0x800)
+        {
+            slot_clear_flag800_if_idle(task, entry);
+        }
+        if (*fp & 0x100)
+        {
+            world_scroll_step(task, entry);
+        }
+        if (*fp & 0x10)
+        {
+            tick_obj_timer(task + 0x1C, entry);
+        }
+        entry += 0x100;
+    }
+    for (index = 0; index < 16; index++)
+    {
+        fp = (u16 *)(entry + 0xA0);
+        flags = *fp;
+        if ((flags & 0x84) == 0)
+        {
+            if (flags & 2)
+            {
+                cmd_slot_clear_flag2(task, entry, (u8)index);
+            }
+            if (*fp & 0x20)
+            {
+                cmd_update_kind(task, entry, (u8)index);
+            }
+            if (*fp & 0x100)
+            {
+                world_scroll_step(task, entry);
+            }
+            if (*fp & 0x10)
+            {
+                tick_obj_timer(task + 0x1C, entry);
+            }
+        }
+        entry += 0x100;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F2448/cmd_update_kind.s", void cmd_update_kind(u8 *owner, u8 *arg, u8 kind))
 
-ASM_FUNC("asm/code_080F2448/world_scroll_step.s", void world_scroll_step(u8 *owner, u8 *obj))
+void world_scroll_step(u8 *owner, u8 *obj)
+{
+    u32 zero;
+    u8 *acc;
+    u8 *world;
+    s32 sx;
+    s32 sy;
+    s32 a;
+    s32 steps;
+    s32 len;
+    u32 target;
+    s32 px;
+    s32 py;
+    u16 sum;
+
+    sx = *(s16 *)(gWorld + 0x358);
+    sy = *(s16 *)(gWorld + 0x35A);
+    acc = gWorld + 0x35E;
+    sum = *(u16 *)acc + *(u16 *)(gWorld + 0x35C);
+    zero = 0;
+    *(u16 *)acc = sum;
+    a = *(s16 *)acc;
+    if (a < 0)
+    {
+        a += 0xF;
+    }
+    steps = a >> 4;
+    len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(sx * sx + sy * sy);
+    if (steps < len)
+    {
+        target = *(u32 *)(gWorld + 0x24C);
+        px = *(s16 *)(gWorld + 0x354) + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sx * steps, len);
+        py = *(s16 *)(gWorld + 0x356) - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sy * steps, len);
+        set_obj_target(target, px, py);
+    }
+    else
+    {
+        set_obj_target(*(u32 *)(gWorld + 0x24C), *(s16 *)(gWorld + 0x354) + sx, *(s16 *)(gWorld + 0x356) - sy);
+        world = gWorld;
+        *(u16 *)(world + 0x35E) = zero;
+        *(u16 *)(world + 0x35C) = zero;
+        *(u16 *)(obj + 0xA0) &= 0xFAFF;
+    }
+}
 
 ASM_FUNC("asm/code_080F2448/world_target_motion.s", void world_target_motion(void))
 
