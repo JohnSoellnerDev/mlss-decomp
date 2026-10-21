@@ -146,6 +146,156 @@ ASM_FUNC("asm/code_0801D358/obj_load_record.s", void obj_load_record(void))
 
 ASM_FUNC("asm/code_0801D358/decode_e400.s", void decode_e400(void))
 
-ASM_FUNC("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void))
+struct SpriteStepObj
+{
+    u8 filler0[0x12];
+    u8 flags12;
+    u8 filler13[0xD];
+    s8 step20;
+    u8 filler21;
+    u8 frame22;
+    u8 cell23;
+    u8 filler24;
+    u8 count25;
+    u8 filler26[3];
+    u8 unk29;
+    s16 remaining2A;
+    s16 travelled2C;
+    u8 filler2E[0xA];
+    u8 *tab38;
+    u8 *table3C;
+    s32 result40;
+    u8 *ptr44;
+    u8 **ptr48;
+    u8 filler4C[0x10];
+    void (*cb5C)(void *, s32);
+    s32 cbArg60;
+};
+
+NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr))
+{
+    struct SpriteStepObj *s = spr;
+    u8 *table;
+    s32 count;
+    s32 frame;
+    s32 travelled;
+    s32 dir;
+    s32 remaining;
+    s32 cell;
+    s32 step;
+    s32 store;
+    s32 v;
+    s32 flags;
+    s32 idx;
+    s32 t;
+    u8 *p20;
+    u8 *p22;
+    u8 *p23;
+
+    if (s->ptr48 != 0 && *(s32 *)s->ptr48 != 0)
+    {
+        goto tail;
+    }
+    if (s->ptr44 != 0 && *s->ptr44 != 1)
+    {
+        goto tail;
+    }
+    flags = s->flags12;
+    if ((flags & 0x30) != 0)
+    {
+        goto tail;
+    }
+    dir = ((u32)flags << 28) >> 31;
+    t = -9;
+    t &= flags;
+    s->flags12 = t;
+    table = s->table3C;
+    count = s->count25;
+    travelled = s->travelled2C;
+    remaining = s->remaining2A;
+    cell = s->cell23;
+    frame = s->frame22;
+    step = s->step20;
+    p23 = &s->cell23;
+    p22 = &s->frame22;
+    p20 = (u8 *)&s->step20;
+    if (step < 0)
+    {
+        step = -step;
+    }
+    travelled += step;
+    remaining -= step;
+    if (remaining <= 0)
+    {
+        dir ^= 1;
+        do
+        {
+            v = *(s8 *)p20;
+            if (v <= 0)
+            {
+                cell--;
+                if (cell < 0)
+                {
+                    cell = count - 1;
+                    travelled = 0;
+                    s->flags12 = (s->flags12 & -9) | (dir << 3);
+                }
+            }
+            else
+            {
+                cell++;
+                if (cell >= count)
+                {
+                    cell = 0;
+                    travelled = 0;
+                    s->flags12 = (s->flags12 & -9) | (dir << 3);
+                }
+            }
+            idx = cell * 2 + 1;
+            frame = table[idx];
+            remaining += table[idx + 1] << 4;
+        } while (remaining <= 0);
+    }
+    store = 1;
+    flags = s->flags12;
+    if ((flags & 8) != 0)
+    {
+        if ((flags & 6) == 2)
+        {
+            s->flags12 = flags | 0x10;
+            cell = count - 1;
+            frame = table[cell * 2 + 1];
+            remaining = 1;
+            travelled = 0;
+        }
+        else if ((flags & 6) == 4)
+        {
+            s->flags12 = flags | 0x20;
+            store = 0;
+        }
+    }
+    if (store != 0)
+    {
+        u8 *tab = s->tab38;
+        s32 off = tab[0] | (tab[1] << 8);
+        u8 *base = tab - off;
+        u8 *ea = base + (frame << 1);
+        s32 val = ea[1] | (ea[2] << 8);
+        s->result40 = (s32)(base + val);
+        s->travelled2C = travelled;
+        s->remaining2A = remaining;
+        *p23 = cell;
+        *p22 = frame;
+    }
+tail:
+    if (s->cb5C != 0)
+    {
+        if ((s->unk29 & 2) != 0 || (s->flags12 & 0x28) == 8)
+        {
+            s->cb5C(s, s->cbArg60);
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0801D358/obj_gfx_step.s", void obj_gfx_step(void))
