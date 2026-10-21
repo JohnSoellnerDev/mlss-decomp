@@ -1160,11 +1160,18 @@ NONMATCH("asm/code_080EA8A0/draw_text_item_raw.s", u32 draw_text_item_raw(void *
     u32 extra = *(u32 *)((u8 *)rec + 0x14);
     u32 hi = (u8)((s32)attr >> 8);
     u32 width = gTextWidthTable[(attr & 0xFF) << 1];
-    u32 bits = (extra << 2) & 0x800;
+    u32 bits;
+    u32 mask;
 
-    bits |= ((extra - 0x80) << 1) & 0x300;
-    bits |= (extra << 1) & 0xC0;
-    bits |= extra & 0x1F;
+    bits = extra << 2;
+    mask = 0x800;
+    bits &= mask;
+    mask = 0x300;
+    bits |= ((extra - 0x80) << 1) & mask;
+    mask = 0xC0;
+    bits |= (extra << 1) & mask;
+    mask = 0x1F;
+    bits |= extra & mask;
     draw_text_prim(obj, rec->byte0, rec->half4, rec->half8, hi, width, rec->half10, bits, rec->byte18, rec->word1C);
     return 1;
 }
