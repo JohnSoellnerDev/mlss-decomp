@@ -81,6 +81,14 @@ struct WaveWorld
     struct WaveObj *slots[8];
 };
 
+struct Bits7F
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
 void sound_stop_song(u32 song);
@@ -175,7 +183,63 @@ void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void anim_bit1_chance(void *part, u32 chance);
 u32 query_or_arm_wait(struct WaveObj *obj);
 
-ASM_FUNC("asm/code_08071CC8/spawn_slot_sprite.s", void spawn_slot_sprite(struct WaveObj *obj))
+NONMATCH("asm/code_08071CC8/spawn_slot_sprite.s", void spawn_slot_sprite(struct WaveObj *obj))
+{
+    struct WaveObj *table;
+    struct WaveObj *slot;
+    s32 timerStart;
+    u8 poseFlags;
+    s32 dx;
+    s32 speed;
+    s32 half;
+    s32 ratio;
+
+    poseFlags = obj->pose->flags;
+    timerStart = 8;
+    if ((timerStart & poseFlags) != 0)
+    {
+        sprite_set_action(obj, 6, 0x40B4, 0);
+        sprite_set_action(obj->link, 6, 0, 0);
+        sound_stop_song(0x6C);
+        effect_spawn_at(0x21C6, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        table = gWorld->slots[0];
+        slot = (struct WaveObj *)((u8 *)table + 8);
+        sprite_entry_update(slot->pose);
+        sprite_set_action(slot, 2, 0x40AE, 0);
+        slot->x = obj->x - 0x2000;
+        slot->y = obj->y;
+        slot->h = obj->h + 0x800;
+        slot->state = move_by_velocity;
+        ((struct Bits7F *)&table->unk7F)->bit6 = 0;
+        ((struct Bits7F *)&table->unk7F)->bit5 = 0;
+        slot->cb68 = on_arrive;
+        slot->unk6C = obj->unk6C;
+        slot->owner = obj->owner;
+        obj_list_push_default(slot);
+        slot->cb58 = (void (*)(struct WaveObj *))obj_setup_and_place;
+        slot->cb60 = lookup_part_b_then_step;
+        table->param4 = 0;
+        table->unkB8 = timerStart;
+        obj->state = handle_group_mode;
+        table->phase = obj->owner->part->targetX + 0x800;
+        table->unkB6 = slot->x / 0x100;
+        table->unkBA = slot->h / 0x100;
+        dx = (table->unkB6 << 8) - table->phase;
+        speed = dx / 0x166;
+        half = speed / 2;
+        ratio = 0x4000 / (half * half);
+        if (ratio == 1)
+        {
+            ratio = 2;
+        }
+        *(s32 *)&table->dy = -ratio;
+        table->select = speed;
+        *(s32 *)&table->timer = -dx;
+        table->unkB4 = 0;
+        set_slot_value(0x8C, -1);
+    }
+}
+END_NONMATCH
 
 void handle_group_mode(struct WaveObj *obj)
 {
