@@ -73,8 +73,7 @@ struct CurObj
 struct SysKeys3E
 {
     u8 filler0[0x3E];
-    u16 bit0 : 1;
-    u16 rest : 15;
+    u16 keys;
 };
 
 struct Pos38
@@ -231,14 +230,14 @@ void state_toggle_map_tiles(struct Owner *owner);
 void state_menu_alloc_scene(struct Owner *owner);
 void state_hero_anim_when_active(struct Owner *owner);
 
-NONMATCH("asm/code_08105A30/state_hero_select_confirm.s", void state_hero_select_confirm(struct Owner *owner))
+void state_hero_select_confirm(struct Owner *owner)
 {
     u8 *hero;
     struct Obj *obj;
     struct Entry *task;
     s32 idx;
 
-    if (((struct SysKeys3E *)gSys)->bit0 == 0)
+    if ((((struct SysKeys3E *)gSys)->keys ^ 1) & 1)
     {
         return;
     }
@@ -264,11 +263,39 @@ NONMATCH("asm/code_08105A30/state_hero_select_confirm.s", void state_hero_select
             owner->state = state_figure_jump_start;
         }
     }
+}
+
+void state_init_map_tiles(struct Owner *owner)
+{
+    copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0, 0x1E, 2,
+                      (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
+    copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0x12, 0x1E, 2,
+                      (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
+    owner->posX = 0;
+    owner->timer = 0;
+    owner->state = state_toggle_map_tiles;
+}
+
+NONMATCH("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_tiles(struct Owner *owner))
+{
+    u16 timer = owner->timer;
+    s32 step = timer + 1;
+    u32 cell;
+    u32 pos;
+
+    owner->timer = step;
+    if ((s16)step > 12)
+    {
+        owner->timer = 0;
+        owner->posX = (u16)owner->posX ^ 1;
+        copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0, 0x1E, 2,
+                          (u8 *)(cell = ((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable,
+                                 pos = ((s32)owner->posX << 2) + (u32)gMapTable, *(u32 *)cell + pos), 0x8000);
+        copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0x12, 0x1E, 2,
+                          (u8 *)(cell = ((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable,
+                                 pos = ((s32)owner->posX << 2) + (u32)gMapTable, *(u32 *)cell + pos), 0x8000);
+    }
 } END_NONMATCH
-
-ASM_FUNC("asm/code_08105A30/state_init_map_tiles.s", void state_init_map_tiles(struct Owner *owner))
-
-ASM_FUNC("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_tiles(struct Owner *owner))
 
 void state_move_to_target(struct Owner *owner)
 {
@@ -717,7 +744,7 @@ void state_hero_anim_notify(struct Owner *owner)
     }
 }
 
-NONMATCH("asm/code_08105A30/state_hero_anim_when_active.s", void state_hero_anim_when_active(struct Owner *owner))
+void state_hero_anim_when_active(struct Owner *owner)
 {
     u8 idx;
     struct Owner *pose;
@@ -726,14 +753,14 @@ NONMATCH("asm/code_08105A30/state_hero_anim_when_active.s", void state_hero_anim
     pose = (struct Owner *)((u8 *)gWorld->list58[idx + 6] + 8);
     if ((pose->sprite->flags & 8) != 0)
     {
-        sprite_set_action(pose, idx ? 1 : 4, idx ? 0x204E : 0x2001, 0);
+        sprite_set_action(pose, gWorld->hero340 ? 1 : 4, gWorld->hero340 ? 0x204E : 0x2001, 0);
         pose = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
         sprite_set_action(pose, 3, 0, 0);
         ((struct MsBits *)&pose->sprite->flags)->mode = 1;
         owner->state = state_hero_sprite_check;
         set_slot_value(0x53, -1);
     }
-} END_NONMATCH
+}
 
 void state_heroes_anim_stop(struct Owner *owner)
 {
