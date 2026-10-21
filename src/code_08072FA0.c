@@ -46,6 +46,13 @@ struct Flags79Bits
     u8 rest : 4;
 };
 
+struct Flags76Bits
+{
+    u8 low : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 struct ChainNode
 {
     struct ChainNode *next;
@@ -85,7 +92,7 @@ struct ActorObj
     u8 filler70[0x74 - 0x70];
     u8 group;
     u8 depth;
-    u8 filler76[0x77 - 0x76];
+    u8 flags76;
     u8 flags77;
     u8 flags78;
     u8 flags79;
@@ -293,7 +300,40 @@ void prepare_slide_timing(struct ActorObj *obj)
     obj->state = slide_step;
 }
 
-ASM_FUNC("asm/code_08072FA0/slide_step.s", void slide_step(struct ActorObj *obj))
+void slide_step(struct ActorObj *obj)
+{
+    struct ActorPart *part;
+    struct ActorObj *link;
+    struct ActorObj *owner;
+    s32 d;
+    s32 h;
+    s32 dh;
+
+    obj->pose->unkC += 0x400;
+    obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
+    d = (s16)obj->timer - obj->paramA0 / 2;
+    h = d * d * obj->param9C;
+    dh = (s16)obj->dh << 8;
+    dh += 0x3000;
+    obj->posH = h + dh;
+    obj->timer++;
+    if ((s16)obj->timer > obj->paramA0)
+    {
+        set_slot_value(0xCC, -1);
+        part = obj->part;
+        effect_spawn_at(0x226E, part->targetX / 0x100, part->targetY / 0x100,
+                        part->targetH / 0x100, obj);
+        link = (struct ActorObj *)((u8 *)obj->part + 8);
+        owner = link->owner;
+        resolve_contact_action(owner, link, link->posX / 0x100, link->posH / 0x100,
+                               owner->part->unkEC != -1 ? 0x13 : 0x12);
+        sprite_set_action(link, 1, 0, 0);
+        obj->targetX = 0x1E;
+        obj->state = wait_counter_then_finish;
+        obj->posX = 0x12C00;
+    }
+}
 
 void wait_timer_then_settle(struct ActorObj *obj)
 {
@@ -382,7 +422,64 @@ void slide_step_with_pose(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08072FA0/hover_bob_step.s", void hover_bob_step(struct ActorObj *obj))
+NONMATCH("asm/code_08072FA0/hover_bob_step.s", void hover_bob_step(struct ActorObj *obj))
+{
+    struct ActorPart *part;
+    s32 tgtX;
+    s32 tgtY;
+    s32 tgtH;
+    s32 zero;
+    s32 none;
+    s32 timer;
+    u16 now;
+
+    obj->targetX--;
+    if (obj->targetX <= 0)
+    {
+        effect_spawn_at(0x2276, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        obj->targetX = 5;
+    }
+    timer = obj->timer - 0x180;
+    zero = 0;
+    none = -1;
+    obj->timer = timer;
+    obj->pose->unkC = timer;
+    part = obj->owner->part;
+    tgtX = part->targetX;
+    tgtY = part->targetY;
+    tgtH = part->targetH + 0x4800;
+    obj->posY = tgtY;
+    obj->posX = tgtX + (gCosineTable[((s16)obj->timer / 0x100) & 0xFF] / 0x40) * 144;
+    obj->posH = tgtH + (gSineTable[((s16)obj->timer / 0x100) & 0xFF] / 0x40) * 72;
+    now = obj->timer;
+    if (now > 0x8000)
+    {
+        obj->paramA0 = 1;
+    }
+    if (now <= 0x3FFF && obj->paramA0 != 0)
+    {
+        if (((struct Flags76Bits *)&obj->owner->flags76)->mode != 1)
+        {
+            set_slot_value(0xD3, none);
+            sprite_set_action(obj, 4, 0, 0);
+            obj->pose->unkC = zero;
+        }
+        else
+        {
+            obj->paramA0 = zero;
+            if (--obj->param9C > 0)
+            {
+                set_slot_value(0x10E, none);
+                return;
+            }
+            set_slot_value(0xD3, none);
+            sprite_set_action(obj, 4, 0, 0);
+            obj->pose->unkC = zero;
+        }
+        obj->state = wait_for_index;
+    }
+}
+END_NONMATCH
 
 void settle_to_data_target(struct ActorObj *obj)
 {
