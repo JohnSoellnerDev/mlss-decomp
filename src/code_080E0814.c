@@ -215,7 +215,63 @@ NONMATCH("asm/code_080E0814/leave_special_mode.s", void leave_special_mode(void)
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080E0814/build_iris_rows.s", void build_iris_rows(void))
+void offset_three_words(u32 item, s32 *a, s32 *b, s32 *c, u32 d);
+
+NONMATCH("asm/code_080E0814/build_iris_rows.s", void build_iris_rows(s32 x, s32 y, s32 z, u32 radius))
+{
+    u32 *out;
+    u32 radiusSq;
+    s32 row;
+
+    if (gWorld->saved260 != 0)
+    {
+        offset_three_words(gWorld->item24C, &x, &y, &z, 0);
+        out = (u32 *)(gWorkBuf + ((((((u32)gWorld->flags0B << 26) >> 31) * 5) << 7) + 0x3EF0));
+        radiusSq = radius * radius;
+        for (row = 0; row < 160; row++)
+        {
+            s32 dy = y - row;
+            s32 half = radiusSq - dy * dy;
+            s32 h;
+            s32 left;
+            s32 right;
+            u32 v;
+
+            if (half <= 0)
+            {
+                *out++ = 0;
+                continue;
+            }
+            h = ((s32 (*)(s32))gMathRoutines)(half);
+            right = x + h;
+            if (right < 0)
+            {
+                *out++ = 0;
+                continue;
+            }
+            if (right > 240)
+            {
+                right = 240;
+            }
+            left = x - h;
+            if (left > 239)
+            {
+                *out++ = 0;
+                continue;
+            }
+            if (left < 0)
+            {
+                *out++ = right | (right << 16);
+            }
+            else
+            {
+                v = (left << 8) | right;
+                *out++ = v | (v << 16);
+            }
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E0814/scale_point_list.s", void scale_point_list(void))
 
