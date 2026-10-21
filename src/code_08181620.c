@@ -228,9 +228,13 @@ void obj_zoom_quarter_spin8_1804(struct PtObj *obj)
     *words = angle;
 }
 
-NONMATCH("asm/code_08181620/obj_zoom_tilt_rise8_1a5c.s", void obj_zoom_tilt_rise8_1a5c(struct PtObj *obj))
+void obj_zoom_tilt_rise8_1a5c(struct PtObj *obj)
 {
     struct PtLocal l;
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct PtRecord *rec;
     s32 zoom;
     s32 speed;
@@ -277,16 +281,20 @@ NONMATCH("asm/code_08181620/obj_zoom_tilt_rise8_1a5c.s", void obj_zoom_tilt_rise
         sz = (l.z * zoom) / 0x100;
         l.z = sz;
         ty = sz;
-        ty = ty * (gCosineTable[angle & 0xFF] / 0x40);
-        ra = (ty - (gSineTable[angle & 0xFF] / 0x40) * sx) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        ty = ty * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        ra = (ty - (*sn / 0x40) * sx) / 0x100;
         l.z = ra;
-        rb = ((sx * (gCosineTable[angle & 0xFF] / 0x40)) + ((gSineTable[angle & 0xFF] / 0x40) * sz)) / 0x100;
+        rb = ((sx * (*cs / 0x40)) + ((*sn / 0x40) * sz)) / 0x100;
         l.x = rb;
         t = sy;
-        t = t * (gCosineTable[12] / 0x40);
-        ty = (t - (gSineTable[12] / 0x40) * ra) / 0x100;
+        cs2 = &gCosineTable[12];
+        t = t * (*cs2 / 0x40);
+        sn2 = &gSineTable[12];
+        ty = (t - (*sn2 / 0x40) * ra) / 0x100;
         l.y = ty;
-        tz = ((ra * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * sy)) / 0x100;
+        tz = ((ra * (*cs2 / 0x40)) + ((*sn2 / 0x40) * sy)) / 0x100;
         l.z = tz;
         l.y = ty + angle;
 
@@ -327,11 +335,14 @@ NONMATCH("asm/code_08181620/obj_zoom_tilt_rise8_1a5c.s", void obj_zoom_tilt_rise
     *words++ = speed;
     *words = angle;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08181620/obj_jump_zoom_turn_points_1cb8.s", void obj_jump_zoom_turn_points_1cb8(struct PtObj *obj))
+void obj_jump_zoom_turn_points_1cb8(struct PtObj *obj)
 {
     struct PtLocal l;
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct PtRecord *rec;
     s32 zoom;
     s32 speed;
@@ -382,16 +393,20 @@ NONMATCH("asm/code_08181620/obj_jump_zoom_turn_points_1cb8.s", void obj_jump_zoo
         sz = (l.z * zoom) / 0x100;
         l.z = sz;
         ty = sz;
-        ty = ty * (gCosineTable[angle & 0xFF] / 0x40);
-        ra = (ty - (gSineTable[angle & 0xFF] / 0x40) * sx) / 0x100;
+        cs = &gCosineTable[angle & 0xFF];
+        ty = ty * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        ra = (ty - (*sn / 0x40) * sx) / 0x100;
         l.z = ra;
-        rb = ((sx * (gCosineTable[angle & 0xFF] / 0x40)) + ((gSineTable[angle & 0xFF] / 0x40) * sz)) / 0x100;
+        rb = ((sx * (*cs / 0x40)) + ((*sn / 0x40) * sz)) / 0x100;
         l.x = rb;
         t = sy;
-        t = t * (gCosineTable[12] / 0x40);
-        ty = (t - (gSineTable[12] / 0x40) * ra) / 0x100;
+        cs2 = &gCosineTable[12];
+        t = t * (*cs2 / 0x40);
+        sn2 = &gSineTable[12];
+        ty = (t - (*sn2 / 0x40) * ra) / 0x100;
         l.y = ty;
-        tz = ((ra * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * sy)) / 0x100;
+        tz = ((ra * (*cs2 / 0x40)) + ((*sn2 / 0x40) * sy)) / 0x100;
         l.z = tz;
         l.y = ty + drift;
 
@@ -436,7 +451,6 @@ NONMATCH("asm/code_08181620/obj_jump_zoom_turn_points_1cb8.s", void obj_jump_zoo
     *words++ = drift;
     *words = accel;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08181620/obj_rise_turn_points_1f4c.s", void obj_rise_turn_points_1f4c(void))
 
