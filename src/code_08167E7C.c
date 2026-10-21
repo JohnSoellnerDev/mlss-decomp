@@ -13,6 +13,8 @@ extern const u8 gObjScript08216806[];
 extern const u32 gPhase4ChildETable[];
 extern u32 (*gUnk_03000D48)();
 extern u32 (*gUnk_03000D4C)();
+extern void path_step_main(void);
+extern void path_step_loop(void);
 
 void obj_destroy_sprites(void *obj, u32 flags);
 void task_remove(void *node, u32 kind);
@@ -160,7 +162,19 @@ ASM_FUNC("asm/code_08167E7C/obj_phase4_step.s", void obj_phase4_step(void))
 
 ASM_FUNC("asm/code_08167E7C/grid_lines_obj_draw_grid.s", void grid_lines_obj_draw_grid(void *obj))
 
-ASM_FUNC("asm/code_08167E7C/obj_frame_update.s", void obj_frame_update(void))
+void obj_frame_update(struct GridObj *obj)
+{
+    struct GridObj *child = obj->unk14;
+    u32 state;
+    u32 (**fnA)();
+
+    obj_list_pass_0a8c();
+    fnA = &gUnk_03000D48;
+    state = gUnk_0203FFB8.root;
+    (*fnA)((void *)state, (void *)(state + 0xA14));
+    gSys.oamCurrent = gUnk_03000D4C((void *)gUnk_0203FFB8.root, gSys.oamCurrent);
+    grid_lines_obj_draw_grid(child);
+}
 
 void obj_set_dir_to_point(u32 unused0, struct GridObj *obj, s32 x, s32 y)
 {
@@ -171,7 +185,45 @@ void obj_set_dir_to_point(u32 unused0, struct GridObj *obj, s32 x, s32 y)
     obj->dir52 = gDirTab[sector];
 }
 
-ASM_FUNC("asm/code_08167E7C/obj_copy_end_points.s", void obj_copy_end_points(void))
+// Matches except for the routine offset: the original subtracts two different symbols at the same
+// ROM address (config/symbols.txt has only path_step_main there). With one symbol the term folds to 0.
+NONMATCH("asm/code_08167E7C/obj_copy_end_points.s", void obj_copy_end_points(struct GridObj *obj))
+{
+    struct GridObj *a;
+    struct GridObj *b;
+    u32 *table;
+    u32 ax;
+    u32 ay1;
+    u32 ay;
+    u32 bx;
+    u32 by1;
+    u32 by;
+    u32 k;
+
+    if ((*(u32 *)&obj->flags & 1) != 0)
+    {
+        a = obj->unk28;
+        ax = (u32)a->unk18;
+        ay1 = (u32)a->unk1C + (u32)a->anchor3C;
+        ay = (u32)a->unk20;
+        table = obj->points40;
+        k = 0xFFFFF800;
+        ay1 = ay1 + k;
+        table[0] = ax;
+        table[1] = ay1;
+        table[2] = ay;
+        b = obj->unk2C;
+        bx = (u32)b->unk18;
+        by1 = (u32)b->unk1C + (u32)b->anchor3C;
+        by = (u32)b->unk20;
+        by1 = by1 + k;
+        table[42] = bx;
+        table[43] = by1;
+        table[44] = by;
+        ((void (*)(void *))(*(u32 *)((u8 *)table + 0x234) + ((u32)path_step_main - (u32)path_step_main)))(table);
+    }
+}
+END_NONMATCH
 
 void obj_set_mode_if_flag8(struct GridObj *obj)
 {
@@ -307,7 +359,17 @@ s32 avg_fields_sdiv15_b(void *obj)
     return sum / 15;
 }
 
-ASM_FUNC("asm/code_08167E7C/path_step_loop_call.s", void path_step_loop_call(void))
+u32 path_step_loop_call(struct GridObj *obj, u32 a1, u32 a2, u32 a3, u32 a4)
+{
+    u32 args[3];
+    u32 r;
+
+    args[0] = a1;
+    args[1] = a2;
+    args[2] = a3;
+    r = ((u32 (*)(void *, u32 *, u32))(*(u32 *)((u8 *)obj + 0x234) + ((u32)path_step_loop - (u32)path_step_main)))(obj, args, a4 * a4);
+    return (-r | r) >> 31;
+}
 
 NONMATCH("asm/code_08167E7C/path_step_main_call.s", void path_step_main_call(struct GridObj *obj))
 {
@@ -389,4 +451,39 @@ void obj_place_child(struct GridObj *obj, u32 mode, u32 attr, s32 *base, u32 rec
 
 ASM_FUNC("asm/code_08167E7C/create_obj_group_main.s", void create_obj_group_main(void))
 
-ASM_FUNC("asm/code_08167E7C/obj_place_pair.s", void obj_place_pair(void))
+// Matches except for the register of the mode and the flag mask (and the argument order of the
+// second call): the original keeps them the other way round.
+NONMATCH("asm/code_08167E7C/obj_place_pair.s", void obj_place_pair(struct GridGroup *group, u32 mode))
+{
+    u32 m = mode;
+    u32 one = 1;
+    s32 *base = &group->base14;
+    s32 stepX;
+    s32 stepY;
+    s32 baseX;
+    s32 midY;
+
+    obj_place_child(group->objA, m, group->v2C + 0x80, base, one);
+    triple_copy(&group->objD->unk18, &group->objA->unk18);
+    if ((group->objA->flags & one) != 0)
+        obj_update_sprites(group->objD);
+    else
+        obj_release_sprites(group->objD);
+    obj_place_child(group->objB, m, group->v2C + 0x80, (s32 *)((u8 *)group + 0x14), 3);
+    triple_copy(&group->objE->unk18, &group->objB->unk18);
+    if ((group->objB->flags & one) != 0)
+        obj_update_sprites(group->objE);
+    else
+        obj_release_sprites(group->objE);
+    triple_copy(&group->objC->unk18, base);
+    ((struct GridSprite *)group->objC->unk10)->word0C = group->v2C << 8;
+    stepX = group->v34 * 18;
+    baseX = group->base14;
+    group->out38 = baseX - stepX;
+    stepY = group->v30 * 18;
+    midY = group->base1C;
+    group->out40 = midY + stepY;
+    group->out44 = baseX + stepX;
+    group->out4C = midY - stepY;
+}
+END_NONMATCH
