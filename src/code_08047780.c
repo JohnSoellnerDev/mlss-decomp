@@ -798,7 +798,66 @@ struct FieldObj *obj_init_defaults(struct FieldObj *obj)
     return obj;
 }
 
-ASM_FUNC("asm/code_08047780/obj_select_state_code.s", void obj_select_state_code(void))
+extern u8 *gSelectStateCodePtrTable[];
+
+void obj_select_state_code(struct FieldObj *obj, u32 mode)
+{
+    s32 code = *(s8 *)(gSelectStateCodePtrTable[obj->unk54] + obj->unk04);
+
+    if ((u16)obj->unk04 <= 4 || obj->unk04 == 0xD)
+    {
+        switch (mode)
+        {
+        case 0:
+            if (code == 1 && (obj->flags213 & 0x20) == 0)
+                code = 0;
+            break;
+        case 1:
+            if (obj->unk54 == 0)
+                code = 0x17;
+            break;
+        case 2:
+            if (obj->unk54 == 0)
+            {
+                if (code == 1 && (obj->flags213 & 0x20) != 0)
+                    code = 0xF;
+                else
+                    code = 0xB;
+            }
+            break;
+        case 3:
+            if (obj->unk54 == 1)
+                code = 0x10;
+            break;
+        case 4:
+            if (obj->unk54 == 1)
+                code = 0x12;
+            break;
+        case 5:
+        case 6:
+        default:
+            break;
+        }
+    }
+    if (obj->unk54 == 0 && mode == 2)
+    {
+        if (code == 7)
+            code = 0xC;
+        else if (code == 9)
+            code = 0xE;
+    }
+    if (code == 7)
+    {
+        if (obj->unk345 == 8 || obj->unk343 != -1 || obj->unk2C == 6 || obj->unk2C == 7)
+            code = 8;
+    }
+    else if (code == 0xC)
+    {
+        if (obj->unk345 == 0xD || obj->unk343 != -1 || obj->unk2C == 6 || obj->unk2C == 7)
+            code = 0xD;
+    }
+    obj->unk344 = code;
+}
 
 struct FieldSpr16
 {
@@ -875,7 +934,54 @@ NONMATCH("asm/code_08047780/obj_store_attrs.s", void obj_store_attrs(struct Fiel
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08047780/obj_place_sprite.s", void obj_place_sprite(void))
+void obj_update_screen_pos(struct FieldObj *obj, s32 a, s32 b);
+
+NONMATCH("asm/code_08047780/obj_place_sprite.s", void obj_place_sprite(struct FieldObj *obj, u16 a, u16 b))
+{
+    u8 flags216;
+    s32 dx;
+    s32 dy;
+    struct FieldAttrEntry **ap;
+
+    if ((obj->unk352 & 0x40) != 0)
+    {
+        if ((obj->flags20F & 2) != 0)
+        {
+            flags216 = obj->flags216 & 0x20;
+            if (flags216 == 0)
+            {
+                dx = obj->unk0C;
+                if (dx < 0)
+                    dx += 0xFF;
+                dx = (dx >> 8) - (s16)a;
+                obj->unk06 = dx;
+                dy = (obj->unk10 - obj->unk14) / 0x100 - (s16)b - 3;
+                obj->unk08 = dy;
+                obj->sub->unk00 = dx + (s8)obj->unk23A;
+                obj->sub->unk02 = obj->unk08 - obj->unk18 / 0x100 + (s8)obj->unk23B + 4;
+                obj->sub->unk0E = 0xFFFF;
+                obj->unk0A = flags216;
+            }
+        }
+    }
+    else
+    {
+        obj_update_screen_pos(obj, (s16)a, (s16)b);
+    }
+
+    ap = &obj->attr;
+    if (((*ap)->unk12 & 0x20) == 0)
+    {
+        if ((obj->unk353 & 1) != 0)
+        {
+            (*ap)->unk00 = (s8)obj->unk372 + obj->sub->unk00;
+            (*ap)->unk02 = (s8)obj->unk373 + obj->sub->unk02;
+            (*ap)->unk0E = (s8)obj->unk374 + obj->sub->unk0E;
+            ((struct FieldBits1F *)&(*ap)->unk1F)->lo = (((u32)obj->sub->unk1F << 30) >> 30);
+        }
+    }
+}
+END_NONMATCH
 
 void init_pos_obj_refresh_sprite(struct FieldObj *obj)
 {
