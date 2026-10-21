@@ -491,6 +491,7 @@ NONMATCH("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
 {
     const u8 *packed = gUnk_08002D2C + 0x81F4;
     u8 *dst = heap_alloc(read_varlen_plus1(packed), 1, gBgDecompBufferTag, 0);
+    vu16 *bg;
 
     ((void (*)(const void *, void *))gUnk_03000C84)(packed, dst);
     cpu_fast_set(dst, (void *)0x06000000, 0x2000);
@@ -500,13 +501,10 @@ NONMATCH("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
     }
     cpu_fast_set(gScenePaletteA, gUnk_02000080, 0x80);
     *(u16 *)gUnk_02000080 = 0x190;
-    {
-        vu16 *bg = (vu16 *)gUnk_0200000A;
-
-        *bg = 0x1701;
-        bg += 2;
-        *bg = 0x1D02;
-    }
+    bg = (vu16 *)gUnk_0200000A;
+    *bg = 0x1701;
+    bg += 2;
+    *bg = 0x1D02;
     *(vu16 *)0x02000000 |= 0xA00;
     ((struct SysBgDirty *)gSys)->bgPalDirty |= 0x7FFF;
 }
@@ -999,18 +997,16 @@ void obj_release_two_children(struct EffectObj *obj, u32 flags)
     }
 }
 
-static inline void clear_axis(s32 *p)
-{
-    p[0] = 0;
-    p[2] = 0;
-}
-
 NONMATCH("asm/code_081612F0/obj_clear_bounds.s", struct EffectB *obj_clear_bounds(struct EffectB *obj))
 {
+    s32 *upper;
+
     obj->outX = 0;
-    obj->posX = 0;
+    upper = (s32 *)&obj->outX;
+    upper[2] = 0;
     obj->outY = 0;
-    obj->posY = 0;
+    upper++;
+    upper[2] = 0;
     obj->timer = 0;
     obj->state = 0;
     obj->ofsX = 0;
