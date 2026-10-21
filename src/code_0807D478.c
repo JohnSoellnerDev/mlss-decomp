@@ -29,10 +29,19 @@ struct PopupDirtyBits
     u8 unk2 : 6;
 };
 
+struct SpriteRing;
+
 struct SpritePart
 {
-    u8 filler0[0x77];
+    u8 filler0[0x28];
+    struct SpriteRing *ring;
+    u8 filler2C[0x76 - 0x2C];
+    u8 flags76;
     u8 index;
+    u8 filler78[0x94 - 0x78];
+    s32 unk94;
+    u8 filler98[0xB2 - 0x98];
+    u16 unkB2;
 };
 
 struct PartIndexBits
@@ -125,8 +134,13 @@ struct SpriteObj
     u32 unk68;
     u8 filler6C[0x76 - 0x6C];
     u8 flags76;
-    u8 filler77[0xB8 - 0x77];
+    u8 flags77;
+    u8 filler78[0xB8 - 0x78];
     u16 b8;
+    u8 fillerBA[0xC3 - 0xBA];
+    u8 ofsX;
+    u8 ofsY;
+    u8 ofsZ;
 };
 
 struct RasterNode
@@ -144,12 +158,14 @@ struct World
     u8 dirty;
     u8 flagsC;
     u8 levelD;
-    u8 filler0E[0x3C - 0x0E];
+    u8 filler0E[0x12 - 0x0E];
+    u16 flags12;
+    u8 filler14[0x3C - 0x14];
     struct Task *taskFree;
     u8 filler40[0x48 - 0x40];
     struct Task *taskList;
     struct Task *list4C;
-    u8 filler50[0x54 - 0x50];
+    struct Task *frameTasks;
     struct SpriteObj *objs;
     u8 filler58[0x70 - 0x58];
     struct SpriteObj *unk70;
@@ -161,9 +177,10 @@ struct World
     struct PopupNode *nodePool;
     u8 filler244[0x24C - 0x244];
     void *camera;
-    u8 filler250[0x254 - 0x250];
+    void *copyQueue;
     struct RasterNode *rasterList;
     struct RasterNode *rasterCur;
+    void (*frameHook)(void);
 };
 
 extern struct World *gWorld;
@@ -369,7 +386,7 @@ void popup_fade_step_b(struct Task *task)
     }
 }
 
-NONMATCH("asm/code_0807D478/popup_digit_spawn.s", struct Task *popup_digit_spawn(u32 digit, s32 x, s32 y, s32 z))
+NONMATCH("asm/code_0807D478/popup_digit_spawn.s", struct Task *popup_digit_spawn(u32 digit, s32 x, s32 y, s32 z, u32 flag))
 {
     struct Task *task;
     struct PopupNode *node;
