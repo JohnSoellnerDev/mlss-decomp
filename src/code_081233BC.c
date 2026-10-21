@@ -47,7 +47,13 @@ void refresh_hud_tiles(u32 ctx)
 
 ASM_FUNC("asm/code_081233BC/draw_sprite.s", void draw_sprite(void))
 
-ASM_FUNC("asm/code_081233BC/oam_write_attrs.s", void oam_write_attrs(void))
+u16 *oam_write_attrs(u16 *oam, u16 y, u8 flags, u8 mode, u8 mosaic, u8 colors, u8 shape, u16 x, u8 affine, u8 size, u16 tile, u8 prio, u8 palette)
+{
+    oam[0] = y | (shape << 14 | colors << 13 | mosaic << 12 | mode << 10 | flags << 8);
+    oam[1] = x | (size << 14 | affine << 9);
+    oam[2] = tile | (palette << 12 | prio << 10);
+    return oam + 4;
+}
 
 void create_menu_object(u32 ctx, u32 flag)
 {
