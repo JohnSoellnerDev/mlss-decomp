@@ -15,6 +15,18 @@ extern u8 *gParty;
 extern const u8 gRowTable[];
 extern const u8 gRowTableC[];
 extern const u8 gRowTable8[];
+struct ItemRec
+{
+    u8 unk0;
+    u8 unk1;
+    u8 filler2[14];
+};
+
+extern const u8 gDropRollTable[];
+extern u8 gItemTable[];
+u32 mt19937_next(void);
+s32 rand_below(s32 range, u32 seed);
+void give_reward(u32 item, u32 amount, u32 flag);
 void update_obj_list(void);
 void obj_list_pass_0a8c(void);
 
@@ -423,7 +435,111 @@ struct MenuObj *screen_child_init(struct MenuObj *obj, u8 kind, u32 data)
     return obj;
 }
 
-ASM_FUNC("asm/code_081171F8/drop_roll.s", void drop_roll(void))
+NONMATCH("asm/code_081171F8/drop_roll.s", u32 drop_roll(u16 index, u8 kind, u8 flag))
+{
+    const u8 *tab;
+    const u8 *entry;
+    const u8 *look;
+    struct ItemRec *items;
+    u32 item;
+    u32 amount;
+    u32 amountRaw;
+    u32 raw;
+    u32 roll;
+    u32 low;
+    u8 chance;
+
+    item = index;
+    if (kind == 0x10)
+    {
+        goto lookup;
+    }
+    if (kind != 0x20)
+    {
+        goto random;
+    }
+lookup:
+    if (flag != 0)
+    {
+        goto lookupWord;
+    }
+    tab = gDropRollTable;
+    look = tab + (item << 2);
+    item = ((u32)look[0] << 26) >> 28;
+    raw = *(u16 *)look;
+    goto halfAmount;
+lookupWord:
+    tab = gDropRollTable;
+    look = tab + (item << 2);
+    item = (*(u32 *)look << 15) >> 28;
+    raw = look[2];
+    goto wordAmount;
+random:
+    roll = mt19937_next();
+    chance = rand_below(4, roll);
+    tab = gDropRollTable;
+    entry = tab + (item << 2);
+    low = entry[0];
+    if (chance > ((low << 30) >> 30))
+    {
+        goto randWord;
+    }
+    item = (low << 26) >> 28;
+    raw = *(u16 *)entry;
+halfAmount:
+    amount = (raw << 19) >> 25;
+    goto joinAmount;
+randWord:
+    item = (*(u32 *)entry << 15) >> 28;
+    raw = entry[2];
+wordAmount:
+    amount = raw >> 1;
+joinAmount:
+    amountRaw = amount;
+    if (item > 7)
+    {
+        amount = 0;
+    }
+    if (item != 0)
+    {
+        give_reward(item, amount, 1);
+    }
+    switch (item)
+    {
+    case 0:
+        item = 0;
+        break;
+    case 2:
+        item = 4;
+        break;
+    case 4:
+        items = (struct ItemRec *)gItemTable;
+        item = items[amount].unk1;
+        break;
+    case 5:
+        item = 5;
+        break;
+    case 3:
+        item = amount + 0xC;
+        break;
+    case 8:
+        item = 1;
+        break;
+    case 9:
+        item = 2;
+        break;
+    case 1:
+    case 12:
+        item = 3;
+        break;
+    default:
+        break;
+    }
+    raw = (amountRaw << 5) | 0x10;
+    item &= 0xF;
+    return item | raw;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/build_menu_list.s", void build_menu_list(void))
 
