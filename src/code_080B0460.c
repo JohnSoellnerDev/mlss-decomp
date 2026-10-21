@@ -114,9 +114,13 @@ void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct HeroBody *body, u32 offsets);
 void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
+void step_motion(struct HeroBody *body);
+void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct HeroBody *owner);
 
 void hero_b_step_threshold_b05dc(struct HeroBody *body);
 void hero_b_wait_ratio_then_fx(struct HeroBody *body);
+void pair_end_place_both_a(struct HeroBody *body);
+void hero_b_step_reach_13a4(struct HeroBody *body);
 
 void hero_b_to_partner_fast(struct HeroBody *body)
 {
@@ -197,7 +201,52 @@ void hero_b_take_target_pose(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080B0460/hero_b_wait_ratio_then_fx.s", void hero_b_wait_ratio_then_fx(struct HeroBody *body))
+NONMATCH("asm/code_080B0460/hero_b_wait_ratio_then_fx.s", void hero_b_wait_ratio_then_fx(struct HeroBody *body))
+{
+    struct HeroBody *body_b;
+    struct Hero *hero_b;
+    s32 ratioLo;
+    s32 ratioHi;
+    s32 ratio;
+    s32 inRange;
+
+    hero_b = gWorld->heroB;
+    body_b = &hero_b->body;
+    step_motion(body_b);
+    ratioLo = hero_b->body.ratioLo;
+    ratioHi = hero_b->body.ratioHi;
+    ratio = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(ratioHi << 14, ratioLo);
+    if (hero_b->body.step > ratio)
+        inRange = 0;
+    else
+        inRange = hero_b->body.progress >= ratio;
+    if (inRange != 0)
+    {
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->pose == -1)
+                sprite_set_action(body_b, 6, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 6, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+    }
+    if ((body_b->flags & 0x20) != 0)
+    {
+        set_slot_value(0x2E, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->pose == -1)
+                sprite_set_action(body_b, 8, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 8, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+        effect_spawn_at(0x1E, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+        body->state = pair_end_place_both_a;
+    }
+}
+END_NONMATCH
 
 void pair_end_place_both_a(struct HeroBody *body)
 {
@@ -267,6 +316,42 @@ void pair_end_place_both_a(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080B0460/hero_pair_place_b_beside_a.s", void hero_pair_place_b_beside_a(void))
+void hero_pair_place_b_beside_a(struct HeroBody *body)
+{
+    struct World *world = gWorld;
+    struct Hero *hero_a = world->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct Hero *hero_b = world->heroB;
+    struct HeroBody *body_b = &hero_b->body;
 
-ASM_FUNC("asm/code_080B0460/hero_b_step_reach_13a4.s", void hero_b_step_reach_13a4(void))
+    if ((body_b->sprite->flags & 8) != 0)
+    {
+        set_slot_value(0x2B, -1);
+        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+        {
+            place_targets(body_b, body_a->targetX / 0x100 + hero_a->body.ofsX + 0x20,
+                          body_a->targetY / 0x100 + hero_a->body.ofsY, 0, -1);
+            hero_b->body.height = body_b->targetZ / 0x100 + 0x20;
+            set_motion_offsets(body_b, 0x399);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            u16 v;
+
+            place_targets(body_a, body_b->targetX / 0x100 + body_b->ofsX,
+                          body_b->targetY / 0x100 + body_b->ofsY, body_b->targetZ / 0x100 + 0x18, -1);
+            v = 0x20;
+            body_a->height = v;
+            set_motion_offsets(body_a, 0x600);
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 1, 0x2061, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+        body_b->timer = body_b->timer & 0xFFF;
+        body->state = hero_b_step_reach_13a4;
+    }
+}
+
+ASM_FUNC("asm/code_080B0460/hero_b_step_reach_13a4.s", void hero_b_step_reach_13a4(struct HeroBody *body))
