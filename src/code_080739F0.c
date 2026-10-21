@@ -252,7 +252,7 @@ void orbit_step_action2(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct ActorObj *obj))
+void orbit_step_finish(struct ActorObj *obj)
 {
     s32 *tx = &obj->targetX;
     s16 *tab = gCosineTable;
@@ -261,7 +261,10 @@ NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct 
     s32 ph;
     s32 s;
     s32 k;
+    s32 k2;
     s32 next;
+    k = 0x90;
+    k2 = 0x30;
     ph = *phase;
     if (ph < 0) {
         ph += 0xFF;
@@ -271,7 +274,6 @@ NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct 
     if (s < 0) {
         s += 0x3F;
     }
-    k = 0x90;
     obj->posX = *tx + (s >> 6) * k;
     ty = &obj->targetY;
     tab = gSineTable;
@@ -284,8 +286,7 @@ NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct 
     if (s < 0) {
         s += 0x3F;
     }
-    k = 0x30;
-    obj->posY = *ty - (s >> 6) * k;
+    obj->posY = *ty - (s >> 6) * k2;
     if (obj->part->countA8 != 0) {
         next = *phase + 0x100;
     } else {
@@ -296,7 +297,6 @@ NONMATCH("asm/code_080739F0/orbit_step_finish.s", void orbit_step_finish(struct 
         obj_release(obj);
     }
 }
-END_NONMATCH
 
 u32 lookup_then_finish(struct ActorObj *obj)
 {
