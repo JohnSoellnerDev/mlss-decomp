@@ -948,7 +948,82 @@ void bg_slide_offset_callback(struct Obj *obj)
 ASM_FUNC("asm/code_0810D6C0/resolve_contact_action.s", void resolve_contact_action(void))
 
 void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
-ASM_FUNC("asm/code_0810D6C0/partner_link_update.s", void partner_link_update(void))
+NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode))
+{
+    s32 delta;
+    s16 vel;
+    s32 scaled;
+    s32 modeVal;
+    s32 link;
+    u16 speedA;
+    u16 animScale;
+    u16 scaleB;
+
+    link = partner->unk28->unk7E & 6;
+    if (link != 2 && link != 4)
+    {
+        return 1;
+    }
+    speedA = obj->unk6C->unkC;
+    animScale = obj->unk28->unk10A;
+    vel = partner->unk28->unk104;
+    scaleB = partner->unk28->unk10C;
+    scaled = animScale * (speedA * 0x66);
+    delta = scaled / 0x100;
+    scaled = (vel << 1) + vel;
+    scaled = scaled + (scaled << 4);
+    scaled = scaleB * scaled;
+    delta = delta - scaled / 0x100;
+    delta = delta / 0x100;
+    if (delta <= 0)
+    {
+        delta = 1;
+    }
+    modeVal = 0;
+    if (mode == 2)
+    {
+        partner->unkB2 = modeVal;
+    }
+    else if (mode == 1)
+    {
+        partner->unkB2 = modeVal;
+        modeVal = 1;
+    }
+    else if (mode == 3)
+    {
+        partner->unkB2 += 0x400;
+        modeVal = 2;
+    }
+    else
+    {
+        partner->unkB2 = modeVal;
+    }
+    apply_partner_effect(obj, partner, delta, modeVal, partner->unk10 / 0x100, partner->unk18 / 0x100, 0);
+    if ((partner->unk28->unk111 & 2) == 0)
+    {
+        vel = partner->unk28->unkF6;
+        if (vel == 0)
+        {
+            obj_stop(partner);
+            partner->unk28->unk11E = vel;
+            return 1;
+        }
+    }
+    if (obj->unk6C != 0 && (obj->unk6C->unk8 & 0x80) != 0 && obj->unk54 != 0)
+    {
+        obj->unk4C = obj->unk54;
+    }
+    if (partner->unk30 != 0)
+    {
+        obj_release(partner->unk30);
+    }
+    if (partner->unk58 != 0)
+    {
+        partner->unk58(partner, obj, 0);
+    }
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0810D6C0/hero_random_offset.s", void hero_random_offset(void))
 
