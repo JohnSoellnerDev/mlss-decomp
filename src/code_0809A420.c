@@ -810,15 +810,16 @@ void draw_if_visible(struct HeroBody *body)
 
 NONMATCH("asm/code_0809A420/follow_focus_then_pose.s", void follow_focus_then_pose(struct HeroBody *body))
 {
+    struct World **pworld = &gWorld;
+    struct World *world = *pworld;
     u8 *pick = body->unk34;
-    struct World *world = gWorld;
 
     if (body->data->effect != 0)
     {
         u8 offX = pick[1];
         u8 offY = pick[2];
         s32 x = (s16)obj_last_x(world->focus) + offX;
-        s32 y = (s16)obj_last_y(gWorld->focus) + offY;
+        s32 y = (s16)obj_last_y((*pworld)->focus) + offY;
 
         place_targets(body, x, y, 0, -1);
         set_motion_start(body, 0);
@@ -903,6 +904,9 @@ NONMATCH("asm/code_0809A420/start_anim_by_hero.s", void start_anim_by_hero(struc
 {
     struct HeroBody *heroA = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
+    s32 x;
+    s32 y;
+    s32 z;
 
     if (body->unk9C != 0)
     {
@@ -912,7 +916,19 @@ NONMATCH("asm/code_0809A420/start_anim_by_hero.s", void start_anim_by_hero(struc
             sprite_set_action(body, 5, 0x40BF, 0);
         ((struct ModeByte *)&body->sprite->flags)->mode = 1;
     }
-    effect_spawn_at(0x11E6, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
+    x = body->x;
+    if (x < 0)
+        x += 0xFF;
+    x >>= 8;
+    y = body->y;
+    if (y < 0)
+        y += 0xFF;
+    y >>= 8;
+    z = body->z;
+    if (z < 0)
+        z += 0xFF;
+    z >>= 8;
+    effect_spawn_at(0x11E6, x, y, z, body);
     body->state = follow_hero_anim;
 }
 END_NONMATCH
