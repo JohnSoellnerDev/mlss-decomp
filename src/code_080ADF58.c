@@ -201,10 +201,236 @@ void obj_release(struct HeroBody *obj);
 void hero_b_to_partner_fast(struct HeroBody *body);
 void pair_finish_and_rebuild(struct HeroBody *body);
 
+static inline void copy_pose_offsets(struct HeroBody *src, struct HeroBody *dst)
+{
+    dst->x = src->x + (src->data->offsets[4] << 8);
+    dst->y = src->y + (src->data->offsets[5] << 8);
+    dst->z = src->z + (src->data->offsets[6] << 8) - 0xC00;
+}
+
 ASM_FUNC("asm/code_080ADF58/pair_regroup.s", void pair_regroup(void))
 
-ASM_FUNC("asm/code_080ADF58/pair_action_a_start.s", void pair_action_a_start(struct HeroBody *body))
+void pair_action_a_start(struct HeroBody *body)
+{
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 timer;
+    s32 newt;
+    s32 *tp;
+    s32 mode;
 
-ASM_FUNC("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struct HeroBody *body))
+    if (((gSys.held ^ 1) & 1) != 0)
+    {
+        display_flush();
+        obj_free_parts(body_a);
+        if (body_b->unkA4 != 0)
+        {
+            body_set_pose(6, body_a, 0x16, -0x28);
+            mode = body->mode & 6;
+            if (mode == 2 || mode == 4)
+                body->state = pair_action_b_follow_a;
+            return;
+        }
+        body_set_pose(1, body_a, 0x16, -0x28);
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+            body->state = pair_action_b_follow_partner;
+        return;
+    }
 
-ASM_FUNC("asm/code_080ADF58/pair_action_pick_partner.s", void pair_action_pick_partner(struct HeroBody *body))
+    tp = &hero_b->body.unkA8;
+    timer = *tp;
+    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
+    *tp = newt;
+    if (body_b->unkA8 > 0)
+        return;
+    if (body_b->unkA4 != 0)
+    {
+        body_b->unkA4 = 0;
+        body_b->unkA8 = 0x1E00;
+        sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
+        return;
+    }
+    body_b->unkA4 = 1;
+    body_b->unkA8 = 0x1400;
+    sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
+    body_b->place = gWorld->slots[body_b->place]->body.place;
+    if (body_b->place == -1)
+    {
+        body_b->counter--;
+        body_b->place = body_a->place;
+    }
+    body_a->partner = &gWorld->slots[body_b->place]->body;
+    copy_pose_offsets(body_a->partner, body_a->next);
+    body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
+    if (body_b->counter > 0)
+        return;
+    set_slot_value(0x116, -1);
+    mode = body_a->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(body_a, 3, 0x2032, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    mode = body_b->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(body_b, 3, 0x2061, 0);
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+    }
+    body_b->counter = 2;
+    body_b->unkA8 = 0xF00;
+    body->state = pair_action_a_hold;
+}
+
+NONMATCH("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struct HeroBody *body))
+{
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 timer;
+    s32 newt;
+    s32 *tp;
+    s32 mode;
+
+    if (((gSys.held ^ 1) & 1) != 0)
+    {
+        display_flush();
+        obj_free_parts(body_a);
+        if (body_b->unkA4 != 0)
+        {
+            body_set_pose(6, body_a, 0x16, -0x28);
+            mode = body->mode & 6;
+            if (mode == 2 || mode == 4)
+                body->state = pair_action_b_follow_a;
+            return;
+        }
+        body_set_pose(1, body_a, 0x16, -0x28);
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+            body->state = hero_b_to_partner_slow;
+        return;
+    }
+
+    tp = &hero_b->body.unkA8;
+    timer = *tp;
+    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
+    *tp = newt;
+    if (body_b->unkA8 > 0)
+        return;
+    if (body_b->unkA4 != 0)
+    {
+        body_b->unkA4 = 0;
+        body_b->unkA8 = 0x1400;
+        sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
+        return;
+    }
+    body_b->unkA4 = 1;
+    body_b->unkA8 = 0xF00;
+    sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
+    body_b->place = gWorld->slots[body_b->place]->body.place;
+    if (body_b->place == -1)
+    {
+        body_b->counter--;
+        body_b->place = body_a->place;
+    }
+    body_a->partner = &gWorld->slots[body_b->place]->body;
+    copy_pose_offsets(body_a->partner, body_a->next);
+    body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
+    if (body_b->counter > 0)
+        return;
+    set_slot_value(0x116, -1);
+    mode = body_a->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(body_a, 4, 0x2032, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    mode = body_b->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(body_b, 4, 0x2061, 0);
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+    }
+    body_a->order = body_b->order - 1;
+    body_b->counter = 5;
+    body_b->unkA8 = 0x700;
+    body->state = pair_action_pick_partner;
+}
+END_NONMATCH
+
+void pair_action_pick_partner(struct HeroBody *body)
+{
+    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 timer;
+    s32 newt;
+    s32 *tp;
+    s32 mode;
+    s32 count;
+    s32 i;
+
+    if (((gSys.held ^ 1) & 1) != 0)
+    {
+        display_flush();
+        obj_free_parts(body_a);
+        if (body_b->unkA4 != 0)
+        {
+            body_set_pose(6, body_a, 0x16, -0x28);
+            mode = body->mode & 6;
+            if (mode == 2 || mode == 4)
+                body->state = pair_action_b_follow_a;
+            return;
+        }
+        body_set_pose(1, body_a, 0x16, -0x28);
+        mode = body->mode & 6;
+        if (mode == 2 || mode == 4)
+            body->state = hero_b_to_partner_fast;
+        return;
+    }
+
+    tp = &hero_b->body.unkA8;
+    timer = *tp;
+    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
+    *tp = newt;
+    if (body_b->unkA8 > 0)
+        return;
+    if (body_b->unkA4 != 0)
+    {
+        body_b->unkA4 = 0;
+        body_b->unkA8 = 0xA00;
+        sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
+        return;
+    }
+    body_b->unkA4 = 1;
+    body_b->unkA8 = 0x700;
+    sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
+    body_b->place = gWorld->slots[body_b->place]->body.place;
+    if (body_b->place == -1)
+    {
+        body_b->counter--;
+        body_b->place = body_a->place;
+    }
+    body_a->partner = &gWorld->slots[body_b->place]->body;
+    copy_pose_offsets(body_a->partner, body_a->next);
+    body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
+    if (body_b->counter > 0)
+        return;
+    obj_free_parts(body_a);
+    display_flush();
+    obj_release(body_a->next);
+    count = 0;
+    for (i = 0; i < 6; i++)
+    {
+        struct HeroBody *cand = &gWorld->slots[i]->body;
+        if (cand->place != -2)
+        {
+            count++;
+            if (rand_below(count, mt19937_next()) == 0)
+                body_a->partner = cand;
+        }
+    }
+    body->state = pair_action_b_follow_a;
+}
