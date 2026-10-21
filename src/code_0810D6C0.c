@@ -59,6 +59,13 @@ struct Flags79
     u8 high : 3;
 };
 
+struct Flags0B
+{
+    u8 low6 : 6;
+    u8 bit6 : 1;
+    u8 high : 1;
+};
+
 struct World
 {
     u8 filler0[7];
@@ -337,21 +344,21 @@ NONMATCH("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(u32 index, u3
             {
                 callback = draw_counter_display;
             }
-            else if ((s32)value > 1)
+            else if ((s32)value <= 1)
+            {
+                if (value != 0)
+                {
+                    return;
+                }
+                callback = draw_panel_values;
+            }
+            else
             {
                 if (value != 2)
                 {
                     return;
                 }
                 callback = draw_counter_display;
-            }
-            else if (value == 0)
-            {
-                callback = draw_panel_values;
-            }
-            else
-            {
-                return;
             }
             mark->unk4 = callback;
         }
@@ -490,7 +497,28 @@ void release_timer_tiles(void)
     }
 }
 
-ASM_FUNC("asm/code_0810D6C0/timer_window_setup.s", void timer_window_setup(struct Obj *obj))
+void timer_window_setup(struct Obj *obj)
+{
+    s32 scroll;
+    s32 left;
+    vu32 *hofs;
+
+    if ((s16)gWorld->timerObj->unk12 <= 0x3F)
+    {
+        scroll = 8;
+    }
+    else
+    {
+        scroll = (s16)gWorld->timerObj->unk12 / 0x100;
+    }
+    hofs = (vu32 *)REG_ADDR_BG2HOFS;
+    left = (u16)(scroll - 7);
+    *hofs = left | (((s32)(s16)obj->unk16 - 6) << 16);
+    *(vu32 *)REG_ADDR_WININ = 0x3F3B3F3F;
+    *(vu32 *)REG_ADDR_WIN0H = 0x7FF07FF0;
+    *(vu32 *)REG_ADDR_WIN0V = (*(vu16 *)&gUnk_0200001A + 0x99) | ((*(vu16 *)&gUnk_0200001A + 0x8E) << 8)
+        | (((*(vu16 *)&gUnk_0200001A + 0x99) | ((*(vu16 *)&gUnk_0200001A + 0x8E) << 8)) << 16);
+}
 
 void voice_message_step(struct Obj *obj)
 {
@@ -528,21 +556,21 @@ void scroll_text_step(struct Obj *obj)
 
 NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
 {
+    vu16 *win;
     struct Obj *timer;
     struct Obj *child;
-    u16 *win;
 
     if (gWorld->timerObj == 0)
     {
         timer = task_create_list_4c((u32)scroll_text_step, 0);
         gWorld->timerObj = timer;
-        gWorld->flags0B = 0x40 | gWorld->flags0B;
+        ((struct Flags0B *)&gWorld->flags0B)->bit6 = 1;
         child = raster_line_add(timer_window_setup, 0x86, (u32)update_voice_message);
         gWorld->timerObj->unkC = child;
         child->unk16 = gUnk_0200001A;
-        win = (u16 *)&gUnk_02000048;
+        win = (vu16 *)&gUnk_02000048;
         *win = 0x3F3F;
-        win++;
+        win = win + 1;
         *win = 0x3F3B;
     }
 }
@@ -550,7 +578,24 @@ END_NONMATCH
 
 void timer_window_setup(struct Obj *obj);
 void update_voice_message(void);
-ASM_FUNC("asm/code_0810D6C0/show_slot4_text_centered.s", void show_slot4_text_centered(void))
+static inline void release_slot4_pair(void)
+{
+    release_tile_slot(gWorld->slot4Tiles, 0);
+    release_tile_slot(gWorld->slot4Tiles, 1);
+}
+
+void show_slot4_text_centered(void *text)
+{
+    s32 width;
+    void *slot;
+
+    release_slot4_pair();
+    set_tile_slot(gWorld->slot4Tiles, 0, 0, 0, 0, 0xE, 3);
+    draw_slot_frame(gWorld->slot4Tiles, 1, 0, 1);
+    width = measure_text(3, text, 0);
+    slot = gWorld->slot4Tiles;
+    draw_slot_text(slot, 0, 0x60 - width, 6, text, 0x91);
+}
 
 void release_slot4_tiles(void)
 {
@@ -759,14 +804,16 @@ u32 status_anim_wait(void)
 NONMATCH("asm/code_0810D6C0/status_anim_start.s", u32 status_anim_start(void))
 {
     struct World *world = gWorld;
-    struct Obj **entry = (struct Obj **)((u8 *)world + 0x2FC) + world->statusObj->unk10;
+    struct Obj **entry = &world->slotTable[world->statusObj->unk10];
     struct Obj *slot = *entry;
     struct Obj *active = world->active;
     s32 y = active->unk44 - 0x800;
+    s32 x;
 
     world->statusValue = (u32)slot;
     *entry = 0;
-    return obj_motion_start(slot, active->unk40 - 0x2000, y, 0, 0x3800);
+    x = active->unk40 - 0x2000;
+    return obj_motion_start(slot, x, y, 0, 0x3800);
 }
 END_NONMATCH
 
@@ -848,7 +895,20 @@ void bg_restore_after_sprite(struct Obj *obj)
     REG_BG3VOFS = gUnk_0200001E;
 }
 
-ASM_FUNC("asm/code_0810D6C0/bg_slide_in.s", void bg_slide_in(struct Obj *obj))
+void bg_slide_in(struct Obj *obj)
+{
+    s32 t = obj->unk14 + 3;
+
+    obj->unk14 = t;
+    if ((s16)t > 0x18)
+    {
+        obj->unk14 = 0x18;
+        release_slot4_pair();
+        obj->unkC = (struct Obj *)bg_slide_offset_callback;
+    }
+    REG_BG2VOFS = *(vu16 *)&gUnk_0200001A + obj->unk14;
+    REG_BG3VOFS = *(vu16 *)&gUnk_0200001E + obj->unk14;
+}
 
 void child_slide_to_bg2(struct Obj *obj)
 {
