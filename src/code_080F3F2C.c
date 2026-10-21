@@ -97,8 +97,63 @@ void obj_detach_active(void *obj);
 void slot_set_bias(struct Owner *owner, u32 idx, s32 value);
 void slot_read_pos(struct Owner *owner, s32 idx, s16 *x, s16 *y, s16 *z);
 void apply_pose_to_parts(void *obj);
+void reset_obj_params_a(void *ctx, void *rec, u32 a, u32 b, u32 mode, u32 sub);
+void reset_obj_params_b(void *ctx, void *rec, u32 a, u32 b, u32 mode, u32 sub);
 
-ASM_FUNC("asm/code_080F3F2C/cmd_reset_slot_node.s", void cmd_reset_slot_node(void))
+NONMATCH("asm/code_080F3F2C/cmd_reset_slot_node.s", u32 cmd_reset_slot_node(struct Owner *owner, struct Obj *node, struct Cmd *cmd, u8 sub))
+{
+    u32 mode;
+    u32 slot;
+    u32 low;
+    u16 h;
+    u8 *rec;
+    u8 *base;
+    u8 *nib;
+
+    slot = cmd->unk4;
+    base = (u8 *)owner->state + (slot << 8);
+    rec = base + 0x700;
+    mode = 1;
+    nib = base + 0x7FD;
+    low = slot & 0xF;
+    *nib = (*nib & -16) | low;
+    if ((cmd->unk0 & 1) != 0)
+    {
+        node->unkA0 |= 4;
+        mode = 9;
+    }
+    switch (cmd->unk0)
+    {
+    case 0:
+    case 1:
+        reset_obj_params_b((u8 *)owner + 0x1C, rec, *(u32 *)node, cmd->unk8, mode, sub);
+        *(u32 *)node = cmd->unk8;
+        break;
+    case 2:
+    case 3:
+        reset_obj_params_b((u8 *)owner + 0x1C, rec, cmd->unk8, 0, mode, sub);
+        break;
+    case 4:
+    case 5:
+        if (((rec[0xA0] ^ 1) & 1) != 0)
+            reset_obj_params_b((u8 *)owner + 0x1C, rec, *(u32 *)node, cmd->unk8, mode, sub);
+        else
+            reset_obj_params_a((u8 *)owner + 0x1C, rec, *(u32 *)node, cmd->unk8, mode, sub);
+        *(u32 *)node = cmd->unk8;
+        break;
+    case 6:
+    case 7:
+        if (((rec[0xA0] ^ 1) & 1) != 0)
+            reset_obj_params_b((u8 *)owner + 0x1C, rec, cmd->unk8, 0, mode, sub);
+        else
+            reset_obj_params_a((u8 *)owner + 0x1C, rec, cmd->unk8, 0, mode, sub);
+        break;
+    }
+    h = node->unkA0;
+    return 1 & ~(h >> 2);
+}
+END_NONMATCH
+
 u32 cmd_copy_if_active(struct Owner *owner, u32 *dst, u32 *block)
 {
     u8 idx;
@@ -276,7 +331,46 @@ ASM_FUNC("asm/code_080F3F2C/cmd_slot_apply_state.s", void cmd_slot_apply_state(v
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_reset_record.s", void cmd_slot_reset_record(void))
 
 
-ASM_FUNC("asm/code_080F3F2C/cmd_slot_set_record_state.s", void cmd_slot_set_record_state(void))
+NONMATCH("asm/code_080F3F2C/cmd_slot_set_record_state.s", u32 cmd_slot_set_record_state(struct Owner *owner, u8 *dst, struct Cmd *cmd))
+{
+    struct Entry *entry;
+    struct Obj *inner;
+    u32 shade;
+    u32 hi;
+
+    if (cmd->unk10 != 0)
+    {
+        ((struct Obj *)dst)->unkA0 |= 0x800;
+        hi = cmd->unk0 << 4;
+        ((struct Obj *)dst)->unkFD = (((struct Obj *)dst)->unkFD & 0xF) | hi;
+    }
+    dst = (u8 *)owner->state + (cmd->unk0 << 8) + 0x700;
+    refresh_slot_view(owner, (s16)cmd->unk0);
+    if ((s32)cmd->unk0 <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+    inner = entry->obj8;
+    if (inner != 0)
+        shade = (u16)(s8)inner->unk20;
+    else
+        shade = 0x10;
+    if ((s32)cmd->unk0 <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+    sprite_set_action(entry, cmd->unk8, cmd->unk4, 0);
+    slot_set_flag6(owner, (s16)cmd->unk0, (s8)cmd->unkC);
+    if ((s32)cmd->unk0 <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+    inner = entry->obj8;
+    inner->unk20 = shade;
+    ((struct StatusBits *)&inner->status)->bit4 = 0;
+    return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, inner, (u8)cmd->unk10, 0);
+}
+END_NONMATCH
 NONMATCH("asm/code_080F3F2C/cmd_slot_reload_object.s", u32 cmd_slot_reload_object(struct Owner *owner, void *unused, struct Cmd *cmd))
 {
     struct Entry *entry;
