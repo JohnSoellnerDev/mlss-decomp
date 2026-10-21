@@ -753,7 +753,20 @@ void enemy_box_point_then_collide(void *owner, struct Actor *ent, void **out)
     out[0] = random_collide;
 }
 
-ASM_FUNC("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out))
+NONMATCH("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 zero;
+    struct Actor *target = owner->tgtA;
+    u16 speed;
+
+    ent->homeX = ent->posX;
+    ent->homeY = ent->posY;
+    speed = *(u16 *)((u8 *)ent->rec + ent->index * 2 + 0x2A);
+    zero = 0;
+    start_move_to(ent, target->posX + (target->vx << 4), target->posY + (target->vy << 4), speed, zero);
+    *out = enemy_after_step_box_check;
+}
+END_NONMATCH
 
 void enemy_wait_sprite_flag_then_load(void *owner, struct Actor *ent, void **out)
 {
