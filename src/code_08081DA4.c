@@ -249,11 +249,12 @@ ASM_FUNC("asm/code_08081DA4/state_random_step.s", void state_random_step(void))
 
 ASM_FUNC("asm/code_08081DA4/state_timed_motion.s", void state_timed_motion(struct SpriteTask *task))
 
-NONMATCH("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struct SpriteTask *task))
+void state_wait_arrival(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
     struct SpriteHead *head = obj->head;
     s32 timer = head->timerF6;
+    struct SpriteState *world;
     u8 bit;
 
     if (timer == 0)
@@ -263,8 +264,9 @@ NONMATCH("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struc
         task->next = state_wait_flag;
         task->timer = timer;
         ((struct SpriteLo2Bits *)&gWorld->unk2C0)->lo2 = 1;
+        world = gWorld;
         bit = ~obj->head->unkEC & 1;
-        ((struct SpriteBit2Bits *)&gWorld->unk2C0)->bit2 = bit;
+        ((struct SpriteBit2Bits *)&world->unk2C0)->bit2 = bit;
     }
     else
     {
@@ -282,7 +284,6 @@ NONMATCH("asm/code_08081DA4/state_wait_arrival.s", void state_wait_arrival(struc
         }
     }
 }
-END_NONMATCH
 
 void state_draw_pose(struct SpriteTask *task)
 {
@@ -824,9 +825,13 @@ ASM_FUNC("asm/code_08081DA4/init_sprite_pools.s", void init_sprite_pools(void))
 
 ASM_FUNC("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_display(void))
 
-NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54(u16 *list))
+void unknown_code_08082f54(u16 *list)
 {
     s32 count;
+    s32 stop;
+    s32 none;
+    u32 mask;
+    u32 kind;
     u16 *table;
     u16 code;
     u16 item;
@@ -843,16 +848,19 @@ NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54
     }
     if (code != 0xFFFF)
     {
+        none = -1;
+        stop = 0xFFFF;
         do
         {
             table = load_table_value(&count, code);
             count--;
-            while (count != -1)
+            while (count != none)
             {
                 item = table[count];
                 if (item != 0)
                 {
-                    u32 kind = item & 0xF000;
+                    mask = 0xF000;
+                    kind = mask & item;
 
                     if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
                     {
@@ -867,7 +875,7 @@ NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54
             {
                 return;
             }
-        } while (code != 0xFFFF);
+        } while (code != stop);
     }
     for (;;)
     {
@@ -878,7 +886,8 @@ NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54
             return;
         }
         {
-            u32 kind = item & 0xF000;
+            mask = 0xF000;
+            kind = mask & item;
 
             if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
             {
@@ -887,7 +896,6 @@ NONMATCH("asm/code_08081DA4/unknown_code_08082f54.s", void unknown_code_08082f54
         }
     }
 }
-END_NONMATCH
 
 void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b)
 {
@@ -1148,7 +1156,58 @@ void sync_obj_impulse(struct MapObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(void))
+struct ScreenEntry
+{
+    u16 x;
+    u16 y;
+    u8 filler4[0xE - 4];
+    u16 unkE;
+};
+
+struct ScreenCamera
+{
+    u8 filler0[0x774];
+    u16 unk774;
+    u16 unk776;
+};
+
+NONMATCH("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(struct ScreenCamera *camera, struct SpriteObj *obj))
+{
+    struct ScreenEntry *entry;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 v;
+    s32 base;
+    s32 yz;
+
+    entry = (struct ScreenEntry *)obj->record;
+    if (entry == 0)
+    {
+        return;
+    }
+    x = obj->unk38 / 0x100;
+    y = obj->unk3C / 0x100;
+    z = obj->unk40 / 0x100;
+    yz = y - z;
+    entry->x = x - camera->unk774;
+    entry->y = yz - camera->unk776;
+    if ((obj->flags79 & 4) == 0)
+    {
+        base = 0x1F0;
+        v = (s8)obj->unk74 + base - y;
+        v += (s8)obj->unk75;
+        if (v < 0)
+        {
+            entry->unkE = 0;
+        }
+        else
+        {
+            entry->unkE = v;
+        }
+    }
+}
+END_NONMATCH
 
 void offset_pair_by_camera(u8 *camera, s32 *a, s32 *b)
 {
