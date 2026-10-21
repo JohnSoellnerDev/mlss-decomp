@@ -169,6 +169,13 @@ struct AnimSub
     const void *vtable;
 };
 
+struct Pair7A
+{
+    u16 a;
+    u16 filler2;
+    u16 b;
+};
+
 void init_appear_obj_base(struct AnimSub *sub);
 void list_drain(struct ObjList *list);
 s8 blend_fade_step(struct ObjCallback8 *obj);
@@ -507,8 +514,8 @@ NONMATCH("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_s
     flags &= -0x21;
     obj->unk79 = flags;
     obj->unk7C = 0;
-    obj->unk7A = 0;
-    obj->unk7E = 0x100;
+    ((struct Pair7A *)&obj->unk7A)->a = 0;
+    ((struct Pair7A *)&obj->unk7A)->b = 0x100;
 }
 END_NONMATCH
 
