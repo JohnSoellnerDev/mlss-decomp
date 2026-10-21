@@ -135,12 +135,76 @@ u8 obj_flags_2b5_30_set(void *obj);
 u32 mt19937_next(void);
 u32 rand_below(u32 range, u32 rnd);
 void zone_move_handler(void);
-void zone_entry_handler(void);
+void zone_entry_handler(struct Owner *parent, struct Obj *obj);
 void run_state_handler(void);
 void start_wander_b(void);
 void obj_seek_entry(void);
 
-ASM_FUNC("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(void))
+NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struct Owner *parent, struct Obj *obj))
+{
+    u16 *table;
+    struct Sensor *sensor;
+    struct Obj *entry;
+    u16 *ea;
+    s32 *tbl2;
+    u8 idx;
+    s8 zone;
+    s32 pick;
+    s32 dx;
+    s32 dy;
+    s32 ax;
+    s32 ay;
+    u32 rnd;
+    u32 pick2;
+    u32 face;
+
+    table = (u16 *)obj->tbl;
+    sensor = obj->sensor;
+    zone = zone_point_code(parent, obj, 0);
+    if (zone != -1)
+    {
+        if (find_active_entry(parent, &idx) != 0)
+            pick = idx;
+        else
+            pick = ((u32)parent->flags208 << 30) >> 31;
+        entry = *(struct Obj **)((pick << 2) + (u8 *)parent + 0x28);
+        if ((sensor->h18 << 8) <= entry->z + entry->dz && (sensor->h1A << 8) >= entry->z + entry->dz)
+        {
+            rnd = mt19937_next();
+            pick2 = rand_below(4, rnd);
+            tbl2 = &obj->tbl2BC;
+            ea = &table[(u8)pick2];
+            obj->speed23E = ea[0];
+            *tbl2 = (s16)ea[0];
+            obj->hop2F8 = ea[8];
+            obj->step248 = (s16)ea[12];
+            dx = entry->x - obj->x;
+            dy = entry->y - obj->y;
+            ax = dx;
+            if (dx < 0)
+                ax = -dx;
+            ay = dy;
+            if (dy < 0)
+                ay = -dy;
+            if (ax > ay)
+            {
+                ((struct Spr *)obj->cell)->record21 = 1;
+                ((struct Bits *)&((struct Spr *)obj->cell)->flags11)->b6 = (u32)dx >> 31;
+                ((struct Bits3 *)&obj->flags24)->lo3 = dx < 0 ? 6 : 2;
+            }
+            else
+            {
+                ((struct Spr *)obj->cell)->record21 = ((~dy) >> 31) & 2;
+                ((struct Bits3 *)&obj->flags24)->lo3 = ((~dy) >> 31) & 4;
+            }
+            obj_load_record(obj->cell, ((struct Spr *)obj->cell)->record21, -1, 0, 0);
+            face = ((u32)obj->flags24 << 29) >> 30;
+            obj_set_cell_coord(obj, face, 0);
+            obj_halt(obj, 0);
+        }
+    }
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_0814F8E4/enter_zone_move.s", void enter_zone_move(void))
@@ -261,6 +325,7 @@ void obj_init_from_link(struct Obj *obj)
 
 
 ASM_FUNC("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(void *owner, struct Obj *obj, u16 mode, u8 flag))
+
 
 ASM_FUNC("asm/code_0814F8E4/obj_place_linked.s", void obj_place_linked(void))
 
