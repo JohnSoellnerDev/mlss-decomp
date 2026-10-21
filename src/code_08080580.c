@@ -8,6 +8,19 @@ struct TwBit4
     u8 rest : 3;
 };
 
+struct TwBit5
+{
+    u8 lo : 5;
+    u8 b5 : 1;
+    u8 rest : 2;
+};
+
+struct Lo2Bits
+{
+    u8 lo2 : 2;
+    u8 rest : 6;
+};
+
 struct TaskNode
 {
     struct TaskNode *next;
@@ -226,6 +239,26 @@ void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void *create_map_object(void *mem, u32 prio, const void *tag, u32 cfg, u32 a, u32 b, u32 ptr);
 extern const u8 gMapObjTag[];
 void task_init_map(struct TaskNode *task);
+extern u8 *gWorkBuf;
+struct ModelCtx
+{
+    u8 filler0[8];
+    u16 unk8;
+    u8 filler0A[0x3C - 0xA];
+    u8 *list3C;
+};
+extern struct ModelCtx *gModelCtx;
+struct ObjBit2
+{
+    u8 lo2 : 2;
+    u8 b2 : 1;
+    u8 rest : 5;
+};
+void *create_obj_de4(u32 a, u32 id, u32 b, u32 c, u32 d, u32 e, u32 f);
+void obj_load_record(void *rec, u32 a, s32 b, u32 c, u32 d);
+void sprite_update_cd0(void *obj);
+void obj_gfx_step(void *obj, void *list, u8 *count);
+void release_obj_131c(void *obj);
 
 NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
 {
@@ -680,13 +713,184 @@ void task_spawn_objects(struct TaskNode *task);
 ASM_FUNC("asm/code_08080580/task_run_parts.s", void task_run_parts(struct TaskNode *task))
 
 void task_load_part_codes(void);
-ASM_FUNC("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(struct TaskNode *task))
+NONMATCH("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(struct TaskNode *task))
+{
+    u8 count;
+    u32 span;
+    u16 *out;
+    s32 i;
+    struct SpritePart *part;
+    struct SpriteObj *pose;
+    s32 value;
+    s32 r;
+
+    if (is_state_busy() == 0)
+    {
+        out = (u16 *)(gWorkBuf + 0x3A68);
+        for (i = 0; i < 8; i++)
+        {
+            u8 *obj = create_obj_de4(0, i + 0x700A, 0, -1, -1, -1, -1);
+
+            obj_load_record(obj, 0, -1, 0, 0);
+            sprite_update_cd0(obj);
+            *(u16 *)obj = 0x78;
+            *(u16 *)(obj + 2) = 0x50;
+            count = 0;
+            obj_gfx_step(obj, gModelCtx->list3C, &count);
+            span = *(u16 *)(obj + 0x30);
+            ((struct ObjBit2 *)(obj + 0x13))->b2 = 0;
+            release_obj_131c(obj);
+            gWorld->unk1C0[i] = out;
+            *out = count;
+            out++;
+            {
+                u8 *rec = gModelCtx->list3C;
+
+                count--;
+                if (count != 0xFF)
+                {
+                    u16 attr;
+                    u16 pos;
+                    s32 tile;
+
+                    do
+                    {
+                        attr = *(u16 *)rec;
+                        *out = *rec - 0x50;
+                        out++;
+                        *out = (attr & 0xFF00) | 0x400;
+                        out++;
+                        pos = *(u16 *)(rec + 2);
+                        *out = (pos & 0x1FF) - 0x78;
+                        out++;
+                        *out = pos & 0xFE00;
+                        out++;
+                        tile = (*(u16 *)(rec + 4) & 0xFFF) | 0xFFFFB800;
+                        *out = tile;
+                        out++;
+                        rec = *(u8 **)(rec + 0x10);
+                        count--;
+                    } while (count != 0xFF);
+                }
+            }
+        }
+        gModelCtx->unk8 += span;
+        release_block(gWorld->sub0);
+        for (i = 0; i < 8; i += 2)
+        {
+            part = gWorld->parts[i];
+            if ((part->mode & 6) == 4 || (part->mode & 6) == 2)
+            {
+                pose = (struct SpriteObj *)((u8 *)part + 8);
+                value = *(u8 *)(part->ptr10 + 0x25);
+                r = rand_below(value, mt19937_next());
+                sprite_set_action(pose, 0, 0, r);
+            }
+            part = gWorld->parts[i + 1];
+            if ((part->mode & 6) == 4 || (part->mode & 6) == 2)
+            {
+                pose = (struct SpriteObj *)((u8 *)part + 8);
+                value = *(u8 *)(part->ptr10 + 0x25);
+                r = rand_below(value, mt19937_next());
+                sprite_set_action(pose, 0, 0, r);
+            }
+        }
+        task->fn = (void *)task_load_part_codes;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08080580/task_load_part_codes.s", void task_load_part_codes(void))
 
-ASM_FUNC("asm/code_08080580/task_free_blocks.s", void task_free_blocks(void))
+NONMATCH("asm/code_08080580/task_free_blocks.s", void task_free_blocks(struct TaskNode *task))
+{
+    u8 idle = is_state_busy();
 
-ASM_FUNC("asm/code_08080580/task_state_machine.s", void task_state_machine(void))
+    if (idle == 0)
+    {
+        release_block(gWorld->sub0->inner48->block8);
+        set_flags_2_3(gWorld->unk244);
+        *(u32 *)(gWorld->unk250 + 0x280) = create_text_entry(gWorld->unk244, 0, 0x06004020, 0x3FE0, 0xC);
+        *(u32 *)(gWorld->unk250 + 0x284) = create_text_entry(gWorld->unk244, 1, 0x060082C0, 0x3D40, 0xC);
+        setup_bg_entry(gWorld->unk244, 0, 2, 0xF, *(u32 *)(gWorld->unk250 + 0x288), idle, 0x7000, 0xF);
+        ((struct TwBit5 *)&gWorld->flags2BF)->b5 = 0;
+        reset_root_params(gWorld->unk244, *(u32 *)(gTaskPickTable + 4 + (gWorld->unk2B6 << 5)));
+        task->fn = (void *)state_clear_mode_bit;
+    }
+}
+END_NONMATCH
+
+void task_state_machine(struct TaskNode *task)
+{
+    u8 idle = is_state_busy();
+
+    if (idle == 0)
+    {
+        struct SpritePart *sel;
+        u8 *cand;
+        struct SpriteObj *obj;
+        u8 index;
+        u32 value;
+        u32 *slot;
+
+        ((struct Lo2Bits *)&gWorld->unkA)->lo2 = 1;
+        task->obj = (void *)(u32)idle;
+        sel = (gWorld->unk2BE & 1) == 0 ? gWorld->parts[6] : gWorld->parts[7];
+        cand = (u8 *)sel + 8;
+        if (((struct RecBits *)&sel->mode)->mode == 1)
+        {
+            task->obj = cand;
+        }
+        obj = task->obj;
+        if (obj == 0)
+        {
+            goto wait_entry;
+        }
+        index = gWorld->unk2BA;
+        if (index > 5)
+        {
+            goto default_entry;
+        }
+        else
+        {
+            switch (index)
+            {
+            case 0:
+            wait_entry:
+                task->fn = (void *)state_set_flags_and_run;
+                run_obj_entry((u32)state_set_flags_and_run);
+                task_create_list_4c(owner_wait_entry, 0);
+                break;
+            case 1:
+                slot = &obj->unk9C;
+                value = 0;
+                goto anim_store;
+            case 2:
+                task->fn = (void *)state_show_and_scale;
+                break;
+            case 3:
+                obj->unk9C = 0;
+                task->fn = (void *)state_random_step;
+                break;
+            case 5:
+                slot = &obj->unk9C;
+                value = 1;
+            anim_store:
+                *slot = value;
+                task->fn = (void *)state_set_anim_and_draw;
+                break;
+            case 4:
+                task->fn = (void *)state_draw_pose;
+                break;
+            }
+        }
+    }
+    return;
+default_entry:
+    task->fn = (void *)state_set_flags_and_run;
+    run_obj_entry((u32)state_set_flags_and_run);
+    task_create_list_4c(owner_wait_entry, 0);
+}
 
 void sprite_load_active_tables(void)
 {
