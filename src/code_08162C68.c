@@ -118,8 +118,8 @@ void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
 NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj *obj))
 {
-    s32 delta;
     s32 pos;
+    s32 delta;
 
     switch (obj->unk30)
     {
@@ -128,7 +128,7 @@ NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj
         obj->unk10 = delta;
         pos = obj->unk08 + delta;
         obj->unk08 = pos;
-        if (obj->unk08 > 0x4FFF)
+        if (pos > 0x4FFF)
         {
             obj->unk10 = (-delta * 2) / 3;
             if ((obj->unk10 >> 8) == 0)
@@ -220,7 +220,6 @@ NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos
     struct SpritePos *spriteA2;
     struct SpritePos *spriteB2;
     struct SpritePos *spriteA3;
-    s32 layerSrc;
     s32 x;
     s32 y;
 
@@ -255,9 +254,8 @@ NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos
         {
             spriteA3->x = 0x178;
         }
-        layerSrc = (s32)obj->unk20 >> 8;
         spriteA = (struct SpritePos *)obj->unk10;
-        *(u16 *)((u8 *)spriteA + 0xE) = obj->unk50 - (layerSrc - 0x400);
+        *(u16 *)((u8 *)spriteA + 0xE) = obj->unk50 - (((s32)obj->unk20 >> 8) - 0x400);
     }
 }
 END_NONMATCH
@@ -385,7 +383,33 @@ NONMATCH("asm/code_08162C68/tween_groups_obj_step_move.s", void tween_groups_obj
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08162C68/create_obj_group_5005.s", void create_obj_group_5005(void))
+NONMATCH("asm/code_08162C68/create_obj_group_5005.s", u32 *create_obj_group_5005(u32 *table))
+{
+    u8 i;
+    u32 *entry;
+    s32 slot;
+    struct BigObj *obj;
+
+    *table = 0;
+    lookup_or_alloc_13b4(4, 0x5005, -1, 1);
+    lookup_or_alloc_14b8(4, 0x5005, -1, 1);
+    find_or_alloc_obj_slots(4, 0x5005, 0, 0, 0, &slot, -1);
+    for (i = 0; i < 3; i++)
+    {
+        entry = (u32 *)((u8 *)table + 4) + i;
+        obj = obj_init_big(heap_alloc2(0x6C, 0, gTweenGroup5005Tag, 0), 0);
+        *entry = (u32)obj;
+        obj->unk10 = (u32)create_obj_de4(4, 0x5005, 1, -1, -1, -1, -1);
+        obj_load_record((void *)obj->unk10, 0, -1, 0, 0);
+        sprite_update_cd0((void *)obj->unk10);
+        *(u8 *)(obj->unk10 + 0x1F) = 0;
+        *(u16 *)(obj->unk10 + 0xE) = 0;
+        obj->unk14 = 0;
+        obj_release_slots((void *)((struct BigObj *)*entry)->unk10);
+    }
+    return table;
+}
+END_NONMATCH
 
 struct PairChild
 {
