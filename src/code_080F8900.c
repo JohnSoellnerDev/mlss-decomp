@@ -574,8 +574,9 @@ u32 cmd_slot_resync_pos(struct OwnerObj *obj, u32 unused, s16 *p)
 
 ASM_FUNC("asm/code_080F8900/cmd_slot_flag_copy.s", u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p))
 
-NONMATCH("asm/code_080F8900/cmd_slot_set_stream.s", u32 cmd_slot_set_stream(struct OwnerObj *obj, u8 *node, u32 *p))
+u32 cmd_slot_set_stream(struct OwnerObj *obj, u8 *node, u32 *p)
 {
+    s32 bit = 2;
     u8 base = obj->state[0x179C];
     u8 idx;
     u32 x;
@@ -602,10 +603,9 @@ NONMATCH("asm/code_080F8900/cmd_slot_set_stream.s", u32 cmd_slot_set_stream(stru
     slot_set_value(obj, idx, value, mode);
     slot_set_vec(idx, x, y, z, 0);
     slot_start_motion(idx, 1);
-    *(u16 *)(node + 0xA0) |= 2;
+    *(u16 *)(node + 0xA0) |= bit;
     return 0;
 }
-END_NONMATCH
 
 u32 cmd_wait_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p, u32 flag)
 {
