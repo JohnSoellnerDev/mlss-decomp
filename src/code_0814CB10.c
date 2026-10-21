@@ -155,6 +155,13 @@ struct Flags8
     u8 bit7 : 1;
 };
 
+struct CellMode12
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 void obj_set_or_add_pos(struct Enemy *obj, u32 dx, u32 dy, u32 dz, u32 copy, u32 add);
 void obj_box_to_stack(s16 *box, struct Enemy *ent, u32 a, u32 b);
 u8 point_in_box(s16 *box, struct Enemy *obj, s32 x, s32 y);
@@ -192,6 +199,8 @@ void fall_landing_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_check_1d8(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void fall_landing_check_1d8_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void obj_set_active(struct Enemy *ent, u32 zero);
+void tick_store(void);
+u8 *obj_probe_tile_heights(struct Enemy *obj, s32 x, s32 y, s32 *h0, s32 *h1, s32 *h2);
 void obj_set_sprite_link(struct Enemy *ent, u32 zero);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot);
@@ -527,8 +536,75 @@ void ai_start_dash(struct Enemy *unused, struct Enemy *parent, u32 *slot);
 void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 ASM_FUNC("asm/code_0814CB10/ai_face_target_tick.s", void ai_face_target_tick(struct Enemy *parent, struct Enemy *obj, u32 *slot))
 
-ASM_FUNC("asm/code_0814CB10/ai_start_dash.s", void ai_start_dash(struct Enemy *unused, struct Enemy *parent, u32 *slot))
+void ai_start_dash(struct Enemy *unused, struct Enemy *obj, u32 *slot)
+{
+    struct Enemy *child;
+    u8 mode;
+    u16 speed;
+    s32 roll;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 spare[4];
 
+    child = obj->unk344;
+    mode = gFrameAttrTable[((((u32)obj->unk216 << 28) >> 30) << 4) + (((u32)*(u8 *)&obj->unk24 << 29) >> 29) + 8];
+    roll = rand_below(2, mt19937_next());
+    speed = ((u16 *)(obj->unk1B0 + 0x30))[roll];
+    ((struct Flags8 *)&obj->unk20D)->bit2 = 0;
+    switch (mode)
+    {
+    case 0:
+        child->unk242 = mode;
+        child->unk244 = -speed;
+        break;
+    case 1:
+        child->unk242 = speed;
+        child->unk244 = 0;
+        break;
+    case 2:
+        child->unk242 = 0;
+        child->unk244 = speed;
+        break;
+    case 3:
+        child->unk242 = -speed;
+        child->unk244 = 0;
+        break;
+    default:
+        return;
+    }
+    obj_set_active(child, 1);
+    obj_set_sprite_link(child, 1);
+    x = obj->posX;
+    y = obj->posY;
+    switch (mode)
+    {
+    case 0:
+        y = y - 0x100;
+        break;
+    case 1:
+        x = x + 0x1500;
+        break;
+    case 2:
+        y = y + 0x800;
+        break;
+    case 3:
+        x = x - 0x1500;
+        break;
+    }
+    z = obj->posZ + 0x600;
+    z += obj->dz;
+    obj_set_or_add_pos(child, x, y, z, 1, 0);
+    child->unk272[3] = 0x800;
+    child->unk272[0] = 0x800;
+    child->unk272[4] = 0x800;
+    child->unk272[1] = 0x800;
+    child->unk272[5] = 0x800;
+    child->unk272[2] = 0x800;
+    obj_load_record(child->cell, 0xD, -1, 0, 0);
+    ((struct CellMode12 *)&obj->cell->unk12)->mode = 1;
+    *slot = (u32)ai_dash_step;
+}
 void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
     struct Enemy *child;
@@ -560,13 +636,184 @@ void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot);
-ASM_FUNC("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+NONMATCH("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+{
+    struct Enemy *child;
+    u8 *beh;
+    u8 *table;
+    s32 roll;
+    s32 dx;
+    s32 x0;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    beh = (u8 *)obj + 0x58;
+    child = obj->unk344;
+    ((struct Flags8 *)&obj->unk20D)->bit2 = 0;
+    obj_set_active(child, 1);
+    obj_set_sprite_link(child, 1);
+    if (obj->cell->unk11 & 0x40)
+    {
+        x0 = obj->posX;
+        dx = -0x300;
+    }
+    else
+    {
+        x0 = obj->posX;
+        dx = 0x300;
+    }
+    x = x0 + dx;
+    y = obj->posY;
+    z = obj->posZ + 0x1900;
+    z += obj->dz;
+    obj_set_or_add_pos(child, x, y, z, 1, 0);
+    child->unk272[3] = 0x1000;
+    child->unk272[0] = 0x1000;
+    child->unk272[4] = 0xA00;
+    child->unk272[1] = 0xA00;
+    child->unk272[5] = 0x800;
+    child->unk272[2] = 0x800;
+    roll = rand_below(2, mt19937_next());
+    table = *(u8 **)(beh + 0x158);
+    child->unk2DC = ((u16 *)(table + 0x38))[roll];
+    ((struct CellMode12 *)&obj->cell->unk12)->mode = 1;
+    obj_load_record(child->cell, 0xE, -1, 0, 0);
+    ((struct Flags8 *)&obj->unk20E)->bit2 = 1;
+    *slot = (u32)ai_airborne;
+}
+END_NONMATCH
 
 void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot);
-ASM_FUNC("asm/code_0814CB10/ai_airborne.s", void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot)
+{
+    struct Enemy *child;
+    struct Enemy *tgt_a;
+    struct Enemy *tgt_b;
+    struct Enemy *higher;
+    struct Cell *cell;
+    u8 *beh;
+    u8 *table;
+    s32 za;
+    s32 zb;
+    s32 timer;
+    s32 roll;
+
+    beh = (u8 *)obj + 0x58;
+    child = obj->unk344;
+    tgt_a = parent->unk200;
+    za = tgt_a->posZ + tgt_a->dz;
+    tgt_b = parent->unk204;
+    zb = tgt_b->posZ + tgt_b->dz;
+    higher = tgt_b;
+    if (za >= zb)
+    {
+        higher = tgt_a;
+    }
+    child->dz = child->dz + child->unk2DC;
+    cell = obj->cell;
+    if (cell->unk23 > 4)
+    {
+        timer = cell->unk2A - (s8)cell->unk20;
+        if (timer <= 0)
+        {
+            cell->unk23 = 6;
+            ((struct BitsMode *)&obj->unk214)->low = 0;
+        }
+    }
+    if ((child->unk216 & 0x20)
+        || (((u8 *)child)[0x25] & 0x78)
+        || (*(u32 *)((u8 *)child + 0x20C) & (u32)gUnk_02000001) != (u32)gUnk_02000001
+        || child->posZ + child->dz >= higher->posZ + higher->dz + 0xF000
+        || *(s16 *)((u8 *)child + 0x52) < 0
+        || *(s16 *)((u8 *)child + 0x52) > 0x9F)
+    {
+        obj_set_sprite_link(child, 0);
+        roll = rand_below(2, mt19937_next());
+        table = *(u8 **)(beh + 0x158);
+        timer = ((u8 *)(table + 0x3C))[roll];
+        *(u16 *)(beh + 0x17A) = timer;
+        ((struct BitsMode *)&obj->unk214)->low = 0;
+        *slot = (u32)tick_store;
+        ((u32 *)slot)[3] = (u32)ai_leap_to_target;
+    }
+}
 
 void ai_hop_fall(u32 unused, struct Enemy *obj, u32 *slot);
-ASM_FUNC("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+NONMATCH("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+{
+    struct Enemy *child;
+    struct Enemy *target;
+    s16 *vxp;
+    s16 *vyp;
+    s32 *p248;
+    u8 idx;
+    s32 h0;
+    s32 h1;
+    s32 h2;
+    u8 *beh;
+    u8 *table;
+    s32 tile_x;
+    s32 tile_y;
+    s32 aim_x;
+    s32 aim_y;
+    s32 new_y;
+    s32 dz;
+    s32 roll;
+
+    beh = (u8 *)obj + 0x58;
+    child = obj->unk344;
+    if ((u8)find_active_entry(parent, &idx))
+    {
+        target = *(struct Enemy **)((u8 *)parent + idx * 4 + 0x28);
+        vxp = (s16 *)((u8 *)target + 0x242);
+        aim_x = target->posX + (((*vxp << 1) + *vxp) << 3);
+        if (aim_x < 0)
+        {
+            aim_x += 0xFFF;
+        }
+        tile_x = aim_x >> 12;
+        vyp = (s16 *)((u8 *)target + 0x244);
+        aim_y = target->posY + (((*vyp << 1) + *vyp) << 3);
+        if (aim_y < 0)
+        {
+            aim_y += 0xFFF;
+        }
+        tile_y = aim_y >> 12;
+        obj_probe_tile_heights(obj, tile_x, tile_y, &h0, &h1, &h2);
+        if (h0 == 0x7FFFFFFF || (h1 != 0x7FFFFFFF && h2 == 0x7FFFFFFF))
+        {
+            child->posX = target->posX - (((*vxp << 1) + *vxp) << 3);
+            new_y = target->posY - (((*vyp << 1) + *vyp) << 3);
+        }
+        else
+        {
+            child->posX = target->posX + (((target->unk242 << 1) + target->unk242) << 3);
+            new_y = target->posY + (((target->unk244 << 1) + target->unk244) << 3);
+        }
+        child->posY = new_y;
+        child->posZ = target->posZ;
+        dz = 0xF000;
+    }
+    else
+    {
+        child->posX = obj->posX + 0x2000;
+        child->posY = obj->posY;
+        child->posZ = obj->posZ;
+        dz = obj->dz + 0xF000;
+    }
+    child->dz = dz;
+    obj_set_sprite_link(child, 1);
+    roll = rand_below(2, mt19937_next());
+    p248 = (s32 *)((u8 *)child + 0x248);
+    table = *(u8 **)(beh + 0x158);
+    *p248 = ((u16 *)(table + 0x3E))[roll];
+    roll = rand_below(2, mt19937_next());
+    table = *(u8 **)(beh + 0x158);
+    child->unk2DC = ((u8 *)(table + 0x42))[roll];
+    *slot = (u32)ai_hop_fall;
+}
+END_NONMATCH
 
 void obj_set_sprite_link(struct Enemy *ent, u32 zero);
 void obj_set_active(struct Enemy *ent, u32 zero);
