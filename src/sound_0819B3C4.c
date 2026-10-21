@@ -607,7 +607,40 @@ void sound_info_set_4a4(u32 idx, u32 value)
     sound_info()->playerWord[idx] = value;
 }
 
-ASM_FUNC("asm/sound_0819B3C4/player_start.s", void player_start(u32 player, u32 song))
+NONMATCH("asm/sound_0819B3C4/player_start.s", void player_start(u32 player, u32 song))
+{
+    s32 i;
+    struct SndTrack *tr;
+    u16 bits;
+    u16 *offs;
+    u8 *base;
+
+    player_key_off(player);
+    sound_info_set_4a4(player, 0x4B);
+    sound_info()->playerFlags[player] |= 1;
+    sound_info()->playerFlags[player] &= 0xFD;
+    offs = (u16 *)gSongTableLo[song];
+    base = (u8 *)offs;
+    tr = (struct SndTrack *)((u8 *)sound_info() + ((player * 3) << 7));
+    bits = *offs;
+    offs++;
+    for (i = 11; i >= 0; i--)
+    {
+        if (bits & 1)
+        {
+            u32 data = (u32)(base + *offs);
+            offs++;
+            track_init(tr, data);
+        }
+        else
+        {
+            tr->status = 0;
+        }
+        tr++;
+        bits >>= 1;
+    }
+}
+END_NONMATCH
 
 void player_enable(u32 player)
 {
