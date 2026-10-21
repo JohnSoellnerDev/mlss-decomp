@@ -36,6 +36,13 @@ struct HighBitByte
     u8 high : 1;
 };
 
+struct Unk111Bit3
+{
+    u8 low3 : 3;
+    u8 b3 : 1;
+    u8 high4 : 4;
+};
+
 struct Flags78Bits
 {
     u8 low5 : 5;
@@ -75,7 +82,9 @@ struct ActorInfo
 struct ActorPart
 {
     struct ActorPart *link;
-    u8 filler0[0xB0 - 4];
+    u8 filler0[0x84 - 4];
+    u16 unk84;
+    u8 filler0B[0xB0 - 0x86];
     s32 unkB0;
     u8 filler1[0xD8 - 0xB4];
     s32 targetX;
@@ -172,6 +181,7 @@ struct World
 
 extern struct World *gWorld;
 extern u8 gRoom149Layer0[];
+extern u8 gText[];
 
 void sound_stop_song(u32 song);
 void set_slot_value(u32 id, s32 value);
@@ -195,6 +205,7 @@ void obj_retarget_c(struct ActorObj *obj);
 void obj_retarget_a(struct ActorObj *obj);
 void obj_retarget_b(struct ActorObj *obj);
 void obj_pose_update_b(struct ActorObj *obj);
+void obj_stop_a(struct ActorObj *obj);
 void hero_b_link_b(struct ActorObj *obj);
 void hero_b_active_a(struct ActorObj *obj);
 void hero_b_flagged_a(struct ActorObj *obj);
@@ -394,7 +405,59 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj *obj))
+NONMATCH("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj *obj))
+{
+    struct Hero *hero = gWorld->heroB;
+    struct ActorObj *body = &hero->body;
+    struct ActorObj *owner = obj;
+    struct ActorPart *part;
+    struct ActorPart *head;
+
+    if (owner->part->info->flags1D & 0x10)
+    {
+        owner->state = 0;
+        return;
+    }
+    ((struct Unk111Bit3 *)&owner->part->unk111)->b3 = 1;
+    ((struct PartBits *)&owner->part->unk111)->b1 = 1;
+    ((struct HighBitByte *)&hero->unkD4)->low7 = 0x46;
+    hero->unkD2 = 0xCC;
+    resolve_contact_action(body, owner, 0, 0, (u32)(gRoom149Layer0 + 0x59));
+    body->unk24++;
+    part = owner->part;
+    if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+    {
+        s32 x = owner->baseX / 0x100 + owner->offsetC3;
+        s32 y = owner->baseY / 0x100 + owner->offsetC4;
+        effect_spawn_at(0x6C4, x, y, 0, owner);
+    }
+    owner->partner = 0;
+    head = owner->part;
+    if (head->link != 0)
+    {
+        owner->state = 0;
+        part = head;
+        if ((part->info->flags1C & 0x80) == 0)
+        {
+            do
+            {
+                part = part->link;
+            } while ((part->info->flags1C & 0x80) == 0);
+        }
+        obj = (struct ActorObj *)((u8 *)part + 8);
+        part->unk84 = owner->motionSpeed;
+    }
+    obj->owner = owner;
+    if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
+    {
+        part = obj->part;
+        place_targets(obj, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, -1);
+        obj->unk92 = obj->part->targetH / 0x100 + 0x30;
+        set_motion_offsets(obj, 0x600);
+    }
+    obj->state = obj_stop_b;
+}
+END_NONMATCH
 
 void hero_b_unlink_a(struct ActorObj *obj)
 {
@@ -579,7 +642,68 @@ void heroes_step(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj *obj))
+NONMATCH("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj *obj))
+{
+    struct Hero *hero = gWorld->heroB;
+    struct ActorObj *body = &hero->body;
+    struct ActorObj *owner = obj;
+    struct ActorPart *part;
+    struct ActorPart *head;
+
+    if (owner->part->info->flags1D & 0x10)
+    {
+        ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
+        hero->unkD2 = 0xF3;
+        resolve_contact_action(body, owner, 0, 0, (u32)(gText + 0x5F065));
+        body->unk24++;
+        part = owner->part;
+        if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+        {
+            s32 x = owner->baseX / 0x100 + owner->offsetC3;
+            s32 y = owner->baseY / 0x100 + owner->offsetC4;
+            effect_spawn_at(0x6C4, x, y, 0, owner);
+        }
+        owner->state = 0;
+        return;
+    }
+    ((struct PartBits *)&owner->part->unk111)->b1 = 1;
+    ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
+    hero->unkD2 = 0xF3;
+    resolve_contact_action(body, owner, 0, 0, (u32)(gText + 0x5F065));
+    body->unk24++;
+    part = owner->part;
+    if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+    {
+        s32 x = owner->baseX / 0x100 + owner->offsetC3;
+        s32 y = owner->baseY / 0x100 + owner->offsetC4;
+        effect_spawn_at(0x6C4, x, y, 0, owner);
+    }
+    head = owner->part;
+    if (head->link != 0)
+    {
+        owner->state = 0;
+        part = head;
+        if ((part->info->flags1C & 0x80) == 0)
+        {
+            do
+            {
+                part = part->link;
+            } while ((part->info->flags1C & 0x80) == 0);
+        }
+        obj = (struct ActorObj *)((u8 *)part + 8);
+        part->unk84 = owner->motionSpeed;
+    }
+    obj->owner = owner;
+    if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
+    {
+        part = obj->part;
+        place_targets(obj, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, -1);
+        obj->unk92 = obj->part->targetH / 0x100 + 0x40;
+        set_motion_offsets(obj, 0x580);
+    }
+    obj->state = obj_stop_a;
+}
+END_NONMATCH
 
 void obj_stop_a(struct ActorObj *obj)
 {
