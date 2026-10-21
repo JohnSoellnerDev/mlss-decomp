@@ -128,6 +128,15 @@ struct StateOwner
     s16 kind;
 };
 
+struct PartyHero
+{
+    u8 filler0[0x0E];
+    u16 unkE;
+    u8 filler10[0x14 - 0x10];
+    u16 unk14;
+    u8 filler16[0x3C - 0x16];
+};
+
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
 extern u8 *gParty;
@@ -448,7 +457,52 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08100FFC/state_hero_fx_dispatch.s", void state_hero_fx_dispatch(struct StateOwner *owner))
+NONMATCH("asm/code_08100FFC/state_hero_fx_dispatch.s", void state_hero_fx_dispatch(struct StateOwner *owner))
+{
+    s32 slot;
+    struct PartyHero *hero;
+    u16 value;
+    u16 value2;
+    u32 byte4;
+    void (*fx)(struct StateOwner *);
+
+    slot = ~gWorld->fig1->animIndex;
+    hero = (struct PartyHero *)(gParty + slot * 60);
+    value = gWorld->list58[slot + 6]->unkF6;
+    hero->unkE = value;
+    hero->unk14 = gWorld->list58[slot + 6]->unkFC;
+    if (value == 0)
+    {
+        hero->unkE = 1;
+    }
+    if (gWorld->fig2 != NULL)
+    {
+        slot = ~gWorld->fig2->animIndex;
+        hero = (struct PartyHero *)(gParty + slot * 60);
+        value2 = gWorld->list58[slot + 6]->unkF6;
+        hero->unkE = value2;
+        hero->unk14 = gWorld->list58[slot + 6]->unkFC;
+        if (value2 == 0)
+        {
+            hero->unkE = 1;
+        }
+    }
+    byte4 = gWorld->unk4;
+    if (byte4 == 0 || gWorld->unk5 == 0)
+    {
+        fx = (void (*)(struct StateOwner *))state_effect_mode_2;
+        if (byte4 != 0)
+        {
+            fx = (void (*)(struct StateOwner *))state_effect_release;
+        }
+    }
+    else
+    {
+        fx = (void (*)(struct StateOwner *))state_clear_hero_flags;
+    }
+    fx(owner);
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_08100FFC/state_play_result_effects.s", void state_play_result_effects(void))
