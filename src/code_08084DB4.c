@@ -240,10 +240,11 @@ void copy_map_rect_add(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h, u16 *src,
     }
 }
 
-NONMATCH("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(u8 *obj, u32 y, u16 *src, u32 h, u32 value))
+void fill_map_rect(u8 *obj, u32 y, u16 *src, u32 h, u32 value)
 {
     u16 *dst;
     s32 n;
+    s32 i;
     u16 *p;
 
     dst = (u16 *)(*(u8 **)(obj + 0x288) + ((y * 5) << 8));
@@ -262,15 +263,15 @@ NONMATCH("asm/code_08084DB4/fill_map_rect.s", void fill_map_rect(u8 *obj, u32 y,
         if (n > 0)
         {
             p = dst;
+            i = n;
             do
             {
                 *p = *p + value;
                 p++;
-            } while (--n != 0);
+            } while (--i != 0);
         }
     }
 }
-END_NONMATCH
 
 void copy_slot_tiles(u8 *obj, u8 idx, void *dst, u32 off, u32 count)
 {
