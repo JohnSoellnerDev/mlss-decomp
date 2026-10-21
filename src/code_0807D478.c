@@ -443,7 +443,7 @@ void popup_wave_step(struct Task *task)
 
 ASM_FUNC("asm/code_0807D478/oam_write_number.s", void oam_write_number(u8 *digits, s32 x, s32 y, s32 scale, s32 flags))
 
-NONMATCH("asm/code_0807D478/raster_line_add.s", struct RasterNode *raster_line_add(void (*handler)(struct RasterNode *node), s32 line, void *callback))
+struct RasterNode *raster_line_add(void (*handler)(struct RasterNode *node), s32 line, void *callback)
 {
     struct RasterNode *node;
     struct RasterNode *cur;
@@ -469,19 +469,24 @@ NONMATCH("asm/code_0807D478/raster_line_add.s", struct RasterNode *raster_line_a
         cur = cur->next;
     }
     node->next = cur;
-    if (prev != NULL)
-        prev->next = node;
-    else
-        gWorld->rasterList = node;
-    if (callback != NULL)
-        node->unk4 = (u32)callback;
-    else
-        node->unk4 = (u32)raster_irq_default;
+    if (prev == NULL)
+        goto set_head;
+    prev->next = node;
+link_done:
+    if (callback == NULL)
+        goto default_cb;
+    node->unk4 = (u32)callback;
+    goto join_cb;
+set_head:
+    gWorld->rasterList = node;
+    goto link_done;
+default_cb:
+    node->unk4 = (u32)raster_irq_default;
+join_cb:
     node->handler = handler;
     node->line = line;
     return node;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0807D478/task_frame_update.s", void task_frame_update(void))
 
@@ -489,13 +494,14 @@ NONMATCH("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
 {
     struct RasterNode *node;
     struct RasterNode *next;
+    s32 nextLine;
+    vu16 *regDispstat;
     s32 cur;
+    s32 (*waitFn)(void);
     u32 v;
     vu16 *regIme;
-    vu16 *regDispstat;
     vu16 *regIe;
     u32 vcountBit;
-    s32 (*waitFn)(void);
 
     node = gWorld->rasterCur;
     cur = node->line;
@@ -504,20 +510,17 @@ NONMATCH("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
     regDispstat = (vu16 *)0x04000004;
     regIe = (vu16 *)0x04000200;
     vcountBit = 4;
-    for (;;)
-    {
-        if (node->handler != NULL)
-            node->handler(node);
-        next = node->next;
-        if (next == NULL)
-            return;
-        if (cur >= next->line)
-            node = next;
-        else
-            break;
-    }
+again:
+    if (node->handler != NULL)
+        node->handler(node);
+    next = node->next;
+    if (next == NULL)
+        goto done;
+    nextLine = next->line;
+    if (cur >= nextLine)
+        goto advance;
     gWorld->rasterCur = next;
-    v = next->line << 8;
+    v = nextLine << 8;
     do
     {
     } while (waitFn() == 0);
@@ -529,6 +532,12 @@ NONMATCH("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
     *regIe |= vcountBit;
     REG_IF |= vcountBit;
     *regIme = 1;
+    goto done;
+advance:
+    node = next;
+    goto again;
+done:
+    return;
 }
 END_NONMATCH
 
@@ -590,21 +599,20 @@ void task_release_obj(struct Task *task)
 
 ASM_FUNC("asm/code_0807D478/obj_run_part.s", void obj_run_part(struct SpriteObj *obj, struct SpritePart *part))
 
-NONMATCH("asm/code_0807D478/obj_try_run_part.s", s32 obj_try_run_part(struct SpriteObj *obj, struct SpritePart *part))
+s32 obj_try_run_part(struct SpriteObj *obj, struct SpritePart *part)
 {
     struct SpriteObj *owner;
     struct SpriteObj *cur;
     struct SpriteObj *prev;
     struct SpriteObj *next;
     ObjHandler handler;
-    s32 res;
-    u32 index;
     ObjHandler *slots;
+    u32 index;
     u32 off;
 
     index = part->index;
     if ((index & 7) == 0)
-        return 0;
+        goto none;
     if (obj->stateFn == (u32)effect_follow)
         owner = obj->parent;
     else
@@ -613,13 +621,13 @@ NONMATCH("asm/code_0807D478/obj_try_run_part.s", s32 obj_try_run_part(struct Spr
     slots = owner->handlers;
     handler = *(ObjHandler *)((u8 *)slots + off);
     if (handler == NULL)
-        return 0;
-    if ((res = search_frame_pairs(obj, part)) == 0)
-        return 0;
+        goto none;
+    if ((index = search_frame_pairs(obj, part)) == 0)
+        goto none;
     if (owner != obj)
         owner->unk54 = 0;
     if (handler(owner, part) != 0)
-        return 0;
+        goto none;
     prev = NULL;
     cur = gWorld->objs;
     if (cur != NULL)
@@ -645,8 +653,9 @@ NONMATCH("asm/code_0807D478/obj_try_run_part.s", s32 obj_try_run_part(struct Spr
         } while (cur != NULL);
     }
     return 1;
+none:
+    return 0;
 }
-END_NONMATCH
 
 void update_active_objs(void)
 {
