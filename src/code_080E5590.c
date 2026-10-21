@@ -51,6 +51,16 @@ extern s32 gUnk_03000FAC;
 extern s32 gUnk_03000FB0;
 extern u32 gUnk_03000FA8;
 
+struct ListNode
+{
+    u8 unk0;
+    u8 filler1[3];
+    struct ListNode *unk4;
+    void *unk8;
+};
+
+void sub_080E57D4(struct ListNode *head, void *key);
+
 ASM_FUNC("asm/code_080E5590/sub_080E5590.s", void sub_080E5590(void))
 
 void sub_080E5728(void)
@@ -64,9 +74,76 @@ void sub_080E5740(void)
     ((void (*)(u32, void *, u32))gMemRoutines)(0, gUnk_03000F90 + 0x10, 0x40);
 }
 
-ASM_FUNC("asm/code_080E5590/sub_080E5760.s", void sub_080E5760(void))
+struct ListNode *sub_080E5760(struct ListNode *head, void *key)
+{
+    struct ListNode *cur;
+    struct ListNode *node;
+    struct ListNode *next;
+    struct ListNode *prev;
 
-ASM_FUNC("asm/code_080E5590/sub_080E57D4.s", void sub_080E57D4(void))
+    if (key == 0)
+    {
+        struct ListNode *all;
+
+        all = head;
+        if (all != 0)
+        {
+            do
+            {
+                next = all->unk4;
+                heap_free(all);
+                all = next;
+            } while (all != 0);
+        }
+        return 0;
+    }
+    for (cur = head; cur != 0; cur = cur->unk4)
+    {
+        if (key == cur->unk8)
+        {
+            sub_080E57D4(head, cur);
+        }
+        else if (key == cur)
+        {
+            cur->unk0 = 0xFF;
+        }
+    }
+    prev = 0;
+    for (node = head; node != 0; node = next)
+    {
+        next = node->unk4;
+        if ((s8)node->unk0 < 0)
+        {
+            if (prev != 0)
+            {
+                prev->unk4 = next;
+            }
+            else
+            {
+                head = next;
+            }
+            heap_free(node);
+        }
+    }
+    return head;
+}
+
+void sub_080E57D4(struct ListNode *head, void *key)
+{
+    struct ListNode *node;
+
+    for (node = head; node != 0; node = node->unk4)
+    {
+        if (key == node->unk8)
+        {
+            sub_080E57D4(head, node);
+        }
+        else if (key == node)
+        {
+            node->unk0 = 0xFF;
+        }
+    }
+}
 
 static inline void dma_ctrl_stop(u8 *base)
 {
