@@ -118,6 +118,37 @@ struct Particle
     s16 dx;
 };
 
+struct SysFlagArea
+{
+    u8 filler0[0x888];
+    u8 sysFlags;
+};
+
+struct FrameRec
+{
+    u8 filler0[2];
+    s16 index;
+    u16 delay;
+};
+
+struct FrameObj
+{
+    u8 filler0[4];
+    u32 callback;
+    s32 value8;
+    struct FrameRec *rec;
+    u16 delay;
+    u8 filler12[6];
+    u16 zero18;
+};
+
+extern u8 gSys[];
+extern const u16 gTileHalfTable[];
+extern const u8 gUnk_089F46B0[];
+extern u8 gUnk_02000460[];
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
+void effect_obj_frame(void);
+
 void obj_release(struct ActorObj *obj);
 void wait_for_index(struct ActorObj *obj);
 void sound_stop_song(u32 song);
@@ -471,10 +502,11 @@ NONMATCH("asm/code_080DECE0/obj_load_code_entry_then_wait.s", void obj_load_code
     }
     else
     {
+        u32 *codeIdSlot = &obj->codeId;
         u8 *entry = gItemTable + ((*codeByte & 0x7F) << 4);
         u32 id = (entry[2] & 7) + 0x4188;
 
-        obj->codeId = id;
+        *codeIdSlot = id;
         ensure_code_entry(id);
         next = obj_wait_not_busy_action10;
     }
@@ -626,9 +658,129 @@ void fx_spawn_list_step(struct FxSpawnList *fx)
 
 ASM_FUNC("asm/code_080DECE0/fx_tick_move_records.s", void fx_tick_move_records(void))
 
-ASM_FUNC("asm/code_080DECE0/spawn_random_particle.s", u32 spawn_random_particle(struct Particle *obj, s16 *src))
+u32 spawn_random_particle(struct Particle *obj, s16 *src)
+{
+    u32 rnd;
+    u32 angle;
+    u32 angleSq;
+    s32 length;
+    u32 k;
+    s32 v;
+    s32 t;
+    s32 dirX;
+    s32 dirY;
+    s32 base;
 
-ASM_FUNC("asm/code_080DECE0/init_drift_particle.s", void init_drift_particle(void))
+    rnd = mt19937_next();
+    angle = rnd & 0xFF;
+    rnd = rnd >> 8;
+    angleSq = angle * angle;
+    length = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(~(angleSq * angleSq));
+    k = rnd & 0xFF;
+    rnd = rnd >> 8;
+    v = gCosineTable[k & 0xFF];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = length * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    dirX = t >> 8;
+    v = gSineTable[k & 0xFF];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = length * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    dirY = t >> 8;
+    base = (rnd & 0xFF) + src[0];
+    rnd = rnd >> 8;
+    if ((rnd & 1) != 0)
+    {
+        angleSq = -angleSq;
+    }
+    t = dirX * base;
+    if (t < 0)
+    {
+        t += 0x1FFF;
+    }
+    obj->posX = t >> 13;
+    t = angleSq * base;
+    if (t < 0)
+    {
+        t += 0x1FFF;
+    }
+    obj->posH = t >> 13;
+    t = dirY * base;
+    if (t < 0)
+    {
+        t += 0x1FFF;
+    }
+    obj->posY = (t >> 13) + (src[1] << 8);
+    obj->x = 0;
+    obj->dh = 0;
+    t = src[2];
+    obj->y = t << 8;
+    obj->timer = 1;
+    return 1;
+}
+
+NONMATCH("asm/code_080DECE0/init_drift_particle.s", u32 init_drift_particle(struct Particle *obj, s16 *src))
+{
+    u32 rnd;
+    u32 scaleA;
+    u32 hi;
+    u32 scaleB;
+    u32 yScaled;
+    u32 idx;
+    s32 t;
+    s32 v;
+
+    obj->posX = 0;
+    obj->posY = 0;
+    obj->posH = -0x400;
+    rnd = mt19937_next();
+    scaleA = (0 - ((rnd & 0xFF) + 0x300)) >> 2;
+    obj->dh = ((u32)src[0] * scaleA) >> 8;
+    hi = rnd >> 8;
+    idx = hi;
+    idx &= 0xFF;
+    hi = hi >> 8;
+    scaleB = ((hi & 0xFF) + 0x300) >> 2;
+    yScaled = ((u32)src[1] * scaleB) >> 8;
+    v = gCosineTable[idx & 0xFF];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = yScaled * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->x = t >> 8;
+    v = gSineTable[idx & 0xFF];
+    if (v < 0)
+    {
+        v += 0x3F;
+    }
+    t = yScaled * (v >> 6);
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    obj->y = t >> 8;
+    obj->timer = 1;
+    return 5;
+}
+END_NONMATCH
 
 void step_particle(struct Particle *obj, s16 *params)
 {
@@ -683,6 +835,40 @@ void step_particle(struct Particle *obj, s16 *params)
 
 ASM_FUNC("asm/code_080DECE0/orbit_point.s", void orbit_point(void))
 
-ASM_FUNC("asm/code_080DECE0/start_obj_frame.s", void start_obj_frame(void))
+NONMATCH("asm/code_080DECE0/start_obj_frame.s", void start_obj_frame(struct FrameObj *obj))
+{
+    struct FrameRec *rec = obj->rec;
+    const u16 *tbl;
+    void (*copy)(u8 *, u8 *, u32);
+    u32 frame;
+    u32 frame2;
+    s32 next;
+    u32 off;
+    s32 counter;
+
+    tbl = gTileHalfTable;
+    frame = (u32)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (tbl[rec->index] << 2));
+    queue_display_entry(2, (void *)frame, (void *)0x06016800, 0x100, 0, 0);
+    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    next = rec->index + 1;
+    if ((((struct SysFlagArea *)gSys)->sysFlags & 6) != 0)
+    {
+        off = (next + 1) << 1;
+    }
+    else
+    {
+        off = next << 1;
+    }
+    frame2 = (u32)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (*(u16 *)((u8 *)tbl + off) << 2));
+    copy((u8 *)frame2, gUnk_02000460, 0x20);
+    *(u16 *)gSys |= 0x8000;
+    counter = gWorld[9];
+    gWorld[9] = (counter & -16) | (((((u32)counter << 28) >> 28) + 1) & 0xF);
+    obj->value8 = 0;
+    obj->delay = rec->delay;
+    obj->zero18 = 0;
+    obj->callback = (u32)effect_obj_frame;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080DECE0/effect_obj_frame.s", void effect_obj_frame(void))
