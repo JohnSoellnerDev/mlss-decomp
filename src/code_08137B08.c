@@ -202,14 +202,99 @@ void obj_random_pose_short(struct Owner *owner, struct Enemy *obj, u32 *out)
 }
 
 
-ASM_FUNC("asm/code_08137B08/obj_link_sprites.s", void obj_link_sprites(void))
+static inline u32 obj_try_link_anchor(struct Enemy *anchor, struct Enemy *obj)
+{
+    u32 lock;
+
+    if ((anchor->unk20C & 1) != 0)
+    {
+        return 0;
+    }
+    lock = anchor->unk33C & 6;
+    if (lock != 0)
+    {
+        return 0;
+    }
+    obj_set_sprite_link(anchor, 1);
+    obj_set_active(anchor, 1);
+    obj_set_or_add_pos(anchor, obj->posX, obj->posY + 0x100, obj->posZ + obj->unk18 + 0x1000, 1, lock);
+    return 1;
+}
+
+void obj_link_sprites(struct Owner *owner, struct Enemy *obj)
+{
+    u8 *bahn;
+
+    bahn = (u8 *)obj + 0x58;
+    if ((obj->sprite->flags12 & 8) != 0)
+    {
+        obj_apply_state_a(obj);
+        obj->unk198 = start_linked_state;
+        if (!obj_try_link_anchor(*(struct Enemy **)((u8 *)owner + (obj->unk54 * 4) + 0x2C), obj))
+        {
+            obj_try_link_anchor(*(struct Enemy **)((u8 *)owner + (obj->unk54 * 4) + 0x30), obj);
+        }
+        *(u16 *)(bahn + 0x17A) = 0x78;
+    }
+}
 
 
 ASM_FUNC("asm/code_08137B08/obj_random_offset.s", void obj_random_offset(void))
 
 ASM_FUNC("asm/code_08137B08/obj_random_offset_step.s", void obj_random_offset_step(void))
 
-ASM_FUNC("asm/code_08137B08/obj_random_facing_target.s", void obj_random_facing_target(void))
+void obj_random_facing_target(struct Enemy *obj)
+{
+    u8 stages[2];
+    u16 *table;
+    u16 sel;
+    u32 rnd;
+    u32 facing;
+    struct Sprite *sprite;
+    u16 pal;
+
+    table = obj->unk100;
+    obj->unk1CC = (s32)obj->unk130[rand_below(2, mt19937_next())] << 8;
+    rnd = rand_below(4, mt19937_next());
+    sprite = obj->sprite;
+    sel = rnd;
+    pal = obj->unk108[sel];
+    sprite->unk20 = pal;
+    obj->unk239 = pal;
+    obj->unk23E = *(u16 *)((u8 *)table + (sel << 1));
+    obj->unk1D0 = sel;
+
+    facing = ((u32)obj->unk24 << 29) >> 29;
+    if ((facing & 2) != 0)
+    {
+        stages[0] = 0;
+        stages[1] = 4;
+    }
+    else
+    {
+        stages[0] = 2;
+        stages[1] = 6;
+    }
+    obj_set_stage(obj, stages[rand_below(2, mt19937_next())]);
+    obj->unk2CC = obj->posX;
+    obj->unk2D0 = obj->posY;
+
+    switch (((u32)obj->unk24 << 29) >> 29)
+    {
+    case 0:
+        obj->unk2D0 = (s32)*(s16 *)((u8 *)table + 0x38) << 8;
+        break;
+    case 2:
+        obj->unk2CC = (s32)*(s16 *)((u8 *)table + 0x3E) << 8;
+        break;
+    case 4:
+        obj->unk2D0 = (s32)*(s16 *)((u8 *)table + 0x3A) << 8;
+        break;
+    case 6:
+        obj->unk2CC = (s32)*(s16 *)((u8 *)table + 0x3C) << 8;
+        break;
+    }
+}
 
 
 ASM_FUNC("asm/code_08137B08/obj_pick_move_vector.s", void obj_pick_move_vector(void))
@@ -218,7 +303,57 @@ ASM_FUNC("asm/code_08137B08/obj_random_orbit_offset.s", void obj_random_orbit_of
 
 ASM_FUNC("asm/code_08137B08/obj_start_move_to_target.s", void obj_start_move_to_target(void))
 
-ASM_FUNC("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty))
+NONMATCH("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty))
+{
+    u8 *bahn;
+    u8 **routines;
+    u16 *flagp;
+    s16 *vx;
+    s16 *vy;
+    s32 len;
+    s32 dx;
+    s32 dy;
+
+    bahn = (u8 *)obj + 0x58;
+    obj->unk1C4 = obj->posX / 0x100;
+    obj->unk1C6 = obj->posY / 0x100;
+    obj->unk1C8 = (obj->posZ + obj->unk18) / 0x100;
+    if (mode == 1)
+    {
+        tx += obj->posX;
+        ty += obj->posY;
+    }
+    obj->unk2BC = obj->posX;
+    obj->unk2C0 = obj->posY;
+    obj->unk2CC = tx;
+    obj->unk2D0 = ty;
+
+    dx = (tx - obj->posX) / 4;
+    vx = (s16 *)&obj->unk242;
+    *vx = dx;
+    obj->unk2D8 = dx;
+    dy = (ty - obj->posY) / 4;
+    vy = (s16 *)&obj->unk244;
+    *vy = dy;
+    obj->unk2DA = dy;
+
+    routines = &gMathRoutines;
+    len = ((s32 (*)(s32))*routines)(*vx * *vx + *vy * *vy);
+    obj->unk2E0 = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(len, (s16)obj->unk23E) << 2;
+    obj->unk1CC = len << 2;
+    obj->unk2DE = 0;
+    if ((*(u16 *)vx | *(u16 *)vy) != 0)
+    {
+        obj->heading = (u32)((u16)angle_of_vector16(*vx, *vy) + 0x10) >> 8;
+    }
+    else
+    {
+        obj->heading = 0xFF;
+    }
+    flagp = (u16 *)(bahn + 0xA0);
+    *flagp = 0x800 | *flagp;
+}
+END_NONMATCH
 
 void obj_start_hop(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
 {
