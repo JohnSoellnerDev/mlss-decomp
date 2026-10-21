@@ -72,6 +72,12 @@ struct PoolEntry
     struct ClassVt *table;
 };
 
+struct GameVars
+{
+    u8 filler0[0x1898];
+    struct PoolEntry *unk1898[0x100];
+};
+
 extern u8 gClassE7a0[];
 extern u8 gClassE7e0[];
 extern u8 *gUnk_03001020;
@@ -110,7 +116,46 @@ void obj_free_tile_bufs(void *obj);
 
 ASM_FUNC("asm/code_0815B1DC/scene_init_objects.s", void scene_init_objects(void))
 
-ASM_FUNC("asm/code_0815B1DC/scene_free_objects.s", void scene_free_objects(void))
+void scene_free_objects(struct GameVars *game)
+{
+    struct PoolEntry *entry;
+    struct ClassVt *table;
+    void **slot;
+    s32 i;
+
+    for (i = 0; i < 0x100; i++)
+    {
+        entry = game->unk1898[i];
+        if (entry != 0)
+        {
+            table = entry->table;
+            table->fn0C((u8 *)entry + table->thisOffset, 3);
+        }
+        game->unk1898[i] = 0;
+    }
+
+    slot = (void **)((u8 *)game + 0x1E88);
+    if (*slot != 0)
+    {
+        obj_release_children_5(*slot, 3);
+        *slot = 0;
+    }
+    slot = (void **)((u8 *)game + 0x1E8C);
+    if (*slot != 0)
+    {
+        obj_release_children_9(*slot, 3);
+        *slot = 0;
+    }
+    slot = (void **)((u8 *)game + 0x1E90);
+    if (*slot != 0)
+    {
+        window_destroy(*slot, 3);
+        *slot = 0;
+    }
+    obj_free_tile_bufs((u8 *)game + 0x1C);
+    obj_free_tile_bufs((u8 *)game + 0x840);
+    obj_free_tile_bufs((u8 *)game + 0x1064);
+}
 
 ASM_FUNC("asm/code_0815B1DC/transition_scene_step.s", void transition_scene_step(void))
 
@@ -165,8 +210,64 @@ void camera_follow_chars(u8 *game)
 
 ASM_FUNC("asm/code_0815B1DC/obj_spawn_by_kind.s", void obj_spawn_by_kind(void))
 
+
 ASM_FUNC("asm/code_0815B1DC/update_bg_scroll_shadows.s", void update_bg_scroll_shadows(void))
-ASM_FUNC("asm/code_0815B1DC/obj_command.s", void obj_command(void))
+
+NONMATCH("asm/code_0815B1DC/obj_command.s", u32 obj_command(struct ClassObj *obj, u32 view, u16 speed, u32 cmd_arg, u8 cmd))
+{
+    struct ObjClassVt *cls;
+    u8 *arg;
+    struct SpriteObj *sprite;
+    const u8 *slotTable;
+    u8 kind;
+    s32 idx;
+    u32 random;
+
+    switch (cmd)
+    {
+    case 1:
+        cls = (struct ObjClassVt *)obj->klass;
+        arg = (u8 *)obj + cls->thisOffset30;
+        ((void (*)(void *))cls->fn34)(arg);
+        break;
+    case 2:
+        break;
+    case 5:
+        if (((obj->timer ^ 1) & 1) != 0)
+        {
+            obj->timer = obj->timer | 1;
+            *(u16 *)&obj->angle = 0x96;
+            obj_step_pos18(*(void **)(gUnk_03001020 + 0x1CB8), -3);
+            sprite = obj_get_sprite(obj);
+            kind = sprite->kind;
+            *((u8 *)obj + 0x42) = kind;
+            if (obj->kind == 0)
+                obj_set_sprite_kind(obj, 0x28);
+            else
+                obj_set_sprite_kind(obj, 0x29);
+        }
+        break;
+    case 13:
+        obj->state = 8;
+        break;
+    case 12:
+        if (obj->kind == 0)
+        {
+            slotTable = gSlotTable;
+            random = mt19937_next();
+            idx = rand_below(0x24, random);
+            set_slot_value(slotTable[idx], -1);
+        }
+        obj->vy = 0xFC18;
+        obj->state = 2;
+        break;
+    default:
+        return obj_step_by_state(obj, view, (s16)speed, cmd_arg);
+    }
+    return 0;
+}
+END_NONMATCH
+
 ASM_FUNC("asm/code_0815B1DC/obj_step_by_state.s", u32 obj_step_by_state(struct ClassObj *obj, u32 view, s16 speed, u32 cmd_arg))
 
 struct ClassObj *set_class_e7e0_ex(struct ClassObj *obj, void *rec, u16 idx)
