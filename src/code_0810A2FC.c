@@ -669,7 +669,66 @@ void refresh_world_object(struct WorldObj *obj, s32 mode)
     place_world_object(x, y, z, mode, 0x7001);
 }
 
-ASM_FUNC("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(void))
+NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 value, s32 slot, s32 flag, s32 mode_base))
+{
+    s32 kc = 0x2C5;
+    struct World **pw;
+    s32 pos;
+    s32 limit;
+    s32 hi;
+    u16 mode;
+    s32 x;
+    s32 z;
+
+    pos = value;
+    switch (slot)
+    {
+    case 0:
+        limit = *((u8 *)gWorld + 0x33F);
+        break;
+    case 1:
+        limit = *((u8 *)gWorld + 0x340);
+        break;
+    case 2:
+        limit = *((u8 *)gWorld + 0x341);
+        break;
+    default:
+        break;
+    }
+    pw = &gWorld;
+    limit = (s16)limit;
+    if (limit > 5)
+    {
+        hi = (s8)*((u8 *)*pw + 0x2C5 + slot);
+        pos = pos - (s8)*((u8 *)*pw + 0x2C2 + slot);
+        if (pos < 0)
+        {
+            pos += limit;
+        }
+        if (pos - 1 > hi)
+        {
+            pos = hi - 1;
+        }
+        if ((u32)pos > 4)
+        {
+            pos = hi;
+        }
+    }
+    *((u8 *)*pw + kc + slot) = pos;
+    if (flag != 0)
+    {
+        mode = mode_base + 9;
+    }
+    else
+    {
+        mode = 0xB;
+    }
+    x = (gSlotTableX[slot] << 3) + ((s16)obj_last_x(gWorld->unk24C) + 4);
+    z = obj_last_y(gWorld->unk24C);
+    z = (s16)z - (pos * 0xB + (gSlotTableZ[slot] << 3)) - 0x18;
+    place_world_object(x, 0, z, (s16)mode, 0x7001);
+}
+END_NONMATCH
 
 void tile_upload_step(u16 block)
 {
