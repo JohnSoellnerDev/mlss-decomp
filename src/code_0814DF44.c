@@ -145,6 +145,26 @@ struct ZoneAnim
     s16 unk1E;
 };
 
+typedef void (*ChaseHandler)(void *owner, struct CompanionObj *obj, u32 *slot);
+typedef u8 (*ChaseMethod)(void *self, void *fn, u32 zero);
+
+struct AiBlock
+{
+    u8 filler0[0x148];
+    u32 callback;
+};
+
+struct MethodSlot
+{
+    s16 offset;
+    u16 unk2;
+    ChaseMethod fn;
+};
+
+
+u8 probe_body_hit(void *owner, struct CompanionObj *body, s32 x, s32 y, s32 z, u32 a, u32 b);
+void obj_deactivate(struct CompanionObj *obj);
+
 u32 mt19937_next(void);
 u32 rand_below(u32 range, u32 rnd);
 u32 angle_of_vector16(s32 dx, s32 dy);
@@ -592,7 +612,43 @@ void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u3
 ASM_FUNC("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void))
 
 void enter_idle_wait(struct CompanionObj *obj, u32 *slot);
-ASM_FUNC("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
+NONMATCH("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
+{
+    struct CompanionObj *body;
+    struct AiBlock *bodyAi;
+    struct AiBlock *entAi;
+    struct MethodSlot *m;
+    u8 result;
+    u8 locked;
+
+    body = obj->child;
+    entAi = (struct AiBlock *)((u8 *)obj + 0x58);
+    bodyAi = (struct AiBlock *)((u8 *)body + 0x58);
+    ((ChaseHandler)obj->handler)(parent, obj, &obj->handler);
+    if (body->handler == 0)
+        return;
+    ((ChaseHandler)body->handler)(parent, body, &body->handler);
+    m = (struct MethodSlot *)(body->methods + 0x68);
+    result = m->fn((u8 *)body + m->offset, (void *)m->fn, 0);
+    if (result == 0)
+    {
+        locked = body->flags216 & 0x20;
+        if (locked == 0 && (body->flags20C & 1) != 0)
+        {
+            if (probe_body_hit(parent, body, body->x, body->y, body->z + body->dz, 1, locked) == 0)
+                return;
+        }
+    }
+    bodyAi->callback = 0;
+    {
+        s32 f = body->flags20D;
+        f |= 8;
+        body->flags20D = f;
+    }
+    obj_deactivate(body);
+    enter_idle_wait(obj, &entAi->callback);
+}
+END_NONMATCH
 
 void entry_switch_handler(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot)
 {
