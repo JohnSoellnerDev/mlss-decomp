@@ -331,7 +331,56 @@ void obj_wait_ready_action2_external(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08060504/obj_pose_active_choose_motion.s", void obj_pose_active_choose_motion(struct ActorObj *obj))
+void obj_pose_active_choose_motion(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        struct ActorPart *part;
+        s32 mode;
+        void (*next)(struct ActorObj *);
+
+        switch (obj->param9C)
+        {
+        case 0:
+            obj->targetX = (part = obj->owner->part)->targetX + 0x1800;
+            obj->targetY = part->targetY - 2;
+            obj->targetH = part->targetH;
+            break;
+        case 1:
+            obj->targetX = (part = obj->owner->part)->targetX + 0x4000;
+            obj->targetY = part->targetY - 2;
+            obj->targetH = part->targetH;
+            break;
+        case 2:
+            obj->targetX = (part = obj->owner->part)->targetX;
+            obj->targetY = part->targetY + 2;
+            obj->targetH = part->targetH;
+            break;
+        }
+        ((struct Flags79Bit5 *)&obj->flags)->bit5 = 1;
+        obj->motionSpeed = 0x180;
+        obj->motionStart = 0;
+        start_motion(obj);
+        sprite_set_action(obj, 3, 0, 0);
+        mode = obj->param9C;
+        if (mode == 0)
+        {
+            set_slot_value(0x5C, -1);
+            next = obj_index_zero_setup_action4;
+        }
+        else if (mode == 1)
+        {
+            set_slot_value(0x5C, -1);
+            next = obj_index_zero_slot_action4_b;
+        }
+        else
+        {
+            set_slot_value(0x5C, -1);
+            next = obj_index_zero_slot_action4;
+        }
+        obj->state = next;
+    }
+}
 
 void obj_pose_active_spawn_child_b(struct ActorObj *obj)
 {
