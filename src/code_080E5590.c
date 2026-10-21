@@ -101,13 +101,10 @@ void stop_dma_channel(void)
 
 static inline void dma_window_start(u8 *base)
 {
-    u32 bank;
-
     *(vu16 *)(base + 0xA) &= 0xC5FF;
     *(vu16 *)(base + 0xA) &= 0x7FFF;
     *(vu16 *)(base + 0xA);
-    bank = gUnk_03000F98;
-    *(vu32 *)base = (u32)gUnk_03000F94 + ((bank * 5) << 7);
+    *(vu32 *)base = (u32)gUnk_03000F94 + ((gUnk_03000F98 * 5) << 7);
     *(vu32 *)(base + 4) = 0x04000040;
     *(vu32 *)(base + 8) = 0xA6600001;
     *(vu32 *)(base + 8);
@@ -133,8 +130,7 @@ NONMATCH("asm/code_080E5590/start_dma_window.s", void start_dma_window(void))
             dma_window_start((u8 *)0x040000D4);
             break;
     }
-    bank = gUnk_03000F98;
-    *(vu32 *)0x04000040 = *(u32 *)((u32)gUnk_03000F94 + ((bank * 5) << 7));
+    *(vu32 *)0x04000040 = *(u32 *)((u32)gUnk_03000F94 + (((bank = gUnk_03000F98) * 5) << 7));
     gUnk_03000F98 = bank ^ 1;
 }
 END_NONMATCH
@@ -235,16 +231,11 @@ NONMATCH("asm/code_080E5590/start_dma0_line_copy.s", void start_dma0_line_copy(v
 {
     struct DmaChannel *dma = (struct DmaChannel *)0x040000B0;
     s32 rows4;
-    s32 rows;
-    u32 stride;
 
     *(vu16 *)((u8 *)dma + 0xA) &= 0xC5FF;
     *(vu16 *)((u8 *)dma + 0xA) &= 0x7FFF;
     *(vu16 *)((u8 *)dma + 0xA);
-    rows = gUnk_03000FB0;
-    rows4 = rows << 2;
-    stride = (rows * 5) << 7;
-    dma->sad = (u32)gUnk_03000FA4 + gUnk_03000FA8 * stride;
+    dma->sad = (u32)gUnk_03000FA4 + ((((rows4 = gUnk_03000FB0 << 2) + gUnk_03000FB0) << 7) * gUnk_03000FA8);
     dma->dad = (gUnk_03000FAC << 2) + REG_ADDR_BG0HOFS;
     if (rows4 < 0)
     {
