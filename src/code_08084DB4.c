@@ -434,9 +434,116 @@ void restore_display(u8 *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_08084DB4/jump_velocity.s", void jump_velocity(void))
+NONMATCH("asm/code_08084DB4/jump_velocity.s", s32 jump_velocity(u16 *outDx, u16 *outDy, u16 *outDh, s32 tx, s32 ty, s32 h0, s32 t, s32 g, s32 damp, s32 *extra))
+{
+    s32 dist;
+    s32 disc;
+    s32 ft;
+    s32 halfC;
+    s32 arg;
+    s32 q2x4;
+    s32 n;
+    s32 sum;
+    s32 k;
+    s32 j;
+    s32 v;
+    s32 res;
 
-ASM_FUNC("asm/code_08084DB4/unknown_code_08085f6c.s", void unknown_code_08085f6c(void))
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(tx * tx + ty * ty);
+    disc = (t * (t / 2)) / 2 - (t * (h0 / 2)) / 2;
+    ft = t + MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(disc) * 2;
+    halfC = (ft * (ft / 2)) / 2;
+    arg = halfC + (dist * (dist / 4)) / 4;
+    q2x4 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(arg) * 4;
+    *outDh = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((g * ft) << 1) + (q2x4 >> 1), q2x4);
+    n = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(q2x4 + g / 2, g);
+
+    sum = 0;
+    k = n;
+    do
+    {
+        v = 0x4000;
+        j = k;
+        if (j > 0)
+        {
+            do
+            {
+                v = (v * damp) / 0x100;
+                j--;
+            } while (j != 0);
+        }
+        sum += v;
+        k--;
+    } while (k != 0);
+
+    *outDx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((tx << 14) + sum / 2, sum);
+    *outDy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((ty << 14) + sum / 2, sum);
+
+    res = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(2 * (h0 - (s16)*outDh * n) + (n * (n + 1)) / 2, n * (n + 1));
+    if (extra != NULL)
+    {
+        *extra = distance_step((s16)*outDh, res, h0);
+    }
+    return res;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08084DB4/unknown_code_08085f6c.s", s32 unknown_code_08085f6c(u16 *outDx, u16 *outDy, u16 *outDh, s32 tx, s32 ty, s32 h0, s32 t, s32 g, s32 damp, s32 *extra))
+{
+    s32 dist;
+    s32 tt;
+    s32 disc;
+    s32 ft;
+    s32 halfC;
+    s32 arg;
+    s32 q2x4;
+    s32 n;
+    s32 sum;
+    s32 k;
+    s32 j;
+    s32 v;
+    s32 res;
+
+    tt = t;
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(tx * tx + ty * ty);
+    if (h0 > 0)
+    {
+        tt += h0;
+    }
+    tt = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(tt * ((tt * (tt / 0x100)) / 0x100));
+    tt = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(tt << 14);
+    disc = (tt * (tt / 2)) / 2 - (tt * (t / 2)) / 2;
+    ft = tt + MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(disc) * 2;
+    halfC = (ft * (ft / 2)) / 2;
+    arg = halfC + (dist * (dist / 4)) / 4;
+    q2x4 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(arg) * 4;
+    *outDh = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((g * ft) << 1) + (q2x4 >> 1), q2x4);
+    n = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(q2x4 + g / 2, g);
+
+    sum = 0;
+    k = n;
+    do
+    {
+        v = 0x4000;
+        for (j = k; j > 0; j--)
+        {
+            v = (v * damp) / 0x100;
+        }
+        sum += v;
+        k--;
+    } while (k != 0);
+
+    *outDx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((tx << 14) + sum / 2, sum);
+    *outDy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((ty << 14) + sum / 2, sum);
+
+    res = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(2 * (h0 - (s16)*outDh * n) + (n * (n + 1)) / 2, n * (n + 1));
+    if (extra != NULL)
+    {
+        *extra = distance_step((s16)*outDh, res, h0);
+    }
+    return res;
+}
+END_NONMATCH
 
 s32 distance_step(s32 x, s32 y, s32 z);
 s32 sub_080861A4(s32 *dist, s32 *outX, s32 x, s32 y, s32 h, s32 n)
