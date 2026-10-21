@@ -153,6 +153,11 @@ struct World
 extern struct World *gWorld;
 extern u8 gSys[];
 
+static inline void *world_tracked_obj(void)
+{
+    return gWorld->trackedObj;
+}
+
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -181,6 +186,9 @@ void hero_a_timer_step_080be698(struct HeroBody *body);
 void hero_a_step_wait_f5c8(struct HeroBody *body);
 void hero_b_follow_partner_offset(struct HeroBody *body);
 void hero_b_ratio_release_a(struct HeroBody *body);
+void step_end_and_partner_next(struct HeroBody *body);
+void resolve_contact_action(struct HeroBody *member, struct HeroBody *partner, s32 a, s32 b, s32 code);
+extern const u8 gUnk_0800E210[];
 
 void hero_a_active_slot_pose_anim(struct HeroBody *body)
 {
@@ -428,9 +436,109 @@ void hero_a_place_pose_finish_3(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080BE0A0/hero_a_join_partner_next.s", void hero_a_join_partner_next(struct HeroBody *body))
+void hero_a_join_partner_next(struct HeroBody *joined)
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
+    struct HeroBody *owner;
+    struct Hero *walk;
+    s32 flagsByte;
+    void (*next)(struct HeroBody *);
 
-ASM_FUNC("asm/code_080BE0A0/hero_b_shift_place_pose_next.s", void hero_b_shift_place_pose_next(void))
+    if ((joined->data->slot->bits1D & 0x10) != 0)
+    {
+        next = 0;
+    }
+    else
+    {
+        body_set_pose(2, body_b, 0x2E, 8);
+        owner = joined;
+        set_slot_value(0x114, -1);
+        flagsByte = joined->data->flags111;
+        joined->data->flags111 = flagsByte | 8;
+        ((struct HeroCcBits *)&body_a->cc)->low = 0;
+        body_a->scale = 0x100;
+        resolve_contact_action(body_a, joined, 0, 0, (s32)(gUnk_0800E210 + 0x237A));
+        body_a->count++;
+        if (joined->data->flagsF6 > 0 || (joined->data->flags111 & 2) != 0)
+        {
+            s32 fx = joined->targetX / 0x100 + joined->ofsX;
+            s32 fy = joined->targetY / 0x100 + joined->ofsY;
+            effect_spawn_at(0x2E93, fx, fy, 0x16, joined);
+        }
+        joined->link = 0;
+        if (joined->data->first != 0)
+        {
+            joined->state = 0;
+            walk = (struct Hero *)joined->data;
+            if ((walk->slot->bits1C & 0x80) == 0)
+            {
+                do
+                {
+                    walk = walk->next;
+                } while ((walk->slot->bits1C & 0x80) == 0);
+            }
+            joined = &walk->body;
+            joined->frame = owner->frame;
+        }
+        joined->partner = owner;
+        if ((joined->mode & 6) == 2 || (joined->mode & 6) == 4)
+        {
+            place_targets(joined, joined->data->targetX / 0x100, joined->data->targetY / 0x100, joined->data->targetH / 0x100, -1);
+            joined->unk92 = joined->data->targetH / 0x100 + 0x60;
+            set_motion_offsets(joined, 0x600);
+        }
+        next = step_end_and_partner_next;
+    }
+    joined->state = next;
+}
+
+void hero_b_shift_place_pose_next(void)
+{
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body = &hero_b->body;
+    struct HeroSprite *sprite;
+    struct HeroSpan *span;
+    s32 ty;
+    s32 x;
+    s32 y;
+
+    if ((body->sprite->flags & 8) != 0)
+    {
+        body->targetX += 0x2000;
+        body->posX = body->targetX;
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+        {
+            ty = body->targetY;
+            if (ty < 0)
+                ty += 0xFF;
+            ty = ty >> 8;
+            x = (s16)obj_last_x(world_tracked_obj()) + 0x110;
+            y = (s16)obj_last_y(world_tracked_obj()) + ty;
+            place_targets(body, x, y, 0, -1);
+            set_motion_start(body, 0x400);
+        }
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+        {
+            if (body->data->poseIndex == -1)
+                sprite_set_action(body, 0, 0x2002, 0);
+            else
+                sprite_set_action(body, 0, 0x204F, 0);
+            sprite = body->sprite;
+            {
+                s32 flip = 0;
+                span = &body->span;
+                if (span->a >= span->b)
+                    flip = 1;
+                ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
+            }
+            ((struct HeroSpriteBits *)&body->sprite->flags)->mode = 0;
+        }
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+            body->state = hero_b_step_place_pose_finish;
+    }
+}
 
 void hero_a_effect_link_rate_next(struct HeroBody *body)
 {
