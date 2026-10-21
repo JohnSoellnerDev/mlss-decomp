@@ -200,9 +200,8 @@ void hero_a_place_at_b_target(struct Body *body)
     body->state = (u32)hero_a_place_at_child_target;
 }
 
-NONMATCH("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_at_child_target(struct Body *body))
+void hero_a_place_at_child_target(struct Body *body)
 {
-    struct Hero *heroA;
     struct Hero *heroB;
     struct Body *body_a;
     struct Body *body_b;
@@ -213,11 +212,9 @@ NONMATCH("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_a
     s32 z;
     s32 tz;
     s32 t;
-    struct World *world = gWorld;
 
-    heroA = world->heroA;
-    heroB = world->heroB;
-    body_a = &heroA->body;
+    body_a = &gWorld->heroA->body;
+    heroB = gWorld->heroB;
     body_b = &heroB->body;
     step_motion(body_a);
     k = (s8)heroB->body.ofsZ - 4;
@@ -263,7 +260,6 @@ NONMATCH("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_a
         body->state = (u32)hero_a_step_window_20e8;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_20e8(void))
 
