@@ -193,7 +193,7 @@ struct FcBits
     u8 rest : 6;
 };
 
-NONMATCH("asm/code_08025650/obj_build_message.s", void obj_build_message(struct Obj *obj, u32 unused, u32 kind, u32 index, u32 flag))
+void obj_build_message(struct Obj *obj, u32 unused, u32 kind, u32 index, u32 flag)
 {
     u8 *text = 0;
     u8 *entry;
@@ -213,7 +213,9 @@ NONMATCH("asm/code_08025650/obj_build_message.s", void obj_build_message(struct 
     {
         if ((s32)kind <= 11)
             goto check;
-        offset = ((index << 1) + index) << 2;
+        offset = index << 1;
+        offset += index;
+        offset <<= 2;
         table = (u32)gStringTable12;
     }
     entry = (u8 *)(offset + table);
@@ -258,7 +260,6 @@ check:
         obj->unk10A = 0x14;
     }
 }
-END_NONMATCH
 
 void obj_load_resources(struct Obj *obj, u16 id)
 {
