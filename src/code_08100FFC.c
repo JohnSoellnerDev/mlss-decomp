@@ -137,6 +137,26 @@ struct PartyHero
     u8 filler16[0x3C - 0x16];
 };
 
+struct FlagBits56
+{
+    u8 lo5 : 5;
+    u8 b5 : 1;
+    u8 b6 : 1;
+    u8 rest : 1;
+};
+
+struct NibbleLo
+{
+    u8 lo4 : 4;
+    u8 hi4 : 4;
+};
+
+struct WorldPart
+{
+    u8 filler0[0xFC];
+    s16 fc;
+};
+
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
 extern u8 *gParty;
@@ -156,7 +176,7 @@ void state_effect_release(void);
 void state_clear_hero_flags(void);
 void state_choose_hero(struct StateOwner *owner);
 void state_update_hero_markers(void);
-void world_mode_step(void);
+void world_mode_step(struct StateOwner *owner);
 void draw_obj_pose(struct WorldObj *obj);
 void motion_step(struct WorldObj *obj);
 u32 is_state_busy(void);
@@ -262,7 +282,70 @@ u32 process_object_chain(void)
     return modes;
 }
 
-ASM_FUNC("asm/code_08100FFC/world_mode_step.s", void world_mode_step(void))
+NONMATCH("asm/code_08100FFC/world_mode_step.s", void world_mode_step(struct StateOwner *owner))
+{
+    struct World *world;
+    struct WorldObj *entry;
+    u8 *obj;
+    struct WorldObj *part;
+    void (*method)(u8 *);
+    s32 partFc;
+    s32 delta;
+    u8 *rec;
+    u32 steps;
+    u32 value;
+    u32 phase;
+
+    if ((u8)is_state_busy() != 0)
+    {
+        return;
+    }
+    if (gWorld->flags0B & 4)
+    {
+        return;
+    }
+    entry = gWorld->curObj;
+    obj = (u8 *)entry + 8;
+    method = (void (*)(u8 *))((u32 *)*(u32 **)(obj + 0x6C))[1];
+    method(obj);
+    ((struct FlagBits56 *)&entry->flags7F)->b6 = 0;
+    ((struct FlagBits56 *)&entry->flags7F)->b5 = 0;
+    world = gWorld;
+    if (world->menuMode == 1)
+    {
+        steps = (u8)((gWorld->heroSel & 0x7F) / 3) + 1;
+        ((struct NibbleLo *)&gWorld->phase8)->lo4 = steps | (steps << 2);
+        part = *(struct WorldObj **)(obj + 0x28);
+        partFc = ((struct WorldPart *)part)->fc;
+        if ((gWorld->level2BF >> 6) <= 1)
+        {
+            rec = gWorld->table1B8 + gWorld->heroSel * 24;
+            delta = rec[0x10];
+        }
+        else
+        {
+            rec = gWorld->table1B8 + gWorld->heroSel * 24;
+            delta = rec[0x11];
+        }
+        ((struct WorldPart *)part)->fc = partFc - delta;
+    }
+    else
+    {
+        s32 lowMask = 0xF;
+        s32 highMask = -16;
+        value = ((world->counter347 & 0x7F) + 1) & lowMask;
+        world->phase8 = (highMask & world->phase8) | value;
+        world = gWorld;
+        if (world->curObj->animIndex == -2)
+        {
+            phase = world->phase8;
+            world->phase8 = (highMask & phase) | (((phase << 28) >> 26) & lowMask);
+        }
+    }
+    owner->state = (u32)state_update_hero_markers;
+    set_cur_flags(8);
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_08100FFC/state_update_hero_markers.s", void state_update_hero_markers(void))
