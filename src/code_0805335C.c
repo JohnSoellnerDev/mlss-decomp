@@ -25,7 +25,8 @@ struct ObjLists
 struct TextboxObj
 {
     u8 state;
-    u8 filler1[0x18 - 1];
+    u8 filler1[0x14 - 1];
+    void *unk14;
     const void *unk18;
     u8 unk1C;
     u8 filler1D[0x20 - 0x1D];
@@ -71,6 +72,38 @@ void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void scene_start_task(void *node, u32 kind, const void *tag, u32 arg);
 void window_anim_step(void *window);
 extern const u8 gLangBoxSizes[];
+extern const u8 gText[];
+extern u16 gUnk_02000008;
+extern u16 gUnk_02000010;
+extern u16 gUnk_02000054;
+extern u16 gUnk_02000080;
+void voice_setup_params(void *voice, void *block, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h);
+void voice_set_data_ptr(void *voice, u32 a, u32 b, void *ptr);
+s32 track_run(void *voice);
+void frame_update(void);
+void *heap_alloc(u32 size, u32 a, const void *tag, u32 c);
+u32 read_varlen_plus1(const void *src);
+void cpu_fast_set(const void *src, void *dst, u32 ctl);
+void driver_tables_init(void *block, const void *params);
+void textbox_place_style(struct TextboxObj *obj);
+extern u8 iwram_overlay[];
+extern const u8 gDriverParams[];
+extern const u8 gTagWinMap[];
+extern const u8 gTagDecomp[];
+extern const u8 gTagDriver081e37c4[];
+extern const u8 gTagVoice[];
+extern const u8 gTagTextBuf[];
+extern const u8 gTagBwsw[];
+extern const u8 gSharedBg083a26d4[];
+extern const u8 gPaletteRomA[];
+extern const u8 gPaletteRomB[];
+extern u32 (*gUnk_03000C84)();
+
+struct VoiceTrack
+{
+    u8 filler0[8];
+    u8 *data;
+};
 
 ASM_FUNC("asm/code_0805335C/textbox_setup_tiles.s", void textbox_setup_tiles(void))
 
@@ -114,7 +147,115 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0805335C/textbox_step.s", void textbox_step(void))
 
-ASM_FUNC("asm/code_0805335C/textbox_create.s", void textbox_create(void))
+NONMATCH("asm/code_0805335C/textbox_create.s", struct TextboxObj *textbox_create(struct TextboxObj *obj, u32 kind))
+{
+    u32 zero;
+    void *gfx;
+    u8 *base;
+    u32 langByte;
+    u32 lang;
+    u32 langTrack;
+    s32 margin;
+    u16 boxW;
+    u16 *map;
+    u16 *p;
+    u16 *q;
+    void *aligned;
+    u16 tile;
+    s32 x;
+    s32 y;
+
+    task_insert(obj, kind & 0xFF);
+    obj->unk18 = gTextboxTaskClass;
+    p = &gUnk_02000050;
+    *p = 0xBF;
+    p += 2;
+    *p = 0x10;
+    p -= 0x2A;
+    *p = 0;
+    frame_update();
+    obj->unk1C = 0xF0;
+    obj->unk34 = heap_alloc(0x800, 1, gTagWinMap, 0);
+    gfx = heap_alloc(0x8000, 1, gTagDecomp, 0);
+    gUnk_03000C84(gSharedBg083a26d4, gfx);
+    cpu_fast_set(gfx, (void *)0x06000000, (read_varlen_plus1(gSharedBg083a26d4) << 9) >> 11);
+    if (gfx != NULL)
+        heap_free_a(gfx);
+    if ((gSys[0x888] & 6) == 0)
+    {
+        cpu_fast_set(gPaletteRomA, &gUnk_02000080, 0x78);
+    }
+    else
+    {
+        cpu_fast_set(gPaletteRomB, &gUnk_02000080, 0x78);
+    }
+    gUnk_02000080 = 0x7FFF;
+    base = gSys;
+    *(u16 *)(base + 2) = 0xFFFF;
+    obj->unk2C = heap_alloc((u32)0x0819A4F0 - (u32)iwram_overlay, 0, gTagDriver081e37c4, 1);
+    driver_tables_init(obj->unk2C, gDriverParams);
+    obj->unk30 = heap_alloc2(0x14, 0, gTagVoice, 1);
+    obj->unk20 = heap_alloc(0x1001F, 1, gTagTextBuf, 1);
+    obj->unk24 = (void *)(((u32)obj->unk20 + 0x1F) & 0xFFFFFFE0);
+    obj->unk28 = heap_alloc(0x2000, 1, gTagBwsw, 1);
+    zero = 0;
+    cpu_fast_set(&zero, (void *)0x06004000, 0x01000008);
+    langByte = base[0x8C0];
+    lang = 0;
+    if (langByte != 7)
+        lang = langByte;
+    langTrack = ((const u32 *)(gText + 0x110DD0))[lang];
+    boxW = *(const u16 *)(gLangBoxSizes + (base[0x8C0] << 2));
+    voice_setup_params(obj->unk30, obj->unk24, boxW, 0, 0, 0, 1, 2, 5, 0);
+    voice_set_data_ptr(obj->unk30, 0, 0x48, (void *)(langTrack + 2));
+    do
+    {
+        struct VoiceTrack *track = obj->unk30;
+        u8 *data = track->data;
+
+        if (data[0] == 0xFF && data[1] == 0x0B && data[2] == 1)
+            track->data = data + 3;
+    } while ((track_run(obj->unk30) << 16) != 0);
+    map = obj->unk28;
+    tile = 0xE001;
+    y = 0;
+    aligned = obj->unk24;
+    margin = (0x1E - boxW) / 2;
+    for (; y < 16; y++)
+    {
+        map += margin;
+        if (boxW != 0)
+        {
+            for (x = 0; x < boxW; x++)
+            {
+                *map++ = tile++;
+            }
+        }
+        map += margin + 2;
+    }
+    cpu_fast_set(aligned, (void *)0x06004020, 0x1000);
+    cpu_fast_set(obj->unk28, (void *)0x06002000, 0x200);
+    p = &gUnk_02000008;
+    *p = 0x406;
+    p++;
+    *p = 0x1C02;
+    q = &gUnk_02000010;
+    *q = 0;
+    q++;
+    *q = 0;
+    q++;
+    *q = 0;
+    q++;
+    *q = 0;
+    textbox_place_style(obj);
+    p = &gUnk_02000050;
+    *p = 0xBF;
+    gUnk_02000054 = 0;
+    p -= 0x28;
+    *p = 0x3340;
+    return obj;
+}
+END_NONMATCH
 
 void textbox_update(struct TextboxObj *obj)
 {
@@ -171,7 +312,7 @@ void textbox_update(struct TextboxObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(void))
+ASM_FUNC("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(struct TextboxObj *obj))
 
 void textbox_task_free(struct TextboxObj *obj, u32 kind)
 {
