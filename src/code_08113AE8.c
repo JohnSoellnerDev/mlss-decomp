@@ -75,6 +75,13 @@ struct SpriteBits
     u8 unk3 : 5;
 };
 
+struct SpriteNode
+{
+    u8 filler0[0x04];
+    struct Sprite *sprite;
+    struct SpreadPos *pos;
+};
+
 struct World
 {
     u8 filler0[0x0C];
@@ -90,7 +97,8 @@ struct World
 
 struct Obj
 {
-    u8 filler0[0x08];
+    u8 filler0[0x04];
+    void *nodeTake4;
     struct Sprite *sprite;
     u8 filler0C[0x04];
     s32 dispX;
@@ -176,6 +184,9 @@ extern const u32 gSlotMotion[];
 extern const u16 gModeStartX[];
 extern const u16 gModeStartY[];
 extern const u16 gUnk_08202218[];
+extern const u32 gSlotAngle[];
+extern s16 gCosineTable[];
+extern s16 gSineTable[];
 
 void sprite_set_action(struct Obj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
@@ -198,8 +209,9 @@ struct Obj *obj_spawn_linked(struct Obj *owner, u32 kind, u32 flags);
 void obj_stop_anim_clear_cb(struct Obj *obj);
 void obj_start_anim1_timer(struct Obj *obj);
 void obj_stop_anim(struct Obj *obj);
-void world_link_a_setup(struct Obj *obj, u32 flag);
-void world_link_b_setup(struct Obj *obj, u32 flag);
+void world_link_a_setup(struct Obj *obj, u16 flag);
+void world_link_b_setup(struct Obj *obj, u16 flag);
+void obj_move_to_scene_target(struct Obj *obj);
 void obj_setup_motion_from_scene(struct Obj *obj);
 void obj_motion_step_a(struct Obj *obj);
 void obj_query_contact_step(struct Obj *obj);
@@ -480,7 +492,46 @@ void obj_timer_countdown_anim17(struct Obj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_setup_world_links.s", void obj_setup_world_links(void))
+void world_links_idle_step(struct Obj *obj);
+
+void obj_setup_world_links(struct Obj *obj)
+{
+    struct Obj *part;
+    struct Owner *owner;
+    u32 zero;
+
+    if (obj->sprite->mode & 8)
+    {
+        sprite_set_action(obj, 0x1C, 0, 0);
+        part = (struct Obj *)(gWorld->linkA + 8);
+        part->scene->mode = 0;
+        zero = 0;
+        part->owner = obj->owner;
+        part->unk9C = obj->unk9C;
+        part->unkA0 = obj->unkA0;
+        part->unkA4 = obj->unkA4;
+        if (((struct SpriteBits *)&part->filler76)->mode == 2)
+        {
+            world_link_a_setup(part, obj->scene->mode & 1);
+        }
+        part = (struct Obj *)(gWorld->linkB + 8);
+        part->scene->mode = zero;
+        owner = obj->owner;
+        part->owner = owner;
+        part->unk9C = obj->unk9C;
+        part->unkA0 = obj->unkA0;
+        part->unkA4 = obj->unkA4;
+        if (obj->scene->mode == 3)
+        {
+            part->owner = (struct Owner *)(gWorld->entries[(s16)owner->target->slot + 2] + 8);
+        }
+        if (((struct SpriteBits *)&part->filler76)->mode == 2)
+        {
+            world_link_b_setup(part, (obj->scene->mode >> 1) & 1);
+        }
+        obj->callback = world_links_idle_step;
+    }
+}
 
 void obj_timer_release_hold(struct Obj *obj)
 {
@@ -545,14 +596,140 @@ NONMATCH("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_t
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struct Obj *obj, u32 flag))
+NONMATCH("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struct Obj *obj, u16 flag))
+{
+    struct Obj *link;
+    struct Obj *part;
+    struct SpriteNode *take;
+    struct ChainNode *tail;
+    struct SpreadPos *pos;
+    struct ChainNode *n;
+    s32 anim;
+    s32 tmp;
+    u32 zero;
+
+    link = obj_spawn_linked(obj, 0x4031, 0);
+    anim = (obj->unk9C != 0) ? 2 : 3;
+    sprite_set_action(link, anim, 0, 0);
+    tmp = obj->posX / 0x100 - 0x1C;
+    zero = 0;
+    link->pixX = tmp;
+    link->pixY = obj->posY / 0x100 - 8;
+    link->pixZ = obj->posZ / 0x100 + 0x20;
+    link->posX = obj->posX - 0x1400;
+    link->dispX = link->posX;
+    link->posY = obj->posY - 0x800;
+    link->dispY = link->posY;
+    link->posZ = obj->posZ + 0x2000;
+    link->dispZ = link->posZ;
+    link->level = obj->level - 1;
+    link->callback = NULL;
+    ((struct KindBits *)&link->kind)->kind = 3;
+    part = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 - 8, obj->posY / 0x100 - 4, obj->posZ / 0x100 + 0x28, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+    sprite_set_action(part, 1, 0, 0);
+    part->filler79[0] |= 1;
+    part->callback = obj_spread_chain_to_hold;
+    part->chain = obj->chain;
+    obj->chain = part;
+    pos = (struct SpreadPos *)&part->filler0C;
+    pos->px = 8;
+    pos->py = -2;
+    pos->pz = zero;
+    take = sprite_node_take();
+    part->nodeTake4 = take;
+    take->sprite = part->sprite;
+    take->pos = pos;
+    tail = pos->head = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    tail = n;
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    tail = n;
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    n->next = (struct ChainNode *)zero;
+    obj->scene->mode = 1;
+    if (flag != 0)
+    {
+        obj->callback = obj_move_to_scene_target;
+    }
+    else
+    {
+        obj->callback = link_state_clear_idle;
+    }
+}
+END_NONMATCH
 
 struct Obj *obj_spawn(struct Scene *scene, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void *sprite_node_take(void);
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void link_state_clear_idle(struct Obj *obj);
 void obj_spread_chain_to_hold(struct Obj *obj);
-ASM_FUNC("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struct Obj *obj, u32 flag))
+NONMATCH("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struct Obj *obj, u16 flag))
+{
+    struct Obj *link;
+    struct Obj *part;
+    struct SpriteNode *take;
+    struct ChainNode *tail;
+    struct SpreadPos *pos;
+    struct ChainNode *n;
+    s32 anim;
+    s32 tmp;
+    u32 zero;
+
+    link = obj_spawn_linked(obj, 0x4032, 0);
+    anim = (obj->unk9C != 0) ? 2 : 3;
+    sprite_set_action(link, anim, 0, 0);
+    tmp = obj->posX / 0x100 + 0x20;
+    zero = 0;
+    link->pixX = tmp;
+    link->pixY = obj->posY / 0x100 + 8;
+    link->pixZ = obj->posZ / 0x100 + 0x20;
+    link->posX = obj->posX + 0x1800;
+    link->dispX = link->posX;
+    link->posY = obj->posY + 0x800;
+    link->dispY = link->posY;
+    link->posZ = obj->posZ + 0x2000;
+    link->dispZ = link->posZ;
+    link->level = obj->level - 1;
+    link->callback = NULL;
+    ((struct KindBits *)&link->kind)->kind = 3;
+    part = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 + 8, obj->posY / 0x100 + 4, obj->posZ / 0x100 + 0x28, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+    sprite_set_action(part, 1, 0, 0);
+    part->filler79[0] |= 1;
+    part->callback = obj_spread_chain_to_hold;
+    part->chain = obj->chain;
+    obj->chain = part;
+    pos = (struct SpreadPos *)&part->filler0C;
+    pos->px = 8;
+    pos->py = -2;
+    pos->pz = zero;
+    take = sprite_node_take();
+    part->nodeTake4 = take;
+    take->sprite = part->sprite;
+    take->pos = pos;
+    tail = pos->head = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    tail = n;
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    tail = n;
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    tail->next = n;
+    n->next = (struct ChainNode *)zero;
+    obj->scene->mode = 1;
+    if (flag != 0)
+    {
+        obj->callback = obj_move_to_scene_target;
+    }
+    else
+    {
+        obj->callback = link_state_clear_idle;
+    }
+}
+END_NONMATCH
 
 void obj_begin_effect(struct Obj *obj)
 {
@@ -577,7 +754,56 @@ void obj_begin_effect(struct Obj *obj)
 ASM_FUNC("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part(struct Obj *obj))
 
 void obj_release_when_motion_done(struct Obj *obj);
-ASM_FUNC("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
+NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
+{
+    s32 *ang;
+    s32 *dst;
+    s32 angle;
+    s32 idx;
+    s32 cs;
+    s32 sn;
+    s32 base;
+    s32 next;
+
+    if ((obj->sprite->mode & 6) == 2)
+    {
+        if ((obj->sprite->mode & 8) != 0)
+        {
+            obj_release(obj);
+            sound_stop_song(0x10C);
+            return;
+        }
+    }
+    angle = obj->unk98 + 0x8000;
+    ang = &obj->unk98;
+    if (angle < 0)
+    {
+        angle = obj->unk98 + 0x80FF;
+    }
+    idx = (angle >> 8) & 0xFF;
+    cs = gCosineTable[idx];
+    obj->dispX = (cs / 0x40) * 0x18 + 0x5000;
+    sn = gSineTable[idx];
+    obj->dispY = (sn / 0x40) * 0x10 + 0x6C00;
+    dst = &obj->unk98;
+    base = *ang;
+    if (obj->scene->mode != 0)
+    {
+        next = base + gSlotAngle[obj->slot];
+    }
+    else
+    {
+        next = base - gSlotAngle[obj->slot];
+    }
+    *dst = next;
+    if ((u32)(*ang - 0x4000) > 0x8000)
+    {
+        place_targets(obj, -0x20, obj->posY / 0x100, obj->posZ / 0x100, 0x100);
+        set_motion_start(obj, gSlotMotion[obj->slot]);
+        obj->callback = obj_release_when_motion_done;
+    }
+}
+END_NONMATCH
 
 void obj_finish_motion(struct Obj *obj);
 
