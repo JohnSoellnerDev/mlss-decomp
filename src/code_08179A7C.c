@@ -513,6 +513,7 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_aaa0.s", void obj_model
     s32 x2;
     s32 pos;
     s32 t;
+    s32 base;
 
     words = obj->data;
     zoom = *words++;
@@ -545,7 +546,9 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_aaa0.s", void obj_model
         l.y = y2;
         z2 = (z1 * (gCosineTable[64] / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
         l.z = z2;
-        z3 = (z2 * (gCosineTable[82] / 0x40) - (gSineTable[82] / 0x40) * l.x) / 0x100;
+        base = z2;
+        base = base * (gCosineTable[82] / 0x40);
+        z3 = (base - (gSineTable[82] / 0x40) * l.x) / 0x100;
         l.z = z3;
         x2 = (l.x * (gCosineTable[82] / 0x40) + (gSineTable[82] / 0x40) * z2) / 0x100;
         l.x = x2;
@@ -631,6 +634,7 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_acd8.s", void obj_model
     s32 x2;
     s32 pos;
     s32 t;
+    s32 base;
 
     words = obj->data;
     zoom = *words++;
@@ -663,7 +667,9 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_acd8.s", void obj_model
         l.y = y2;
         z2 = (z1 * (gCosineTable[64] / 0x40) + (gSineTable[64] / 0x40) * y1) / 0x100;
         l.z = z2;
-        z3 = (z2 * (gCosineTable[82] / 0x40) - (gSineTable[82] / 0x40) * l.x) / 0x100;
+        base = z2;
+        base = base * (gCosineTable[82] / 0x40);
+        z3 = (base - (gSineTable[82] / 0x40) * l.x) / 0x100;
         l.z = z3;
         x2 = (l.x * (gCosineTable[82] / 0x40) + (gSineTable[82] / 0x40) * z2) / 0x100;
         l.x = x2;
