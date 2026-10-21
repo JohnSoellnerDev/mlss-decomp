@@ -104,6 +104,13 @@ struct SpriteObj
     u16 unk124;
 };
 
+struct EntryBits12
+{
+    u8 b0 : 1;
+    u8 b12 : 2;
+    u8 rest : 5;
+};
+
 struct ObjFlags77
 {
     u8 filler0[0x77];
@@ -267,7 +274,7 @@ END_NONMATCH
 s32 update_positions_to_target(struct SpriteObj *obj);
 void link_actor_if_free(struct SpriteObj *obj);
 void ramp_values_then_remove(struct SpriteObj *obj);
-NONMATCH("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(struct SpriteObj *obj))
+void spawn_child_4025_adopt(struct SpriteObj *obj)
 {
     struct SpriteObj *part;
     struct SpriteObj *partBody;
@@ -295,7 +302,7 @@ NONMATCH("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_ado
     child->unk6C = partBody->unk6C;
     ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
     ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
-    child->entry->flags &= ~6;
+    ((struct EntryBits12 *)&child->entry->flags)->b12 = 0;
     child->callback = link_actor_if_free;
     child->timer = 0x1E;
     child->child = obj->child;
@@ -311,15 +318,16 @@ NONMATCH("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_ado
     }
     else
     {
-        if (obj->unkA0 <= 2)
+        switch (obj->unkA0)
         {
-            if (obj->unkA0 >= 1)
-                child->unk10 = 0x10000;
+        case 1:
+        case 2:
+            child->unk10 = 0x10000;
+            break;
         }
     }
     obj->callback = ramp_values_then_remove;
 }
-END_NONMATCH
 
 static inline s32 scale_by_18(s32 h)
 {
