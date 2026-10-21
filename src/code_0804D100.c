@@ -80,6 +80,8 @@ struct ObjFlags0
     u8 bit7 : 1;
 };
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
 u32 tile_ptr_at(u8 *obj, s16 x, s16 y);
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
@@ -113,7 +115,58 @@ s32 obj_on_tile_18(struct TileObj *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_0804D100/obj_tile_corners_check.s", void obj_tile_corners_check(void))
+NONMATCH("asm/code_0804D100/obj_tile_corners_check.s", u32 obj_tile_corners_check(struct TileObj *obj))
+{
+    s32 outA;
+    s32 outB;
+    s32 outC;
+    s32 x0;
+    s32 x1;
+    s32 yLo;
+    s32 y;
+    s32 h;
+    s32 zTop;
+    u32 w;
+    s32 t;
+
+    w = obj->unk278;
+    x0 = obj->unkC - (w >> 1);
+    t = x0 - 0x100;
+    x1 = t + w;
+    y = obj->unk10;
+    t = y + 0x100;
+    yLo = t - obj->unk27C;
+    h = obj->unk14 + obj->unk18;
+    if (h < 0)
+        h = 0;
+    zTop = obj->unk27A + h;
+
+    tile_query(obj->layer290, x0, yLo, &outA, &outB, &outC, (u8)1, (u8)1);
+    if (h < outA)
+        return 1;
+    if (h < outC && zTop >= outB)
+        return 1;
+
+    tile_query(obj->layer290, x1, yLo, &outA, &outB, &outC, (u8)1, (u8)1);
+    if (h < outA)
+        return 1;
+    if (h < outC && zTop >= outB)
+        return 1;
+
+    tile_query(obj->layer290, x0, y, &outA, &outB, &outC, (u8)1, (u8)1);
+    if (h < outA)
+        return 1;
+    if (h < outC && zTop >= outB)
+        return 1;
+
+    tile_query(obj->layer290, x1, y, &outA, &outB, &outC, (u8)1, (u8)1);
+    if (h < outA)
+        return 1;
+    if (h >= outC || zTop < outB)
+        return 0;
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0804D100/snap_to_tile_edge.s", void snap_to_tile_edge(void))
 
