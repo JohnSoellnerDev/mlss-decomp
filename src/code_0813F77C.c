@@ -133,7 +133,7 @@ void obj_set_sprite_link(struct Enemy *obj, u32 value);
 void obj_set_active(struct Enemy *obj, u32 value);
 void obj_set_cell_coord(struct Enemy *obj, u32 cell, u32 arg);
 void enemy_sibling_noop_state(void);
-void enemy_run_move(void);
+void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out);
 void enemy_hop_fall_then_next(void);
 void enemy_after_fall_check_box(void);
 void enemy_fall_step(void);
@@ -151,6 +151,10 @@ extern const u8 gFrameAttrTable[];
 u8 find_active_entry(struct Owner *owner, u8 *idx);
 void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index);
 u8 point_in_box(s16 *bounds, struct Enemy *obj, s32 zMaxIn, s32 zMinIn);
+void enemy_kick_after_probe(struct Owner *owner, struct Enemy *ent, EnemyFn *out);
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
+u8 z_approach(struct Enemy *ent);
+u8 step_pos_xy_plain(struct Enemy *ent);
 void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset);
 u8 boxes_overlap_oriented(s16 *box, struct Enemy *a, struct Enemy *b, s32 zAbove, s32 zBelow);
 
@@ -371,13 +375,133 @@ void enemy_group_sibling_setup(struct Owner *owner, struct Enemy *ent)
         obj_set_sprite_link(ent, 0);
         ((struct Bit2 *)&ent->unk20D)->bit2 = 0;
         ent->state = enemy_sibling_noop_state;
-        ent->nextHandler = enemy_run_move;
+        ent->nextHandler = (EnemyFn)enemy_run_move;
     }
 }
 
-ASM_FUNC("asm/code_0813F77C/enemy_run_move.s", void enemy_run_move(void))
+NONMATCH("asm/code_0813F77C/enemy_run_move.s", void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+{
+    u8 zero = 0;
+    u8 one = 1;
+    s16 box[8];
+    u8 k;
+    u16 *sensor;
+    s32 outA;
+    s32 outB;
+    s32 outC;
+    s32 xNext;
+    s32 yNext;
+    s32 (*div)(s32, s32);
+    s32 half;
+    s32 cornerDx;
+    s32 offsetY;
+    s32 cornerX;
+    s32 cornerY;
+    u8 *tile;
+    u8 approached;
+    u16 vxr;
 
-ASM_FUNC("asm/code_0813F77C/enemy_kick_after_probe.s", void enemy_kick_after_probe(void))
+    sensor = ent->sensor;
+    xNext = ent->x + ent->vx;
+    yNext = ent->y + ent->vy;
+    if (ent->frames != 0)
+    {
+        for (k = 0; k < ((u8 *)sensor)[0xB]; k++)
+        {
+            obj_box_to_stack(box, ent, 0x22, (((u32)k << 19) + 0xC0000) >> 16);
+            if (!(ent->x >= (box[0] << 8) && ent->x <= (box[1] << 8) && ent->y >= (box[3] << 8) && ent->y <= (box[2] << 8)))
+            {
+                if (xNext >= (box[0] << 8) && xNext <= (box[1] << 8) && yNext >= (box[3] << 8) && yNext <= (box[2] << 8))
+                {
+                    ent->x -= ent->vx;
+                    ent->y -= ent->vy;
+                    ent->frames = 0;
+                }
+            }
+        }
+    }
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    half = div(*(u16 *)((u8 *)ent + 0x272), 2);
+    if (ent->vx <= 0)
+    {
+        cornerDx = 0;
+        if (ent->vx < 0)
+        {
+            cornerDx = -half;
+        }
+    }
+    else
+    {
+        cornerDx = half;
+    }
+    if (ent->vy <= 0)
+    {
+        offsetY = -*(u16 *)((u8 *)ent + 0x276);
+    }
+    else
+    {
+        offsetY = 0;
+    }
+    cornerX = ent->x + ent->vx + cornerDx;
+    cornerY = ent->y + ent->vy + offsetY;
+    vxr = *(u16 *)((u8 *)ent + 0x242);
+    if ((vxr | *(u16 *)((u8 *)ent + 0x244)) != 0)
+    {
+        tile = tile_query(ent->map, cornerX, cornerY, &outA, &outB, &outC, zero, one);
+        if ((*tile & 0x80) != 0)
+        {
+            ent->vx = 0;
+            ent->vy = 0;
+        }
+    }
+    step_pos_xy_plain(ent);
+    approached = z_approach(ent);
+    if (approached == 0)
+    {
+        ((struct Bit6 *)&ent->unk20D)->bit6 = 1;
+        ((struct Bit2 *)&ent->unk20E)->bit2 = 0;
+        obj_set_cell_coord(ent, 0, 0);
+        enemy_kick_after_probe(owner, ent, out);
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0813F77C/enemy_kick_after_probe.s", void enemy_kick_after_probe(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+{
+    u8 found;
+    s32 h0;
+    s32 h1;
+    s32 h2;
+    u8 *tile;
+    u8 *table;
+    struct Enemy *partner;
+    u32 idx;
+    u16 strength;
+    u16 offset;
+
+    table = (u8 *)ent + 0x100;
+    tile = obj_probe_tile_heights(ent, ent->x / 0x1000, ent->y / 0x1000, &h0, &h1, &h2);
+    if ((*tile & 0x80) != 0)
+    {
+        ((struct Bit5 *)&ent->unk1D6)->bit5 = 1;
+        return;
+    }
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    if (find_active_entry(owner, &found) != 0)
+    {
+        idx = found;
+    }
+    else
+    {
+        idx = ((u32)owner->flags208 << 30) >> 31;
+    }
+    partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
+    strength = ((u16 *)table)[rand_below(4, mt19937_next())];
+    offset = ((u16 *)table)[rand_below(2, mt19937_next()) + 0x18];
+    collide_react(owner, ent, partner, offset, strength, (s8)table[0x40], (s8)table[0x41], 0x22, 0);
+    *out = enemy_run_until_contact;
+}
+END_NONMATCH
 
 
 ASM_FUNC("asm/code_0813F77C/enemy_run_until_contact.s", void enemy_run_until_contact(void))
