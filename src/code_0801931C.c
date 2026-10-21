@@ -148,7 +148,8 @@ u32 slot_bit_test(u32 i);
 void slot_reset(u32 idx);
 void set_slot_fields(u32 idx, u8 level, u8 period);
 void set_ramp0_target(u8 level, u8 period);
-u8 move_complete_records(u8 *base);
+u8 move_complete_records(u8 *base, u32 unused, u32 arg2, u32 arg3);
+struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data);
 
 void set_slot_target(u32 idx, u32 value, u32 mode)
 {
@@ -415,44 +416,7 @@ void reset_state_0c28(void)
     gUnk_03000C78 = 0;
 }
 
-NONMATCH("asm/code_0801931C/table_register.s", u32 table_register(struct RegEntry *p))
-{
-    s32 idx;
-    s32 count;
-
-    if (gUnk_03000C78 == (u32)sub_0800063C)
-    {
-        if (p->state > 1)
-            return 0;
-        idx = gUnk_03000D08;
-        count = 0;
-        if (gUnk_03000C88[idx] != 0)
-        {
-            if (gUnk_03000C88[idx]->key == p->key)
-                return 0;
-            while (gUnk_03000C88[idx] != 0)
-            {
-                idx++;
-                idx %= 32;
-                count++;
-                if (count > 31)
-                    return 0;
-                if (gUnk_03000C88[idx] == 0)
-                    break;
-                if (gUnk_03000C88[idx]->key == p->key)
-                    return 0;
-            }
-        }
-        gUnk_03000C88[idx] = p;
-        p->state = 2;
-        gUnk_03000C80++;
-        return 1;
-    }
-    ((void (*)(u32, u32))gUnk_03000C84)(p->unk4, p->key);
-    p->state = 0;
-    return 0;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_0801931C/table_register.s", u32 table_register(struct RegEntry *p))
 
 // The original loop was unrolled by the compiler; the remainder entry differs slightly.
 NONMATCH("asm/code_0801931C/read_varlen_plus1.s", u32 read_varlen_plus1(u8 *p))
@@ -475,15 +439,18 @@ NONMATCH("asm/code_0801931C/read_varlen_plus1.s", u32 read_varlen_plus1(u8 *p))
             shift += 8;
         } while (--count != 0);
     }
-    return v + 1;
+    v += 1;
+    return v;
 }
 END_NONMATCH
 
-// The original loads the table end a second time from the literal pool; GCC keeps it in a register.
+// The original loads the table end a second time from its own literal pool entry; GCC shares one.
 NONMATCH("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
 {
-    s32 len = (u32)sub_0800063C - (u32)decompress_routine;
-    u8 *buf = heap_alloc(len, 0, gHeapTags + 0x48, 0);
+    s32 len = (u32)sub_0800063C;
+    u8 *buf;
+    len -= (u32)decompress_routine;
+    buf = heap_alloc(len, 0, gHeapTags + 0x48, 0);
     gUnk_03000C84 = (u32)buf;
     if (len < 0)
         len += 3;
@@ -494,72 +461,7 @@ NONMATCH("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0801931C/task_insert.s", struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data))
-{
-    struct ListNode *q;
-    struct ListNode *next;
-    u8 *dst;
-    u32 cnt = 0;
-
-    task->desc = (void *)gDefaultTaskDesc;
-    if (SYS_AREA->listHead == 0)
-    {
-        SYS_AREA->listHead = task;
-        task->prev = 0;
-        task->next = 0;
-    }
-    else
-    {
-        q = SYS_AREA->listHead;
-        for (;;)
-        {
-            if (q->unk1 > prio)
-            {
-                if (q->prev == 0)
-                    SYS_AREA->listHead = task;
-                else
-                    q->prev->next = task;
-                task->prev = q->prev;
-                task->next = q;
-                q->prev = task;
-                break;
-            }
-            next = q->next;
-            if (next == 0)
-            {
-                q->next = task;
-                task->prev = q;
-                task->next = next;
-                cnt++;
-                break;
-            }
-            q = next;
-            cnt++;
-        }
-    }
-    task->unk14 = SYS_AREA->current;
-    task->unk3 = (task->unk3 & 3) | (cnt << 2);
-    task->unk0 = 0;
-    task->unk1 = prio;
-    {
-        int b = task->unk2;
-        b |= 1;
-        b |= 2;
-        b &= -0x3D;
-        b |= 4;
-        task->unk2 = b;
-    }
-    *(u16 *)&task->unk2 = *(u16 *)&task->unk2 & ~0x3C0;
-    task->unk4 = 0;
-    dst = task->unk8;
-    dst[0] = data[0];
-    dst[1] = data[1];
-    dst[2] = data[2];
-    dst[3] = data[3];
-    SYS_AREA->taskCount++;
-    return task;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_0801931C/task_insert.s", struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data))
 
 ASM_FUNC("asm/code_0801931C/run_tasks.s", void run_tasks(void))
 
@@ -669,25 +571,9 @@ void serial_link_shutdown(void)
 
 ASM_FUNC("asm/code_0801931C/serial_frame.s", void serial_frame(void))
 
-NONMATCH("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
-{
-    u16 *hw;
-    s32 sum;
-    u32 zero;
+ASM_FUNC("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
 
-    gUnk_03000D0C->buf1C[0] = gUnk_03000D0C->unkB;
-    gUnk_03000D0C->buf1C[1] = gUnk_03000D0C->unk2 ^ gUnk_03000D0C->unk3;
-    zero = 0;
-    ((u16 *)gUnk_03000D0C->buf1C)[1] = zero;
-    cpu_set(gUnk_03000D10 + 2, gUnk_03000D0C->buf1C + 4, 0x04000004);
-    hw = (u16 *)gUnk_03000D0C->buf1C;
-    sum = hw[0] + hw[1] + hw[2] + hw[3] + hw[4] + hw[5] + hw[6] + hw[7] + hw[8] + hw[9];
-    hw[1] = ~sum - 0xC;
-    gUnk_03000D0C->unk4 = 1;
-}
-END_NONMATCH
-
-ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base))
+ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base, u32 unused, u32 arg2, u32 arg3))
 
 void serial_link_update(void)
 {
@@ -768,7 +654,46 @@ struct GfxObj
     void *data2C;
 };
 
-ASM_FUNC("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struct ListNode *obj, u8 kind, u8 *taskData, void *data))
+NONMATCH("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struct ListNode *obj, u8 kind, u8 *taskData, void *data))
+{
+    u8 *base;
+    struct GfxObj *g;
+    u16 *shadow;
+    u32 flags;
+
+    task_insert(obj, kind, taskData);
+    g = (struct GfxObj *)obj;
+    g->handler = (void *)gObjHandler;
+    base = gSys;
+    flags = base[0x88A];
+    flags &= -9;
+    base[0x88A] = flags;
+    g->unk1C = 0x10;
+    g->data2C = data;
+    g->unk1E = 0;
+    g->unk20 = 0;
+    g->unk24 = 0;
+    g->unk28 = 0;
+    cpu_fast_set(gObjInitBgPalette, gUnk_02000080, 0x80);
+    dma_copy_or_queue((void *)gObjInitBgTiles, (void *)0x06008000, 0x4000, 0x20, 0);
+    dma_copy_or_queue((void *)gScreenMapObjInit, (void *)0x06000000, 0x500, 0x20, 0);
+    *(u32 *)(base + 0x884) |= 0xFFFF;
+    {
+        int hw = *(u16 *)(base + 2);
+        hw |= 0xFFFF;
+        *(u16 *)(base + 2) = hw;
+    }
+    frame_update();
+    shadow = gUnk_02000050;
+    shadow[0] = 0xBF;
+    gUnk_02000054 = 0x10;
+    shadow = (u16 *)((u8 *)shadow - 0x48);
+    *shadow = 0x88;
+    shadow = (u16 *)((u8 *)shadow - 8);
+    *shadow = 0x140;
+    return obj;
+}
+END_NONMATCH
 
 void task_remove(struct ListNode *task, u32 flags);
 ASM_FUNC("asm/code_0801931C/anim_state_step.s", void anim_state_step(void))
