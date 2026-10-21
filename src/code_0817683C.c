@@ -273,7 +273,9 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin5_736c.s", void obj_zoom_spin5_736c(str
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        z2 = (z1 * (gCosineTable[angle & 0xFF] / 0x40) - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        y2 = z1;
+        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -370,7 +372,9 @@ NONMATCH("asm/code_0817683C/obj_zoom_spin6_75d4.s", void obj_zoom_spin6_75d4(str
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        z2 = (z1 * (gCosineTable[angle & 0xFF] / 0x40) - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        y2 = z1;
+        y2 = y2 * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (y2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
         l.x = x2;
