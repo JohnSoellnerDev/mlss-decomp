@@ -916,7 +916,7 @@ void obj_rise_point(struct Point1Obj *obj)
     *words = vy;
 }
 
-NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Point1Obj *obj))
+void obj_spin_model10(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
@@ -930,6 +930,7 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
     s32 *p1;
     s32 *p2;
     u32 *pslot;
+    s16 *cb;
     s16 *cs;
     s16 *sn;
     s32 vx;
@@ -938,6 +939,7 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
     s32 z1;
     s32 x2;
     s32 z2;
+    s32 idx;
     s32 t;
     s32 pos;
 
@@ -965,9 +967,11 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         z2 = z1;
-        cs = &gCosineTable[angle & 0xFF];
+        cb = gCosineTable;
+        idx = angle & 0xFF;
+        cs = cb + idx;
         z2 = z2 * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
+        sn = &gSineTable[idx];
         z2 = (z2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
@@ -1013,7 +1017,6 @@ NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Po
     *words++ = step;
     *words = angle;
 }
-END_NONMATCH
 
 void obj_pulse_model8(struct Point1Obj *obj)
 {
@@ -1102,9 +1105,15 @@ void obj_pulse_model8(struct Point1Obj *obj)
     *words = vel;
 }
 
-NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct Point1Obj *obj))
+void obj_tilt45_model4(struct Point1Obj *obj)
 {
     struct Point1Local l;
+    s16 *cb;
+    s16 *sb;
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     s32 x1;
     s32 zoom;
     s32 vel;
@@ -1116,7 +1125,6 @@ NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct 
     s32 *p1;
     s32 *p2;
     u32 *pslot;
-    s16 *cs;
     s32 vx;
     s32 y1;
     s32 z1;
@@ -1148,16 +1156,21 @@ NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct 
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        cs = &gCosineTable[64];
+        cb = gCosineTable;
+        cs = cb + 64;
         t = t * (*cs / 0x40);
-        y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
+        sb = gSineTable;
+        sn = sb + 64;
+        y2 = (t - (*sn / 0x40) * z1) / 0x100;
         l.y = y2;
-        l.z = ((z1 * (*cs / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        l.z = ((z1 * (*cs / 0x40)) + ((*sn / 0x40) * y1)) / 0x100;
         t = x1;
-        t = t * (gCosineTable[32] / 0x40);
-        x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
+        cs2 = cb + 32;
+        t = t * (*cs2 / 0x40);
+        sn2 = sb + 32;
+        x2 = (t - (*sn2 / 0x40) * y2) / 0x100;
         l.x = x2;
-        l.y = ((y2 * (gCosineTable[32] / 0x40)) + ((gSineTable[32] / 0x40) * x1)) / 0x100;
+        l.y = ((y2 * (*cs2 / 0x40)) + ((*sn2 / 0x40) * x1)) / 0x100;
 
         if (obj->flags & 0x80) {
             t = obj->posX;
@@ -1196,7 +1209,6 @@ NONMATCH("asm/code_0818AA98/obj_tilt45_model4.s", void obj_tilt45_model4(struct 
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
 void obj_pulse_model6(struct Point1Obj *obj)
 {
