@@ -59,6 +59,7 @@ void mt19937_seed(u32 state, u32 seed);
 u32 point_in_box(s16 *bounds, struct SceneObj *obj, s32 zMaxIn, s32 zMinIn);
 
 extern u8 *gWorld;
+extern u8 *gMemRoutines;
 extern void (*gUnk_03000FE0)(void);
 void vcount_store(u8 *out);
 void run_task_list(u8 *list);
@@ -68,7 +69,11 @@ void world_init(void);
 void load_vram_tiles(void *p);
 void set_text_ptrs(u32 value);
 void set_cur_flags_both(u32 value);
-void world_objects_tick(void);
+void world_objects_tick(u32 *owner);
+void obj_list_remove(void *obj);
+void clear_list_entries(void);
+void state_wait_free_slots(void);
+void state_select_target(void);
 void release_timer_tiles(void);
 void set_irq_callback(u32 kind, void *cb);
 void obj_release(void *obj);
@@ -87,6 +92,17 @@ struct FlagBit6
     u8 lo6 : 6;
     u8 b6 : 1;
     u8 b7 : 1;
+};
+struct Lo2Bits
+{
+    u8 lo2 : 2;
+    u8 hi6 : 6;
+};
+struct Bit4Bits
+{
+    u8 lo4 : 4;
+    u8 b4 : 1;
+    u8 hi3 : 3;
 };
 void owner_release(u8 *owner, u32 mode);
 u32 world_entry_ready(void);
@@ -329,7 +345,44 @@ ASM_FUNC("asm/code_080FBF10/boxes_overlap.s", u32 boxes_overlap(s16 *bounds, str
 
 ASM_FUNC("asm/code_080FBF10/boxes_overlap_oriented.s", u32 boxes_overlap_oriented(s16 *box, struct SceneObj *a, struct SceneObj *b, s32 zAbove, s32 zBelow))
 
-ASM_FUNC("asm/code_080FBF10/find_active_entry.s", u8 find_active_entry(u8 *owner, u8 *out))
+NONMATCH("asm/code_080FBF10/find_active_entry.s", u8 find_active_entry(u8 *owner, u8 *out))
+{
+    u32 select;
+    u32 sel;
+    struct SceneObj *entry;
+    u32 ready;
+    u8 *slot;
+    struct SceneObj *other;
+
+    select = owner[0x208];
+    sel = ((u32)select << 29) >> 31;
+    entry = *(struct SceneObj **)(owner + 0x28 + (sel << 2));
+    ready = ((u32)entry->unk20C << 31) >> 31;
+    ready &= ((u32)entry->unk352 << 28) >> 31;
+    ready &= ((u32)entry->unk20D << 30) >> 31;
+    if (ready != 0)
+    {
+        *out = sel;
+    }
+    else
+    {
+        slot = owner + 0x28;
+        if ((select & 4) == 0)
+        {
+            slot += 4;
+        }
+        other = *(struct SceneObj **)slot;
+        ready = ((u32)other->unk20C << 31) >> 31;
+        ready &= ((u32)other->unk352 << 28) >> 31;
+        if (ready == 0)
+        {
+            return 0;
+        }
+        *out = ((select >> 2) ^ 1) & 1;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 point_in_box(s16 *bounds, struct SceneObj *obj, s32 zMaxIn, s32 zMinIn)
 {
@@ -837,8 +890,76 @@ void owner_wait_entry(u8 *owner)
 void state_prepare_world(u32 *slot);
 ASM_FUNC("asm/code_080FBF10/world_begin_scene.s", void world_begin_scene(void))
 
-ASM_FUNC("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(u32 *slot))
+NONMATCH("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(u32 *slot))
+{
+    u8 ready;
 
-ASM_FUNC("asm/code_080FBF10/world_objects_tick.s", void world_objects_tick(void))
+    ready = world_entry_ready();
+    if (ready == 0)
+    {
+        load_vram_tiles(*(void **)(gWorld + 0x250));
+        set_text_ptrs(0);
+        *(u8 *)(gWorld + 0x34A) = 0xFF;
+        *(u8 *)(gWorld + 0x34C) = 0xFF;
+        *(u8 *)(gWorld + 0x34E) = 0xFF;
+        *(u8 *)(gWorld + 0x350) = 0x80;
+        *(u8 *)(gWorld + 0x34B) = 0xFF;
+        *(u8 *)(gWorld + 0x34D) = 0xFF;
+        *(u8 *)(gWorld + 0x34F) = 0xFF;
+        *(u8 *)(gWorld + 0x351) = 0x80;
+        ((void (*)(u32, void *, u32))gMemRoutines)(0x33333333, (void *)0x06017600, 0x200);
+        ((struct Lo2Bits *)(gWorld + 0xA))->lo2 = 2;
+        set_cur_flags_both(1);
+        *(u16 *)(*(u8 **)(gWorld + 0x2D8) + 0xA) = ready;
+        slot[1] = (u32)world_objects_tick;
+    }
+}
+END_NONMATCH
+
+void world_objects_tick(u32 *owner)
+{
+    s32 i;
+    u8 *obj;
+    u8 *list;
+    s32 off;
+    u32 zero;
+    void (*next)(void);
+    void (*cb)(u8 *);
+
+    for (i = 0, zero = 0; i < 8; i++)
+    {
+        list = gWorld;
+        off = i << 2;
+        list = list + 0x58;
+        obj = *(u8 **)(list + off);
+        cb = *(void (**)(u8 *))(obj + 0x70);
+        if (cb != 0)
+        {
+            cb(obj + 8);
+        }
+        if (*(void **)(obj + 0x10) != 0)
+        {
+            obj_list_remove(obj + 8);
+            *(u16 *)(obj + 0xB6) = zero;
+            *(u16 *)(obj + 0xB8) = zero;
+            *(u16 *)(obj + 0xBA) = zero;
+            obj[0x7E] &= 0x7F;
+            ((struct Bit4Bits *)(obj + 0x80))->b4 = 0;
+            *(u32 *)(obj + 0x74) = zero;
+            *(u32 *)(obj + 0x70) = zero;
+            *(u32 *)(obj + 0x5C) = zero;
+        }
+    }
+    clear_list_entries();
+    if (gWorld[4] == 0 || gWorld[5] == 0)
+    {
+        next = state_wait_free_slots;
+    }
+    else
+    {
+        next = state_select_target;
+    }
+    owner[1] = (u32)next;
+}
 
 ASM_FUNC("asm/code_080FBF10/state_select_target.s", void state_select_target(void))
