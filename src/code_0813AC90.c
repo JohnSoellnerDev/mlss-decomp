@@ -117,7 +117,7 @@ void step_move_set_state_8(void);
 s8 wander_to_edge(struct Obj *obj, u16 steps, s32 dist);
 s8 wander_diag(struct Obj *obj, s32 x, s32 y);
 u32 angle_of_vector16(s32 x, s32 y);
-u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, u8 param4, u8 param5, u16 param6, u16 param7);
+u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 param5, u16 param6, u16 param7);
 void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
 void random_cell_setup(struct Obj *obj, u32 callback);
 u8 point_in_box(s16 *bounds, struct Obj *entry, s32 zMax, s32 zMin);
@@ -127,6 +127,7 @@ void obj_box_to_stack(s16 *out, struct Obj *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Obj *obj, u32 flags, u32 offset);
 u32 mt19937_next(void);
 s32 rand_below(s32 range, u32 seed);
+u32 tile_blocks_move(struct Obj *obj, s32 x, s32 y, s32 pos, s32 span, u8 dir, u16 *flags);
 
 s8 zone_point_code(struct Obj *obj, struct Obj *zone, s32 margin)
 {
@@ -226,15 +227,112 @@ NONMATCH("asm/code_0813AC90/box_hit_kind.s", u32 box_hit_kind(struct Obj *owner,
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0813AC90/probe_body_hit.s", void probe_body_hit(void))
+u8 probe_body_hit(struct Obj *ctx, struct Obj *obj, s32 x, s32 y, s32 mode, u8 flag, u16 *extra)
+{
+    s32 px;
+    u32 hit;
+
+    hit = tile_blocks_move(ctx, x, y, mode, obj->unk27A, flag, extra);
+    if ((u8)hit != 0)
+        return 1;
+    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
+    px = x - px;
+    hit = tile_blocks_move(ctx, px, y - obj->unk27C, mode, obj->unk27A, flag, extra);
+    if ((u8)hit != 0)
+        return 1;
+    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
+    px = px + x;
+    hit = tile_blocks_move(ctx, px, y - obj->unk27C, mode, obj->unk27A, flag, extra);
+    if ((u8)hit != 0)
+        return 1;
+    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
+    px = x - px;
+    hit = tile_blocks_move(ctx, px, y, mode, obj->unk27A, flag, extra);
+    if ((u8)hit != 0)
+        return 1;
+    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
+    px = px + x;
+    hit = tile_blocks_move(ctx, px, y, mode, obj->unk27A, flag, extra);
+    return (u8)hit;
+}
 
 ASM_FUNC("asm/code_0813AC90/box_overlap_xy.s", void box_overlap_xy(void))
 
-ASM_FUNC("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero))
+NONMATCH("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero))
+{
+    s32 frames;
+
+    if (zero.value != 0)
+    {
+        x += obj->x;
+        y += obj->y;
+    }
+    obj->startX = obj->x;
+    obj->startY = obj->y;
+    obj->targetX = x;
+    obj->targetY = y;
+    x -= obj->x;
+    y -= obj->y;
+    x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x, 0x10);
+    y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(y, 0x10);
+    obj->zSpan = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(x * x + y * y) << 4;
+    frames = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zSpan, speed);
+    obj->moveFrames = frames;
+    obj->steps = frames;
+    if ((u16)frames != 0)
+    {
+        obj->vx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x << 4, obj->steps);
+        obj->vy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(y << 4, obj->steps);
+    }
+    else
+    {
+        obj->vy = 0;
+        obj->vx = 0;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0813AC90/start_move_to_b.s", void start_move_to_b(void))
 
-ASM_FUNC("asm/code_0813AC90/start_move_to_3d.s", void start_move_to_3d(void))
+void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, s32 speed, ByteArg zero)
+{
+    s32 frames;
+
+    if (zero.value != 0)
+    {
+        x += obj->x;
+        y += obj->y;
+        z += obj->z + obj->dz;
+    }
+    obj->startX = obj->x;
+    obj->startY = obj->y;
+    obj->zStart = obj->z + obj->dz;
+    obj->targetX = x;
+    obj->targetY = y;
+    obj->zTarget = z;
+    x -= obj->x;
+    y -= obj->y;
+    z -= obj->z + obj->dz;
+    x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x, 0x10);
+    y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(y, 0x10);
+    z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(z, 0x10);
+    obj->zSpan = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(x * x + y * y + z * z) << 4;
+    frames = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zSpan, speed);
+    obj->moveFrames = frames;
+    obj->steps = frames;
+    if ((u16)frames != 0)
+    {
+        obj->vx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x << 4, obj->steps);
+        obj->vy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(y << 4, obj->steps);
+        obj->zSpeed = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(z << 4, obj->steps);
+    }
+    else
+    {
+        obj->zSpeed = 0;
+        obj->vy = 0;
+        obj->vx = 0;
+    }
+}
 
 ASM_FUNC("asm/code_0813AC90/wander_to_edge.s", s8 wander_to_edge(struct Obj *obj, u16 steps, s32 dist))
 
@@ -242,7 +340,75 @@ ASM_FUNC("asm/code_0813AC90/wander_diag.s", s8 wander_diag(struct Obj *obj, s32 
 
 ASM_FUNC("asm/code_0813AC90/collide_react.s", void collide_react(void))
 
-ASM_FUNC("asm/code_0813AC90/collide_wander_diag.s", void collide_wander_diag(void))
+NONMATCH("asm/code_0813AC90/collide_wander_diag.s", s8 collide_wander_diag(u32 unused, struct Obj *obj, struct Obj *other, u16 size, u16 speed, s8 dirA, s8 dirB, u16 extA, u16 extB))
+{
+    u8 code;
+    s32 keep;
+    u32 facing;
+    s32 sector;
+
+    keep = 1;
+    code = collide_boxes(obj, other, size, dirA, dirB, extA, extB);
+    if (code == 0xFF)
+        goto wander;
+    if (code != 2)
+    {
+        if (code != 8)
+            goto wander;
+    }
+    if (code != 1)
+    {
+        if (code != 4)
+            keep = 0;
+    }
+    if (keep == 0)
+        goto wander;
+    if (code & 2)
+    {
+        if (code & 1)
+        {
+            start_move_to(obj, size, -size, speed, (u8)1);
+            code = 0;
+            goto done;
+        }
+        if (code & 4)
+        {
+            start_move_to(obj, size, size, speed, (u8)1);
+            code = 1;
+        }
+        goto done;
+    }
+    if ((code & 8) == 0)
+        goto done;
+    if (code & 1)
+    {
+        start_move_to(obj, -size, -size, speed, (u8)1);
+        code = 3;
+        goto done;
+    }
+    if ((code & 4) == 0)
+        goto done;
+    start_move_to(obj, -size, size, speed, (u8)1);
+    code = 2;
+    goto done;
+
+wander:
+    code = wander_diag(obj, size, speed);
+done:
+    if (((u16)obj->vx | (u16)obj->vy) != 0)
+        facing = ((u32)(u16)angle_of_vector16(obj->vx, obj->vy) + 0x10) >> 8;
+    else
+        facing = 0xFF;
+    obj->facing = facing;
+    if (((u16)obj->vx | (u16)obj->vy) != 0)
+        sector = (((u16)angle_of_vector16(obj->vx, obj->vy) + 0x1000) >> 13) & 7;
+    else
+        sector = -1;
+    sector &= 7;
+    ((struct Lo3 *)&obj->sector)->lo3 = sector;
+    return (s8)code;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
 {
@@ -293,7 +459,7 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
 }
 END_NONMATCH
 
-u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, u8 param4, u8 param5, u16 param6, u16 param7)
+u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 param5, u16 param6, u16 param7)
 {
     s16 box[8];
     s32 xMin;
