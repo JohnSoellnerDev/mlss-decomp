@@ -581,7 +581,7 @@ NONMATCH("asm/code_08171CAC/sprite_list_draw.s", void sprite_list_draw(struct Po
         l.y = y2;
         t = z1;
         t = t * (gCosineTable[0] / 0x40);
-        l.z = (t + ((gSineTable[0] / 0x40) * y1)) / 0x100;
+        l.z = (t + (gSineTable[0] / 0x40) * y1) / 0x100;
         l.y = y2 - 0x400;
 
         if (obj->flags & 0x80) {
