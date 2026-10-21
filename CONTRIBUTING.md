@@ -221,6 +221,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   Sometimes the index needs its own variable as well, computed right after the copy of the
   coordinate: `y2 = z1; idx = angle & 0xFF; cs = &gCosineTable[idx];` with `s32 idx`
   (`obj_zoom_spin8_0308` in src/code_0817FD84.c).
+  When the original loads the table symbol and adds the offset (`ldr r6, =gCosineTable; adds r6,
+  #0x80`) but `&gCosineTable[64]` gives one pool word `gCosineTable+0x80`, take the base into its
+  own pointer first: `cb = gCosineTable; cs = cb + 64;`, pointers declared first
+  (`obj_tilt45_model4` in src/code_0818AA98.c, `obj_turn_zoom4_6310` in src/code_08186128.c).
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
