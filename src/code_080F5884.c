@@ -50,6 +50,16 @@ struct SlotByteFD
     u8 hi : 4;
 };
 
+struct WorldBits2BF
+{
+    u8 filler0[0x2BF];
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
 struct OwnerState
 {
     u8 filler0[0x179C];
@@ -111,19 +121,17 @@ ASM_FUNC("asm/code_080F5884/cmd_slot_set_field.s", void cmd_slot_set_field(void)
 
 NONMATCH("asm/code_080F5884/cmd_slot_link_list.s", u32 cmd_slot_link_list(u32 unused0, u32 unused1, u32 *cmd))
 {
-    struct World *world;
     u32 *cursor;
-    u8 *entry;
     u8 *obj;
-    u8 *flags;
-    s32 mode;
+    u8 *entry;
     s32 f;
+    s32 mode;
     s32 s;
     s32 bit;
+    u8 *flags;
 
     cursor = cmd;
-    world = gWorld;
-    entry = world->slots[*cursor++];
+    entry = gWorld->slots[*cursor++];
     obj = entry + 8;
     mode = *cursor++;
     switch (mode)
@@ -139,7 +147,7 @@ NONMATCH("asm/code_080F5884/cmd_slot_link_list.s", u32 cmd_slot_link_list(u32 un
                         *(s32 *)(obj + 0x40) / 0x100, obj);
         break;
     case 1:
-        list_splice_pair(entry, world->slots[*cursor]);
+        list_splice_pair(entry, gWorld->slots[*cursor]);
         break;
     case 2:
         s = *cursor;
@@ -326,7 +334,8 @@ NONMATCH("asm/code_080F5884/cmd_slot_set_bits.s", u32 cmd_slot_set_bits(u32 unus
         u8 *ptr;
         s32 mask;
 
-        cur[0x80] = cur[0x80] & (mask = -0x11);
+        mask = -0x11;
+        cur[0x80] = cur[0x80] & mask;
         ptr = *(u8 **)(cur + 0x10);
         if (ptr != 0)
         {
@@ -475,6 +484,7 @@ NONMATCH("asm/code_080F5884/slot_follow_source.s", u32 slot_follow_source(struct
     u8 *srcPos;
     s32 d;
     u16 v;
+    u16 *field;
 
     if (owner->state->slotCode <= 6)
     {
@@ -491,26 +501,31 @@ NONMATCH("asm/code_080F5884/slot_follow_source.s", u32 slot_follow_source(struct
     *(u32 *)(dst + 0xBC) = *(u32 *)(src + 0xBC);
     v = *(u16 *)(src + 0xC0);
     *(u16 *)(dst + 0xC0) = v;
-    v = *(u16 *)(src + 0xC2);
-    *(u16 *)(dst + 0xC2) = v;
+    *(u16 *)(dst + 0xC2) = *(u16 *)(src + 0xC2);
+    field = (u16 *)(src + 0xC4);
     d = *(s32 *)(dstPos + 0x38) - *(s32 *)(srcPos + 0x38);
     if (d < 0)
     {
         d += 0xFF;
     }
-    *(u16 *)(dst + 0xC4) = (d >> 8) + *(u16 *)(src + 0xC4);
+    v = (d >> 8) + *field;
+    *(u16 *)(dst + 0xC4) = v;
+    field = (u16 *)(src + 0xC6);
     d = *(s32 *)(dstPos + 0x3C) - *(s32 *)(srcPos + 0x3C);
     if (d < 0)
     {
         d += 0xFF;
     }
-    *(u16 *)(dst + 0xC6) = (d >> 8) + *(u16 *)(src + 0xC6);
+    v = (d >> 8) + *field;
+    *(u16 *)(dst + 0xC6) = v;
+    field = (u16 *)(src + 0xC8);
     d = *(s32 *)(dstPos + 0x40) - *(s32 *)(srcPos + 0x40);
     if (d < 0)
     {
         d += 0xFF;
     }
-    *(u16 *)(dst + 0xC8) = (d >> 8) + *(u16 *)(src + 0xC8);
+    v = (d >> 8) + *field;
+    *(u16 *)(dst + 0xC8) = v;
     *(u32 *)(dst + 0xBC) = 0;
     return 1;
 }
@@ -549,15 +564,47 @@ NONMATCH("asm/code_080F5884/cmd_set_scroll.s", u32 cmd_set_scroll(u32 unused0, u
     }
     world->unk35C = bits;
     gWorld->unk35E = 0;
-    a0 = (u16 *)(obj + 0xA0);
-    old = *a0;
-    add = cursor[1] ? 0x500 : 0x100;
-    *a0 = old | add;
+    old = *(u16 *)(obj + 0xA0);
+    *(u16 *)(obj + 0xA0) = old | (cursor[1] ? 0x500 : 0x100);
     return 0;
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F5884/cmd_flags_show.s", void cmd_flags_show(void))
+u32 cmd_flags_show(u32 unused0, u32 unused1, u32 *cmd)
+{
+    u32 flags;
+    s32 limit;
+    u8 *sub;
+
+    flags = *cmd;
+    if ((flags & 1) != 0)
+    {
+        if ((flags & 4) != 0 || gWorld->unk4 != 0)
+        {
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gUnk_02000080, gWorkBuf + 0x3AF0, 0x400);
+            ((struct WorldBits2BF *)gWorld)->bit3 = 1;
+            sub = gWorld->unk248;
+            if ((*cmd & 2) != 0)
+            {
+                limit = 0x7FFF;
+            }
+            else
+            {
+                limit = 0;
+            }
+            sub_08115F54(sub, 4, limit, 0x10, 0xFFFF, 0xFFFF, 0, 0);
+        }
+        else
+        {
+            menu_open_setup();
+        }
+    }
+    else
+    {
+        ((struct WorldBits2BF *)gWorld)->bit5 = 1;
+    }
+    return 1;
+}
 
 u32 list_slot_ops_cmd_world_mode(u32 unused0, u32 unused1, s32 *cmd)
 {
