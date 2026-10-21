@@ -64,7 +64,8 @@ struct Obj
     u16 speed2;
     u8 filler240[0x242 - 0x240];
     u16 vx;
-    u8 filler244[0x248 - 0x244];
+    u16 vy;
+    u8 filler246[0x248 - 0x246];
     u32 stepLen;
     u8 filler24C[0x294 - 0x24C];
     struct Cell *cell;
@@ -129,7 +130,7 @@ u32 position_blocked(struct Obj *parent, struct Obj *obj, u32 x, u32 y, u32 z);
 void reset_record_fields(struct Obj *obj);
 u32 mt19937_next(void);
 u8 step_pos_xy_c(struct Obj *obj);
-void wander_to_edge(struct Obj *obj, u16 a, s16 b);
+void wander_to_edge(struct Obj *obj, u16 a, s32 b);
 void tick_store(void);
 s32 rand_below(s32 range, u32 seed);
 void run_state_handler(void);
@@ -183,8 +184,54 @@ END_NONMATCH
 
 void enemy_axis_limit_step(struct Obj *parent, struct Obj *obj, u32 *slot);
 void start_drop_slot(struct Obj *parent, struct Obj *obj, u32 *slot);
-void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, u16 speed, u8 flag);
-ASM_FUNC("asm/code_0814AEAC/enemy_pose_move.s", void enemy_pose_move(struct Obj *parent, struct Obj *obj, u32 *slot))
+void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, u16 speed, ByteArg flag);
+NONMATCH("asm/code_0814AEAC/enemy_pose_move.s", void enemy_pose_move(struct Obj *parent, struct Obj *obj, u32 *slot))
+{
+    u8 *ai;
+    u8 *rec;
+    u16 *timer;
+    s32 dy;
+    s32 dx;
+    s32 dist;
+    s32 xStep;
+    s32 yStep;
+    s32 zdz;
+    s32 homeZ;
+    s32 zTarget;
+    u8 frame;
+    u16 speed;
+    u8 one;
+    s32 hoverOffset;
+
+    hoverOffset = -0x2000;
+    ai = (u8 *)obj + 0x58;
+    rec = obj->boxTab;
+    dx = obj->homeX - obj->x;
+    dy = obj->homeY - obj->y;
+    dist = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy), 0x100);
+    frame = rec[obj->index + 0x40];
+    xStep = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx, dist) * frame;
+    yStep = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy, dist) * frame;
+    zdz = obj->z + obj->dz;
+    homeZ = obj->homeZ + obj->homeDZ;
+    if (zdz > homeZ)
+    {
+        zTarget = 0x2000;
+    }
+    else
+    {
+        zTarget = homeZ - (zdz + hoverOffset);
+    }
+    timer = (u16 *)(ai + 0x178);
+    speed = *(u16 *)(rec + *timer * 2 + 0x38);
+    one = 1;
+    start_move_to_3d(obj, xStep, yStep, zTarget, speed, one);
+    ((struct ModeBits *)&obj->mode)->low3 = 4;
+    obj->cell->unk20 = rec[*timer + 0x34];
+    slot[0] = (u32)enemy_axis_limit_step;
+    slot[1] = (u32)start_drop_slot;
+}
+END_NONMATCH
 void start_vertical_move(struct Obj *parent, struct Obj *obj, u32 *slot);
 void enemy_axis_limit_step(struct Obj *parent, struct Obj *obj, u32 *slot)
 {
@@ -604,11 +651,170 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0814AEAC/hop_fall.s", void hop_fall(struct Obj *parent, struct Obj *obj))
+NONMATCH("asm/code_0814AEAC/hop_fall.s", void hop_fall(struct Obj *parent, struct Obj *obj))
+{
+    s32 t;
+    s32 q;
+    s32 scale;
+    s32 dzPart;
+
+    if (obj->phase == 0)
+    {
+        obj->zNextAdj = obj->z + 0xA00;
+        obj->zNext = obj->z + obj->dz;
+        obj->zScale = obj->zNextAdj - obj->zNext;
+        obj->zspeed = 0x200;
+        obj->speed2 = 0x200;
+        t = obj->zScale * 2 + 0x200;
+        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((t >> 1) - 0x40000, t);
+        obj->stepLen = -q;
+        if (obj->stepLen == 0)
+        {
+            obj->stepLen = 1;
+        }
+        obj->phase = 1;
+        return;
+    }
+    if (obj->phase != 1)
+    {
+        return;
+    }
+    scale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
+    if (scale != 0)
+    {
+        dzPart = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(scale * scale);
+        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale * (s16)obj->zspeed, dzPart);
+    }
+    obj->zspeed -= obj->stepLen;
+    if ((s16)obj->zspeed < 0 && obj->dz <= 0x400)
+    {
+        obj->dz = 0;
+        ((struct Bit2Byte *)&obj->flags20F)->bit2 = 0;
+        if ((u8)position_blocked(parent, obj, obj->x, obj->y, obj->z + obj->dz) != 0)
+        {
+            set_state(parent, obj, 0xC);
+        }
+        else
+        {
+            set_state(parent, obj, 7);
+        }
+    }
+}
+END_NONMATCH
 
 void vertical_step(struct Obj *parent, struct Obj *obj);
 void walk_step_or_restart(struct Obj *parent, struct Obj *obj);
-ASM_FUNC("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_state(struct Obj *parent, struct Obj *obj, u8 state))
+u32 distance_xy(struct Obj *a, struct Obj *b);
+void hop_fall(struct Obj *parent, struct Obj *obj);
+NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_state(struct Obj *parent, struct Obj *obj, u8 state))
+{
+    u16 *tab;
+    s32 chaseSpeed;
+    s32 zs;
+    s32 dist;
+    u32 pick;
+    u16 frames;
+    u16 margin;
+    u16 speed;
+    u32 *tgtp;
+    struct Obj *target;
+
+    tab = (u16 *)((u8 *)obj + 0x100);
+    if (state == 0)
+    {
+        *((u8 *)obj + 0x210) |= 0x20;
+        obj->timer = 0x50;
+        frames = tab[rand_below(4, mt19937_next())];
+        margin = tab[rand_below(2, mt19937_next()) + 0x18];
+        wander_to_edge(obj, margin, frames);
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)idle_wander;
+    }
+    else if (state == 1)
+    {
+        *((u8 *)obj + 0x210) |= 0x20;
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)chase_active_entry;
+    }
+    else if (state == 2)
+    {
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)enemy_land_wait_sprite;
+    }
+    else if (state == 4)
+    {
+        u8 zero;
+
+        chaseSpeed = 0x580;
+        tgtp = &parent->tgtA;
+        zero = 0;
+        target = (struct Obj *)*tgtp;
+        start_move_to(obj, target->x, target->y, chaseSpeed, zero);
+        target = (struct Obj *)*tgtp;
+        obj->vx = target->x + (s16)target->vx * 6 - obj->x;
+        obj->vy = target->y + (s16)target->vy * 6 - obj->y;
+        distance_xy(obj, target);
+        obj->vx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)obj->vx, 0x20);
+        obj->vy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)obj->vy, 0x20);
+        obj->zNextAdj = obj->z + obj->dz + 0x2800;
+        obj->zNext = obj->z + obj->dz;
+        obj->zScale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 1);
+        obj->zspeed = chaseSpeed;
+        obj->speed2 = chaseSpeed;
+        zs = obj->zScale * 2 + chaseSpeed;
+        dist = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((zs >> 1) - 0x1E4000, zs);
+        obj->stepLen = -dist;
+        if (obj->stepLen == 0)
+        {
+            obj->stepLen = 1;
+        }
+        *((u8 *)obj + 0x20F) |= 4;
+        state_change_hook(parent, obj, 4);
+        pick = rand_below(0x64, mt19937_next());
+        if (pick > 0x13)
+        {
+            *(u32 *)((u8 *)obj + 0x1A0) = (u32)aim_ahead_step;
+        }
+        else
+        {
+            *(u32 *)((u8 *)obj + 0x1A0) = (u32)vertical_step;
+        }
+    }
+    else if (state == 7)
+    {
+        *((u8 *)obj + 0x210) |= 0x20;
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)wait_then_box_check;
+    }
+    else if (state == 9)
+    {
+        u8 zero;
+
+        pick = rand_below(4, mt19937_next());
+        speed = tab[pick];
+        zero = 0;
+        start_move_to(obj, obj->homeX, obj->homeY, speed, zero);
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)walk_step_or_restart;
+    }
+    else if (state == 0xA)
+    {
+        pick = rand_below(4, mt19937_next());
+        obj->timer = tab[pick + 0x14];
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)tick_store;
+        *(u32 *)((u8 *)obj + 0x1AC) = (u32)idle_wander;
+    }
+    else if (state == 0xB)
+    {
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)vertical_step;
+    }
+    else if (state == 0xC)
+    {
+        *((s8 *)obj + 0x210) &= -0x21;
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)sidestep_drift;
+    }
+    else if (state == 0xD)
+    {
+        *((s8 *)obj + 0x210) &= -0x21;
+        *(u32 *)((u8 *)obj + 0x1A0) = (u32)hop_fall;
+    }
+}
+END_NONMATCH
 
 void sprite_step_e6a0(void *obj);
 ASM_FUNC("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state))
@@ -731,7 +937,7 @@ void save_home_and_wander(struct Obj *parent, struct Obj *obj)
 }
 void tick_store(void);
 u8 step_pos_xy_c(struct Obj *obj);
-void wander_to_edge(struct Obj *obj, u16 a, s16 b);
+void wander_to_edge(struct Obj *obj, u16 a, s32 b);
 void set_idle_slot(struct Obj *parent, struct Obj *obj, u32 *slot)
 {
     u8 *box = obj->boxTab;
