@@ -185,10 +185,186 @@ u32 slot_bit_test(u32 a);
 void serial_start_phase_2(void);
 void serial_clear_phase(void);
 void serial_enter_phase_1(void);
+void give_reward(u32 item, u32 amount, u32 flag);
 
 ASM_FUNC("asm/code_080EA8A0/set_obj_flag.s", void set_obj_flag(void))
 
-ASM_FUNC("asm/code_080EA8A0/cmd_update_and_store.s", void cmd_update_and_store(void))
+NONMATCH("asm/code_080EA8A0/cmd_update_and_store.s", u32 cmd_update_and_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid))
+{
+    u32 *cur;
+    u32 index;
+    s32 kind;
+    u32 sel;
+    u32 amount;
+    u32 result;
+    u8 *addr;
+
+    cur = cmd;
+    index = *cur++;
+    kind = *cur++;
+    switch (kind)
+    {
+    case 0:
+        sel = *cur++;
+        switch (((s32)sel >> 7) - 1)
+        {
+        case 0:
+            addr = gParty + 0xBA + (sel & 0x7F);
+            break;
+        case 1:
+            addr = gParty + 0xF2 + (sel & 0x7F);
+            break;
+        case 3:
+            addr = gParty + 0x8A + (sel & 0x7F);
+            break;
+        case 2:
+            addr = gParty + 0xAA + (sel & 0x7F);
+            break;
+        case 5:
+            addr = gParty + 0x12A + (sel & 0x7F);
+            break;
+        case 4:
+            cur--;
+            goto bit_path;
+        }
+        {
+            u32 mode;
+            u8 cell = *addr;
+
+            amount = (cell == 0xFF) ? 0 : cell;
+            mode = *cur++;
+            switch (mode)
+            {
+            case 0:
+                {
+                    u32 delta = *cur;
+
+                    amount = (u16)((s16)amount + delta);
+                    give_reward((u8)((s32)sel >> 7), sel & 0x7F, (u8)delta);
+                    result = *addr == (s16)amount;
+                }
+                break;
+            case 1:
+                {
+                    u32 diff = ((s16)amount - *cur) << 16;
+
+                    amount = diff >> 16;
+                    if ((s32)diff < 0)
+                    {
+                        *addr = 0;
+                        result = 0;
+                    }
+                    else
+                    {
+                        *addr = amount;
+                        result = 1;
+                    }
+                }
+                break;
+            }
+        }
+        break;
+    case 1:
+        {
+            u32 sub;
+
+            cur++;
+            sub = *cur++;
+            switch (sub)
+            {
+            case 0:
+                {
+                    s32 sum = *(u16 *)(gParty + 0x88) + *cur;
+
+                    amount = (u16)sum;
+                    if ((s16)sum > 9999)
+                    {
+                        amount = 9999;
+                        result = 0;
+                    }
+                    else
+                    {
+                        result = 1;
+                    }
+                }
+                break;
+            case 1:
+                {
+                    u32 diff = (*(u16 *)(gParty + 0x88) - *cur) << 16;
+
+                    amount = diff >> 16;
+                    if ((s32)diff < 0)
+                    {
+                        amount = 0;
+                        result = 0;
+                    }
+                    else
+                    {
+                        result = 1;
+                    }
+                }
+                break;
+            }
+            *(u16 *)(gParty + 0x88) = amount;
+        }
+        break;
+    case 2:
+    bit_path:
+        {
+            u32 src = cur[0];
+            u32 mode = cur[1];
+            s32 bitsrc = src;
+
+            addr = gParty + 0xB2 + (((s32)(src & 0x7F)) >> 3);
+            if ((s32)src < 0)
+            {
+                bitsrc = src + 7;
+            }
+            amount = (0x10000u << (src - ((bitsrc >> 3) << 3))) >> 16;
+            switch (mode)
+            {
+            case 0:
+                {
+                    u32 cell = *addr;
+
+                    if (((s16)amount & cell) != 0)
+                    {
+                        result = 0;
+                    }
+                    else
+                    {
+                        *addr = cell | amount;
+                        result = 1;
+                    }
+                }
+                break;
+            case 1:
+                {
+                    u32 cell = *addr;
+
+                    if (((s16)amount & cell) == 0)
+                    {
+                        result = 0;
+                    }
+                    else
+                    {
+                        *addr = cell & ~amount;
+                        result = 1;
+                    }
+                }
+                break;
+            }
+        }
+        break;
+    }
+
+    if ((s32)index >= 0)
+    {
+        set_var(mid, (u8 *)obj + 0x18, 0, 0, (s16)index, result);
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 cmd_read_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid)
 {
