@@ -194,7 +194,72 @@ u32 lookup_part(struct ActionObj *obj);
 u32 lookup_link_slot(struct ActionObj *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActionObj *owner);
 
-ASM_FUNC("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_step(struct ActionObj *obj))
+NONMATCH("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_step(struct ActionObj *obj))
+{
+    struct ActionObj *effect;
+    struct ActionRecord *rec;
+    s32 t;
+    s32 q;
+    s32 y;
+    u32 key;
+    s32 anim;
+    s32 *accum;
+    s16 *steps;
+    s32 *p;
+    s32 c;
+
+    if (obj->effectTimer != 0)
+    {
+        t = (s16)(--obj->effectCount);
+        if (t == 0)
+        {
+            effect = obj_spawn_linked(obj, 0x4137, 0);
+            effect->childFlags |= 1;
+            effect->level = t;
+            effect->timer = obj->timer + 1;
+            rec = obj->record;
+            key = rec->unk16 | ((((u32)rec->unk1E << 28) >> 16) + 0x1000);
+            if (key == 0x4136)
+            {
+                anim = rec->unk21 + 2;
+            }
+            else
+            {
+                anim = 0;
+            }
+            sprite_set_action(effect, anim, 0, 0);
+            effect->record->unk23 = obj->record->unk23;
+            effect->record->flags |= 0x10;
+            effect->state = wait_progress_then_return_or_destroy;
+            set_motion_from_value(effect, 0xC);
+            obj->effectCount = 3;
+            obj->effectTimer--;
+        }
+    }
+
+    obj->posX = (obj->dirX * *(accum = &obj->accum)) / *(steps = &obj->steps) + obj->unk1C;
+    obj->posY = (obj->dirY * *accum) / *steps + obj->unk1E;
+    q = *accum / 0x100 - *steps;
+    obj->posZ = obj->level * (q * q);
+    c = (u16)obj->counter + 0x14;
+    obj->counter = c;
+    *accum += obj->counter;
+    q = *accum / 0x100;
+    if (q > *steps * 2)
+    {
+        p = &obj->targetX;
+        *p = 0x10000;
+        obj->posX = 0x10000;
+        p = p + 1;
+        y = obj->part->targetY;
+        *p = y;
+        obj->posY = y;
+        obj->posZ = 0x12C00;
+        sound_stop_song(0x10F);
+        obj->state = start_move_to_part;
+    }
+}
+END_NONMATCH
 
 void start_move_to_part(struct ActionObj *obj)
 {
