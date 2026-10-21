@@ -681,4 +681,56 @@ void actor_jump_to_target_b(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08069778/obj_jump_arc.s", void obj_jump_arc(struct ActorObj *obj))
+NONMATCH("asm/code_08069778/obj_jump_arc.s", void obj_jump_arc(struct ActorObj *obj))
+{
+    struct ActorObj *child = obj->child;
+
+    if (child->param9C != 0)
+    {
+        obj->param9C = 0x300;
+        obj->paramA0 = 0x66;
+        obj->state = jump_obj_fall_step;
+        obj_release(child);
+    }
+    else
+    {
+        s32 x;
+        s32 y;
+
+        x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+        obj->posX = x;
+        y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
+        obj->posY = y;
+        {
+            s32 offset = (s16)obj->timer - obj->paramA0 / 2;
+
+            obj->posH = (offset * offset) * obj->param9C + (obj->targetH << 8) + ((s16)obj->dh << 8);
+        }
+        child->posX = x;
+        child->posY = obj->posY;
+        child->posH = obj->posH;
+        obj->timer++;
+        if ((s16)obj->timer == obj->paramA0 / 2)
+        {
+            u32 variant;
+
+            if (obj->targetY == 1)
+                variant = 0x2000;
+            else
+                variant = 0x204D;
+            sprite_set_action(obj, 6, variant, 0);
+            ((struct PoseModeBits *)&obj->pose->flags)->mode = 1;
+        }
+        if ((s16)obj->timer > obj->paramA0)
+        {
+            if (obj->targetY == 1)
+                sprite_set_action(obj, 4, 0x2000, 0);
+            else
+                sprite_set_action(obj, 4, 0x204D, 0);
+            obj->targetX--;
+            obj->posH = 0;
+            obj->state = actor_aim_and_count;
+        }
+    }
+}
+END_NONMATCH
