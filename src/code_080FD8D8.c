@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct FigWorld
 {
@@ -53,6 +54,39 @@ struct ObjCounter121
     u8 hi : 1;
 };
 
+struct ObjFlags122
+{
+    u8 filler0[0x122];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
+struct ObjMode7E
+{
+    u8 filler0[0x7E];
+    u8 lo : 1;
+    u8 mode : 2;
+    u8 hi : 5;
+};
+
+struct FigFlags2C0
+{
+    u8 filler0[0x2C0];
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 hi3 : 3;
+};
+
+struct ObjFlags11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 hi : 1;
+};
+
 struct Owner;
 
 struct ObjMode12
@@ -74,6 +108,10 @@ struct FigObj
 
 extern struct FigWorld *gWorld;
 extern u8 *gWorkBuf;
+extern u8 gSys[];
+extern u16 gGlyphIndexTable[];
+extern u32 gMapTable[];
+extern u8 gUnk_02000440[];
 u8 step_motion(struct FigPart *part);
 void sprite_set_action(struct FigPart *part, u32 action, u32 arg, u32 extra);
 u8 is_state_busy(void);
@@ -101,8 +139,56 @@ void state_select_by_status(struct StateOwner *owner);
 s32 signed_byte_e4(void *part);
 void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void state_restore_saved_when_flag(void);
+void refresh_sprite_state(void);
+void noop_stub_080826AC(void);
+void world_objects_tick(void);
+void state_menu_open_active(void);
+void state_select_targets(void);
+void create_status_objects(void);
+void hero_select_begin(void);
 
-ASM_FUNC("asm/code_080FD8D8/state_start.s", void state_start(void))
+NONMATCH("asm/code_080FD8D8/state_start.s", void state_start(struct StateOwner *owner))
+{
+    u32 left;
+    u8 *obj;
+    u16 *status;
+    u32 cb;
+    s32 unk18;
+
+    obj = gWorld->cur;
+    sprite_load_active_tables();
+    unk18 = owner->unk18;
+    cb = (u32)state_wait_menu;
+    if (unk18 != 0)
+        cb = (u32)state_ready_check;
+    owner->callback = cb;
+    ((struct ObjFlags122 *)obj)->bit5 = 0;
+    status = (u16 *)(obj + 0x11E);
+    if (*status & 0x100)
+    {
+        left = ((struct ObjCounter121 *)obj)->counter - 1;
+        ((struct ObjCounter121 *)obj)->counter = left;
+        if ((left & 7) == 0)
+        {
+            anim_bit100_release(obj);
+            *(u32 *)(gWorkBuf + 0x8E58) = owner->callback;
+            owner->callback = (u32)state_call_saved_if_flag;
+        }
+    }
+    else if (*status & 0x200)
+    {
+        left = ((struct ObjCounter121 *)obj)->counter - 1;
+        ((struct ObjCounter121 *)obj)->counter = left;
+        if ((left & 7) == 0)
+        {
+            place_and_start_action5(obj + 8, 0x10, 0x500);
+            *(u32 *)(gWorkBuf + 0x8E58) = owner->callback;
+            owner->callback = (u32)state_call_active_callback;
+            *status &= 0xFCFF;
+        }
+    }
+}
+END_NONMATCH
 
 void state_ready_check(struct StateOwner *owner)
 {
@@ -206,7 +292,59 @@ void state_wait_menu(struct StateOwner *owner)
 
 ASM_FUNC("asm/code_080FD8D8/state_update_bits.s", void state_update_bits(void))
 
-ASM_FUNC("asm/code_080FD8D8/state_camera.s", void state_camera(void))
+void state_camera(struct StateOwner *owner)
+{
+    u8 *obj;
+    u8 *fig1;
+    u8 *fig2;
+    u32 ready;
+    s32 mask;
+    s32 off;
+    void (*fn)(struct StateOwner *);
+
+    obj = gWorld->cur;
+    ready = is_state_busy();
+    if (ready != 0)
+        return;
+    if (((struct ObjMode7E *)obj)->mode == 2)
+    {
+        if (*(u32 *)(obj + 0xE8) != 0)
+        {
+            fig1 = gWorld->fig[0];
+            fig2 = gWorld->fig[1];
+            if (fig1 != 0 && ((struct ObjMode7E *)fig1)->mode == 1)
+                *(u32 *)(fig1 + 0x74) = ready;
+            if (fig2 != 0 && ((struct ObjMode7E *)fig2)->mode == 1)
+                *(u32 *)(fig2 + 0x74) = 0;
+            ((struct FigFlags2C0 *)gWorld)->bit4 = 0;
+            noop_stub_080826AC();
+            *(u32 *)(gWorkBuf + 0x8E58) = (u32)state_menu_open_active;
+            owner->callback = (u32)state_menu_open_active;
+            off = 0x122;
+            mask = ~0x40;
+            *(gWorld->list[0] + off) &= mask;
+            *(gWorld->list[1] + off) &= mask;
+            *(gWorld->list[2] + off) &= mask;
+            *(gWorld->list[3] + off) &= mask;
+            *(gWorld->list[4] + off) &= mask;
+            *(gWorld->list[5] + off) &= mask;
+            *(gWorld->list[6] + off) &= mask;
+            *(gWorld->list[7] + off) &= mask;
+            ((struct FigFlags2C0 *)gWorld)->bit3 = 1;
+        }
+        else
+        {
+            owner->callback = (u32)world_objects_tick;
+        }
+    }
+    else
+    {
+        refresh_sprite_state();
+        fn = (void (*)(struct StateOwner *))state_select_targets;
+        owner->callback = (u32)fn;
+        fn(owner);
+    }
+}
 
 NONMATCH("asm/code_080FD8D8/state_message.s", void state_message(struct StateOwner *owner))
 {
@@ -424,5 +562,51 @@ ASM_FUNC("asm/code_080FD8D8/state_select_targets.s", void state_select_targets(v
 
 ASM_FUNC("asm/code_080FD8D8/figure_vectors_setup.s", void figure_vectors_setup(void))
 
-ASM_FUNC("asm/code_080FD8D8/figure_status_enter.s", void figure_status_enter(void))
+NONMATCH("asm/code_080FD8D8/figure_status_enter.s", void figure_status_enter(struct StateOwner *owner))
+{
+    struct FigWorld *world;
+    struct FigWorld *world2;
+    struct FigWorld **pworld;
+    u8 *fig;
+    u8 *fig1;
+    u8 *fig2;
+    u32 idx;
+    u32 entry;
+    void (*copy)(u8 *, u8 *, u32);
+
+    world = gWorld;
+    fig1 = world->fig[0];
+    if (fig1 != 0 && (fig1[0x81] & 0x10) != 0)
+        return;
+    if (world->fig[1] != 0 && (world->fig[1][0x81] & 0x10) != 0)
+        return;
+    fig = fig1;
+    if (fig != 0 && ((struct ObjMode7E *)fig)->mode == 1)
+    {
+        if (world->cur == fig)
+            sprite_set_action((struct FigPart *)(fig + 8), 1, -1, 0);
+        else
+            sprite_set_action((struct FigPart *)(fig + 8), -1, -1, 0);
+        ((struct ObjFlags11 *)((struct FigPart *)fig)->unk10)->bit6 = 0;
+    }
+    pworld = &gWorld;
+    world2 = *pworld;
+    fig2 = world2->fig[1];
+    if (fig2 != 0 && ((struct ObjMode7E *)fig2)->mode == 1)
+    {
+        if (world2->cur == fig2)
+            sprite_set_action((struct FigPart *)(fig2 + 8), 1, -1, 0);
+        else
+            sprite_set_action((struct FigPart *)(fig2 + 8), -1, -1, 0);
+        ((struct ObjFlags11 *)((struct FigPart *)fig2)->unk10)->bit6 = 0;
+    }
+    copy = (void (*)(u8 *, u8 *, u32))(gMemRoutines + ((u32)iwram_copy - (u32)iwram_fill));
+    idx = ((gSys[0x888] & 6) != 0) ? 0x20 : 0x1E;
+    entry = *(u16 *)((u8 *)gGlyphIndexTable + idx);
+    copy((u8 *)gMapTable + gMapTable[entry], gUnk_02000440, 0x20);
+    *(u16 *)gSys = *(u16 *)gSys | 0x4000;
+    create_status_objects();
+    owner->callback = (u32)hero_select_begin;
+}
+END_NONMATCH
 ASM_FUNC("asm/code_080FD8D8/hero_select_begin.s", void hero_select_begin(void))
