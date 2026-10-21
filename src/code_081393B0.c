@@ -355,7 +355,87 @@ void load_part_offsets(struct Enemy *obj, s16 index)
 
 ASM_FUNC("asm/code_081393B0/advance_move_step.s", u32 advance_move_step(void *ctx, struct Enemy *obj))
 
-ASM_FUNC("asm/code_081393B0/position_blocked.s", u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z))
+NONMATCH("asm/code_081393B0/position_blocked.s", u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z))
+{
+    struct Partner *partner;
+    s32 t;
+    s32 partnerX, partnerY, partnerZ;
+    s32 px = x, py = y, pz = z;
+    s32 partnerW, partnerH, halfW, myHalfW;
+
+    partner = owner->party[1];
+    t = partner->posX;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    partnerX = t >> 8;
+    t = partner->posY;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    partnerY = t >> 8;
+    t = partner->posZ;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    partnerZ = t >> 8;
+    partnerW = *(u16 *)((u8 *)partner + 0x278) >> 8;
+    partnerH = *(u16 *)((u8 *)partner + 0x27C) >> 8;
+    t = px;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    px = t >> 8;
+    t = py;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    py = t >> 8;
+    t = pz;
+    if (t < 0)
+    {
+        t += 0xFF;
+    }
+    pz = t >> 8;
+
+    if ((*((u8 *)owner + 0x246) & 0x1C) != 0xC)
+    {
+        return 0;
+    }
+    if ((*((u8 *)partner + 0x20C) & 1) == 0)
+    {
+        return 0;
+    }
+    if (partnerZ != pz)
+    {
+        return 0;
+    }
+    halfW = (u16)partnerW >> 1;
+    myHalfW = *(u16 *)((u8 *)obj + 0x278) >> 9;
+    if (partnerX - halfW - 2 > px + myHalfW)
+    {
+        return 0;
+    }
+    if (partnerX + halfW + 2 < px - myHalfW)
+    {
+        return 0;
+    }
+    if (partnerY - partnerH - 2 > py)
+    {
+        return 0;
+    }
+    if (partnerY + 2 < py - *(u16 *)((u8 *)obj + 0x27C))
+    {
+        return 0;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 div_scaled_fixed(u32 a, u32 x, u32 b, u32 k)
 {
@@ -460,7 +540,22 @@ void sub_08139F08(void)
 {
 }
 
-ASM_FUNC("asm/code_081393B0/body_timer_tick.s", void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out))
+NONMATCH("asm/code_081393B0/body_timer_tick.s", void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out))
+{
+    struct Enemy *body = ent->body;
+    EnemyFn handler;
+
+    body->unk1D2--;
+    if (ent->unk1D2 == 0)
+    {
+        ((struct Flags8 *)&ent->unk1D6)->bit0 = 1;
+        ((struct Flags8 *)&ent->unk1D6)->bit1 = 0;
+        handler = body->unk1AC;
+        *out = handler;
+        handler(ctx, ent, out);
+    }
+}
+END_NONMATCH
 
 void tick_body_timer(void *ctx, struct Enemy *ent, EnemyFn *out)
 {
