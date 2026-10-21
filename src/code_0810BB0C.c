@@ -55,6 +55,14 @@ struct Bits12
     u8 high : 3;
 };
 
+struct Bits1F
+{
+    u8 low : 2;
+    u8 mid : 2;
+    u8 bits45 : 2;
+    u8 top : 2;
+};
+
 struct Obj
 {
     u8 filler0[4];
@@ -365,7 +373,111 @@ void panel_slide_end(struct Obj *obj)
     obj->unk4 = 0;
 }
 
-ASM_FUNC("asm/code_0810BB0C/update_slot_display.s", void update_slot_display(void))
+NONMATCH("asm/code_0810BB0C/update_slot_display.s", void update_slot_display(u32 index))
+{
+    struct Obj *obj;
+    struct Obj *slot;
+    struct Obj *created;
+    struct World *world;
+    struct Fig *fig;
+    struct SlotChild *rec;
+    s32 frameCount;
+    s32 t;
+    s32 stored;
+    u32 slotOff;
+    u8 *slotBase;
+    u8 state;
+
+    world = gWorld;
+    slotOff = index << 2;
+    if ((world->flags0B & 8) != 0)
+    {
+        return;
+    }
+    slotBase = (u8 *)world + 0x284;
+    slot = *(struct Obj **)(slotBase + slotOff);
+    if (slot != 0)
+    {
+        obj = slot;
+    }
+    else
+    {
+        created = list_add_task((u8 *)world + 0x48, step_slot_object);
+        created->unk8 = (struct Child *)slot;
+        created->unk16 = 0;
+        slotBase = (u8 *)gWorld + 0x284;
+        *(struct Obj **)(slotBase + slotOff) = created;
+        obj = created;
+    }
+    if (obj == 0)
+    {
+        return;
+    }
+    if (gWorld->stateByte == 0)
+    {
+        release_slot_object(index);
+        return;
+    }
+    fig = gWorld->figs[index];
+    state = gWorld->stateByte;
+    if (state == 2)
+    {
+        frameCount = (fig->unk11E & 0x2000) ? 0x1D : 0x19;
+    }
+    else
+    {
+        frameCount = (fig->unk11E & 0x1000) ? 0x1B : 0x17;
+    }
+    if (frameCount > 3)
+    {
+        state |= 0x20;
+    }
+    t = frameCount - 1;
+    frameCount = t - fig->unkEC;
+    stored = ((s32)((u32)obj->unk16 << 16) >> 17) & 0x1F;
+    if (stored == state)
+    {
+        return;
+    }
+    if (obj->unk8 != 0)
+    {
+        rec = (struct SlotChild *)obj->unk8;
+    }
+    else
+    {
+        rec = (struct SlotChild *)spawn_obj_by_id(0x7001, 0, 2, 1);
+        obj->unk8 = (struct Child *)rec;
+    }
+    obj_load_record(rec, frameCount, -1, 0, 0);
+    rec->unk0 = fig->unkD8 / 0x100 - 0xE;
+    rec->unk2 = (fig->unkDC - fig->unkE0) / 0x100 - 0x34;
+    ((struct Bits1F *)&rec->unk1F)->top = 1;
+    ((struct Bits1F *)&rec->unk1F)->bits45 = 1;
+    ((struct Bits1F *)&rec->unk1F)->mid = 1;
+    ((struct Bits1F *)&rec->unk1F)->low = 1;
+    if ((fig->unk11E & 0x300) != 0)
+    {
+        ((struct Bits11 *)&rec->unk11)->mode = 1;
+    }
+    stored = ((s32)((u32)obj->unk16 << 16) >> 17) & 0xF;
+    if (stored == gWorld->stateByte && (s16)rec->unk4 == 0x100)
+    {
+        sprite_entry_update((struct SlotChild *)rec);
+        obj->unk4 = clear_slot_entry;
+    }
+    else
+    {
+        if (stored != gWorld->stateByte)
+        {
+            rec->unk6 = 0x400;
+            rec->unk4 = 0x400;
+        }
+        ((struct Bits12 *)&rec->unk12)->bit4 = 1;
+        obj->unk4 = step_slot_object;
+    }
+    obj->unk16 = (state << 1) | index;
+}
+END_NONMATCH
 
 void clear_slot_entry(struct Obj *obj)
 {
