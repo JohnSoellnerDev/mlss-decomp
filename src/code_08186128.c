@@ -152,6 +152,7 @@ NONMATCH("asm/code_08186128/obj_turn_zoom4_6310.s", void obj_turn_zoom4_6310(str
     s32 x2;
     s32 t;
     s32 pos;
+    s16 *cs;
 
     words = obj->data;
     zoom = *words++;
@@ -176,10 +177,11 @@ NONMATCH("asm/code_08186128/obj_turn_zoom4_6310.s", void obj_turn_zoom4_6310(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        t = t * (gCosineTable[64] / 0x40);
+        cs = &gCosineTable[64];
+        t = t * ((*cs) / 0x40);
         y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
         l.y = y2;
-        l.z = ((z1 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        l.z = ((z1 * ((*cs) / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
         t = x1;
         t = t * (gCosineTable[32] / 0x40);
         x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
@@ -337,6 +339,7 @@ NONMATCH("asm/code_08186128/obj_turn_zoom4_6748.s", void obj_turn_zoom4_6748(str
     s32 x2;
     s32 t;
     s32 pos;
+    s16 *cs;
 
     words = obj->data;
     zoom = *words++;
@@ -361,10 +364,11 @@ NONMATCH("asm/code_08186128/obj_turn_zoom4_6748.s", void obj_turn_zoom4_6748(str
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
         t = y1;
-        t = t * (gCosineTable[64] / 0x40);
+        cs = &gCosineTable[64];
+        t = t * ((*cs) / 0x40);
         y2 = (t - (gSineTable[64] / 0x40) * z1) / 0x100;
         l.y = y2;
-        l.z = ((z1 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        l.z = ((z1 * ((*cs) / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
         t = x1;
         t = t * (gCosineTable[32] / 0x40);
         x2 = (t - (gSineTable[32] / 0x40) * y2) / 0x100;
