@@ -197,14 +197,34 @@ void start_motion(void *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, void *owner);
 void slot_set_timer(s16 idx, u32 value);
 void task_spawn_wait_idle(void *obj);
+u32 cmd_reset_obj_part(struct Owner *obj, u8 *state, u32 *params, u8 idx);
 
 ASM_FUNC("asm/code_080F7100/refresh_slot_view.s", void refresh_slot_view(void))
-
 ASM_FUNC("asm/code_080F7100/slot_apply_anim.s", void slot_apply_anim(void))
 
 ASM_FUNC("asm/code_080F7100/slot_reload_record.s", void slot_reload_record(void))
 
-ASM_FUNC("asm/code_080F7100/slot_set_value.s", void slot_set_value(void))
+NONMATCH("asm/code_080F7100/slot_set_value.s", void slot_set_value(void *unused0, s16 idx, u32 value, u8 mode))
+{
+    struct SlotObj *obj;
+    if (idx <= 7)
+        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    if (mode != 0)
+    {
+        if ((value & 0x40) != 0)
+            obj->unk7C = (value & 0xF) << 4;
+        else if (value != 0)
+            obj->unk7C = value << 8;
+        else
+            obj->unk7C = *(u16 *)((u8 *)obj + 0x90);
+        obj->timer7A = 0;
+    }
+    else
+        slot_set_timer(idx, value);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/slot_get_field.s", void slot_get_field(void))
 
@@ -335,13 +355,32 @@ NONMATCH("asm/code_080F7100/slot_set_timer.s", void slot_set_timer(s16 idx, u32 
     if (idx <= 7)
         obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
     else
-        obj = (struct SlotObj *)(gWorkBuf + 0x300 + idx * 0xD0);
+        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
     obj->timer7A = value;
     obj->unk7C = 0;
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F7100/slot_set_vec.s", void slot_set_vec(void))
+struct Bit5Of79
+{
+    u8 lo5 : 5;
+    u8 b5 : 1;
+    u8 hi2 : 2;
+};
+
+NONMATCH("asm/code_080F7100/slot_set_vec.s", void slot_set_vec(s16 idx, s32 x, s32 y, s32 z, u8 flag))
+{
+    struct SlotObj *obj;
+    if (idx <= 7)
+        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        obj = (struct SlotObj *)(gWorkBuf + 0x300 + idx * 0xD0);
+    obj->vecX = x << 8;
+    obj->vecY = y << 8;
+    obj->vecZ = z << 8;
+    ((struct Bit5Of79 *)&obj->flag79)->b5 = flag;
+}
+END_NONMATCH
 
 void obj_task_attach(struct TaskObj *obj)
 {
@@ -353,7 +392,6 @@ void obj_task_attach(struct TaskObj *obj)
 }
 
 ASM_FUNC("asm/code_080F7100/obj_task_attach_idx.s", void obj_task_attach_idx(void))
-
 u32 slot_widest_span(void *unused0, s32 threshold)
 {
     s32 best = threshold;
@@ -463,7 +501,7 @@ NONMATCH("asm/code_080F7100/slot_set_pos_abs.s", void slot_set_pos_abs(void *unu
     if (idx <= 7)
         obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
     else
-        obj = (struct SlotObj *)(gWorkBuf + 0x300 + idx * 0xD0);
+        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
     addr = (u32)obj->ring + 0xD8;
     obj->drawX = x << 8;
     *(u32 *)addr = x << 8;
@@ -477,14 +515,13 @@ NONMATCH("asm/code_080F7100/slot_set_pos_abs.s", void slot_set_pos_abs(void *unu
 END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/slot_set_flag6.s", void slot_set_flag6(void))
-
 NONMATCH("asm/code_080F7100/slot_set_bias.s", void slot_set_bias(void *unused0, s16 idx, u8 bias))
 {
     struct SlotObj *obj;
     if (idx <= 7)
         obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
     else
-        obj = (struct SlotObj *)(gWorkBuf + 0x300 + idx * 0xD0);
+        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
     obj->biasC5 = bias;
 }
 END_NONMATCH
@@ -603,7 +640,26 @@ u32 owner_state_set(struct Owner *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_080F7100/cmd_slot_place.s", void cmd_slot_place(void))
+NONMATCH("asm/code_080F7100/cmd_slot_place.s", u32 cmd_slot_place(void *unused0, void *unused1, s32 *cmd))
+{
+    s32 idx = cmd[0];
+    struct SlotObj *obj;
+    u32 a;
+    s32 dx;
+    s32 dy;
+    s32 dz;
+    if (idx <= 7)
+        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    a = cmd[1];
+    dx = obj->posX / 0x100 + cmd[2];
+    dy = obj->posY / 0x100 + cmd[3];
+    dz = obj->posZ / 0x100 + cmd[4];
+    effect_spawn_at(a, dx, dy, dz, obj);
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/cmd_slot_start_table.s", void cmd_slot_start_table(void))
 
