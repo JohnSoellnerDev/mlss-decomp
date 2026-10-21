@@ -49,6 +49,23 @@ struct ObjWithState
     struct ObjState *state;
 };
 
+struct ObjFields
+{
+    u8 filler0[0x42];
+    u8 unk42;
+    u8 unk43;
+    s32 unk44;
+    s32 unk48;
+};
+
+struct Bits43
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 hi5 : 5;
+};
+
 ASM_FUNC("asm/code_080E76A4/clear_active_slot_rects.s", void clear_active_slot_rects(void))
 
 ASM_FUNC("asm/code_080E76A4/clear_slot_rect.s", void clear_slot_rect(void))
@@ -100,6 +117,65 @@ ASM_FUNC("asm/code_080E76A4/upload_box_frame.s", void upload_box_frame(void))
 
 ASM_FUNC("asm/code_080E76A4/dma_tile_upload.s", void dma_tile_upload(void))
 
-ASM_FUNC("asm/code_080E76A4/set_obj_fields.s", void set_obj_fields(void))
+void set_obj_fields(u32 unused0, struct ObjFields *obj, u32 unused2, u32 unused3, u8 val48, u16 val44, u16 flags)
+{
+    s32 mode;
+    s32 idx;
+    u8 b42;
+    u32 bit7;
+
+    if ((flags & 0x38) != 0)
+    {
+        mode = (flags & 0x700) >> 8;
+        if (mode <= 1)
+        {
+            if (mode >= 0)
+            {
+                obj->unk44 = val44;
+                bit7 = (flags & 0x80) >> 7;
+                ((struct Bits43 *)&obj->unk43)->b0 = bit7;
+                if (mode == 0)
+                {
+                    b42 = obj->unk42;
+                    b42 |= 0x80;
+                    obj->unk42 = b42;
+                }
+                else
+                {
+                    obj->unk48 = (u32)val48 << 3;
+                }
+                obj->unk48 -= 8;
+                idx = ((flags & 0x78) >> 3) - 1;
+                switch (idx)
+                {
+                case 0:
+                case 2:
+                    ((struct Bits43 *)&obj->unk43)->hi5 = 5;
+                    ((struct Bits43 *)&obj->unk43)->b2 = 1;
+                    obj->unk44 -= 4;
+                    break;
+                case 8:
+                case 10:
+                    ((struct Bits43 *)&obj->unk43)->hi5 = 9;
+                    ((struct Bits43 *)&obj->unk43)->b1 = 1;
+                    obj->unk44 -= 8;
+                    break;
+                case 1:
+                    ((struct Bits43 *)&obj->unk43)->hi5 = 7;
+                    ((struct Bits43 *)&obj->unk43)->b2 = 1;
+                    obj->unk44 -= 4;
+                    break;
+                case 9:
+                    ((struct Bits43 *)&obj->unk43)->hi5 = 13;
+                    ((struct Bits43 *)&obj->unk43)->b1 = 1;
+                    obj->unk44 -= 8;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
+}
 
 ASM_FUNC("asm/code_080E76A4/slot_tile_upload_draw_obj_tiles.s", void slot_tile_upload_draw_obj_tiles(void))
