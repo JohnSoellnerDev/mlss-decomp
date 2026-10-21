@@ -165,6 +165,16 @@ struct Mid5Half
     u16 rest : 6;
 };
 
+struct MotionSlot
+{
+    u32 unk0[4];
+    u16 unk10;
+    u16 unk12;
+    s32 unk14;
+    s32 unk18;
+    u8 unk1C;
+};
+
 void obj_set_state(void *obj, u32 state);
 void obj_finish_move_step(void *obj);
 void obj_stop_motion(void *obj);
@@ -177,6 +187,8 @@ void obj_sync_sub_slot(void *obj, u32 value);
 void obj_set_cell_coord(void *obj, u32 cell, u32 arg);
 u32 flags_vars_set_obj_state(void *root, void *dst, void *obj, u32 state, u32 zero);
 void set_half_23e(void *obj, s16 v);
+u8 cell_motion_obj_move_toward_target(void *obj, u32 mode, u32 rel, s32 pos_a0, s32 pos_b0, s32 pos_c0, u32 d6, u32 d7, u32 d8, u16 ext_a, u16 ext_b, u16 ext_c, u16 scale, u16 val6_in, s32 sign_in, u32 bits15);
+void set_flag_a0_2(void *a, void *b, u8 *p, u32 c);
 extern u8 *gEffectState;
 
 ASM_FUNC("asm/code_080EDB40/command_on_list_entry.s", void command_on_list_entry(void))
@@ -331,10 +343,140 @@ ASM_FUNC("asm/code_080EDB40/set_effect_key.s", void set_effect_key(void))
 
 ASM_FUNC("asm/code_080EDB40/cmd_test_and_store.s", void cmd_test_and_store(void))
 
-ASM_FUNC("asm/code_080EDB40/cmd_move_toward.s", void cmd_move_toward(void))
+u32 cmd_move_toward(struct OwnerObj *owner, struct Entity *ent, u32 arg, u32 *rec)
+{
+    s32 step;
+    s32 p7;
+    s32 p6;
+    u32 f10;
+    u32 f9;
+    u32 f38;
+    s32 mode;
+    u8 moved;
+
+    if ((((s32)rec[0] >> 4) & 1) != 0)
+    {
+        rec[2] = rec[2] << 4;
+        rec[3] = rec[3] << 4;
+    }
+    mode = rec[1];
+    switch (mode)
+    {
+    case 0:
+        if (((((u8)(rec[0] >> 1)) ^ 1) & 1) != 0)
+            step = ent->unkC / 0x100;
+        else
+            step = 0;
+        p7 = rec[2];
+        p6 = rec[3];
+        f10 = 1;
+        f9 = 0;
+        f38 = 0;
+        break;
+    case 1:
+        step = rec[2];
+        if (((((u8)(rec[0] >> 1)) ^ 1) & 1) != 0)
+            p7 = ent->unk10 / 0x100;
+        else
+            p7 = 0;
+        p6 = rec[3];
+        f10 = 0;
+        f9 = 1;
+        f38 = 0;
+        break;
+    case 2:
+        step = rec[2];
+        p7 = rec[3];
+        if (((((u8)(rec[0] >> 1)) ^ 1) & 1) != 0)
+            p6 = (ent->unk14 + ent->unk18) / 0x100;
+        else
+            p6 = 0;
+        f10 = 0;
+        f9 = 0;
+        f38 = 1;
+        break;
+    }
+    if ((((s32)rec[0] >> 2) & 3) == 0)
+    {
+        if ((rec[5] & 0x40) != 0)
+            rec[5] = (rec[5] & 0xF) << 4;
+        else
+            rec[5] = rec[5] << 8;
+        if (rec[5] != 0)
+            set_half_23e(ent, (s16)rec[5]);
+    }
+    moved = cell_motion_obj_move_toward_target(ent, (((s32)rec[0] >> 2) & 3) + 3, ((s32)rec[0] >> 1) & 1, step, p7, p6,
+        f10 << 8, f9 << 8, f38 << 8, 0x100, 0x100, 0x100, *(u16 *)((u8 *)rec + 0x10),
+        *(u16 *)((u8 *)rec + 0x14), (rec[0] & 1) ? 1 : -1, -1);
+    if (moved != 0)
+    {
+        set_flag_a0_2(owner, ent, (u8 *)arg, 0);
+        return 0;
+    }
+    return 1;
+}
 
 void set_half_23e(void *obj, s16 v);
-ASM_FUNC("asm/code_080EDB40/cmd_move_slot.s", void cmd_move_slot(void))
+u32 cmd_move_slot(struct OwnerObj *owner, struct Entity *ent, u32 arg, u32 *rec)
+{
+    struct Entity *target;
+    s32 ax;
+    s32 bx;
+    s32 cx;
+    u32 f9;
+    u32 f8;
+    u32 f38;
+    s32 mode;
+    u8 moved;
+
+    target = *(struct Entity **)((u8 *)owner->list + rec[2] * 4 + 0x28);
+    mode = rec[1];
+    switch (mode)
+    {
+    case 0:
+        ax = ent->unkC / 0x100;
+        bx = target->unk10 / 0x100;
+        cx = (target->unk14 + target->unk18) / 0x100;
+        f9 = 1;
+        f8 = 0;
+        f38 = 0;
+        break;
+    case 1:
+        ax = target->unkC / 0x100;
+        bx = ent->unk10 / 0x100;
+        cx = (target->unk14 + target->unk18) / 0x100;
+        f9 = 0;
+        f8 = 1;
+        f38 = 0;
+        break;
+    case 2:
+        ax = target->unkC / 0x100;
+        bx = target->unk10 / 0x100;
+        cx = (ent->unk14 + ent->unk18) / 0x100;
+        f9 = 0;
+        f8 = 0;
+        f38 = 1;
+        break;
+    }
+    if ((((s32)rec[0] >> 1) & 3) == 0)
+    {
+        if ((rec[4] & 0x40) != 0)
+            rec[4] = (rec[4] & 0xF) << 4;
+        else
+            rec[4] = rec[4] << 8;
+        if (rec[4] != 0)
+            set_half_23e(ent, *(s16 *)((u8 *)rec + 8));
+    }
+    moved = cell_motion_obj_move_toward_target(ent, (((s32)rec[0] >> 1) & 3) + 3, 0, ax, bx, cx,
+        f9 << 8, f8 << 8, f38 << 8, 0x100, 0x100, 0x100, *(u16 *)((u8 *)rec + 0xC),
+        *(u16 *)((u8 *)rec + 0x10), (rec[0] & 1) ? 1 : -1, rec[2]);
+    if (moved != 0)
+    {
+        set_flag_a0_2(owner, ent, (u8 *)arg, 0);
+        return 0;
+    }
+    return 1;
+}
 
 u32 apply_stage_command(struct OwnerObj *owner, struct Entity *obj, struct Record *rec, u32 *cmds)
 {
@@ -619,7 +761,54 @@ u32 start_track_move(struct OwnerObj *owner, struct Record *rec, struct Track *t
     return 0;
 }
 
-ASM_FUNC("asm/code_080EDB40/set_motion_slot.s", void set_motion_slot(void))
+NONMATCH("asm/code_080EDB40/set_motion_slot.s", u32 set_motion_slot(void *unused0, struct Entity *obj, void *unused2, u32 *cmds))
+{
+    u32 *p = cmds;
+    u32 k = *p++;
+    struct MotionSlot *slot = (struct MotionSlot *)(gEffectState + ((k << 5) + 0x2A0));
+    s32 old = gEffectState[0x55B];
+    u32 bits = (((u32)old << 27) >> 28) | (1 << k);
+
+    {
+        s32 mask = -0x1F;
+        gEffectState[0x55B] = (mask & old) | ((bits & 0xF) << 1);
+    }
+
+    p[1] = -p[1];
+    p[2] = -p[2];
+    if ((p[0] & 1) != 0)
+    {
+        p[1] = p[1] << 4;
+        p[2] = p[2] << 4;
+    }
+    if (((s32)p[0] >> 1 & 3) == 1)
+    {
+        s32 magnitude = ((s32 (*)(s32))gMathRoutines)((p[1] * p[1] + p[2] * p[2]) << 4);
+        if ((p[3] & 0x40) != 0)
+            p[3] = (p[3] & 0xF) << 2;
+        else
+            p[3] = p[3] << 6;
+        slot->unk14 = (s32)((p[3] * p[1]) << 4) / magnitude;
+        slot->unk18 = (s32)((p[3] * p[2]) << 4) / magnitude;
+    }
+    else
+    {
+        slot->unk14 = (s32)(p[1] << 8) / (s32)p[3];
+        slot->unk18 = (s32)(p[2] << 8) / (s32)p[3];
+    }
+    slot->unk0[3] = 0;
+    slot->unk0[2] = 0;
+    slot->unk0[1] = 0;
+    slot->unk0[0] = 0;
+    if (obj != 0)
+        slot->unk1C = obj->unk54 + 4;
+    else
+        slot->unk1C = gEffectState[0x548];
+    slot->unk10 = p[1];
+    slot->unk12 = p[2];
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080EDB40/set_effect_flags.s", void set_effect_flags(void))
 
