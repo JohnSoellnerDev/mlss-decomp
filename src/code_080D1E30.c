@@ -150,7 +150,7 @@ void enter_finish_rebuild(struct Body *body);
 void set_motion_start(struct Body *body, u32 speed);
 void set_motion_speed_aux(struct Body *obj, u32 value, s32 aux);
 s32 find_frame_entry(struct Body *obj, s32 index);
-void hero_a_place_at_child_target(void);
+void hero_a_place_at_child_target(struct Body *body);
 void hero_a_step_window_20e8(void);
 void body_link_partner_fx_slot55(struct Body *body);
 void body_link_partner_fx_slot9d(struct Body *body);
@@ -200,7 +200,70 @@ void hero_a_place_at_b_target(struct Body *body)
     body->state = (u32)hero_a_place_at_child_target;
 }
 
-ASM_FUNC("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_at_child_target(void))
+NONMATCH("asm/code_080D1E30/hero_a_place_at_child_target.s", void hero_a_place_at_child_target(struct Body *body))
+{
+    struct Hero *heroA;
+    struct Hero *heroB;
+    struct Body *body_a;
+    struct Body *body_b;
+    s32 k;
+    s32 za;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 tz;
+    s32 t;
+    struct World *world = gWorld;
+
+    heroA = world->heroA;
+    heroB = world->heroB;
+    body_a = &heroA->body;
+    body_b = &heroB->body;
+    step_motion(body_a);
+    k = (s8)heroB->body.ofsZ - 4;
+    za = body_a->z;
+    if (za < body_a->targetZ)
+    {
+        if (za < body_b->z + (k << 8))
+        {
+            body_b->sprite->scale = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(za, k);
+        }
+    }
+    if (body_a->flags & 0x20)
+    {
+        set_slot_value(0x2B, -1);
+        ((struct SpriteMirrorByte *)&body_a->sprite->unk11)->mirror = 0;
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            t = body_a->child->targetX;
+            if (t < 0)
+                t += 0xff;
+            x = (t >> 8) + body_a->child->ofsX - 0x14;
+            t = body_a->child->targetY;
+            if (t < 0)
+                t += 0xff;
+            y = (t >> 8) + body_a->child->ofsY;
+            tz = body_a->child->targetZ;
+            if (tz < 0)
+                tz += 0xff;
+            z = tz >> 8;
+            place_targets(body_a, x, y, z, -1);
+            t = body_a->child->targetZ;
+            if (t < 0)
+                t += 0xff;
+            body_a->arc = (t >> 8) + 2;
+            set_motion_offsets(body_a, 0x500);
+        }
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 7, 0x2036, 0);
+            ((struct SpriteModeByte *)&body_a->sprite->flags)->mode = 1;
+        }
+        body_a->timer &= 0xFFF;
+        body->state = (u32)hero_a_step_window_20e8;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_20e8(void))
 
@@ -392,7 +455,61 @@ void body_place_at_midpoint(struct Body *body)
     body->state = (u32)body_place_at_midpoint_arc;
 }
 
-ASM_FUNC("asm/code_080D1E30/body_place_at_midpoint_arc.s", void body_place_at_midpoint_arc(struct Body *body))
+void body_place_at_midpoint_arc(struct Body *body)
+{
+    s32 height;
+    struct Body *partner;
+    s32 t;
+    s32 sy;
+    s32 pz;
+    s32 tz;
+    s32 ofsZ;
+    s32 mx;
+    s32 my;
+    s32 arc;
+
+    partner = body->partner;
+    step_motion(body);
+    if (body->flags & 0x20)
+    {
+        set_slot_value(0x9C, -1);
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+        {
+            t = partner->targetX + body->targetX;
+            if (t < 0)
+                t += 0xff;
+            mx = ((t >> 8) + partner->ofsX) / 2;
+            sy = partner->targetY + body->targetY;
+            if (sy < 0)
+                sy += 0xff;
+            my = ((sy >> 8) + partner->ofsY) / 2;
+            place_targets(body, mx, my, 0, -1);
+            pz = partner->z;
+            if (pz < 0)
+                pz += 0xff;
+            pz >>= 8;
+            ofsZ = partner->ofsZ;
+            arc = (0x50 - (pz + ofsZ)) / 2;
+            if (partner == (struct Body *)((u8 *)partner->data + 8))
+            {
+                height = ofsZ;
+            }
+            else
+            {
+                find_frame_entry(partner, 0);
+                height = partner->unk47;
+            }
+            tz = partner->targetZ;
+            if (tz < 0)
+                tz += 0xff;
+            height += tz >> 8;
+            height += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(arc * arc, arc + height * height / 0x40);
+            body->arc = height;
+            set_motion_offsets(body, 0x500);
+        }
+        body->state = (u32)body_link_partner_fx_slot55;
+    }
+}
 
 void body_link_partner_fx_slot55(struct Body *body)
 {
