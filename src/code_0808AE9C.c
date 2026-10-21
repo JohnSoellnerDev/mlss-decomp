@@ -219,6 +219,8 @@ extern u8 *gWorld;
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void sprite_node_take_link(struct Actor *obj);
 void arrive_when_timer_done(struct Actor *obj);
+void jump_arc_step(struct Actor *obj);
+void pose_update_if_visible_a(struct Actor *obj);
 
 void spawn_child_4068_sprite(struct Actor *obj)
 {
@@ -385,7 +387,93 @@ void spawn_child_4068_sprite_d(struct Actor *obj)
 ASM_FUNC("asm/code_0808AE9C/travel_aim_at_target.s", s32 travel_aim_at_target(struct Actor *obj))
 
 void travel_then_spawn_home(struct Actor *obj);
-ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_traveler.s", void wait_then_spawn_traveler(void))
+NONMATCH("asm/code_0808AE9C/wait_then_spawn_traveler.s", void wait_then_spawn_traveler(struct Actor *obj))
+{
+    u16 *counter;
+    u16 before;
+    struct Actor *traveler;
+    struct Actor *owner;
+    struct Data *ownerData;
+    void **node;
+    void **link;
+    s32 *targetX;
+    s32 *targetY;
+    s32 *targetH;
+    s32 left;
+    s32 step = 4;
+    u32 count;
+
+    counter = &obj->step;
+    before = *counter;
+    *counter = before - 1;
+    if ((s16)before <= 0)
+    {
+        traveler = obj_spawn(obj->data, 0x4066, (obj->x / 0x100) - 0xA, obj->y / 0x100, (obj->h / 0x100) + 0x18, ((u32)obj->pose->turn << 25) >> 31, 1);
+        obj->child = traveler;
+        traveler->dx = 0;
+        ((struct Flags79Bit0 *)&traveler->flags79)->bit0 = 1;
+        traveler->targetX = traveler->baseX;
+        traveler->targetY = traveler->baseY;
+        traveler->targetH = traveler->baseH;
+        traveler->listSlot = 0;
+        ((struct ActionBits *)&traveler->action)->mode = 3;
+        traveler->owner = obj->owner;
+        traveler->timer = obj->timer;
+        traveler->paramA0 = obj->paramA0;
+        traveler->paramA4 = obj->paramA4;
+        traveler->buttons = obj->buttons;
+        sprite_node_take_link(traveler);
+
+        count = ((struct Counter *)gWorld)->cnt;
+        ((struct Counter *)gWorld)->cnt = count - 1;
+        ((struct Oam *)traveler->oam)->index = count;
+
+        targetX = &obj->targetX;
+        targetY = &obj->targetY;
+        targetH = &obj->targetH;
+
+        node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+        traveler->nodes = node;
+        link = node;
+        node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+        *link = node;
+        link = node;
+        node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+        *link = node;
+        link = node;
+        left = 7;
+        do
+        {
+            node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+            *link = node;
+            link = node;
+            node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+            *link = node;
+            link = node;
+            node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+            *link = node;
+            link = node;
+            node = sprite_node_alloc(traveler->x, traveler->y, traveler->h);
+            *link = node;
+            link = node;
+            left -= step;
+        } while (left >= 0);
+        *link = 0;
+        traveler->state = travel_then_spawn_home;
+
+        owner = obj->owner;
+        ownerData = owner->data;
+        *targetX = ownerData->x;
+        *targetY = ownerData->y;
+        *targetH = ownerData->h;
+        sprite_set_action(obj, 6, 0, 0);
+        obj->state = arrive_when_timer_done;
+        *counter = 6;
+        set_slot_value(0x5C, -1);
+        set_slot_value(0x5E, -1);
+    }
+}
+END_NONMATCH
 
 void travel_then_spawn_home(struct Actor *obj)
 {
@@ -448,7 +536,7 @@ void settle_aim_then_finish(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_walker.s", void wait_then_spawn_walker(void))
+ASM_FUNC("asm/code_0808AE9C/wait_then_spawn_walker.s", void wait_then_spawn_walker(struct Actor *obj))
 
 void walk_then_spawn_home(struct Actor *obj)
 {
@@ -559,11 +647,72 @@ NONMATCH("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(struc
 END_NONMATCH
 
 void part_jump_setup(struct Actor *obj);
-ASM_FUNC("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(void))
+NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struct Actor *obj))
+{
+    s32 xOff;
+    s32 yOff;
+    struct Actor *part;
+    struct Actor *owner;
+
+    if (obj->pose->visible)
+    {
+        switch (obj->mode)
+        {
+        case 1:
+            sprite_set_action(obj, 9, 0, 0);
+            break;
+        case 0:
+        case 2:
+            sprite_set_action(obj, 5, 0, 0);
+            break;
+        case 3:
+            sprite_set_action(obj, 9, 0, 0);
+            break;
+        }
+        obj->state = pose_update_if_visible_a;
+        set_slot_value(0x11A, -1);
+        owner = obj->owner;
+        switch (obj->mode)
+        {
+        case 0:
+        case 2:
+            xOff = 0x35;
+            break;
+        case 1:
+        case 3:
+            xOff = 0x1B;
+            break;
+        }
+        switch (obj->mode)
+        {
+        case 0:
+        case 2:
+            yOff = -9;
+            break;
+        case 1:
+        case 3:
+            yOff = -5;
+            break;
+        }
+        part = obj_spawn(obj->data, 0x405D, (obj->x / 0x100) - xOff, (obj->y / 0x100) + yOff, obj->h / 0x100, 1, 1);
+        obj->child = part;
+        part->listSlot = 0xFF;
+        ((struct Flags78Bits *)&part->flags78)->kind = 1;
+        part->timer = obj->timer;
+        part->paramA0 = obj->paramA0;
+        part->paramA4 = obj->paramA4;
+        part->buttons = obj->buttons;
+        part->anim = obj->anim;
+        part->mode = obj->mode;
+        part->owner = owner;
+        part_jump_setup(part);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0808AE9C/part_jump_setup.s", void part_jump_setup(struct Actor *obj))
 
-ASM_FUNC("asm/code_0808AE9C/jump_arc_step.s", void jump_arc_step(void))
+ASM_FUNC("asm/code_0808AE9C/jump_arc_step.s", void jump_arc_step(struct Actor *obj))
 
 void part_landing_step(struct Actor *obj)
 {
