@@ -289,7 +289,66 @@ NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(str
 END_NONMATCH
 
 void apply_display_state(struct SceneObj *obj);
-ASM_FUNC("asm/code_08026EA8/set_object_mode.s", void set_object_mode(void))
+struct FcModeBits
+{
+    u8 low3 : 3;
+    u8 mode : 4;
+    u8 bit7 : 1;
+};
+
+struct SysHalf
+{
+    u16 h0;
+    u16 h2;
+};
+
+void sync_and_draw_obj(struct SceneObj *obj, u32 load, u32 p2, u32 p3, u32 p5, u32 p6);
+void flush_dirty_blocks(struct SceneObj *obj);
+u32 init_bg_view(u8 *obj, u8 mode);
+extern u16 gUnk_02000272;
+
+void set_object_mode(struct SceneObj *obj, u32 mode, u32 p3, u16 p4, u16 p5, u16 p6)
+{
+    switch (mode)
+    {
+    case 1:
+        apply_display_state(obj);
+    case 2:
+        obj->half128 = p4;
+        sync_and_draw_obj(obj, (mode != 1) ? 4 : 0, p3, p4, p5, p6);
+        break;
+    case 4:
+        if (obj->unkF0 != 0)
+        {
+            ((struct SysHalf *)gSys)->h0 = obj->unkF0 >> 16;
+            ((struct SysHalf *)gSys)->h2 = obj->unkF0;
+            *(u32 *)(gSys + 0x884) = obj->unkF0;
+            flush_dirty_blocks(obj);
+        }
+        else
+        {
+            ((struct SysHalf *)gSys)->h0 = 0xFFFF;
+            ((struct SysHalf *)gSys)->h2 = 0xFFFF;
+            *(u32 *)(gSys + 0x884) = 0xFFFFFFFF;
+        }
+        apply_display_state(obj);
+        obj->half0FE = gUnk_02000272;
+        {
+            u32 fd = obj->flagsFD;
+
+            fd |= 8;
+            obj->flagsFD = fd;
+        }
+    case 3:
+    case 5:
+        gUnk_02000272 = 0;
+        ((struct SysHalf *)gSys)->h2 |= 0x8000;
+        init_bg_view(obj->sub1FC, (u8)(mode - 3));
+        obj->half128 = 0;
+        break;
+    }
+    ((struct FcModeBits *)&obj->flagsFC)->mode = mode;
+}
 
 ASM_FUNC("asm/code_08026EA8/object_setup_wipe.s", void object_setup_wipe(void))
 
@@ -320,7 +379,114 @@ u32 object_mode_check(struct SceneObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08026EA8/object_teardown.s", void object_teardown(struct SceneObj *obj))
+void reset_pair_slots(struct SceneObj *obj);
+void obj_update_entities(struct SceneObj *obj);
+void process_obj_entries(struct SceneObj *obj);
+void free_block_if_bit0(void *block, u32 flags);
+void map_view_map_obj_destroy(void *obj, u32 arg);
+void task_remove(void *node, u32 flags);
+void free_effect_state(void *p);
+void run_pending_obj_callbacks(void);
+void menu_obj_free(void *obj, u32 kind);
+extern const u8 gEntryUpdateTaskClass[];
+
+struct HalfLow10
+{
+    u16 low10 : 10;
+    u16 rest : 6;
+};
+
+struct TaskCls
+{
+    u8 filler0[0x18];
+    const u8 *cls18;
+};
+
+struct EntryInfo
+{
+    u8 filler0[0x18];
+    s16 unk18;
+    u8 filler1A[0x1C - 0x1A];
+    void (*fn1C)(void *);
+};
+
+struct EntryWithInfo
+{
+    u8 filler0[0x338];
+    struct EntryInfo *info;
+};
+
+NONMATCH("asm/code_08026EA8/object_teardown.s", void object_teardown(struct SceneObj *obj))
+{
+    s32 i;
+    u32 s79;
+    u32 t;
+
+    reset_pair_slots(obj);
+    obj_update_entities(obj);
+    process_obj_entries(obj);
+    t = ((struct SysLow10 *)gSys)->low10;
+    ((struct HalfLow10 *)&obj->half120)->low10 = t;
+    s79 = gSys[0x79];
+    {
+        u32 f = (s79 & 0xC) | (((u8 *)obj)[0x121] & -0xD);
+
+        f = (f & -0x11) | (s79 & 0x10);
+        f = (f & -0x21) | (s79 & 0x20);
+        ((u8 *)obj)[0x121] = f;
+    }
+    if (obj->sub1FC != 0)
+    {
+        free_block_if_bit0(obj->sub1FC, 3);
+        obj->sub1FC = 0;
+    }
+    if (obj->sub308 != 0)
+    {
+        map_view_map_obj_destroy(obj->sub308, 3);
+        obj->sub308 = 0;
+    }
+    if (obj->sub310 != 0)
+    {
+        ((struct TaskCls *)obj->sub310)->cls18 = gEntryUpdateTaskClass;
+        task_remove(obj->sub310, 3);
+        obj->sub310 = 0;
+    }
+    if (obj->sub30C != 0)
+    {
+        task_remove(obj->sub30C, 3);
+        obj->sub30C = 0;
+    }
+    free_effect_state(obj->sub31C);
+    if (obj->flagsF8 & 1)
+    {
+        run_pending_obj_callbacks();
+        ((struct Bits3Of8 *)&obj->flagsF8)->b0 = 0;
+    }
+    if (obj->sub314 != 0)
+    {
+        menu_obj_free(obj->sub314, 3);
+        obj->sub314 = 0;
+    }
+    set_flag_2_2(*(void **)obj->sub31C);
+    set_flag_2_2(*(void **)obj->sub320);
+    set_flag_2_2(obj);
+    for (i = 0; i < obj->childCount; i++)
+    {
+        struct EntryWithInfo *e;
+        struct EntryInfo *info;
+
+        e = obj->entities[i];
+        info = e->info;
+        info->fn1C((u8 *)e + info->unk18);
+    }
+    {
+        u32 f9 = obj->flagsF9;
+
+        f9 |= 0x80;
+        obj->flagsF9 = f9;
+    }
+}
+END_NONMATCH
 
 void object_start_kind(struct SceneObj *obj)
 {
