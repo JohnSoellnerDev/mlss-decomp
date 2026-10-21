@@ -344,12 +344,12 @@ NONMATCH("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part
     struct ListItem *item;
     struct Obj *part;
     s32 minusOne;
-    u32 *list;
+    s32 mask;
 
-    list = (u32 *)((u8 *)gWorld + 0x58);
-    item = (struct ListItem *)list[obj->unk9C];
+    item = (struct ListItem *)((u32 *)((u8 *)gWorld + 0x58))[obj->unk9C];
     part = (struct Obj *)&item->filler8;
-    item->sprite->flags11 = (item->flags110 & 0x40) | (item->sprite->flags11 & -0x41);
+    mask = -0x41;
+    item->sprite->flags11 = (item->flags110 & 0x40) | (item->sprite->flags11 & mask);
     part->dispX = item->targetX;
     part->dispY = item->targetY;
     part->dispZ = item->targetZ;
