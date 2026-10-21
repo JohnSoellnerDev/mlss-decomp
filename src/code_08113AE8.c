@@ -376,8 +376,9 @@ void obj_stop_anim_clear_cb(struct Obj *obj)
 
 void sprite_entry_update(struct Sprite *sprite);
 void obj_place_sprite_part(struct Obj *obj);
-NONMATCH("asm/code_08113AE8/obj_link_flag_set.s", u32 obj_link_flag_set(struct Obj *obj, struct Obj *other))
+u32 obj_link_flag_set(struct Obj *obj, struct Obj *other)
 {
+    s32 frame = 0x10;
     u32 found;
     u8 *scene;
 
@@ -388,12 +389,11 @@ NONMATCH("asm/code_08113AE8/obj_link_flag_set.s", u32 obj_link_flag_set(struct O
         *(scene + 0x7E) |= 0x80;
         *(scene + 0x7F) |= 0x20;
         obj->callback = obj_scene_move_or_stop;
-        obj->sprite->unk20 = 0x10;
+        obj->sprite->unk20 = frame;
         return 0;
     }
     return found;
 }
-END_NONMATCH
 
 void obj_phase_wait_idle(struct Obj *obj)
 {
