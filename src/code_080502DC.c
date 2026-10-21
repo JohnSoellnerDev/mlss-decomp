@@ -637,6 +637,7 @@ ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(voi
 
 NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 *obj))
 {
+    s32 noCode = 0xFFFF;
     u8 *flags;
     u8 f;
     u32 one;
@@ -684,7 +685,7 @@ NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 
         k = 0x1FE;
         *(u16 *)(obj + 0x33E) = *(u16 *)(obj + 0x33E) | k;
         *(u16 *)(obj + 0x340) = one;
-        *(u16 *)(obj + 0x342) = 0xFFFF;
+        *(u16 *)(obj + 0x342) = noCode;
     }
 }
 END_NONMATCH
