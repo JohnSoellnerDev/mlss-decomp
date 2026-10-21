@@ -45,23 +45,23 @@ struct EffectChildTable
     u8 filler0[0x10];
     s16 ofs10;
     u16 filler12;
-    void *fn14;
+    void (*fn14)(void *self, void *pos);
     s16 ofs18;
     u16 filler1A;
-    void *fn1C;
+    void (*fn1C)(void *self, u32 mode);
     u8 filler20[0x8];
     s16 ofs28;
     u16 filler2A;
-    void *fn2C;
+    void (*fn2C)(void *self, u32 mode);
     s16 ofs30;
     u16 filler32;
-    void *fn34;
+    void (*fn34)(void *self, void *pos);
     s16 ofs38;
     u16 filler3A;
-    void *fn3C;
+    void (*fn3C)(void *self);
     s16 ofs40;
     u16 filler42;
-    void *fn44;
+    void (*fn44)(void *self);
 };
 
 struct EffectChild
@@ -196,6 +196,14 @@ u32 classify_tile_code(void *obj, u32 tile, s32 row);
 struct EffectObj *obj_init_class_ea30(struct EffectObj *obj);
 void *lookup_or_alloc_13b4(s32 a, s32 b, s32 c, s32 d);
 void *find_or_alloc_obj_slots(s32 a, s32 b, s32 c, s32 d, s32 e, void *f, s32 g);
+void set_irq_callback(u32 kind, void *cb);
+void obj_setup_tiles(void *obj, const void *src, u32 w, u32 h, u32 x, u32 y, void *vram, u32 extra);
+void obj_scroll_tile_ring(struct TileObj *obj, s32 x, s32 y);
+extern u32 gEffectTilesATag[];
+extern u32 gEffectTilesBTag[];
+extern u32 gEffectChildTag[];
+extern u32 gEffectChildInit[];
+extern u16 gUnk_02000014[];
 
 ASM_FUNC("asm/code_081612F0/classify_tile_code.s", u32 classify_tile_code(void *obj, u32 tile, s32 row))
 
@@ -682,7 +690,67 @@ struct EffectObj *effect_sub_init_cls9e8(struct EffectObj *obj, struct EffectHea
     return obj;
 }
 
-ASM_FUNC("asm/code_081612F0/effect_step.s", void effect_step(void))
+NONMATCH("asm/code_081612F0/effect_step.s", s32 effect_step(struct EffectObj *effect, struct EffectWorld *owner))
+{
+    u32 size = sizeof(struct TileObj);
+    u32 state = effect->unk00;
+    struct EffectChildTable *table;
+    vu16 *p;
+    void *pos;
+    s32 x;
+    s32 y;
+
+    switch (state)
+    {
+    case 0:
+    {
+        gUnk_03001024 = owner;
+        owner->tilesA = obj_clear_tile_ptrs(heap_alloc2(size, 1, gEffectTilesATag, 0));
+        obj_setup_tiles(owner->tilesA, gUnk_08002D2C + 4, 0xE0, 0x20, state, state, (void *)0x0600B800, state);
+        owner->tilesB = obj_clear_tile_ptrs(heap_alloc2(size, 1, gEffectTilesBTag, 0));
+        obj_setup_tiles(owner->tilesB, gUnk_08002D2C + 0x2F34, 0xE0, 0x20, state, state, (void *)0x0600E800, state);
+        init_bg_gfx(owner);
+        owner->child = obj_init_ex(heap_alloc2(0x34, 1, gEffectChildTag, 0), gEffectChildInit, owner->tilesA, 0x14);
+        table = owner->child->table;
+        table->fn1C((u8 *)owner->child + table->ofs18, 1);
+        table = owner->child->table;
+        table->fn2C((u8 *)owner->child + table->ofs28, 1);
+        p = gUnk_02000050;
+        *p = state;
+        p += 2;
+        *p = state;
+        set_irq_callback(2, effect_dma_callback);
+        effect->unk00++;
+    }
+        break;
+    case 1:
+    {
+        table = owner->child->table;
+        table->fn14((u8 *)owner->child + table->ofs10, pos = &owner->posX);
+        table = owner->child->table;
+        table->fn3C((u8 *)owner->child + table->ofs38);
+        table = owner->child->table;
+        table->fn44((u8 *)owner->child + table->ofs40);
+        table = owner->child->table;
+        table->fn34((u8 *)owner->child + table->ofs30, pos);
+        x = owner->posX >> 8;
+        y = owner->posY >> 8;
+        obj_scroll_tile_ring(owner->tilesA, x, y);
+        obj_scroll_tile_ring(owner->tilesB, x, y);
+        p = gUnk_02000014;
+        *p = x;
+        p++;
+        *p = y;
+        p += 3;
+        *p = x;
+        p++;
+        *p = y;
+    }
+        break;
+    }
+    return 0;
+}
+END_NONMATCH
 
 void obj_set_class_ea60(struct EffectObj *obj, u32 flags)
 {
