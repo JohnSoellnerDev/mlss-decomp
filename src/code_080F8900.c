@@ -666,8 +666,9 @@ u8 cmd_restore_word0(void *obj, void *arg, u32 *p)
     return restore_obj_word0((u8 *)obj + 0x1C, arg);
 }
 
-NONMATCH("asm/code_080F8900/cmd_owner_set_var.s", u32 cmd_owner_set_var(struct OwnerObj *obj, u8 *var, u32 *p, u32 ctx))
+u32 cmd_owner_set_var(struct OwnerObj *obj, u8 *var, u32 *p, u32 ctx)
 {
+    s32 varBase = 0x100;
     u8 *part;
     u8 *owner;
 
@@ -679,7 +680,7 @@ NONMATCH("asm/code_080F8900/cmd_owner_set_var.s", u32 cmd_owner_set_var(struct O
         break;
     case 1:
     {
-        u32 off = (p[2] << 8) + 0x100;
+        u32 off = (p[2] << 8) + varBase;
         u8 *st = obj->state;
 
         part = st + off;
@@ -693,7 +694,6 @@ NONMATCH("asm/code_080F8900/cmd_owner_set_var.s", u32 cmd_owner_set_var(struct O
     set_var((u8 *)ctx, var + 0x18, owner + 0x1794, var + 0xA8, *(s16 *)p, *(u16 *)(part + 0xA0) & 1);
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_owner_part_copy(struct OwnerObj *obj, u32 *dst, u32 *p)
 {
