@@ -165,6 +165,7 @@ void child_visible_check(struct Actor *obj);
 
 void pair_children_end(struct Actor *obj);
 void child_hold_settle(struct Actor *obj);
+void state_partner_action8(struct Actor *obj);
 void spawn_marker_child(struct Actor *obj);
 void land_at_target_height(struct Actor *obj);
 void wait_motion_end(struct Actor *obj);
@@ -259,7 +260,50 @@ void pair_children_end(struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_08097238/child_hold_settle.s", void child_hold_settle(struct Actor *obj))
+NONMATCH("asm/code_08097238/child_hold_settle.s", void child_hold_settle(struct Actor *obj))
+{
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *partner = obj->partner;
+    s32 inWindow;
+    s32 q;
+    s32 lo;
+    s32 hi;
+
+    step_motion(obj);
+    lo = obj->speedLo;
+    hi = obj->speedHi;
+    q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(hi << 14, lo);
+    inWindow = obj->step <= q && (s16)obj->phase >= q;
+    if (inWindow) {
+        if ((obj->flags76 & 6) == 2 || (obj->flags76 & 6) == 4) {
+            sprite_set_action(obj, 2, 0, 0);
+            obj->pose->mode = 1;
+        }
+    }
+    if (obj->flags79 & 0x20) {
+        struct Actor *dataBody;
+
+        set_slot_value(0x9F, -1);
+        obj_detach_active(obj->pose);
+        dataBody = (struct Actor *)((u8 *)obj->data + 8);
+        if ((dataBody->flags76 & 6) == 2 || (dataBody->flags76 & 6) == 4) {
+            sprite_set_action(dataBody, -1, -1, 0);
+            dataBody->pose->mode = 0;
+        }
+        if ((partner->data->input & 0x300) == 0 && (partner->flags76 & 6) == 2) {
+            u32 action = 0x2051;
+
+            if (partner == heroA) {
+                action -= 0x2F;
+            }
+            sprite_set_action(partner, 8, action, 0);
+            partner->pose->mode = 1;
+        }
+        obj->state = state_partner_action8;
+    }
+}
+END_NONMATCH
+
 void spawn_marker_child(struct Actor *obj)
 {
     struct Actor *heroA = &gWorld->heroA->body;
@@ -769,6 +813,7 @@ u32 pair_begin_setup_b(struct Actor *obj)
 }
 
 ASM_FUNC("asm/code_08097238/pair_sum_offsets.s", void pair_sum_offsets(struct Actor *obj))
+
 void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
 void end_hero_follow(struct Actor *obj);
