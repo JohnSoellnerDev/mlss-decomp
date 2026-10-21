@@ -106,7 +106,7 @@ NONMATCH("asm/code_080E9020/init_slot_table.s", void *init_slot_table(void **slo
         cursor[0xC] = 0xFF;
         obj = create_obj_de4(0, 0x8004, 1, -1, -1, -1, -1);
         *(void **)cursor = obj;
-        ((u8 *)obj)[0x1F] = 0;
+        *((u8 *)obj + 0x1F) = 0;
         obj_load_record(obj, 0, -1, 0, 0);
         v = ((u32)count << 16) + 0xFFFF0000;
         cursor += 0x10;
@@ -609,8 +609,8 @@ void free_list_move(struct FreeListState *st, u32 a1)
 NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeListState *st, u32 a1))
 {
     struct FreeDesc *best;
-    struct FreeDesc *prev;
     struct FreeDesc *cur;
+    struct FreeDesc *back;
     struct FreeDesc *newDesc;
     u32 size;
 
@@ -619,7 +619,7 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
         return 0;
     }
     best = 0;
-    prev = 0;
+    back = 0;
     cur = st->unk4;
     while (cur != 0)
     {
@@ -633,19 +633,19 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
         }
         else if (size == a1)
         {
-            if (prev == 0)
+            if (back == 0)
             {
                 st->unk4 = cur->next;
             }
             else
             {
-                prev->next = cur->next;
+                back->next = cur->next;
             }
             cur->next = st->unk0;
             st->unk0 = cur;
             return cur->start;
         }
-        prev = cur;
+        back = cur;
         cur = cur->next;
     }
     if (best != 0)
@@ -725,10 +725,10 @@ ASM_FUNC("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e
 
 NONMATCH("asm/code_080E9020/sub_080E9EC4.s", void sub_080E9EC4(s16 idx, s16 mode, u16 bit))
 {
+    u8 *entry;
     u32 b;
     u32 f;
     s32 t;
-    u8 *entry;
 
     entry = gParty + idx * 60;
     switch (mode)
@@ -800,7 +800,40 @@ void set_flag(u8 *flagsA, u8 *flagsB, u16 id, u8 value)
     *word = (*word & ~(1 << bit)) | ((value & 1) << bit);
 }
 
-ASM_FUNC("asm/code_080E9020/read_var.s", u32 read_var(u16 id))
+NONMATCH("asm/code_080E9020/read_var.s", u32 read_var(u16 arg))
+{
+    u32 id;
+    u8 *base;
+    u32 value;
+
+    id = arg;
+    if (id <= 0x1CB7)
+    {
+        id = (u16)(id - 0x1B90);
+        base = (u8 *)gUnk_03000FC0 + 0x414;
+        value = base[id];
+    }
+    else if (id <= 0x1CD7)
+    {
+        id = (u16)(id - 0x1CB8);
+        base = (u8 *)gUnk_03000FC0 + 0x53C;
+        value = base[id];
+    }
+    else if (id <= 0x1D17)
+    {
+        u32 off;
+
+        off = ((u32)(u16)(id - 0x1CD8) << 16) >> 15;
+        base = (u8 *)gUnk_03000FC0 + 0x394;
+        value = *(u16 *)(base + off);
+    }
+    else
+    {
+        value = 0;
+    }
+    return value;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E9020/write_var.s", void write_var(u16 id, u16 value))
 
