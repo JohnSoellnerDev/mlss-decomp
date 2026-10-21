@@ -7,6 +7,14 @@ struct ScrollNode
     s32 value;
 };
 
+struct SpriteNode
+{
+    struct SpriteNode *next;
+    struct SpriteEntry *unk4;
+    struct ScrollNode **unk8;
+    u8 unkC;
+};
+
 struct SpriteObj;
 
 struct SpriteEntry
@@ -141,6 +149,21 @@ extern struct SpriteObj *gUnk_03000F60;
 extern s16 gUnk_03000EC8[];
 extern s16 gUnk_03000ECC[];
 extern u8 gSys[];
+extern u32 gUnk_03000F64;
+extern s32 gLinkOffsetX[];
+extern s32 gLinkOffsetH[];
+extern s32 gUnk_03000EB0[];
+extern s32 gUnk_03000EB8[];
+extern s32 gUnk_03000EC0[];
+
+extern void (*gUnk_03000ED4)(struct SpriteObj *);
+extern void (*gUnk_03000ED8)(struct SpriteObj *);
+extern u8 gUnk_03000F5C;
+extern u8 gUnk_03000F5D;
+extern void (*gUnk_03000EDC[])(struct SpriteObj *);
+extern void (*gUnk_03000F1C[])(struct SpriteObj *);
+void actor_link_anim_steps(struct SpriteObj *obj);
+void set_slot_fields(u32 idx, u8 level, u8 period);
 
 void sprite_set_action(struct SpriteObj *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -157,6 +180,8 @@ struct SpriteObj *obj_spawn(struct SpriteObj *parent, u32 kind, s32 x, s32 y, s3
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 z, void *ent);
 void partner_link_update(void *ent, void *kind, u32 arg);
 u32 mt19937_next(void);
+struct SpriteNode *sprite_node_take(void);
+struct SpriteNode *sprite_node_alloc(s32 x, s32 y, s32 z);
 
 void mode_counter_tick(struct SpriteObj *obj);
 void random_spawn_pos(struct SpriteObj *obj);
@@ -173,12 +198,128 @@ void remove_object_b(struct SpriteObj *obj);
 void anim0_clear_cb_if_active_b(struct SpriteObj *obj);
 void anim0_clear_cb_if_active_c(struct SpriteObj *obj);
 
-ASM_FUNC("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(void))
+NONMATCH("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(struct SpriteObj *obj))
+{
+    s32 t;
+    u16 *phase;
+    struct SpriteObj *actorA;
+    struct SpriteObj *actorB;
+    struct SpriteObj *child;
+
+    phase = &obj->timer2;
+    t = *phase - 1;
+    *phase = t;
+    if ((s16)t <= 0)
+    {
+        set_slot_value(0x54, -1);
+        *phase = 0xA;
+    }
+    if (obj->child != 0)
+        return;
+    set_slot_fields(1, 0xFF, 0);
+    ((u8 *)gWorld->trackedObj)[0x770] = 0;
+    actorA = (struct SpriteObj *)((u8 *)gWorld->slots[6] + 8);
+    actorB = (struct SpriteObj *)((u8 *)gWorld->slots[7] + 8);
+    if (actorA->callback == actor_link_anim_steps)
+    {
+        actorA->callback = gUnk_03000ED4;
+        actorA->entry->flags &= ~0x10;
+    }
+    if (actorB->callback == actor_link_anim_steps)
+    {
+        actorB->callback = gUnk_03000ED8;
+        actorB->entry->flags &= ~0x10;
+    }
+    gUnk_03000F5C = 0;
+    gUnk_03000F5D = 0;
+    child = actorA->child;
+    while (child != 0)
+    {
+        if (child->callback == actor_link_anim_steps)
+        {
+            u8 n;
+
+            child->entry->flags &= ~0x10;
+            n = gUnk_03000F5C;
+            gUnk_03000F5C = n + 1;
+            child->callback = gUnk_03000EDC[n];
+        }
+        child = child->child;
+    }
+    child = actorB->child;
+    while (child != 0)
+    {
+        if (child->callback == actor_link_anim_steps)
+        {
+            u8 n;
+
+            child->entry->flags &= ~0x10;
+            n = gUnk_03000F5D;
+            gUnk_03000F5D = n + 1;
+            child->callback = gUnk_03000F1C[n];
+        }
+        child = child->child;
+    }
+    obj->callback = 0;
+}
+END_NONMATCH
 
 s32 update_positions_to_target(struct SpriteObj *obj);
 void link_actor_if_free(struct SpriteObj *obj);
 void ramp_values_then_remove(struct SpriteObj *obj);
-ASM_FUNC("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(void))
+NONMATCH("asm/code_08078708/spawn_child_4025_adopt.s", void spawn_child_4025_adopt(struct SpriteObj *obj))
+{
+    struct SpriteObj *part;
+    struct SpriteObj *partBody;
+    struct SpriteObj *child;
+
+    obj->timer2 += 0x400;
+    update_positions_to_target(obj);
+    part = obj->mainObj;
+    partBody = (struct SpriteObj *)((u8 *)part + 8);
+    child = obj_spawn(part, 0x4025, gUnk_03000EB0[obj->mode] / 0x100, gUnk_03000EB8[obj->mode] / 0x100,
+                      gUnk_03000EC0[obj->mode] / 0x100, 0, 1);
+    sprite_set_action(child, 1, 0, 0);
+    child->unk74 = 0xFF;
+    {
+        u32 flags = child->flags79;
+
+        child->flags79 = flags | 1;
+    }
+    {
+        u32 flags = child->flags76;
+
+        child->flags76 = flags | 6;
+    }
+    child->owner = partBody->owner;
+    child->unk6C = partBody->unk6C;
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+    child->entry->flags &= ~6;
+    child->callback = link_actor_if_free;
+    child->timer = 0x1E;
+    child->child = obj->child;
+    child->mode = obj->mode;
+    child->unkA0 = obj->unkA0;
+    child->child = obj->child;
+    obj->child = child;
+    obj->timer = 0x28;
+    if (obj->mode == 0)
+    {
+        if (obj->unkA0 == 0 || obj->unkA0 == 2)
+            child->unk10 = 0x10000;
+    }
+    else
+    {
+        if (obj->unkA0 <= 2)
+        {
+            if (obj->unkA0 >= 1)
+                child->unk10 = 0x10000;
+        }
+    }
+    obj->callback = ramp_values_then_remove;
+}
+END_NONMATCH
 
 static inline s32 scale_by_18(s32 h)
 {
@@ -345,7 +486,57 @@ void tick_mode_and_remove_when_low(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot))
+NONMATCH("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot))
+{
+    s32 found;
+    s32 t;
+    s32 phase;
+    u32 kind;
+
+    found = lookup_slot(obj, slot);
+    if (found != 0)
+        return found;
+    t = obj->timer - 1;
+    obj->timer = t;
+    if ((s16)t <= 0)
+    {
+        obj->timer = 1;
+        obj->unkB2++;
+        phase = (s16)obj->timer2;
+        switch (phase)
+        {
+        case 0:
+            kind = 0x402C;
+            break;
+        case 1:
+            kind = 0x402D;
+            break;
+        case 2:
+            kind = 0x402E;
+            break;
+        default:
+            goto none;
+        }
+        sprite_set_action(obj, kind, 0, 0);
+        effect_spawn_at(0x29F1, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        obj->timer2++;
+        goto tail;
+    none:
+        effect_spawn_at(0x2A32, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        obj_release(obj);
+        set_slot_value(0x3B, -1);
+        return 0;
+    }
+    else
+    {
+        effect_spawn_at(0x29F1, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+    }
+tail:
+    obj->mode = 0xFFFFF900;
+    obj->callback = tick_mode_and_remove_when_low;
+    return -1;
+}
+END_NONMATCH
 
 void timer_spawn_child_402f(struct SpriteObj *obj)
 {
@@ -425,12 +616,123 @@ void pick_side_random_then_anim(struct SpriteObj *obj)
         set_slot_value(0x119, -1);
     }
 }u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
-void slot_place_and_move(struct SpriteObj *obj);
+u32 slot_place_and_move(struct SpriteObj *obj, u32 other);
+void set_pose_halfword_and_link(struct SpriteObj *obj);
 void scroll_queue_and_cull(struct SpriteObj *obj);
 void scroll_and_cull(struct SpriteObj *obj);
-ASM_FUNC("asm/code_08078708/spawn_child_4030_with_nodes.s", void spawn_child_4030_with_nodes(void))
+NONMATCH("asm/code_08078708/spawn_child_4030_with_nodes.s", void spawn_child_4030_with_nodes(struct SpriteObj *obj))
+{
+    s32 t;
+    u16 *wait;
+    u32 pool;
+    u32 count;
+    struct SpriteObj *child;
+    struct SpriteNode *node;
+    struct SpriteNode *n2;
+    struct SpriteNode *n3;
 
-ASM_FUNC("asm/code_08078708/slot_place_and_move.s", void slot_place_and_move(struct SpriteObj *obj))
+    wait = &obj->timer;
+    t = *wait - 1;
+    *wait = t;
+    if ((s16)t <= 0)
+    {
+        obj_list_push_default(obj);
+        obj->unk58 = (void *)destroy_sprite_entry;
+        obj->unk60 = (void (*)(struct SpriteObj *))slot_place_and_move;
+        child = obj_spawn(obj->mainObj, 0x4030, obj->unk38 / 0x100, obj->unk3C / 0x100 - 2,
+                          obj->unk40 / 0x100, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+        sprite_set_action(child, obj->phase, 0, 0);
+        child->child = obj->child;
+        obj->child = child;
+        child->flags79 |= 1;
+        child->unk74 = obj->unk74;
+        child->callback = scroll_queue_and_cull;
+        child->unkB2 = 0x2222;
+        node = sprite_node_take();
+        child->desc = (struct SpriteDesc *)node;
+        node->unk4 = child->entry;
+        node->unk8 = &child->list;
+        pool = ((u8 *)gWorld)[7];
+        count = (pool << 27) >> 27;
+        ((u8 *)gWorld)[7] = (pool & 0xE0) | ((count - 1) & 0x1F);
+        node->unkC = (node->unkC & 0xE0) | count;
+        child->list = (struct ScrollNode *)sprite_node_alloc(child->unk10, child->unk14, child->unk18);
+        n2 = sprite_node_alloc(child->unk10, child->unk14, child->unk18);
+        ((struct SpriteNode *)child->list)->next = n2;
+        n3 = sprite_node_alloc(child->unk10, child->unk14, child->unk18);
+        n2->next = n3;
+        n3->next = 0;
+        obj->callback = scroll_and_cull;
+    }
+}
+END_NONMATCH
+
+NONMATCH("asm/code_08078708/slot_place_and_move.s", u32 slot_place_and_move(struct SpriteObj *obj, u32 other))
+{
+    u32 found;
+    u32 rnd;
+    s32 i;
+    s32 pick;
+    s32 seek;
+    s32 slotBase;
+    s32 v6;
+    s32 v0;
+    s32 idx;
+    struct SpriteObj *part;
+    struct SpriteObj *child;
+    struct SpriteObj *walk;
+
+    found = lookup_slot(obj, other);
+    if (found != 0)
+        return found;
+    gUnk_03000F64 = other;
+    if ((s16)((struct SpriteObj *)other)->mainObj->unkEC == -1)
+        gUnk_03000F68 = found;
+    else
+        gUnk_03000F68 = 1;
+    child = (struct SpriteObj *)obj->mainObj->unk38;
+    while (child != 0)
+    {
+        if (child->unkB2 == 0x2222)
+            obj_release(child);
+        child = child->child;
+    }
+    effect_spawn_at(0x2A6E, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+    rnd = mt19937_next();
+    pick = (rnd & 3) + 1;
+    gUnk_03000F60 = 0;
+    part = obj->mainObj;
+    walk = *(struct SpriteObj **)part;
+    slotBase = (s16)part->unkEC;
+    seek = slotBase + 1;
+    for (i = 0; i < pick; i++)
+    {
+        do
+        {
+            walk = *(struct SpriteObj **)walk;
+            v6 = (s16)walk->unkEC;
+            v0 = (s16)walk->unkF6;
+        } while (v0 == 0 || v6 == seek);
+    }
+    gUnk_03000F60 = (struct SpriteObj *)((u8 *)walk + 8);
+    idx = ((u32)(v6 - slotBase) << 24) >> 22;
+    part = obj->mainObj;
+    obj->unk84 = part->unkD8 + (gLinkOffsetX[idx >> 2] << 8);
+    obj->unk88 = part->unkDC;
+    obj->unk8C = part->unkE0 + (gLinkOffsetH[idx >> 2] << 8);
+    {
+        u32 flags = obj->flags79;
+
+        obj->flags79 = flags | 0x20;
+    }
+    obj->unk7C = 0x200;
+    obj->unk7A = 0;
+    start_motion(obj);
+    obj->timer = 8;
+    obj->callback = set_pose_halfword_and_link;
+    return 0;
+}
+END_NONMATCH
 
 void remove_object(struct SpriteObj *obj);
 void resolve_contact_action(void *owner, void *obj, s32 a, s32 b, u32 code);
