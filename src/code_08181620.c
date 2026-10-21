@@ -462,4 +462,116 @@ ASM_FUNC("asm/code_08181620/obj_grow_spin_points_26d0.s", void obj_grow_spin_poi
 
 ASM_FUNC("asm/code_08181620/obj_grow_spin_points_2980.s", void obj_grow_spin_points_2980(void))
 
-ASM_FUNC("asm/code_08181620/obj_spring_turn_points_2c50.s", void obj_spring_turn_points_2c50(void))
+void obj_spring_turn_points_2c50(struct PtObj *obj)
+{
+    struct { s32 x; s32 y; s32 z; u32 model; } l;
+    s32 *pt;
+    s32 zoom;
+    s32 angle;
+    s32 angVel;
+    u32 h;
+    u32 saved;
+    s32 left;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s16 *cs;
+    s16 *sn;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 x2;
+    s32 y2;
+    s32 z2;
+    s32 t;
+    s32 pos;
+
+    pt = (s32 *)obj->data;
+    zoom = *pt++;
+    angle = *pt++;
+    angVel = *pt++;
+    l.model = obj->rec->model;
+    h = block_flag_byte(obj->rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (left = 0; left < 2; left++) {
+        x = *pt++;
+        l.x = x;
+        y = *pt++;
+        l.y = y;
+        z = *pt++;
+        l.z = z;
+        x1 = (x * zoom) / 0x100;
+        l.x = x1;
+        y1 = (y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (z * zoom) / 0x100;
+        l.z = z1;
+        y2 = z1;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[angle & 0xFF];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        y2 = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        l.y = y2;
+        l.z = ((z2 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
+        l.y = y2 + angle;
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        t = obj->posY;
+        pos = l.y;
+        if (pos < 0) {
+            pos += 0xFF;
+        }
+        pos >>= 8;
+        l.y = t + pos;
+        t = obj->posZ;
+        pos = l.z;
+        if (pos < 0) {
+            pos += 0xFF;
+        }
+        pos >>= 8;
+        l.z = t + pos;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    angle += angVel;
+    angVel -= angle / 0x80;
+    pt = (s32 *)obj->data;
+    *pt++ = zoom;
+    *pt++ = angle;
+    *pt = angVel;
+}
