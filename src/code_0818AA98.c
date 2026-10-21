@@ -60,7 +60,7 @@ extern const u8 gSpawnStartSpinModel10[];
 extern const u8 gSpawnStartRisePoint[];
 extern const u8 gSpawnStartSpinModel6[];
 
-extern void obj_spin_model6(void);
+extern void obj_spin_model6(struct Point1Obj *obj);
 
 // One fixed point at the object position; the object record gets a 0x80 x 0x80 size.
 void obj_fixed_point(struct Point1Obj *obj)
@@ -717,7 +717,109 @@ void obj_pulse_model6_b(struct Point1Obj *obj)
     *words = vel;
 }
 
-ASM_FUNC("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(void))
+NONMATCH("asm/code_0818AA98/obj_spin_model6.s", void obj_spin_model6(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 zoom;
+    s32 step;
+    s32 angle;
+    s32 size;
+    struct ObjRecord *rec;
+    u32 *words;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 x2;
+    s32 z2;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    step = *words++;
+    angle = *words++;
+    size = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 6; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        z2 = z1;
+        z2 = z2 * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (z2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[64] / 0x40);
+        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
+        l.z = ((z2 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += step;
+    angle -= 3;
+    size += 8;
+    if (size > 0x200) {
+        size = 0x200;
+    }
+    rec->unk4 = size;
+    rec->unk6 = size;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = step;
+    *words++ = angle;
+    *words = size;
+}
+END_NONMATCH
 
 // One point that rises: y grows by vy, vy slows above 384 and y snaps to 256 when falling
 // near the bottom. The position is also stored as halfwords in the object record.
@@ -811,7 +913,100 @@ void obj_rise_point(struct Point1Obj *obj)
     *words = vy;
 }
 
-ASM_FUNC("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Point1Obj *obj))
+NONMATCH("asm/code_0818AA98/obj_spin_model10.s", void obj_spin_model10(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 zoom;
+    s32 step;
+    s32 angle;
+    struct ObjRecord *rec;
+    u32 *words;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 x1;
+    s32 y1;
+    s32 z1;
+    s32 x2;
+    s32 z2;
+    s32 t;
+    s32 pos;
+
+    words = obj->data;
+    zoom = *words++;
+    step = *words++;
+    angle = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 10; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        x1 = (vx * zoom) / 0x100;
+        l.x = x1;
+        y1 = (l.y * zoom) / 0x100;
+        l.y = y1;
+        z1 = (l.z * zoom) / 0x100;
+        l.z = z1;
+        z2 = z1;
+        z2 = z2 * (gCosineTable[angle & 0xFF] / 0x40);
+        z2 = (z2 - (gSineTable[angle & 0xFF] / 0x40) * x1) / 0x100;
+        l.z = z2;
+        x2 = (x1 * (gCosineTable[angle & 0xFF] / 0x40) + (gSineTable[angle & 0xFF] / 0x40) * z1) / 0x100;
+        l.x = x2;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        l.y = (t - (gSineTable[12] / 0x40) * z2) / 0x100;
+        l.z = ((z2 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom += step;
+    angle += 2;
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = step;
+    *words = angle;
+}
+END_NONMATCH
 
 void obj_pulse_model8(struct Point1Obj *obj)
 {
