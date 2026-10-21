@@ -228,8 +228,8 @@ void obj_stop_motion(struct FieldObj *obj)
 
 NONMATCH("asm/code_08045F18/obj_set_motion_a_08046AA4.s", u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
 {
+    u16 spd;
     u32 target;
-    u32 spd;
     s32 now;
     s32 goal;
     s32 step;
@@ -303,14 +303,14 @@ NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct Fie
         return 0;
     if (mode == 1)
     {
-        step = spd;
+        step = speed;
         if (now >= goal)
-            step = -spd;
+            step = -speed;
         obj->axisBStep = step;
     }
     else
     {
-        obj->axisBSpeed = speed;
+        obj->axisBSpeed = spd;
     }
     obj->axisBCount = 0;
     flags = &obj->moveFlags2B5;
@@ -323,12 +323,14 @@ END_NONMATCH
 NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
 {
     u32 target;
-    u32 spd;
+    u16 spd;
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
     s32 t;
+    s16 *pNow;
+    s16 *pGoal;
 
     spd = speed;
     if (relative == 1)
@@ -343,8 +345,10 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_0
     }
     obj->axisACur = obj->sub->h08;
     obj->axisATarget = target;
-    now = (s16)obj->unk2FE;
-    goal = (s16)obj->unk306;
+    pNow = (s16 *)&obj->unk2FE;
+    pGoal = (s16 *)&obj->unk306;
+    now = *pNow;
+    goal = *pGoal;
     if (now == goal)
         return 0;
     if (mode == 1)
@@ -367,7 +371,7 @@ END_NONMATCH
 NONMATCH("asm/code_08045F18/obj_set_motion_a_compare.s", u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
 {
     u32 target;
-    u32 spd;
+    u16 spd;
     s32 now;
     s32 goal;
     s32 step;
@@ -444,28 +448,34 @@ void obj_sync_sub_slot(struct FieldObj *obj, s32 slot)
 
 ASM_FUNC("asm/code_08045F18/obj_step_index.s", void obj_step_index(void))
 
+static inline void obj_set_state_bit6(struct FieldObj *o)
+{
+    o->state214 |= 0x40;
+}
+
 NONMATCH("asm/code_08045F18/obj_set_state.s", void obj_set_state(struct FieldObj *obj, u8 state))
 {
-    u8 *p;
+    u32 m;
     u32 old;
     u32 prev;
     u32 v;
 
-    p = &obj->state214;
-    old = *p;
+    old = obj->state214;
+    m = 7;
     prev = (old << 29) >> 26;
     v = (old & -0x39) | prev;
-    *p = (v & -8) | (state & 7);
-    if ((((u32)*p << 29) >> 29) > 2)
+    v = (v & -8) | (state & m);
+    obj->state214 = v;
+    if ((((u32)v << 29) >> 29) > 2)
     {
         obj->unk02 = obj->unk24 << 5;
     }
-    if ((*p & 7) == 3)
+    if ((obj->state214 & 7) == 3)
     {
         struct FieldSub *sub = obj->sub;
         obj_load_record(sub, sub->anim21, 0, 0, 0);
     }
-    *(u8 *)((u8 *)obj + 0x214) |= 0x40;
+    obj_set_state_bit6(obj);
 }
 END_NONMATCH
 
@@ -515,7 +525,7 @@ void obj_apply_state_a(struct FieldObj *obj)
     obj->klass338->fn3C((u8 *)obj + obj->klass338->thisOffset38, 1);
 }
 
-NONMATCH("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(struct FieldObj *obj))
+void obj_apply_state_b(struct FieldObj *obj)
 {
     u8 *p;
     u32 v;
@@ -539,17 +549,14 @@ NONMATCH("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(struct 
     }
     if (obj->flags215 & 1)
     {
-        u16 prev = obj->prevId21C;
-
-        if (prev != obj->id218)
+        if (obj->prevId21C != obj->id218)
         {
-            obj->id218 = prev;
+            obj->id218 = obj->prevId21C;
             obj_update_special_flag(obj);
         }
     }
-    f = obj->flags215;
-    mode = f & 1;
-    if (f & 4)
+    mode = obj->flags215 & 1;
+    if (obj->flags215 & 4)
         a = obj->anim221;
     else
         a = -1;
@@ -562,7 +569,6 @@ NONMATCH("asm/code_08045F18/obj_apply_state_b.s", void obj_apply_state_b(struct 
     ((struct SlotBits *)&obj->flags215)->bit0 = 0;
     ((struct SlotBits *)&obj->flags215)->has1 = 0;
 }
-END_NONMATCH
 
 void obj_set_sprite_slot(struct FieldObj *obj, u32 slot)
 {
