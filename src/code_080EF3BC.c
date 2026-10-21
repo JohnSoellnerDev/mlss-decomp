@@ -93,7 +93,7 @@ struct AnchorBits3 { u8 lo3 : 3; u8 b3 : 1; u8 top : 4; };
 void set_sub_pair_mode(u8 *target, u32 a, u32 b, u32 c);
 void follow_anchor(u8 *target, u32 arg);
 
-NONMATCH("asm/code_080EF3BC/apply_anchor_command.s", u32 apply_anchor_command(u8 *obj, u8 *dst, u32 *cmds))
+u32 apply_anchor_command(u8 *obj, u8 *dst, u32 *cmds)
 {
     u8 *list = *(u8 **)(obj + 0x14);
     u32 mode;
@@ -123,15 +123,18 @@ NONMATCH("asm/code_080EF3BC/apply_anchor_command.s", u32 apply_anchor_command(u8
         ((struct AnchorBits4 *)(*(u8 **)(obj + 0x14) + 0x208))->b4 = 0;
         /* fall through */
     case 6:
-        ((struct AnchorBits3 *)(*(u8 **)(obj + 0x14) + 0x208))->b3 = (cmds[0] - 5) & 1;
+    {
+        u8 *target = *(u8 **)(obj + 0x14);
+        u32 bit = cmds[0] - 5;
+        ((struct AnchorBits3 *)(target + 0x208))->b3 = bit & 1;
         break;
+    }
     case 7:
         follow_anchor(*(u8 **)(obj + 0x14), 1);
         break;
     }
     return 1;
 }
-END_NONMATCH
 
 struct Bit1Bits { u8 lo1 : 1; u8 b1 : 1; u8 rest : 6; };
 u32 pair_slot_kind(u8 *list);
@@ -231,42 +234,7 @@ extern const u8 gAreaEntryTable[];
 extern u8 *gRecordPtrTable[];
 void set_flag(u32 a, u32 b, u32 value, u32 flag);
 
-NONMATCH("asm/code_080EF3BC/apply_record_setting.s", u32 apply_record_setting(u32 unused0, u32 unused1, u32 *cmds))
-{
-    if (cmds[0] != 0x3FF)
-    {
-        const u8 *area = gAreaEntryTable + cmds[0] * 24;
-        u32 *p = cmds + 1;
-        u8 *record = gRecordPtrTable[*(u16 *)(area + 0x10)];
-        u8 *base = record - ((record[7] << 8) | record[6]);
-        u32 index = *p++;
-        u8 *entry = base + index * 20;
-
-        if (((entry[0x12] >> 3) & 7) == 3)
-        {
-            u32 word = ((u32)entry[0xF] << 24) | ((u32)entry[0xE] << 16) | ((u32)entry[0xD] << 8) | entry[0xC];
-            u16 value = (word >> 10) + 0x960;
-
-            set_flag(0, 0, value, *(u8 *)p);
-        }
-    }
-    else
-    {
-        u8 *gfx = gUnk_03000FC0;
-        u32 value = 0;
-
-        if (cmds[2] != 0)
-        {
-            value = -1;
-        }
-        cmds[0] = value;
-        *(u32 *)(gfx + 0x14C) = value;
-        ((void (*)(u32, void *, u32))gMemRoutines)(cmds[0], gfx + 0x150, 0xFC);
-        *(u32 *)(gfx + 0x248) = cmds[0];
-    }
-    return 1;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_080EF3BC/apply_record_setting.s", void apply_record_setting(void))
 
 struct FlagBits7 { u8 lo7 : 7; u8 b7 : 1; };
 struct FlagBits6 { u8 lo6 : 6; u8 b6 : 1; u8 top : 1; };
@@ -290,24 +258,44 @@ static inline void set_flag_bit7(u8 *p, u32 v)
 NONMATCH("asm/code_080EF3BC/entity_setup_set_flag_bit.s", u32 entity_setup_set_flag_bit(u8 *obj, u32 unused, u32 *cmds))
 {
     u8 *list = *(u8 **)(obj + 0x14);
-    u32 idx = *cmds++;
-    u8 *entry = ((u8 **)(list + 0x28))[idx];
-    s32 kind = *cmds++;
+    u32 idx;
+    u32 off;
+    u8 *slots;
+    u8 *entry;
+    s32 kind;
+
+    idx = *cmds++;
+    off = idx << 2;
+    slots = list + 0x28;
+    entry = *(u8 **)(slots + off);
+    kind = *cmds++;
 
     switch (kind)
     {
     case 0:
-        set_flag_bit7(entry + 0x351, *cmds);
+    {
+        u32 value = *cmds;
+        set_flag_bit7(entry + 0x351, value);
         break;
+    }
     case 1:
-        set_flag_bit6(list + 0x209, *cmds);
+    {
+        u32 value = *cmds;
+        set_flag_bit6(list + 0x209, value);
         break;
+    }
     case 2:
-        set_flag_bit5(list + 0x20B, *cmds);
+    {
+        u32 value = *cmds;
+        set_flag_bit5(list + 0x20B, value);
         break;
+    }
     case 3:
-        set_flag_bit6(list + 0x26A, *(u8 *)cmds);
+    {
+        u8 *bits = list + 0x26A;
+        set_flag_bit6(bits, *(u8 *)cmds);
         break;
+    }
     }
     return 1;
 }
@@ -434,7 +422,7 @@ NONMATCH("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(u8 
         return;
     }
     owner = *obj;
-    if (((flags ^ 1) & 1) != 0)
+    if ((((u16)flags ^ 1) & 1) != 0)
     {
         return;
     }
@@ -519,19 +507,21 @@ NONMATCH("asm/code_080EF3BC/update_effect_slots.s", void update_effect_slots(u8 
     s16 i;
     s32 x;
     s32 y;
+    u8 idx;
 
     i = 0;
     slot = *(u8 **)gUnk_03000FC8;
     for (; i <= 3; i++, slot += 0x10)
     {
-        u8 idx = i;
+        idx = i;
         if ((u8)slot_countdown(gUnk_03000FC8, idx) != 0)
         {
             if (slot[0xE] != 0)
             {
                 u8 *list = *(u8 **)(*task + 0x14);
-                u8 **entries = (u8 **)(list + 0x28);
-                u8 *z = entries[slot[0xC]];
+                u32 off = slot[0xC] << 2;
+                u8 *base = list + 0x28;
+                u8 *z = *(u8 **)(base + off);
                 entity_camera_offset(list, slot[0xC], &x, &y);
                 y = y - z[0x283];
                 *(s16 *)(slot + 8) = x;
