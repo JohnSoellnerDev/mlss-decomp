@@ -578,7 +578,7 @@ void obj_tilt_zoom2_bea8(struct Point1Obj *obj)
     *words = vel;
 }
 
-NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c07c.s", void obj_model8_zoom_c07c(struct Point1Obj *obj))
+void obj_model8_zoom_c07c(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -667,9 +667,8 @@ NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c07c.s", void obj_model8_zoom_c07c(s
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c274.s", void obj_model8_zoom_c274(struct Point1Obj *obj))
+void obj_model8_zoom_c274(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -758,9 +757,8 @@ NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c274.s", void obj_model8_zoom_c274(s
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c46c.s", void obj_model8_zoom_c46c(struct Point1Obj *obj))
+void obj_model8_zoom_c46c(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -849,9 +847,8 @@ NONMATCH("asm/code_0817B2D8/obj_model8_zoom_c46c.s", void obj_model8_zoom_c46c(s
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817B2D8/obj_model8_zoom_oam_190_c664.s", void obj_model8_zoom_oam_190_c664(struct Point1Obj *obj))
+void obj_model8_zoom_oam_190_c664(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -940,9 +937,8 @@ NONMATCH("asm/code_0817B2D8/obj_model8_zoom_oam_190_c664.s", void obj_model8_zoo
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817B2D8/obj_model8_zoom_oam_180_c85c.s", void obj_model8_zoom_oam_180_c85c(struct Point1Obj *obj))
+void obj_model8_zoom_oam_180_c85c(struct Point1Obj *obj)
 {
     struct Point1Local l;
     struct ObjRecord *rec;
@@ -1031,7 +1027,6 @@ NONMATCH("asm/code_0817B2D8/obj_model8_zoom_oam_180_c85c.s", void obj_model8_zoo
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
 
 void obj_point_fixed_ca54(struct Point1Obj *obj)
 {
