@@ -950,6 +950,7 @@ ASM_FUNC("asm/code_0810D6C0/resolve_contact_action.s", void resolve_contact_acti
 void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
 NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode))
 {
+    s32 speedMul = 0x66;
     s32 delta;
     s32 vel;
     s32 v2;
@@ -969,7 +970,7 @@ NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(stru
     animScale = obj->unk28->unk10A;
     vel = partner->unk28->unk104;
     scaleB = partner->unk28->unk10C;
-    scaled = animScale * (speedA * 0x66);
+    scaled = animScale * (speedA * speedMul);
     delta = scaled / 0x100;
     scaled = (vel << 1) + vel;
     scaled = scaled + (scaled << 4);
