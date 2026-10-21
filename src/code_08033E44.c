@@ -145,6 +145,7 @@ void pair_turn_and_sample(void *obj, u32 zero);
 
 NONMATCH("asm/code_08033E44/sub_08033E44.s", void sub_08033E44(struct PairObj *obj))
 {
+    u32 bit = 8;
     struct PairPart **slotA;
     struct PairPart **slotB;
     struct PairPart *pa;
@@ -172,7 +173,7 @@ NONMATCH("asm/code_08033E44/sub_08033E44.s", void sub_08033E44(struct PairObj *o
     qb->flags351 |= 0x40;
     rb = *slotB;
     ra = *slotA;
-    ra->flags358 |= 8;
+    ra->flags358 |= bit;
     rb->flags358 |= 8;
     b = *slotB;
     target = ((*slotA)->posZ - b->posZ) / 0x100 + 0x14;
