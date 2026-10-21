@@ -476,7 +476,7 @@ ASM_FUNC("asm/code_0817FD84/obj_zoom_quarter_spin8_0f78.s", void obj_zoom_quarte
 
 ASM_FUNC("asm/code_0817FD84/obj_zoom_tilt_rise8_11dc.s", void obj_zoom_tilt_rise8_11dc(struct FallObj *obj))
 
-NONMATCH("asm/code_0817FD84/obj_zoom_quarter10_1440.s", void obj_zoom_quarter10_1440(struct FallObj *obj))
+void obj_zoom_quarter10_1440(struct FallObj *obj)
 {
     struct FallLocal l;
     struct FallRecord *rec;
@@ -561,4 +561,4 @@ NONMATCH("asm/code_0817FD84/obj_zoom_quarter10_1440.s", void obj_zoom_quarter10_
     *words++ = zoom;
     *words = vel;
 }
-END_NONMATCH
+
