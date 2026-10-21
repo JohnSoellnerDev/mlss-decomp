@@ -516,6 +516,7 @@ ASM_FUNC("asm/sound_0819B3C4/cgb_sequencer.s", void cgb_sequencer(u32 ch))
 
 NONMATCH("asm/sound_0819B3C4/cgb_wave_step.s", void cgb_wave_step(void))
 {
+    s32 reg = 0x04000073;
     u8 *rec = (u8 *)sound_info() + 0x4E0;
     u32 next;
 
@@ -532,7 +533,7 @@ NONMATCH("asm/sound_0819B3C4/cgb_wave_step.s", void cgb_wave_step(void))
         *(vu16 *)0x04000074 = *(u16 *)(rec + 8);
         return;
     case 5:
-        *(vu8 *)0x04000073 = 0;
+        *(vu8 *)reg = 0;
         next = 0;
         break;
     default:
