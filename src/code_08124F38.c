@@ -77,6 +77,11 @@ void slot_reset(u32 id);
 u32 slot_bit_test(u32 a);
 void set_slot_fields(u32 a, u32 b, u32 c);
 void sound_dma_reset(void);
+void sound_driver_init(void);
+u16 eeprom_write_block_wait(u16 idx, void *data);
+u32 eeprom_verify(u16 idx, void *data);
+extern u8 gUnk_03001004;
+extern u8 gUnk_03001006[];
 
 NONMATCH("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
 {
@@ -141,7 +146,56 @@ ASM_FUNC("asm/code_08124F38/save_game_flush_dma_off.s", void save_game_flush_dma
 
 ASM_FUNC("asm/code_08124F38/save_game_flush_sound_off.s", void save_game_flush_sound_off(void))
 
-ASM_FUNC("asm/code_08124F38/eeprom_write_block_muted.s", void eeprom_write_block_muted(void))
+NONMATCH("asm/code_08124F38/eeprom_write_block_muted.s", u16 eeprom_write_block_muted(u32 unused0, u32 unused1, u16 block))
+{
+    u16 ie[2];
+    u16 buf[4];
+    s32 i;
+    u32 flags;
+    u8 *sys;
+
+    ie[0] = *(u16 *)0x04000200;
+    *(u16 *)0x04000208 = 0;
+    *(u16 *)0x04000200 = 0;
+    if (block == 0)
+    {
+        sys = gSys;
+        flags = 0;
+        sys[0x888] |= 0x40;
+        if ((u8)slot_bit_test(0) == 1)
+            flags = 1;
+        gUnk_03001006[0] = ((struct SysSlots *)sys)->songSlot[0];
+        slot_reset(0);
+        if ((u8)slot_bit_test(1) == 1)
+            flags |= 2;
+        gUnk_03001006[1] = ((struct SysSlots *)sys)->songSlot[1];
+        slot_reset(1);
+        sound_dma_reset();
+        gUnk_03001004 = flags;
+    }
+    {
+        u16 *p = buf;
+        for (i = 0; i < 4; i++)
+            *p++ = 0;
+    }
+    eeprom_write_block_wait(block, buf);
+    eeprom_verify(block, buf);
+    if (block + 1 == 0x400)
+    {
+        ((struct SysFlags888 *)gSys)->bits.bit6 = 0;
+        flags = gUnk_03001004;
+        if (flags != 0)
+        {
+            if (flags & 1)
+                slot_set_mode(0, 0xFF, 0x1E);
+            if (flags & 2)
+                slot_set_mode(1, 0xFF, 0x1E);
+        }
+    }
+    *(u16 *)0x04000200 = ie[0];
+    return block + 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08124F38/eeprom_read_slots_setup.s", void eeprom_read_slots_setup(void))
 
