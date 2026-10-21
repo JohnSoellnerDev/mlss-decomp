@@ -147,6 +147,7 @@ struct ZoneAnim
 
 typedef void (*ChaseHandler)(void *owner, struct CompanionObj *obj, u32 *slot);
 typedef u8 (*ChaseMethod)(void *self, void *fn, u32 zero);
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
 
 struct AiBlock
 {
@@ -161,6 +162,26 @@ struct MethodSlot
     ChaseMethod fn;
 };
 
+struct OwnerObj
+{
+    u8 filler0[0x28];
+    struct CompanionObj *entries[2];
+    u8 filler30[0x124 - 0x30];
+    u16 kind;
+    u8 filler126[0x200 - 0x126];
+    u32 tgtA;
+    u32 tgtB;
+};
+
+struct BoxVol
+{
+    u8 filler0[0xC];
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 dz;
+};
+
 
 u8 probe_body_hit(void *owner, struct CompanionObj *body, s32 x, s32 y, s32 z, u32 a, u32 b);
 void obj_deactivate(struct CompanionObj *obj);
@@ -173,7 +194,7 @@ void ai_set_facing_from_velocity(struct CompanionObj *owner, struct CompanionObj
 void ai_set_box_for_state(void *parent, struct CompanionObj *obj, u32 *slot);
 u32 obj_inside_area(struct CompanionObj *obj);
 void step_xy_or_handler(void *parent, struct CompanionObj *obj, u32 *slot);
-void start_move_to(struct CompanionObj *obj, s32 x, s32 y, s32 speed, u8 zero);
+void start_move_to(struct CompanionObj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
 u32 point_in_box(void *box, struct CompanionObj *obj, u32 limit, u32 zero);
 void obj_box_to_stack(void *box, struct CompanionObj *obj, u32 extent, u32 zero);
 u8 step_pos_xy_plain(struct CompanionObj *obj);
@@ -308,7 +329,58 @@ ASM_FUNC("asm/code_0814DF44/ai_choose_move_target.s", void ai_choose_move_target
 
 void ai_set_anim_by_mode(struct CompanionObj *obj, u8 mode);
 void ai_aim_and_strike(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot);
-ASM_FUNC("asm/code_0814DF44/ai_move_or_return.s", void ai_move_or_return(void))
+u8 widths_overlap_x(struct CompanionObj *obj, u32 other);
+u8 heights_overlap_y(struct CompanionObj *obj, u32 other);
+void ai_move_or_return(struct OwnerObj *owner, struct CompanionObj *obj, u32 *slot)
+{
+    s32 unused[4];
+    struct Behavior *beh;
+    s16 *tbl;
+    u16 sizeA;
+    u16 sizeB;
+    u16 sizeC;
+    s32 speed;
+    u32 roll;
+
+    beh = (struct Behavior *)((u8 *)obj + 0x58);
+    tbl = obj->tbl;
+    sizeA = obj->size272;
+    sizeB = obj->size274;
+    sizeC = obj->size276;
+    obj->size272 = 0x800;
+    obj->size274 = 0x400;
+    obj->size276 = 0x600;
+    if (((u8)widths_overlap_x(obj, owner->tgtA) != 0 && (u8)heights_overlap_y(obj, owner->tgtA) != 0)
+        || ((u8)widths_overlap_x(obj, owner->tgtB) != 0 && (u8)heights_overlap_y(obj, owner->tgtB) != 0))
+    {
+        obj->size272 = sizeA;
+        obj->size274 = sizeB;
+        obj->size276 = sizeC;
+        *slot = (u32)ai_aim_and_strike;
+    }
+    else
+    {
+        obj->size272 = sizeA;
+        obj->size274 = sizeB;
+        obj->size276 = sizeC;
+        if ((u8)step_pos_xy_plain(obj) == 0)
+        {
+            if ((u8)obj_inside_area(obj) == 0)
+            {
+                roll = rand_below(4, mt19937_next());
+                speed = tbl[roll + 4];
+                start_move_to(obj, beh->homeX, beh->homeY, speed, (u8)0);
+                ai_set_anim_by_mode(obj, 2);
+                *slot = (u32)step_xy_or_handler;
+            }
+            else
+            {
+                ai_set_anim_by_mode(obj, 0);
+                *slot = (u32)ai_choose_move_target;
+            }
+        }
+    }
+}
 
 NONMATCH("asm/code_0814DF44/ai_aim_and_strike.s", void ai_aim_and_strike(struct CompanionObj *owner, struct CompanionObj *obj, u32 *slot))
 {
@@ -609,7 +681,44 @@ void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u3
         *slot = (u32)ai_wander_random;
 }
 
-ASM_FUNC("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void))
+NONMATCH("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void *parent, struct CompanionObj *obj))
+{
+    struct Sprite **sprp;
+    struct CompanionObj *child;
+    s32 flag;
+    struct Sprite *spr;
+
+    child = obj->child;
+    ((struct FlagBits *)&obj->flags33E)->bit4 = 1;
+    sprp = &obj->sprite;
+    if ((*sprp)->record == 1)
+    {
+        obj->size272 = 0xA00;
+        obj->size274 = 0x1000;
+        obj->size276 = 0xA00;
+    }
+    load_anim_tables(obj);
+    ((struct StateBits *)&obj->state)->low3 = 1;
+    ((struct FlagBits *)&obj->flags33D)->bit3 = 1;
+    init_size_and_pose(child);
+    spr = obj->sprite;
+    flag = obj->sensor->flag8;
+    ((struct MirrorBits *)&spr->mirror)->bit6 = flag & 1;
+    obj->variant = (*sprp)->record;
+    obj->homeX = obj->x;
+    obj->homeY = obj->y;
+    obj->index1D0 = rand_below(4, mt19937_next());
+    child->handler = 0;
+    obj->altHandler = (u32)companion_chase_tick;
+    obj->handler = (u32)entry_switch_handler;
+    if (((struct OwnerObj *)parent)->kind == 0x197)
+    {
+        obj->timer = 0xF;
+        obj->handler = (u32)tick_store;
+        obj->nextHandler = (u32)entry_switch_handler;
+    }
+}
+END_NONMATCH
 
 void enter_idle_wait(struct CompanionObj *obj, u32 *slot);
 NONMATCH("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
@@ -751,7 +860,51 @@ void init_size_and_pose(struct CompanionObj *obj)
 
 ASM_FUNC("asm/code_0814DF44/spawn_random_offset.s", void spawn_random_offset(void))
 
-ASM_FUNC("asm/code_0814DF44/box_fx8_div_and_dispatch.s", void box_fx8_div_and_dispatch(void))
+NONMATCH("asm/code_0814DF44/box_fx8_div_and_dispatch.s", u32 box_fx8_div_and_dispatch(void *self, struct CompanionObj *obj, struct BoxVol *box))
+{
+    s32 xb;
+    s32 yb;
+    s32 xa;
+    s32 ya;
+
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->x, 0x100);
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->y, 0x100);
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->z + obj->dz, 0x100);
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(box->x, 0x100);
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(box->y, 0x100);
+    MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(box->z + box->dz, 0x100);
+    switch (obj->variant)
+    {
+    case 0:
+        if ((obj->sprite->mirror & 0x40) != 0)
+        {
+            xb = 0x6400;
+            xa = 0;
+            yb = 0x400;
+            ya = yb;
+        }
+        else
+        {
+            xb = 0;
+            xa = 0x6400;
+            yb = 0x400;
+            ya = yb;
+        }
+        break;
+    case 1:
+        xb = 0x400;
+        xa = xb;
+        yb = 0;
+        ya = 0x6400;
+        break;
+    }
+    if (obj->x + xa >= box->x && obj->x - xb <= box->x && obj->y + ya >= box->y
+        && obj->y - yb <= box->y && obj->z + obj->dz + 0x400 >= box->z + box->dz
+        && obj->z + obj->dz <= box->z + box->dz)
+        return 1;
+    return 0;
+}
+END_NONMATCH
 
 u32 entry_within_reach(struct CompanionObj *obj, struct CompanionObj *other)
 {
