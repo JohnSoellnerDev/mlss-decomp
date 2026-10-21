@@ -213,8 +213,10 @@ static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *chil
     ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
 }
 
-NONMATCH("asm/code_080DACF4/obj_spawn_child_part.s", void obj_spawn_child_part(struct ActorObj *obj))
+void obj_spawn_child_part(struct ActorObj *obj)
 {
+    s32 hOfs = 4;
+    s32 xOfs = 0xA;
     struct ActorObj *child;
     struct ActorPart *part;
 
@@ -240,9 +242,9 @@ NONMATCH("asm/code_080DACF4/obj_spawn_child_part.s", void obj_spawn_child_part(s
         child->ground = obj->owner->data->targetH;
         part = obj->owner->data;
         child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
-                                      part->targetX - (child->baseX - 0xA),
+                                      part->targetX - (child->baseX - xOfs),
                                       part->targetY - child->baseY,
-                                      child->ground - (child->baseH - 4),
+                                      child->ground - (child->baseH - hOfs),
                                       0x5C00, 0x466, 0x100, 0);
         obj->childValue = 0;
         sprite_set_action(obj, 3, 0, 0);
@@ -251,7 +253,6 @@ NONMATCH("asm/code_080DACF4/obj_spawn_child_part.s", void obj_spawn_child_part(s
         obj->state = obj_pose_update_if_active_c;
     }
 }
-END_NONMATCH
 
 void anim_steps_obj_fall_step(struct ActorObj *obj)
 {
