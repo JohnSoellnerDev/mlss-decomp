@@ -132,6 +132,8 @@ u32 mt19937_next(void);
 void dma_win0_from_buffer(void);
 void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
 extern const u8 gTagYbtb[];
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
+void *task_push_list_50(void *next, void *obj);
 
 ASM_FUNC("asm/code_080E0814/unknown_thumb_080e0814.s", void unknown_thumb_080e0814(void))
 
@@ -317,7 +319,49 @@ NONMATCH("asm/code_080E0814/advance_path.s", void advance_path(struct StreamObj 
 END_NONMATCH
 
 void copy_bg_block_flipped(struct StreamObj *obj);
-ASM_FUNC("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(void))
+NONMATCH("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(u32 index))
+{
+    u32 *entryA;
+    u32 *entryB;
+    u32 *entry;
+    s32 diff;
+    u32 i2;
+    u32 i3;
+    u32 sel;
+    s32 h;
+    s32 ctrl;
+    u8 *frame;
+    void (*copy)(u8 *, u8 *, u32);
+    void (*copy2)(u8 *, u8 *, u32);
+
+    gWorld->tile26C = index;
+    frame = (u8 *)((u32)gUnk_089F46B0 + *(u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[index] * 4));
+    queue_display_entry(2, frame, (void *)0x06004000, -1, 0, 0);
+    i3 = (index + 3) << 1;
+    entryA = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + i3) * 4);
+    i2 = (index + 2) << 1;
+    entryB = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + i2) * 4);
+    diff = *entryA - *entryB;
+    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    copy(gUnk_02000180, gWorkBuf + 0x3DF0, diff);
+    copy2 = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    sel = i2;
+    if ((gSys[0x888] & 6) != 0)
+    {
+        sel = i3;
+    }
+    entry = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + sel) * 4);
+    copy2((u8 *)((u32)gUnk_089F46B0 + *entry), gUnk_02000180, diff);
+    h = diff;
+    if (h < 0)
+    {
+        h += 0x1F;
+    }
+    ctrl = (0xFF00 >> (8 - (h >> 5))) & 0xFFFFFF00;
+    ((struct SysHead *)gSys)->unk2 = ctrl | ((struct SysHead *)gSys)->unk2;
+    task_push_list_50(copy_bg_block_flipped, 0);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear(void))
 {
