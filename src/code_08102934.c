@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Sprite
 {
@@ -32,7 +33,8 @@ struct DisplaySub
 
 struct DisplayEntry
 {
-    u8 filler0[0x8];
+    u8 filler0[0x4];
+    void (*state)(struct DisplayEntry *);
     void *data;
     struct DisplaySub *sub;
     u16 unk10;
@@ -46,7 +48,7 @@ struct Owner
 {
     u8 filler0[0x4];
     void (*state)(struct Owner *);
-    u8 filler8[0x4];
+    u32 unk8;
     struct Figure *fig;
     u16 timer;
     u16 index;
@@ -95,6 +97,12 @@ void state_display_entry_draw(struct DisplayEntry *entry);
 void state_spawn_list_entry(struct Owner *owner);
 void state_show_hero_label(struct Owner *owner);
 void state_apply_hero_stats(struct Owner *owner);
+void draw_obj_at_xy(struct Owner *obj);
+void sprite_node_release(struct DisplaySub *sub);
+void draw_entry_flags(struct DisplayEntry *entry);
+void draw_digits_c0_p12(u32 value, u32 x, s32 y, s32 right);
+void draw_digits_c0_p11(u32 value, u32 x, s32 y, s32 right);
+void draw_digits_49_p12(u32 value, u32 x, s32 y, s32 right);
 void clear_map_rect(void *slot, s32 a, s32 b, s32 c, s32 d, s32 e);
 void obj_release(void *obj);
 void obj_release_node(void *node);
@@ -112,7 +120,132 @@ ASM_FUNC("asm/code_08102934/state_draw_rows.s", void state_draw_rows(void))
 
 ASM_FUNC("asm/code_08102934/create_display_entry.s", struct DisplayEntry *create_display_entry(void *data, u32 value, u32 stat, u32 mode, s32 s0, s32 s1, s32 s2, s32 s3, s32 s4, u32 s5, u32 s6, u32 s7, s32 width))
 
-ASM_FUNC("asm/code_08102934/state_display_entry_draw.s", void state_display_entry_draw(struct DisplayEntry *entry))
+NONMATCH("asm/code_08102934/state_display_entry_draw.s", void state_display_entry_draw(struct DisplayEntry *entry))
+{
+    struct DisplaySub *sub;
+    void *data;
+    s32 src;
+    s16 mode;
+    s32 limit;
+    s32 subX;
+    s32 subH;
+    s32 dataY;
+    s32 drawW;
+    s32 pos;
+    s32 w;
+    s32 bit;
+    u32 s0;
+    u32 s4;
+    u32 s8;
+    u32 sC;
+    u32 s10;
+    u32 s14;
+    u32 s18;
+    u32 s1C;
+    u32 s20;
+    u8 *queue;
+    u8 *sysb;
+
+    data = entry->data;
+    sub = entry->sub;
+    src = (s16)sub->unk16;
+    s0 = sub->unk4;
+    s4 = sub->unk8;
+    drawW = sub->unkC;
+    s8 = sub->unk10 & 0xFFF;
+    sC = entry->unk10 & 0xFFF;
+    mode = (s16)entry->mode18;
+    if (mode > 0)
+    {
+        limit = mode;
+    }
+    else if (mode == -2)
+    {
+        limit = 0x9999;
+    }
+    else
+    {
+        limit = 0x999999;
+    }
+    subX = (s16)sub->unk12;
+    subH = (s16)sub->unk14;
+    s10 = ((u32)sub->unk1A << 20) >> 20;
+    s14 = (s16)sub->unk18;
+    s18 = (s16)entry->unk12;
+    s1C = (s16)entry->unk14;
+    s20 = (s16)entry->unk16;
+    dataY = *(s16 *)((u8 *)data + 0x10);
+    if (dataY < subX + subH)
+    {
+        if (subX < dataY)
+        {
+            pos = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((dataY - subX) * src, subH);
+            s0 = to_bcd(src - pos);
+            w = to_bcd(s4 + pos);
+            drawW = w;
+            if (drawW > limit)
+            {
+                drawW = limit;
+            }
+            if (*(u16 *)((u8 *)gWorld + 0x2D4) != pos)
+            {
+                *(u16 *)((u8 *)gWorld + 0x2D4) = pos;
+            }
+        }
+        if (dataY < (s32)s8)
+        {
+            bit = ((s32)(sub->unk10 << 16) >> 28) & 1;
+            draw_digits_c0_p12(s0, s10, s14, bit);
+        }
+        else
+        {
+            bit = ((s32)(sub->unk10 << 16) >> 28) & 1;
+            draw_digits_c0_p11(s0, s10, s14, bit);
+        }
+        if (dataY < (s32)sC)
+        {
+            bit = ((s32)(entry->unk10 << 16) >> 28) & 1;
+            draw_digits_49_p12(drawW, s18, s1C, bit);
+        }
+        else
+        {
+            bit = ((s32)(entry->unk10 << 16) >> 28) & 1;
+            draw_digits_49_p11(drawW, s18, s1C, bit);
+        }
+        if (dataY < (s32)s8)
+        {
+            sysb = gSys;
+            queue = *(u8 **)(sysb + 0x880);
+            *(u16 *)queue = (s14 + 6) & 0xFF;
+            *(u16 *)(queue + 2) = (u16)s20;
+            *(u16 *)(queue + 4) = 0xC0D4;
+            *(u8 **)(sysb + 0x880) = queue + 8;
+        }
+        else
+        {
+            sysb = gSys;
+            queue = *(u8 **)(sysb + 0x880);
+            *(u16 *)queue = (s14 + 6) & 0xFF;
+            *(u16 *)(queue + 2) = (u16)s20;
+            *(u16 *)(queue + 4) = 0xB0D4;
+            *(u8 **)(sysb + 0x880) = queue + 8;
+        }
+    }
+    else
+    {
+        sprite_node_release(sub);
+        w = to_bcd(s4 + src);
+        drawW = w;
+        if (drawW > limit)
+        {
+            drawW = limit;
+        }
+        entry->sub = (struct DisplaySub *)drawW;
+        entry->state = draw_entry_flags;
+        entry->state(entry);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08102934/state_create_display_entries.s", void state_create_display_entries(void))
 
