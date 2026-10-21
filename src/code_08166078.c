@@ -335,14 +335,15 @@ void rom_offset_call_g(u8 *obj, u32 a, u32 b, u16 c)
 
 // The original subtracts two symbol names that sit at the same ROM address; only one exists in
 // config/symbols.txt, so the difference folds to 0 here.
-NONMATCH("asm/code_08166078/rom_offset_call_h.s", void rom_offset_call_h(u8 *obj, u32 a, u16 b))
+extern void fill_rect_4bpp_clip_routine(void);
+
+void rom_offset_call_h(u8 *obj, u32 a, u16 b)
 {
     void (*fn)(void *, u32, u32);
 
-    fn =(void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)fill_rect_4bpp_clip - (u32)fill_rect_4bpp_clip));
+    fn =(void (*)(void *, u32, u32))(*(u8 **)(obj + 0x20) + ((u32)fill_rect_4bpp_clip_routine - (u32)fill_rect_4bpp_clip));
     fn(*(void **)(obj + 4), a, b);
 }
-END_NONMATCH
 
 void obj_clear_buffer(u8 *obj)
 {
