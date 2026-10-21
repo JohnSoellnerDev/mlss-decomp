@@ -60,6 +60,8 @@ struct Bit2
 
 typedef void (*EnemyFn)(void);
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+
 struct Sprite
 {
     u8 filler0[0x12];
@@ -140,10 +142,10 @@ void enemy_approach_partner(void);
 void enemy_run_until_contact(void);
 void collide_react(struct Owner *owner, struct Enemy *ent, struct Enemy *bro, u32 speed, u32 a, s32 b, s32 c, u32 d, u32 e);
 void start_z_move(struct Enemy *obj, s32 z, u16 speed, u8 rel, s32 zLimit);
-void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 speed, u8 zero);
+void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 speed, ByteArg zero);
 u16 angle_of_vector16(s32 x, s32 y);
 u8 *obj_probe_tile_heights(struct Enemy *obj, s32 x, s32 y, s32 *h0, s32 *h1, s32 *h2);
-void start_move_to_3d(struct Enemy *obj, s32 x, s32 y, s32 z, u16 speed, u8 flag);
+void start_move_to_3d(struct Enemy *obj, s32 x, s32 y, s32 z, u16 speed, ByteArg flag);
 extern const u8 gFrameAttrTable[];
 
 u8 find_active_entry(struct Owner *owner, u8 *idx);
@@ -177,9 +179,64 @@ void enemy_hop_prepare_fall(u32 r0, struct Enemy *ent, EnemyFn *out)
     *out = enemy_hop_fall_then_next;
 }
 
-ASM_FUNC("asm/code_0813F77C/enemy_hop_fall_to_tile.s", void enemy_hop_fall_to_tile(void))
+NONMATCH("asm/code_0813F77C/enemy_hop_fall_to_tile.s", void enemy_hop_fall_to_tile(u32 r0, struct Enemy *ent, EnemyFn *out))
+{
+    s32 h0;
+    s32 h1;
+    s32 h2;
+    s32 idx;
+    u16 speed;
+    u32 cell;
 
-ASM_FUNC("asm/code_0813F77C/enemy_hop_return_home.s", void enemy_hop_return_home(void))
+    obj_probe_tile_heights(ent, ent->x / 0x1000, ent->y / 0x1000, &h0, &h1, &h2);
+    if (h2 != -1)
+    {
+        h0 = h2;
+    }
+    idx = rand_below(4, mt19937_next());
+    speed = ((u16 *)(ent->rec + 0x58))[idx];
+    start_move_to_3d(ent, ent->x, ent->y, h0 + 0x3000, speed, (u8)0);
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    cell = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
+    obj_set_cell_coord(ent, cell, 0);
+    *out = enemy_after_fall_check_box;
+}
+END_NONMATCH
+
+void enemy_hop_return_home(u32 r0, struct Enemy *ent, EnemyFn *out)
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec;
+    s32 dx;
+    s32 dy;
+    u32 facing;
+    s32 idx;
+    u16 speed;
+    u8 zero;
+    u32 cell;
+
+    rec = ent->rec;
+    dx = ent->homeX - ent->x;
+    dy = ent->homeY - ent->y;
+    if ((dx | dy) != 0)
+    {
+        facing = ((u32)angle_of_vector16(dx, dy) + 0x10) >> 8;
+    }
+    else
+    {
+        facing = 0xFF;
+    }
+    zero = 0;
+    ent->angle = facing;
+    idx = rand_below(4, mt19937_next());
+    speed = ((u16 *)(*(u8 **)(ai + 0x158) + 0x64))[idx];
+    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    cell = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
+    obj_set_cell_coord(ent, cell, 0);
+    ent->sprite->unk20 = rec[*(u16 *)(ai + 0x178) + 0x60];
+    *out = enemy_wait_after_step_c;
+}
 
 u32 enemy_partner_in_sensor(struct Owner *owner, struct Enemy *ent)
 {
@@ -328,7 +385,6 @@ ASM_FUNC("asm/code_0813F77C/enemy_run_until_contact.s", void enemy_run_until_con
 NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
 {
     u8 found;
-    s32 idx;
     u32 pidx;
     u8 *entry;
     u16 speed;
@@ -336,13 +392,13 @@ NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(s
     struct Enemy *partner;
     s32 dx;
     s32 dy;
+    s32 dir;
     s32 cell;
 
     ((struct Bit4 *)&ent->unk1D6)->bit4 = 0;
     ((struct Bit6 *)&ent->unk20D)->bit6 = 0;
     ((struct Bit2 *)&ent->unk20F)->bit2 = 1;
-    idx = rand_below(4, mt19937_next());
-    ent->index = idx;
+    ent->index = rand_below(4, mt19937_next());
     entry = (u8 *)ent->rec + ent->index * 2;
     speed = *(u16 *)(entry + 0x2A);
     z = ent->z + ent->dz + *(u16 *)(entry + 0x22);
@@ -360,8 +416,8 @@ NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(s
     dy = partner->y - ent->y;
     if ((dx | dy) != 0)
     {
-        cell = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
-        cell >>= 1;
+        dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+        cell = dir >> 1;
     }
     else
     {
