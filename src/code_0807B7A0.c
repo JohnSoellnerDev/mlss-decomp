@@ -47,7 +47,10 @@ struct PoolRecord
     u8 flags11;
     u8 flags12;
     u8 flags13;
-    u8 filler14[0x1F - 0x14];
+    u16 mask14;
+    u8 filler16[0x1C - 0x16];
+    u16 half1C;
+    u8 filler1E;
     u8 flags1F;
     u8 unk20;
     u8 filler21[0x29 - 0x21];
@@ -105,6 +108,14 @@ struct RecFlags12
     u8 hi3 : 3;
 };
 
+struct RecFlags13
+{
+    u8 lo2 : 2;
+    u8 b2 : 1;
+    u8 b3 : 1;
+    u8 rest : 4;
+};
+
 struct RecFlags29
 {
     u8 b0 : 1;
@@ -125,7 +136,7 @@ struct PoolObj
     struct PoolObj *ring;
     u32 unk2C;
     struct PoolObj *sibling;
-    u8 filler34[0x38 - 0x34];
+    u32 oamStart;
     s32 posX;
     s32 posY;
     s32 posZ;
@@ -175,18 +186,43 @@ struct SpriteEnt
 
 struct ModelCtx
 {
-    u8 filler0[0x30];
+    u8 filler0[0xC];
+    u16 slotTab[(0x30 - 0xC) / 2];
     struct SpriteEnt *list30;
+    u32 unk34;
+    u32 unk38;
 };
 
 extern struct ModelCtx *gModelCtx;
+
+struct DrawChild
+{
+    struct DrawChild *next;
+    s32 x;
+    s32 y;
+    s32 z;
+    u8 filler10[0x1B - 0x10];
+    u8 flags;
+};
+
+struct DrawNode
+{
+    struct DrawNode *next;
+    struct PoolObj *obj;
+    struct DrawChild *child;
+    u8 bits;
+};
 
 struct SpriteWorld
 {
     u8 unk0[4];
     u8 counter4;
     u8 counter5;
-    u8 unk6[0xD - 6];
+    u8 unk6;
+    u8 oamRow;
+    u8 unk8[0xA - 8];
+    u8 unkA;
+    u8 unkB[0xD - 0xB];
     u8 unkD;
     u8 unkE[0x12 - 0xE];
     u16 unk12;
@@ -207,9 +243,13 @@ struct SpriteWorld
     u8 unk7C[0x220 - 0x7C];
     struct SpriteEnt *slot220;
     struct SpriteEnt *slot224;
-    u8 unk228[0x244 - 0x228];
+    u8 unk228[0x238 - 0x228];
+    struct DrawNode *nodeFree;
+    struct DrawNode *nodeUsed;
+    u8 unk240[0x244 - 0x240];
     void *resource244;
     struct SlotTable *table248;
+    s32 *camera;
 };
 
 struct SlotMove
@@ -275,7 +315,15 @@ void obj_list_remove(void *node);
 void set_state_word_1780(void *resource, u32 value);
 void sprite_entry_update(struct SpriteEnt *ent);
 void alloc_slot_for_node(void);
-void obj_bind_slots(void *rec);
+void setup_obj_10bc(void *rec, u32 a, u32 group, u32 b, s32 c, s32 d, s32 e, s32 f);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
+u32 block_flag_byte(void *obj);
+void oam_list_rows_a(u32 list, u32 count, u32 layer);
+void oam_list_rows_b(u32 list, u32 count);
+void offset_three_words(void *camera, s32 *a, s32 *b, s32 *c, u32 hide);
+void oam_place_points(u32 *cursor, u32 count, s32 x, s32 y, u32 extra, u32 attr0Or, u32 mirror);
+u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
+void obj_bind_slots(struct PoolRecord *rec);
 void obj_release_slots(void *rec);
 void list_remove_active(void *node);
 u32 sprite_node_release(u32 p);
@@ -507,9 +555,159 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0807B7A0/obj_bind_slots.s", void obj_bind_slots(void *rec))
+NONMATCH("asm/code_0807B7A0/obj_bind_slots.s", void obj_bind_slots(struct PoolRecord *rec))
+{
+    u16 slots;
+    s32 first;
+    struct SpriteEnt *obj;
+    u32 idx;
+    u32 partIdx;
+    u32 partOff;
 
-ASM_FUNC("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolObj *tmpl, u32 flags, s32 x, s32 y, s32 z, u32 vis, u32 extra))
+    if (rec == NULL)
+    {
+        return;
+    }
+    if (rec->flags12 & 0x20)
+    {
+        return;
+    }
+    slots = rec->mask14;
+    if (slots == 0)
+    {
+        return;
+    }
+    first = 0;
+    while (((slots ^ 1) & 1) != 0)
+    {
+        slots >>= 1;
+        first++;
+    }
+
+    if (rec->flags29 & 0x10)
+    {
+        obj = gModelCtx->list30;
+        if (obj != NULL)
+        {
+            do
+            {
+                if (!(obj->flags12 & 0x20) && obj != (struct SpriteEnt *)rec && ((obj->mask14 >> first) & 1))
+                {
+                    for (;;)
+                    {
+                    }
+                }
+                obj = obj->next68;
+            } while (obj != NULL);
+        }
+        idx = first;
+        if (slots != 0)
+        {
+            do
+            {
+                if (slots & 1)
+                {
+                    gModelCtx->slotTab[idx] |= 0xFFFF;
+                }
+                slots >>= 1;
+                idx++;
+            } while (slots != 0);
+        }
+        rec->mask14 = 0;
+    }
+
+    if ((*(u32 *)&rec->half1C & 0x00F0FFFF) == 0x600000)
+    {
+        rec->flags12 |= 0x20;
+        return;
+    }
+
+    partOff = 0;
+    for (partIdx = 0; partIdx <= 7; partIdx++)
+    {
+        u8 *part = gWorld->table248->records + partOff;
+
+        if (((((u32)part[1]) << 28) >> 28) == first && (part[0] & 3) != 0)
+        {
+            for (obj = gModelCtx->list30; obj != NULL; obj = obj->next68)
+            {
+                if (!(obj->flags12 & 0x20) && obj != (struct SpriteEnt *)rec && ((obj->mask14 >> first) & 1))
+                {
+                    goto release;
+                }
+            }
+            menu_entry_refresh(gWorld->table248, partIdx & 0xFF, 0);
+            break;
+        }
+        partOff += 0x1C;
+    }
+
+release:
+    obj_release_slots(rec);
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolObj *tmpl, u32 flags, s32 x, s32 y, s32 z, u32 vis, u32 extra))
+{
+    struct PoolRecord *rec;
+    struct PoolObj *obj;
+    u16 group;
+    u8 *flagsPtr;
+    u32 v;
+    s32 bit8;
+
+    group = flags;
+    obj = (struct PoolObj *)(gWorkBuf + 0x1000);
+    if (obj->flags76 & 6)
+    {
+        do
+        {
+            obj = (struct PoolObj *)((u8 *)obj + 0xD0);
+        } while (obj->flags76 & 6);
+    }
+    rec = obj->record;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, obj, 0xD0);
+    obj->record = rec;
+    obj->ring = tmpl;
+    obj->next = gWorld->list78;
+    gWorld->list78 = obj;
+    if (group != 0)
+    {
+        obj_bind_slots(rec);
+        ((struct RecFlags13 *)&rec->flags13)->b2 = 0;
+        ((struct RecFlags13 *)&rec->flags13)->b3 = 0;
+        setup_obj_10bc(rec, 0, group, 1, -1, -1, -1, -1);
+        bit8 = 8;
+        rec->flags13 |= 4;
+        rec->flags13 |= bit8;
+        obj_load_record(rec, 0, -1, 0, 0);
+        list_remove_active(rec);
+        obj_load_record(rec, 0, -1, 0, 0);
+        sprite_entry_update((struct SpriteEnt *)rec);
+        v = rec->flags1F;
+        v = ((((((v & 0xFFFFFFFC) | 2) & 0xFFFFFFF3) | bit8) & 0xFFFFFFCF) | 0x20) & 0x3F;
+        rec->flags1F = v | 0x80;
+        ((struct RecFlags11 *)&rec->flags11)->b6 = vis & 1;
+    }
+    ((struct PoolFlags *)&obj->flags76)->mode = 2;
+    obj->unk10 = x << 8;
+    obj->posX = x << 8;
+    obj->unk14 = y << 8;
+    obj->posY = y << 8;
+    obj->unk18 = z << 8;
+    obj->posZ = z << 8;
+    obj->unk90 = 0x100;
+    flagsPtr = (u8 *)obj + 0xCC;
+    if (tmpl != NULL)
+    {
+        *(u16 *)((u8 *)obj + 0xC8) = *(u16 *)((u8 *)tmpl + 0xD0);
+        *flagsPtr = (*flagsPtr & 0x80) | (*((u8 *)tmpl + 0xD4) & 0x7F);
+        *(u16 *)((u8 *)obj + 0xCA) = *(u16 *)((u8 *)tmpl + 0xD2);
+    }
+    *flagsPtr &= 0x7F;
+    return obj;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/obj_spawn_linked.s", void obj_spawn_linked(void))
 
@@ -682,6 +880,6 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/draw_sprite_nodes.s", void draw_sprite_nodes(void))
 
-ASM_FUNC("asm/code_0807B7A0/oam_place_points.s", void oam_place_points(void))
+ASM_FUNC("asm/code_0807B7A0/oam_place_points.s", void oam_place_points(u32 *cursor, u32 count, s32 x, s32 y, u32 extra, u32 attr0Or, u32 mirror))
 
 ASM_FUNC("asm/code_0807B7A0/emit_active_parts_oam.s", void emit_active_parts_oam(void))
