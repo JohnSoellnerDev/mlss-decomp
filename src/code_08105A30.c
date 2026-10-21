@@ -330,7 +330,42 @@ void state_move_to_target(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digits(void))
+NONMATCH("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digits(struct Owner *owner))
+{
+    u16 timer = owner->timer;
+    s32 signedTimer = owner->timer;
+    u32 cell;
+    u32 vram;
+    u32 digits;
+    s32 idx;
+    u8 *hero;
+
+    if (signedTimer > 0)
+    {
+        owner->timer = timer - 1;
+    }
+    else
+    {
+        idx = owner->posX;
+        hero = gParty + idx * 0x3C;
+        digits = to_bcd(hero[0x30]);
+        gWorld->digit370->unk8 = digits;
+        gWorld->digit370->unk10 = 0x1E;
+        vram = 0x06010000;
+        MEM_ROUTINE(void (*)(u32, void *, u32), iwram_fill)(0, (void *)0x06017200, 0x400);
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)((((cell = (digits & 0xF) << 1) + 0x49) << 5) + vram), (u8 *)(vram + 0x72C0), 0x20);
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x4A) << 5) + vram), (u8 *)(vram + 0x7340), 0x20);
+        digits >>= 4;
+        if (digits != 0)
+        {
+            cell = (digits & 0xF) << 1;
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x49) << 5) + 0x06010000), (u8 *)0x060174A0, 0x20);
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x4A) << 5) + 0x06010000), (u8 *)0x06017520, 0x20);
+        }
+        owner->state = state_build_hero_sprites;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08105A30/state_build_hero_sprites.s", void state_build_hero_sprites(struct Owner *owner))
 
