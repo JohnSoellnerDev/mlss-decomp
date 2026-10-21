@@ -50,13 +50,17 @@ void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
 ASM_FUNC("asm/code_08192854/obj_zoom_model8_turn_rem6.s", void obj_zoom_model8_turn_rem6(void))
 
-NONMATCH("asm/code_08192854/obj_zoom_model8_2aa8.s", void obj_zoom_model8_2aa8(struct Point1Obj *obj))
+void obj_zoom_model8_2aa8(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct Point1Local l;
-    u32 *words;
+    struct ObjRecord *rec;
     s32 zoom;
     s32 step;
-    struct ObjRecord *rec;
+    u32 *words;
     u32 h;
     u32 saved;
     s32 i;
@@ -65,13 +69,12 @@ NONMATCH("asm/code_08192854/obj_zoom_model8_2aa8.s", void obj_zoom_model8_2aa8(s
     u32 *pslot;
     s32 vx;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
     s32 z2;
-    s32 t;
     s32 base;
     s32 pos;
+    s32 y1;
 
     words = obj->data;
     zoom = *words++;
@@ -95,16 +98,20 @@ NONMATCH("asm/code_08192854/obj_zoom_model8_2aa8.s", void obj_zoom_model8_2aa8(s
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[0] / 0x40);
-        z2 = (t - (gSineTable[0] / 0x40) * x1) / 0x100;
+        base = z1;
+        cs = &gCosineTable[0];
+        base = base * (*cs / 0x40);
+        sn = &gSineTable[0];
+        z2 = (base - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[0] / 0x40) + (gSineTable[0] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = (z2 * (gCosineTable[64] / 0x40) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        base = y1;
+        cs2 = &gCosineTable[64];
+        base = base * (*cs2 / 0x40);
+        sn2 = &gSineTable[64];
+        l.y = (base - (*sn2 / 0x40) * z2) / 0x100;
+        l.z = (z2 * (*cs2 / 0x40) + ((*sn2 / 0x40) * y1)) / 0x100;
 
         if (obj->flags & 0x80) {
             base = obj->posX;
@@ -141,7 +148,6 @@ NONMATCH("asm/code_08192854/obj_zoom_model8_2aa8.s", void obj_zoom_model8_2aa8(s
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08192854/obj_pulse_tilt_turn4.s", void obj_pulse_tilt_turn4(void))
 
@@ -1002,13 +1008,17 @@ void obj_point1_rem190_39a4(struct Point1Obj *obj)
     *words = phase;
 }
 
-NONMATCH("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(struct Point1Obj *obj))
+void obj_zoom_model6(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct Point1Local l;
-    u32 *words;
+    struct ObjRecord *rec;
     s32 zoom;
     s32 step;
-    struct ObjRecord *rec;
+    u32 *words;
     u32 h;
     u32 saved;
     s32 i;
@@ -1017,13 +1027,13 @@ NONMATCH("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(struct Poin
     u32 *pslot;
     s32 vx;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
+    s32 y2;
     s32 z2;
-    s32 t;
     s32 base;
     s32 pos;
+    s32 y1;
 
     words = obj->data;
     zoom = *words++;
@@ -1047,16 +1057,21 @@ NONMATCH("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(struct Poin
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[0] / 0x40);
-        z2 = (t - (gSineTable[0] / 0x40) * x1) / 0x100;
+        base = z1;
+        cs = &gCosineTable[0];
+        base = base * (*cs / 0x40);
+        sn = &gSineTable[0];
+        z2 = (base - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[0] / 0x40) + (gSineTable[0] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = (z2 * (gCosineTable[64] / 0x40) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        base = y1;
+        cs2 = &gCosineTable[64];
+        base = base * (*cs2 / 0x40);
+        sn2 = &gSineTable[64];
+        y2 = (base - (*sn2 / 0x40) * z2) / 0x100;
+        l.y = y2;
+        l.z = (z2 * (*cs2 / 0x40) + ((*sn2 / 0x40) * y1)) / 0x100;
 
         if (obj->flags & 0x80) {
             base = obj->posX;
@@ -1093,15 +1108,18 @@ NONMATCH("asm/code_08192854/obj_zoom_model6.s", void obj_zoom_model6(struct Poin
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08192854/obj_zoom_model8.s", void obj_zoom_model8(struct Point1Obj *obj))
+void obj_zoom_model8(struct Point1Obj *obj)
 {
+    s16 *cs;
+    s16 *sn;
+    s16 *cs2;
+    s16 *sn2;
     struct Point1Local l;
-    u32 *words;
+    struct ObjRecord *rec;
     s32 zoom;
     s32 step;
-    struct ObjRecord *rec;
+    u32 *words;
     u32 h;
     u32 saved;
     s32 i;
@@ -1110,13 +1128,12 @@ NONMATCH("asm/code_08192854/obj_zoom_model8.s", void obj_zoom_model8(struct Poin
     u32 *pslot;
     s32 vx;
     s32 x1;
-    s32 y1;
     s32 z1;
     s32 x2;
     s32 z2;
-    s32 t;
     s32 base;
     s32 pos;
+    s32 y1;
 
     words = obj->data;
     zoom = *words++;
@@ -1140,16 +1157,20 @@ NONMATCH("asm/code_08192854/obj_zoom_model8.s", void obj_zoom_model8(struct Poin
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[0] / 0x40);
-        z2 = (t - (gSineTable[0] / 0x40) * x1) / 0x100;
+        base = z1;
+        cs = &gCosineTable[0];
+        base = base * (*cs / 0x40);
+        sn = &gSineTable[0];
+        z2 = (base - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[0] / 0x40) + (gSineTable[0] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = (z2 * (gCosineTable[64] / 0x40) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        base = y1;
+        cs2 = &gCosineTable[64];
+        base = base * (*cs2 / 0x40);
+        sn2 = &gSineTable[64];
+        l.y = (base - (*sn2 / 0x40) * z2) / 0x100;
+        l.z = (z2 * (*cs2 / 0x40) + ((*sn2 / 0x40) * y1)) / 0x100;
 
         if (obj->flags & 0x80) {
             base = obj->posX;
@@ -1186,7 +1207,6 @@ NONMATCH("asm/code_08192854/obj_zoom_model8.s", void obj_zoom_model8(struct Poin
     *words++ = zoom;
     *words = step;
 }
-END_NONMATCH
 
 // Single-point object (sum): the point is added to the object position and placed; the
 // phase grows by the zoom and both record halfwords get the new phase.
