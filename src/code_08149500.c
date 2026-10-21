@@ -619,9 +619,68 @@ NONMATCH("asm/code_08149500/enemy_update_draw_flags.s", void enemy_update_draw_f
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08149500/set_box_flag_1d8.s", void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
+void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
+{
+    s16 *sensor;
+    s16 box[8];
+    u8 idx;
+    struct Partner *entry;
 
-ASM_FUNC("asm/code_08149500/enemy_start_fall.s", void enemy_start_fall(void))
+    sensor = ent->sensor;
+    if (find_active_entry(owner, &idx) == 0)
+    {
+        ((struct Flags8 *)&ent->unk1D8)->bit0 = 0;
+    }
+    else
+    {
+        entry = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+        box[0] = *sensor * 0x10 - 0x20;
+        sensor++;
+        box[3] = *sensor * 0x10 - 0x20;
+        sensor++;
+        box[1] = *sensor * 0x10 + 0x20;
+        box[2] = sensor[1] * 0x10 + 0x20;
+        if (point_in_box(box, entry, 0x7FFF, 0) == 0)
+        {
+            ((struct Flags8 *)&ent->unk1D8)->bit0 = 0;
+        }
+        else
+        {
+            ((struct Flags8 *)&ent->unk1D8)->bit0 = 1;
+        }
+    }
+}
+
+NONMATCH("asm/code_08149500/enemy_start_fall.s", void enemy_start_fall(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
+{
+    u8 *ai;
+    u8 *roll;
+    u8 dice[2];
+    u8 threshold;
+    u8 rollValue;
+
+    ai = (u8 *)ent + 0x58;
+    ent->unk2C4 = ent->posZ + ent->unk18;
+    dice[0] = 3;
+    roll = &dice[1];
+    *roll = rand_below(0x64, mt19937_next());
+    threshold = dice[0];
+    rollValue = *roll;
+    if ((s8)rollValue - (s8)threshold < 0)
+    {
+        ent->unk2D4 = 0x1800;
+    }
+    else
+    {
+        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+    }
+    ent->zspeed = 0x100;
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+    *stateOut = (u32)fall_landing_active;
+}
+END_NONMATCH
 
 void fall_landing_pick_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
@@ -664,7 +723,36 @@ ASM_FUNC("asm/code_08149500/enemy_seek_partner_axis.s", void enemy_seek_partner_
 
 ASM_FUNC("asm/code_08149500/enemy_check_owner_box.s", void enemy_check_owner_box(void))
 
-ASM_FUNC("asm/code_08149500/enemy_start_fall_alt.s", void enemy_start_fall_alt(void))
+NONMATCH("asm/code_08149500/enemy_start_fall_alt.s", void enemy_start_fall_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
+{
+    u8 *ai;
+    u8 *roll;
+    u8 dice[2];
+    u8 threshold;
+    u8 rollValue;
+
+    ai = (u8 *)ent + 0x58;
+    ent->unk2C4 = ent->posZ + ent->unk18;
+    dice[0] = 3;
+    roll = &dice[1];
+    *roll = rand_below(0x64, mt19937_next());
+    threshold = dice[0];
+    rollValue = *roll;
+    if ((s8)rollValue - (s8)threshold < 0)
+    {
+        ent->unk2D4 = 0x1800;
+    }
+    else
+    {
+        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+    }
+    ent->zspeed = 0x100;
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+    *stateOut = (u32)fall_landing;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_partner_axis_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 
