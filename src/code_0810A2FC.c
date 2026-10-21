@@ -213,11 +213,12 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
     struct Obj *slot;
     void (*next)(struct Owner *);
     s32 counter;
+    s32 mask;
+    s32 lockv;
 
     status_slots_update(owner);
     world = gWorld;
-    counter = world->counter314 + 0x400;
-    world->counter314 = counter;
+    counter = world->counter314 += 0x400;
     if ((s32)(counter << 16) > 0x1FFF0000)
     {
         world->counter314 = 0x2000;
@@ -228,7 +229,10 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
         }
         else
         {
-            world->lock &= 0x1F;
+            lockv = world->lock;
+            mask = 0x1F;
+            lockv = mask & lockv;
+            world->lock = lockv;
             next = status_slots_update;
         }
         owner->state = next;
@@ -301,86 +305,14 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(struct Owner *owner))
 
-NONMATCH("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
-{
-    struct OamEntry *cursor;
-    struct OamEntry *nextEntry;
-    struct OamEntry *prevEntry;
-    struct OamEntry *anchor;
-    struct OamEntry *anchorNext;
-    struct Obj *slot;
-    struct Pic *pic;
-    s32 i;
-    s32 kind;
-    s32 posX;
-    s32 posY;
-    s32 tile;
-    s32 attrX;
-    s32 maskX;
-    s32 maskY;
-    s32 flag;
-
-    cursor = gModelCtx->head;
-    i = 0;
-    maskX = 0x1FF;
-    maskY = 0xFF;
-    flag = 0x4000;
-    for (; i < 5; i++)
-    {
-        slot = gWorld->slots[i];
-        if (slot != 0)
-        {
-            pic = slot->pic;
-            kind = pic->kind;
-            if (kind == 5)
-            {
-                kind = 4;
-            }
-            if (kind > 4)
-            {
-                kind -= 5;
-            }
-            posX = pic->posX;
-            posY = pic->posY;
-            tile = gOamTileTable[kind] + 0x5D;
-            if (kind == 3)
-            {
-                attrX = (posX - 8) & maskX;
-                cursor->attr0 = ((posY - 4) & maskY) | flag;
-            }
-            else
-            {
-                cursor->attr0 = ((posY - 4) & maskY) | flag;
-                attrX = ((posX - 0x10) & maskX) | flag;
-            }
-            cursor->attr1 = attrX;
-            cursor->attr2 = tile | -0x2800;
-            nextEntry = cursor->unk10;
-            prevEntry = cursor->unkC;
-            anchor = slot->pic->anchor;
-            anchorNext = anchor->unkC;
-            cursor->unk6 = 0;
-            cursor->unk8 = anchorNext->unk8;
-            nextEntry->unkC = prevEntry;
-            prevEntry->unk10 = nextEntry;
-            cursor->unkC = anchorNext;
-            cursor->unk10 = anchor;
-            anchorNext->unk10 = cursor;
-            anchor->unkC = cursor;
-            gModelCtx->count++;
-            cursor = nextEntry;
-        }
-    }
-    gModelCtx->head = cursor;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
 
 NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(struct Obj *obj, s32 x, s32 y, s32 height, s32 kind))
 {
     struct Owner *task;
+    s32 t;
     s32 clampX;
     s32 clampY;
-    s32 t;
     s32 (*div)(s32, s32);
 
     task = obj->owner;
