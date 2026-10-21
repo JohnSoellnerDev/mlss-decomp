@@ -222,8 +222,7 @@ NONMATCH("asm/code_08178064/obj_zoom_fixed5_size100_8254.s", void obj_zoom_fixed
         t = t * (gCosineTable[38] / 0x40);
         z2 = (t - (gSineTable[38] / 0x40) * x1) / 0x100;
         l.z = z2;
-        t = x1 * (gCosineTable[38] / 0x40);
-        x2 = (t + (gSineTable[38] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (gCosineTable[38] / 0x40) + (gSineTable[38] / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[32] / 0x40);
