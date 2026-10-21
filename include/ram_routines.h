@@ -19,8 +19,9 @@ extern u8 iwram_math_08199424[];
 #define MATH_ROUTINE(type, name) ((type)(gMathRoutines + ((u32)name - (u32)iwram_sqrt)))
 
 // Sine and cosine over 256 steps (1.0 = 0x1000). The two tables overlap in ROM (the cosine
-// table starts 64 entries into the sine table) but the code always uses them by name.
-extern const s16 gSineTable[];
-extern const s16 gCosineTable[];
+// table starts 64 entries into the sine table) but the code always uses them by name. Not const:
+// the original reads the entries again after stores instead of keeping them in registers.
+extern s16 gSineTable[];
+extern s16 gCosineTable[];
 
 #endif // GUARD_RAM_ROUTINES_H

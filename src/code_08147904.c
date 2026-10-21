@@ -227,7 +227,6 @@ u8 enemy_touches_companion_oriented(struct Owner *owner, struct Enemy *ent);
 u8 step_pos_xy_c(struct Enemy *ent);
 void obj_refresh_sub_attr(struct Enemy *ent);
 void collide_react(struct Owner *owner, struct Enemy *ent, void *target, s32 part, s32 speed, s32 a, s32 b, s32 c, s32 zero);
-extern const s16 gSineTable[];
 u8 tile_blocks_move(struct Owner *owner, s32 x, s32 y, s32 z, s32 w, s32 one, s32 zero);
 void enemy_run_return(struct Owner *owner, struct Enemy *ent, u32 *out);
 void wander_to_edge(struct Enemy *ent, s32 steps, s32 dist);

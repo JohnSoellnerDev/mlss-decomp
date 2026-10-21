@@ -333,7 +333,6 @@ struct E060Obj {
     u16 unk38;
 };
 
-extern const s16 gCosineTable[];
 extern u8 *gUnk_03001014;
 
 ASM_FUNC("asm/code_08154490/obj_behavior_e060.s", void obj_behavior_e060(void))
