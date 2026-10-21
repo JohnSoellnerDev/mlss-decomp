@@ -462,8 +462,10 @@ void obj_rec_x_drift_01d8(struct FallObj *obj)
     *pt = counter;
 }
 
-NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0308.s", void obj_zoom_spin8_0308(struct FallObj *obj))
+void obj_zoom_spin8_0308(struct FallObj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct FallLocal l;
     struct FallRecord *rec;
     s32 zoom;
@@ -483,9 +485,10 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0308.s", void obj_zoom_spin8_0308(str
     s32 x2;
     s32 y2;
     s32 z2;
-    u16 idx;
+    s32 idx;
     s32 t;
     s32 pos;
+
 
     words = obj->data;
     zoom = *words++;
@@ -512,10 +515,12 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0308.s", void obj_zoom_spin8_0308(str
         l.z = z1;
         y2 = z1;
         idx = angle & 0xFF;
-        y2 = y2 * (gCosineTable[idx] / 0x40);
-        z2 = (y2 - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -561,10 +566,11 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0308.s", void obj_zoom_spin8_0308(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0578.s", void obj_zoom_spin8_0578(struct FallObj *obj))
+void obj_zoom_spin8_0578(struct FallObj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct FallLocal l;
     s32 zoom;
     s32 vel;
@@ -584,9 +590,10 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0578.s", void obj_zoom_spin8_0578(str
     s32 x2;
     s32 y2;
     s32 z2;
-    u16 idx;
+    s32 idx;
     s32 t;
     s32 pos;
+
 
     words = obj->data;
     zoom = *words++;
@@ -613,10 +620,12 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0578.s", void obj_zoom_spin8_0578(str
         l.z = z1;
         y2 = z1;
         idx = angle & 0xFF;
-        y2 = y2 * (gCosineTable[idx] / 0x40);
-        z2 = (y2 - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -664,10 +673,11 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_0578.s", void obj_zoom_spin8_0578(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817FD84/obj_zoom_spin8_07fc.s", void obj_zoom_spin8_07fc(struct FallObj *obj))
+void obj_zoom_spin8_07fc(struct FallObj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct FallLocal l;
     s32 zoom;
     s32 vel;
@@ -687,9 +697,10 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_07fc.s", void obj_zoom_spin8_07fc(str
     s32 x2;
     s32 y2;
     s32 z2;
-    u16 idx;
+    s32 idx;
     s32 t;
     s32 pos;
+
 
     words = obj->data;
     zoom = *words++;
@@ -716,10 +727,12 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_07fc.s", void obj_zoom_spin8_07fc(str
         l.z = z1;
         y2 = z1;
         idx = angle & 0xFF;
-        y2 = y2 * (gCosineTable[idx] / 0x40);
-        z2 = (y2 - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -767,10 +780,11 @@ NONMATCH("asm/code_0817FD84/obj_zoom_spin8_07fc.s", void obj_zoom_spin8_07fc(str
     *words++ = vel;
     *words = angle;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0817FD84/obj_zoom_fall6_0a80.s", void obj_zoom_fall6_0a80(struct FallObj *obj))
+void obj_zoom_fall6_0a80(struct FallObj *obj)
 {
+    s16 *cs;
+    s16 *sn;
     struct FallLocal l;
     struct FallRecord *rec;
     s32 zoom;
@@ -792,10 +806,10 @@ NONMATCH("asm/code_0817FD84/obj_zoom_fall6_0a80.s", void obj_zoom_fall6_0a80(str
     s32 x2;
     s32 y2;
     s32 z2;
-    u16 idx;
+    s32 idx;
     s32 t;
     s32 pos;
-    s32 cpy;
+
 
     words = obj->data;
     zoom = *words++;
@@ -822,12 +836,14 @@ NONMATCH("asm/code_0817FD84/obj_zoom_fall6_0a80.s", void obj_zoom_fall6_0a80(str
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
+        y2 = z1;
         idx = angle & 0xFF;
-        cpy = z1;
-        cpy = cpy * (gCosineTable[idx] / 0x40);
-        z2 = (cpy - (gSineTable[idx] / 0x40) * x1) / 0x100;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
+        sn = &gSineTable[idx];
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
-        x2 = (x1 * (gCosineTable[idx] / 0x40) + (gSineTable[idx] / 0x40) * z1) / 0x100;
+        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
         t = y1;
         t = t * (gCosineTable[12] / 0x40);
@@ -877,7 +893,6 @@ NONMATCH("asm/code_0817FD84/obj_zoom_fall6_0a80.s", void obj_zoom_fall6_0a80(str
     *words++ = height;
     *words = fall;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0817FD84/obj_zoom_quarter_spin8_0d14.s", void obj_zoom_quarter_spin8_0d14(struct FallObj *obj))
 
