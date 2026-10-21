@@ -28,6 +28,63 @@ struct WindowObj
     const void *klass;
 };
 
+struct SlotSrc
+{
+    u16 unk0;
+    u16 unk2;
+    u8 filler4[0xE - 4];
+    u16 unkE;
+    u8 filler10[0x11 - 0x10];
+    u8 unk11;
+    u8 unk12;
+    u8 filler13[0x16 - 0x13];
+    u16 unk16;
+    u8 filler18[0x1E - 0x18];
+    u8 unk1E;
+    u8 unk1F;
+    u8 unk20;
+    u8 filler21[0x24 - 0x21];
+    u8 unk24;
+    u8 unk25;
+};
+
+struct SlotRec
+{
+    struct SlotSrc *src;
+    u16 unk4;
+    u16 unk6;
+    u16 unk8;
+    u16 unkA;
+    u8 unkC;
+    u8 unkD;
+    u8 unkE;
+    u8 unkF;
+    u16 bits10;
+    u16 unk12;
+    u8 filler14[0x3A - 0x14];
+    u16 unk3A;
+    u8 flag3C;
+    u8 flag3D;
+};
+
+struct SlotRecBitsAt
+{
+    u8 filler0[0x10];
+    u16 b0 : 1;
+    u16 b1 : 1;
+    u16 b2 : 1;
+    u16 f3 : 2;
+    u16 f5 : 2;
+    u16 f7 : 2;
+    u16 f9 : 2;
+};
+
+struct SlotHolder
+{
+    u8 filler0[0x158];
+    struct SlotRec *recs;
+};
+
 extern u16 gUnk_02000008;
 extern u8 gUnk_03000C80[];
 extern u32 gUnk_03000FE4;
@@ -53,7 +110,40 @@ ASM_FUNC("asm/code_081218F0/tween_move_to.s", void tween_move_to(void))
 
 ASM_FUNC("asm/code_081218F0/tween_step.s", void tween_step(void))
 
-ASM_FUNC("asm/code_081218F0/unknown_thumb_08121e42.s", void unknown_thumb_08121e42(void))
+NONMATCH("asm/code_081218F0/unknown_thumb_08121e42.s", void unknown_thumb_08121e42(struct SlotHolder *base))
+{
+    s32 three;
+    s32 one;
+    s32 i;
+    struct SlotRec **recs;
+
+    recs = &base->recs;
+    one = 1;
+    three = 3;
+    for (i = 0; i < 12; i++)
+    {
+        if ((*recs)[i].flag3D != 0)
+        {
+            (*recs)[i].unk4 = (*recs)[i].src->unk0;
+            (*recs)[i].unk6 = (*recs)[i].src->unk2;
+            (*recs)[i].unk8 = ((((u32)(*recs)[i].src->unk1E << 28) >> 16) + 0x1000) | (*recs)[i].src->unk16;
+            (*recs)[i].unkA = (*recs)[i].unk3A;
+            (*recs)[i].unkC = (*recs)[i].src->unk24;
+            (*recs)[i].unkD = (*recs)[i].src->unk25;
+            (*recs)[i].unkE = (*recs)[i].flag3D;
+            (*recs)[i].unkF = (*recs)[i].src->unk20;
+            ((struct SlotRecBitsAt *)&(*recs)[i])->b0 = (((u32)(*recs)[i].flag3C << 31) >> 31);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->b1 = (((u32)(*recs)[i].src->unk12 << 27) >> 31);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->b2 = (((u32)(*recs)[i].src->unk11 << 25) >> 31);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->f3 = (((u32)(*recs)[i].src->unk1F << 30) >> 30);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->f5 = (((u32)(*recs)[i].src->unk1F << 28) >> 30);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->f7 = (((u32)(*recs)[i].src->unk1F << 26) >> 30);
+            ((struct SlotRecBitsAt *)&(*recs)[i])->f9 = ((*recs)[i].src->unk1F >> 6);
+            (*recs)[i].unk12 = (*recs)[i].src->unkE;
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081218F0/screen_view_update.s", void screen_view_update(void))
 
