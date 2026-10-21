@@ -63,7 +63,6 @@ NONMATCH("asm/code_08181620/obj_zoom_tilt10_1620.s", void obj_zoom_tilt10_1620(s
     s32 y2;
     s32 t;
     s32 pos;
-    s32 u;
 
     words = obj->data;
     zoom = *words++;
@@ -87,11 +86,13 @@ NONMATCH("asm/code_08181620/obj_zoom_tilt10_1620.s", void obj_zoom_tilt10_1620(s
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        u = y1;
-        u = u * (gCosineTable[12] / 0x40);
-        y2 = (u - (gSineTable[12] / 0x40) * z1) / 0x100;
+        t = y1;
+        t = t * (gCosineTable[12] / 0x40);
+        y2 = (t - (gSineTable[12] / 0x40) * z1) / 0x100;
         l.y = y2;
-        l.z = ((z1 * (gCosineTable[12] / 0x40)) + ((gSineTable[12] / 0x40) * y1)) / 0x100;
+        t = z1;
+        t = t * (gCosineTable[12] / 0x40);
+        l.z = (t + ((gSineTable[12] / 0x40) * y1)) / 0x100;
         l.y = y2 - 0x800;
 
         if (obj->flags & 0x80) {
@@ -452,7 +453,112 @@ void obj_jump_zoom_turn_points_1cb8(struct PtObj *obj)
     *words = accel;
 }
 
-ASM_FUNC("asm/code_08181620/obj_rise_turn_points_1f4c.s", void obj_rise_turn_points_1f4c(void))
+NONMATCH("asm/code_08181620/obj_rise_turn_points_1f4c.s", void obj_rise_turn_points_1f4c(struct PtObj *obj))
+{
+    struct PtLocal l;
+    s16 *cs;
+    s16 *sn;
+    s16 *sb;
+    struct PtRecord *rec;
+    s32 *pt;
+    s32 height;
+    s32 angle;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 x24;
+    s32 y24;
+    s32 z24;
+    s32 z1;
+    s32 x2;
+    s32 y2;
+    s32 t;
+    s32 pos;
+
+    pt = (s32 *)obj->data;
+    height = *pt++;
+    angle = *pt++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 2; i++) {
+        x = *pt++;
+        l.x = x;
+        y = *pt++;
+        l.y = y;
+        z = *pt++;
+        l.z = z;
+        x24 = x * 24;
+        l.x = x24;
+        y24 = y * 24;
+        l.y = y24;
+        z24 = z * 24;
+        l.z = z24;
+        y2 = z24;
+        cs = &gCosineTable[angle & 0xFF];
+        y2 = y2 * (*cs / 0x40);
+        sb = gSineTable;
+        sn = sb + (angle & 0xFF);
+        z1 = (y2 - (*sn / 0x40) * x24) / 0x100;
+        l.z = z1;
+        x2 = (x24 * (*cs / 0x40) + (*sn / 0x40) * z24) / 0x100;
+        l.x = x2;
+        t = y24;
+        t = t * (gCosineTable[12] / 0x40);
+        y2 = (t - (sb[12] / 0x40) * z1) / 0x100;
+        l.y = y2;
+        t = z1;
+        t = t * (gCosineTable[12] / 0x40);
+        l.z = (t + ((sb[12] / 0x40) * y24)) / 0x100;
+        l.y = y2 + height;
+
+        if (obj->flags & 0x80) {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t - pos;
+        } else {
+            t = obj->posX;
+            pos = x2;
+            if (pos < 0) {
+                pos += 0xFF;
+            }
+            pos >>= 8;
+            l.x = t + pos;
+        }
+        l.y = obj->posY + l.y / 0x100;
+        l.z = obj->posZ + l.z / 0x100;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    height -= 0x100;
+    angle += 0xC;
+    pt = (s32 *)obj->data;
+    *pt++ = height;
+    *pt = angle;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08181620/obj_grow_spin_points_2180.s", void obj_grow_spin_points_2180(void))
 
