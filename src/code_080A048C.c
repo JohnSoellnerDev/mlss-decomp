@@ -232,7 +232,96 @@ void swing_then_draw(struct Body *body)
     }
 }
 
-ASM_FUNC("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orbit(void))
+static inline void copy_sprite_u16(struct Body *body, struct Body *head, u32 off)
+{
+    struct SpriteEntry *bodySpr;
+    struct SpriteEntry *childSpr;
+    struct SpriteEntry *headSpr;
+
+    bodySpr = body->sprite;
+    childSpr = body->child->sprite;
+    headSpr = head->sprite;
+    *(u16 *)((u8 *)childSpr + off) = *(u16 *)((u8 *)headSpr + off);
+    *(u16 *)((u8 *)bodySpr + off) = *(u16 *)((u8 *)headSpr + off);
+}
+
+NONMATCH("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orbit(struct Body *body))
+{
+    u32 count;
+    struct Body *head;
+    struct OrbitNode *node;
+    struct OrbitNode *next;
+    u8 flag;
+    s32 *speed;
+    s32 *span;
+    const s16 *cosTab;
+    s32 bx;
+    s32 cdiv;
+    s32 prod;
+    s32 p8;
+    s32 x2;
+
+    head = body->data->leader;
+    count = 0;
+    node = (struct OrbitNode *)((u8 *)body->child + 0xC);
+    while (node != NULL)
+    {
+        if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(count, 5) == 0)
+        {
+            flag = node->unk1B;
+            node->unk1B = (((flag >> 7) ^ 1) << 7) | (flag & 0x7F);
+        }
+        if (count == 9)
+        {
+            node->unk4 = head->targetX;
+            node->unk8 = head->targetY;
+            next = node->next;
+        }
+        else if (count == 0x13)
+        {
+            node->unk4 = body->targetX;
+            node->unk8 = body->targetY;
+            next = node->next;
+        }
+        else
+        {
+            next = node->next;
+            node->unk4 = next->unk4;
+            node->unk8 = next->unk8;
+        }
+        node = next;
+        count++;
+    }
+
+    speed = (s32 *)&head->swing;
+    cosTab = gCosineTable;
+    span = (s32 *)&head->spanA;
+    bx = *span;
+    if (bx < 0)
+    {
+        bx += 0xFF;
+    }
+    cdiv = cosTab[((bx >> 8) + 0x80) & 0xFF] / 0x40;
+    prod = *speed * cdiv;
+    if (prod < 0)
+    {
+        prod += 0xFF;
+    }
+    p8 = prod >> 8;
+    x2 = ((p8 << 2) + p8) << 7;
+    if (x2 < 0)
+    {
+        x2 += 0xFF;
+    }
+    body->x = 0x2F00 - (x2 >> 8);
+    cdiv = gSineTable[((*span / 0x100) + 0x80) & 0xFF] / 0x40;
+    prod = *speed * cdiv;
+    body->y = 0x6C00 - (prod / 0x100);
+    body->z = head->z;
+    copy_sprite_u16(body, head, 4);
+    copy_sprite_u16(body, head, 6);
+}
+END_NONMATCH
 
 u32 link_to_partner_fx(struct Body *body, struct Body *partner, u32 mode)
 {
