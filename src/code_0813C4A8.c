@@ -163,7 +163,8 @@ struct AimSub
     void *collide;
     u8 filler150[0x158 - 0x150];
     s8 *rect;
-    u8 filler15C[0x17E - 0x15C];
+    s16 *sensor;
+    u8 filler160[0x17E - 0x160];
     u8 flags1D6;
 };
 
@@ -210,6 +211,7 @@ void aim_and_box_state(struct Owner *owner, struct Actor *ent);
 void aim_and_check_overlap(struct Owner *owner, struct Actor *ent);
 void advance_to_next_state(void);
 void enter_state_d6dc(void);
+void enter_state_d8f4(void);
 void random_branch_state(void);
 void link_to_owner_entry(void);
 u16 angle_of_vector16(s32 x, s32 y);
@@ -584,7 +586,93 @@ END_NONMATCH
 void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out);
 void pair_div256(s32 *dst, s32 *src);
 void pair_shl8(s32 *dst, s32 *src);
-ASM_FUNC("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struct Owner *owner, struct Actor *obj, void **out))
+void move_handler_timed_settle(void);
+NONMATCH("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struct Owner *owner, struct Actor *obj, void **out))
+{
+    u8 idx[4];
+    s16 box[8];
+    s32 pair[2];
+    void *partner;
+    struct AimSub *sub;
+    s32 qx;
+    s32 qy;
+    s32 mag;
+    s32 px;
+    u8 roll;
+
+    if (find_active_entry(owner, idx) == 0)
+    {
+        *out = (void *)setup_random_offset_state;
+        return;
+    }
+    sub = (struct AimSub *)((u8 *)obj + 0x58);
+    partner = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
+    step_toward(obj, partner, 0, pair);
+    pair_div256(pair, pair);
+    qx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posX, 0x100);
+    qy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posY, 0x100);
+    {
+        s32 t = pair[0];
+        if (t > 0)
+            t = 0;
+        box[0] = t + qx - 0x10;
+    }
+    {
+        s32 t = pair[1];
+        if (t > 0)
+            t = 0;
+        box[3] = t + qy - 0x10;
+    }
+    {
+        s32 t = pair[0];
+        if (t < 0)
+            t = 0;
+        box[1] = t + qx + 0x10;
+    }
+    {
+        s32 t = pair[1];
+        if (t < 0)
+            t = 0;
+        box[2] = t + qy + 0x10;
+    }
+    if (point_in_box(box, partner, 0x7FFF, 0) != 0)
+    {
+        roll = rand_below(0x64, mt19937_next());
+        if (roll > 0x5A && (roll & 1) != 0)
+        {
+            pair_shl8(pair, pair);
+        }
+        else
+        {
+            px = pair[0];
+            if (px != 0)
+            {
+                mag = px << 8;
+                if ((((u8)rand_below(2, mt19937_next()) ^ 1) & 1) != 0)
+                    mag = -mag;
+                pair[1] = mag;
+                pair[0] = 0;
+            }
+            else
+            {
+                mag = pair[1];
+                mag <<= 8;
+                if ((((u8)rand_below(2, mt19937_next()) ^ 1) & 1) != 0)
+                    mag = -mag;
+                pair[0] = mag;
+                pair[1] = px;
+            }
+        }
+    }
+    else
+    {
+        pair_shl8(pair, pair);
+    }
+    obj_start_move_to_target(obj, 1, pair[0], pair[1]);
+    *out = (void *)move_handler_timed_settle;
+    sub->collide = (void *)active_hit_state;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0813C4A8/step_toward.s", void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out))
 
@@ -975,7 +1063,76 @@ void timer_overlap_state_b(struct Owner *owner, struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct Owner *owner, struct Actor *ent))
+NONMATCH("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct Owner *owner, struct Actor *ent))
+{
+    u8 idx[4];
+    s16 box[8];
+    struct AimSub *sub;
+    struct Actor *partner;
+    s32 dx;
+    s32 dy;
+    s32 heading;
+    s16 *sensor;
+    s32 v;
+    s8 *rect;
+    void **handler;
+
+    sub = (struct AimSub *)((u8 *)ent + 0x58);
+    if (find_active_entry(owner, idx) == 0)
+    {
+        idx[0] = ((u32)(*(u8 *)((u8 *)owner + 0x208)) << 29) >> 31;
+    }
+    partner = *(struct Actor **)((u8 *)owner + 0x28 + (idx[0] << 2));
+    dx = partner->posX - ent->posX;
+    dy = partner->posY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        heading = (((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+    }
+    else
+    {
+        heading = 0xFFFF;
+    }
+    if (heading != (((u32)*((u8 *)ent + 0x24) << 29) >> 29))
+        obj_set_stage(ent, heading);
+
+    handler = (void **)&sub->handler;
+    ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, ent, handler);
+    if ((sub->flags1D6 & 1) != 0)
+    {
+        sensor = sub->sensor;
+        partner = *(struct Actor **)((u8 *)owner + 0x28 + (idx[0] << 2));
+        v = sensor[4];
+        box[0] = (v << 4) + 8;
+        v = sensor[5];
+        box[3] = (v << 4) + 8;
+        v = sensor[6];
+        box[1] = (v << 4) + 8;
+        v = sensor[7];
+        box[2] = (v << 4) + 8;
+        ((struct ModeBits *)&ent->mode)->mode = 3;
+        if (point_in_box(box, partner, 0x7FFF, 0) != 0)
+        {
+            rect = sub->rect;
+            box[0] = rect[0x30] << 4;
+            box[2] = rect[0x31] << 4;
+            box[4] = rect[0x32] << 4;
+            box[1] = rect[0x33] << 4;
+            box[3] = rect[0x34] << 4;
+            box[5] = rect[0x35] << 4;
+            if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]) != 0)
+            {
+                sub->update = (void *)random_branch_state;
+                sub->update2 = (void *)enter_state_d8f4;
+                *handler = (void *)link_to_owner_entry;
+                sub->collide = (void *)link_to_owner_entry;
+                return;
+            }
+        }
+        sub->update = (void *)enter_state_d8f4;
+    }
+}
+END_NONMATCH
 
 void timer_overlap_state_c(struct Owner *owner, struct Actor *obj)
 {
