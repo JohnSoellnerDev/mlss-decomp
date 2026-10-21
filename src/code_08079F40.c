@@ -38,12 +38,22 @@ struct ShapeTask
     void *buffer;
     void (*release)(u32 arg);
     u32 releaseArg;
+    u8 filler28[0x32 - 0x28];
+    u8 unk32;
+    u8 kind;
+    u8 filler34[0x40 - 0x34];
+    u16 unk40;
+    u16 unk42;
 };
 
 extern u8 gUnk_03000ED0;
 extern u32 gUnk_03000F6C;
 extern const u8 gShapeTaskClass[];
+extern const u8 gHeapTagKindSpriteBuf[];
 
+void task_insert(void *node, u8 kind, u32 data);
+u32 start_window_buffer(u32 a, u32 b);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
 void sprite_release(struct ShapeTask *obj, u32 freeMem);
 void iris_timer_step(struct SpriteObj *obj);
 void sprite_set_action(struct SpriteObj *obj, u32 action, u32 arg, u32 extra);
@@ -386,7 +396,104 @@ void phase_step(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08079F40/spawn_kind_sprite.s", void spawn_kind_sprite(void))
+NONMATCH("asm/code_08079F40/spawn_kind_sprite.s", struct ShapeTask *spawn_kind_sprite(struct ShapeTask *obj, u8 flags, u32 taskArg, u8 kind, u16 half, u32 releaseArg, u32 window, u32 windowArg2, void (*release)(u32 arg)))
+{
+    task_insert(obj, flags, taskArg);
+    obj->cls = (void *)gShapeTaskClass;
+    if ((u8)start_window_buffer(window, windowArg2) == 0)
+    {
+        obj->buffer = (void *)-1;
+        if (obj != NULL)
+        {
+            sprite_release(obj, 3);
+        }
+        return obj;
+    }
+    obj->buffer = NULL;
+    obj->kind = kind;
+    obj->unk42 = half;
+    obj->release = release;
+    obj->releaseArg = releaseArg;
+    switch (kind)
+    {
+    case 0:
+    case 1:
+        obj->unk32 = 0xA;
+        obj->buffer = heap_alloc_raw(1, 0x50, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        break;
+    case 2:
+    case 3:
+        obj->unk32 = 8;
+        obj->buffer = heap_alloc_raw(1, 0x40, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        ((u32 *)obj->buffer)[2] = 0x7800;
+        ((u32 *)obj->buffer)[3] = 0;
+        ((u32 *)obj->buffer)[6] = 0xF000;
+        ((u32 *)obj->buffer)[7] = 0x5000;
+        ((u32 *)obj->buffer)[10] = 0x7800;
+        ((u32 *)obj->buffer)[11] = 0xA000;
+        ((u32 *)obj->buffer)[14] = 0;
+        ((u32 *)obj->buffer)[15] = 0x5000;
+        break;
+    case 4:
+    case 5:
+        obj->unk32 = 8;
+        obj->buffer = heap_alloc_raw(1, 0x40, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        ((u32 *)obj->buffer)[0] = 0;
+        ((u32 *)obj->buffer)[1] = 0;
+        ((u32 *)obj->buffer)[2] = 0x7800;
+        ((u32 *)obj->buffer)[4] = 0xF000;
+        ((u32 *)obj->buffer)[5] = 0;
+        ((u32 *)obj->buffer)[7] = 0x5000;
+        ((u32 *)obj->buffer)[8] = 0xF000;
+        ((u32 *)obj->buffer)[9] = 0xA000;
+        ((u32 *)obj->buffer)[10] = 0x7800;
+        ((u32 *)obj->buffer)[12] = 0;
+        ((u32 *)obj->buffer)[13] = 0xA000;
+        ((u32 *)obj->buffer)[15] = 0x5000;
+        break;
+    case 6:
+    case 7:
+        obj->unk32 = 4;
+        obj->buffer = heap_alloc_raw(1, 0x20, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        ((u32 *)obj->buffer)[0] = 0;
+        ((u32 *)obj->buffer)[1] = 0;
+        ((u32 *)obj->buffer)[4] = 0xF000;
+        ((u32 *)obj->buffer)[5] = 0xA000;
+        ((u32 *)obj->buffer)[6] = 0;
+        ((u32 *)obj->buffer)[7] = 0xA000;
+        break;
+    case 8:
+    case 9:
+        obj->unk32 = 4;
+        obj->buffer = heap_alloc_raw(1, 0x20, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        break;
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+        obj->unk40 = half;
+        break;
+    case 16:
+    case 17:
+        obj->unk32 = ((u8(*)(s32, u32))obj->releaseArg)(-1, obj->releaseArg);
+        obj->buffer = heap_alloc_raw(1, obj->unk32 << 3, gHeapTagKindSpriteBuf);
+        obj->unk40 = half;
+        iris_timer_step((struct SpriteObj *)obj);
+        return obj;
+    default:
+        return obj;
+    }
+    iris_timer_step((struct SpriteObj *)obj);
+    return obj;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08079F40/iris_timer_step.s", void iris_timer_step(struct SpriteObj *obj))
 
