@@ -20,7 +20,9 @@ struct SpriteState
     u8 flags0A;
     u8 flags0B;
     u8 flags0C;
-    u8 filler0D[0x54 - 0x0D];
+    u8 filler0D[0x1C - 0x0D];
+    u8 *slotFlags;
+    u8 filler20[0x54 - 0x20];
     struct SpriteObj *objs;
     u8 filler58[0x228 - 0x58];
     struct SpriteObj *partsB[2];
@@ -249,26 +251,19 @@ struct ShowRec
 void obj_stop(void *obj);
 void apply_partner_effect(void *a, void *b, u32 strength, s32 c, s32 x, s32 z, s32 d);
 
-static inline s32 to_whole_pixels(s32 v)
-{
-    if (v < 0)
-        v += 0xFF;
-    return v >> 8;
-}
-
-NONMATCH("asm/code_0807ED70/sprite_objects_obj_show_at.s", s32 sprite_objects_obj_show_at(void *target, struct SpriteObj *obj, u32 arg))
+s32 sprite_objects_obj_show_at(void *target, struct SpriteObj *obj, u32 arg)
 {
     void *ring;
     struct ShowRec *rec;
 
+    rec = (struct ShowRec *)obj;
     ring = obj->ring;
     if (ring == NULL)
         return 0;
-    rec = (struct ShowRec *)obj;
     if (obj->record == NULL)
         rec = (struct ShowRec *)((u8 *)ring + 8);
-    apply_partner_effect(target, rec, arg, 0, to_whole_pixels(rec->posY) + rec->offY,
-                         to_whole_pixels(rec->posX) + rec->offX, 0);
+    apply_partner_effect(target, rec, arg, 0, rec->posY / 0x100 + rec->offY,
+                         rec->posX / 0x100 + rec->offX, 0);
     rec->unkB8 = 0x193;
     if (*((u8 *)ring + 0x111) & 2)
         return 0;
@@ -277,7 +272,6 @@ NONMATCH("asm/code_0807ED70/sprite_objects_obj_show_at.s", s32 sprite_objects_ob
     obj_stop((u8 *)ring + 8);
     return -1;
 }
-END_NONMATCH
 
 void display_flush(void)
 {
@@ -670,4 +664,97 @@ void write_entry_offsets_camera(u32 a, u32 b, u32 d, u32 e, u32 f)
     write_entry_offsets(gWorld->camera, a, b, d, e, f);
 }
 
-ASM_FUNC("asm/code_0807ED70/find_slot_by_kind.s", void find_slot_by_kind(void))
+struct SlotFlags
+{
+    u8 unk0 : 1;
+    s8 kind : 3;
+    u8 hi4 : 4;
+};
+
+struct SlotGroupFlags
+{
+    u8 filler0[2];
+    u8 flagsA;
+    u8 filler3[3];
+    u8 flagsB;
+    u8 filler7[3];
+    u8 flagsC;
+    u8 filler0B;
+};
+
+struct SlotGroupObjs
+{
+    u8 *a;
+    u8 *b;
+    u8 *c;
+};
+
+static inline struct SpriteRecord *slot_entry_record(u8 *ent)
+{
+    return *(struct SpriteRecord **)(ent + 0x10);
+}
+
+static inline s32 slot_entry_kind(u8 *ent)
+{
+    return *(s16 *)(ent + 0xEC);
+}
+
+NONMATCH("asm/code_0807ED70/find_slot_by_kind.s", s32 find_slot_by_kind(s32 kind))
+{
+    struct SlotGroupObjs *objs;
+    struct SlotGroupFlags *flags;
+    u8 *ent;
+    s32 group;
+    s32 index;
+    struct SpriteState *st;
+    u8 *table;
+
+    st = gWorld;
+    group = 0;
+    table = st->slotFlags;
+    objs = (struct SlotGroupObjs *)((u8 *)st + 0x58);
+    flags = (struct SlotGroupFlags *)(table + 8);
+    do
+    {
+        if ((u8)((struct SlotFlags *)&flags->flagsA)->kind <= 2)
+        {
+            ent = objs->a;
+            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
+            {
+                if (kind < 0)
+                    return group;
+                if (slot_entry_kind(ent) == kind)
+                    return group;
+            }
+        }
+        index = group + 1;
+        if ((u8)((struct SlotFlags *)&flags->flagsB)->kind <= 2)
+        {
+            ent = objs->b;
+            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
+            {
+                if (kind < 0)
+                    return index;
+                if (slot_entry_kind(ent) == kind)
+                    return index;
+            }
+        }
+        index = group + 2;
+        if ((u8)((struct SlotFlags *)&flags->flagsC)->kind <= 2)
+        {
+            ent = objs->c;
+            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
+            {
+                if (kind < 0)
+                    return index;
+                if (slot_entry_kind(ent) == kind)
+                    return index;
+            }
+        }
+        objs++;
+        flags++;
+        group += 3;
+    } while (group < 6);
+    return -1;
+}
+END_NONMATCH
