@@ -82,6 +82,10 @@ def main():
                 continue
             value = a | 1 if s.kind == "thumb" else a
             out.append(f"PROVIDE({s.name} = 0x{value:08X});")
+        for a, s in sorted(syms.items()):
+            for fl in s.flags:
+                if fl.startswith("dup="):
+                    out.append(f"PROVIDE({fl[4:]} = 0x{(a | 1 if s.kind == 'thumb' else a):08X});")
         return "\n".join(out) + "\n"
 
     rom_objs, exp_objs = [], []

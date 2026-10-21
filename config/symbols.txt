@@ -274,11 +274,11 @@
 08001D50 copy_menu_obj_head arm
 08001D98 copy_masked_routine arm
 08001DBC masked_block_copy arm
-08001DF8 path_step_main arm
+08001DF8 path_step_main arm dup=path_step_main_routine
 08001FA0 path_step_loop arm
 08002004 isqrt_bits arm
 0800210C div_signed_path arm
-080022A4 fill_rect_4bpp_clip arm
+080022A4 fill_rect_4bpp_clip arm dup=fill_rect_4bpp_clip_routine
 080024B4 dot3x3_4bpp arm
 080025D4 dot3x3_4bpp_clip arm
 0800261C line_3px_4bpp arm

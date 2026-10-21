@@ -335,10 +335,20 @@ class Writer:
         return f"0x{w:08X}"
 
     def pool_word(self, f, a):
-        """Text for the pool word at a. GCC keeps one entry per constant in a pool, so a second word
-        with gCosineTable's address in the same pool is a different expression for it:
-        gSineTable[64] (the sine table runs straight into the cosine table)."""
+        """Text for the pool word at a. GCC keeps one entry per constant in a pool, so two words with
+        the same value in one pool are different expressions for it: gSineTable[64] for a second
+        gCosineTable (the sine table runs straight into the cosine table), and the `dup=` name of
+        config/symbols.txt for the first of two words of a RAM routine that starts its block."""
         text = self.symbolize(self.dis.u32(a), f)
+        s = self.syms.get(self.dis.u32(a) & ~1)
+        dup = [x[4:] for x in s.flags if x.startswith("dup=")] if s is not None and s.name == text else []
+        if dup:
+            # the routine and its block start: two names for one address, the routine comes first
+            p = a + 4
+            while p in f.pool:
+                if self.dis.u32(p) == self.dis.u32(a):
+                    return dup[0]
+                p += 4
         if text == "gCosineTable":
             p = a - 4
             while p in f.pool:
