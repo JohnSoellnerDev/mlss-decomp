@@ -73,6 +73,7 @@ NONMATCH("asm/code_08190F3C/obj_zoom_model6_flat_13e4.s", void obj_zoom_model6_f
     s32 x2;
     s32 z2;
     s32 t;
+    s32 base;
     s32 pos;
 
     words = obj->data;
@@ -103,25 +104,27 @@ NONMATCH("asm/code_08190F3C/obj_zoom_model6_flat_13e4.s", void obj_zoom_model6_f
         l.z = z2;
         x2 = (x1 * (gCosineTable[0] / 0x40) + (gSineTable[0] / 0x40) * z1) / 0x100;
         l.x = x2;
-        l.y = (y1 * (gCosineTable[64] / 0x40) - (gSineTable[64] / 0x40) * z2) / 0x100;
+        t = y1;
+        t = t * (gCosineTable[64] / 0x40);
+        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
         l.z = (z2 * (gCosineTable[64] / 0x40) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
+            base = obj->posX;
             pos = x2;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            l.x = base - pos;
         } else {
-            t = obj->posX;
+            base = obj->posX;
             pos = x2;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            l.x = base + pos;
         }
         l.y = obj->posY + l.y / 0x100;
         l.z = obj->posZ + l.z / 0x100;
@@ -333,6 +336,7 @@ NONMATCH("asm/code_08190F3C/obj_zoom_model8_flat_1d00.s", void obj_zoom_model8_f
     s32 x2;
     s32 z2;
     s32 t;
+    s32 base;
     s32 pos;
 
     words = obj->data;
@@ -363,25 +367,27 @@ NONMATCH("asm/code_08190F3C/obj_zoom_model8_flat_1d00.s", void obj_zoom_model8_f
         l.z = z2;
         x2 = (x1 * (gCosineTable[0] / 0x40) + (gSineTable[0] / 0x40) * z1) / 0x100;
         l.x = x2;
-        l.y = (y1 * (gCosineTable[64] / 0x40) - (gSineTable[64] / 0x40) * z2) / 0x100;
+        t = y1;
+        t = t * (gCosineTable[64] / 0x40);
+        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
         l.z = (z2 * (gCosineTable[64] / 0x40) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
+            base = obj->posX;
             pos = x2;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            l.x = base - pos;
         } else {
-            t = obj->posX;
+            base = obj->posX;
             pos = x2;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            l.x = base + pos;
         }
         l.y = obj->posY + l.y / 0x100;
         l.z = obj->posZ + l.z / 0x100;
