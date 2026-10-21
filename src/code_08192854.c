@@ -314,7 +314,98 @@ void obj_point1_zoom_step_half_3170(struct Point1Obj *obj)
     *words = phase;
 }
 
-ASM_FUNC("asm/code_08192854/obj_point1_zoom_step35_32b8.s", void obj_point1_zoom_step35_32b8(void))
+NONMATCH("asm/code_08192854/obj_point1_zoom_step35_32b8.s", void obj_point1_zoom_step35_32b8(struct Point1Obj *obj))
+{
+    struct Point1Local l;
+    s32 zoom;
+    u32 *words;
+    s32 step;
+    s32 phase;
+    struct ObjRecord *rec;
+    u32 h;
+    u32 saved;
+    s32 i;
+    s32 *p1;
+    s32 *p2;
+    u32 *pslot;
+    s32 vx;
+    s32 pos;
+    s32 t;
+
+    words = obj->data;
+    zoom = *words++;
+    step = *words++;
+    phase = *words++;
+    rec = obj->rec;
+    l.model = rec->model;
+    h = block_flag_byte(rec);
+    saved = 0;
+    oam_list_rows_b(l.model, h);
+    p1 = &l.y;
+    p2 = &l.z;
+    pslot = &l.model;
+    for (i = 0; i < 1; i++) {
+        vx = *words++;
+        l.x = vx;
+        l.y = *words++;
+        l.z = *words++;
+        if (obj->flags & 0x80) {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos - t;
+        } else {
+            pos = obj->posX;
+            t = vx;
+            if (t < 0) {
+                t += 0xFF;
+            }
+            t >>= 8;
+            l.x = pos + t;
+        }
+        pos = obj->posY;
+        t = l.y;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.y = pos + t;
+        pos = obj->posZ;
+        t = l.z;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        t >>= 8;
+        l.z = pos + t;
+        offset_words_camera(&l.x, p1, p2, 0);
+        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
+        if (!saved) {
+            l.model = gModelCtx->model;
+            saved = 1;
+        }
+    }
+    if (saved) {
+        gModelCtx->model = l.model;
+    }
+    zoom = zoom - step + 6;
+    step = (step * 3) / 5;
+    phase += 6;
+    rec->unk4 = zoom;
+    rec->unk6 = zoom;
+    if (obj->flags & 0x80) {
+        rec->unkC = -phase << 8;
+    } else {
+        rec->unkC = phase << 8;
+    }
+    words = obj->data;
+    *words++ = zoom;
+    *words++ = step;
+    *words = phase;
+}
+END_NONMATCH
 
 // Single-point object with a remaining-time counter: the point is added to the object position
 // and placed; the record halfwords get 0x140 minus the phase.
