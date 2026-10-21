@@ -241,7 +241,9 @@ void obj_link_sprites(struct Owner *owner, struct Enemy *obj)
 
 ASM_FUNC("asm/code_08137B08/obj_random_offset.s", void obj_random_offset(void))
 
+
 ASM_FUNC("asm/code_08137B08/obj_random_offset_step.s", void obj_random_offset_step(void))
+
 
 void obj_random_facing_target(struct Enemy *obj)
 {
@@ -301,7 +303,87 @@ ASM_FUNC("asm/code_08137B08/obj_pick_move_vector.s", void obj_pick_move_vector(v
 
 ASM_FUNC("asm/code_08137B08/obj_random_orbit_offset.s", void obj_random_orbit_offset(void))
 
-ASM_FUNC("asm/code_08137B08/obj_start_move_to_target.s", void obj_start_move_to_target(void))
+
+void obj_start_move_to_target(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
+{
+    u8 *bahn;
+    u8 **routines;
+    u16 *flagp;
+    u16 flagValue;
+    s32 vx;
+    s32 vy;
+    s32 dx;
+    s32 dy;
+
+    bahn = (u8 *)obj + 0x58;
+    obj->unk1C4 = obj->posX / 0x100;
+    obj->unk1C6 = obj->posY / 0x100;
+    obj->unk1C8 = (obj->posZ + obj->unk18) / 0x100;
+
+    if (mode == 1)
+    {
+        tx += obj->posX;
+        ty += obj->posY;
+    }
+    obj->unk2BC = obj->posX;
+    obj->unk2C0 = obj->posY;
+    obj->unk2CC = tx;
+    obj->unk2D0 = ty;
+
+    if (tx > obj->posX)
+    {
+        vx = obj->unk23E;
+    }
+    else if (tx < obj->posX)
+    {
+        vx = -obj->unk23E;
+    }
+    else
+    {
+        vx = 0;
+    }
+    obj->unk242 = vx;
+    obj->unk2D8 = vx;
+
+    if (ty > obj->posY)
+    {
+        vy = obj->unk23E;
+    }
+    else if (ty < obj->posY)
+    {
+        vy = -obj->unk23E;
+    }
+    else
+    {
+        vy = 0;
+    }
+    obj->unk244 = vy;
+    obj->unk2DA = vy;
+    obj->unk2DE = 0;
+
+    {
+        u16 hx;
+        u16 hy;
+
+        hx = *(u16 *)&obj->unk2D8;
+        hy = *(u16 *)&obj->unk2DA;
+        if ((hx | hy) != 0)
+    {
+        obj->heading = (u32)((u16)angle_of_vector16(obj->unk2D8, obj->unk2DA) + 0x10) >> 8;
+    }
+    else
+    {
+        obj->heading = 0xFF;
+    }
+    }
+
+    routines = &gMathRoutines;
+    *(s32 *)(bahn + 0x174) = ((s32 (*)(s32))*routines)((obj->unk2CC - obj->unk2BC) * (obj->unk2CC - obj->unk2BC) + (obj->unk2D0 - obj->unk2C0) * (obj->unk2D0 - obj->unk2C0));
+    flagp = (u16 *)(bahn + 0xA0);
+    flagValue = *flagp | 0x800;
+    *flagp = flagValue;
+}
+
 
 NONMATCH("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty))
 {
@@ -396,7 +478,87 @@ void obj_start_hop(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
     obj->unkF8 |= 0x800;
 }
 
-ASM_FUNC("asm/code_08137B08/obj_start_move_zero_anchor.s", void obj_start_move_zero_anchor(void))
+void obj_start_move_zero_anchor(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
+{
+    u8 *bahn;
+    u8 **routines;
+    u16 *flagp;
+    u16 flagValue;
+    s32 vx;
+    s32 vy;
+    s32 dx;
+    s32 dy;
+
+    bahn = (u8 *)obj + 0x58;
+    obj->unk1C4 = obj->posX / 0x100;
+    obj->unk1C6 = obj->posY / 0x100;
+    obj->unk1C8 = (obj->posZ + obj->unk18) / 0x100;
+
+    if (mode == 1)
+    {
+        tx += obj->posX;
+        ty += obj->posY;
+    }
+    obj->unk2BC = 0;
+    obj->unk2C0 = 0;
+    obj->unk2CC = tx;
+    obj->unk2D0 = ty;
+
+    if (tx > obj->posX)
+    {
+        vx = obj->unk23E;
+    }
+    else if (tx < obj->posX)
+    {
+        vx = -obj->unk23E;
+    }
+    else
+    {
+        obj->unk2BC = 0;
+        vx = 0;
+    }
+    obj->unk242 = vx;
+    obj->unk2D8 = vx;
+
+    if (ty > obj->posY)
+    {
+        vy = obj->unk23E;
+    }
+    else if (ty < obj->posY)
+    {
+        vy = -obj->unk23E;
+    }
+    else
+    {
+        obj->unk2C0 = 0;
+        vy = 0;
+    }
+    obj->unk244 = vy;
+    obj->unk2DA = vy;
+    obj->unk2DE = 0;
+
+    {
+        u16 hx;
+        u16 hy;
+
+        hx = *(u16 *)&obj->unk2D8;
+        hy = *(u16 *)&obj->unk2DA;
+        if ((hx | hy) != 0)
+        {
+            obj->heading = (u32)((u16)angle_of_vector16(obj->unk2D8, obj->unk2DA) + 0x10) >> 8;
+        }
+        else
+        {
+            obj->heading = 0xFF;
+        }
+    }
+
+    routines = &gMathRoutines;
+    *(s32 *)(bahn + 0x174) = ((s32 (*)(s32))*routines)((obj->unk2CC - obj->posX) * (obj->unk2CC - obj->posX) + (obj->unk2D0 - obj->posY) * (obj->unk2D0 - obj->posY));
+    flagp = (u16 *)(bahn + 0xA0);
+    flagValue = *flagp | 0x800;
+    *flagp = flagValue;
+}
 
 void obj_velocity_from_facing(struct Enemy *obj)
 {
