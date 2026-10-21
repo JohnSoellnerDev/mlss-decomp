@@ -79,6 +79,29 @@ struct ActorObj
     s16 dh;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+// The child takes over the kind and two flag bits of its parent.
+static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child, u32 kind)
+{
+    ((struct Flags78Bits *)&child->dir)->kind = kind >> 5;
+    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+}
+
 s32 is_state_busy(void);
 s32 query_contact(struct ActorObj *obj, s32 a, s32 b);
 s32 obj_query_contact(struct ActorObj *obj, s32 a, s32 b);
@@ -143,4 +166,55 @@ struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h
 void on_arrive(struct ActorObj *obj);
 void obj_stop(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08065F94/obj_spawn_linked_child.s", void obj_spawn_linked_child(struct ActorObj *obj))
+void obj_lift_step_finish(struct ActorObj *obj);
+u32 obj_lookup_slot_or_finish(struct ActorObj *obj);
+
+void obj_spawn_linked_child(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    struct ActorObj *walk;
+    s32 diff;
+    s32 t;
+    s32 q;
+    s32 half;
+    s32 speed;
+
+    child = obj_spawn(obj->part, 0x40A4, obj->baseX / 0x100, obj->baseY / 0x100 + 2,
+                      obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+    walk = obj->child;
+    if (walk != NULL)
+    {
+        do
+        {
+            walk = walk->child;
+        } while (walk != NULL);
+    }
+    obj_child_flags(obj, child, 0x20);
+    child->handler68 = on_arrive;
+    child->link = obj->link;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+    child->handler60 = (s32 (*)(struct ActorObj *))obj_lookup_slot_or_finish;
+    child->byte74 = obj->byte74;
+    child->targetX = obj->owner->part->targetX;
+    child->dx = child->baseX / 0x100;
+    child->dh = child->baseH / 0x100;
+    diff = ((s32)child->dx << 8) - child->targetX;
+    t = diff;
+    if (diff < 0)
+    {
+        t = diff + 0x1FF;
+    }
+    q = t >> 9;
+    half = (q + (s32)((u32)t >> 31)) >> 1;
+    speed = 0x3000 / (half * half);
+    if (speed == 1)
+    {
+        speed = 2;
+    }
+    child->param9C = -speed;
+    child->paramA0 = q;
+    child->paramA4 = -diff;
+    child->timer = 0;
+    child->state = obj_lift_step_finish;
+}
