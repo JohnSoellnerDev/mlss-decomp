@@ -182,14 +182,17 @@ extern const u8 gMapPalettesA[];
 extern const u8 gMapPalettesB[];
 extern const u8 gRomBlockTable[];
 extern u8 gUnk_03000DE8[];
+static inline const u8 *map_palette_set(void)
+{
+    if ((gSys[0x888] & 6) == 2)
+        return gMapPalettesB;
+    return gMapPalettesA;
+}
+
 NONMATCH("asm/code_0805970C/obj_copy_rom_block.s", void obj_copy_rom_block(u8 *obj))
 {
-    const u8 *src;
+    const u8 *src = map_palette_set();
 
-    if ((gSys[0x888] & 6) == 2)
-        src = gMapPalettesB;
-    else
-        src = gMapPalettesA;
     cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DE8[5]]], *(void **)(obj + 0x78), 0x78);
 }
 END_NONMATCH
@@ -292,22 +295,7 @@ NONMATCH("asm/code_0805970C/write_scroll_shadows.s", void write_scroll_shadows(u
 END_NONMATCH
 
 extern u8 gUnk_02000080[];
-NONMATCH("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
-{
-    const u8 *src;
-    u8 *base;
-    u32 color;
-
-    if ((gSys[0x888] & 6) == 2)
-        src = gMapPalettesB;
-    else
-        src = gMapPalettesA;
-    cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DD0[5]]], gUnk_02000080, 0x78);
-    base = gSys;
-    color = 0x7fff;
-    *(u16 *)(base + 2) = color;
-}
-END_NONMATCH
+ASM_FUNC("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
 
 void obj_reload_map(u8 *obj)
 {
