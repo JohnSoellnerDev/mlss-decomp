@@ -58,7 +58,10 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Routines copied to IWRAM are called as `base + (routine - block start)` with three literal
   pool words (`gMathRoutines`, `iwram_div`, `iwram_sqrt`): use `MATH_ROUTINE(type, iwram_div)` /
   `MEM_ROUTINE(type, iwram_copy)` from `include/ram_routines.h`. The sine and cosine tables are
-  `gSineTable` and `gCosineTable` (two symbols, two literal pool words).
+  `gSineTable` and `gCosineTable` (two symbols, two literal pool words). Declare them without `const`
+  (`extern s16 gSineTable[];`), otherwise GCC loads each value once instead of again at every use.
+  The sine table runs straight into the cosine table, so `gSineTable[64]` is the address of
+  `gCosineTable`; the disassembler writes such a second pool word as `gSineTable+0x80`.
 - `bl __divsi3` / `__modsi3` / `__udivsi3` / `__umodsi3` are plain `/` and `%` in C (signed or
   unsigned operands); division by a power of two is inlined (`asrs` with a rounding fix-up).
 - `switch` becomes `cmp rX, #N; bhi default; lsls; ldr table; adds; ldr; mov pc` followed by a

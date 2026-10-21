@@ -334,6 +334,19 @@ class Writer:
                 return f"{s.name}+0x{w - s.addr:X}"
         return f"0x{w:08X}"
 
+    def pool_word(self, f, a):
+        """Text for the pool word at a. GCC keeps one entry per constant in a pool, so a second word
+        with gCosineTable's address in the same pool is a different expression for it:
+        gSineTable[64] (the sine table runs straight into the cosine table)."""
+        text = self.symbolize(self.dis.u32(a), f)
+        if text == "gCosineTable":
+            p = a - 4
+            while p in f.pool:
+                if self.symbolize(self.dis.u32(p), f) == text:
+                    return "gSineTable+0x80"
+                p -= 4
+        return text
+
     def operand_text(self, f, insn):
         """Instruction text, or None when it has to be written as raw bytes."""
         mn, op = insn.mnemonic, insn.op_str
@@ -444,7 +457,7 @@ class Writer:
                     out.append(f"\t{text}")
                 a += insn.size
             elif a in f.pool:
-                out.append(f"\t.4byte {self.symbolize(dis.u32(a), f)}")
+                out.append(f"\t.4byte {self.pool_word(f, a)}")
                 a += 4
             elif a in f.jt:
                 w = f.jt[a]
