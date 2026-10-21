@@ -253,6 +253,7 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
     s32 *rest;
     s32 dz;
     s32 limit;
+    s32 *lim;
 
     part = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zTarget - obj->zStart, 4);
     if (part != 0)
@@ -271,8 +272,9 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
     {
         if ((s16)rem > 0)
             return 1;
+        lim = &obj->zLimit;
         dz = obj->dz;
-        limit = obj->zLimit;
+        limit = *lim;
         if (dz > limit)
             return 1;
     }
@@ -280,8 +282,9 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
     {
         if ((s16)rem > 0)
             return 1;
+        lim = &obj->zLimit;
         dz = obj->dz;
-        limit = obj->zLimit;
+        limit = *lim;
         if (dz < limit)
             return 1;
     }
