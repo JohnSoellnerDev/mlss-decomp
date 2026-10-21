@@ -212,6 +212,12 @@ function start, calls show the relocation (the called symbol). A worked example 
   original variable): the temporary is the variable that later takes `obj->posX` in the flag
   branches (`t` in `obj_rotx_zoom12_f0c0`, `pos` in `obj_accel_tilt5_f4e4`, both in
   src/code_0817E4F0.c) - in the original both sit in the same register.
+- Point-model functions with a variable angle (`gCosineTable[angle & 0xFF]`) where only a coordinate
+  (z1, x1) and the register holding the table entry address swap: read the entries through pointer
+  variables, `cs = &gCosineTable[angle & 0xFF];` right before the first use and `*cs` in the formulas
+  (`s16 *cs; s16 *sn;`). The declaration position of the pointers decides which of the equally
+  ranked values gets a register first (example `obj_spring_turn_points_2eb8` in
+  src/code_08182EB8.c).
 - GCC folds `A - (B + 0x500)` into `(A - 0x500) - B` with a pool constant; the original's
   `movs`/`lsls` 0x500 added to B comes from a local constant (`s32 zOffset = 0x500; ... A - (B +
   zOffset)`). A `cmn` compare is `x <= -y` (`x + y <= 0` gives `adds; cmp`). Examples in
