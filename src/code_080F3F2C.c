@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct Obj
 {
@@ -55,6 +56,11 @@ struct Cmd
     s32 unk14;
 };
 
+struct Words7
+{
+    s32 w[7];
+};
+
 struct Entry
 {
     u8 filler0[8];
@@ -73,6 +79,20 @@ struct StatusBits
     u8 lo4 : 4;
     u8 bit4 : 1;
     u8 hi3 : 3;
+};
+
+struct FlagBit0At79
+{
+    u8 filler0[0x79];
+    u8 bit0 : 1;
+    u8 hi7 : 7;
+};
+
+struct FlagBit7At110
+{
+    u8 filler0[0x110];
+    u8 lo7 : 7;
+    u8 bit7 : 1;
 };
 
 extern struct World *gWorld;
@@ -187,7 +207,54 @@ u32 cmd_copy_if_active(struct Owner *owner, u32 *dst, u32 *block)
 ASM_FUNC("asm/code_080F3F2C/entry_flag_command.s", void entry_flag_command(void))
 ASM_FUNC("asm/code_080F3F2C/entry_value_command.s", void entry_value_command(void))
 
-ASM_FUNC("asm/code_080F3F2C/entry_mode_command.s", void entry_mode_command(void))
+NONMATCH("asm/code_080F3F2C/entry_mode_command.s", u32 entry_mode_command(void *unused0, void *unused1, struct Cmd *node))
+{
+    u32 word;
+    s32 mode;
+    struct Entry *entry;
+    struct Obj *obj;
+    u32 bit4;
+
+    word = node->unk0;
+    mode = (s32)word >> 1;
+    switch (mode)
+    {
+    case 0:
+        if ((word & 1) != 0)
+        {
+            if (node->unk4 <= 7)
+                entry = (struct Entry *)((u8 *)gWorld->slots[node->unk4] + 8);
+            else
+                entry = (struct Entry *)(gWorkBuf + 0xD0 * node->unk4 + 0x300);
+            obj = entry->obj8;
+            bit4 = ((u32)obj->status << 27) >> 31;
+            sprite_set_action(entry, obj->unk21, 0, 0);
+            obj = entry->obj8;
+            ((struct StatusBits *)&obj->status)->bit4 = bit4;
+        }
+        else
+        {
+            if (node->unk4 <= 7)
+                entry = (struct Entry *)((u8 *)gWorld->slots[node->unk4] + 8);
+            else
+                entry = (struct Entry *)(gWorkBuf + 0xD0 * node->unk4 + 0x300);
+            obj_detach_active(entry->obj8);
+        }
+        break;
+    case 1:
+        if (node->unk4 <= 7)
+            entry = (struct Entry *)((u8 *)gWorld->slots[node->unk4] + 8);
+        else
+            entry = (struct Entry *)(gWorkBuf + 0xD0 * node->unk4 + 0x300);
+        ((struct FlagBit0At79 *)entry)->bit0 = (node->unk0 & 1) ^ 1;
+        break;
+    case 2:
+        ((struct FlagBit7At110 *)gWorld->slots[node->unk4])->bit7 = word & 1;
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F3F2C/entry_flag_store.s", void entry_flag_store(void))
 u32 owner_entry_cmds_cmd_slot_set_motion(struct Owner *owner, struct Obj *obj, struct Cmd *cmd)
@@ -460,7 +527,29 @@ ASM_FUNC("asm/code_080F3F2C/cmd_slot_mode_owner.s", void cmd_slot_mode_owner(voi
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_mode_cmd.s", void cmd_slot_mode_cmd(void))
 ASM_FUNC("asm/code_080F3F2C/cmd_slot_copy_tile.s", void cmd_slot_copy_tile(void))
 
-ASM_FUNC("asm/code_080F3F2C/cmd_set_var_distance.s", void cmd_set_var_distance(void))
+u32 cmd_set_var_distance(struct Owner *owner, u8 *dst, struct Cmd *cmd, u8 *extra)
+{
+    s32 value;
+    s32 buf[14];
+    s32 *pb;
+
+    if (cmd->unk4 == 0)
+    {
+        *(struct Words7 *)buf = *(struct Words7 *)((u8 *)gWorld->slots[cmd->unk8] + 0x14);
+        pb = &buf[7];
+        *(struct Words7 *)pb = *(struct Words7 *)((u8 *)gWorld->slots[cmd->unkC] + 0x14);
+        buf[1] = buf[1] / 0x10;
+        buf[2] = buf[2] / 0x10;
+        buf[3] = buf[3] / 0x10;
+        pb[1] = pb[1] / 0x10;
+        pb[2] = pb[2] / 0x10;
+        pb[3] = pb[3] / 0x10;
+        value = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(
+            (pb[1] - buf[1]) * (pb[1] - buf[1]) + (pb[2] - buf[2]) * (pb[2] - buf[2]) + (pb[3] - buf[3]) * (pb[3] - buf[3])) / 0x10;
+    }
+    set_var(extra, dst + 0x18, (u8 *)owner->state + 0x1794, dst + 0xA8, *(s16 *)cmd, value);
+    return 1;
+}
 u32 cmd_set_var_from_source(struct Owner *owner, u8 *dst, struct Cmd *cmd, u8 *extra)
 {
     s32 value;
