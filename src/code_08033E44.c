@@ -224,7 +224,28 @@ NONMATCH("asm/code_08033E44/sub_08034710.s", void sub_08034710(struct PairObj *o
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08033E44/sub_08034884.s", void sub_08034884(void))
+NONMATCH("asm/code_08033E44/sub_08034884.s", void sub_08034884(struct PairObj *obj, struct PairPart *sub))
+{
+    update_pair_facing(obj, 1, 1);
+    sub->state4 = 0x48;
+    ((struct BitsLo6 *)&sub->flags351)->bit6 = 1;
+    if ((((u8 *)obj)[0x208] & 0x10) != 0)
+    {
+        if ((sub->mode352 & 0x80) != 0)
+        {
+            obj_shift_state_slots(obj->subB);
+            advance_anim_frame(obj, obj->subB, (((u32)((u8 *)obj)[0x208] << 27) >> 31), 0);
+        }
+        ((struct BitsLo6 *)&sub->partner388->flags351)->bit6 = 1;
+    }
+    obj_set_id(sub, 0x1002);
+    motion_obj_set_move_target(sub, 0x18, 0x75, obj->move100);
+    obj_setup_aux_1045(sub);
+    sub->attached36C->unk20 = (obj->flagsFB >> 3) << ((((u32)((u8 *)obj)[0x20A]) << 30) >> 31);
+    ((u8 *)obj)[0x20B] |= 0x80;
+    set_slot_value(0x46, -1);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49(struct PairObj *obj))
 {
