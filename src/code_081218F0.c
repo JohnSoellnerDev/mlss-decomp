@@ -160,10 +160,9 @@ NONMATCH("asm/code_081218F0/unknown_thumb_081225d0.s", void unknown_thumb_081225
 
     for (i = y; i < h; i++)
     {
-        row = map + i * 32;
-
         for (j = x; j < w; j++)
         {
+            row = map + i * 32;
             if (mode == 0)
             {
                 row[j] = mode;
