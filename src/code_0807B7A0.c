@@ -530,12 +530,16 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
         u16 oldMask = ent->mask14;
         u32 link = ((u32)ent->flags13 << 30) >> 30;
         u32 shifted;
+        u16 size;
         u16 key;
         u32 found;
         u16 newMask;
+        u16 w12;
         struct SpriteEnt *node;
         struct SpriteNode *n;
         struct SpriteWorld *world;
+        struct SlotTable *tbl;
+        void (*cb)(void *);
 
         sprite_update_cd0(ent);
         if (link != 0)
@@ -545,10 +549,12 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
         newMask = ent->mask14;
         if (oldMask != newMask)
         {
-            gWorld->unk12 = gWorld->unk12 | newMask;
+            w12 = gWorld->unk12;
+            gWorld->unk12 = w12 | newMask;
         }
+        size = ent->half1C;
         shifted = (u32)ent->byte1E << 28;
-        if (((ent->half1C | ((shifted >> 16) + 0x1000)) - 0x2000) <= 1)
+        if (((size | ((shifted >> 16) + 0x1000)) - 0x2000) <= 1)
         {
             if (gWorld->slot220 == NULL)
             {
@@ -561,10 +567,7 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
         }
         else
         {
-            void (*cb)(void *);
-
-            key = ((shifted >> 16) + 0x1000) | ent->unk16;
-            found = find_entry_code(gWorld->table248, key);
+            found = find_entry_code(gWorld->table248, (u16)(((shifted >> 16) + 0x1000) | ent->unk16));
             if ((found << 16) == 0xFFFF0000)
             {
                 return;
@@ -729,8 +732,8 @@ NONMATCH("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolO
         ((struct RecFlags13 *)&rec->flags13)->b2 = 0;
         ((struct RecFlags13 *)&rec->flags13)->b3 = 0;
         setup_obj_10bc(rec, 0, group, 1, -1, -1, -1, -1);
-        bit8 = 8;
         rec->flags13 |= 4;
+        bit8 = 8;
         rec->flags13 |= bit8;
         obj_load_record(rec, 0, -1, 0, 0);
         list_remove_active(rec);
@@ -841,11 +844,16 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
 {
     if (obj != NULL)
     {
+        u8 *flags;
+        u32 link;
+
         ((struct StateBits *)&obj->flags76)->kind = 0;
         obj_list_remove(obj);
-        if (obj->link68 != 0 && obj->link68 != (u32)obj_release)
+        link = obj->link68;
+        flags = &obj->flags76;
+        if (link != 0 && link != (u32)obj_release)
         {
-            ((void (*)(void *))obj->link68)(obj);
+            ((void (*)(void *))link)(obj);
         }
         if (obj->ring != NULL)
         {
@@ -873,14 +881,15 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
             {
                 struct PoolObj *prev = ringHead;
 
-                while (prev->sibling != NULL && obj != prev->sibling)
+                while (prev->sibling != NULL)
                 {
+                    if (obj == prev->sibling)
+                    {
+                        prev->sibling = obj->sibling;
+                        obj->sibling = NULL;
+                        break;
+                    }
                     prev = prev->sibling;
-                }
-                if (prev->sibling != NULL)
-                {
-                    prev->sibling = obj->sibling;
-                    obj->sibling = NULL;
                 }
             }
         }
@@ -925,21 +934,17 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
             struct PoolObj *prev = NULL;
             struct PoolObj *cur = gWorld->list78;
 
-            for (;;)
+            while (cur != NULL)
             {
-                if (cur == NULL)
-                {
-                    break;
-                }
                 if (cur == obj)
                 {
-                    if (prev != NULL)
+                    if (prev == NULL)
                     {
-                        prev->next = obj->next;
+                        gWorld->list78 = obj->next;
                     }
                     else
                     {
-                        gWorld->list78 = obj->next;
+                        prev->next = obj->next;
                     }
                     break;
                 }
@@ -952,7 +957,7 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
 
             if (pos - (u32)gWorkBuf <= 0xCFF)
             {
-                ((struct PoolFlags *)&obj->flags76)->mode = 0;
+                ((struct PoolFlags *)flags)->mode = 0;
             }
         }
         obj->unk54 = 0;
