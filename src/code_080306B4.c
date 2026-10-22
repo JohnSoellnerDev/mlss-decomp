@@ -138,6 +138,36 @@ void pair_sub_state_3a(struct PairObj *obj, struct PairSub *sub)
     set_slot_value(0x56, -1);
 }
 
-ASM_FUNC("asm/code_080306B4/pair_slot_kind.s", void pair_slot_kind(void))
+NONMATCH("asm/code_080306B4/pair_slot_kind.s", u32 pair_slot_kind(struct PairObj *obj))
+{
+    s16 i;
+    u8 f;
+    s32 state;
+
+    i = 0;
+    do
+    {
+        f = *(u8 *)obj->slots[i];
+        if ((f & 0x40) == 0)
+        {
+            f = *(u8 *)obj->slots[i + 1];
+            if ((f & 0x40) == 0)
+            {
+                i += 2;
+                continue;
+            }
+        }
+        if ((f & 0x38) == 0x10)
+            return 2;
+        if ((f & 0x38) == 0x18)
+            return 3;
+        return 4;
+    } while (i <= 7);
+    state = 0;
+    if ((obj->state246 & 0x1C) == 4)
+        state = 1;
+    return state;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080306B4/pair_state_2e_3a.s", void pair_state_2e_3a(void))
