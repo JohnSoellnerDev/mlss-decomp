@@ -130,7 +130,8 @@ void obj_timer_to_move(struct ActorObj *obj);
 void obj_wave_left_to_target(struct ActorObj *obj);
 void obj_wave_rise_stop(struct ActorObj *obj);
 void obj_wave_fall_stop(struct ActorObj *obj);
-void obj_move_by_path(void);
+void obj_move_by_path(struct ActorObj *obj);
+void obj_random_pick_start(struct ActorObj *obj);
 void obj_count_down_exit(struct ActorObj *obj);
 void obj_timer_table_next(struct ActorObj *obj);
 void obj_link_then_finish(struct ActorObj *obj);
@@ -151,8 +152,31 @@ void obj_pose_release_partner(struct ActorObj *obj);
 struct ActorObj *obj_spawn_linked(struct ActorObj *parent, u32 kind, u32 value);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActorObj *owner);
 
-ASM_FUNC("asm/code_08070318/obj_move_by_path.s", void obj_move_by_path(void))
+void obj_move_by_path(struct ActorObj *obj)
+{
+    s32 dt;
+    s32 dtSq;
+    s32 hBias = 0x3000;
 
+    obj->posX = (obj->paramA4 * (s16)obj->timer / obj->paramA0) + (obj->dx << 8);
+    obj->posY = (obj->paramA8 * (s16)obj->timer / obj->paramA0) + (obj->dy << 8);
+    dt = (s16)obj->timer - obj->paramA0 / 2;
+    dtSq = dt * dt;
+    obj->posH = obj->param9C * dtSq + ((obj->dh << 8) + hBias);
+    obj->timer++;
+    if ((s16)obj->timer >= obj->paramA0 / 2)
+    {
+        if (obj->posH <= 0)
+        {
+            obj->posH = 0;
+            sprite_set_action(obj, 0x1A, 0, 0);
+            set_slot_value(0xA3, -1);
+            effect_spawn_at(0x2001, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+            obj->param9C = obj->targetH;
+            obj->state = obj_random_pick_start;
+        }
+    }
+}
 
 void wave_obj_timer_spawn_effect(struct ActorObj *obj)
 {
