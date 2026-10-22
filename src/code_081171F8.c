@@ -584,16 +584,20 @@ ASM_FUNC("asm/code_081171F8/char_menu_cell.s", void char_menu_cell(void))
 
 ASM_FUNC("asm/code_081171F8/char_menu_list.s", void char_menu_list(void))
 
-NONMATCH("asm/code_081171F8/unknown_thumb_081188a4.s", u8 unknown_thumb_081188a4(u8 kind, u8 idx))
+u8 unknown_thumb_081188a4(u8 kind, u8 idx)
 {
     u8 result;
+    u8 *base;
     u8 *field;
     const u8 *table;
 
     switch (kind)
     {
     case 0:
-        field = gParty + idx * 0x3C + 0x32;
+        base = gParty;
+        base += idx * 0x3C;
+        field = base;
+        field += 0x32;
         if (*field == 0xFF)
         {
             result = 0xFF;
@@ -603,7 +607,10 @@ NONMATCH("asm/code_081171F8/unknown_thumb_081188a4.s", u8 unknown_thumb_081188a4
         result = table[*field * 20 + 6];
         break;
     case 1:
-        field = gParty + idx * 0x3C + 0x31;
+        base = gParty;
+        base += idx * 0x3C;
+        field = base;
+        field += 0x31;
         if (*field == 0xFF)
         {
             result = 0xFF;
@@ -618,18 +625,21 @@ NONMATCH("asm/code_081171F8/unknown_thumb_081188a4.s", u8 unknown_thumb_081188a4
     }
     return result;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_081171F8/sub_0811891C.s", u8 sub_0811891C(u8 kind, u8 idx))
 {
     u8 result;
+    u8 *base;
     u8 *field;
     const u8 *table;
 
     switch (kind)
     {
     case 0:
-        field = gParty + idx * 0x3C + 0x32;
+        base = gParty;
+        base += idx * 0x3C;
+        field = base;
+        field += 0x32;
         if (*field == 0xFF)
         {
             result = 0xFF;
@@ -639,7 +649,10 @@ NONMATCH("asm/code_081171F8/sub_0811891C.s", u8 sub_0811891C(u8 kind, u8 idx))
         result = table[*field * 20 + 10];
         break;
     case 1:
-        field = gParty + idx * 0x3C + 0x31;
+        base = gParty;
+        base += idx * 0x3C;
+        field = base;
+        field += 0x31;
         if (*field == 0xFF)
         {
             result = 0xFF;
@@ -649,14 +662,17 @@ NONMATCH("asm/code_081171F8/sub_0811891C.s", u8 sub_0811891C(u8 kind, u8 idx))
         result = table[*field * 20 + 10];
         break;
     case 2:
-        field = gParty + idx * 0x3C;
-        if (field[0x33] == 0xFF)
+        base = gParty;
+        base += idx * 0x3C;
+        field = base;
+        field += 0x33;
+        if (*field == 0xFF)
         {
             result = 0xFF;
             break;
         }
         table = gRowTable8;
-        result = table[field[0x33] * 8 + 4];
+        result = table[*field * 8 + 4];
         break;
     }
     return result;
