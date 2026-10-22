@@ -224,7 +224,87 @@ u32 try_engage_pair(struct PairObj *obj, struct PairSub *other, u8 engage, u8 fl
 
 ASM_FUNC("asm/code_0802EDD8/pair_ring_pair_step.s", void pair_ring_pair_step(void))
 
-ASM_FUNC("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(void))
+NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct PairObj *obj))
+{
+    u8 fb;
+
+    if ((obj->flags2B8 & 0x10) == 0)
+        return;
+    ((struct Bit3Bits *)&obj->subA->flags20D)->bit3 = 0;
+    advance_obj_motion(obj->subA, obj->entries);
+    obj_advance_motion(obj->subA);
+
+    if (!(obj->flags2B8 & 0x20) && (obj->flags208 & 0x10))
+    {
+        ((struct Bit3Bits *)&obj->subB->flags20D)->bit3 = 0;
+        advance_obj_motion(obj->subB, obj->entries);
+        obj_advance_motion(obj->subB);
+    }
+    if (obj->flags208 & 0x10)
+    {
+        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subB) & 1;
+        if (obj->flags2B8 & 0x20)
+        {
+            obj->half26E--;
+            if (obj->half26E == 0)
+                ((struct Bit5Bits *)&obj->flags2B8)->bit5 = 0;
+        }
+    }
+    else
+    {
+        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subA) & 1;
+    }
+
+    if ((obj->flags2B8 & 0x10) == 0)
+    {
+        fb = obj->flagFB & 4;
+        if (fb == 0)
+        {
+            obj->subA->unk14 += obj->subA->unk18;
+            obj->subA->unk18 = fb;
+            obj->subA->unk3C += obj->subA->unk40;
+            obj->subA->unk40 = fb;
+        }
+        {
+            s32 t = obj->subA->flags353;
+            t &= -3;
+            obj->subA->flags353 = t;
+        }
+        obj->subA->flags20D |= 8;
+        obj->subA->flags20D |= 0x40;
+        if (obj->flags208 & 0x10)
+        {
+            fb = obj->flagFB & 4;
+            if (fb == 0)
+            {
+                obj->subB->unk14 += obj->subB->unk18;
+                obj->subB->unk18 = fb;
+                obj->subB->unk3C += obj->subB->unk40;
+                obj->subB->unk40 = fb;
+            }
+            {
+                s32 t = obj->subB->flags353;
+                t &= -3;
+                obj->subB->flags353 = t;
+            }
+            obj->subB->flags20D |= 8;
+            obj->subB->flags20D |= 0x40;
+            pair_turn_and_sample(obj, 0);
+        }
+        {
+            struct PairSub *pb = obj->subB;
+            struct PairSub *pa = obj->subA;
+            pa->flags20F |= 4;
+            pb->flags20F |= 4;
+        }
+        *(u16 *)((u8 *)obj + 0x20A) &= 0xFE7F;
+    }
+    else
+    {
+        update_sub_bounds(obj);
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct PairObj *obj))
 {
@@ -245,7 +325,7 @@ NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct 
     ty = y >> 8;
     if (tx < 0 || ty < 0 || tx >= obj->bound286 || ty >= obj->bound288)
     {
-        obj->subA->flags353 |= 2;
+        ((struct Bit1Bits *)&obj->subA->flags353)->bit1 = 1;
     }
     else
     {
@@ -265,7 +345,7 @@ NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct 
         ty = y >> 8;
         if (tx < 0 || ty < 0 || tx >= obj->bound286 || ty >= obj->bound288)
         {
-            obj->subB->flags353 |= 2;
+            ((struct Bit1Bits *)&obj->subB->flags353)->bit1 = 1;
         }
         else
         {
@@ -297,15 +377,17 @@ static inline u32 test_flag_level(void)
     return level;
 }
 
-NONMATCH("asm/code_0802EDD8/apply_test_level.s", void apply_test_level(void))
+void apply_test_level(void)
 {
     u32 level;
     s32 count;
     u16 half;
-    u32 idx;
     u8 *state;
-    u16 *dst;
+    s32 one;
+    s32 two;
 
+    one = 1;
+    two = 2;
     level = test_flag_level();
     count = level;
     if (count > 0)
@@ -315,22 +397,19 @@ NONMATCH("asm/code_0802EDD8/apply_test_level.s", void apply_test_level(void))
         half = *(u16 *)(state + 0xC);
         if ((half & 0x1FF) == 1 && ((half >> 9) & 0xF) == 0)
         {
-            idx = ((u32)gSys[0x888] << 29) >> 30;
-            dst = &gUnk_02000282;
-            *dst = gRomLevelTable[idx * 3 + count];
-            *(u16 *)gSys = 1 | *(u16 *)gSys;
+            u16 *dst = &gUnk_02000282;
+            *dst = gRomLevelTable[((((u32)gSys[0x888] << 29) >> 30) * 3) + count];
+            *(u16 *)gSys = one | *(u16 *)gSys;
         }
         half = *(u16 *)(state + 0xE);
         if ((half & 0x1FF) == 2 && ((half >> 9) & 0xF) == 0)
         {
-            idx = ((u32)gSys[0x888] << 29) >> 30;
-            dst = &gUnk_020002A2;
-            *dst = gRomLevelTable[idx * 3 + count];
-            *(u16 *)gSys = 2 | *(u16 *)gSys;
+            u16 *dst = &gUnk_020002A2;
+            *dst = gRomLevelTable[((((u32)gSys[0x888] << 29) >> 30) * 3) + count];
+            *(u16 *)gSys = two | *(u16 *)gSys;
         }
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0802EDD8/obj_pair_tick.s", void obj_pair_tick(struct PairObj *obj))
 {
@@ -385,7 +464,6 @@ END_NONMATCH
 NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct PairObj *obj, u32 mode, u32 arg))
 {
     u8 *pa;
-    u8 *pb;
 
     if (mode == 1)
     {
@@ -394,8 +472,7 @@ NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct Pair
         pa = &obj->flags20A;
         *pa |= 2;
         obj->subA->flags351 |= 0x40;
-        pb = &obj->subB->flags351;
-        *pb |= 0x40;
+        { u8 *pq = &obj->subB->flags351; *pq |= 0x40; }
         if ((s16)obj->subB->state04 > 100)
             return;
         if (arg != 0 && overlaps_entry_lists(obj, obj->subB))
@@ -419,8 +496,7 @@ NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct Pair
     pa = &obj->flags20A;
     *pa |= 2;
     obj->subA->flags351 |= 0x40;
-    pb = &obj->subB->flags351;
-    *pb |= 0x40;
+    { u8 *pq = &obj->subB->flags351; *pq |= 0x40; }
     switch ((((u32)obj->state246) << 27) >> 29)
     {
     case 0:
