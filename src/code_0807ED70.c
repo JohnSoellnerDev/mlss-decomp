@@ -149,6 +149,9 @@ void popup_rise_step_b(void);
 u8 step_motion(void *obj);
 void effect_spawn_at(u32 kind, s32 x, s32 y, s32 z, void *obj);
 void task_finish_anim(void);
+void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
+void sprite_entry_update(void *obj);
+u32 atan2_angle(s32 x, s32 y);
 
 struct Lo77
 {
@@ -189,6 +192,14 @@ struct Bits12
     u8 bit0 : 1;
     u8 mid2 : 2;
     u8 hi5 : 5;
+};
+
+struct Bits1F
+{
+    u8 f0 : 2;
+    u8 f1 : 2;
+    u8 f2 : 2;
+    u8 f3 : 2;
 };
 
 struct NodeDesc
@@ -258,7 +269,199 @@ NONMATCH("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_object
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0807ED70/set_body_part.s", void set_body_part(void))
+static inline u32 part_key(struct SpriteObj *part)
+{
+    return part->unk16 | ((((u32)part->flags1E << 28) >> 16) + 0x1000);
+}
+
+static inline void part_copy_flags(struct SpriteObj *body, struct SpriteObj *part)
+{
+    ((struct Bits1F *)&part->flags1F)->f0 = ((struct Bits1F *)&body->record->flags1F)->f0;
+    ((struct Bits1F *)&part->flags1F)->f1 = ((struct Bits1F *)&body->record->flags1F)->f1;
+    ((struct Bits1F *)&part->flags1F)->f2 = ((struct Bits1F *)&body->record->flags1F)->f2;
+    ((struct Bits1F *)&part->flags1F)->f3 = ((struct Bits1F *)&body->record->flags1F)->f3;
+    part->unkE = body->record->unkE + 0xFF;
+}
+
+NONMATCH("asm/code_0807ED70/set_body_part.s", void set_body_part(struct SpriteObj *body, s32 kind, s32 x, s32 y, s32 step))
+{
+    struct SpriteObj *partB;
+    struct SpriteObj *part;
+    s32 sub;
+    s32 index;
+    s32 dir;
+    s32 mode;
+
+    part = gWorld->partsA[*(s16 *)((u8 *)body->ring + 0xEC) + 2];
+    if ((kind & 0xFF000000) == 0xFF000000)
+    {
+        mode = gWorld->flags0A & 0xC0;
+        if (mode == 0x80)
+            kind &= 0x00FFFFFF;
+        else
+        {
+            kind = -2;
+            if (mode == 0x40)
+                kind++;
+        }
+    }
+    sub = -1;
+    if (kind != -1)
+    {
+        if (kind == 1)
+            sub = 0;
+        else if (kind == 2)
+            sub = 1;
+        if (sub != -1)
+        {
+            if (part == NULL)
+            {
+                part = spawn_obj_by_id(0x20B1, sub, 0, 1);
+                sprite_entry_update(part);
+                part_copy_flags(body, part);
+            }
+            else if (part->unk21 != sub)
+            {
+                obj_load_record(part, sub, -1, 0, 0);
+                sprite_entry_update(part);
+            }
+        }
+    }
+    if (kind != -2)
+    {
+        part->x = body->record->x;
+        part->y = body->record->y;
+        gWorld->partsA[*(s16 *)((u8 *)body->ring + 0xEC) + 2] = part;
+    }
+    if ((gWorld->flags0C & 0x10) == 0)
+        return;
+    partB = gWorld->partsB[*(s16 *)((u8 *)body->ring + 0xEC) + 2];
+    if ((kind & 0xFF000000) == 0xFF000000)
+    {
+        mode = gWorld->flags0A & 0xC0;
+        if (mode == 0x80)
+            kind &= 0x00FFFFFF;
+        else
+        {
+            if (mode != 0x40)
+                return;
+            kind = -1;
+        }
+    }
+    if (kind == -1)
+    {
+        s32 angle = atan2_angle(x, y);
+
+        dir = ((angle / 16 + 5) / 2) & 7;
+        if (partB == NULL)
+        {
+            partB = spawn_obj_by_id(0x20B2, dir, 0, 1);
+            sprite_entry_update(partB);
+            partB->unkE = 0;
+        }
+        else
+        {
+            if (part_key(partB) != 0x20B2)
+            {
+                obj_bind_slots(partB);
+                ((struct Bits13 *)&partB->flags13)->bit2 = 0;
+                ((struct Bits13 *)&partB->flags13)->bit3 = 0;
+                setup_obj_10bc(partB, 0, 0x20B2, 1, kind, kind, kind, kind);
+                ((struct Bits13 *)&partB->flags13)->bit2 = 1;
+                ((struct Bits13 *)&partB->flags13)->bit3 = 1;
+                obj_load_record(partB, 0, kind, 0, 0);
+                list_remove_active(partB);
+            }
+            else if (partB->unk21 == dir)
+                goto tail_b;
+            obj_load_record(partB, dir, kind, 0, 0);
+            sprite_entry_update(partB);
+        }
+    }
+    else
+    {
+        index = 0;
+        switch (kind)
+        {
+        case 0x60:
+            index = 0x11;
+            break;
+        case 0x10:
+            index = 0xC;
+            break;
+        case 1:
+            index = 2;
+            break;
+        case 0:
+            index = 0xA;
+            break;
+        case 2:
+            index = 3;
+            break;
+        case 3:
+            index = 0x1A - (step << 1);
+            goto add_step;
+        case 0x30:
+            index = 0x13;
+            break;
+        case 0x20:
+            index = 0xE;
+            break;
+        case 0x40:
+            index = 0xB;
+            break;
+        case 0x50:
+            index = 0xF;
+            break;
+        case 0xB0:
+            index = 0x18;
+            break;
+        case 0x80:
+            index = 0xD;
+            break;
+        case 0x70:
+            index = 0x16;
+            break;
+        case 0x90:
+            index = 0x12;
+            break;
+        case 0xA0:
+            index = 0x14;
+            break;
+        case 0xD0:
+            index = 0x15;
+            break;
+        case 0xC0:
+            index = 0x10;
+            break;
+        case 0xE0:
+            index = 0x17;
+            break;
+        case 0xF0:
+            index = 0x19;
+            break;
+        }
+add_step:
+        index += step << 1;
+        if (partB == NULL)
+        {
+            partB = spawn_obj_by_id(0x2083, index, 0, 1);
+            sprite_entry_update(partB);
+            partB->unkE = 0;
+        }
+        else if (partB->unk21 != index)
+        {
+            obj_load_record(partB, index, -1, 0, 0);
+            sprite_entry_update(partB);
+        }
+    }
+tail_b:
+    partB->x = body->record->x + x;
+    partB->y = body->record->y + y;
+    gWorld->partsB[*(s16 *)((u8 *)body->ring + 0xEC) + 2] = partB;
+}
+END_NONMATCH
+
 void obj_free_parts(struct SpriteObj *obj)
 {
     struct SpriteObj *part;
