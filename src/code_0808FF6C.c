@@ -202,4 +202,48 @@ void hold_orbit_finish_if_pose_visible_d(struct HoldActor *obj);
 void hold_orbit_finish_if_pose_visible_e(struct HoldActor *obj);
 void finish_if_pose_visible_f(struct HoldActor *obj);
 
-ASM_FUNC("asm/code_0808FF6C/orbit_start_a.s", void orbit_start_a(struct HoldActor *obj))
+NONMATCH("asm/code_0808FF6C/orbit_start_a.s", void orbit_start_a(struct HoldActor *obj))
+{
+    s32 mode;
+
+    obj->state = orbit_start_a;
+    mode = obj->action & 0x38;
+    if (mode != 0)
+    {
+        end_action(obj);
+        return;
+    }
+    if ((s16)obj->step == 0)
+    {
+        sprite_set_action(obj, 0, 0x2054, 0);
+    }
+    if ((s16)obj->step == 2)
+    {
+        sprite_set_action(obj, 0, 0x2054, 1);
+    }
+    if ((s16)obj->step == 4)
+    {
+        sprite_set_action(obj, 0, 0x2054, 2);
+    }
+    if ((s16)obj->step == 6)
+    {
+        sprite_set_action(obj, 0, 0x2054, 3);
+    }
+    if ((s16)obj->step != 8)
+    {
+        if ((gSys.held & obj->buttons) == 0)
+        {
+            obj->state = hold_countdown_a;
+            return;
+        }
+    }
+    else
+    {
+        sprite_set_action(obj, 1, 0, 0);
+        obj->step = mode;
+        obj->state = hold_wait_b;
+    }
+    ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
+    obj->step++;
+}
+END_NONMATCH
