@@ -393,7 +393,41 @@ void wait_progress_then_return_or_destroy(struct ActionObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0811121C/link_and_start_action_from_flags.s", void link_and_start_action_from_flags(void))
+NONMATCH("asm/code_0811121C/link_and_start_action_from_flags.s", u32 link_and_start_action_from_flags(struct ActionObj *obj))
+{
+    struct ActionObj *owner;
+    u16 *flags;
+    u32 mask;
+    s16 inverted;
+    u32 bits;
+    u32 index;
+
+    owner = obj->owner;
+    flags = &owner->part->flags;
+    mask = 0xF000;
+    inverted = (mask & *flags) ^ 0xFFFF;
+    partner_link_update(obj, owner, 0xFF);
+    obj->state = timed_effect_then_step;
+    mask &= *flags;
+    bits = (inverted & mask) << 16;
+    if (bits != 0)
+    {
+        inverted = bits >> 28;
+        index = 0;
+        if (((inverted ^ 1) & 1) != 0)
+        {
+            do
+            {
+                index++;
+            } while ((((inverted >> index) ^ 1) & 1) != 0);
+        }
+        sprite_set_action(obj, (s16)index, 0x4136, 0);
+        obj->part->animFlag113 = 1;
+        set_slot_value(0xA3, -1);
+    }
+    return 0;
+}
+END_NONMATCH
 
 u32 mark_chain_then_state(struct ActionObj *obj)
 {
@@ -582,4 +616,49 @@ void obj_finish_when_idle(struct ActionObj *obj)
 
 ASM_FUNC("asm/code_0811121C/obj_spawn_part_chain.s", void obj_spawn_part_chain(struct ActionObj *obj))
 
-ASM_FUNC("asm/code_0811121C/obj_layout_node_chain.s", void obj_layout_node_chain(void))
+NONMATCH("asm/code_0811121C/obj_layout_node_chain.s", void obj_layout_node_chain(struct ActionObj *obj))
+{
+    struct ActionPart *part;
+    struct LayoutNode *start;
+    struct LayoutOffsets *anchor;
+    s32 x0;
+    s32 y0;
+    s32 z0;
+    s32 dx;
+    s32 dy;
+    s32 dz;
+    s32 k;
+    struct LayoutNode *node;
+    s32 sx;
+    s32 sy;
+    s32 sz;
+
+    part = obj->part;
+    start = (struct LayoutNode *)&part->offs;
+    anchor = (struct LayoutOffsets *)((u8 *)part->unk38 + 0xC);
+    x0 = start->x - 0xE00;
+    y0 = start->y - 0x100;
+    z0 = start->z + 0x1000;
+    dx = anchor->unk4 - x0;
+    k = 0x100;
+    dy = anchor->unk8 - (start->y + k);
+    dz = anchor->unkC - z0;
+    node = (struct LayoutNode *)((u8 *)obj + 0xC);
+    if (node != 0)
+    {
+        sz = dz;
+        sy = dy;
+        sx = dx;
+        do
+        {
+            node->x = sx / 6 + x0;
+            node->y = sy / 6 + y0;
+            node->z = sz / 6 + z0;
+            node = node->next;
+            sz += dz;
+            sy += dy;
+            sx += dx;
+        } while (node != 0);
+    }
+}
+END_NONMATCH
