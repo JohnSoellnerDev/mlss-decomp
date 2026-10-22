@@ -75,6 +75,21 @@ struct ObjFlagBits
     u8 rest : 2;
 };
 
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
 struct SceneWorld
 {
     u8 filler0[0x70];
@@ -131,12 +146,69 @@ void step_child_chain_b(struct ActorObj *obj);
 void resolve_contact_action(struct ActorObj *owner, struct ActorObj *obj, s32 a, s32 b, u32 code);
 void stop_when_pose_active(struct ActorObj *obj);
 void timer_then_wait_child(struct ActorObj *obj);
+struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 
 ASM_FUNC("asm/code_080739F0/spawn_orbit_chain.s", void spawn_orbit_chain(void))
 
 ASM_FUNC("asm/code_080739F0/rotate_duo_step.s", void rotate_duo_step(void))
 
-ASM_FUNC("asm/code_080739F0/spawn_child_chain.s", void spawn_child_chain(void))
+void spawn_child_chain(struct ActorObj *obj)
+{
+    struct ActorObj *child;
+    struct ActorObj *made;
+    s32 *total;
+    s32 count;
+
+    if (obj->pose->flags & 8) {
+        sprite_set_action(obj, 5, 0, 0);
+        set_slot_value(0x116, -1);
+        set_slot_value(0xD5, -1);
+        effect_spawn_at(0x22E8, obj->part->targetX / 0x100, obj->part->targetY / 0x100,
+                        obj->part->targetH / 0x100, obj);
+        total = &obj->scale;
+        child = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
+                          obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = child;
+        ((struct Flags78Bits *)&child->flags78)->kind = 1;
+        child->byte74 = obj->byte74;
+        child->owner = obj->owner;
+        ((struct ObjFlags77 *)child)->bit6 = 0;
+        ((struct ObjFlags77 *)child)->bit5 = 0;
+        child->callback68 = on_arrive;
+        child->copy6C = obj->copy6C;
+        child->scale = 0;
+        child->paramA4 = 0;
+        obj_list_push_default(child);
+        child->state = orbit_step_action1;
+        child->handler60 = lookup_then_finish;
+        child->targetX = obj->baseX;
+        child->targetY = obj->baseY - 0xA00;
+        for (count = 1; count < *total; count++) {
+            made = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
+                             obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            child->child = made;
+            child = made;
+            child->flags78 = (child->flags78 & 0x1F) | 0x20;
+            child->byte74 = obj->byte74;
+            child->owner = obj->owner;
+            ((struct ObjFlags77 *)child)->bit6 = 0;
+            ((struct ObjFlags77 *)child)->bit5 = 0;
+            child->callback68 = on_arrive;
+            child->copy6C = obj->copy6C;
+            child->scale = count;
+            child->paramA4 = ((count << 8) / *total) << 8;
+            obj_list_push_default(child);
+            child->state = orbit_step_action1;
+            child->handler60 = lookup_then_finish;
+            child->targetX = obj->baseX;
+            child->targetY = obj->baseY - 0xA00;
+        }
+        child->child = 0;
+        obj->paramA0 = 0;
+        obj->count = 0x30;
+        obj->state = count_frames_then_timer;
+    }
+}
 
 void wait_scene_objects_then_timer(struct ActorObj *obj)
 {
