@@ -724,7 +724,7 @@ NONMATCH("asm/code_08087E1C/set_motion_offsets.s", void set_motion_offsets(struc
     step = (s16)clamped;
     dx = (obj->targetX >> 16) - (s16)obj->targetX;
     dy = (obj->targetY >> 16) - (s16)obj->targetY;
-    sum = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(outA * ((outA * (step - th->lo)) / 0x40), outB * (outB / 0x40));
+    sum = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((((outA * (step - th->lo)) / 0x40) * outA), outB * (outB / 0x40));
     root = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + sum * sum);
     if (root != 0)
         start = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((value << 6) + root / 2, root);
