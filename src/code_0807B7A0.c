@@ -459,8 +459,60 @@ ASM_FUNC("asm/code_0807B7A0/alloc_slot_for_node.s", void alloc_slot_for_node(voi
 
 ASM_FUNC("asm/code_0807B7A0/alloc_slot_refresh_for_node.s", void alloc_slot_refresh_for_node(void))
 
-ASM_FUNC("asm/code_0807B7A0/refresh_slots_for_mask.s", void refresh_slots_for_mask(void))
+NONMATCH("asm/code_0807B7A0/refresh_slots_for_mask.s", void refresh_slots_for_mask(struct SpriteEnt *ent, u32 arg))
+{
+    u32 mask = ent->mask14;
+    u32 bit = 0;
+    
+    if (mask != 0)
+    {
+        do
+        {
+            u32 low = mask & 1;
+            u32 rest = mask >> 1;
+            u32 nextBit = bit + 1;
 
+            if (low)
+            {
+                
+                
+                s32 slot;
+                u32 off;
+                struct SlotTable *tbl;
+                u32 idx;
+                u32 next;
+
+                for (slot = 0, off = 0; slot <= 7; slot += 2, off += 0x38)
+                {
+                    u8 *part;
+
+                    tbl = gWorld->table248;
+                    part = tbl->records + off;
+                    if (((((u32)part[1]) << 28) >> 28) == bit && (part[0] & 3) != 0)
+                    {
+                        idx = slot;
+                    }
+                    else
+                    {
+                        next = slot + 1;
+                        tbl = gWorld->table248;
+                        part = tbl->records + off + 0x1C;
+                        if (((((u32)part[1]) << 28) >> 28) != bit || (part[0] & 3) == 0)
+                        {
+                            continue;
+                        }
+                        idx = next;
+                    }
+                    menu_entry_refresh(tbl, (u8)idx, (u8)arg);
+                    break;
+                }
+            }
+            mask = rest;
+            bit = nextBit;
+        } while (mask != 0);
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(struct SpriteEnt *ent))
 {
@@ -709,7 +761,37 @@ NONMATCH("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolO
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0807B7A0/obj_spawn_linked.s", void obj_spawn_linked(void))
+NONMATCH("asm/code_0807B7A0/obj_spawn_linked.s", struct PoolObj *obj_spawn_linked(struct PoolObj *src, u32 flags, struct PoolObj *base))
+{
+    struct PoolObj *pos = base;
+    struct PoolObj *child;
+    u16 group = flags;
+    u32 busy;
+
+    if (pos == NULL)
+    {
+        pos = src;
+    }
+    child = obj_spawn(src->ring, group, pos->posX / 0x100, pos->posY / 0x100, pos->posZ / 0x100,
+        ((u32)src->record->flags11 << 25) >> 31, 1);
+    child->sibling = src->sibling;
+    src->sibling = child;
+    busy = src->flags76 & 6;
+    child->flags76 = (child->flags76 & -7) | busy;
+    ((struct PoolBits77 *)child)->bit6 = ((struct PoolBits77 *)src)->bit6;
+    ((struct PoolBits77 *)child)->bit5 = ((struct PoolBits77 *)src)->bit5;
+    child->unk6C = src->unk6C;
+    child->unk2C = src->unk2C;
+    child->unk4C = 0;
+    child->link68 = 0;
+    child->unk7C = src->unk7C;
+    child->unk9C = src->unk9C;
+    child->unkA0 = src->unkA0;
+    child->unkA4 = src->unkA4;
+    child->unkA8 = src->unkA8;
+    return child;
+}
+END_NONMATCH
 
 struct PoolObj *pool_slot_init(s32 slot, u32 value)
 {
