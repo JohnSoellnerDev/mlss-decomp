@@ -60,6 +60,14 @@ struct BodyFlagBits
     u8 high : 2;
 };
 
+struct LinkBits11
+{
+    u8 filler0[0x11];
+    u8 lo2 : 2;
+    u8 mode : 2;
+    u8 hi : 4;
+};
+
 struct HeroBody;
 
 typedef void (*BodyFunc)(struct HeroBody *);
@@ -135,6 +143,10 @@ void step_motion_scaled(struct HeroBody *body);
 u32 partner_link_update(struct HeroBody *obj, struct HeroBody *partner, u32 mode);
 u32 lookup_slot(struct HeroBody *body, u32 arg);
 void obj_list_remove(struct HeroBody *body);
+void step_motion(struct HeroBody *body);
+void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
+void sprite_entry_update(void *node);
+void obj_load_record(void *rec, u32 a, u32 b, u32 c, u32 d);
 void change_item_count(u32 item, u32 count);
 void set_slot_value(u32 id, s32 value);
 u32 mt19937_next(void);
@@ -421,6 +433,7 @@ void anim10_when_shown(struct HeroBody *body)
 
 NONMATCH("asm/code_0809A420/spawn_child_pose.s", void spawn_child_pose(struct HeroBody *body))
 {
+    s32 kc = 0x20;
     struct HeroBody *child;
     s32 childX;
     s32 childY;
@@ -461,7 +474,7 @@ NONMATCH("asm/code_0809A420/spawn_child_pose.s", void spawn_child_pose(struct He
         {
             s32 bit6 = body->style & 0x40;
             s32 merged = (child->style & ~0x40) | bit6;
-            s32 bit5 = body->style & 0x20;
+            s32 bit5 = body->style & kc;
 
             child->style = (merged & ~0x20) | bit5;
         }
@@ -753,7 +766,108 @@ void init_random_timer(struct HeroBody *body)
 }
 
 
-ASM_FUNC("asm/code_0809A420/seek_hero.s", void seek_hero(struct HeroBody *body))
+NONMATCH("asm/code_0809A420/seek_hero.s", void seek_hero(struct HeroBody *body))
+{
+    s32 i;
+    struct Hero *hero;
+    struct HeroBody *heroBody;
+    struct HeroSprite *link;
+    u32 frame;
+    u32 mode;
+
+    if (body->partner != 0)
+        return;
+    step_motion(body);
+    for (i = 0; i < 2; i++)
+    {
+        s32 dx;
+        s32 dy;
+        s32 dx16;
+        s32 dy8;
+        s32 dist;
+
+        hero = ((struct Hero **)((u8 *)gWorld + 0x58))[i + 6];
+        heroBody = &hero->body;
+        mode = 6;
+        mode &= heroBody->unk76;
+        if (mode != 2)
+            continue;
+        if (heroBody->targetZ < 0)
+            continue;
+        dx = body->targetX - heroBody->targetX;
+        if (dx < 0)
+            dx += 0xF;
+        dx16 = dx >> 4;
+        dy = body->targetY - heroBody->targetY;
+        if (dy < 0)
+            dy += 7;
+        dy8 = dy >> 3;
+        dist = dx16 * dx16 + dy8 * dy8;
+        if (dist > 0x6400 || heroBody->targetZ != 0)
+            continue;
+        if (heroBody->state == 0 || (s16)heroBody->unkB2 > 0)
+            heroBody->unkB2 = 0;
+        link = spawn_obj_by_id(0x40C1, 0, 2, 1);
+        sprite_entry_update(link);
+        frame = ((u8 *)body->sprite)[0x23] + 1;
+        if (frame == ((u8 *)body->sprite)[0x25])
+            frame = 0;
+        obj_load_record(link, 0, frame, 0, 0);
+        body->unkA8 = (s32)link;
+        ((struct LinkBits11 *)link)->mode = 1;
+        link->unk0 = body->sprite->unk0;
+        link->unk2 = body->sprite->unk2;
+        link->unkE = heroBody->sprite->unkE - 1;
+        gUnk_02000052 = 0x1000;
+        body->partner = heroBody;
+        heroBody->partner = body;
+        heroBody->unk7C = body->unk7C;
+        mode = 6;
+        mode &= heroBody->unk76;
+        if (mode == 2 || mode == 4)
+            heroBody->state = fall_and_release;
+        break;
+    }
+    if (body->flags & 0x20)
+    {
+        if (body->unk1C != 0)
+        {
+            u8 *pick = body->unk34;
+            u32 n = 1;
+
+            if (pick[3] != 0xFF)
+            {
+                u8 *p = pick + 3;
+
+                do
+                {
+                    u32 rnd = mt19937_next();
+
+                    if (rand_below(n, rnd) == 0)
+                        {
+                            s32 off = (*p << 2) + (s16)body->unk20 * 0x48;
+                            body->unk34 = (u8 *)*(u32 *)((u8 *)gPoseTable + off);
+                        }
+                    p++;
+                    n++;
+                } while (*p != 0xFF);
+            }
+            body->unk1C--;
+            body->unk1E = 0;
+            mode = 6;
+            mode &= body->unk76;
+            if (mode == 2 || mode == 4)
+                body->state = follow_focus_then_pose;
+        }
+        else
+        {
+            sprite_set_action(body, 2, 0x40C0, 0);
+            ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+            body->state = draw_if_visible;
+        }
+    }
+}
+END_NONMATCH
 
 void fall_and_release(struct HeroBody *body)
 {
