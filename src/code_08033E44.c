@@ -226,7 +226,44 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08033E44/sub_08034884.s", void sub_08034884(void))
 
-ASM_FUNC("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49(void))
+NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49(struct PairObj *obj))
+{
+    struct PairPart **slotA;
+    struct PairPart **slotB;
+    struct PairPart *pa;
+    struct PairPart *pb;
+    struct PairPart *qa;
+    struct PairPart *qb;
+    struct PairPart *ra;
+    struct PairPart *rb;
+    u32 bit = 8;
+    u32 flag = 0x40;
+
+    update_pair_facing(obj, 1, 1);
+    slotB = &obj->subB;
+    pb = *slotB;
+    slotA = &obj->subA;
+    pa = *slotA;
+    pa->state4 = 0x49;
+    pb->state4 = 0x49;
+    qb = *slotB;
+    qa = *slotA;
+    qa->flags351 |= flag;
+    qb->flags351 |= flag;
+    rb = *slotB;
+    ra = *slotA;
+    ra->flags358 |= bit;
+    rb->flags358 |= bit;
+    (*slotB)->flags20D |= 0x20;
+    ((struct Lo3Bits *)&(*slotB)->state214)->lo3 = 4;
+    obj_set_id(*slotB, 0x1025);
+    ((struct ModeBits *)&(*slotB)->sprite294->flags12)->mode = 1;
+    (*slotB)->flags212 |= 0x40;
+    (*slotB)->sprite294->unk20 = (obj->flagsFB >> 3) << ((((u32)((u8 *)obj)[0x20A]) << 30) >> 31);
+    ((u8 *)obj)[0x20B] |= 0x80;
+    set_slot_value(0x3C, -1);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08033E44/sub_08034A70.s", void sub_08034A70(struct PairObj *obj))
 {
