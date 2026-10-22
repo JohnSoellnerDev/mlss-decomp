@@ -101,15 +101,16 @@ void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, u32 *out, s32 slot);
 extern u8 gTagSlots[];
 
-NONMATCH("asm/code_080E9020/init_slot_table.s", void *init_slot_table(void **slot))
+void *init_slot_table(void **slot)
 {
     u8 *cursor;
+    int next;
     u32 local;
     u16 count;
     u32 v;
     void *obj;
 
-    cursor = *slot = heap_alloc_raw(1, 0x40, gTagSlots);
+    cursor = (*slot = heap_alloc_raw(1, 0x40, gTagSlots));
     gMemRoutines(0, cursor, 0x40);
     find_or_alloc_obj_slots(7, 0x8001, 1, 0, 0, &local, 0xF);
     count = 4;
@@ -118,15 +119,16 @@ NONMATCH("asm/code_080E9020/init_slot_table.s", void *init_slot_table(void **slo
         cursor[0xC] = 0xFF;
         obj = create_obj_de4(0, 0x8004, 1, -1, -1, -1, -1);
         *(void **)cursor = obj;
-        *((u8 *)obj + 0x1F) = 0;
-        obj_load_record(obj, 0, -1, 0, 0);
-        v = ((u32)count << 16) + 0xFFFF0000;
+        v = 0;
+        ((u8 *)obj)[0x1F] = 0;
+        obj_load_record(obj, 0, -1, 0, v);
+        next = ((u32)count << 16) + 0xFFFF0000;
+        v = next;
         cursor += 0x10;
         count = v >> 16;
     } while ((s32)v > 0);
     return slot;
 }
-END_NONMATCH
 
 void sprite_update_cd0(void *sprite);
 u8 claim_table_slot(void *state, u8 a, u8 b, u8 c, u16 d, u16 e, u8 f)
