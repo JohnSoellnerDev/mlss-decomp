@@ -1,9 +1,21 @@
 #include "global.h"
 
+struct SubBits12
+{
+    u8 lo4 : 4;
+    u8 bit4 : 1;
+    u8 hi3 : 3;
+};
+
 struct SubObj
 {
-    u8 filler0[0xE];
+    u8 filler0[4];
+    u16 unk4;
+    u16 unk6;
+    u8 filler8[0xE - 8];
     u16 unkE;
+    u8 filler10[2];
+    u8 unk12;
 };
 
 struct SpriteObj
@@ -85,13 +97,22 @@ struct ProjObj
 {
     u8 filler0[0xC];
     void *unkC;
-    u8 filler10[0x6C - 0x10];
+    struct SubObj *unk10;
+    u8 filler14[0x6C - 0x14];
     u32 unk6C;
     s32 unk70;
     s32 unk74;
     s32 unk78;
     u32 unk7C;
     s32 unk80;
+    s32 unk84;
+    u16 unk88;
+    u16 unk8A;
+    u16 unk8C;
+    u16 unk8E;
+    u16 unk90;
+    u8 filler92[6];
+    u16 unk98;
 };
 
 struct PosXY
@@ -101,12 +122,54 @@ struct PosXY
     s32 y;
 };
 
+struct GridPart
+{
+    u8 filler0[0x18];
+    struct PosXY pos18;
+    u8 filler24[0x6C - 0x24];
+    u16 flags6C;
+    s16 ctr6E;
+    u8 filler70[4];
+    s32 unk74;
+    s32 unk78;
+};
+
+struct GridLinesObj
+{
+    struct GridPart *unk0;
+    struct GridPart *unk4;
+    u8 filler8[0xC];
+    struct PosXY pos14;
+    struct PosXY vel20;
+    s32 unk2C;
+    s32 unk30;
+    s32 unk34;
+    u8 filler38[0x50 - 0x38];
+    s32 unk50;
+};
+
 extern s16 gSineTable[];
 extern s16 gCosineTable[];
 extern const u8 gClassEbb8[];
 u32 rand_scaled(u32 count, u32 base);
 u32 arc_tan2(s32 x, s32 y);
 void obj_set_fields_18(void *obj, s32 x, s32 y, s32 z);
+extern const u8 gClassEba8[];
+extern const u8 gObjScript08217b64[];
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void obj_setup_slot(void *obj, u32 a, u32 b, u32 c, s32 offset, ByteArg flag);
+void obj_set_table_44(void *obj, const void *table);
+void triple_set(void *dst, s32 a, s32 b, s32 c);
+extern u16 gUnk_03000374[];
+extern const s16 gKeyStepTable[];
+extern const u8 gHeapTagProjectile[];
+struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, struct PosXY *dst, u32 mode);
+void list_insert(void *list, void *node);
+void obj_set_speed_from(void *obj, void *other);
+void obj_script_step(void *obj);
+void obj_place_pair(void *obj, u32 mode);
+void obj_clamp_pos(void *region, void *a, void *b);
+void obj_copy_mode_fields(void *obj);
 
 struct StateObj
 {
@@ -132,7 +195,7 @@ void set_slot_target(u32 a, u32 b);
 void write_var(u16 id, u16 value);
 u8 timer_tick(void *timer);
 void obj_copy_pos_to_shadow(void *src);
-void grid_lines_obj_step_motion(void *obj, void *region, void *list);
+void grid_lines_obj_step_motion(struct GridLinesObj *obj, void *region, void *list);
 void child_states_obj_run_stage(void *obj);
 void obj_run_phases(void *obj);
 void obj_run_substates(void *obj);
@@ -166,7 +229,102 @@ void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 s32 lerp_step_08164EE0(s32 a, s32 b, s32 steps, s32 t);
 
 
-ASM_FUNC("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_step_motion(void *obj, void *region, void *list))
+NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_step_motion(struct GridLinesObj *obj, void *region, void *list))
+{
+    u16 *keys = gUnk_03000374;
+    u32 flag;
+    s32 stepY;
+    u32 angleDelta;
+    s32 stepX;
+    u32 idx;
+    u32 low;
+    u16 pressed;
+    struct ProjObj *proj;
+    struct GridPart *childA;
+    struct GridPart *childB;
+    s32 sinSpeed;
+    s32 cosSpeed;
+
+    flag = 0;
+    angleDelta = 0;
+    stepY = 0;
+    stepX = 0;
+    if (obj->unk50 == 0)
+    {
+        if ((keys[0] & 0xF0) != 0)
+        {
+            idx = (keys[0] >> 4) & 0xF;
+            stepX = *(s16 *)((u8 *)gKeyStepTable + (idx << 2));
+            stepY = *(s16 *)((u8 *)(gKeyStepTable + 1) + (idx << 2));
+        }
+        if (obj->unk0->ctr6E + obj->unk4->ctr6E > 0)
+        {
+            if (obj->unk0->ctr6E != 0)
+            {
+                angleDelta = 4;
+            }
+            if (obj->unk4->ctr6E != 0)
+            {
+                angleDelta -= 4;
+            }
+        }
+        else
+        {
+            if ((keys[0] & 2) != 0)
+            {
+                angleDelta = 2;
+            }
+            if ((keys[0] & 1) != 0)
+            {
+                angleDelta -= 2;
+            }
+        }
+        if (stepX != 0 || stepY != 0 || angleDelta != 0)
+        {
+            flag = 1;
+        }
+        pressed = keys[1];
+        low = 0x100;
+        low &= pressed;
+        if (low != 0 && (obj->unk0->flags6C & 1))
+        {
+            proj = obj_init_projectile(heap_alloc2(0x84, 0, gHeapTagProjectile, 0), &obj->unk0->pos18, &obj->pos14, 1);
+            list_insert(list, proj);
+            obj_set_speed_from(proj, obj->unk0);
+        }
+        else
+        {
+            low = 0x200;
+            low &= pressed;
+            if (low != 0 && (obj->unk4->flags6C & 1))
+            {
+                proj = obj_init_projectile(heap_alloc2(0x84, 0, gHeapTagProjectile, 0), &obj->unk4->pos18, &obj->pos14, 1);
+                list_insert(list, proj);
+                obj_set_speed_from(proj, obj->unk4);
+            }
+        }
+    }
+    obj->unk2C = (obj->unk2C + angleDelta) & 0xFF;
+    childA = obj->unk0;
+    childB = obj->unk4;
+    sinSpeed = gSineTable[obj->unk2C & 0xFF] / 0x40;
+    obj->unk30 = sinSpeed;
+    childB->unk74 = sinSpeed;
+    childA->unk74 = sinSpeed;
+    cosSpeed = gCosineTable[obj->unk2C & 0xFF] / 0x40;
+    obj->unk34 = cosSpeed;
+    childB->unk78 = cosSpeed;
+    childA->unk78 = cosSpeed;
+    obj->vel20.x = stepX;
+    obj->vel20.y = stepY;
+    obj_clamp_pos(region, &obj->pos14, &obj->vel20);
+    obj_copy_mode_fields(obj->unk0);
+    obj_script_step(obj->unk0);
+    obj_copy_mode_fields(obj->unk4);
+    obj_script_step(obj->unk4);
+    obj_place_pair(obj, flag);
+}
+END_NONMATCH
 
 struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, struct PosXY *dst, u32 mode)
 {
@@ -207,7 +365,42 @@ struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, stru
 ASM_FUNC("asm/code_08169710/obj_line_bounce_step.s", void obj_line_bounce_step(void))
 
 ASM_FUNC("asm/code_08169710/obj_check_contact.s", void obj_check_contact(void))
-ASM_FUNC("asm/code_08169710/obj_init_bullet.s", void obj_init_bullet(void))
+struct ProjObj *obj_init_bullet(struct ProjObj *obj, u32 base, u32 offset, u32 angle, s32 speedA, s32 speedB, s32 extra)
+{
+    u8 one = 1;
+    s32 slotX;
+    s32 slotY;
+    s32 posX;
+    s32 posY;
+    struct SubObj *sub;
+
+    obj_init_big(obj, 3);
+    obj->unkC = (void *)gClassEba8;
+    obj_create_sprite_10(obj, 4, 0x5006, 0, 5, 2);
+    ((struct SubBits12 *)&obj->unk10->unk12)->bit4 = 1;
+    sub = obj->unk10;
+    sub->unk6 = 0x200;
+    sub->unk4 = 0x200;
+    obj->unk8E = 0;
+    obj->unk8A = 0;
+    obj->unk7C = angle;
+    obj->unk78 = angle;
+    obj->unk80 = speedA;
+    obj->unk84 = speedB;
+    obj->unk90 = 0;
+    obj->unk98 = 0;
+    obj->unk88 = rand_scaled(0, 0x80);
+    triple_set(&obj->unk6C, base, 0, offset);
+    posX = base + (((gSineTable[angle & 0xFF] / 0x40) * speedA) << 1);
+    posY = (((gCosineTable[angle & 0xFF] / 0x40) * speedB) << 1) + offset;
+    obj_set_fields_18(obj, posX, 0, posY);
+    slotX = base + (gSineTable[angle & 0xFF] / 0x40) * speedA;
+    slotY = (gCosineTable[angle & 0xFF] / 0x40) * speedB + offset;
+    obj_setup_slot(obj, slotX, 0, slotY, extra + 0x3C, one);
+    obj_set_table_44(obj, gObjScript08217b64);
+    obj->unk8C = 0;
+    return obj;
+}
 
 ASM_FUNC("asm/code_08169710/obj_node_update.s", void obj_node_update(void))
 
