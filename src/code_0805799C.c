@@ -146,9 +146,9 @@ NONMATCH("asm/code_0805799C/map_scene_free.s", void map_scene_free(struct MapObj
     heap_free_b(gUnk_03000DA0);
     run_pending_obj_callbacks();
     *(u16 *)gUnk_02000080 = 0x7FFF;
+    zero = 0;
     sys = gSys;
     *(u16 *)(sys + 2) = *(u16 *)(sys + 2) | one;
-    zero = 0;
     *(u16 *)0x02000000 = zero;
     sys[0x31] = 2;
     frame_update();
