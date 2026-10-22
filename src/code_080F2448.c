@@ -54,26 +54,17 @@ struct ObjFlags12
 {
     u8 bit0 : 1;
     u8 mode : 2;
-    u8 rest : 5;
-};
-
-struct FlagBit0
-{
-    u8 bit0 : 1;
-    u8 rest : 7;
-};
-
-static inline void set_flag_bit0(u8 *p, u32 v)
-{
-    ((struct FlagBit0 *)p)->bit0 = v;
-}
+    u8 bit3 : 1;
+    u8 rest : 4;
+} __attribute__((packed));
 
 NONMATCH("asm/code_080F2448/cmd_set_global_flag.s", u32 cmd_set_global_flag(u32 unused0, u32 unused1, u8 *cmd))
 {
     u8 *flag = gEffectState + 0x55A;
     u32 one = 1;
+    u32 bit = *cmd & one;
 
-    set_flag_bit0(flag, *cmd & one);
+    *flag = (*flag & -2) | bit;
     return 1;
 }
 END_NONMATCH
@@ -144,25 +135,33 @@ u32 cmd_find_slot(u8 *owner, u8 *obj_ref, u32 *out, u32 *rec, u32 kind_arg, u32 
 
 NONMATCH("asm/code_080F2448/cmd_set_clear_flag4.s", u32 cmd_set_clear_flag4(u8 *owner, u32 unused, u32 *cmd))
 {
+    u16 *flags;
+    u32 four;
+    u32 mask;
+    u32 cur;
+    u16 v;
     u32 index = cmd[1];
     u32 list = *(u32 *)(owner + 0x14);
     u8 *obj = *(u8 **)((index << 2) + list + 0x28);
     u32 mode = cmd[0];
-    u16 v;
-
-    if (mode == 0)
+    switch (mode)
     {
-        v = 4 | *(u16 *)(obj + 0xF8);
-    }
-    else if (mode == 1)
-    {
-        v = 0xFFFB & *(u16 *)(obj + 0xF8);
-    }
-    else
-    {
+    case 0:
+        flags = (u16 *)(obj + 0xF8);
+        cur = *flags;
+        four = 4;
+        v = cur | four;
+        break;
+    case 1:
+        flags = (u16 *)(obj + 0xF8);
+        cur = *flags;
+        mask = 0xFFFB;
+        v = cur & mask;
+        break;
+    default:
         return 1;
     }
-    *(u16 *)(obj + 0xF8) = v;
+    *flags = v;
     return 1;
 }
 END_NONMATCH
@@ -501,7 +500,43 @@ NONMATCH("asm/code_080F2448/task_tick_objects.s", void task_tick_objects(u8 *tas
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F2448/cmd_update_kind.s", void cmd_update_kind(u8 *owner, u8 *arg, u8 kind))
+NONMATCH("asm/code_080F2448/cmd_update_kind.s", void cmd_update_kind(u8 *owner, u8 *arg, u8 kind))
+{
+    u8 *entry;
+    u8 *obj;
+    s32 count;
+    u8 *table;
+
+    if (kind <= 7)
+    {
+        table = gWorld + 0x58;
+        entry = *(u8 **)(table + (kind << 2)) + 8;
+    }
+    else
+    {
+        entry = gWorkBuf + kind * 0xD0 + 0x300;
+    }
+    obj = *(u8 **)(entry + 8);
+    if (obj != 0)
+    {
+        if (((struct ObjFlags12 *)(obj + 0x12))->mode != 1)
+        {
+            ((struct ObjFlags12 *)(obj + 0x12))->mode = 1;
+        }
+        if (((struct ObjFlags12 *)(obj + 0x12))->bit3 != 0)
+        {
+            count = *(s32 *)(arg + 0x9C) - 1;
+            *(s32 *)(arg + 0x9C) = count;
+            if (count == 0)
+            {
+                slot_apply_anim(owner, kind);
+                *(u16 *)(arg + 0xA0) ^= 0x20;
+            }
+            ((struct ObjFlags12 *)(obj + 0x12))->mode = 0;
+        }
+    }
+}
+END_NONMATCH
 
 void world_scroll_step(u8 *owner, u8 *obj)
 {
