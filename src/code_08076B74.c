@@ -184,8 +184,9 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
-NONMATCH("asm/code_08076B74/spawn_child_8031.s", void spawn_child_8031(struct ActorObj *obj))
+void spawn_child_8031(struct ActorObj *obj)
 {
+    s32 childType = 0x8031;
     struct ActorPart *part;
     struct ActorObj *child;
     s32 x;
@@ -199,7 +200,7 @@ NONMATCH("asm/code_08076B74/spawn_child_8031.s", void spawn_child_8031(struct Ac
         x = part->targetX / 0x100;
         y = part->targetY / 0x100;
         h = part->targetH / 0x100;
-        child = obj_spawn(part, 0x8031, x, y, h + 0x40, 0, 1);
+        child = obj_spawn(part, childType, x, y, h + 0x40, 0, 1);
         sprite_set_action(child, obj->paramA0, 0, 0);
         child->child = obj->child;
         obj->child = child;
@@ -217,4 +218,3 @@ NONMATCH("asm/code_08076B74/spawn_child_8031.s", void spawn_child_8031(struct Ac
         obj->paramA8 = 10;
     }
 }
-END_NONMATCH
