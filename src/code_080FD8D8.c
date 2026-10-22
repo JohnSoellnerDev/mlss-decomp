@@ -146,6 +146,10 @@ void state_menu_open_active(void);
 void state_select_targets(void);
 void create_status_objects(void);
 void hero_select_begin(void);
+void figure_status_enter(struct StateOwner *owner);
+void slot_set_vec(u32 idx, s32 x, s32 y, s32 z, u32 flag);
+void slot_set_timer(u32 idx, u32 value);
+void slot_start_motion(u32 idx, u32 flag);
 
 NONMATCH("asm/code_080FD8D8/state_start.s", void state_start(struct StateOwner *owner))
 {
@@ -561,7 +565,78 @@ void figure_pair_step(struct FigObj *obj)
 
 ASM_FUNC("asm/code_080FD8D8/state_select_targets.s", void state_select_targets(void))
 
-ASM_FUNC("asm/code_080FD8D8/figure_vectors_setup.s", void figure_vectors_setup(void))
+void figure_vectors_setup(struct StateOwner *owner)
+{
+    struct FigWorld *world;
+    u8 *fig;
+    s32 i;
+    u32 motion;
+    u32 slot;
+    s32 px;
+    s32 py;
+
+    for (i = 0; i < 2; i++)
+    {
+        world = gWorld;
+        fig = world->fig[i];
+        if (fig == 0)
+            continue;
+        if (((struct ObjMode7E *)fig)->mode != 1)
+            continue;
+        motion = *(u16 *)(fig + 0x11E) & 0x300;
+        if (motion != 0)
+            continue;
+        *(u32 *)(fig + 0x9C) = motion;
+        if (i == 1)
+        {
+            if (world->cur == fig)
+            {
+                slot = *(u8 *)(fig + 0xF4);
+                px = *(s32 *)(fig + 0xD8) / 0x100 + 0x12;
+                py = *(s32 *)(fig + 0x44) / 0x100;
+                slot_set_vec(slot, px, py, 0, i);
+            }
+            else
+            {
+                slot = *(u8 *)(fig + 0xF4);
+                px = *(s32 *)(fig + 0xD8) / 0x100 - 0x10;
+                py = *(s32 *)(fig + 0x44) / 0x100;
+                slot_set_vec(slot, px, py, 0, i);
+            }
+        }
+        else if (world->fig[1] != 0)
+        {
+            if (world->cur == fig)
+            {
+                slot = *(u8 *)(fig + 0xF4);
+                px = *(s32 *)(fig + 0xD8) / 0x100 + 4;
+            }
+            else
+            {
+                slot = *(u8 *)(fig + 0xF4);
+                px = *(s32 *)(fig + 0xD8) / 0x100 - 0x1E;
+            }
+            py = *(s32 *)(fig + 0x44) / 0x100;
+            slot_set_vec(slot, px, py, 0, 1);
+        }
+        else
+        {
+            slot = *(u8 *)(fig + 0xF4);
+            px = *(s32 *)(fig + 0xD8) / 0x100 + 0xB;
+            py = *(s32 *)(fig + 0x44) / 0x100;
+            slot_set_vec(slot, px, py, 0, 1);
+        }
+        slot_set_timer(*(u8 *)(fig + 0xF4), 4);
+        slot_start_motion(*(u8 *)(fig + 0xF4), 0);
+        if (*(s16 *)(fig + 0xEC) == -1)
+            sprite_set_action((struct FigPart *)(fig + 8), 0, 0x2002, 0);
+        else
+            sprite_set_action((struct FigPart *)(fig + 8), 0, 0x204F, 0);
+        if (*(s32 *)(fig + 0x8C) < *(s32 *)(fig + 0x40))
+            ((struct ObjFlags11 *)((struct FigPart *)fig)->unk10)->bit6 = 1;
+    }
+    owner->callback = (u32)figure_status_enter;
+}
 
 NONMATCH("asm/code_080FD8D8/figure_status_enter.s", void figure_status_enter(struct StateOwner *owner))
 {
