@@ -26,6 +26,7 @@ struct KeyState
 {
     u8 filler0[0x3C];
     u16 held;
+    u16 pressed;
 };
 
 extern struct KeyState gSys;
@@ -98,7 +99,7 @@ struct HeroBody
     u8 flags;
     u16 rate;
     u16 frame;
-    u16 progress;
+    s16 progress;
     u8 filler80[0x84 - 0x80];
     s16 spanA;
     s16 spanB;
@@ -172,4 +173,120 @@ void obj_release_node(void *node);
 
 ASM_FUNC("asm/code_080A5690/hero_a_node_step_with_input.s", void hero_a_node_step_with_input(struct HeroBody *body))
 
-ASM_FUNC("asm/code_080A5690/hero_a_node_step_with_input_b.s", void hero_a_node_step_with_input_b(void))
+NONMATCH("asm/code_080A5690/hero_a_node_step_with_input_b.s", void hero_a_node_step_with_input_b(struct HeroBody *body))
+{
+    struct Hero *hero;
+    struct HeroBody *body_a;
+    struct HeroNode *node;
+    u16 *timer;
+    s32 step;
+    struct World *world;
+    void (*fn)(struct HeroBody *);
+    s32 wants;
+    s32 limit;
+    s32 reached;
+    s32 lo;
+    s32 hi;
+    s32 mode;
+    s32 wm;
+    hero = gWorld->heroA;
+    body_a = &hero->body;
+    step = 0x4000;
+    state_stack_advance_progress(body_a);
+    node = body_a->node;
+    sprite_entry_update(node);
+    node->x = body_a->sprite->unk0 + 0x14;
+    node->y = body_a->sprite->unk2 - 0xE;
+    node->z = body_a->sprite->unkE - 1;
+    if (hero->body.progress < step)
+    {
+        ((struct HeroFlagBits *)&hero->body.flags)->active = 0;
+    }
+    timer = &hero->body.timer;
+    if ((*timer >> 12) != 0)
+    {
+        goto tail;
+    }
+    wants = 0;
+    if (hero->body.progress >= 0)
+    {
+        wants = hero->body.step <= step;
+    }
+    timer = &body_a->timer;
+    if (wants && (gSys.pressed & 1))
+    {
+        *timer = (*timer & 0xFFF) | 0x2000;
+    }
+    if ((*timer >> 12) != 0)
+    {
+        goto tail;
+    }
+    limit = step;
+    if (limit > 0x7FFF)
+    {
+        limit = 0x7FFF;
+    }
+    reached = 0;
+    if (body_a->step <= limit)
+    {
+        reached = body_a->progress >= limit;
+    }
+    if (reached)
+    {
+        world = gWorld;
+        wm = world->mode;
+        world->mode = (wm & -0x31) | ((((u32)wm << 26) >> 30 | 1) << 4);
+        *timer = (*timer & 0xFFF) | 0x1000;
+        goto tail;
+    }
+    if (body_a->progress > step)
+    {
+        goto tail;
+    }
+    if (!(gSys.pressed & 1) && (gSys.pressed & 3) == 0)
+    {
+        goto tail;
+    }
+    world = gWorld;
+    wm = world->mode;
+    world->mode = (wm & -0x31) | ((((u32)wm << 26) >> 30 | 1) << 4);
+    if ((((u32)gWorld->mode << 28) >> 30) & ~1)
+    {
+        goto tail;
+    }
+    *timer = (*timer & 0xFFF) | 0x1000;
+tail:
+    mode = *timer >> 12;
+    if (mode != 0)
+    {
+        lo = 0;
+        if (lo > 0x4000)
+        {
+            lo = 0x4000;
+        }
+        hi = step;
+        if (hi > 0x7FFF)
+        {
+            hi = 0x7FFF;
+        }
+        if (hi < lo)
+        {
+            lo = hi;
+        }
+        if (body_a->progress >= lo && body_a->step <= hi && mode > 1)
+        {
+            *timer = *timer & 0xFFF;
+            fn = hero_a_drop_node_5f18;
+            body->state = fn;
+            fn(body);
+            goto end;
+        }
+    }
+    if (hero->body.flags & 0x20)
+    {
+        body->state = hero_a_release_node;
+    }
+end:
+    ;
+}
+END_NONMATCH
