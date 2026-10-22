@@ -164,6 +164,8 @@ NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struc
     u32 rnd;
     u32 pick2;
     u32 face;
+    s32 four;
+    struct Bits3 *fb;
 
     table = (u16 *)obj->tbl;
     sensor = obj->sensor;
@@ -174,7 +176,7 @@ NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struc
             pick = idx;
         else
             pick = ((u32)parent->flags208 << 30) >> 31;
-        entry = *(struct Obj **)((pick << 2) + (u8 *)parent + 0x28);
+        entry = *(struct Obj **)((pick << 2) + (u32)parent + 0x28);
         if ((sensor->h18 << 8) <= entry->z + entry->dz && (sensor->h1A << 8) >= entry->z + entry->dz)
         {
             rnd = mt19937_next();
@@ -202,7 +204,9 @@ NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struc
             else
             {
                 ((struct Spr *)obj->cell)->record21 = ((~dy) >> 31) & 2;
-                ((struct Bits3 *)&obj->flags24)->lo3 = ((~dy) >> 31) & 4;
+                four = 4;
+                fb = (struct Bits3 *)&obj->flags24;
+                fb->lo3 = ((~dy) >> 31) & four;
             }
             obj_load_record(obj->cell, ((struct Spr *)obj->cell)->record21, -1, 0, 0);
             face = ((u32)obj->flags24 << 29) >> 30;
@@ -493,7 +497,7 @@ void obj_init_from_link(struct Obj *obj)
 }
 
 
-NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner *owner, struct Obj *obj, u16 mode, u8 flag))
+void obj_start_walk(struct Owner *owner, struct Obj *obj, u16 mode, u8 flag)
 {
     struct Obj *entry;
     u16 *table;
@@ -505,6 +509,8 @@ NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner 
     s32 ax;
     s32 ay;
     u32 cell;
+    s32 four;
+    struct Bits3 *fb;
 
     table = (u16 *)obj->tbl;
     idx = rand_below(4, mt19937_next());
@@ -516,7 +522,7 @@ NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner 
             k = slot;
         else
             k = ((u32)owner->flags208 << 30) >> 31;
-        entry = *(struct Obj **)((k << 2) + (u8 *)owner + 0x28);
+        entry = *(struct Obj **)((k << 2) + (u32)owner + 0x28);
         dx = entry->x - obj->x;
         dy = entry->y - obj->y;
         ax = dx;
@@ -534,19 +540,24 @@ NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner 
         else
         {
             ((struct Spr *)obj->cell)->record21 = ((~dy) >> 31) & 2;
-            ((struct Bits3 *)&obj->flags24)->lo3 = ((~dy) >> 31) & 4;
+            four = 4;
+            fb = (struct Bits3 *)&obj->flags24;
+            fb->lo3 = ((~dy) >> 31) & four;
         }
     }
     switch (mode)
     {
     case 0:
-        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 4;
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8];
+        cell += 4;
         break;
     case 1:
-        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 8;
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8];
+        cell += 8;
         break;
     case 2:
-        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8] + 0xC;
+        cell = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + (((u32)obj->flags24 << 29) >> 29) + 8];
+        cell += 0xC;
         break;
     default:
         return;
@@ -554,7 +565,6 @@ NONMATCH("asm/code_0814F8E4/obj_start_walk.s", void obj_start_walk(struct Owner 
     obj_set_cell_coord(obj, cell, 0);
     ((struct Mode12 *)&obj->cell->flags12)->mode = 1;
 }
-END_NONMATCH
 
 void obj_place_linked(struct Obj *obj, u8 flag)
 {
