@@ -1,6 +1,27 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBit5
+{
+    u16 lo : 5;
+    u16 bit5 : 1;
+    u16 hi : 10;
+};
+
+struct HalfBit2
+{
+    u16 lo : 2;
+    u16 bit2 : 1;
+    u16 hi : 13;
+};
+
+struct HalfBit4
+{
+    u16 lo : 4;
+    u16 bit4 : 1;
+    u16 hi : 11;
+};
+
 struct EnemyRec
 {
     u8 filler0[0x1A];
@@ -249,7 +270,7 @@ NONMATCH("asm/code_08141008/enemy_init_group_random.s", void enemy_init_group_ra
     s32 pick;
     u16 timerVal;
 
-    ent->flags33E |= 0x10;
+    ((struct HalfBit4 *)&ent->flags33E)->bit4 = 1;
     for (n = 1; n < sensor[0] + 1; n++)
     {
         struct Actor *sibling = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[n];
@@ -266,8 +287,8 @@ NONMATCH("asm/code_08141008/enemy_init_group_random.s", void enemy_init_group_ra
     ent->landZ = ent->posZ + ent->dz;
     ent->phase = 0;
     ent->hopStep = ((u8 *)rec)[1];
-    ent->flags20E |= 4;
-    ent->flags20D |= 0x20;
+    ((struct HalfBit2 *)&ent->flags20E)->bit2 = 1;
+    ((struct HalfBit5 *)&ent->flags20D)->bit5 = 1;
     *(void **)(ai + 0x140) = enemy_state_run_move;
     *(void **)(ai + 0x148) = enemy_timer_then_cell;
     *(void **)(ai + 0x150) = enemy_prepare_move_to_partner;
