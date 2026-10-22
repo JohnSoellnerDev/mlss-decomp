@@ -334,8 +334,9 @@ u32 place_part_in_slot(s32 slot, s32 mode, s32 a2, s32 a3, s32 s0, s32 s4, s32 s
 void menu_entry_refresh(void *entry, u32 idx, u32 arg);
 struct PoolObj *obj_spawn(struct PoolObj *tmpl, u32 flags, s32 x, s32 y, s32 z, u32 vis, u32 extra);
 
-NONMATCH("asm/code_0807B7A0/update_sprite_list.s", void update_sprite_list(void))
+void update_sprite_list(void)
 {
+    s32 visible;
     struct SpriteNode *node = gWorld->spriteList;
     struct SpriteEntry *obj;
     u32 flags;
@@ -359,7 +360,9 @@ NONMATCH("asm/code_0807B7A0/update_sprite_list.s", void update_sprite_list(void)
             }
             obj->posX = 0x78;
             obj->posY = 0x50;
-            if (0x20 & flags)
+            visible = 0x20;
+            visible &= flags;
+            if (visible)
             {
                 sprite_entry_update((struct SpriteEnt *)obj);
                 node->callback(node);
@@ -379,7 +382,6 @@ NONMATCH("asm/code_0807B7A0/update_sprite_list.s", void update_sprite_list(void)
         } while (node != NULL);
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/place_part_in_slot.s", u32 place_part_in_slot(s32 slot, s32 mode, s32 a2, s32 a3, s32 s0, s32 s4, s32 s8))
 
