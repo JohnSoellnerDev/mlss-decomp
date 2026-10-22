@@ -327,7 +327,7 @@ struct TaskObj *obj_callback_18_task_insert(struct TaskObj *obj, u8 kind, const 
 
 NONMATCH("asm/code_08137510/fade_end.s", void fade_end(struct Fade *obj))
 {
-    vu16 *p;
+    u16 *p;
 
     p = gUnk_02000050;
     *p = obj->unk2C;
@@ -502,4 +502,43 @@ moving:
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08137510/obj_begin_glide.s", void obj_begin_glide(void))
+static inline void set_bit6_flag(struct Sprite *spr, u32 v)
+{
+    ((struct Bit6Byte *)&spr->flags11)->bit6 = v;
+}
+
+NONMATCH("asm/code_08137510/obj_begin_glide.s", void obj_begin_glide(void *ctx, struct Enemy *obj, u32 *out))
+{
+    struct Sprite *rec;
+    u32 keep;
+    u32 seed;
+    u32 pick;
+    u16 value;
+    s32 maskClear0;
+    s32 maskClear1;
+
+    maskClear0 = -2;
+    maskClear1 = -3;
+    rec = obj->sprite;
+    keep = ((u32)rec->flags11 << 25) >> 31;
+    obj_set_state(obj, 1);
+    obj_sync_sub_slot(obj, 0);
+    obj_set_cell_coord(obj, rec->unk21 + 4, 0);
+    set_bit6_flag(rec, keep);
+    seed = mt19937_next();
+    pick = rand_below(4, seed);
+    value = obj->unk128[pick];
+    obj->unk1D2 = value;
+    if (value != 0)
+    {
+        out[0] = (u32)tick_fire;
+        obj->unk1AC = (u32)advance_handler_slot;
+        obj->unk1D6 = (obj->unk1D6 | 2) & maskClear0;
+    }
+    else
+    {
+        obj->unk1D6 = (obj->unk1D6 & maskClear1) | 1;
+        obj->unkF8 &= 0xFBFF;
+    }
+}
+END_NONMATCH
