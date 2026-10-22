@@ -1,5 +1,12 @@
 #include "global.h"
 
+struct ByteBit6
+{
+    u8 lo : 6;
+    u8 bit6 : 1;
+    u8 hi : 1;
+};
+
 struct HalfBit7
 {
     u16 lo : 7;
@@ -299,7 +306,7 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
     ((struct Lo3Bits *)&(*slotB)->state214)->lo3 = 4;
     obj_set_id(*slotB, 0x1025);
     ((struct ModeBits *)&(*slotB)->sprite294->flags12)->mode = 1;
-    (*slotB)->flags212 |= 0x40;
+    ((struct ByteBit6 *)&(*slotB)->flags212)->bit6 = 1;
     (*slotB)->sprite294->unk20 = (obj->flagsFB >> 3) << ((((u32)((u8 *)obj)[0x20A]) << 30) >> 31);
     ((u8 *)obj)[0x20B] |= 0x80;
     set_slot_value(0x3C, -1);
