@@ -33,7 +33,7 @@ NONMATCH("asm/code_08023DE8/scene_obj_return_copy.s", void scene_obj_return_copy
     ((struct AttrBits *)obj->attrPtr)->b3 = ((u32)*(u8 *)&obj->attrs << 29) >> 31;
     ((struct AttrBits *)obj->attrPtr)->b4 = ((u32)*(u8 *)&obj->attrs << 28) >> 31;
     ((struct AttrBits *)obj->attrPtr)->b5 = ((u32)*(u8 *)&obj->attrs << 27) >> 31;
-    ((struct AttrBits *)obj->attrPtr)->b6 = ((u32)*(u8 *)&obj->attrs << 25) >> 31;
+    ((struct AttrBits *)obj->attrPtr)->b6 = (*(u8 *)&obj->attrs & 0x40) >> 6;
     ((struct AttrBits *)obj->attrPtr)->b7 = ((u32)*(u8 *)&obj->attrs << 24) >> 31;
     ((struct AttrBits *)obj->attrPtr)->b0 = 1;
 }
