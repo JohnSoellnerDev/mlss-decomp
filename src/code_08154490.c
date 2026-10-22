@@ -912,9 +912,10 @@ void obj_track_char_a(struct TrackObj *obj)
     }
 }
 
-NONMATCH("asm/code_08154490/obj_create_digits.s", struct DigitObj *obj_create_digits(struct DigitObj *obj))
+struct DigitObj *obj_create_digits(struct DigitObj *obj)
 {
-    u32 rowGap;
+    s32 i;
+    struct Sprite **slot;
 
     obj->unk1C = 0;
     obj->unk08 = 0;
@@ -929,29 +930,18 @@ NONMATCH("asm/code_08154490/obj_create_digits.s", struct DigitObj *obj_create_di
     obj->unk30 = 0;
     obj->unk34 = 0;
 
-    obj->unk00 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
-    obj_load_record(obj->unk00, 0xA, -1, 0, 0);
-    sprite_update_cd0(obj->unk00);
-    obj->unk00->unk00 = 0xD8;
-    rowGap = 0x10;
-    obj->unk00->unk02 = rowGap;
-
-    obj->unk04 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
-    obj_load_record(obj->unk04, 0xA, -1, 0, 0);
-    sprite_update_cd0(obj->unk04);
-    obj->unk04->unk00 = 0xE0;
-    obj->unk04->unk02 = rowGap;
-
-    obj->unk08 = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
-    obj_load_record(obj->unk08, 0xA, -1, 0, 0);
-    sprite_update_cd0(obj->unk08);
-    obj->unk08->unk00 = 0xE8;
-    obj->unk08->unk02 = rowGap;
+    for (i = 0; i < 3; i++) {
+        slot = (struct Sprite **)obj + i;
+        *slot = create_obj_de4(4, 0x500C, 0, -1, -1, -1, -1);
+        obj_load_record(*slot, 0xA, -1, 0, 0);
+        sprite_update_cd0(*slot);
+        (*slot)->unk00 = 0xD8 + i * 8;
+        (*slot)->unk02 = 0x10;
+    }
 
     obj_update_digits(obj);
     return obj;
 }
-END_NONMATCH
 
 void obj_shake_or_countdown(struct DigitObj *obj)
 {
