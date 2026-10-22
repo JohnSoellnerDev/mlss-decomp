@@ -364,7 +364,6 @@ void obj_timer_move_to_owner_then_f358(struct ActorObj *obj)
 
 NONMATCH("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pair_move_then_e640(struct ActorObj *obj))
 {
-    s32 kc = 0x41;
     struct ActorPart *data;
     struct ActorPart *a;
     struct ActorPart *b;
@@ -374,6 +373,7 @@ NONMATCH("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pai
     s32 t = obj->timer - 1;
     s32 flags;
     s32 bit;
+    s32 mask;
 
     obj->timer = t;
     if ((s16)t < 0)
@@ -421,9 +421,10 @@ NONMATCH("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pai
         bit = ((u32)flags << 25) >> 31;
         bit = bit ^ 1;
         bit = bit << 6;
-        flags = -kc & flags;
-        flags = flags | bit;
-        pose->byte11 = flags;
+        mask = -0x41;
+        mask &= flags;
+        mask |= bit;
+        pose->byte11 = mask;
         obj->state = obj_slot_spawn_child_anim9;
         code = &obj->data->unk113;
         if (*code & 0x80)
