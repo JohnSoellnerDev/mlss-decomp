@@ -381,18 +381,17 @@ static inline void menu_obj_release(struct MenuObj *obj)
     }
 }
 
-NONMATCH("asm/code_081152FC/menu_obj_step.s", void menu_obj_step(struct MenuObj *obj))
+void menu_obj_step(struct MenuObj *obj)
 {
-    struct SysPad *pad;
-    u32 keys;
+    u16 keys;
     s32 cursor;
     s32 t;
     void *node;
+    s32 m;
 
     switch (obj->state1D) {
     case 0:
-        pad = (struct SysPad *)gSys;
-        keys = pad->keys;
+        keys = gSys[0x2A / 2];
         if ((keys & 1) != 0) {
             cursor = *(s8 *)&obj->cursor1C;
             switch (cursor) {
@@ -413,18 +412,20 @@ NONMATCH("asm/code_081152FC/menu_obj_step.s", void menu_obj_step(struct MenuObj 
             }
             break;
         }
-        if ((keys & 4) != 0) {
+        m = 4;
+        m &= keys;
+        if (m != 0) {
             menu_obj_release(obj);
             break;
         }
-        if ((pad->repeat & 0x40) != 0) {
+        if ((((struct SysPad *)gSys)->repeat & 0x40) != 0) {
             t = obj->cursor1C - 1;
             obj->cursor1C = t;
             if ((t << 24) < 0) {
                 obj->cursor1C = 2;
             }
         }
-        if ((pad->repeat & 0x80) != 0) {
+        if ((((struct SysPad *)gSys)->repeat & 0x80) != 0) {
             t = obj->cursor1C + 1;
             obj->cursor1C = t;
             if ((s8)t > 2) {
@@ -443,7 +444,6 @@ NONMATCH("asm/code_081152FC/menu_obj_step.s", void menu_obj_step(struct MenuObj 
         break;
     }
 }
-END_NONMATCH
 
 void owner_method_noop(void)
 {
@@ -529,10 +529,13 @@ static inline struct TableEntry *menu_entry_at(struct MenuTable *obj, u32 offset
 
 NONMATCH("asm/code_081152FC/menu_entry_refresh.s", u32 menu_entry_refresh(struct MenuTable *obj, u8 index, u8 show))
 {
-    u32 offset;
-    struct TableEntry *e;
-    struct TableEntry *table;
     u32 bit;
+    u32 t;
+    u32 low;
+    struct TableEntry *table;
+    u32 offset;
+    u32 off2;
+    struct TableEntry *e;
 
     table = obj->entries2C;
     offset = ((index << 3) - index) << 2;
@@ -555,55 +558,60 @@ NONMATCH("asm/code_081152FC/menu_entry_refresh.s", u32 menu_entry_refresh(struct
     table = obj->entries2C;
     offset = ((index << 3) - index) << 2;
     e = (struct TableEntry *)(offset + (u32)table);
-    if (((((u32)e->byte0 << 26) >> 29) & 6) != 0) {
-        if (menu_entry_at(obj, offset)->buf14 != 0) {
-            heap_free_a(menu_entry_at(obj, offset)->buf14);
+    t = ((u32)e->byte0 << 26) >> 29;
+    low = 6;
+    low &= t;
+    if (low != 0) {
+        if (e->buf14 != 0) {
+            heap_free_a(e->buf14);
         }
         if (menu_entry_at(obj, offset)->buf10 != 0) {
             heap_free_a(menu_entry_at(obj, offset)->buf10);
         }
     }
-    if (menu_entry_at(obj, offset)->tiles0C != 0) {
-        heap_free_a(menu_entry_at(obj, offset)->tiles0C);
+    table = obj->entries2C;
+    off2 = ((index << 3) - index) << 2;
+    if (((struct TableEntry *)(off2 + (u32)table))->tiles0C != 0) {
+        heap_free_a(((struct TableEntry *)(off2 + (u32)table))->tiles0C);
     }
-    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->lo2 = 0;
-    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->bit2 = 0;
-    ((struct TableBits0 *)&menu_entry_at(obj, offset)->byte0)->mid3 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte1)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte1)->hi4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte2)->lo4 = 0;
-    menu_entry_at(obj, offset)->used3 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte4)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte4)->hi4 = 0;
-    menu_entry_at(obj, offset)->byte5 = 0;
-    menu_entry_at(obj, offset)->unk6 = 0;
-    menu_entry_at(obj, offset)->unk8 = 0;
-    menu_entry_at(obj, offset)->byte18 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte19)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, offset)->byte19)->hi4 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->lo2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->bit2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->mid3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte1)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte1)->hi4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte2)->lo4 = 0;
+    menu_entry_at(obj, off2)->used3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte4)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte4)->hi4 = 0;
+    menu_entry_at(obj, off2)->byte5 = 0;
+    menu_entry_at(obj, off2)->unk6 = 0;
+    menu_entry_at(obj, off2)->unk8 = 0;
+    menu_entry_at(obj, off2)->byte18 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte19)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, off2)->byte19)->hi4 = 0;
     return 1;
 }
 END_NONMATCH
 
-NONMATCH("asm/code_081152FC/sub_08115F54.s", void sub_08115F54(struct MenuTable *obj, u8 mode, u16 pos, u32 speed, u32 arg5, u32 arg6, s32 arg7, s32 arg8))
+void sub_08115F54(struct MenuTable *obj, u8 mode, u16 pos, u32 speed, u32 arg5, u32 arg6, s32 arg7, s32 arg8)
 {
     u8 *flags;
-    u32 v36;
-    u32 v38;
+    u16 v36;
+    u16 v38;
     u16 speed16;
     u32 scale;
 
     scale = speed << 16;
-    speed16 = speed;
-    v36 = (u16)arg5;
-    v38 = (u16)arg6;
+    speed16 = scale >> 16;
+    v36 = arg5;
+    v38 = arg6;
     if (obj->unk34 != 0) {
         return;
     }
+    obj->unk32 = mode;
     flags = &obj->unk32;
-    *flags = mode;
     if (v38 == 0) {
-        *flags |= 1;
+        *flags = mode | 1;
     }
     if (v36 == 0) {
         *flags |= 2;
@@ -632,7 +640,6 @@ NONMATCH("asm/code_081152FC/sub_08115F54.s", void sub_08115F54(struct MenuTable 
     gSys[1] |= obj->unk36;
     gSys[0] |= obj->unk38;
 }
-END_NONMATCH
 
 u32 find_entry_code(u32 unused, u32 key)
 {
