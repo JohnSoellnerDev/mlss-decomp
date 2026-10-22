@@ -1,5 +1,18 @@
 #include "global.h"
 
+struct ByteBit4
+{
+    u8 lo : 4;
+    u8 bit4 : 1;
+    u8 hi : 3;
+};
+
+struct ByteBit7
+{
+    u8 lo : 7;
+    u8 bit7 : 1;
+};
+
 struct ActorPose
 {
     u8 filler0[0x0C];
@@ -193,7 +206,7 @@ void link_actor_pair_start(struct ActorObj *obj);
 void countdown_phase_then_wait(struct ActorObj *obj);
 void countdown_spawn_pair_link(struct ActorObj *obj);
 
-NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start(struct ActorObj *obj))
+void link_actor_pair_start(struct ActorObj *obj)
 {
     struct Hero *linkA;
     struct Hero *linkB;
@@ -210,15 +223,15 @@ NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start
     {
         obj->wait = 0x20;
         linkA = gWorld->heroA;
-        linkB = gWorld->heroB;
         actorA = &linkA->body;
+        linkB = gWorld->heroB;
         actorB = &linkB->body;
-        ((struct LinkBlock *)linkA)->flags &= 0x7F;
-        ((struct LinkBlock *)linkB)->flags &= 0x7F;
+        ((struct ByteBit7 *)&((struct LinkBlock *)linkA)->flags)->bit7 = 0;
+        ((struct ByteBit7 *)&((struct LinkBlock *)linkB)->flags)->bit7 = 0;
         gUnk_03000ED4 = actorA->state;
         gUnk_03000ED8 = actorB->state;
-        actorA->pose->flags |= 0x10;
-        actorB->pose->flags |= 0x10;
+        ((struct ByteBit4 *)&actorA->pose->flags)->bit4 = 1;
+        ((struct ByteBit4 *)&actorB->pose->flags)->bit4 = 1;
         actorA->state = actor_link_anim_steps;
         actorB->state = actor_link_anim_steps;
         gUnk_03000F5C = 0;
@@ -229,7 +242,7 @@ NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start
         {
             do
             {
-                child->pose->flags |= 0x10;
+                ((struct ByteBit4 *)&child->pose->flags)->bit4 = 1;
                 gUnk_03000EDC[gUnk_03000F5C++] = (u32)child->state;
                 child->state = actor_link_anim_steps;
                 child = child->child;
@@ -241,7 +254,7 @@ NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start
         {
             do
             {
-                child->pose->flags |= 0x10;
+                ((struct ByteBit4 *)&child->pose->flags)->bit4 = 1;
                 gUnk_03000F1C[gUnk_03000F5D++] = (u32)child->state;
                 child->state = actor_link_anim_steps;
                 child = child->child;
@@ -255,7 +268,6 @@ NONMATCH("asm/code_08077FB8/link_actor_pair_start.s", void link_actor_pair_start
         obj->state = countdown_phase_then_wait;
     }
 }
-END_NONMATCH
 
 void countdown_phase_then_wait(struct ActorObj *obj)
 {
