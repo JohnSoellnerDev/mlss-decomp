@@ -147,7 +147,39 @@ struct ActorCands
 
 extern struct ActorCands *gWorld;
 
-ASM_FUNC("asm/code_0806E410/obj_pose_release_partner.s", void obj_pose_release_partner(struct ActorObj *obj))
+NONMATCH("asm/code_0806E410/obj_pose_release_partner.s", void obj_pose_release_partner(struct ActorObj *obj))
+{
+    u32 action;
+
+    if (obj->pose->flags & 8)
+    {
+        obj_detach_active(obj->kind->pose);
+        ((struct ActorFlagBits *)&obj->kind->flags)->bit3 = 0;
+        action = 0x4129;
+        if (obj->paramA0 == 0)
+        {
+            action = 0x4128;
+            if (obj->param9C == 0) action = 0x4126;
+        }
+        else
+        {
+            if (obj->param9C == 0) action = 0x4127;
+        }
+        sprite_set_action(obj, 0, action, 0);
+        obj->posY = obj->owner->part->targetY;
+        obj->posH += 0x3000;
+        obj->dh = 0;
+        obj->phase = 0x300;
+        obj->dx = obj->dir >> 5;
+        ((struct ActorFlagBits *)&obj->flags)->bit0 = 0;
+        obj->dir = (obj->dir & 0x1F) | 0x60;
+        obj_list_push_default(obj);
+        obj->handler58 = obj_owner_callback_step;
+        obj->handler60 = obj_lookup_slot_step;
+        obj->state = obj_drift_up_until_height;
+    }
+}
+END_NONMATCH
 
 void obj_drift_up_until_height(struct ActorObj *obj)
 {
