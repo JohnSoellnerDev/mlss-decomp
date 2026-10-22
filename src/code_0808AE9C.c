@@ -657,10 +657,13 @@ void set_action_by_mode(struct Actor *obj)
 }
 
 void part_jump_setup(struct Actor *obj);
-NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struct Actor *obj))
+void spawn_part_by_mode(struct Actor *obj)
 {
+    s32 xOffSmall = 0x1B;
     s32 xOff;
     s32 yOff;
+    s32 x;
+    s32 y;
     struct Actor *part;
     struct Actor *owner;
 
@@ -685,7 +688,7 @@ NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struc
         switch (obj->mode)
         {
         case 1:
-            xOff = 0x1B;
+            xOff = xOffSmall;
             break;
         case 0:
         case 2:
@@ -695,6 +698,7 @@ NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struc
             xOff = 0x1B;
             break;
         }
+        x = (obj->x / 0x100) - xOff;
         switch (obj->mode)
         {
         case 1:
@@ -708,7 +712,8 @@ NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struc
             yOff = -5;
             break;
         }
-        part = obj_spawn(obj->data, 0x405D, (obj->x / 0x100) - xOff, (obj->y / 0x100) + yOff, obj->h / 0x100, 1, 1);
+        y = (obj->y / 0x100) + yOff;
+        part = obj_spawn(obj->data, 0x405D, x, y, obj->h / 0x100, 1, 1);
         obj->child = part;
         part->listSlot = 0xFF;
         ((struct Flags78Bits *)&part->flags78)->kind = 1;
@@ -722,7 +727,6 @@ NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struc
         part_jump_setup(part);
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0808AE9C/part_jump_setup.s", void part_jump_setup(struct Actor *obj))
 
