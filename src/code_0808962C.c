@@ -365,20 +365,20 @@ NONMATCH("asm/code_0808962C/spawn_child_with_offsets.s", void spawn_child_with_o
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0808962C/offset_and_move_child.s", void offset_and_move_child(struct ActorObj *obj))
+void offset_and_move_child(struct ActorObj *obj)
 {
     struct ActorPart *rec = obj->part;
     struct ActorObj *owner = obj->owner;
     s16 outX;
     s16 outY;
     s16 outH;
-    s32 bhp;
+    s32 hOffset = 0x500;
 
     obj->dx = (u16)obj->dx + (u16)obj->dy;
     move_step(&outX, &outY, &outH,
               owner->part->targetX - rec->baseX,
               owner->part->targetY - rec->baseY,
-              owner->part->targetH - (bhp = rec->baseH + 0x500, bhp),
+              owner->part->targetH - (rec->baseH + hOffset),
               obj->dx);
     obj->posX = obj->baseX + outX;
     obj->posY = obj->baseY + outY;
@@ -395,7 +395,6 @@ NONMATCH("asm/code_0808962C/offset_and_move_child.s", void offset_and_move_child
         obj_release(obj);
     }
 }
-END_NONMATCH
 
 s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 arg)
 {
