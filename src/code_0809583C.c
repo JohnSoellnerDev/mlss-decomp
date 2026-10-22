@@ -263,7 +263,7 @@ void visible_action_2000(struct HeroBody *body)
     }
 }
 
-NONMATCH("asm/code_0809583C/actor_init_linked.s", u32 actor_init_linked(struct HeroBody *body))
+u32 actor_init_linked(struct HeroBody *body)
 {
     struct HeroBody *partner;
     void *anim;
@@ -288,14 +288,20 @@ NONMATCH("asm/code_0809583C/actor_init_linked.s", u32 actor_init_linked(struct H
     body->jumpInit = 0x1AA8;
     body->rate = 0x200;
     body->side = 0;
-    (void)*(volatile s16 *)&partner->data->slot;
-    partner->dh = 0x300;
+    /* the test only reads the partner's slot; both arms store the same value */
+    if (partner->data->slot == -1)
+    {
+        partner->dh = 0x300;
+    }
+    else
+    {
+        partner->dh = 0x300;
+    }
     body->resume = NULL;
     body->state = partner_wait_after_connect;
     body->scale = 0x100;
     return 1;
 }
-END_NONMATCH
 
 void pick_random_partner(struct HeroBody *body)
 {
