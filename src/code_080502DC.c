@@ -639,7 +639,7 @@ NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 
     u8 *flags;
     u8 f;
     u32 one;
-    u32 k;
+    u16 m;
     struct SpriteObj **pslot;
     struct SpriteObj **cslot;
     struct SpriteObj *tmp;
@@ -680,8 +680,8 @@ NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 
         set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 0);
         ((struct Mid4At6 *)flags)->mid4 = 0;
         obj[0x23B] = 0;
-        k = 0x1FE;
-        *(u16 *)(obj + 0x33E) = *(u16 *)(obj + 0x33E) | k;
+        m = *(u16 *)(obj + 0x33E);
+        *(u16 *)(obj + 0x33E) = m | 0x1FE;
         *(u16 *)(obj + 0x340) = one;
         *(u16 *)(obj + 0x342) = noCode;
     }
