@@ -170,6 +170,16 @@ struct SpriteStepObj
     s32 cbArg60;
 };
 
+struct Bits12
+{
+    u8 lo1 : 1;
+    u8 mode : 2;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
 NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr))
 {
     struct SpriteStepObj *s = spr;
@@ -204,9 +214,7 @@ NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr
         goto tail;
     }
     dir = ((u32)flags << 28) >> 31;
-    t = -9;
-    t &= flags;
-    s->flags12 = t;
+    ((struct Bits12 *)&s->flags12)->bit3 = 0;
     table = s->table3C;
     count = s->count25;
     travelled = s->travelled2C;
@@ -236,7 +244,7 @@ NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr
                 {
                     cell = count - 1;
                     travelled = 0;
-                    s->flags12 = (s->flags12 & -9) | (dir << 3);
+                    ((struct Bits12 *)&s->flags12)->bit3 = dir;
                 }
             }
             else
@@ -246,7 +254,7 @@ NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr
                 {
                     cell = 0;
                     travelled = 0;
-                    s->flags12 = (s->flags12 & -9) | (dir << 3);
+                    ((struct Bits12 *)&s->flags12)->bit3 = dir;
                 }
             }
             idx = cell * 2 + 1;
@@ -256,19 +264,19 @@ NONMATCH("asm/code_0801D358/sprite_step_e6a0.s", void sprite_step_e6a0(void *spr
     }
     store = 1;
     flags = s->flags12;
-    if ((flags & 8) != 0)
+    if (((struct Bits12 *)&s->flags12)->bit3)
     {
-        if ((flags & 6) == 2)
+        if (((struct Bits12 *)&s->flags12)->mode == 1)
         {
-            s->flags12 = flags | 0x10;
+            ((struct Bits12 *)&s->flags12)->bit4 = 1;
             cell = count - 1;
             frame = table[cell * 2 + 1];
             remaining = 1;
             travelled = 0;
         }
-        else if ((flags & 6) == 4)
+        else if (((struct Bits12 *)&s->flags12)->mode == 2)
         {
-            s->flags12 = flags | 0x20;
+            ((struct Bits12 *)&s->flags12)->bit5 = 1;
             store = 0;
         }
     }
