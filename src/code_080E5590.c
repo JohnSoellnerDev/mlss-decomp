@@ -191,6 +191,7 @@ static inline void dma_window_start(u8 *base)
 
 NONMATCH("asm/code_080E5590/start_dma_window.s", void start_dma_window(void))
 {
+    u32 buf;
     u32 bank;
 
     ((void (*)(void))gUnk_03000F9C)();
@@ -209,7 +210,9 @@ NONMATCH("asm/code_080E5590/start_dma_window.s", void start_dma_window(void))
             dma_window_start((u8 *)0x040000D4);
             break;
     }
-    *(vu32 *)0x04000040 = *(u32 *)((u32)gUnk_03000F94 + (((bank = gUnk_03000F98) * 5) << 7));
+    buf = (u32)gUnk_03000F94;
+    bank = gUnk_03000F98;
+    *(vu32 *)0x04000040 = *(u32 *)(buf + ((bank * 5) << 7));
     gUnk_03000F98 = bank ^ 1;
 }
 END_NONMATCH
@@ -306,16 +309,20 @@ struct DmaChannel
     vu32 cnt;
 };
 
-NONMATCH("asm/code_080E5590/start_dma0_line_copy.s", void start_dma0_line_copy(void))
+void start_dma0_line_copy(void)
 {
     struct DmaChannel *dma = (struct DmaChannel *)0x040000B0;
     s32 rows4;
+    u32 sad;
+    u32 dad;
 
     *(vu16 *)((u8 *)dma + 0xA) &= 0xC5FF;
     *(vu16 *)((u8 *)dma + 0xA) &= 0x7FFF;
     *(vu16 *)((u8 *)dma + 0xA);
-    dma->sad = (u32)gUnk_03000FA4 + ((((rows4 = gUnk_03000FB0 << 2) + gUnk_03000FB0) << 7) * gUnk_03000FA8);
-    dma->dad = (gUnk_03000FAC << 2) + REG_ADDR_BG0HOFS;
+    sad = (u32)gUnk_03000FA4 + ((((rows4 = gUnk_03000FB0 << 2) + gUnk_03000FB0) << 7) * gUnk_03000FA8);
+    dad = (gUnk_03000FAC << 2) + REG_ADDR_BG0HOFS;
+    dma->sad = sad;
+    dma->dad = dad;
     if (rows4 < 0)
     {
         rows4 += 3;
@@ -324,7 +331,6 @@ NONMATCH("asm/code_080E5590/start_dma0_line_copy.s", void start_dma0_line_copy(v
     dma->cnt;
     gUnk_03000FA8 ^= 1;
 }
-END_NONMATCH
 
 void free_engine_block(void)
 {
