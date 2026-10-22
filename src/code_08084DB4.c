@@ -52,6 +52,7 @@ NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx
     struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
     u32 tiles;
     u32 bit6;
+    s32 sm = ~0x3FFF;
 
     if (slot->maxTiles != 0)
     {
@@ -60,7 +61,7 @@ NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx
     ((struct TileSlotFlags *)slot)->bit6 = flag & 1;
     ((struct TileSlotFlags *)slot)->bit7 = 0;
     tiles = (p6 * p7) & 0x3FFF;
-    slot->size = (slot->size & -0x4000) | tiles;
+    slot->size = (slot->size & sm) | tiles;
     slot->value = value;
     slot->unk1 = p5;
     slot->maxTiles = p6;
@@ -389,9 +390,9 @@ void flush_copy_queue(u8 *obj)
 }
 
 ASM_FUNC("asm/code_08084DB4/free_slot_blocks.s", void free_slot_blocks(void))
-NONMATCH("asm/code_08084DB4/reset_display.s", void reset_display(void))
+void reset_display(void)
 {
-    u16 *p;
+    vu16 *p;
 
     gSavedDispcnt = *(u16 *)DISPCNT_SHADOW;
     *(u16 *)DISPCNT_SHADOW = 0x7F40;
@@ -399,7 +400,7 @@ NONMATCH("asm/code_08084DB4/reset_display.s", void reset_display(void))
     *(u16 *)(DISPCNT_SHADOW + 0x52) = 0x808;
     *(u16 *)(DISPCNT_SHADOW + 0x0C) = 0x1E04;
     *(u16 *)(DISPCNT_SHADOW + 0x0E) = 0x1F08;
-    p = (u16 *)&gUnk_02000018;
+    p = (vu16 *)&gUnk_02000018;
     *p = 0;
     p++;
     *p = 0;
@@ -422,7 +423,6 @@ NONMATCH("asm/code_08084DB4/reset_display.s", void reset_display(void))
     dma_fill_or_queue(0, (void *)0x06008000, 0x5000, 0x20, 0);
     dma_fill_or_queue(0, (void *)0x0600F800, 0x800, 0x20, 0);
 }
-END_NONMATCH
 
 void restore_display(u8 *obj, u32 flags)
 {
