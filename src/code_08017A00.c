@@ -449,47 +449,31 @@ void heap_free_b(void *p)
     heap_free(p);
 }
 
-void *heap_alloc(u32 size, u32 pool, const u8 *tag, u8 clear)
+NONMATCH("asm/code_08017A00/heap_alloc.s", void *heap_alloc(u32 size, u32 pool, const u8 *tag, u8 clear))
 {
-    u32 bits;
-    u32 *src;
-    void *p = heap_alloc_raw(pool, size, tag);
-    int shift;
-
+    u32 zero;
+    void *p;
+    p = heap_alloc_raw(pool, size, tag);
     if (clear != 0)
     {
-        u32 zero = 0;
-
-        shift = 11;
-        do
-        {
-            src = &zero;
-            bits = size << 9;
-        } while (0);
-        cpu_set(src, p, (bits >> shift) | 0x05000000);
+        zero = 0;
+        cpu_set(&zero, p, ((size << 9) >> 11) | 0x05000000);
     }
     return p;
 }
+END_NONMATCH
 
-void *heap_alloc2(u32 size, u32 pool, const u8 *tag, u8 clear)
+NONMATCH("asm/code_08017A00/heap_alloc2.s", void *heap_alloc2(u32 size, u32 pool, const u8 *tag, u8 clear))
 {
     void *p = heap_alloc_raw(pool, size, tag);
-
     if (clear != 0)
     {
         u32 zero = 0;
-
         cpu_set(&zero, p, ((size << 9) >> 11) | 0x05000000);
     }
-    if (clear || size)
-    {
-        return p;
-    }
-    else
-    {
-        return p;
-    }
+    return p;
 }
+END_NONMATCH
 
 void init_sys_defaults(void)
 {

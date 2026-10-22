@@ -268,78 +268,71 @@ struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y
     return obj;
 }
 
-void obj_move_child_step(struct ChildObj *obj)
+NONMATCH("asm/code_0816CA84/obj_move_child_step.s", void obj_move_child_step(struct ChildObj *obj))
 {
     s32 pos;
     s32 limit;
     s32 *step;
+    s32 cur;
     s32 v;
     s32 next;
-    unsigned long long wide;
 
     step = &obj->unk80;
-    pos = obj->unk1C + *step;
+    cur = obj->unk1C;
+    pos = *step;
+    pos += cur;
     obj->unk1C = pos;
     if (pos <= 0x3FFF)
     {
-        wide = 0x3FFF;
-        limit = wide;
+        limit = 0x3FFF;
         limit++;
     }
     else
     {
         limit = 0x8000;
         if (pos <= 0x8000)
-        {
             goto state;
-        }
     }
     obj->unk1C = limit;
     *step = -*step;
+
 state:
     if (obj->unk78 == 2)
-    {
         goto grow;
-    }
-
     if (obj->unk78 <= 2)
-    {
         goto sync;
-    }
     if (obj->unk78 == 3)
-    {
         goto shrink;
-    }
     goto sync;
+
 grow:
     v = obj->unk84 + 0x100;
     obj->unk84 = v;
     obj->unk88 = v;
     if (obj->unk84 <= 0x1800)
-    {
         goto sync;
-    }
     obj->unk88 = 0x1800;
     obj->unk84 = 0x1800;
     next = 0;
     goto store;
+
 shrink:
     v = obj->unk84 - 0x100;
     obj->unk84 = v;
     obj->unk88 = v;
     if (obj->unk84 >= 0)
-    {
         goto sync;
-    }
     obj->unk88 = 0;
     obj->unk84 = 0;
     next = 1;
+
 store:
     obj->unk78 = next;
 
 sync:
     obj_sync_children_pos(obj);
 }
+END_NONMATCH
 
 void obj_sync_children_pos(struct ChildObj *obj)
 {

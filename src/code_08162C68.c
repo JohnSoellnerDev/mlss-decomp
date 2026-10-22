@@ -116,45 +116,40 @@ void obj_release_slots(void *sprite);
 void sprite_update_cd0(void *sprite);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
-s32 effect_step_d(struct EffectObj *obj)
+NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj *obj))
 {
-    s32 delta;
     s32 pos;
+    s32 delta;
 
-    do
+    switch (obj->unk30)
     {
-        switch (obj->unk30)
+    case 0:
+        delta = obj->unk10 + 0x14;
+        obj->unk10 = delta;
+        pos = obj->unk08 + delta;
+        obj->unk08 = pos;
+        if (pos > 0x4FFF)
         {
-        case 0:
-            delta = obj->unk10 + 0x14;
-            obj->unk10 = delta;
-            pos = obj->unk08 + delta;
-            obj->unk08 = pos;
-            if (pos > 0x4FFF)
-            {
-                obj->unk10 = (-delta * 2) / 3;
-                if ((obj->unk10 >> 8) == 0)
-                {
-                    goto finish;
-                }
-            }
-            ((struct SpritePos *)obj->unk00)->x = (obj->unk04 + obj->unk14) >> 8;
-            ((struct SpritePos *)obj->unk00)->y = (obj->unk08 + obj->unk18) >> 8;
-            break;
-        case 1:
-            if (--obj->unk2C <= 0)
-            {
-                return 1;
-            }
-            break;
+            obj->unk10 = (-delta * 2) / 3;
+            if ((obj->unk10 >> 8) == 0)
+                goto finish;
         }
-        return 0;
-    finish:
-        obj->unk2C = 0x50;
-    } while (0);
+        ((struct SpritePos *)obj->unk00)->x = (obj->unk04 + obj->unk14) >> 8;
+        ((struct SpritePos *)obj->unk00)->y = (obj->unk08 + obj->unk18) >> 8;
+        break;
+    case 1:
+        if (--obj->unk2C <= 0)
+            return 1;
+        break;
+    }
+    return 0;
+
+finish:
+    obj->unk2C = 0x50;
     obj->unk30 = 1;
     return 0;
 }
+END_NONMATCH
 
 void obj_release_child_free_c(void *obj, u32 freeFlag)
 {

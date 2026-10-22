@@ -464,29 +464,30 @@ void effect_release_cls980(struct EffectObj *obj, u32 kind)
     task_remove(obj, kind);
 }
 
-struct EffectObj *effect_ctor_cls980(struct EffectObj *obj, u8 kind, void *data)
+NONMATCH("asm/code_081612F0/effect_ctor_cls980.s", struct EffectObj *effect_ctor_cls980(struct EffectObj *obj, u8 kind, void *data))
 {
     struct EffectObj *child;
-    vu16 *p;
+    u16 *p;
 
     task_insert(obj, kind, data);
     obj->unk18 = (s32)gClassE980;
-    do
-    {
-        child = heap_alloc2(0x1C, 1, gHeapTagOtkdB, 0);
-        task_insert(child, 8, gHeapTagOtkdB);
-        child->unk18 = (s32)gFrameUpdateClass;
-        obj->unk1C = (s32)child;
-        child->unk14 = (s32)obj;
-        obj->unk20 = (s32)obj_init_class_ea30(heap_alloc2(8, 1, gHeapTagMt7p, 0));
-        obj->unk44 = obj->unk40 = obj->unk28 = obj->unk24 = 0;
-        p = (vu16 *)gUnk_02000050;
-        *p = 0xDF;
-        p += 2;
-        *p = 0x1F;
-    } while (0);
+    child = heap_alloc2(0x1c, 1, gHeapTagOtkdB, 0);
+    task_insert(child, 8, gHeapTagOtkdB);
+    child->unk18 = (s32)gFrameUpdateClass;
+    obj->unk1C = (s32)child;
+    child->unk14 = (s32)obj;
+    obj->unk20 = (s32)obj_init_class_ea30(heap_alloc2(8, 1, gHeapTagMt7p, 0));
+    obj->unk24 = 0;
+    obj->unk28 = 0;
+    obj->unk40 = 0;
+    obj->unk44 = 0;
+    p = (u16 *)gUnk_02000050;
+    *p = 0xdf;
+    p += 2;
+    *p = 0x1f;
     return obj;
 }
+END_NONMATCH
 
 struct SysBgDirty
 {
