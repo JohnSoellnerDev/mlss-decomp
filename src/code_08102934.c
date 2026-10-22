@@ -201,7 +201,10 @@ NONMATCH("asm/code_08102934/state_display_entry_draw.s", void state_display_entr
     u32 s1C;
     u32 s20;
     u8 *queue;
+    u8 **qp;
     u8 *sysb;
+    s32 val;
+    u16 k;
 
     data = entry->data;
     sub = entry->sub;
@@ -271,20 +274,22 @@ NONMATCH("asm/code_08102934/state_display_entry_draw.s", void state_display_entr
         }
         if (dataY < (s32)s8)
         {
+            val = (s14 + 6) & 0xFF;
             sysb = gSys;
             queue = *(u8 **)(sysb + 0x880);
-            *(u16 *)queue = (s14 + 6) & 0xFF;
+            *(u16 *)queue = val;
             *(u16 *)(queue + 2) = (u16)s20;
-            *(u16 *)(queue + 4) = 0xC0D4;
+            k = 0xC0D4;
             *(u8 **)(sysb + 0x880) = queue + 8;
         }
         else
         {
+            val = (s14 + 6) & 0xFF;
             sysb = gSys;
             queue = *(u8 **)(sysb + 0x880);
-            *(u16 *)queue = (s14 + 6) & 0xFF;
+            *(u16 *)queue = val;
             *(u16 *)(queue + 2) = (u16)s20;
-            *(u16 *)(queue + 4) = 0xB0D4;
+            k = 0xB0D4;
             *(u8 **)(sysb + 0x880) = queue + 8;
         }
     }
@@ -399,4 +404,76 @@ ASM_FUNC("asm/code_08102934/state_figure_jump_start.s", void state_figure_jump_s
 
 ASM_FUNC("asm/code_08102934/task_countdown_digits.s", void task_countdown_digits(void))
 
-ASM_FUNC("asm/code_08102934/state_digits_slide.s", void state_digits_slide(void))
+NONMATCH("asm/code_08102934/state_digits_slide.s", void state_digits_slide(struct Owner *obj))
+{
+    struct World *world;
+    u32 ctrByte;
+    u32 ctrShift;
+    u32 counter;
+    u32 keep;
+    u32 oam;
+    vu16 *row;
+    s32 acc;
+    s32 y;
+    u8 *queue;
+    u8 *sysb;
+
+    obj->timer -= 0x13;
+    if ((s16)obj->timer <= 0)
+    {
+        obj->unk16 = obj->unk8;
+        if ((s16)obj->unk8 == 0x10)
+        {
+            obj->index += 4;
+        }
+        obj->timer = 0;
+        obj->state = draw_obj_at_xy;
+        obj->state(obj);
+    }
+    else
+    {
+        world = gWorld;
+        ctrByte = world->digitCtr;
+        ctrShift = ctrByte << 27;
+        keep = ctrByte;
+        keep &= 0xFFFFFFE0;
+        world->digitCtr = (((ctrShift >> 27) - 1) & 0x1F) | keep;
+        counter = ctrShift >> 27;
+        row = (vu16 *)(((((u32)gSys[0x888] << 28) >> 31) << 10) + ((counter << 5) + (u32)(gSys + 0x80)));
+        (void)row[3];
+        row[3] = 0x100 - obj->timer;
+        (void)row[7];
+        row[7] = 0;
+        (void)row[11];
+        row[11] = 0;
+        (void)row[15];
+        row[15] = 0x100 - obj->timer;
+
+        acc = (s16)obj->index;
+        if ((s16)obj->unk16 <= 8)
+        {
+            acc += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x68 - acc) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
+        }
+        else
+        {
+            acc += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x78 - acc) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
+            if ((s16)obj->unk16 == 9)
+            {
+                acc += 4;
+            }
+        }
+        y = (s16)obj->posY + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x44 - (s16)obj->posY) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
+
+        sysb = gSys;
+        queue = *(u8 **)(sysb + 0x880);
+        *(u16 *)(queue + 8) = ((y - 0x20) & 0xFF) | 0x300;
+        *(u16 *)queue = ((y - 0x20) & 0xFF) | 0x300;
+        *(u16 *)(queue + 0xA) = ((acc - 0x20) & 0x1FF) | (counter << 9) | 0xFFFF8000;
+        *(u16 *)(queue + 2) = ((acc - 0x20) & 0x1FF) | (counter << 9) | 0xFFFF8000;
+        *(u16 *)(queue + 4) = 0xB390;
+        *(u16 *)(queue + 0xC) = 0xB3A0;
+        *(u8 **)(sysb + 0x880) = queue + 0x10;
+        draw_digits_49_p11((s16)obj->unk16, (s16)obj->index + 8, (s16)obj->posY - 8, 0);
+    }
+}
+END_NONMATCH
