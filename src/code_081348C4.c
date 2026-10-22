@@ -565,6 +565,7 @@ s32 obj_step_toward_target_081350A0(struct AppearObj *obj)
 
 NONMATCH("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_speed(struct AppearObj *obj))
 {
+    s32 kc = 0x21;
     s32 r;
     s32 x;
     s32 y;
@@ -595,11 +596,11 @@ NONMATCH("asm/code_081348C4/obj_integrate_and_speed.s", void obj_integrate_and_s
     }
     obj->unk80 = r;
     flags = obj->unk79;
-    flags &= -0x21;
+    flags &= -kc;
     obj->unk79 = flags;
     obj->unk7C = 0;
-    ((struct Pair7A *)&obj->unk7A)->a = 0;
-    ((struct Pair7A *)&obj->unk7A)->b = 0x100;
+    obj->unk7A = 0;
+    obj->unk7E = 0x100;
 }
 END_NONMATCH
 
@@ -670,14 +671,14 @@ NONMATCH("asm/code_081348C4/item_attach_sprite_8.s", void item_attach_sprite_8(s
     sub->unk08 = create_obj_de4(p1, p2, p3, -1, -1, -1, -1);
     obj_load_record(sub->unk08, p4, -1, 0, 0);
     sprite_update_cd0(sub->unk08);
-    hi = p5 << 6;
     rec = (u8 *)sub->unk08;
+    hi = p5 << 6;
     t = rec[0x1F];
     t = (t & 0x3F) | hi;
-    p5 &= 3;
-    t = (t & -0x31) | (p5 << 4);
-    t = (t & -0xD) | (p5 << 2);
-    t = (t & -4) | p5;
+    p5 = (u8)p5 & 3;
+    t = (p5 << 4) | (t & ~0x30);
+    t = (p5 << 2) | (t & ~0xC);
+    t = p5 | (t & ~3);
     rec[0x1F] = t;
     ((struct FxRecE *)sub->unk08)->unkE = 0;
 }
@@ -944,6 +945,11 @@ NONMATCH("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct Anim
         if (z < gZoneTable[0])
         {
             t = gZoneTable[1];
+            if (sub->unk0C->unk21 != t)
+            {
+                item_load_record(sub->unk0C, t, -1, 0, 0);
+            }
+            sprite_update_cd0(sub->unk0C);
         }
         else
         {
@@ -964,14 +970,14 @@ NONMATCH("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct Anim
                     t = gZoneTable[5];
                 }
             }
-        }
-        if (zone != 3)
-        {
-            if (sub->unk0C->unk21 != t)
+            if (zone != 3)
             {
-                item_load_record(sub->unk0C, t, -1, 0, 0);
+                if (sub->unk0C->unk21 != t)
+                {
+                    item_load_record(sub->unk0C, t, -1, 0, 0);
+                }
+                sprite_update_cd0(sub->unk0C);
             }
-            sprite_update_cd0(sub->unk0C);
         }
         if (zone > 2)
         {
