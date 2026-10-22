@@ -362,7 +362,7 @@ void free_task_state(u8 *task, u32 arg)
 
 ASM_FUNC("asm/code_080F2448/task_update.s", void task_update(void))
 
-NONMATCH("asm/code_080F2448/task_slot_write.s", void task_slot_write(u8 *task, u8 slot_arg, u32 arg2))
+void task_slot_write(u8 *task, u8 slot_arg, u32 arg2)
 {
     u8 *slot_base;
     u8 *rec;
@@ -375,7 +375,8 @@ NONMATCH("asm/code_080F2448/task_slot_write.s", void task_slot_write(u8 *task, u
 
     slot_base = *(u8 **)(task + 0x2C) + (slot_arg << 8);
     rec = slot_base + 0x100;
-    args[0] = 1;
+    val_b = 1;
+    args[0] = val_b;
     args[1] = arg2;
     count = *(u16 *)(slot_base + 0x1A0);
     if (count != 0)
@@ -412,7 +413,6 @@ NONMATCH("asm/code_080F2448/task_slot_write.s", void task_slot_write(u8 *task, u
         cmd_reset_obj_part(task, *(u8 **)(task + 0x2C), args, slot_arg);
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_080F2448/task_tick_objects.s", void task_tick_objects(u8 *task))
 {
