@@ -122,8 +122,8 @@ void release_or_update_rec(struct StreamObj *obj);
 NONMATCH("asm/code_080E2024/fall_and_bounce.s", void fall_and_bounce(struct PosObj *obj, struct FallParams *params))
 {
     s32 y;
-    s32 vy;
-    u16 limit;
+    u16 vy;
+    s32 limit;
     s32 reversed;
 
     obj->x = obj->x + obj->vx;
@@ -156,16 +156,20 @@ END_NONMATCH
 
 NONMATCH("asm/code_080E2024/advance_z.s", void advance_z(struct PosObj *obj, struct FallParams *params))
 {
-    s32 vz = obj->vz;
-    obj->z += vz;
+    s32 z;
+    s32 vz;
+    vz = obj->vz;
+    z = obj->z;
+    z += vz;
+    obj->z = z;
     if (vz < 0)
     {
-        if (obj->z >= -32768)
+        if (z >= -32768)
         {
             return;
         }
     }
-    else if ((params->limit << 8) >= obj->z)
+    else if ((params->limit << 8) >= z)
     {
         return;
     }
@@ -275,10 +279,12 @@ u32 load_table_value(s32 *out, u32 index)
     return offset + (u32)table;
 }
 
-NONMATCH("asm/code_080E2024/update_scroll_shadows.s", void update_scroll_shadows(struct ScrollObj *obj))
+void update_scroll_shadows(struct ScrollObj *obj)
 {
     s32 x;
     s32 y;
+    s32 sx;
+    s32 sy;
     obj->posX = obj->posX + obj->speedX;
     obj->posY = obj->posY + obj->speedY;
     x = (s16)obj->posX;
@@ -286,17 +292,45 @@ NONMATCH("asm/code_080E2024/update_scroll_shadows.s", void update_scroll_shadows
     {
         x += 0xFF;
     }
-    gUnk_02000018 = x >> 8;
+    sx = x >> 8;
+    gUnk_02000018 = sx;
     y = (s16)obj->posY;
     if (y < 0)
     {
         y += 0xFF;
     }
-    gUnk_0200001A = y >> 8;
+    sy = y >> 8;
+    gUnk_0200001A = sy;
+}
+
+NONMATCH("asm/code_080E2024/dma_win0_from_buffer.s", void dma_win0_from_buffer(u32 arg0, u32 arg1, u32 arg2, u32 arg3))
+{
+    void *callback;
+    u32 bank;
+    u8 *draw;
+    u32 value;
+    vu32 *dma;
+    u32 win;
+    u8 *world;
+    callback = *(void **)(gWorld + 0x260);
+    ((void (*)(void *, u32, u32, u32))callback)(callback, 0x260, arg2, arg3);
+    dma = (vu32 *)REG_ADDR_DMA0SAD;
+    ((vu16 *)dma)[5] &= 0xC5FF;
+    ((vu16 *)dma)[5] &= 0x7FFF;
+    ((vu16 *)dma)[5];
+    world = gWorld;
+    bank = ((u32)*(u8 *)(world + 0xB) << 26) >> 31;
+    draw = gWorkBuf;
+    dma[0] = ((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)draw;
+    win = REG_ADDR_WIN0H;
+    dma[1] = win;
+    dma[2] = 0xA6600001;
+    dma[2];
+    bank = ((u32)*(u8 *)(world + 0xB) << 26) >> 31;
+    value = *(u32 *)(((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)draw);
+    *(vu32 *)win = value;
 }
 END_NONMATCH
-
-ASM_FUNC("asm/code_080E2024/dma_win0_from_buffer.s", void dma_win0_from_buffer(void))
 
 void release_or_update_rec(struct StreamObj *obj)
 {
@@ -396,4 +430,30 @@ struct CellObj *unknown_thumb_080e3738(struct CellObj *obj, u32 kind, u32 data, 
     return obj;
 }
 
-ASM_FUNC("asm/code_080E2024/sub_080E377C.s", void sub_080E377C(void))
+NONMATCH("asm/code_080E2024/sub_080E377C.s", void sub_080E377C(void))
+{
+    u16 *shadow;
+    s32 i;
+    u8 *sys;
+    u8 *base;
+    u32 off;
+
+    shadow = &gUnk_0200000C;
+    *shadow = 0x1E04;
+    shadow += 6;
+    *shadow = 0;
+    shadow = (u16 *)((u32)shadow + 2);
+    *shadow = 8;
+    for (i = 0; i < 0x150; i++)
+    {
+        off = i * 4;
+        base = gWorkBuf + 0x5470;
+        *(u32 *)(base + off) = gTileBlock5x2Table[i] + 0x80008000;
+    }
+    dma_copy_or_queue(gWorkBuf + 0x5470, (void *)0x0600F000, 0x540, 0x20, 0);
+    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gPaletteGrayPink, gUnk_02000180, 0x20);
+    sys = gSys;
+    *(u16 *)(sys + 2) = 0xFFFF;
+    *(s32 *)(sys + 0x884) = -1;
+}
+END_NONMATCH
