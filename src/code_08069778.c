@@ -190,7 +190,7 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
-NONMATCH("asm/code_08069778/actor_land_and_move.s", void actor_land_and_move(struct ActorObj *obj))
+void actor_land_and_move(struct ActorObj *obj)
 {
     obj->posH += obj->paramA4;
     obj->paramA4 -= obj->paramA8;
@@ -202,13 +202,14 @@ NONMATCH("asm/code_08069778/actor_land_and_move.s", void actor_land_and_move(str
         {
             obj->targetX = obj->owner->part->targetX + (obj->param9C << 8);
             obj->targetY = obj->owner->part->targetY;
+            obj->motionSpeed = 0x100;
         }
         else
         {
             obj->targetX = obj->param9C;
             obj->targetY = obj->paramA0;
+            obj->motionSpeed = 0x100;
         }
-        obj->motionSpeed = 0x100;
         obj->targetH = obj->baseH;
         ((struct ActorFlags79Bits *)&obj->flags79)->bit5 = 1;
         obj->motionStart = 0;
@@ -221,7 +222,6 @@ NONMATCH("asm/code_08069778/actor_land_and_move.s", void actor_land_and_move(str
             set_slot_value(0x81, -1);
     }
 }
-END_NONMATCH
 
 void actor_start_motion_wait(struct ActorObj *obj)
 {
