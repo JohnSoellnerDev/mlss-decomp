@@ -219,7 +219,71 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080E5590/clip_edges_to_lines.s", void clip_edges_to_lines(void))
 
-ASM_FUNC("asm/code_080E5590/fill_iris_spans.s", void fill_iris_spans(void))
+NONMATCH("asm/code_080E5590/fill_iris_spans.s", void fill_iris_spans(s32 cx, s32 cy, s32 scale, s32 radius))
+{
+    s32 y;
+    s32 radSq;
+    s32 rcp;
+    s32 dy;
+    s32 dySq;
+    s32 t;
+    s32 frac;
+    s32 h;
+    s32 w;
+    s32 half;
+    s32 left;
+    s32 right;
+    u8 *line;
+
+    line = (u8 *)gUnk_03000F94 + ((gUnk_03000F98 * 5) << 7);
+    MEM_ROUTINE(void (*)(u32, void *, u32), iwram_fill)(0xFFFFFFFF, line, 0x280);
+    radSq = radius * radius;
+    rcp = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x40000000, radSq);
+    for (y = 0; y < 160; y++)
+    {
+        dy = y - cy;
+        dySq = dy * dy;
+        if (dySq < radSq)
+        {
+            t = dySq * rcp;
+            if (t < 0)
+            {
+                t += 0xFFFF;
+            }
+            frac = t >> 16;
+            h = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(0x4000 - frac);
+            w = scale * h;
+            if (w < 0)
+            {
+                w += 0x7F;
+            }
+            half = w >> 7;
+            left = cx - half;
+            if (left <= 239)
+            {
+                if (left < 0)
+                {
+                    line[1] = 0;
+                }
+                else
+                {
+                    line[1] = left;
+                }
+                right = cx + half;
+                if (right < 0)
+                {
+                    line[0] = 0;
+                }
+                if (right <= 239)
+                {
+                    line[0] = right;
+                }
+            }
+        }
+        line += 4;
+    }
+}
+END_NONMATCH
 
 u32 start_window_buffer(s32 mode, u32 fill)
 {
@@ -410,7 +474,50 @@ struct TextHolder *init_text_obj(struct TextHolder *holder, u32 arg1, u32 size, 
     return holder;
 }
 
-ASM_FUNC("asm/code_080E5590/release_obj_parts.s", void release_obj_parts(void))
+static inline void release_part_sound(u8 *part)
+{
+    if ((u8)sound_is_playing(gTextModeTable[*part >> 5]))
+    {
+        sound_stop_song(gTextModeTable[*part >> 5]);
+    }
+}
+
+NONMATCH("asm/code_080E5590/release_obj_parts.s", void release_obj_parts(struct TextHolder *holder, u32 keep))
+{
+    struct TextObj *obj;
+    u8 *base;
+    s32 index;
+
+    if (holder->records != 0)
+    {
+        free_text_pair(holder->records, 3);
+    }
+    holder->records = 0;
+    obj = holder->obj;
+    if (obj != 0)
+    {
+        index = 0;
+        base = (u8 *)obj;
+        for (; index < 5; index++, base += 0x4C)
+        {
+            if (((((u8)(holder->obj->flags1B2 >> index)) ^ 1) & 1) == 0)
+            {
+                release_part_sound(base + 0x41);
+            }
+        }
+        if (holder->obj->textBlock != 0)
+        {
+            heap_free(holder->obj->textBlock);
+        }
+        heap_free(holder->obj);
+        holder->obj = 0;
+    }
+    if (keep & 1)
+    {
+        heap_free_b(holder);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E5590/flags_vars_setup_bg_layer.s", void flags_vars_setup_bg_layer(void))
 
