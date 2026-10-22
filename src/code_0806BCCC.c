@@ -304,7 +304,8 @@ NONMATCH("asm/code_0806BCCC/actor_side_action_timer8_child.s", void actor_side_a
     s32 action;
     u32 t;
 
-    if (obj->pose->flags & (t = 8))
+    t = 8;
+    if (obj->pose->flags & 8)
     {
         if (obj->paramA8 == 0)
         {
