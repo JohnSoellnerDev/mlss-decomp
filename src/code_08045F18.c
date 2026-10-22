@@ -272,9 +272,9 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046AA4.s", u32 obj_set_motion_a_0
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
-    s32 keepMask = 0x3F;
+    u32 *targetp;
     u32 target;
     u16 spd;
     s32 now;
@@ -297,29 +297,35 @@ NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct Fie
         target = value;
     }
     obj->axisBCur = obj->sub->h06;
-    obj->axisBTarget = target;
+    targetp = &target;
+    obj->axisBTarget = *targetp;
     now = (s16)obj->axisBCur;
     goal = (s16)target;
     if (now == goal)
+    {
         return 0;
+    }
     if (mode == 1)
     {
-        step = speed;
+        step = spd;
         if (now >= goal)
-            step = -speed;
+        {
+            step = -spd;
+        }
         obj->axisBStep = step;
     }
     else
     {
-        obj->axisBSpeed = spd;
+        obj->axisBSpeed = speed;
     }
     obj->axisBCount = 0;
     flags = &obj->moveFlags2B5;
     bits = mode << 6;
-    *flags = (*flags & keepMask) | bits;
+    spd = *flags & 0x3F;
+    *flags = *flags;
+    *flags = spd | bits;
     return 1;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
 {
