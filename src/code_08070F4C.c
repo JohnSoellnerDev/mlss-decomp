@@ -175,4 +175,19 @@ void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void anim_bit1_chance(void *part, u32 chance);
 u32 query_or_arm_wait(struct WaveObj *obj);
 
-ASM_FUNC("asm/code_08070F4C/obj_fall_to_ground.s", void obj_fall_to_ground(struct WaveObj *obj))
+void obj_fall_to_ground(struct WaveObj *obj)
+{
+    s32 x;
+
+    obj->param4 += 0x1CC;
+    x = obj->counter - obj->param4;
+    obj->x = x;
+    obj->y = obj->param0 + (obj->targetY * obj->param4) / obj->targetX;
+    if ((x / 0x100) <= -0x20)
+    {
+        sound_stop_song(0x11C);
+        obj->x = 0x12C00;
+        obj->y = obj->part->targetY;
+        obj->state = actor_wave_steps;
+    }
+}
