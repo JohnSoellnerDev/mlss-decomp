@@ -28,7 +28,8 @@ struct Rec
       struct Pose *pose10;
       u8 filler14[0x38 - 0x14];
       struct Actor *field38;
-          u8 filler3C[0x4C - 0x3C];
+          u8 filler3C[0x48 - 0x3C];
+      s32 unk48;
       void (*state)(struct Actor *);
       u8 filler50[0x78 - 0x50];
       u16 arrive78;
@@ -75,11 +76,14 @@ struct CandMgr
     u8 status08;
     u8 filler09[0xC - 0x9];
     u8 flags0C;
-    u8 filler0D[0x70 - 0x0D];
+    u8 filler0D[0x58 - 0x0D];
+    struct Rec *slotTab[6];
     struct Rec *candA;
     struct Rec *candB;
           struct Rec *list78;
       struct Rec *cand7C;
+    u8 filler80[0x84 - 0x80];
+    s32 unk84;
 };
 
 struct Actor
@@ -465,7 +469,60 @@ s32 obj_stop(struct Actor *obj)
 
 void obj_track_target(struct Actor *obj);
 void start_placement(struct Actor *obj);
-ASM_FUNC("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(void))
+void obj_place_start(struct Actor *obj);
+NONMATCH("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(struct Actor *obj))
+{
+    s16 *slotp = &obj->data->slot;
+    struct Rec *candA;
+    struct Rec *candB;
+    struct Rec *callArg;
+
+    if (*slotp == -1)
+    {
+        if (gWorld->unk84 != 0)
+            candA = gWorld->slotTab[*slotp + 8];
+        else
+            candA = NULL;
+        candB = obj->data;
+    }
+    else
+    {
+        candA = obj->data;
+        if (gWorld->unk84 != 0)
+            candB = gWorld->slotTab[*slotp + 8];
+        else
+            candB = NULL;
+    }
+    if (obj->data == candB)
+    {
+        if ((candA->flags7E & 6) != 2)
+            goto end;
+        if (candA->unk48 > 0)
+        {
+            if (gWorld->flags0C & 0x40)
+                ((struct Actor *)((u8 *)candA + 8))->state = start_placement;
+            goto end;
+        }
+        callArg = candA;
+    }
+    else
+    {
+        if ((candB->flags7E & 6) != 2)
+            goto end;
+        if (candB->unk48 > 0)
+        {
+            if (gWorld->flags0C & 0x40)
+                ((struct Actor *)((u8 *)candB + 8))->state = start_placement;
+            goto end;
+        }
+        callArg = candB;
+    }
+    obj_track_target((struct Actor *)((u8 *)callArg + 8));
+end:
+    ((struct PoseFlags11 *)&gWorld->flags0C)->bit6 = 0;
+    obj->state = obj_place_start;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080865F8/effect_from_table_obj.s", struct Actor *effect_from_table_obj(struct Actor *obj, s32 code))
 {
