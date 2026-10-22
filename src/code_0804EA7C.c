@@ -1,5 +1,18 @@
 #include "global.h"
 
+struct HalfBit4
+{
+    u16 lo : 4;
+    u16 bit4 : 1;
+    u16 hi : 11;
+};
+
+struct HalfBit0
+{
+    u16 bit0 : 1;
+    u16 hi : 15;
+};
+
 struct Lo3Bits
 {
     u8 lo3 : 3;
@@ -497,14 +510,14 @@ NONMATCH("asm/code_0804EA7C/obj_refresh_child_sprite.s", void obj_refresh_child_
 {
     struct VtEntry *e;
 
-    *((u8 *)obj + 0x20C) &= -2;
+    ((struct HalfBit0 *)&*((u8 *)obj + 0x20C))->bit0 = 0;
     ((struct Bits33C *)((u8 *)obj + 0x33C))->mid12 = 1;
-    obj->sprite294->unk12 |= 0x10;
+    ((struct HalfBit4 *)&obj->sprite294->unk12)->bit4 = 1;
     e = &obj->vtable338->e80;
     e->fn((u8 *)obj + e->off, 2);
     if (obj->child344 != 0 && (obj->child344->unk20F & 2) != 0) {
-        *((u8 *)obj->child344 + 0x20C) &= -2;
-        obj->child344->sprite294->unk12 |= 0x10;
+        ((struct HalfBit0 *)&*((u8 *)obj->child344 + 0x20C))->bit0 = 0;
+        ((struct HalfBit4 *)&obj->child344->sprite294->unk12)->bit4 = 1;
         e = &obj->child344->vtable338->e80;
         e->fn((u8 *)obj->child344 + e->off, 2);
     }
