@@ -319,15 +319,15 @@ void obj_init_fields_8c_load(u8 *obj, u32 a1, u16 a2)
         obj_load_record(*(void **)(obj + 0x10), 0x10, 0, 0, zero);
 }
 
-NONMATCH("asm/code_0816AFFC/child_states_obj_orbit_step.s", void child_states_obj_orbit_step(u8 *obj))
+void child_states_obj_orbit_step(u8 *obj)
 {
+    u8 zero = 0;
     s32 sinv;
     s32 cosv;
     s32 x;
     s32 y;
     u32 idx;
     const s16 *sineTab;
-    u8 zero;
 
     if (obj_is_done(obj))
     {
@@ -341,10 +341,9 @@ NONMATCH("asm/code_0816AFFC/child_states_obj_orbit_step.s", void child_states_ob
         if (cosv < 0)
             cosv += 0x3F;
         y = *(s32 *)(obj + 0x74) + (cosv >> 6) * *(s32 *)(obj + 0x84);
-        obj_setup_slot(obj, x, 0, y, 0x16, zero = 0);
+        obj_setup_slot(obj, x, 0, y, 0x16, zero);
     }
 }
-END_NONMATCH
 
 void obj_destroy_eba8(u8 *obj, u32 flags)
 {
@@ -352,7 +351,29 @@ void obj_destroy_eba8(u8 *obj, u32 flags)
     obj_destroy_sprites(obj, flags);
 }
 
-ASM_FUNC("asm/code_0816AFFC/obj_near_mark.s", void obj_near_mark(void))
+NONMATCH("asm/code_0816AFFC/obj_near_mark.s", u32 obj_near_mark(u8 *obj, u8 *other))
+{
+    u16 *flags;
+    s32 one;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+
+    one = 1;
+    flags = (u16 *)(other + 0x6C);
+    if ((*flags & one) != 0)
+        return 0;
+    dx = *(s32 *)(obj + 0x18) - *(s32 *)(other + 0x18);
+    dy = *(s32 *)(obj + 0x20) - *(s32 *)(other + 0x20);
+    dist = (dx * dx + dy * dy) >> 8;
+    if (dist > 0x8FFF)
+        return 0;
+    set_slot_value(0x37, -1);
+    *flags = *flags | one;
+    *(u32 *)(obj + 0x6C) = 6;
+    return 1;
+}
+END_NONMATCH
 
 void obj_set_speed_from(u8 *obj, u8 *other)
 {
