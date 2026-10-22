@@ -163,6 +163,11 @@ struct Hero
 
 extern struct World *gWorld;
 
+static inline void *focus_obj(void)
+{
+    return gWorld->focus;
+}
+
 void on_arrive(struct HeroBody *body);
 void obj_list_push_default(struct HeroBody *body);
 void task_create_list_48(void (*fn)(), struct HeroBody *body);
@@ -808,10 +813,9 @@ void draw_if_visible(struct HeroBody *body)
         obj_release(body);
 }
 
-NONMATCH("asm/code_0809A420/follow_focus_then_pose.s", void follow_focus_then_pose(struct HeroBody *body))
+void follow_focus_then_pose(struct HeroBody *body)
 {
-    struct World **pworld = &gWorld;
-    struct World *world = *pworld;
+    struct World *world = gWorld;
     u8 *pick = body->unk34;
 
     if (body->data->effect != 0)
@@ -819,7 +823,7 @@ NONMATCH("asm/code_0809A420/follow_focus_then_pose.s", void follow_focus_then_po
         u8 offX = pick[1];
         u8 offY = pick[2];
         s32 x = (s16)obj_last_x(world->focus) + offX;
-        s32 y = (s16)obj_last_y((*pworld)->focus) + offY;
+        s32 y = (s16)obj_last_y(focus_obj()) + offY;
 
         place_targets(body, x, y, 0, -1);
         set_motion_start(body, 0);
@@ -827,7 +831,6 @@ NONMATCH("asm/code_0809A420/follow_focus_then_pose.s", void follow_focus_then_po
     set_motion_start(body, pick[0] << 2);
     body->state = seek_hero;
 }
-END_NONMATCH
 
 
 void hide_and_reset_slot(struct HeroBody *body)
