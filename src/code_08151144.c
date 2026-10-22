@@ -551,9 +551,122 @@ void obj_run_callbacks(void)
     run_pending_obj_callbacks();
 }
 
-ASM_FUNC("asm/code_08151144/obj_init_table.s", u32 obj_init_table(void))
+void *heap_alloc(u32 size, u32 pool, const void *tag, u32 flags);
+extern const u8 gHeapTagObjTableBuf[];
 
-ASM_FUNC("asm/code_08151144/cam_update.s", void cam_update(void))
+NONMATCH("asm/code_08151144/obj_init_table.s", struct Obj *obj_init_table(struct Obj *obj))
+{
+    s32 col;
+    s32 j;
+    u16 *row;
+    u8 *buf;
+
+    obj->posX = 0;
+    obj->posY = 0;
+    obj->x = 0;
+    obj->y = 0xFFFF9C00;
+    *(u16 *)&obj->z = 0;
+    obj->field18.vy = 0;
+    obj->count = 0;
+    obj->unk20 = 0;
+    *(u16 *)&obj->unk24 = 0;
+    obj->field28.sub28 = 0;
+    obj->flags = 0;
+    obj->field30.radius = 0x50;
+    obj->base = 0x10000;
+    obj->unk40 = 0;
+    obj->value = 0x10000;
+    buf = heap_alloc(0x1C8, 1, gHeapTagObjTableBuf, 0);
+    obj->rows = buf;
+    col = 0x9F;
+    row = (u16 *)(buf + 0x13E);
+    do
+    {
+        for (j = 0; j < 10; j++)
+        {
+            *row = 0xEF;
+            row--;
+        }
+        col -= 10;
+    } while (col >= 0);
+    return obj;
+}
+END_NONMATCH
+
+
+
+
+struct SysKeys28
+{
+    u8 filler0[0x28];
+    u16 keys;
+};
+
+extern u16 gUnk_02000052;
+
+NONMATCH("asm/code_08151144/cam_update.s", void cam_update(struct Obj *cam))
+{
+    u8 *sys;
+    u16 held;
+    s32 flags;
+    s32 fadeBits;
+    s32 t;
+
+    sys = gSys;
+    if ((((struct SysKeys28 *)sys)->keys & 0x10) != 0)
+    {
+        cam->x += 0x400;
+    }
+    held = ((struct SysKeys28 *)sys)->keys;
+    if ((held & 0x20) != 0)
+    {
+        cam->x -= 0x400;
+    }
+    if ((held & 0x80) != 0)
+    {
+        cam->y += 0x400;
+    }
+    if ((held & 0x40) != 0)
+    {
+        cam->y -= 0x400;
+    }
+    flags = cam->flags;
+    if ((flags & 1) != 0)
+    {
+        if ((flags & 8) != 0)
+        {
+            fadeBits = (s16)(flags & 4);
+            if (fadeBits != 0)
+            {
+                cam->base += cam->steps;
+                if (cam->base >= cam->value)
+                {
+                    cam->base = cam->value;
+                    cam->flags = flags & -5;
+                }
+            }
+            else
+            {
+                cam->base -= 0x20;
+                if (cam->base < 0)
+                {
+                    cam->base = fadeBits;
+                }
+            }
+            t = cam->base;
+            if (t < 0)
+            {
+                t += 0xFFF;
+            }
+            gUnk_02000052 = ((t >> 12) + 1) << 8 | 8;
+        }
+    }
+}
+END_NONMATCH
+
+
+
+
 
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 
@@ -864,9 +977,64 @@ void sync_script_vars(void)
 
 ASM_FUNC("asm/code_08151144/hblank_iris_window.s", void hblank_iris_window(void))
 
-ASM_FUNC("asm/code_08151144/hitboxes_overlap.s", void hitboxes_overlap(void))
 
-u32 obj_init_table(void);
+NONMATCH("asm/code_08151144/hitboxes_overlap.s", u32 hitboxes_overlap(struct Obj *a, struct Obj *b))
+{
+    s32 hwA;
+    s32 hhA;
+    s32 hwB;
+    s32 hhB;
+    s32 d;
+    u32 dx;
+    s32 ta;
+    s32 tb;
+    u32 dy;
+
+    hwA = a->field28.half.halfW >> 1;
+    hhA = a->field28.half.halfH >> 1;
+    hwB = b->field28.half.halfW >> 1;
+    hhB = b->field28.half.halfH >> 1;
+    if (a->posX > b->posX)
+    {
+        dx = ((u32)(a->posX - b->posX) << 8) >> 16;
+    }
+    else if (a->posX < b->posX)
+    {
+        dx = ((u32)(b->posX - a->posX) << 8) >> 16;
+    }
+    else
+    {
+        dx = 0;
+    }
+    ta = (s16)((a->posY >> 8) - hhA);
+    tb = (s16)((b->posY >> 8) - hhB);
+    if (ta > tb)
+    {
+        d = ta - tb;
+    }
+    else if (ta < tb)
+    {
+        d = tb - ta;
+    }
+    else
+    {
+        d = 0;
+    }
+    dy = (u16)d;
+    if ((s16)dx > hwA + hwB)
+    {
+        return 0;
+    }
+    if ((s16)dy > hhA + hhB)
+    {
+        return 0;
+    }
+    return 1;
+}
+END_NONMATCH
+
+
+
 ASM_FUNC("asm/code_08151144/scene_init_display.s", void *scene_init_display(void *obj, u32 kind, const void *table))
 
 struct SysHalf2
