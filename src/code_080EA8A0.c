@@ -1378,11 +1378,10 @@ u32 set_obj_word0_saved(void *ctx, struct ScriptObj *obj, u32 *rec)
     return 1;
 }
 
-NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ctx, struct ScriptObj *obj))
+u32 restore_obj_word0(void *ctx, struct ScriptObj *obj)
 {
-    u32 saved;
+    u32 saved = obj->word10;
 
-    saved = obj->word10;
     if (saved == 0)
     {
         obj->word4 = obj->word0;
@@ -1392,9 +1391,15 @@ NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ct
         obj->word0 = saved;
         obj->word10 = 0;
     }
-    return 1;
+    if (saved)
+    {
+        return 1;
+    }
+    else
+    {
+        return 1;
+    }
 }
-END_NONMATCH
 
 u32 reset_cursor(void *ctx, struct ScriptObj *obj)
 {
