@@ -141,8 +141,7 @@ NONMATCH("asm/code_080F5884/cmd_slot_link_list.s", u32 cmd_slot_link_list(u32 un
         f = *flags;
         bit = (((u32)f << 29) >> 31) << 3;
         f = (f & -9) | bit;
-        f = f | 4;
-        *flags = f;
+        *flags = f | 4;
         effect_spawn_at(*cursor, *(s32 *)(obj + 0x38) / 0x100, *(s32 *)(obj + 0x3C) / 0x100,
                         *(s32 *)(obj + 0x40) / 0x100, obj);
         break;
@@ -333,9 +332,11 @@ NONMATCH("asm/code_080F5884/cmd_slot_set_bits.s", u32 cmd_slot_set_bits(u32 unus
     {
         u8 *ptr;
         s32 mask;
+        u8 *f80;
 
+        f80 = cur + 0x80;
         mask = -0x11;
-        cur[0x80] = cur[0x80] & mask;
+        *f80 = *f80 & mask;
         ptr = *(u8 **)(cur + 0x10);
         if (ptr != 0)
         {
@@ -398,14 +399,12 @@ NONMATCH("asm/code_080F5884/cmd_slot_set_bit_pair.s", u32 cmd_slot_set_bit_pair(
     {
         s32 flags;
         s32 both;
-        s32 hi;
         s32 lo;
 
         both = w1 & mode;
         p += 0x80;
-        hi = both << 2;
         flags = *p;
-        flags = (flags & -5) | hi;
+        flags = (flags & -5) | (both << 2);
         lo = both << 3;
         flags = (flags & -9) | lo;
         *p = flags;
