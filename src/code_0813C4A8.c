@@ -586,7 +586,7 @@ void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out);
 void pair_div256(s32 *dst, s32 *src);
 void pair_shl8(s32 *dst, s32 *src);
 void move_handler_timed_settle(void);
-NONMATCH("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struct Owner *owner, struct Actor *obj, void **out))
+void pick_active_target(struct Owner *owner, struct Actor *obj, void **out)
 {
     u8 idx[4];
     s16 box[8];
@@ -610,30 +610,10 @@ NONMATCH("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struc
     pair_div256(pair, pair);
     qx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posX, 0x100);
     qy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posY, 0x100);
-    {
-        s32 t = pair[0];
-        if (t > 0)
-            t = 0;
-        box[0] = t + qx - 0x10;
-    }
-    {
-        s32 t = pair[1];
-        if (t > 0)
-            t = 0;
-        box[3] = t + qy - 0x10;
-    }
-    {
-        s32 t = pair[0];
-        if (t < 0)
-            t = 0;
-        box[1] = t + qx + 0x10;
-    }
-    {
-        s32 t = pair[1];
-        if (t < 0)
-            t = 0;
-        box[2] = t + qy + 0x10;
-    }
+    box[0] = (pair[0] > 0 ? 0 : pair[0]) + qx - 0x10;
+    box[3] = (pair[1] > 0 ? 0 : pair[1]) + qy - 0x10;
+    box[1] = (pair[0] < 0 ? 0 : pair[0]) + qx + 0x10;
+    box[2] = (pair[1] < 0 ? 0 : pair[1]) + qy + 0x10;
     if (point_in_box(box, partner, 0x7FFF, 0) != 0)
     {
         roll = rand_below(0x64, mt19937_next());
@@ -671,7 +651,6 @@ NONMATCH("asm/code_0813C4A8/pick_active_target.s", void pick_active_target(struc
     *out = (void *)move_handler_timed_settle;
     sub->collide = (void *)active_hit_state;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0813C4A8/step_toward.s", void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out))
 
@@ -1106,6 +1085,7 @@ NONMATCH("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct 
     s32 heading;
     s16 *sensor;
     s32 v;
+    s16 *bp;
     s8 *rect;
     void **handler;
 
@@ -1134,14 +1114,15 @@ NONMATCH("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct 
     {
         sensor = sub->sensor;
         partner = *(struct Actor **)((u8 *)owner + 0x28 + (idx[0] << 2));
+        bp = box;
         v = sensor[4];
-        box[0] = (v << 4) + 8;
+        bp[0] = (v << 4) + 8;
         v = sensor[5];
-        box[3] = (v << 4) + 8;
+        bp[3] = (v << 4) + 8;
         v = sensor[6];
-        box[1] = (v << 4) + 8;
+        bp[1] = (v << 4) + 8;
         v = sensor[7];
-        box[2] = (v << 4) + 8;
+        bp[2] = (v << 4) + 8;
         ((struct ModeBits *)&ent->mode)->mode = 3;
         if (point_in_box(box, partner, 0x7FFF, 0) != 0)
         {
