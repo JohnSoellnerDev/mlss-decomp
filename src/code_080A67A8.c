@@ -155,7 +155,105 @@ void enter_finish_rebuild(struct HeroBody *body);
 void sprite_entry_update(struct HeroNode *node);
 void hero_b_drop_node_702c(struct HeroBody *body);
 void hero_b_drop_node_6c40(struct HeroBody *body);
+void hero_b_node_input_step_b_6a3c(struct HeroBody *body);
+void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
-ASM_FUNC("asm/code_080A67A8/hero_b_node_input_step_67a8.s", void hero_b_node_input_step_67a8(void))
+extern u8 gSys[];
 
-ASM_FUNC("asm/code_080A67A8/hero_b_node_input_step_b_6a3c.s", void hero_b_node_input_step_b_6a3c(void))
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
+struct NodeBits12
+{
+    u8 filler0[0x12];
+    u8 lo3 : 3;
+    u8 hi5 : 5;
+};
+
+static inline void world_mode_bits_set_2(void)
+{
+    u32 mode = gWorld->mode;
+    gWorld->mode = (mode & ~0x30) | ((((mode << 26) >> 30) | 2) << 4);
+}
+
+NONMATCH("asm/code_080A67A8/hero_b_node_input_step_67a8.s", void hero_b_node_input_step_67a8(struct HeroBody *body))
+{
+    struct Hero *hero;
+    struct HeroBody *hb;
+    struct HeroNode *node;
+    u16 *timer;
+    s32 stepOne;
+    s32 ready;
+    s32 limit;
+    s32 lo;
+    s32 hi;
+    void (*fn)(struct HeroBody *);
+
+    hero = gWorld->heroB;
+    hb = &hero->body;
+    stepOne = 0x4000;
+    state_stack_advance_progress(hb);
+    node = hb->node;
+    sprite_entry_update(node);
+    node->x = hb->sprite->unk0 + 0x14;
+    node->y = hb->sprite->unk2 - 0xE;
+    node->z = hb->sprite->unkE - 1;
+    if (hero->body.progress < stepOne)
+        ((struct HeroFlagBits *)&hero->body.flags)->active = 0;
+    timer = &hero->body.timer;
+    if ((*timer >> 12) == 0) {
+        ready = hero->body.progress >= 0 && hero->body.step <= stepOne;
+        timer = &hb->timer;
+        if (ready && (((struct SysKeys3E *)gSys)->keys & 2))
+            *timer = (*timer & 0xFFF) | 0x2000;
+        if ((*timer >> 12) == 0) {
+            limit = stepOne;
+            if (limit > 0x7FFF)
+                limit = 0x7FFF;
+            if (hero->body.step <= limit && hero->body.progress >= limit) {
+                world_mode_bits_set_2();
+                *timer = (*timer & 0xFFF) | 0x1000;
+            } else if (hero->body.progress <= stepOne && (((struct SysKeys3E *)gSys)->keys & 3)) {
+                world_mode_bits_set_2();
+                if ((((u32)gWorld->mode << 28) >> 30 & ~2) == 0)
+                    *timer = (*timer & 0xFFF) | 0x1000;
+            }
+        }
+    }
+    if ((*timer >> 12) != 0) {
+        lo = 0;
+        hi = stepOne;
+        if (lo > 0x4000)
+            lo = 0x4000;
+        if (hi > 0x7FFF)
+            hi = 0x7FFF;
+        if (hi < lo)
+            lo = hi;
+        if (hb->progress >= lo && hb->step <= hi && (*timer >> 12) > 1) {
+            *timer = *timer & 0xFFF;
+            fn = hero_b_drop_node_6c40;
+            body->state = fn;
+            fn(body);
+            return;
+        }
+    }
+    if (!(hb->flags & 0x20))
+        return;
+    set_slot_value(0x156, -1);
+    node = hb->node;
+    obj_load_record(node, 1, -1, 0, 0);
+    ((struct NodeBits12 *)node)->lo3 = 0;
+    if ((hb->mode & 6) == 2 || (hb->mode & 6) == 4) {
+        hb->rate = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x4000, 0x78);
+        hb->progress = 0;
+        ((struct HeroFlagBits *)&hb->flags)->active = 0;
+    }
+    *timer = *timer & 0xFFF;
+    body->state = hero_b_node_input_step_b_6a3c;
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_080A67A8/hero_b_node_input_step_b_6a3c.s", void hero_b_node_input_step_b_6a3c(struct HeroBody *body))
