@@ -85,6 +85,13 @@ struct NodeCopy
 extern struct ObjListHead gUnk_0203FFB8;
 void heap_free(void *p);
 extern u16 gUnk_0203FFC4[];
+extern struct BlockRec gUnk_0203FFA8;
+extern void *gModelCtx;
+extern u8 *gMemRoutines;
+extern const u8 gHeapTagSpriteNodes[];
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void setup_sprite_buffers(u32 a3);
+void init_node_list(struct NodeRec *node, u32 count);
 
 struct ObjFlags12
 {
@@ -187,7 +194,25 @@ void init_node_flags(struct NodeRec *node, s32 count)
     }
 }
 
-ASM_FUNC("asm/code_08020798/init_node_list.s", void init_node_list(struct NodeRec *node, u32 count))
+NONMATCH("asm/code_08020798/init_node_list.s", void init_node_list(struct NodeRec *node, u32 count))
+{
+    struct NodeRec *prev = NULL;
+    struct NodeRec *next;
+
+    while (count != 0)
+    {
+        node->unk6 = 1;
+        node->key = -1;
+        node->prev = prev;
+        next = node + 1;
+        node->next = next;
+        prev = node;
+        count--;
+        node = next;
+    }
+    (node - 1)->next = NULL;
+}
+END_NONMATCH
 
 extern u8 gSys[];
 extern u32 gUnk_03000D48;
@@ -236,7 +261,32 @@ void release_timers_0908(void)
     gUnk_03000D70 = 0;
 }
 
-ASM_FUNC("asm/code_08020798/init_obj_09a8.s", void init_obj_09a8(void))
+NONMATCH("asm/code_08020798/init_obj_09a8.s", void init_obj_09a8(u16 a0, u8 a1, u8 a2, u8 a3))
+{
+    struct ObjListHead *obj = &gUnk_0203FFB8;
+    struct BlockRec *aux = &gUnk_0203FFA8;
+    s32 i;
+
+    gModelCtx = obj;
+    aux->next = NULL;
+    aux->prev = NULL;
+    aux->size = 0x0003FFB8;
+    aux->kind = 0;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, obj, 0x40);
+    obj->unk0A = a0;
+    obj->rangeEnd = a0;
+    obj->unk04 = a1;
+    obj->unk03 = a1;
+    obj->unk06 = a2;
+    obj->unk05 = a2;
+    obj->firstBlock = aux;
+    for (i = 0; i < 16; i++)
+        obj->slots0C[i] |= -1;
+    obj->buf3C = heap_alloc(0xA28, ((u32)a3 >> 7) ^ 1, gHeapTagSpriteNodes, 0);
+    setup_sprite_buffers(a3);
+    init_node_list(obj->buf3C, 0x82);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08020798/obj_list_pass_0a8c.s", void obj_list_pass_0a8c(void))
 
