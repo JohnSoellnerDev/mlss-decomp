@@ -74,7 +74,7 @@ struct MapObj
     s32 param9C;
     s32 radius;
     s32 wait;
-    s32 angle;
+    u16 *layerBuf;
     u16 timer;
     s16 dx;
     s16 dy;
@@ -126,6 +126,8 @@ extern const struct AreaEntry gAreaEntryTable[];
 extern u8 gUnk_03000DD0[];
 extern const u32 gObjectTilesets[];
 extern const u8 gMapObjLoaderClass[];
+extern const u16 gTblMapLayers[];
+extern const u32 gLayerSets[];
 extern const s16 gCosineTable[];
 extern const s16 gSineTable[];
 
@@ -139,4 +141,24 @@ void map_view_load_map_state(struct MapObj *obj, u16 sel)
     *(struct Block24 *)gUnk_03000DD0 = *(struct Block24 *)&gAreaEntryTable[sel];
 }
 
-ASM_FUNC("asm/code_0805E118/load_layer12_tiles.s", void load_layer12_tiles(struct MapObj *obj, u32 unused))
+NONMATCH("asm/code_0805E118/load_layer12_tiles.s", void load_layer12_tiles(struct MapObj *obj, u32 unused))
+{
+    u16 i;
+    u8 map;
+    u8 *base;
+    u16 *src;
+
+    base = (u8 *)gLayerSets;
+    map = gUnk_03000DD0[4];
+    src = (u16 *)(base + gLayerSets[*(u16 *)((u8 *)gTblMapLayers + map * 4)]);
+    for (i = 0; i <= 0x7FF; i++)
+    {
+        obj->layerBuf[i] = src[i];
+    }
+    src = (u16 *)(base + gLayerSets[*(u16 *)((u8 *)gTblMapLayers + map * 4 + 2)]);
+    for (i = 0; i <= 0x7FF; i++)
+    {
+        obj->layerBuf[0x800 + i] = src[i];
+    }
+}
+END_NONMATCH
