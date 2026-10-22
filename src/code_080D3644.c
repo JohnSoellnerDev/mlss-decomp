@@ -293,6 +293,12 @@ u32 hero_pair_start_with_pose(struct HeroBody *body)
     return 1;
 }
 
+struct PoseByte47
+{
+    u8 low6 : 6;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
 NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_place_both_tracked(struct HeroBody *body))
 {
     struct World *world = gWorld;
@@ -303,7 +309,7 @@ NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_plac
 
     world->unk0E = 7;
     ((struct WorldModeBits *)&gWorld->modeByte)->high =
-        (((struct PoseFlags47 *)&gParty[0x47])->low6 & 1) + ((gParty[0x49] >> 2) & 1) * 2;
+        (((struct PoseByte47 *)&gParty[0x47])->low6 & 1) + ((gParty[0x49] >> 2) & 1) * 2;
     set_slot_value(0x53, -1);
 
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
