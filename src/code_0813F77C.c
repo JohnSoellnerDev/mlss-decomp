@@ -506,9 +506,11 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0813F77C/enemy_run_until_contact.s", void enemy_run_until_contact(void))
 
-NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+void enemy_start_approach(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
     u8 found;
+    u16 ix;
+    u8 *rc;
     u32 pidx;
     u8 *entry;
     u16 speed;
@@ -523,7 +525,9 @@ NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(s
     ((struct Bit6 *)&ent->unk20D)->bit6 = 0;
     ((struct Bit2 *)&ent->unk20F)->bit2 = 1;
     ent->index = rand_below(4, mt19937_next());
-    entry = (u8 *)ent->rec + ent->index * 2;
+    ix = ent->index;
+    rc = ent->rec;
+    entry = (u8 *)((u32)(ix * 2) + (u32)rc);
     speed = *(u16 *)(entry + 0x2A);
     z = ent->z + ent->dz + *(u16 *)(entry + 0x22);
     start_z_move(ent, z, speed, 0, 0);
@@ -551,4 +555,3 @@ NONMATCH("asm/code_0813F77C/enemy_start_approach.s", void enemy_start_approach(s
     ((struct Mode3 *)&ent->unk214)->mode = 0;
     *out = enemy_approach_partner;
 }
-END_NONMATCH
