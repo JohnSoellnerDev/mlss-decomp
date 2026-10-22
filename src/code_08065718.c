@@ -319,7 +319,29 @@ u32 obj_lookup_slot_then_state_bc0(struct ActorObj *obj)
     return 0;
 }
 
-ASM_FUNC("asm/code_08065718/obj_move_place_cull.s", void obj_move_place_cull(struct ActorObj *obj))
+void obj_move_place_cull(struct ActorObj *obj)
+{
+    s32 rel;
+    s32 h;
+    s32 sq;
+    s32 sev;
+
+    obj->pose->unkC += 0x200;
+    obj->posX -= 0xE6;
+    rel = obj->posX - obj->targetX;
+    if (rel < 0)
+        rel += 0xFF;
+    rel >>= 8;
+    sq = rel * rel;
+    sev = sq * 17;
+    h = obj->targetH - sev;
+    obj->posH = h;
+    if (h <= 2047)
+    {
+        effect_spawn_at(0xF08, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        obj_release(obj);
+    }
+}
 
 void obj_no_sprite_idle(struct ActorObj *obj)
 {
