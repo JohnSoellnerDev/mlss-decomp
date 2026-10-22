@@ -292,9 +292,9 @@ void map_obj_set_impulse(struct MapLoaderObj *obj, s16 x, s16 y)
     obj->impulseY = y;
 }
 
-NONMATCH("asm/code_0805AF28/map_obj_write_scroll.s", void map_obj_write_scroll(struct MapLoaderObj *obj))
+void map_obj_write_scroll(struct MapLoaderObj *obj)
 {
-    u16 *p = &gUnk_02000010;
+    vu16 *p = &gUnk_02000010;
 
     *p = obj->posX & 0x1FF;
     gUnk_02000014 = obj->accX & 0x1FF;
@@ -302,7 +302,6 @@ NONMATCH("asm/code_0805AF28/map_obj_write_scroll.s", void map_obj_write_scroll(s
     *p = obj->posY & 0xFF;
     gUnk_02000016 = obj->accY & 0xFF;
 }
-END_NONMATCH
 
 void map_loader_map_obj_destroy(struct MapLoaderObj *obj, u32 param)
 {
