@@ -121,7 +121,55 @@ void decode_stream_run(u8 *rec, u32 *buf, u8 *block, u8 *p3, u8 *p4, u32 advance
 void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
-ASM_FUNC("asm/code_080FA598/cmd_set_value.s", void cmd_set_value(void))
+void reset_obj_params_a(u8 *obj, u8 *state, u32 arg, u32 zero, u32 one, u32 ff);
+void draw_text_prim(void *a, u32 b, s32 c, s32 d, u32 e, u32 f, u32 g, u32 h, u32 i, u32 j);
+u32 lang_table_pair(u8 *entry, u32 lo);
+extern u8 gTextWidthTable[];
+
+u32 cmd_set_value(struct Owner *owner, struct CmdRec *rec, u32 *data, u8 cur)
+{
+    u8 *target = (u8 *)owner->state + data[1] * 0xA8 + 0xA8;
+    u32 mode = 1;
+
+    if (data[0] & 1)
+    {
+        rec->flagsA0 = rec->flagsA0 | 4;
+        mode = 9;
+    }
+    switch (data[0])
+    {
+    case 0:
+    case 1:
+        reset_obj_params_b((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
+        *(u32 *)rec = data[2];
+        break;
+    case 2:
+    case 3:
+        reset_obj_params_b((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+        break;
+    case 4:
+    case 5:
+        if ((((target[0xA0] ^ 1) & 1)))
+            reset_obj_params_b((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
+        else
+            reset_obj_params_a((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
+        *(u32 *)rec = data[2];
+        break;
+    case 6:
+    case 7:
+        if ((((target[0xA0] ^ 1) & 1)))
+            reset_obj_params_b((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+        else
+            reset_obj_params_a((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+        break;
+    default:
+        break;
+    }
+    return !(rec->flagsA0 & 4);
+}
+
+
+
 
 NONMATCH("asm/code_080FA598/cmd_slot_value_by_kind.s", u32 cmd_slot_value_by_kind(struct Owner *owner, u32 unused, u32 *data))
 {
@@ -319,7 +367,201 @@ u32 cmd_start_move_list(struct Owner *owner, struct CmdRec *rec, s32 *data)
 
 ASM_FUNC("asm/code_080FA598/cmd_set_position.s", void cmd_set_position(void))
 
-ASM_FUNC("asm/code_080FA598/cmd_place_sprite.s", void cmd_place_sprite(void))
+NONMATCH("asm/code_080FA598/cmd_place_sprite.s", u32 cmd_place_sprite(struct Owner *owner, u32 unused1, u32 unused2, u32 *data))
+{
+    struct Slot *slot = &owner->list->slots[data[1]];
+    s32 sx;
+    s32 sy;
+    s32 t;
+    s32 ix;
+    s32 lim;
+    s32 tail;
+    s32 d;
+    s32 dir;
+    u32 ofs;
+    u32 sx16;
+    u32 attr;
+    u32 z;
+    u32 fix16;
+    u32 adj;
+    u32 flag;
+    u8 tbl;
+    u8 low;
+
+    t = slot->xFix;
+    if (t < 0)
+        t += 0xFF;
+    sx = t >> 8;
+    t = slot->yFix;
+    if (t < 0)
+        t += 0xFF;
+    sy = t >> 8;
+    ofs = slot->unk3D;
+    sx16 = (u16)sx;
+    tbl = gTextWidthTable[(u8)data[2] << 1];
+    attr = data[3] & 0x1F;
+    attr |= (data[3] << 1) & 0x3C0;
+    attr |= (data[3] << 2) & 0x800;
+    z = data[2];
+    if ((attr & 3) == 2)
+    {
+        if (tbl > 3)
+            tbl = (tbl + 1) & 0xFE;
+        else
+            tbl = 4;
+    }
+    if ((attr & 0x300) == 0)
+    {
+        dir = 2;
+        d = sy - ofs - (((tbl + 3) << 16) >> 13);
+        if (d < 0)
+            dir = 1;
+        attr |= (dir << 8) & 0x300;
+    }
+    else if (attr & 0x40)
+    {
+        adj = 0x18;
+        if (attr & 0x80)
+            adj = 0xFFE8;
+        sx16 = (u16)((s16)sx16 + (s16)adj);
+    }
+    if ((attr & 0x300) == 0x200)
+        sy = sy - 0xD - ((tbl + 2) << 3) - ofs;
+    else
+        sy -= 2;
+    flag = 0;
+    if (sy < 0)
+    {
+        sy = 0;
+        if (attr & 0x100)
+        {
+            sy = 0x10;
+            flag = 1;
+        }
+    }
+    else
+    {
+        t = tbl << 3;
+        if (sy + t + 0x14 > 0x9F)
+        {
+            sy = 0x90 - t;
+            if (attr & 0x200)
+            {
+                sy -= 0x10;
+                flag = 1;
+            }
+        }
+    }
+    if (flag)
+        attr = (attr | 0x40) & 0xFFFF;
+    ix = ((s32)z >> 8) & 0xFF;
+    if (ix == 0)
+        ix = (lang_table_pair(owner->entry, data[5]) >> 16) & 0xFF;
+    if ((attr & 3) == 2)
+    {
+        dir = (ix + 2) / 3;
+        ix = (dir * 3) & 0xFFFF;
+        if (ix & 1)
+            sx += 4;
+    }
+    low = ix;
+    if (low == 0)
+    {
+        ix = 2;
+        low = 2;
+    }
+    if (sx < 0)
+    {
+        sx16 = 0x20;
+        attr &= 0xFF7F;
+        attr |= 0x40;
+    }
+    else if (sx > 0xEF)
+    {
+        sx16 = 0xD0;
+        attr |= 0xC0;
+    }
+    sx = sx - 0x10 - (ix << 2);
+    fix16 = sx16 << 16;
+    lim = (s32)fix16 >> 16;
+    if (sx + 0x18 <= lim)
+    {
+        t = ix << 3;
+        if (sx + t + 8 < lim)
+            sx = lim - 8 - t;
+    }
+    else
+        sx = lim - 0x18;
+    lim = (s32)fix16 >> 16;
+    if (lim > 23)
+    {
+        if (lim > 215)
+        {
+            if ((attr & 0xC0) == 0x40)
+                sx16 = (lim - 0x30) & 0xFFFF;
+            else
+                sx16 = 0xD8;
+            sx = 0xD0 - (ix << 3);
+            attr |= 0xC0;
+            fix16 = sx16 << 16;
+            tail = (s16)sx16 - 0x18;
+            if (sx > tail)
+                sx = tail;
+        }
+    }
+    else
+    {
+        if ((attr & 0xC0) == 0xC0)
+            sx16 = (lim + 0x30) & 0xFFFF;
+        else
+            sx16 = 0x18;
+        sx = 0;
+        attr = (attr & 0xFF7F) | 0x40;
+        fix16 = sx16 << 16;
+        tail = (s16)sx16 - (ix << 1) - 0x18;
+        if (sx < tail)
+            sx = tail;
+    }
+    if (sx < 0)
+    {
+        if ((attr & 3) == 2)
+        {
+            t = lim;
+            if (lim < 0)
+                t = lim + 7;
+            sx = (s16)(lim - ((t >> 3) << 3));
+        }
+        else
+            sx = 0;
+    }
+    else
+    {
+        t = ix << 3;
+        if (sx + t + 0x20 > 0xF0)
+        {
+            t = 0xD0 - t;
+            if ((attr & 3) == 2)
+            {
+                s32 t8 = t - 8;
+
+                lim = (s32)fix16 >> 16;
+                t = lim;
+                if (lim < 0)
+                    t = lim + 7;
+                sx = t8 + (s16)(lim - ((t >> 3) << 3));
+            }
+            else
+                sx = t;
+        }
+    }
+    t = (s32)fix16 >> 16;
+    t = t - sx;
+    attr = (attr - 0x100) & 0xFFFF;
+    draw_text_prim(owner->entry, data[0] & 0xFF, (s16)sx, (s16)sy, low, tbl, t & 0xFFFF, attr,
+                   (u8)data[4], data[5]);
+    return 1;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080FA598/cmd_aux_entry.s", u32 cmd_aux_entry(struct Owner *owner, u32 unused, u32 *data))
 {
