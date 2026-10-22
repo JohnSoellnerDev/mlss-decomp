@@ -1329,11 +1329,9 @@ u32 obj_sub_pair_command(struct OwnerObj *owner, void *unused, u32 *block)
     u32 value = block[0];
     int bit4;
     u32 stored;
-    u32 v;
     u8 *state;
 
-    v = value;
-    if (v != 0xFF)
+    if (value != 0xFF)
     {
         u32 flags = owner->list->unk208;
 
@@ -1355,8 +1353,7 @@ u32 obj_sub_pair_command(struct OwnerObj *owner, void *unused, u32 *block)
     }
     else
     {
-        value = 0xFF;
-        stored = value;
+        stored = 0xFF;
         clear_208_bit1_set_351_bit6(owner->list);
     }
     state = gEffectState;
