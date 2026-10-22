@@ -1,6 +1,19 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBit4
+{
+    u16 lo : 4;
+    u16 bit4 : 1;
+    u16 hi : 11;
+};
+
+struct HalfBit0
+{
+    u16 bit0 : 1;
+    u16 hi : 15;
+};
+
 struct LayoutNode
 {
     struct LayoutNode *next;
@@ -214,7 +227,7 @@ NONMATCH("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_st
         if (t == 0)
         {
             effect = obj_spawn_linked(obj, 0x4137, 0);
-            effect->childFlags |= 1;
+            ((struct HalfBit0 *)&effect->childFlags)->bit0 = 1;
             effect->level = t;
             effect->timer = obj->timer + 1;
             rec = obj->record;
@@ -229,7 +242,7 @@ NONMATCH("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_st
             }
             sprite_set_action(effect, anim, 0, 0);
             effect->record->unk23 = obj->record->unk23;
-            effect->record->flags |= 0x10;
+            ((struct HalfBit4 *)&effect->record->flags)->bit4 = 1;
             effect->state = wait_progress_then_return_or_destroy;
             set_motion_from_value(effect, 0xC);
             obj->effectCount = 3;
