@@ -617,7 +617,41 @@ void body_contact_enemy_move_3d_step(struct Owner *owner, struct Enemy *ent, str
     }
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_seek_partner.s", void enemy_seek_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_seek_partner.s", void enemy_seek_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    u8 *table;
+    u8 idx;
+    struct Partner *partner;
+    s16 box[8];
+    u8 hit;
+
+    if (*(u16 *)((u8 *)ent->unk1B4 + 8) != 0)
+    {
+        u32 k = find_active_entry(owner, &idx) ? idx : ((u32)owner->unk208 << 30) >> 31;
+        partner = *(struct Partner **)((u8 *)owner + k * 4 + 0x28);
+        obj_box_to_stack(box, ent, 0x22, 0xA);
+        hit = point_in_box(box, partner, 0x7FFF, 0);
+    }
+    else
+    {
+        hit = box_hit_kind(owner, ent, 0x11, 0x18, 3);
+    }
+    table = (u8 *)ent + 0x100;
+    if (hit != 0)
+    {
+        state_out->state = enemy_start_guard;
+    }
+    else if (step_pos_xy_c(ent) == 0)
+    {
+        u32 pick = rand_below(4, mt19937_next());
+
+        ai->unk17A = *(u16 *)(table + 0x28 + pick * 2);
+        state_out->state = tick_store;
+        state_out->unkC = enemy_wander_to_edge;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08145D54/enemy_guard_aim.s", void enemy_guard_aim(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
@@ -659,7 +693,7 @@ void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *st
     state_out->state = enemy_run_step;
 }
 
-NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
     struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
     s32 step;
@@ -687,7 +721,7 @@ NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner 
         if (ai->unk17A > 1)
         {
             u8 *flag = &ai->unk17E;
-            s32 f = *flag;
+            u8 f = *flag;
             s32 g;
 
             if (f & 4)
@@ -711,7 +745,6 @@ NONMATCH("asm/code_08145D54/enemy_run_step.s", void enemy_run_step(struct Owner 
         state_out->state = state_out->unk8;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08145D54/enemy_chase_partner.s", void enemy_chase_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
