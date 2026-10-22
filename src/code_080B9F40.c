@@ -155,8 +155,73 @@ void hero_b_step_slot_anim(struct HeroBody *body);
 u32 mt19937_next(void);
 s32 rand_below(s32 range, u32 seed);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
+void hero_a_active_anim_none(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080B9F40/hero_pair_place_mirror.s", void hero_pair_place_mirror(struct HeroBody *body))
+NONMATCH("asm/code_080B9F40/hero_pair_place_mirror.s", void hero_pair_place_mirror(struct HeroBody *body))
+{
+    struct World *world;
+    struct HeroBody *a;
+    struct HeroBody *b;
+    struct HeroData *data;
+    s16 *span;
+    u32 bits;
+    u8 *party;
+
+    gWorld->unk0E = 2;
+    world = gWorld;
+    party = gParty;
+    bits = ((party[0xA] >> 2) & 1) + ((((u32)*(u16 *)(party + 0xC) << 22) >> 26) & 1) * 2;
+    bits = bits << 6;
+    world->mode = (world->mode & 0x3F) | bits;
+    a = &gWorld->heroA->body;
+    b = &gWorld->heroB->body;
+    set_slot_value(0x53, -1);
+    if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+    {
+        data = b->data;
+        place_targets(b, data->targetX / 0x100 + 0x14, data->targetY / 0x100 - 0x10, data->targetH / 0x100, -1);
+        set_motion_start(b, 0x200);
+    }
+    if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+    {
+        if (b->data->pose == -1)
+        {
+            sprite_set_action(b, 0, 0x2002, 0);
+        }
+        else
+        {
+            sprite_set_action(b, 0, 0x204F, 0);
+        }
+        ((struct HeroMirrorBits *)&b->sprite->mirrorFlags)->mirror = (span = &b->spanA)[0] >= span[1];
+        ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+    }
+    if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+    {
+        b->state = 0;
+        enter_finish_rebuild(b);
+    }
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        data = a->data;
+        place_targets(a, data->targetX / 0x100 - 0x14, data->targetY / 0x100 + 0x10, data->targetH / 0x100, -1);
+        set_motion_start(a, 0x200);
+    }
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    {
+        if (a->data->pose == -1)
+        {
+            sprite_set_action(a, 0, 0x2002, 0);
+        }
+        else
+        {
+            sprite_set_action(a, 0, 0x204F, 0);
+        }
+        ((struct HeroMirrorBits *)&a->sprite->mirrorFlags)->mirror = (span = &a->spanA)[0] >= span[1];
+        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+    }
+    body->state = hero_a_active_anim_none;
+}
+END_NONMATCH
 
 void hero_a_rate_wait(struct HeroBody *body)
 {
