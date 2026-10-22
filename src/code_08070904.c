@@ -209,4 +209,24 @@ void obj_counter_next_target(struct WaveObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08070904/obj_move_by_velocity_b.s", void obj_move_by_velocity_b(struct WaveObj *obj))
+void obj_move_by_velocity_b(struct WaveObj *obj)
+{
+    s32 dt;
+
+    obj->x = (obj->param4 * obj->timer) / obj->param0 + (obj->dx << 8);
+    obj->y = (obj->select * obj->timer) / obj->param0 + (obj->dy << 8);
+    dt = obj->timer - obj->param0 / 2;
+    obj->h = (dt * dt) * obj->counter + obj->targetY + (obj->dh << 8);
+    obj->timer++;
+    if (obj->x / 0x100 < -0x20)
+    {
+        obj_release(obj);
+    }
+    else if (obj->timer >= obj->param0 / 2 && obj->h <= 0)
+    {
+        obj->h = 0;
+        obj->timer = 0;
+        obj->dx = obj->baseX / 0x100;
+        obj->dy = obj->baseY / 0x100;
+    }
+}
