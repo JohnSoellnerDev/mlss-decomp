@@ -45,6 +45,17 @@ struct HeroSpan
     s16 b;
 };
 
+struct HeroRange
+{
+    u8 filler0[0x86];
+    s16 lo;
+    u8 filler88[0x9C - 0x88];
+    u32 pairLo;
+    u32 pairHi;
+    u8 filler0A4[0xB4 - 0xA4];
+    s16 hi;
+};
+
 struct HeroExt
 {
     u8 filler0[0x04];
@@ -297,4 +308,63 @@ void hero_a_jitter_dx_step_anim(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080CAD4C/hero_b_step_window_cb508.s", void hero_b_step_window_cb508(struct HeroBody *body))
 
-ASM_FUNC("asm/code_080CAD4C/hero_b_step_in_range_pose_fx.s", void hero_b_step_in_range_pose_fx(void))
+NONMATCH("asm/code_080CAD4C/hero_b_step_in_range_pose_fx.s", void hero_b_step_in_range_pose_fx(struct HeroBody *body))
+{
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 lo;
+    u32 hi;
+    s32 ratio;
+    s32 in_range;
+
+    step_motion(body_b);
+    lo = ((struct HeroRange *)hero_b)->pairLo;
+    hi = ((struct HeroRange *)hero_b)->pairHi;
+    ratio = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(hi << 14, lo);
+    if (((struct HeroRange *)hero_b)->hi > ratio)
+    {
+        in_range = 0;
+    }
+    else
+    {
+        in_range = 1;
+        if (((struct HeroRange *)hero_b)->lo < ratio)
+        {
+            in_range = 0;
+        }
+    }
+    if (in_range)
+    {
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->poseIndex == -1)
+            {
+                sprite_set_action(body_b, 6, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(body_b, 6, 0x204D, 0);
+            }
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+    }
+    if ((body_b->flags & 0x20) != 0)
+    {
+        set_slot_value(0x2E, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->poseIndex == -1)
+            {
+                sprite_set_action(body_b, 8, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(body_b, 8, 0x204D, 0);
+            }
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+        effect_spawn_at(0x33, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+        body->state = hero_b_sprite_active_place_finish;
+    }
+}
+END_NONMATCH
