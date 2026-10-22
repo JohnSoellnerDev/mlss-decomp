@@ -177,7 +177,41 @@ void obj_release(void *obj);
 void hero_b_place_at_target_h(struct HeroBody *owner);
 void resolve_contact_action(struct HeroBody *a, struct HeroBody *b, u32 c, u32 d, const u8 *e);
 
-ASM_FUNC("asm/code_080D5E34/hero_b_fx_place_tracked.s", void hero_b_fx_place_tracked(void))
+static inline void *tracked_obj(void)
+{
+    return gWorld->trackedObj;
+}
+
+void hero_b_fx_place_tracked(struct HeroBody *owner)
+{
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 x;
+    s32 y;
+
+    effect_spawn_at(0x2F7D, owner->posX / 0x100, owner->posY / 0x100, owner->posZ / 0x100, owner);
+    if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+    {
+        sprite_set_action(body_b, 4, 0x2066, 0);
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+    }
+    if (body_b->child != 0)
+    {
+        sprite_set_action(body_b->child, 4, 0x2095, 0);
+        ((struct HeroSpriteBits *)&body_b->child->sprite->flags)->mode = 0;
+    }
+    ((struct HeroSpriteBits *)&body_b->child->sprite->flags)->mode = 1;
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        x = (s16)obj_last_x(tracked_obj()) + 0xA0;
+        y = (s16)obj_last_y(tracked_obj()) + 0x73;
+        place_targets(body_b, x, y, 0x55, -1);
+        { u16 h = 0x5C; body_b->height = h; }
+        set_motion_offsets(body_b, 0x433);
+    }
+    body_b->timer &= 0xFFF;
+    owner->state = hero_pair_b_window_5f5c;
+}
 
 ASM_FUNC("asm/code_080D5E34/hero_pair_b_window_5f5c.s", void hero_pair_b_window_5f5c(struct HeroBody *body))
 
