@@ -207,7 +207,7 @@ struct KeyRepeat
 
 extern u8 gSys[];
 
-NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_slot(struct Owner *owner))
+void state_status_wait_slot(struct Owner *owner)
 {
     struct World *world;
     struct Obj *slot;
@@ -225,20 +225,15 @@ NONMATCH("asm/code_0810A2FC/state_status_wait_slot.s", void state_status_wait_sl
         slot = gWorld->slots[gWorld->statusObj->index];
         if (slot->owner != 0)
         {
-            next = status_wait_slot;
+            owner->state = status_wait_slot;
         }
         else
         {
-            lockv = world->lock;
-            mask = 0x1F;
-            lockv = mask & lockv;
-            world->lock = lockv;
-            next = status_slots_update;
+            world->lock &= 0x1F;
+            owner->state = status_slots_update;
         }
-        owner->state = next;
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0810A2FC/state_status_release.s", void state_status_release(struct Owner *owner))
 {
