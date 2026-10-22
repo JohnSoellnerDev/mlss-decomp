@@ -33,7 +33,7 @@ struct FigBits
 {
     u8 mode : 2;
     u8 bit2 : 1;
-};
+} __attribute__((packed));
 
 struct StateOwner
 {
@@ -364,7 +364,7 @@ NONMATCH("asm/code_080FD8D8/state_message.s", void state_message(struct StateOwn
     set_slot_value(slot, -1);
     world = gWorld;
     mode = world->flags2C0;
-    fig = world->fig[1 ^ ((mode << 29) >> 31)];
+    fig = world->fig[1 ^ ((struct FigBits *)&world->flags2C0)->bit2];
     pos = fig + 8;
     text = 0x2068;
     bit = 4;
@@ -413,14 +413,14 @@ void state_setup_menu(struct StateOwner *owner)
 }
 
 
-NONMATCH("asm/code_080FD8D8/figure_sync_step.s", void figure_sync_step(struct FigObj *obj))
+void figure_sync_step(struct FigObj *obj)
 {
     struct FigWorld *world;
     struct FigPart *part_other;
     struct FigPart *part_active;
     u8 *fig_other;
     u8 *fig_active;
-    u32 shifted;
+    s32 flag;
     u32 text;
     u32 v;
     u32 addr;
@@ -428,10 +428,9 @@ NONMATCH("asm/code_080FD8D8/figure_sync_step.s", void figure_sync_step(struct Fi
     u32 addr3;
 
     world = gWorld;
-    shifted = (u32)world->flags2C0 << 29;
-    fig_other = world->fig[1 ^ (shifted >> 31)];
-    fig_active = world->fig[shifted >> 31];
+    fig_other = world->fig[1 ^ ((struct FigBits *)&world->flags2C0)->bit2];
     part_other = (struct FigPart *)(fig_other + 8);
+    fig_active = world->fig[((struct FigBits *)&world->flags2C0)->bit2];
     part_active = (struct FigPart *)(fig_active + 8);
     if (part_other->unk8[0x23] != 0)
     {
@@ -440,13 +439,19 @@ NONMATCH("asm/code_080FD8D8/figure_sync_step.s", void figure_sync_step(struct Fi
     }
     if (part_other->unk8[0x12] & 8)
     {
-        gWorld->flags0C |= 0x80;
+        {
+            s32 flags = gWorld->flags0C;
+            flags |= 0x80;
+            gWorld->flags0C = flags;
+        }
+        flag = gWorld->flags2C0 & 4;
         text = 0x2069;
-        if (gWorld->flags2C0 & 4)
+        if (flag)
             text -= 0x2F;
         sprite_set_action(part_other, 0, text, 0);
+        flag = gWorld->flags2C0 & 4;
         text = 0x203B;
-        if (gWorld->flags2C0 & 4)
+        if (flag)
             text += 0x2F;
         sprite_set_action(part_active, 0, text, 0);
         addr = (u32)part_other->unk28 + 0xD8;
@@ -458,29 +463,29 @@ NONMATCH("asm/code_080FD8D8/figure_sync_step.s", void figure_sync_step(struct Fi
         obj->unk4 = obj->unk8;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080FD8D8/figure_pair_begin.s", void figure_pair_begin(struct StateOwner *owner))
+void figure_pair_begin(struct StateOwner *owner)
 {
     struct FigWorld *world;
     struct FigPart *part_other;
     struct FigPart *part_active;
     u8 *other_obj;
     u8 *active_obj;
-    u32 shifted;
     u32 text;
+    s32 flag;
 
     world = gWorld;
-    shifted = (u32)world->flags2C0 << 29;
-    part_other = (struct FigPart *)(world->fig[1 ^ (shifted >> 31)] + 8);
-    part_active = (struct FigPart *)(world->fig[shifted >> 31] + 8);
+    part_other = (struct FigPart *)(world->fig[1 ^ ((struct FigBits *)&world->flags2C0)->bit2] + 8);
+    part_active = (struct FigPart *)(world->fig[((struct FigBits *)&world->flags2C0)->bit2] + 8);
     world->flags0C &= 0x7F;
+    flag = gWorld->flags2C0 & 4;
     text = 0x2068;
-    if (gWorld->flags2C0 & 4)
+    if (flag)
         text -= 0x2F;
     sprite_set_action(part_other, 5, text, 0);
+    flag = gWorld->flags2C0 & 4;
     text = 0x2039;
-    if (gWorld->flags2C0 & 4)
+    if (flag)
         text += 0x2F;
     sprite_set_action(part_active, 0xA, text, 0);
     other_obj = part_other->unk8;
@@ -490,25 +495,22 @@ NONMATCH("asm/code_080FD8D8/figure_pair_begin.s", void figure_pair_begin(struct 
     part_active->unk10 -= 0x1600;
     owner->callback = (u32)figure_pair_place;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080FD8D8/figure_pair_place.s", void figure_pair_place(struct StateOwner *owner))
+void figure_pair_place(struct StateOwner *owner)
 {
     struct FigWorld *world;
     struct FigPart *part;
     struct FigPart *part_active;
-    u32 shifted;
     u32 extent;
     u32 offset;
     u8 mode;
     void (*fn)(struct StateOwner *);
 
     world = gWorld;
-    shifted = (u32)world->flags2C0 << 29;
-    part = (struct FigPart *)(world->fig[1 ^ (shifted >> 31)] + 8);
+    part = (struct FigPart *)(world->fig[1 ^ ((struct FigBits *)&world->flags2C0)->bit2] + 8);
     if (part->unk8[0x12] & 8)
     {
-        part_active = (struct FigPart *)(world->fig[shifted >> 31] + 8);
+        part_active = (struct FigPart *)(world->fig[((struct FigBits *)&world->flags2C0)->bit2] + 8);
         sprite_set_action(part, 6, 0, 0);
         sprite_set_action(part_active, 1, 0, 0);
         mode = gWorld->flags2C0 & 4;
@@ -526,7 +528,6 @@ NONMATCH("asm/code_080FD8D8/figure_pair_place.s", void figure_pair_place(struct 
         set_slot_value(0x2B, -1);
     }
 }
-END_NONMATCH
 
 void figure_pair_step(struct FigObj *obj)
 {
