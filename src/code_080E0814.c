@@ -285,10 +285,9 @@ ASM_FUNC("asm/code_080E0814/rotate_point_list.s", void rotate_point_list(void))
 
 ASM_FUNC("asm/code_080E0814/rasterize_outline_rows.s", void rasterize_outline_rows(void))
 
-NONMATCH("asm/code_080E0814/advance_path.s", void advance_path(struct StreamObj *obj))
+void advance_path(struct StreamObj *obj)
 {
     u16 *stream;
-    u16 delay;
     u16 timer;
 
     if ((s16)obj->unk10 == 0)
@@ -299,10 +298,9 @@ NONMATCH("asm/code_080E0814/advance_path.s", void advance_path(struct StreamObj 
             add_obj_target_offset(gWorld->item24C, (s16)stream[0] - (s16)obj->unk12, (s16)stream[1] - (s16)obj->unk14);
             obj->unk12 = stream[0];
             obj->unk14 = stream[1];
-            delay = stream[2];
-            obj->unk10 = delay;
+            obj->unk10 = stream[2];
             obj->stream = stream + 3;
-        } while (delay == 0);
+        } while (obj->unk10 == 0);
     }
     timer = obj->unk10;
     if ((s16)obj->unk10 < 0)
@@ -316,7 +314,6 @@ NONMATCH("asm/code_080E0814/advance_path.s", void advance_path(struct StreamObj 
         obj->unk10 = timer - 1;
     }
 }
-END_NONMATCH
 
 void copy_bg_block_flipped(struct StreamObj *obj);
 NONMATCH("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(u32 index))
@@ -373,6 +370,8 @@ NONMATCH("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear
     u8 *dst;
     struct ScrollBlock *block;
     u16 *ram;
+    struct SysHead *sys;
+    s32 amount;
 
     idx = gWorld->tile26C;
     entryA = (u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[idx + 3] * 4);
@@ -381,14 +380,15 @@ NONMATCH("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear
     span -= *entryB;
     dst = gUnk_02000180;
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3DF0, dst, span);
+    sys = (struct SysHead *)gSys;
     if (span < 0)
     {
         span += 0x1F;
     }
-    ctrl = 0xFF00;
-    ctrl >>= 8 - (span >> 5);
+    amount = 8 - (span >> 5);
+    ctrl = 0xFF00 >> amount;
     ctrl &= 0xFFFFFF00;
-    ((struct SysHead *)gSys)->unk2 = ctrl | ((struct SysHead *)gSys)->unk2;
+    sys->unk2 = ctrl | sys->unk2;
     block = gWorld->scrollBlock;
     if (block != 0)
     {
@@ -469,4 +469,28 @@ void set_scroll_slot(s32 x, s32 y)
     gWorld->scrollBlock = block;
 }
 
-ASM_FUNC("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(struct StreamObj *obj))
+NONMATCH("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(struct StreamObj *obj))
+{
+    struct World *world = gWorld;
+    u32 *src;
+    u32 *dst;
+    u32 remaining;
+    u32 flip;
+
+    src = (u32 *)(gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (gTileHalfTable[world->tile26C + 1] << 2)));
+    flip = 0x80008000;
+    dst = (u32 *)0x0600F000;
+    remaining = 0x200;
+    do
+    {
+        dst[0] = src[0] + flip;
+        dst[1] = src[1] + flip;
+        dst[2] = src[2] + flip;
+        dst[3] = src[3] + flip;
+        src += 4;
+        dst += 4;
+        remaining -= 4;
+    } while ((u16)remaining != 0);
+    obj->state = (void (*)(void))(u32)remaining;
+}
+END_NONMATCH
