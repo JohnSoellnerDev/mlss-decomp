@@ -244,7 +244,41 @@ void obj_run_children_free(struct Obj *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_08164468/obj_triples_done.s", void obj_triples_done(void))
+NONMATCH("asm/code_08164468/obj_triples_done.s", u32 obj_triples_done(struct Obj *obj))
+{
+    s32 group = 0;
+    u32 off = 0;
+    u32 base = (u32)&obj->unk4;
+    while (1)
+    {
+        struct Obj *child;
+        u32 o;
+        child = *(struct Obj **)(base + off);
+        if (!child_is_done(child))
+        {
+            return 0;
+        }
+        o = off;
+        child = *(struct Obj **)(base + (o + 4));
+        if (!child_is_done(child))
+        {
+            return 0;
+        }
+        child = *(struct Obj **)(base + (o + 8));
+        if (!child_is_done(child))
+        {
+            return 0;
+        }
+        off += 0xC;
+        group++;
+        if (group > 1)
+        {
+            break;
+        }
+    }
+    return 1;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_class(struct Obj *obj))
 {
@@ -879,7 +913,42 @@ s32 lerp_step_08164EE0(s32 a, s32 b, s32 steps, s32 t)
     return a + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((b - a) * t, n);
 }
 
-ASM_FUNC("asm/code_08164468/smoothstep_lerp.s", u32 smoothstep_lerp(s32 start, s32 end, s32 steps, s32 step))
+NONMATCH("asm/code_08164468/smoothstep_lerp.s", u32 smoothstep_lerp(s32 start, s32 end, s32 steps, s32 step))
+{
+    s32 off;
+    s32 (*div)(s32, s32);
+    s32 q1;
+    s32 q2;
+    s32 q3;
+    s32 q4;
+    s32 q5;
+    s32 d3;
+
+    if (steps <= 0)
+    {
+        steps = 1;
+    }
+    if (step < 0)
+    {
+        step = 0;
+    }
+    if (step > steps)
+    {
+        step = steps;
+    }
+    off = (u32)iwram_div - (u32)iwram_sqrt;
+    div = (s32 (*)(s32, s32))(gMathRoutines + off);
+    d3 = end * 3;
+    d3 = d3 - start * 3;
+    q1 = div(d3 * step, steps);
+    q2 = div(step * q1, steps);
+    div = (s32 (*)(s32, s32))(gMathRoutines + off);
+    q3 = div((start - end) * 2 * step, steps);
+    q4 = div(step * q3, steps);
+    q5 = div(step * q4, steps);
+    return q5 + q2 + start;
+}
+END_NONMATCH
 
 u32 rand_scaled(u32 count, u32 base)
 {
