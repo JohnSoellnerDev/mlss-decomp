@@ -261,12 +261,11 @@ NONMATCH("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child
     u16 timer;
 
     s16 *dxp = &obj->dx;
-    s16 *dyp = &obj->dy;
     u16 *dhp = (u16 *)&obj->dh;
 
     *dhp = *dhp + obj->dhStep;
     obj->posX = obj->baseX + *dxp;
-    obj->posY = obj->baseY + *dyp;
+    obj->posY = obj->baseY + obj->dy;
     obj->posH = obj->baseH + (s16)*dhp;
     timer = obj->timer;
     if ((s16)obj->timer > 0)
@@ -438,13 +437,12 @@ void obj_settle_step_land_slot69(struct ActorObj *obj)
 NONMATCH("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(struct ActorObj *obj))
 {
     s16 *dxp = &obj->dx;
-    s16 *dyp = &obj->dy;
     void *fx;
     struct FxTask *task;
 
     obj->dh = obj->dh + obj->dhStep;
     obj->posX = obj->baseX + *dxp;
-    obj->posY = obj->baseY + *dyp;
+    obj->posY = obj->baseY + obj->dy;
     obj->posH = obj->baseH + obj->dh;
     if ((s16)obj->timer > 0)
     {
