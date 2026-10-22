@@ -2,16 +2,24 @@
 
 struct ObjNode
 {
-    u8 filler0[0x12];
+    u32 unk00;
+    u32 unk04;
+    u32 unk08;
+    s16 unk0C;
+    u16 unk0E;
+    u8 unk10;
+    u8 unk11;
     u8 flags;
     u8 flags13;
     u16 slotMask;
-    u8 filler16[0x18 - 0x16];
+    u16 unk16;
     u16 unk18;
     u16 unk1A;
     u16 unk1C;
     u8 unk1E;
-    u8 filler1F[0x29 - 0x1F];
+    u8 filler1F[0x22 - 0x1F];
+    u8 unk22;
+    u8 filler23[0x29 - 0x23];
     u8 flags29;
     u8 filler2A[0x2E - 0x2A];
     u16 rangeStart;
@@ -32,9 +40,9 @@ struct ObjNode
 
 struct ObjListHead
 {
-    u8 filler0;
+    u8 mode;
     u8 count;
-    u8 filler2;
+    u8 unk02;
     u8 unk03;
     u8 unk04;
     u8 unk05;
@@ -46,7 +54,7 @@ struct ObjListHead
     struct BlockRec *firstBlock;
     struct ObjNode *first;
     struct ObjNode *last;
-    u8 filler38[0x3C - 0x38];
+    u32 unk38;
     void *buf3C;
 };
 
@@ -603,18 +611,21 @@ NONMATCH("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(struct Ob
     u32 sub;
     u32 id;
     struct ObjNode *other;
+    u8 raw;
+    u8 *blk;
 
     if (direct == 0)
     {
-        sub = ((u32)obj->unk1E << 28) >> 28;
+        raw = obj->unk1E;
+        sub = ((u32)raw << 28) >> 28;
         id = obj->unk18;
         found = find_block_kind(2, sub, id);
         if (found == NULL)
         {
-            found = alloc_list_entry(2, size + 0x10, sub, id);
-            obj->block48 = (u32)found;
+            blk = alloc_list_entry(2, size + 0x10, ((u32)raw << 28) >> 28, id);
+            obj->block48 = (u32)blk;
             obj->block50 = payload;
-            obj->block4C = (u32)(found + 0x10);
+            obj->block4C = (u32)(blk + 0x10);
             fill_record_08f4((struct RecordSource *)obj);
             ((struct Flags13Bits *)&obj->flags13)->bit2 = 1;
         }
@@ -637,17 +648,17 @@ NONMATCH("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(struct Ob
         w = table[2] | (table[3] << 8);
         if (w == 0)
         {
-            sub = ((u32)obj->unk1E << 28) >> 28;
+            raw = obj->unk1E;
+            sub = ((u32)raw << 28) >> 28;
             id = obj->unk1A;
-            found = find_block_kind(3, sub, id);
-            if (found == NULL)
+            link = find_block_kind(3, sub, id);
+            if (link == NULL)
             {
-                found = alloc_list_entry(3, sizeB, sub, id);
+                link = alloc_list_entry(3, sizeB, ((u32)raw << 28) >> 28, id);
                 ((struct Flags13Bits *)&obj->flags13)->bit3 = 1;
             }
             else
                 ((struct Flags13Bits *)&obj->flags13)->bit3 = 0;
-            link = found;
         }
         else
             link = table - w;
