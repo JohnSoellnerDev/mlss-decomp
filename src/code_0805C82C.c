@@ -492,7 +492,41 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0805C82C/load_layer_columns.s", void load_layer_columns(void))
 
-ASM_FUNC("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(void))
+NONMATCH("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(u8 *obj))
+{
+    u16 layer = 0;
+    u32 next;
+    u32 base;
+    s16 x;
+    u16 y;
+
+    do
+    {
+        if (*(u16 *)(gColumnTable + ((2 - layer) << 1) + (*(u16 *)(obj + 0x1E) << 3)) != 0xFFFF)
+        {
+            next = layer + 1;
+            base = layer << 11;
+            for (y = 0; (s16)y <= 15; y++)
+            {
+                u32 rowBase = ((((s16)y) * 3) << 4) + base;
+
+                for (x = 0; x <= 31; x++)
+                {
+                    u16 tile = (*(u16 **)(obj + 0x98))[rowBase + x];
+
+                    blit_metatile(obj, layer, x, (s16)y, tile);
+                }
+            }
+        }
+        else
+        {
+            obj[0xA5A] = layer;
+            next = layer + 1;
+        }
+        layer = (u16)next;
+    } while (layer <= 2);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index))
 {
