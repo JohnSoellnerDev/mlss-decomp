@@ -316,7 +316,7 @@ void advance_path(struct StreamObj *obj)
 }
 
 void copy_bg_block_flipped(struct StreamObj *obj);
-NONMATCH("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(u32 index))
+void show_frame_pair(u32 index)
 {
     u32 *entryA;
     u32 *entryB;
@@ -326,7 +326,6 @@ NONMATCH("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(u32 index))
     u32 i3;
     u32 sel;
     s32 h;
-    s32 ctrl;
     u8 *frame;
     void (*copy)(u8 *, u8 *, u32);
     void (*copy2)(u8 *, u8 *, u32);
@@ -354,11 +353,9 @@ NONMATCH("asm/code_080E0814/show_frame_pair.s", void show_frame_pair(u32 index))
     {
         h += 0x1F;
     }
-    ctrl = (0xFF00 >> (8 - (h >> 5))) & 0xFFFFFF00;
-    ((struct SysHead *)gSys)->unk2 = ctrl | ((struct SysHead *)gSys)->unk2;
+    ((struct SysHead *)gSys)->unk2 |= (0xFF00 >> (8 - (h >> 5))) & 0xFF00;
     task_push_list_50(copy_bg_block_flipped, 0);
 }
-END_NONMATCH
 
 NONMATCH("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear(void))
 {
