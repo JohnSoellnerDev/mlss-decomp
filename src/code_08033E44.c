@@ -1,5 +1,26 @@
 #include "global.h"
 
+struct HalfBit7
+{
+    u16 lo : 7;
+    u16 bit7 : 1;
+    u16 hi : 8;
+};
+
+struct HalfBit3
+{
+    u16 lo : 3;
+    u16 bit3 : 1;
+    u16 hi : 12;
+};
+
+struct HalfBit6
+{
+    u16 lo : 6;
+    u16 bit6 : 1;
+    u16 hi : 9;
+};
+
 struct PairSprite
 {
     u8 filler0[0x12];
@@ -143,7 +164,7 @@ void obj_set_active(void *entry, u32 zero);
 void obj_set_sprite_link(void *entry, u32 zero);
 void pair_turn_and_sample(void *obj, u32 zero);
 
-NONMATCH("asm/code_08033E44/sub_08033E44.s", void sub_08033E44(struct PairObj *obj))
+void sub_08033E44(struct PairObj *obj)
 {
     u32 bit = 8;
     struct PairPart **slotA;
@@ -169,22 +190,21 @@ NONMATCH("asm/code_08033E44/sub_08033E44.s", void sub_08033E44(struct PairObj *o
     pb->state4 = 0x40;
     qb = *slotB;
     qa = *slotA;
-    qa->flags351 |= 0x40;
-    qb->flags351 |= 0x40;
+    ((struct HalfBit6 *)&qa->flags351)->bit6 = 1;
+    ((struct HalfBit6 *)&qb->flags351)->bit6 = 1;
     rb = *slotB;
     ra = *slotA;
     ra->flags358 |= bit;
-    rb->flags358 |= 8;
+    ((struct HalfBit3 *)&rb->flags358)->bit3 = 1;
     b = *slotB;
     target = ((*slotA)->posZ - b->posZ) / 0x100 + 0x14;
     dir = 0xEE >> (((u32)obj->flagsFB << 29) >> 31);
     motion_obj_set_move_target(b, target, dir, obj->move100);
     contacts_obj_start_move(*slotB, 2, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
         (obj->flagsFB & 4) ? 0x12 : 0xC);
-    ((u8 *)obj)[0x20B] |= 0x80;
+    ((struct HalfBit7 *)&((u8 *)obj)[0x20B])->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08033E44/pair_state_step.s", void pair_state_step(void))
 
@@ -286,7 +306,7 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08033E44/sub_08034A70.s", void sub_08034A70(struct PairObj *obj))
+void sub_08034A70(struct PairObj *obj)
 {
     struct PairPart **slotA;
     struct PairPart **slotB;
@@ -321,22 +341,21 @@ NONMATCH("asm/code_08033E44/sub_08034A70.s", void sub_08034A70(struct PairObj *o
     pb->state4 = 0x51;
     qb = *slotB;
     qa = *slotA;
-    qa->flags351 |= 0x40;
-    qb->flags351 |= 0x40;
+    ((struct HalfBit6 *)&qa->flags351)->bit6 = 1;
+    ((struct HalfBit6 *)&qb->flags351)->bit6 = 1;
     rb = *slotB;
     ra = *slotA;
-    ra->flags358 |= 8;
-    rb->flags358 |= 8;
+    ((struct HalfBit3 *)&ra->flags358)->bit3 = 1;
+    ((struct HalfBit3 *)&rb->flags358)->bit3 = 1;
     b = *slotB;
     target = ((*slotA)->posZ - b->posZ) / 0x100 + 0x1A;
     dir = 0xEE >> (((u32)obj->flagsFB << 29) >> 31);
     motion_obj_set_move_target(b, target, dir, obj->move100);
     contacts_obj_start_move(*slotB, 2, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
         (obj->flagsFB & 4) ? 0x10 : 0xA);
-    ((u8 *)obj)[0x20B] |= 0x80;
+    ((struct HalfBit7 *)&((u8 *)obj)[0x20B])->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
-END_NONMATCH
 
 
 ASM_FUNC("asm/code_08033E44/pair_state_a_49_4c.s", void pair_state_a_49_4c(void))
