@@ -250,7 +250,7 @@ void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out
 
 void enemy_enter_contact_state(void *owner, struct Actor *ent);
 
-NONMATCH("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_home(void *owner, struct Actor *ent, void **out))
+void enemy_start_return_home(void *owner, struct Actor *ent, void **out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     u8 *rec = (u8 *)ent->rec;
@@ -260,6 +260,7 @@ NONMATCH("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_
     s32 (*div)(s32, s32);
     u32 cell;
     u16 speed;
+    u8 zero = 0;
 
     ((struct Bits3 *)&ent->mode)->field0 = 4;
     ent->sprite->frame20 = rec[ent->index + 0x42];
@@ -287,13 +288,13 @@ NONMATCH("asm/code_08142A38/enemy_start_return_home.s", void enemy_start_return_
     cell = div(facing, 2);
     obj_set_cell_coord(ent, cell, 0);
     speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x46);
-    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, (u8)0);
+    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
     *out = enemy_wait_after_step_b;
 }
-END_NONMATCH
 
 
 void enemy_idle_handler(void);
+void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_collide_then_idle(struct Owner *owner, struct Actor *ent, void **out)
 {
     u16 *table = ent->table;
@@ -348,7 +349,57 @@ ASM_FUNC("asm/code_08142A38/enemy_idle_handler.s", void enemy_idle_handler(void)
 
 void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
-ASM_FUNC("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(void))
+NONMATCH("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 *rec = (u8 *)ent->rec;
+    u8 idx;
+    u32 index;
+    struct Actor *partner;
+    s32 dx;
+    s32 dy;
+    s32 facing;
+    u8 *dp;
+    u32 dir;
+    u32 cell;
+
+    if (find_active_entry(owner, &idx))
+    {
+        index = idx;
+    }
+    else
+    {
+        index = (u32)(owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Actor **)owner)[index + 10];
+    ((struct Bits3 *)&ent->mode)->field0 = 1;
+    ent->byte239 = rec[*(u16 *)(ai + 0x178) + 0x40];
+    dx = partner->posX - ent->posX;
+    dy = partner->posY - ent->posY;
+    if ((dx | dy) != 0)
+    {
+        facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+    }
+    else
+    {
+        facing = -1;
+    }
+    dp = &ent->filler1C[0x24 - 0x1C];
+    facing &= 7;
+    dir = (*dp & -8) | facing;
+    *dp = dir;
+    cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(dir << 29) >> 29, 2);
+    obj_set_cell_coord(ent, cell, 0);
+    {
+        u8 tv = rec[*(u16 *)(ai + 0x178) + 0x3C];
+
+        *(u16 *)(ai + 0x17A) = tv;
+    }
+    *(s32 *)(ai + 0x184) = ent->posX;
+    *(s32 *)(ai + 0x188) = ent->posY;
+    *out = enemy_charge_handler;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))
 {
@@ -445,7 +496,7 @@ void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
-NONMATCH("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out))
+void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     u8 *rec = (u8 *)ent->rec;
@@ -455,6 +506,7 @@ NONMATCH("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_st
     s32 (*div)(s32, s32);
     u32 cell;
     u16 speed;
+    u8 zero = 0;
 
     ((struct Bits3 *)&ent->mode)->field0 = 4;
     ent->sprite->frame20 = rec[ent->index + 0x4C];
@@ -482,10 +534,9 @@ NONMATCH("asm/code_08142A38/contact_states_enemy_return_home.s", void contact_st
     cell = div(facing, 2);
     obj_set_cell_coord(ent, cell, 0);
     speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x50);
-    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, (u8)0);
+    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
     *out = enemy_wait_after_step;
 }
-END_NONMATCH
 
 
 void enemy_wait_after_step(void *owner, struct Actor *ent, void **out)
@@ -989,7 +1040,7 @@ void enemy_contact_check_state(struct Owner *owner, struct Actor *ent)
     }
 }
 
-NONMATCH("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out))
+void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     void **slot = &ent->handler;
@@ -1007,10 +1058,12 @@ NONMATCH("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_s
         {
             s16 box[8];
             u8 *rec;
+            u8 *f36;
 
             rec = (u8 *)ent->rec;
 
-            box[0] = (s8)rec[0x36] << 4;
+            f36 = rec + 0x36;
+            box[0] = (s8)*f36 << 4;
             box[2] = (s8)rec[0x37] << 4;
             box[4] = (s8)rec[0x38] << 4;
             box[1] = (s8)rec[0x39] << 4;
@@ -1028,7 +1081,6 @@ NONMATCH("asm/code_08142A38/enemy_contact_state_handler.s", void enemy_contact_s
     }
     *(void **)(ai + 0x140) = enemy_enter_contact_state;
 }
-END_NONMATCH
 
 void enemy_run_handler_advance(void *owner, struct Actor *ent)
 {
