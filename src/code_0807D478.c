@@ -520,10 +520,10 @@ NONMATCH("asm/code_0807D478/raster_irq_vcount.s", void raster_irq_vcount(void))
     vu16 *regIe;
     u32 vcountBit;
 
+    regIme = (vu16 *)0x04000208;
     node = gWorld->rasterCur;
     cur = node->line;
     waitFn = number_popup_raster;
-    regIme = (vu16 *)0x04000208;
     regDispstat = (vu16 *)0x04000004;
     regIe = (vu16 *)0x04000200;
     vcountBit = 4;
