@@ -583,6 +583,33 @@ void world_scroll_step(u8 *owner, u8 *obj)
     }
 }
 
+struct MotionCtrl
+{
+    u8 phase : 2;
+    u8 left : 5;
+    u8 axis : 1;
+} __attribute__((packed));
+
+struct MotionOff
+{
+    s8 off : 5;
+    u8 rest : 3;
+} __attribute__((packed));
+
+struct MotionCnt
+{
+    u16 off : 5;
+    u16 cnt : 5;
+    u16 rest : 6;
+} __attribute__((packed));
+
+struct MotionReload
+{
+    u8 lo : 2;
+    u8 val : 5;
+    u8 hi : 1;
+} __attribute__((packed));
+
 ASM_FUNC("asm/code_080F2448/world_target_motion.s", void world_target_motion(void))
 
 ASM_FUNC("asm/code_080F2448/node_step.s", void node_step(void))
