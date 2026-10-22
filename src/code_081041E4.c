@@ -203,7 +203,7 @@ NONMATCH("asm/code_081041E4/state_figure_land.s", void state_figure_land(struct 
     struct Figure *fig;
     struct Sprite *disp;
     struct Task *task;
-    u32 hasAnim;
+    s32 langOfs = 0x8C0;
     u32 labelId;
     u8 lang;
     u8 pointsRaw;
@@ -229,13 +229,12 @@ NONMATCH("asm/code_081041E4/state_figure_land.s", void state_figure_land(struct 
             ((struct SpriteFlags12 *)&fig->link->flags)->mode = 0;
         }
         ((struct SpriteFlags12 *)&fig->link->flags)->mode = 1;
-        hasAnim = fig->anim != -1;
-        disp = spawn_obj_by_id(0x7003, hasAnim, 0, 1);
+        disp = spawn_obj_by_id(0x7003, fig->anim != -1, 0, 1);
         gWorld->menuObj = (struct Widget *)disp;
         sprite_entry_update(disp);
         disp->x = 0x78;
         disp->y = 0x1C;
-        lang = ((u8 *)gSys)[0x8C0];
+        lang = ((u8 *)gSys)[langOfs];
         if (lang <= 4)
         {
             switch (lang)
