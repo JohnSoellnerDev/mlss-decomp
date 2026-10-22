@@ -258,6 +258,9 @@ function start, calls show the relocation (the called symbol). A worked example 
 - Stack slots follow the declaration scopes: a local array declared in an inner `{ }` block is
   placed after the outer locals (moves a byte local from `sp+0x14` to `sp+4`; example
   `enemy_contact_check_state` in src/code_08142A38.c).
+  Registers follow them too: several loops that each declare their counter in their own block get
+  different registers than one counter at function scope (`partner_scan_flags` in
+  src/code_080CC320.c, four passes with a block-local counter each).
 - A signed halfword the original keeps as `ldrsh` while yours becomes `ldrh` + shifts: assign it to
   an `s32` temporary first (`v = obj->unk1D4;` with `s32 v`).
 - A range test as two compares against the outer bounds (`cmp r0, #0xe; bgt else; cmp r0, #0xd;
