@@ -290,7 +290,7 @@
 08002984 span_extents_line arm
 08002A84 span_fill_rows arm
 08002BE8 gUnk_08002BE8 data
-08002C28 frame_9slice_tiles arm
+08002C28 frame_9slice_tiles arm dup=frame_9slice_tiles_routine
 08002D2C gUnk_08002D2C data size=A0E4
 0800CE10 gScenePaletteA data size=200
 0800D010 gScenePaletteB data size=200
