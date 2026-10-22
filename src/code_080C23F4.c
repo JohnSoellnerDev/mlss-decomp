@@ -200,7 +200,54 @@ void visible_place_hero_a_active_link_partner(struct HeroBody *body);
 void hero_a_visible_place_on_target(struct HeroBody *body);
 void hero_a_sprite_active_anim8_to_2520(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_finish(struct HeroBody *body))
+NONMATCH("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_finish(struct HeroBody *body))
+{
+    struct Hero *hero_a;
+    struct HeroBody *body_a;
+    struct HeroData *data;
+    s32 stepDone;
+    s32 quotient;
+    u32 lo;
+    u32 hi;
+
+    hero_a = gWorld->heroA;
+    body_a = &hero_a->body;
+    step_motion(body_a);
+    lo = body_a->wideLo;
+    hi = body_a->wideHi;
+    quotient = MATH_ROUTINE(s32 (*)(u32, u32), iwram_div)(hi << 14, lo);
+    if (body_a->step > quotient)
+        stepDone = 0;
+    else
+    {
+        stepDone = 1;
+        if (body_a->progress < quotient)
+            stepDone = 0;
+    }
+    if (stepDone)
+    {
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            data = body_a->data;
+            if (data->poseIndex == -1)
+                sprite_set_action(body_a, 6, 0x2000, 0);
+            else
+                sprite_set_action(body_a, 6, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+    }
+    if ((body_a->flags & 0x20) != 0)
+    {
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 8, 0x2000, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        effect_spawn_at(0x33, body_a->x / 0x100, body_a->y / 0x100, body_a->z / 0x100, body_a);
+        body->state = hero_a_sprite_active_anim8_to_2520;
+    }
+}
+END_NONMATCH
 
 void hero_pair_place_and_finish(struct HeroBody *body)
 {
