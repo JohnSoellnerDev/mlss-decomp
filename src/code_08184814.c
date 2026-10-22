@@ -146,10 +146,11 @@ void obj_bounce_point_plain(struct Point1Obj *obj)
 // Three points spinning about the vertical axis (angle index from the data), then a fixed
 // tilt by table index 12. The zoom grows by the step, the step decays by 7/8, the angle
 // advances by 6 and the height offset falls by 0x300 each frame.
-NONMATCH("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_model3_fast(struct Point1Obj *obj))
+void obj_spin_rise_model3_fast(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
+    s32 idx;
     s32 step;
     s32 angle;
     s32 lift;
@@ -172,7 +173,6 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_mod
     s32 y2;
     s32 z2;
     s32 t;
-    s32 zt;
     s32 pos;
 
     words = obj->data;
@@ -199,12 +199,13 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_mod
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        zt = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        zt = zt * (*cs / 0x40);
+        y2 = z1;
+        idx = angle & 0xFF;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
         sb = gSineTable;
-        sn = sb + (angle & 0xFF);
-        z2 = (zt - (*sn / 0x40) * x1) / 0x100;
+        sn = sb + idx;
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -254,12 +255,12 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_fast.s", void obj_spin_rise_mod
     *words++ = angle;
     *words = lift;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08184814/obj_spin_rise_model3_a.s", void obj_spin_rise_model3_a(struct Point1Obj *obj))
+void obj_spin_rise_model3_a(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
+    s32 idx;
     s32 step;
     s32 angle;
     s32 lift;
@@ -282,7 +283,6 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_a.s", void obj_spin_rise_model3
     s32 y2;
     s32 z2;
     s32 t;
-    s32 zt;
     s32 pos;
 
     words = obj->data;
@@ -309,12 +309,13 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_a.s", void obj_spin_rise_model3
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        zt = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        zt = zt * (*cs / 0x40);
+        y2 = z1;
+        idx = angle & 0xFF;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
         sb = gSineTable;
-        sn = sb + (angle & 0xFF);
-        z2 = (zt - (*sn / 0x40) * x1) / 0x100;
+        sn = sb + idx;
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -364,12 +365,12 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_a.s", void obj_spin_rise_model3
     *words++ = angle;
     *words = lift;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08184814/obj_spin_rise_model3_b.s", void obj_spin_rise_model3_b(struct Point1Obj *obj))
+void obj_spin_rise_model3_b(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
+    s32 idx;
     s32 step;
     s32 angle;
     s32 lift;
@@ -392,7 +393,6 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_b.s", void obj_spin_rise_model3
     s32 y2;
     s32 z2;
     s32 t;
-    s32 zt;
     s32 pos;
 
     words = obj->data;
@@ -419,12 +419,13 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_b.s", void obj_spin_rise_model3
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        zt = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        zt = zt * (*cs / 0x40);
+        y2 = z1;
+        idx = angle & 0xFF;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
         sb = gSineTable;
-        sn = sb + (angle & 0xFF);
-        z2 = (zt - (*sn / 0x40) * x1) / 0x100;
+        sn = sb + idx;
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -474,12 +475,12 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_b.s", void obj_spin_rise_model3
     *words++ = angle;
     *words = lift;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08184814/obj_spin_rise_model3_c.s", void obj_spin_rise_model3_c(struct Point1Obj *obj))
+void obj_spin_rise_model3_c(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
+    s32 idx;
     s32 step;
     s32 angle;
     s32 lift;
@@ -502,7 +503,6 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_c.s", void obj_spin_rise_model3
     s32 y2;
     s32 z2;
     s32 t;
-    s32 zt;
     s32 pos;
 
     words = obj->data;
@@ -529,12 +529,13 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_c.s", void obj_spin_rise_model3
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        zt = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        zt = zt * (*cs / 0x40);
+        y2 = z1;
+        idx = angle & 0xFF;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
         sb = gSineTable;
-        sn = sb + (angle & 0xFF);
-        z2 = (zt - (*sn / 0x40) * x1) / 0x100;
+        sn = sb + idx;
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -584,12 +585,12 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model3_c.s", void obj_spin_rise_model3
     *words++ = angle;
     *words = lift;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08184814/obj_spin_rise_model12.s", void obj_spin_rise_model12(struct Point1Obj *obj))
+void obj_spin_rise_model12(struct Point1Obj *obj)
 {
     struct Point1Local l;
     s32 zoom;
+    s32 idx;
     s32 step;
     s32 angle;
     s32 lift;
@@ -612,7 +613,6 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model12.s", void obj_spin_rise_model12
     s32 y2;
     s32 z2;
     s32 t;
-    s32 zt;
     s32 pos;
 
     words = obj->data;
@@ -639,12 +639,13 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model12.s", void obj_spin_rise_model12
         l.y = y1;
         z1 = (l.z * zoom) / 0x100;
         l.z = z1;
-        zt = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        zt = zt * (*cs / 0x40);
+        y2 = z1;
+        idx = angle & 0xFF;
+        cs = &gCosineTable[idx];
+        y2 = y2 * (*cs / 0x40);
         sb = gSineTable;
-        sn = sb + (angle & 0xFF);
-        z2 = (zt - (*sn / 0x40) * x1) / 0x100;
+        sn = sb + idx;
+        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
         l.z = z2;
         x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
         l.x = x2;
@@ -686,15 +687,14 @@ NONMATCH("asm/code_08184814/obj_spin_rise_model12.s", void obj_spin_rise_model12
     }
     zoom += step;
     step = (step * 7) / 8;
-    angle += 6;
-    lift -= 0x300;
+    angle += 3;
+    lift -= 0x200;
     words = obj->data;
     *words++ = zoom;
     *words++ = step;
     *words++ = angle;
     *words = lift;
 }
-END_NONMATCH
 
 // Single point with a zoom that moves by its step each frame; the step drops by 1 above zoom 384
 // and the zoom jumps to 256 when the step is negative and the zoom is at most 255.
