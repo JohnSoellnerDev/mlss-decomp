@@ -388,9 +388,9 @@ void popup_fade_step_b(struct Task *task)
 
 NONMATCH("asm/code_0807D478/popup_digit_spawn.s", struct Task *popup_digit_spawn(u32 digit, s32 x, s32 y, s32 z, u32 flag))
 {
-    struct Task *task;
-    struct PopupNode *node;
     struct World **pworld;
+    struct PopupNode *node;
+    struct Task *task;
     struct World *state;
     u32 glyphIndex;
     u32 idx;
@@ -404,7 +404,7 @@ NONMATCH("asm/code_0807D478/popup_digit_spawn.s", struct Task *popup_digit_spawn
     table = gGlyphIndexTable;
     glyphIndex = ((gSys[0x888] & 6) != 0) ? 0x1C : 0x1A;
     idx = *(u16 *)(table + glyphIndex);
-    copy((u8 *)gMapTable + gMapTable[idx], gUnk_02000440, 0x20);
+    copy((u8 *)gMapTable + *(u32 *)((u8 *)gMapTable + (idx << 2)), gUnk_02000440, 0x20);
     sysVal = *(u16 *)gSys;
     *(u16 *)gSys = sysVal | 0x4000;
     pworld = &gWorld;
