@@ -349,7 +349,31 @@ NONMATCH("asm/code_08081DA4/state_random_step.s", void state_random_step(struct 
 END_NONMATCH
 
 
-ASM_FUNC("asm/code_08081DA4/state_timed_motion.s", void state_timed_motion(struct SpriteTask *task))
+void state_timed_motion(struct SpriteTask *task)
+{
+    struct SpriteObj *obj = task->obj;
+    s32 timer;
+    s32 first;
+    s32 second;
+    if ((u8)step_motion(obj) != 0)
+    {
+        return;
+    }
+    if ((s16)task->timer != 0)
+    {
+        timer = (s16)task->timer;
+        first = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkD8 + obj->unk38 * (timer - 1)) / 0x100, timer);
+        second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * (timer - 1)) / 0x100, timer);
+        place_targets(obj, first, second, 0, 0x100);
+        set_step_and_offsets(obj, 0x700, obj->unk40 / 0x100 + 0x14);
+        task->timer--;
+    }
+    else
+    {
+        task->timer = 0x14;
+        task->next = state_wait_arrival;
+    }
+}
 
 void state_wait_arrival(struct SpriteTask *task)
 {
@@ -1345,7 +1369,7 @@ struct ScreenCamera
     u16 unk776;
 };
 
-NONMATCH("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(struct ScreenCamera *camera, struct SpriteObj *obj))
+void write_screen_entry(struct ScreenCamera *camera, struct SpriteObj *obj)
 {
     struct ScreenEntry *entry;
     s32 x;
@@ -1369,8 +1393,7 @@ NONMATCH("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(struc
     if ((obj->flags79 & 4) == 0)
     {
         base = 0x1F0;
-        v = (s8)obj->unk74 + base - y;
-        v += (s8)obj->unk75;
+        v = (s8)obj->unk74 + base - y + (s8)obj->unk75;
         if (v < 0)
         {
             entry->unkE = 0;
@@ -1381,7 +1404,6 @@ NONMATCH("asm/code_08081DA4/write_screen_entry.s", void write_screen_entry(struc
         }
     }
 }
-END_NONMATCH
 
 void offset_pair_by_camera(u8 *camera, s32 *a, s32 *b)
 {
