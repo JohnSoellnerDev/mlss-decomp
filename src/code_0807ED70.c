@@ -152,6 +152,7 @@ void task_finish_anim(void);
 void *spawn_obj_by_id(u32 id, u32 a, u32 b, u32 c);
 void sprite_entry_update(void *obj);
 u32 atan2_angle(s32 x, s32 y);
+s32 number_right_edge(s32 a, s32 b);
 
 struct Lo77
 {
@@ -694,7 +695,29 @@ void raster_irq_default(void)
 {
 }
 
-ASM_FUNC("asm/code_0807ED70/oam_write_tiles.s", void oam_write_tiles(u32 tiles, s32 x, s32 y, u32 prio, u32 right))
+NONMATCH("asm/code_0807ED70/oam_write_tiles.s", void oam_write_tiles(u32 tiles, s32 x, s32 y, u32 prio, u32 right))
+{
+    u8 *base = (u8 *)&gSys;
+    u16 *oam;
+    u32 attr0 = (y & 0xFF) | 0xFFFF8000;
+    u32 shift;
+
+    if (right != 0)
+        x = number_right_edge(tiles, x);
+    oam = (u16 *)*(u32 *)(base + 0x880);
+    shift = prio << 12;
+    do
+    {
+        x = (x - 8) & 0x1FF;
+        oam[0] = attr0;
+        oam[1] = x;
+        oam[2] = (((tiles & 0xF) << 1) + 0x49) | shift;
+        oam += 4;
+        tiles >>= 4;
+    } while (tiles != 0);
+    *(u32 *)(base + 0x880) = (u32)oam;
+}
+END_NONMATCH
 
 void task_anim_countdown(struct Task *task)
 {
