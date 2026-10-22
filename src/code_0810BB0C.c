@@ -220,6 +220,7 @@ NONMATCH("asm/code_0810BB0C/create_status_objects.s", void create_status_objects
     struct Obj *head;
     struct Obj *sub;
     u16 *reg;
+    s32 fl;
 
     if (get_world_timerObj() == 0)
     {
@@ -227,7 +228,9 @@ NONMATCH("asm/code_0810BB0C/create_status_objects.s", void create_status_objects
         {
             head = task_create_list_4c(scroll_text_step, 0);
             gWorld->timerObj = head;
-            gWorld->flags0B |= 0x40;
+            fl = gWorld->flags0B;
+            fl |= 0x40;
+            gWorld->flags0B = fl;
             sub = raster_line_add(timer_window_setup, 0x86, update_voice_message);
             gWorld->timerObj->unkC = sub;
             sub->unk16 = gUnk_0200001A;
@@ -280,11 +283,10 @@ void retract_window_panel(struct Obj *obj)
         *win0 = win;
     }
 }
-NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(u32 index))
+struct Obj *spawn_slot_marker(u32 index)
 {
     struct Fig *fig;
     struct Obj *marker;
-    u16 h;
 
     fig = gWorld->figs[index];
     if (fig == 0)
@@ -299,20 +301,25 @@ NONMATCH("asm/code_0810BB0C/spawn_slot_marker.s", struct Obj *spawn_slot_marker(
     marker->unk8 = (struct Child *)fig;
     if (gWorld->figs[1] == 0)
     {
-        h = 0x20;
+        marker->unk12 = 0x20;
     }
     else
     {
-        h = (fig->unkEC == -1) ? 0x3C : 4;
+        if (fig->unkEC == -1)
+        {
+            marker->unk12 = 0x3C;
+        }
+        else
+        {
+            marker->unk12 = 4;
+        }
     }
-    marker->unk12 = h;
     marker->unk14 = 0xA0;
     marker->unk16 = 0;
     marker->unk18 = 0xFFFF;
     gWorld->marks[index] = marker;
     return marker;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0810BB0C/draw_panel_values.s", void draw_panel_values(struct Obj *obj))
 
