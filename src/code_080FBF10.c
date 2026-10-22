@@ -348,7 +348,7 @@ u8 zone_hit_box_offsets(u8 *owner, struct SceneSlot *slot)
     return boxes_overlap_oriented(bounds, obj, entry, bounds[4], bounds[5]) & 0xFF;
 }
 
-NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owner, struct SceneSlot *slot))
+u32 zone_facing_entry(u8 *owner, struct SceneSlot *slot)
 {
     s16 *bounds = slot->box;
     struct SceneObj *obj = slot->obj;
@@ -359,6 +359,7 @@ NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owne
     u32 oct;
     u32 v;
     u8 flags;
+    s32 low;
 
     if (((s8 *)bounds)[12] < 0)
     {
@@ -394,7 +395,9 @@ NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owne
         goto atmost2;
     case 2:
         flags = entry->unk24;
-        if ((flags & 7) == 0)
+        low = 7;
+        low &= flags;
+        if (low == 0)
         {
             goto fail;
         }
@@ -432,7 +435,9 @@ NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owne
         {
             goto ok;
         }
-        if ((flags & 7) == 0)
+        low = 7;
+        low &= flags;
+        if (low == 0)
         {
             goto ok;
         }
@@ -443,7 +448,6 @@ NONMATCH("asm/code_080FBF10/zone_facing_entry.s", u32 zone_facing_entry(u8 *owne
 fail:
     return 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080FBF10/boxes_overlap.s", u32 boxes_overlap(s16 *bounds, struct SceneObj *a, struct SceneObj *b, s32 zAbove, s32 zBelow))
 
