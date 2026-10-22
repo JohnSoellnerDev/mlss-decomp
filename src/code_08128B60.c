@@ -49,7 +49,43 @@ void menu_obj_free(void *obj, u32 flags);
 void owner_destroy(void *owner, u32 flags);
 void run_pending_obj_callbacks(void);
 
-ASM_FUNC("asm/code_08128B60/fill_tile_rect.s", void fill_tile_rect(void))
+/* Fills a rectangle of 16-bit tile entries with zeros (flag 0) or with running numbers from first. */
+NONMATCH("asm/code_08128B60/fill_tile_rect.s", void fill_tile_rect(u16 *map, s32 x, s32 y, s32 width, s32 height, u16 first, u8 flag))
+{
+    u16 number = first;
+    u8 fill = flag;
+    u16 row;
+    u16 col;
+
+    x >>= 3;
+    y >>= 3;
+    width += x;
+    height += y;
+    row = y;
+    if (row < height)
+    {
+        do
+        {
+            s32 nextRow;
+            col = x;
+            nextRow = row + 1;
+            if (col < width)
+            {
+                u16 *rowBase = (u16 *)((u32)(row << 6) + (u32)map);
+                do
+                {
+                    if (fill == 0)
+                        rowBase[col] = fill;
+                    else
+                        rowBase[col] = number++;
+                    col++;
+                } while (col < width);
+            }
+            row = nextRow;
+        } while (row < height);
+    }
+}
+END_NONMATCH
 
 u32 vram_tile_index(u32 addr)
 {
