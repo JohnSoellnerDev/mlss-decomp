@@ -273,11 +273,14 @@ NONMATCH("asm/code_0816CA84/obj_move_child_step.s", void obj_move_child_step(str
     s32 pos;
     s32 limit;
     s32 *step;
+    s32 cur;
     s32 v;
     s32 next;
 
     step = &obj->unk80;
-    pos = obj->unk1C + *step;
+    cur = obj->unk1C;
+    pos = *step;
+    pos += cur;
     obj->unk1C = pos;
     if (pos <= 0x3FFF)
     {
