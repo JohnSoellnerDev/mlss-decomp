@@ -291,7 +291,8 @@ NONMATCH("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_til
         copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0x12, 0x1E, 2,
                           (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + ((s32)owner->posX << 2) + (u32)gMapTable), 0x8000);
     }
-} END_NONMATCH
+}
+END_NONMATCH
 
 void state_move_to_target(struct Owner *owner)
 {
@@ -396,7 +397,8 @@ NONMATCH("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(str
         owner->timer = 0x28;
         owner->state = 0;
     }
-} END_NONMATCH
+}
+END_NONMATCH
 
 void set_cur_flags_pending(u32 flags);
 void state_menu_open_wait(struct Owner *owner);
