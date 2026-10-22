@@ -204,6 +204,7 @@ u8 *obj_probe_tile_heights(struct Enemy *obj, s32 x, s32 y, s32 *h0, s32 *h1, s3
 void obj_set_sprite_link(struct Enemy *ent, u32 zero);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot);
+void flags_obj_set_mode(struct Enemy *ent, u32 mode);
 extern u8 gUnk_02000001[];
 
 void hit_active_entry(struct Enemy *owner, struct Enemy *ent, u32 *out)
@@ -530,7 +531,70 @@ NONMATCH("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flag
 END_NONMATCH
 
 void ai_face_target_tick(struct Enemy *parent, struct Enemy *obj, u32 *slot);
-ASM_FUNC("asm/code_0814CB10/face_entry.s", void face_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+NONMATCH("asm/code_0814CB10/face_entry.s", void face_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+{
+    struct Enemy *entry;
+    u8 *beh;
+    u8 idx;
+    s32 dx;
+    s32 dy;
+    s32 ax;
+    s32 ay;
+    s32 mode;
+    u32 scaled;
+    u32 ang;
+
+    beh = (u8 *)obj + 0x58;
+    if (!(u8)find_active_entry(parent, &idx))
+    {
+        idx = ((u32)parent->unk208 << 30) >> 31;
+    }
+    entry = *(struct Enemy **)((u8 *)parent + idx * 4 + 0x28);
+    flags_obj_set_mode(obj, 0x28);
+    dx = entry->posX - obj->posX;
+    dy = entry->posY - obj->posY;
+    ax = dx;
+    if (ax < 0)
+    {
+        ax = -ax;
+    }
+    ay = dy;
+    if (ay < 0)
+    {
+        ay = -ay;
+    }
+    if (ax > ay)
+    {
+        mode = 2;
+        if (dx < 0)
+        {
+            mode = 6;
+        }
+        ((struct BitsMode *)&obj->unk24)->low = mode;
+    }
+    else
+    {
+        ((struct BitsMode *)&obj->unk24)->low = (~dy >> 31) & 4;
+    }
+    scaled = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)*(u8 *)&obj->unk24 << 29) >> 29, 2);
+    obj_set_cell_coord(obj, scaled + 4, 0);
+    ((struct BitsMode *)&obj->unk214)->low = 1;
+    dx = entry->posX - obj->posX;
+    dy = entry->posY - obj->posY;
+    if ((dx | dy) != 0)
+    {
+        ang = (u16)angle_of_vector16(dx, dy);
+        obj->unk2 = (ang + 0x10) >> 8;
+    }
+    else
+    {
+        obj->unk2 = 0xFF;
+    }
+    *(u16 *)(beh + 0x17A) = 6;
+    *(u16 *)(beh + 0x17C) = 4;
+    *slot = (u32)ai_face_target_tick;
+}
+END_NONMATCH
 
 void ai_start_dash(struct Enemy *unused, struct Enemy *parent, u32 *slot);
 void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot);
@@ -636,14 +700,13 @@ void ai_dash_step(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot);
-NONMATCH("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+void ai_start_hop(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
     struct Enemy *child;
     u8 *beh;
     u8 *table;
     s32 roll;
     s32 dx;
-    s32 x0;
     s32 x;
     s32 y;
     s32 z;
@@ -655,15 +718,14 @@ NONMATCH("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *par
     obj_set_sprite_link(child, 1);
     if (obj->cell->unk11 & 0x40)
     {
-        x0 = obj->posX;
         dx = -0x300;
+        x = obj->posX + dx;
     }
     else
     {
-        x0 = obj->posX;
         dx = 0x300;
+        x = obj->posX + dx;
     }
-    x = x0 + dx;
     y = obj->posY;
     z = obj->posZ + 0x1900;
     z += obj->dz;
@@ -682,7 +744,6 @@ NONMATCH("asm/code_0814CB10/ai_start_hop.s", void ai_start_hop(struct Enemy *par
     ((struct Flags8 *)&obj->unk20E)->bit2 = 1;
     *slot = (u32)ai_airborne;
 }
-END_NONMATCH
 
 void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot)
@@ -740,13 +801,12 @@ void ai_airborne(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 }
 
 void ai_hop_fall(u32 unused, struct Enemy *obj, u32 *slot);
-NONMATCH("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot))
+void ai_leap_to_target(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
     struct Enemy *child;
     struct Enemy *target;
     s16 *vxp;
     s16 *vyp;
-    s32 *p248;
     u8 idx;
     s32 h0;
     s32 h1;
@@ -757,9 +817,9 @@ NONMATCH("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct 
     s32 tile_y;
     s32 aim_x;
     s32 aim_y;
-    s32 new_y;
     s32 dz;
     s32 roll;
+    s32 roll2;
 
     beh = (u8 *)obj + 0x58;
     child = obj->unk344;
@@ -784,14 +844,13 @@ NONMATCH("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct 
         if (h0 == 0x7FFFFFFF || (h1 != 0x7FFFFFFF && h2 == 0x7FFFFFFF))
         {
             child->posX = target->posX - (((*vxp << 1) + *vxp) << 3);
-            new_y = target->posY - (((*vyp << 1) + *vyp) << 3);
+            child->posY = target->posY - (((*vyp << 1) + *vyp) << 3);
         }
         else
         {
             child->posX = target->posX + (((target->unk242 << 1) + target->unk242) << 3);
-            new_y = target->posY + (((target->unk244 << 1) + target->unk244) << 3);
+            child->posY = target->posY + (((target->unk244 << 1) + target->unk244) << 3);
         }
-        child->posY = new_y;
         child->posZ = target->posZ;
         dz = 0xF000;
     }
@@ -805,15 +864,12 @@ NONMATCH("asm/code_0814CB10/ai_leap_to_target.s", void ai_leap_to_target(struct 
     child->dz = dz;
     obj_set_sprite_link(child, 1);
     roll = rand_below(2, mt19937_next());
-    p248 = (s32 *)((u8 *)child + 0x248);
+    *(s32 *)((u8 *)child + 0x248) = ((u16 *)(*(u8 **)(beh + 0x158) + 0x3E))[roll];
+    roll2 = rand_below(2, mt19937_next());
     table = *(u8 **)(beh + 0x158);
-    *p248 = ((u16 *)(table + 0x3E))[roll];
-    roll = rand_below(2, mt19937_next());
-    table = *(u8 **)(beh + 0x158);
-    child->unk2DC = ((u8 *)(table + 0x42))[roll];
+    child->unk2DC = ((u8 *)(table + 0x42))[roll2];
     *slot = (u32)ai_hop_fall;
 }
-END_NONMATCH
 
 void obj_set_sprite_link(struct Enemy *ent, u32 zero);
 void obj_set_active(struct Enemy *ent, u32 zero);
