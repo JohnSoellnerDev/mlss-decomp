@@ -1145,7 +1145,78 @@ void owner_step(struct OwnerObj *owner)
 
 ASM_FUNC("asm/code_080F8900/unknown_thumb_080f98d8.s", void unknown_thumb_080f98d8(void))
 
-ASM_FUNC("asm/code_080F8900/owner_init_entry.s", void owner_init_entry(void))
+extern u8 *gCurObj;
+extern const u8 gOwnerEntryTag[];
+extern const u8 gOwnerAuxTag[];
+void *init_slot_table(void *state);
+void flags_vars_setup_bg_layer(void *holder, u32 zero, u32 flags, void *block, u32 a4, u32 a5, void *a6, void *a7, void *a8);
+
+struct CurFlags28
+{
+    u8 lo2 : 2;
+    u8 mid4 : 4;
+    u8 hi2 : 2;
+};
+
+struct Bit1Byte
+{
+    u8 lo1 : 1;
+    u8 bit1 : 1;
+    u8 hi6 : 6;
+};
+
+struct Bit0Byte
+{
+    u8 bit0 : 1;
+    u8 rest : 7;
+};
+
+u32 owner_init_entry(u8 *owner, u8 kind, u8 arg2, u32 arg3, u32 arg5, u32 arg6, u16 arg7, u32 arg8, u8 arg9, u8 keep_slots)
+{
+    u8 *state = *(u8 **)(owner + 0x24);
+    u8 *global = gCurObj;
+    u32 zero;
+    s32 fresh;
+    u8 *block;
+
+    zero = 0;
+    *(u16 *)(global + 0x20) = arg8;
+    ((struct CurFlags28 *)(global + 0x28))->mid4 = arg9;
+    block = init_text_obj(heap_alloc2(8, 0, gOwnerEntryTag, 0), arg3, arg5, 0xA);
+    *(u8 **)(owner + 0x28) = block;
+    flags_vars_setup_bg_layer(block, kind, arg2, (void *)arg6, 2, arg7, state + 0x998, (void *)zero, (void *)zero);
+    ((struct Bit1Byte *)(*(u8 **)(*(u8 **)(owner + 0x28) + 4) + 0x1B8))->bit1 = 0;
+    *(void **)(owner + 0x20) = init_slot_table(heap_alloc2(4, 0, gOwnerAuxTag, 0));
+    {
+        u8 *st = *(u8 **)(owner + 0x24);
+
+        fresh = 0;
+        if (keep_slots == 0)
+        {
+            fresh = 1;
+        }
+        ((struct Bit0Byte *)(st + 0x9A3))->bit0 = fresh;
+    }
+    if (keep_slots == 0)
+    {
+        u8 *slot;
+        s16 count;
+        u32 zeroWord;
+        s32 scale;
+
+        count = 12;
+        slot = *(u8 **)(*(u8 **)(owner + 0x14) + 0x158);
+        zeroWord = 0;
+        scale = 0x100;
+        for (; count > 0; count--, slot += 0x40)
+        {
+            *(u32 *)slot = zeroWord;
+            *(u16 *)(slot + 0x3A) = scale;
+            ((struct Bit0Byte *)(slot + 0x3C))->bit0 = 1;
+        }
+    }
+    return load_u32(*(u8 **)(owner + 0x28));
+}
 
 void owner_tick_records(u8 *owner)
 {
