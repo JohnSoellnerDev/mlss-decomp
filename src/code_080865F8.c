@@ -1,6 +1,19 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBit0
+{
+    u16 bit0 : 1;
+    u16 hi : 15;
+};
+
+struct HalfBit6
+{
+    u16 lo : 6;
+    u16 bit6 : 1;
+    u16 hi : 9;
+};
+
 struct PoseBits11
 {
     u8 lo6 : 6;
@@ -539,7 +552,7 @@ NONMATCH("asm/code_080865F8/effect_from_table_obj.s", struct Actor *effect_from_
 
     child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
     table = &((const u16 *)gOffsetRows)[code];
-    child->mode |= 0x40;
+    ((struct HalfBit6 *)&child->mode)->bit6 = 1;
     child->unk44 = table[0];
     child->unk45 = table[1];
     child->unk46 = table[2];
@@ -557,9 +570,9 @@ NONMATCH("asm/code_080865F8/effect_from_table_obj.s", struct Actor *effect_from_
     bitB = obj->pose->flags11;
     bitB &= 0x40;
     bitA = cpose->flags11;
-    bitA &= -0x41;
+    ((struct HalfBit6 *)&bitA)->bit6 = 0;
     cpose->flags11 = bitA | bitB;
-    child->flags |= 1;
+    ((struct HalfBit0 *)&child->flags)->bit0 = 1;
     child->link = obj->link;
     fn = effect_follow;
     child->state = fn;
