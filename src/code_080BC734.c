@@ -628,7 +628,57 @@ void hero_a_place_pose_finish(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080BC734/hero_b_place_last_pose.s", void hero_b_place_last_pose(void))
+static inline void *focus_obj(void)
+{
+    return gWorld->focus24C;
+}
+
+void hero_b_place_last_pose(struct HeroBody *owner)
+{
+    struct World *world;
+    struct Hero *hero_b;
+    struct HeroBody *body_b;
+    struct HeroSprite *sprite;
+    struct HeroSpan *span;
+    s32 ty;
+    s32 x;
+    s32 y;
+
+    world = gWorld;
+    hero_b = world->heroB;
+    body_b = &hero_b->body;
+    if ((body_b->sprite->flags & 8) != 0)
+    {
+        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+        {
+            ty = body_b->targetY;
+            if (ty < 0)
+                ty += 0xFF;
+            ty >>= 8;
+            x = (s16)obj_last_x(focus_obj()) + 0x110;
+            y = (s16)obj_last_y(focus_obj()) + ty;
+            place_targets(body_b, x, y, 0, -1);
+            set_motion_start(body_b, 0x400);
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->poseIndex == -1)
+                sprite_set_action(body_b, 0, 0x2002, 0);
+            else
+                sprite_set_action(body_b, 0, 0x204F, 0);
+            sprite = body_b->sprite;
+            {
+                s32 flip = 0;
+                span = &body_b->span;
+                if (span->a >= span->b)
+                    flip = 1;
+                ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
+            }
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        owner->state = hero_b_step_place_pose_finish;
+    }
+}
 
 void hero_b_step_place_pose_finish(struct HeroBody *body)
 {
