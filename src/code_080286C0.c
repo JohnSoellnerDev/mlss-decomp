@@ -408,7 +408,7 @@ NONMATCH("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(struct Sc
 
     block = ~keep & 0x3FF;
     old = ((struct KeyRegs *)gSys)->enable78;
-    allowed = old & block;
+    allowed = (old & 0x3FF) & block;
     ((struct KeyRegs *)gSys)->enable78 = block;
     if ((obj->keyFlags & 0x20) == 0)
     {
@@ -664,16 +664,14 @@ void call_7380_for_state(struct SceneObj *obj)
     }
 }
 
-NONMATCH("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(struct SceneObj *obj, u32 load, u32 p2, u32 p3, u32 p5, u32 p6))
+NONMATCH("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(struct SceneObj *obj, u32 load, u32 p2, u16 p3, u16 p5, u16 p6))
 {
-    u32 lo;
-    u32 hi;
-    u32 e00;
-    u32 e04;
+    u16 lo;
+    u16 hi;
     u8 *pal = gSys;
 
-    lo = (u16)p5;
-    hi = (p6 << 16) >> 16;
+    lo = p5;
+    hi = p6;
     pal += 0x884;
     *(u32 *)pal |= (p6 << 16) | lo;
     if (load == 0)
@@ -687,9 +685,8 @@ NONMATCH("asm/code_080286C0/sync_and_draw_obj.s", void sync_and_draw_obj(struct 
     }
     obj->unkF4 = lo;
     obj->unkF6 = hi;
-    e00 = (lo & 1) ? gUnk_03000E00 : 0;
-    e04 = (lo & 1) ? gUnk_03000E04 : 0;
-    sub_08115F54(obj->child, (u8)load, (u16)p3, (u16)p2, lo, hi, e00, e04);
+    sub_08115F54(obj->child, (u8)load, (u16)p3, (u16)p2, lo, hi,
+        (lo & 1) ? gUnk_03000E00 : 0, (lo & 1) ? gUnk_03000E04 : 0);
 }
 END_NONMATCH
 
