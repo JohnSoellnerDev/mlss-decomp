@@ -98,7 +98,9 @@ function start, calls show the relocation (the called symbol). A worked example 
   (`obj_clear_mask_if_timer`). Examples: src/code_080A048C.c, src/code_08092784.c.
 - Several stores through one pointer (`*p = a; p++; *p = b;`) become `stmia`; when the original
   uses `str` and `adds`, compute each address in its own variable (`figure_pair_step` in
-  src/code_080FD8D8.c).
+  src/code_080FD8D8.c). Halfword stores to the display register shadows with an `adds rX, #2`
+  between them where your C folds the step into `strh [rX, #2]`: the pointer is `vu16 *`
+  (`map_obj_write_scroll` in src/code_0805AF28.c).
 - A teardown that sets a class pointer, calls a child, then sets the base class pointer again
   and frees the object: the second half is an inlined helper. Written directly, GCC keeps the
   field address in a register across the call (`obj_teardown` in src/code_080502DC.c).
