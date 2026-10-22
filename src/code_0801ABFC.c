@@ -102,6 +102,17 @@ struct AnimTick
     u8 mode;
 };
 
+struct AnimFrameRec
+{
+    u8 filler0[0x18];
+    const u8 *unk18;
+    u8 unk1C;
+    u8 unk1D;
+    u16 unk1E;
+    u8 unk20;
+    u8 unk21;
+};
+
 
 extern u8 gSys[];
 extern u16 gUnk_03000D3C;
@@ -117,6 +128,9 @@ extern const u8 gClassD758[];
 extern const u8 gObjHandler[];
 extern const u8 gTimerDesc[];
 extern const u8 gHeapTagLinkWindow[];
+extern const u8 gLowBitMasks8[];
+extern const u8 gTagCgdw[];
+void cpu_fast_set(const void *src, void *dst, u32 control);
 extern const u8 gHeapTagTextboxScene[];
 extern const u8 gHeapTagSceneCreate[];
 void store_save_slot(void);
@@ -426,7 +440,76 @@ void set_link_slot_mask(u16 mask)
     gUnk_03000D3C = mask;
 }
 
-ASM_FUNC("asm/code_0801ABFC/init_vt_08cdd758.s", void init_vt_08cdd758(void))
+NONMATCH("asm/code_0801ABFC/init_vt_08cdd758.s", struct AnimFrameRec *init_vt_08cdd758(struct AnimFrameRec *obj, u8 kind, u32 data, u16 arg4, u16 index, u8 pal, u8 arg7))
+{
+    u8 *buf;
+    u8 *dst;
+    u8 *p;
+    const u8 *src;
+    u32 color;
+    u32 mask;
+    u32 row;
+    u32 t;
+    u8 j;
+
+    task_insert(obj, kind, data);
+    obj->unk18 = gClassD758;
+    obj->unk1D = arg4;
+    obj->unk1E = index >> 5;
+    obj->unk20 = pal >> 4;
+    obj->unk21 = arg7;
+    color = pal & 0xF;
+    buf = heap_alloc(0x20, 0, gTagCgdw, 0);
+    dst = buf;
+    src = gLowBitMasks8;
+    for (row = 0; row < 8; row++)
+    {
+        mask = 0x80;
+        for (j = 0; j < 2; j++)
+        {
+            t = *src & mask;
+            if (t)
+            {
+                *dst = color;
+            }
+            else
+            {
+                *dst = t;
+            }
+            t = *src & (mask >> 1);
+            if (t)
+            {
+                *dst |= color << 4;
+            }
+            p = dst + 1;
+            t = *src & (mask >> 2);
+            if (t)
+            {
+                *p = color;
+            }
+            else
+            {
+                *p = t;
+            }
+            t = *src & (mask >> 3);
+            if (t)
+            {
+                *p |= color << 4;
+            }
+            dst += 2;
+            mask >>= 4;
+        }
+        src++;
+    }
+    cpu_fast_set(buf, (void *)(index + 0x06010000), 8);
+    if (buf != 0)
+    {
+        heap_free_a(buf);
+    }
+    return obj;
+}
+
+END_NONMATCH
 
 struct SplinePoint
 {
@@ -465,8 +548,8 @@ NONMATCH("asm/code_0801ABFC/poll_spline_path.s", u32 poll_spline_path(struct Spl
         sum_x = 0;
         sum_y = 0;
         i = -2;
+        bound = obj->count + 1;
         n = obj->count;
-        bound = n + 1;
         pos = obj->pos;
         speed = obj->speed;
         if (i <= bound)
@@ -509,19 +592,18 @@ NONMATCH("asm/code_0801ABFC/poll_spline_path.s", u32 poll_spline_path(struct Spl
         }
         *out_x = sum_x / 0x100;
         *out_y = sum_y / 0x100;
-        pos = n * speed + pos;
-        obj->pos = pos;
-        if (pos < (n << 16))
-        {
-            result = 1;
-        }
-        else
+        obj->pos = n * speed + pos;
+        if (obj->pos >= (n << 16))
         {
             obj->pos = n << 16;
             *out_x = obj->points[n - 1].x << 8;
             *out_y = obj->points[n - 1].y << 8;
             obj->points = 0;
             result = 0;
+        }
+        else
+        {
+            result = 1;
         }
     }
     else
