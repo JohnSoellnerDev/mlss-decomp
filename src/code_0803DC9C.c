@@ -99,7 +99,49 @@ void obj_setup_aux_1045(void *sub);
 void obj_release_oam(void *block);
 extern const u16 gUnitStatusIdTable[];
 
-ASM_FUNC("asm/code_0803DC9C/set_unit_table_flags.s", void set_unit_table_flags(void))
+NONMATCH("asm/code_0803DC9C/set_unit_table_flags.s", void set_unit_table_flags(struct PairObj *obj, struct PairSub *unit))
+{
+    s32 mask = 0x1F;
+    const u16 *table = gUnitStatusIdTable;
+    u16 *half = &unit->half218;
+    u8 *status = &unit->status359;
+    s32 extra;
+
+    if (table[0] == *half)
+    {
+        *status = mask & *status;
+    }
+    else
+    {
+        if (table[1] == *half)
+            extra = 0x20;
+        else if (table[2] == *half)
+            extra = 0x40;
+        else if (table[3] == *half)
+            extra = 0x60;
+        else if (table[4] == *half)
+            extra = 0x80;
+        else
+            goto done;
+        *status = (mask & *status) | extra;
+    }
+
+done:
+    update_pair_facing(obj, 1, 1);
+    ((struct StateLo3 *)&unit->stateWord214)->lo3 = 0;
+    unit->state = 0x6B;
+    ((struct Flag351Bits *)&unit->flags351)->b6 = 1;
+    unit->field23B = 0;
+    if (unit->ringFlags358 & 8)
+    {
+        unit->part388->state = 0x6B;
+        ((struct Flag351Bits *)&unit->part388->flags351)->b6 = 1;
+        unit->part388->field23B = 0;
+    }
+    unit->field355 = 0;
+    set_slot_value(0x4A, -1);
+}
+END_NONMATCH
 
 void setup_unit_move(struct PairObj *obj, struct PairSub *unit)
 {
@@ -129,7 +171,36 @@ void setup_unit_move(struct PairObj *obj, struct PairSub *unit)
     set_slot_value(0x46, -1);
 }
 
-ASM_FUNC("asm/code_0803DC9C/setup_pair_move_58.s", void setup_pair_move_58(void))
+NONMATCH("asm/code_0803DC9C/setup_pair_move_58.s", void setup_pair_move_58(struct PairObj *obj))
+{
+    struct PairSub *a;
+    struct PairSub *b;
+    u8 zero;
+
+    update_pair_facing(obj, 1, 1);
+    b = obj->subB;
+    a = obj->subA;
+    zero = 0;
+    a->state = 0x58;
+    b->state = 0x58;
+    obj->subA->flags351 |= 0x40;
+    obj->subB->flags351 |= 0x40;
+    obj->subA->field23B = zero;
+    obj->subB->field23B = zero;
+    obj_set_id(obj->subA, 0x1002);
+    motion_obj_set_move_target(obj->subA, 0x18, 0x75, obj->speed100);
+    {
+        struct SubTable338 *table = obj->subA->table338;
+        u8 *arg0 = (u8 *)obj->subA + table->off38;
+        void (*func)(void *, u32) = table->func3C;
+        func(arg0, 1);
+    }
+    obj->word208 &= 0xFFFE7FFF;
+    obj_setup_aux_1045(obj->subA);
+    obj->subA->ctl36C->frame20 = obj->fieldFB >> 3;
+    set_slot_value(0x46, -1);
+}
+END_NONMATCH
 
 void init_sub_unit_table(struct PairObj *obj, struct PairSub *unit)
 {
@@ -151,7 +222,41 @@ void init_sub_unit_table(struct PairObj *obj, struct PairSub *unit)
     set_slot_value(0x56, -1);
 }
 
-ASM_FUNC("asm/code_0803DC9C/release_unit.s", void release_unit(void))
+NONMATCH("asm/code_0803DC9C/release_unit.s", void release_unit(struct PairObj *obj, struct PairSub *unit))
+{
+    u8 *group;
+    s32 none;
+    s32 id;
+
+    unit->state = 0xF;
+    if (unit->ringFlags358 & 8)
+        unit->part388->state = 0xF;
+    group = &unit->group54;
+    obj_release_oam(obj->oamBlocks[0]);
+    obj_release_oam(obj->oamBlocks[1]);
+    obj_release_oam(obj->oamBlocks[2]);
+    obj_release_oam(obj->oamBlocks[3]);
+    obj_release_oam(obj->oamBlocks[4]);
+    obj_release_oam(obj->oamBlocks[5]);
+    obj_release_oam(obj->oamBlocks[6]);
+    obj_release_oam(obj->oamBlocks[7]);
+    none = -1;
+    if (*group == 0)
+        id = 0x1001;
+    else
+        id = 0x1002;
+    obj_set_id(unit, id);
+    unit->sprite->half6 = 0x100;
+    unit->sprite->half4 = 0x100;
+    unit->field23B = 0;
+    {
+        struct SubTable80 *t = (struct SubTable80 *)((u8 *)unit->table338 + 0x80);
+        u8 *arg0 = (u8 *)unit + t->off0;
+        t->func4(arg0, 1);
+    }
+    set_slot_value(0x49, none);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0803DC9C/update_obj_gfx_state.s", void update_obj_gfx_state(void))
 
