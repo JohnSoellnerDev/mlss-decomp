@@ -173,6 +173,11 @@ void set_motion_offsets(struct HeroBody *body, u32 offsets);
 s32 obj_last_x(void *obj);
 s32 obj_last_y(void *obj);
 
+static inline void *tracked_obj(void)
+{
+    return gWorld->trackedObj;
+}
+
 void hero_a_active_anims(struct HeroBody *body);
 void hero_b_place_from_a(struct HeroBody *body);
 void hero_b_step_end_d354(struct HeroBody *body);
@@ -282,4 +287,32 @@ void hero_b_place_from_a(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080AD18C/hero_b_step_end_d354.s", void hero_b_step_end_d354(struct HeroBody *body))
 
-ASM_FUNC("asm/code_080AD18C/hero_b_follow_tracked_object.s", void hero_b_follow_tracked_object(void))
+void hero_b_follow_tracked_object(struct HeroBody *body)
+{
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 x;
+    s32 y;
+
+    if ((body_b->sprite->flags & 8) != 0)
+    {
+        s32 moved = body_b->x - 0x1000;
+        body_b->x = moved;
+        body_b->targetX = moved;
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 8, 0x2061, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            s32 offY = body_b->sprite->ofsY;
+            x = (s16)obj_last_x(tracked_obj()) - 0x18;
+            y = (s16)obj_last_y(tracked_obj()) + offY;
+            place_targets(body_b, x, y, 0, -1);
+            { u16 h = 0x28; body_b->height = h; }
+            set_motion_offsets(body_b, 0x600);
+        }
+        body->state = hero_b_enter_side;
+    }
+}
