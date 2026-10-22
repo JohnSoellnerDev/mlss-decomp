@@ -10,6 +10,12 @@ struct OrbitNode
     u8 unk1B;
 };
 
+struct OrbitFlagBits
+{
+    u8 lo7 : 7;
+    u8 bit7 : 1;
+} __attribute__((packed));
+
 struct SpriteEntry
 {
     u8 filler0[4];
@@ -308,7 +314,7 @@ void swing_then_draw(struct Body *body)
     }
 }
 
-static inline void copy_sprite_u16(struct Body *body, struct Body *head, u32 off)
+static inline void copy_sprite_unk4(struct Body *body, struct Body *head)
 {
     struct SpriteEntry *bodySpr;
     struct SpriteEntry *childSpr;
@@ -317,17 +323,28 @@ static inline void copy_sprite_u16(struct Body *body, struct Body *head, u32 off
     bodySpr = body->sprite;
     childSpr = body->child->sprite;
     headSpr = head->sprite;
-    *(u16 *)((u8 *)childSpr + off) = *(u16 *)((u8 *)headSpr + off);
-    *(u16 *)((u8 *)bodySpr + off) = *(u16 *)((u8 *)headSpr + off);
+    childSpr->unk4 = headSpr->unk4;
+    bodySpr->unk4 = headSpr->unk4;
 }
 
-NONMATCH("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orbit(struct Body *body))
+static inline void copy_sprite_unk6(struct Body *body, struct Body *head)
+{
+    struct SpriteEntry *bodySpr;
+    struct SpriteEntry *childSpr;
+    struct SpriteEntry *headSpr;
+
+    bodySpr = body->sprite;
+    childSpr = body->child->sprite;
+    headSpr = head->sprite;
+    childSpr->unk6 = headSpr->unk6;
+    bodySpr->unk6 = headSpr->unk6;
+}
+
+void place_members_on_orbit(struct Body *body)
 {
     u32 count;
     struct Body *head;
     struct OrbitNode *node;
-    struct OrbitNode *next;
-    u8 flag;
     s32 *speed;
     s32 *span;
     const s16 *cosTab;
@@ -344,28 +361,24 @@ NONMATCH("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orb
     {
         if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(count, 5) == 0)
         {
-            flag = node->unk1B;
-            node->unk1B = (((flag >> 7) ^ 1) << 7) | (flag & 0x7F);
+            ((struct OrbitFlagBits *)&node->unk1B)->bit7 = ((struct OrbitFlagBits *)&node->unk1B)->bit7 ^ 1;
         }
         if (count == 9)
         {
             node->unk4 = head->targetX;
             node->unk8 = head->targetY;
-            next = node->next;
         }
         else if (count == 0x13)
         {
             node->unk4 = body->targetX;
             node->unk8 = body->targetY;
-            next = node->next;
         }
         else
         {
-            next = node->next;
-            node->unk4 = next->unk4;
-            node->unk8 = next->unk8;
+            node->unk4 = node->next->unk4;
+            node->unk8 = node->next->unk8;
         }
-        node = next;
+        node = node->next;
         count++;
     }
 
@@ -394,10 +407,9 @@ NONMATCH("asm/code_080A048C/place_members_on_orbit.s", void place_members_on_orb
     prod = *speed * cdiv;
     body->y = 0x6C00 - (prod / 0x100);
     body->z = head->z;
-    copy_sprite_u16(body, head, 4);
-    copy_sprite_u16(body, head, 6);
+    copy_sprite_unk4(body, head);
+    copy_sprite_unk6(body, head);
 }
-END_NONMATCH
 
 u32 link_to_partner_fx(struct Body *body, struct Body *partner, u32 mode)
 {
@@ -701,13 +713,17 @@ NONMATCH("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struc
     hero = gWorld->heroA;
     hbody = &hero->body;
     step_motion(hbody);
-    motionX = hbody->motionX;
-    motionY = hbody->motionY;
+    motionX = hero->body.motionX;
+    motionY = hero->body.motionY;
     ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(motionY << 14, motionX);
-    if (hbody->stepLen <= ratio && hbody->progress >= ratio)
-        reached = 1;
-    else
+    if (hero->body.stepLen > ratio)
         reached = 0;
+    else
+    {
+        reached = 1;
+        if (hero->body.progress < ratio)
+            reached = 0;
+    }
     if (reached != 0)
     {
         mode = hbody->mode & 6;
