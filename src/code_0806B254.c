@@ -155,6 +155,10 @@ u32 obj_pair_link_state(struct ActorObj *obj);
 u32 actor_lookup_or_remove(struct ActorObj *obj, u32 slot);
 void obj_slide_x_finish(struct ActorObj *obj);
 void actor_action8_if_no_child(struct ActorObj *obj);
+u32 obj_link_owner(struct ActorObj *obj);
+u32 obj_query_part_finish(struct ActorObj *obj, u32 a, u32 b);
+void actor_begin_offset_motion(struct ActorObj *obj);
+void actor_idle_reset_alt(struct ActorObj *obj);
 
 void obj_spawn_part_child(struct ActorObj *obj)
 {
@@ -231,7 +235,76 @@ void unknown_code_0806b3ba(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_slot(void))
+NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_slot(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    s32 t;
+    s32 dxl;
+    s32 dyl;
+    u32 bits;
+    u32 parent6;
+
+    if (obj->pose->flags & 8)
+    {
+        t = obj->timer;
+        t--;
+        obj->timer = t;
+        if ((t << 16) <= 0)
+        {
+            if (obj->paramA8 == 0)
+            {
+                sprite_set_action(obj, obj->paramA4 + 3, 0, 0);
+                effect_spawn_at(0xD92, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+            }
+            else
+            {
+                sprite_set_action(obj, obj->paramA4 + 6, 0, 0);
+                effect_spawn_at(0xD9A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+            }
+            obj->state = actor_idle_reset_alt;
+            if (obj->paramA8 == 0)
+            {
+                child = obj_spawn(obj->part, 0x408B, obj->baseX / 0x100 - 0x40, obj->baseY / 0x100 + 2,
+                                  obj->baseH / 0x100 + 0x30, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            }
+            else
+            {
+                child = obj_spawn(obj->part, 0x408C, obj->baseX / 0x100 - 0x3C, obj->baseY / 0x100 + 2,
+                                  obj->baseH / 0x100 + 0x1D, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            }
+            obj->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 2;
+            parent6 = obj->flags77;
+            parent6 &= 0x40;
+            bits = child->flags77;
+            bits = (bits & ~0x40) | parent6;
+            bits &= ~0x20;
+            child->flags77 = bits;
+            child->handler68 = on_arrive;
+            child->unk6C = obj->unk6C;
+            child->owner = obj->owner;
+            child->tag = obj->tag;
+            obj_list_push_default(child);
+            child->handler58 = (void (*)(struct ActorObj *))obj_link_owner;
+            child->handler5C = (void (*)(struct ActorObj *))obj_query_part_finish;
+            child->targetX = obj->owner->part->targetX;
+            child->targetY = obj->owner->part->targetY;
+            child->targetH = obj->baseH;
+            *(u8 *)&child->flags79 |= 0x20;
+            child->motionSpeed = 0x300;
+            child->motionStart = 0;
+            start_motion(child);
+            child->state = actor_begin_offset_motion;
+            dyl = obj->owner->part->targetY - child->baseY;
+            dxl = obj->owner->part->targetX - child->baseX;
+            child->dh = child->baseH / 0x100;
+            child->dy = (obj->owner->part->targetY + dyl) / 0x100;
+            child->dx = (obj->owner->part->targetX + dxl) / 0x100;
+            set_slot_value(0x85, -1);
+        }
+    }
+}
+END_NONMATCH
 
 void obj_pose_active_move_high(struct ActorObj *obj)
 {
