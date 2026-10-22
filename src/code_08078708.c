@@ -120,6 +120,13 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
+struct EntryBit4
+{
+    u8 low4 : 4;
+    u8 bit4 : 1;
+    u8 high3 : 3;
+};
+
 struct Flags79Bits
 {
     u8 low5 : 5;
@@ -230,12 +237,12 @@ NONMATCH("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(struct 
     if (actorA->callback == actor_link_anim_steps)
     {
         actorA->callback = gUnk_03000ED4;
-        actorA->entry->flags &= ~0x10;
+        ((struct EntryBit4 *)&actorA->entry->flags)->bit4 = 0;
     }
     if (actorB->callback == actor_link_anim_steps)
     {
         actorB->callback = gUnk_03000ED8;
-        actorB->entry->flags &= ~0x10;
+        ((struct EntryBit4 *)&actorB->entry->flags)->bit4 = 0;
     }
     gUnk_03000F5C = 0;
     gUnk_03000F5D = 0;
@@ -244,12 +251,8 @@ NONMATCH("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(struct 
     {
         if (child->callback == actor_link_anim_steps)
         {
-            u8 n;
-
-            child->entry->flags &= ~0x10;
-            n = gUnk_03000F5C;
-            gUnk_03000F5C = n + 1;
-            child->callback = gUnk_03000EDC[n];
+            ((struct EntryBit4 *)&child->entry->flags)->bit4 = 0;
+            child->callback = gUnk_03000EDC[gUnk_03000F5C++];
         }
         child = child->child;
     }
@@ -258,12 +261,8 @@ NONMATCH("asm/code_08078708/unlink_actor_pair.s", void unlink_actor_pair(struct 
     {
         if (child->callback == actor_link_anim_steps)
         {
-            u8 n;
-
-            child->entry->flags &= ~0x10;
-            n = gUnk_03000F5D;
-            gUnk_03000F5D = n + 1;
-            child->callback = gUnk_03000F1C[n];
+            ((struct EntryBit4 *)&child->entry->flags)->bit4 = 0;
+            child->callback = gUnk_03000F1C[gUnk_03000F5D++];
         }
         child = child->child;
     }
@@ -532,7 +531,7 @@ NONMATCH("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(stru
         default:
             goto none;
         }
-        sprite_set_action(obj, kind, 0, 0);
+        sprite_set_action(obj, 0, kind, 0);
         effect_spawn_at(0x29F1, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
         obj->timer2++;
         goto tail;
@@ -659,7 +658,11 @@ NONMATCH("asm/code_08078708/spawn_child_4030_with_nodes.s", void spawn_child_403
         sprite_set_action(child, obj->phase, 0, 0);
         child->child = obj->child;
         obj->child = child;
-        child->flags79 |= 1;
+        {
+            u32 flags = child->flags79;
+
+            child->flags79 = flags | 1;
+        }
         child->unk74 = obj->unk74;
         child->callback = scroll_queue_and_cull;
         child->unkB2 = 0x2222;
@@ -669,8 +672,8 @@ NONMATCH("asm/code_08078708/spawn_child_4030_with_nodes.s", void spawn_child_403
         node->unk8 = &child->list;
         pool = ((u8 *)gWorld)[7];
         count = (pool << 27) >> 27;
-        ((u8 *)gWorld)[7] = (pool & 0xE0) | ((count - 1) & 0x1F);
-        node->unkC = (node->unkC & 0xE0) | count;
+        ((u8 *)gWorld)[7] = (pool & -0x20) | ((count - 1) & 0x1F);
+        node->unkC = (node->unkC & -0x20) | count;
         child->list = (struct ScrollNode *)sprite_node_alloc(child->unk10, child->unk14, child->unk18);
         n2 = sprite_node_alloc(child->unk10, child->unk14, child->unk18);
         ((struct SpriteNode *)child->list)->next = n2;
@@ -696,6 +699,13 @@ NONMATCH("asm/code_08078708/slot_place_and_move.s", u32 slot_place_and_move(stru
     struct SpriteObj *part;
     struct SpriteObj *child;
     struct SpriteObj *walk;
+    s32 *p84;
+    s32 *p88;
+    u8 *f79;
+    u16 *p7c;
+    u16 *pwait;
+    s32 *p8c;
+    u16 *p7a;
 
     found = lookup_slot(obj, other);
     if (found != 0)
@@ -706,6 +716,13 @@ NONMATCH("asm/code_08078708/slot_place_and_move.s", u32 slot_place_and_move(stru
     else
         gUnk_03000F68 = 1;
     child = (struct SpriteObj *)obj->mainObj->unk38;
+    p84 = &obj->unk84;
+    p88 = &obj->unk88;
+    p8c = &obj->unk8C;
+    f79 = &obj->flags79;
+    p7c = &obj->unk7C;
+    p7a = &obj->unk7A;
+    pwait = &obj->timer;
     while (child != 0)
     {
         if (child->unkB2 == 0x2222)
@@ -716,9 +733,8 @@ NONMATCH("asm/code_08078708/slot_place_and_move.s", u32 slot_place_and_move(stru
     rnd = mt19937_next();
     pick = (rnd & 3) + 1;
     gUnk_03000F60 = 0;
-    part = obj->mainObj;
-    walk = *(struct SpriteObj **)part;
-    slotBase = (s16)part->unkEC;
+    walk = *(struct SpriteObj **)obj->mainObj;
+    slotBase = (s16)obj->mainObj->unkEC;
     seek = slotBase + 1;
     for (i = 0; i < pick; i++)
     {
@@ -732,18 +748,14 @@ NONMATCH("asm/code_08078708/slot_place_and_move.s", u32 slot_place_and_move(stru
     gUnk_03000F60 = (struct SpriteObj *)((u8 *)walk + 8);
     idx = ((u32)(v6 - slotBase) << 24) >> 22;
     part = obj->mainObj;
-    obj->unk84 = part->unkD8 + (gLinkOffsetX[idx >> 2] << 8);
-    obj->unk88 = part->unkDC;
-    obj->unk8C = part->unkE0 + (gLinkOffsetH[idx >> 2] << 8);
-    {
-        u32 flags = obj->flags79;
-
-        obj->flags79 = flags | 0x20;
-    }
-    obj->unk7C = 0x200;
-    obj->unk7A = 0;
+    *p84 = part->unkD8 + (gLinkOffsetX[idx >> 2] << 8);
+    *p88 = part->unkDC;
+    *p8c = part->unkE0 + (gLinkOffsetH[idx >> 2] << 8);
+    *f79 |= 0x20;
+    *p7c = 0x200;
+    *p7a = 0;
     start_motion(obj);
-    obj->timer = 8;
+    *pwait = 8;
     obj->callback = set_pose_halfword_and_link;
     return 0;
 }
@@ -885,7 +897,45 @@ NONMATCH("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_un
 }
 END_NONMATCH
 void start_anim1_if_no_target(struct SpriteObj *obj);
-ASM_FUNC("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_moving(void))
+NONMATCH("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_moving(struct SpriteObj *obj))
+{
+    s32 kx = 0xFFFFFB34;
+    s32 phase;
+    s32 vx;
+    s32 vy;
+    struct SpriteObj *child;
+
+    phase = obj->phase;
+    if (gUnk_03000F6C != 0)
+        phase = 5 - phase;
+    vx = phase * kx + 0x4000;
+    vy = phase * 0xB33 + 0x5000;
+    child = obj_spawn(obj->mainObj, 0x4059, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 4,
+                      obj->unk40 / 0x100 + 0x38, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+    child->child = obj->child;
+    obj->child = child;
+    child->flags78 = (child->flags78 & 0x1F) | 0x20;
+    child->unk74 = obj->unk74;
+    child->callback = start_anim1_if_no_target;
+    child->unk84 = vx;
+    child->unk88 = vy;
+    child->unk8C = 0;
+    {
+        u32 flags = child->flags79;
+
+        child->flags79 = flags | 0x20;
+    }
+    child->unk7C = 0x400;
+    child->unk7A = 0;
+    start_motion(child);
+    ((struct ObjFlags77 *)child)->bit6 = 0;
+    ((struct ObjFlags77 *)child)->bit5 = 0;
+    child->unk68 = on_arrive;
+    child->unk6C = obj->unk6C;
+    child->owner = obj->owner;
+    obj_list_push_default(child);
+}
+END_NONMATCH
 
 void start_child_at_main(struct SpriteObj *obj)
 {
