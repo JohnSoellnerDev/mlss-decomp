@@ -692,9 +692,12 @@ struct EffectObj *effect_sub_init_cls9e8(struct EffectObj *obj, struct EffectHea
 
 NONMATCH("asm/code_081612F0/effect_step.s", s32 effect_step(struct EffectObj *effect, struct EffectWorld *owner))
 {
-    u32 size = sizeof(struct TileObj);
+    u32 srcOff = 4;
+    struct EffectChildSub { s16 ofs; u16 filler; void (*fn)(void *self); };
+    u32 size = 0x824;
     u32 state = effect->unk00;
     struct EffectChildTable *table;
+    struct EffectChildSub *sub;
     vu16 *p;
     void *pos;
     s32 x;
@@ -703,10 +706,9 @@ NONMATCH("asm/code_081612F0/effect_step.s", s32 effect_step(struct EffectObj *ef
     switch (state)
     {
     case 0:
-    {
         gUnk_03001024 = owner;
         owner->tilesA = obj_clear_tile_ptrs(heap_alloc2(size, 1, gEffectTilesATag, 0));
-        obj_setup_tiles(owner->tilesA, gUnk_08002D2C + 4, 0xE0, 0x20, state, state, (void *)0x0600B800, state);
+        obj_setup_tiles(owner->tilesA, gUnk_08002D2C + srcOff, 0xE0, 0x20, state, state, (void *)0x0600B800, state);
         owner->tilesB = obj_clear_tile_ptrs(heap_alloc2(size, 1, gEffectTilesBTag, 0));
         obj_setup_tiles(owner->tilesB, gUnk_08002D2C + 0x2F34, 0xE0, 0x20, state, state, (void *)0x0600E800, state);
         init_bg_gfx(owner);
@@ -721,16 +723,14 @@ NONMATCH("asm/code_081612F0/effect_step.s", s32 effect_step(struct EffectObj *ef
         *p = state;
         set_irq_callback(2, effect_dma_callback);
         effect->unk00++;
-    }
         break;
     case 1:
-    {
         table = owner->child->table;
         table->fn14((u8 *)owner->child + table->ofs10, pos = &owner->posX);
         table = owner->child->table;
         table->fn3C((u8 *)owner->child + table->ofs38);
-        table = owner->child->table;
-        table->fn44((u8 *)owner->child + table->ofs40);
+        sub = (struct EffectChildSub *)((u8 *)owner->child->table + 0x40);
+        sub->fn((u8 *)owner->child + sub->ofs);
         table = owner->child->table;
         table->fn34((u8 *)owner->child + table->ofs30, pos);
         x = owner->posX >> 8;
@@ -745,7 +745,6 @@ NONMATCH("asm/code_081612F0/effect_step.s", s32 effect_step(struct EffectObj *ef
         *p = x;
         p++;
         *p = y;
-    }
         break;
     }
     return 0;
