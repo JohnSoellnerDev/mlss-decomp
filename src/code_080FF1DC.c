@@ -217,9 +217,9 @@ NONMATCH("asm/code_080FF1DC/hero_select_target.s", void hero_select_target(void)
             best = obj;
         }
         gWorld->target1BC = (u8 *)best + 8;
-        gWorld->active->target34 = (u8 *)best + 8;
+        active->target34 = (u8 *)best + 8;
         tab = best->tableF0;
-        entry = (u32 *)((sys[0x8C0] << 2) + tab[0]);
+        entry = (u32 *)(tab[0] + (sys[0x8C0] << 2));
         show_slot4_text_centered(*(u32 *)*entry);
         status_anim_start();
         set_status_entry(1, 0, 0);
@@ -251,7 +251,7 @@ ASM_FUNC("asm/code_080FF1DC/hero_select_frame.s", void hero_select_frame(struct 
 
 ASM_FUNC("asm/code_080FF1DC/hero_marker_sync.s", void hero_marker_sync(void))
 
-NONMATCH("asm/code_080FF1DC/hero_marker_create.s", void hero_marker_create(struct MenuOwner *owner))
+void hero_marker_create(struct MenuOwner *owner)
 {
     struct World *world;
     struct Panel *panel;
@@ -266,12 +266,11 @@ NONMATCH("asm/code_080FF1DC/hero_marker_create.s", void hero_marker_create(struc
     u32 mode;
     s32 i;
 
-    world = gWorld;
-    hero = world->hero278;
+    hero = gWorld->hero278;
     prev = hero->marker80;
     if (prev != 0)
         return;
-    slot = (struct Fig **)((u8 *)world + 0x58);
+    slot = gWorld->list;
     gWorld->node364 = sprite_node_take();
     gWorld->node364->sprite = spawn_obj_by_id(0x7001, 0x16, 1, 1);
     sprite_entry_update(gWorld->node364->sprite);
@@ -288,9 +287,8 @@ NONMATCH("asm/code_080FF1DC/hero_marker_create.s", void hero_marker_create(struc
                 if (!(obj->flags110 & 0x20))
                 {
                     node = sprite_node_alloc(0x80000000, 0, 0);
-                    world = gWorld;
-                    node->unk0 = (u32)world->node364->next;
-                    world->node364->next = node;
+                    node->unk0 = (u32)gWorld->node364->next;
+                    gWorld->node364->next = node;
                 }
             }
             obj = slot[1];
@@ -299,9 +297,8 @@ NONMATCH("asm/code_080FF1DC/hero_marker_create.s", void hero_marker_create(struc
                 if (!(obj->flags110 & 0x20))
                 {
                     node = sprite_node_alloc(0x80000000, 0, 0);
-                    world = gWorld;
-                    node->unk0 = (u32)world->node364->next;
-                    world->node364->next = node;
+                    node->unk0 = (u32)gWorld->node364->next;
+                    gWorld->node364->next = node;
                 }
             }
             slot += 2;
@@ -338,6 +335,6 @@ NONMATCH("asm/code_080FF1DC/hero_marker_create.s", void hero_marker_create(struc
         owner->state = state_hero_menu_plain;
     }
 }
-END_NONMATCH
+
 
 ASM_FUNC("asm/code_080FF1DC/state_hero_menu_plain.s", void state_hero_menu_plain(struct MenuOwner *owner))
