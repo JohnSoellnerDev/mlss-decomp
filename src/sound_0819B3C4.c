@@ -1,6 +1,12 @@
 #include "global.h"
 
 // One track of a player: 0x20 bytes, 12 per player.
+struct ByteBit0
+{
+    u8 bit0 : 1;
+    u8 hi : 7;
+};
+
 struct SndTrack
 {
     u16 status;          // +0x00: bit 0 active, 0x100 pitch LFO on, 0x200/0x400 pitch LFO phase, 0x800 volume LFO on, 0x1000/0x2000 volume LFO phase
@@ -648,7 +654,7 @@ NONMATCH("asm/sound_0819B3C4/player_start.s", void player_start(u32 player, u32 
 
     player_key_off(player);
     sound_info_set_4a4(player, 0x4B);
-    sound_info()->playerFlags[player] |= 1;
+    ((struct ByteBit0 *)&sound_info()->playerFlags[player])->bit0 = 1;
     sound_info()->playerFlags[player] &= 0xFD;
     offs = (u16 *)gSongTableLo[song];
     base = (u8 *)offs;
