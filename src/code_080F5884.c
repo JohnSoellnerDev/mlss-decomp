@@ -5,7 +5,9 @@ struct World
 {
     u8 filler0[4];
     u8 unk4;
-    u8 filler5[0x24 - 5];
+    u8 filler5[0x18 - 5];
+    u16 unk18;
+    u8 filler1A[0x24 - 0x1A];
     void (*callback24)(void);
     u8 filler28[0x58 - 0x28];
     u8 *slots[8];
@@ -114,10 +116,103 @@ void release_object(u8 *obj);
 void release_object_data(u8 *obj);
 void task_list_remove(u8 *obj);
 void process_record_ring(u8 *obj);
+void ensure_code_entry(u32 a);
+void alloc_code_entry(u32 a);
+void load_table_entries(u16 a);
+void load_table_entries_typed(u16 a);
+void obj_detach_active(u8 *obj);
 
 ASM_FUNC("asm/code_080F5884/cmd_set_var_from_slot_field.s", void cmd_set_var_from_slot_field(void))
 
-ASM_FUNC("asm/code_080F5884/cmd_slot_set_field.s", void cmd_slot_set_field(void))
+
+u32 cmd_slot_set_field(u32 unused0, u32 unused1, u32 *cmd)
+{
+    u8 *entry;
+    s32 key;
+    u8 *flags;
+    u32 bits;
+    s32 mask;
+
+    mask = -7;
+    key = cmd[2];
+    if (key == 0x1F)
+    {
+        gWorld->unk18 = cmd[1];
+        return 1;
+    }
+    entry = gWorld->slots[cmd[0]];
+    if ((entry[0x7E] & 6) == 6)
+    {
+        return 1;
+    }
+    switch (key)
+    {
+    case 8:
+        {
+            u32 v = cmd[1];
+            *(u16 *)(entry + 0xF6) = v;
+        }
+        break;
+    case 9:
+        if (*(s16 *)(entry + 0xEC) < 0)
+        {
+            {
+                u32 v = cmd[1];
+                *(u16 *)(entry + 0x102) = v;
+            }
+        }
+        break;
+    case 10:
+        {
+            u32 v = cmd[1];
+            *(u16 *)(entry + 0x106) = v;
+        }
+        break;
+    case 11:
+        if (*(s16 *)(entry + 0xEC) < 0)
+        {
+            {
+                u32 v = cmd[1];
+                *(u16 *)(entry + 0xFC) = v;
+            }
+        }
+        break;
+    case 15:
+        {
+            u32 v = cmd[1];
+            *(u16 *)(entry + 0x104) = v;
+        }
+        break;
+    case 18:
+        *(u32 *)(entry + 0xA4) = cmd[1];
+        break;
+    case 19:
+        *(u32 *)(entry + 0xA8) = cmd[1];
+        break;
+    case 20:
+        *(u32 *)(entry + 0xAC) = cmd[1];
+        break;
+    case 24:
+        {
+            u32 v = cmd[1];
+            *(u16 *)(entry + 0x10E) = v;
+        }
+        break;
+    case 25:
+        {
+            u32 v = cmd[1];
+
+            flags = entry + 0x7E;
+            bits = (v & 3) << 1;
+            *flags = (*flags & mask) | bits;
+        }
+        break;
+    case 17:
+        anim_dispatch(entry, cmd[1], 0xC8, 0);
+        break;
+    }
+    return 1;
+}
 
 NONMATCH("asm/code_080F5884/cmd_slot_link_list.s", u32 cmd_slot_link_list(u32 unused0, u32 unused1, u32 *cmd))
 {
@@ -534,7 +629,77 @@ END_NONMATCH
 ASM_FUNC("asm/code_080F5884/cmd_set_ctx_fields.s", void cmd_set_ctx_fields(void))
 
 
-ASM_FUNC("asm/code_080F5884/cmd_world_scroll.s", void cmd_world_scroll(void))
+NONMATCH("asm/code_080F5884/cmd_world_scroll.s", u32 cmd_world_scroll(u32 unused0, u8 *obj, u32 *cmd))
+{
+    s32 scale;
+    s32 delta;
+    s32 step;
+    u32 flags;
+    s32 bits;
+    u16 old;
+    s32 y;
+    struct World *world;
+
+    scale = ((s32 (*)(s32))gMathRoutines)(0x200);
+    delta = scale * cmd[1];
+    if (delta < 0)
+    {
+        delta += 0x1F;
+    }
+    step = delta >> 5;
+    gWorld->unk35A = 0;
+    gWorld->unk358 = 0;
+    switch (cmd[0])
+    {
+    case 0:
+        gWorld->unk35A = -cmd[1];
+        break;
+    case 1:
+        gWorld->unk358 = step;
+        gWorld->unk35A = -step;
+        break;
+    case 2:
+        gWorld->unk358 = cmd[1];
+        break;
+    case 3:
+        gWorld->unk358 = step;
+        gWorld->unk35A = step;
+        break;
+    case 4:
+        gWorld->unk35A = cmd[1];
+        break;
+    case 5:
+        gWorld->unk358 = -step;
+        gWorld->unk35A = step;
+        break;
+    case 6:
+        gWorld->unk358 = -cmd[1];
+        break;
+    case 7:
+        gWorld->unk358 = -step;
+        gWorld->unk35A = -step;
+        break;
+    }
+    gWorld->unk354 = obj_last_x(gWorld->angle);
+    y = obj_last_y(gWorld->angle);
+    world = gWorld;
+    world->unk356 = y;
+    flags = cmd[2];
+    if ((flags & 0x40) != 0)
+    {
+        bits = flags & 0xF;
+    }
+    else
+    {
+        bits = flags << 4;
+    }
+    world->unk35C = bits;
+    gWorld->unk35E = 0;
+    old = *(u16 *)(obj + 0xA0);
+    *(u16 *)(obj + 0xA0) = old | (cmd[3] ? 0x500 : 0x100);
+    return 0;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080F5884/cmd_set_scroll.s", u32 cmd_set_scroll(u32 unused0, u8 *obj, u32 *cmd))
 {
