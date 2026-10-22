@@ -180,7 +180,83 @@ u8 *obj_init_task_and_buffers(u8 *obj, u8 prio, u32 arg, u16 cfg, u16 extra)
 
 void obj_copy_rom_block(u8 *obj);
 void obj_rebuild_map_tiles(u8 *obj);
-ASM_FUNC("asm/code_0805970C/obj_load_step.s", void obj_load_step(void))
+extern const u8 gTbase[];
+extern const u8 gLoadList[];
+extern u32 gUnk_03000DC0[];
+void table_register(void *entry);
+
+NONMATCH("asm/code_0805970C/obj_load_step.s", void obj_load_step(u8 *obj))
+{
+    const u8 *base;
+    const u32 *tab;
+    const u8 *lp;
+    u32 map;
+    u32 idx;
+    u32 zero;
+    u32 *req;
+    u32 z;
+    s32 st;
+
+    base = gTbase;
+    tab = (const u32 *)base;
+    map = gUnk_03000DE8[3];
+    st = (s16)(*(u16 *)(obj + 0x1C) + 5);
+    switch (st)
+    {
+    case 0:
+        obj_copy_rom_block(obj);
+        zero = 0;
+        gUnk_03000DC0[0] = zero;
+        lp = gLoadList + map * 4; idx = lp[0];
+        if (idx != 0xFF)
+        {
+            gUnk_03000DC0[1] = (u32)(base + tab[idx]);
+            gUnk_03000DC0[2] = *(u32 *)(obj + 0x70);
+            gUnk_03000DC0[3] = zero;
+            table_register(gUnk_03000DC0);
+        }
+        break;
+    case 1:
+        req = gUnk_03000DC0;
+        z = req[0];
+        if (z != 0)
+            return;
+        lp = gLoadList + map * 4; idx = lp[1];
+        if (idx != 0xFF)
+        {
+            req[1] = (u32)(base + tab[idx]);
+            req[2] = *(u32 *)(obj + 0x70) + 0x2000;
+            req[3] = z;
+            table_register(req);
+        }
+        break;
+    case 2:
+        req = gUnk_03000DC0;
+        z = req[0];
+        if (z != 0)
+            return;
+        lp = gLoadList + map * 4; idx = lp[2];
+        if (idx != 0xFF)
+        {
+            req[1] = (u32)(base + tab[idx]);
+            req[2] = *(u32 *)(obj + 0x70) + 0x4000;
+            req[3] = z;
+            table_register(req);
+        }
+        break;
+    case 3:
+        if (gUnk_03000DC0[0] != 0)
+            return;
+        break;
+    case 4:
+        obj_rebuild_map_tiles(obj);
+        break;
+    default:
+        return;
+    }
+    *(u16 *)(obj + 0x1C) += 1;
+}
+END_NONMATCH
 
 void draw_metatile_pal(u8 *obj, u16 row, s16 col, s16 sub, u16 tile);
 ASM_FUNC("asm/code_0805970C/redraw_track_tiles.s", void redraw_track_tiles(u8 *obj))
