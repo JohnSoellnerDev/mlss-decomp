@@ -98,8 +98,8 @@ struct HeroBody
     struct HeroSpan span;
     u8 filler88[0x92 - 0x88];
     u16 height;
-    u32 unk94;
-    u32 unk98;
+    s32 motionX;
+    s32 motionY;
     u32 unk9C;
     u8 filler0A0[0xA4 - 0xA0];
     u32 unkA4;
@@ -154,4 +154,60 @@ void hero_pair_pose_a_anim(struct HeroBody *body);
 void hero_b_step_window_a568(struct HeroBody *body);
 void enter_finish_rebuild(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080C9F58/hero_a_step_range_pose_fx.s", void hero_a_step_range_pose_fx(struct HeroBody *body))
+NONMATCH("asm/code_080C9F58/hero_a_step_range_pose_fx.s", void hero_a_step_range_pose_fx(struct HeroBody *body))
+{
+    struct Hero *hero;
+    struct HeroBody *hbody;
+    s32 inRange;
+    s32 progress;
+    s32 lo;
+    s32 hi;
+    s32 ratio;
+
+    hero = gWorld->heroA;
+    hbody = &hero->body;
+    step_motion(hbody);
+    lo = hero->body.motionX;
+    hi = hero->body.motionY;
+    ratio = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(hi << 14, lo);
+    if (hero->body.step > ratio)
+    {
+        goto out_of_range;
+    }
+    progress = hero->body.progress;
+    inRange = 1;
+    if (progress >= ratio)
+    {
+        goto in_range_done;
+    }
+out_of_range:
+    inRange = 0;
+in_range_done:
+    if (inRange)
+    {
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            if (hbody->data->poseIndex == -1)
+            {
+                sprite_set_action(hbody, 6, 0x2000, 0);
+            }
+            else
+            {
+                sprite_set_action(hbody, 6, 0x204D, 0);
+            }
+            ((struct HeroSpriteBits *)&hbody->sprite->flags)->mode = 1;
+        }
+    }
+    if (hbody->flags & 0x20)
+    {
+        set_slot_value(0x2E, -1);
+        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        {
+            sprite_set_action(hbody, 8, 0x2000, 0);
+            ((struct HeroSpriteBits *)&hbody->sprite->flags)->mode = 1;
+        }
+        effect_spawn_at(0x33, hbody->posX / 0x100, hbody->posY / 0x100, hbody->posZ / 0x100, hbody);
+        body->state = hero_pair_pose_a_anim;
+    }
+}
+END_NONMATCH
