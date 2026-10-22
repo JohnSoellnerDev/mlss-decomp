@@ -30,28 +30,25 @@ struct SoundVoiceFlags
 
 ASM_FUNC("asm/sound_0819A4F0/thunk_set_r0_91_jump.s", void thunk_set_r0_91_jump(void))
 
-NONMATCH("asm/sound_0819A4F0/mem_routines_init.s", u8 *mem_routines_init(u8 *buf))
+u8 *mem_routines_init(u8 *buf)
 {
-    u8 *ret;
+    u8 *dst;
     u32 size;
+    u32 base;
 
-    if (buf != 0)
-    {
-        u8 *dst = (u8 *)(((u32)buf + 3) & -4);
-        size = (u32)iwram_sqrt - (u32)iwram_fill;
-        cpu_set(iwram_fill, dst, (size << 10) >> 11);
-        gMemRoutines = dst;
-        dst += size;
-        ret = dst;
-    }
-    else
+    if (buf == 0)
     {
         gMemRoutines = iwram_fill;
-        ret = 0;
+        return 0;
     }
-    return ret;
+    dst = (u8 *)(((u32)buf + 3) & -4);
+    base = (u32)iwram_fill;
+    size = (u32)iwram_sqrt - base;
+    cpu_set(iwram_fill, dst, (size << 10) >> 11);
+    gMemRoutines = dst;
+    dst += size;
+    return dst;
 }
-END_NONMATCH
 
 u8 vcount_store(u8 *out)
 {
@@ -64,27 +61,25 @@ u32 atan2_angle(s16 x, s16 y)
     return (arc_tan2(x, y) << 16) >> 24;
 }
 
-NONMATCH("asm/sound_0819A4F0/math_routines_init.s", u8 *math_routines_init(u8 *buf))
+u8 *math_routines_init(u8 *buf)
 {
-    u8 *ret;
+    u8 *dst;
+    u32 size;
+    u32 base;
 
-    if (buf != 0)
-    {
-        u8 *dst = (u8 *)(((u32)buf + 3) & -4);
-        u32 size = (u32)gSineTable - (u32)iwram_sqrt;
-        cpu_set(iwram_sqrt, dst, ((size << 9) >> 11) | 0x04000000);
-        gMathRoutines = dst;
-        dst += size;
-        ret = dst;
-    }
-    else
+    if (buf == 0)
     {
         gMathRoutines = iwram_sqrt;
-        ret = 0;
+        return 0;
     }
-    return ret;
+    dst = (u8 *)(((u32)buf + 3) & -4);
+    base = (u32)iwram_sqrt;
+    size = (u32)gSineTable - base;
+    cpu_set(iwram_sqrt, dst, ((size << 9) >> 11) | 0x04000000);
+    gMathRoutines = dst;
+    dst += size;
+    return dst;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/sound_0819A4F0/driver_tables_init.s", void driver_tables_init(void))
 
