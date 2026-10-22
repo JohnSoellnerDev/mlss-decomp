@@ -107,7 +107,22 @@ struct VoiceTrack
 
 ASM_FUNC("asm/code_0805335C/textbox_setup_tiles.s", void textbox_setup_tiles(void))
 
-ASM_FUNC("asm/code_0805335C/textbox_place.s", void textbox_place(void))
+NONMATCH("asm/code_0805335C/textbox_place.s", void textbox_place(struct TextboxObj *obj))
+{
+    u32 bits;
+    u32 w;
+    u32 h;
+    u32 x;
+    u32 y;
+
+    bits = (u32)obj->unk3C << 28;
+    w = gBoxStyleSizes[(bits >> 29) * 4] << 24;
+    h = gBoxStyleSizes[((bits >> 29) * 2 + 1) * 2] << 24;
+    x = (u8)(0xF - (w >> 25));
+    y = (u8)(0xA - (h >> 25));
+    window_place(&obj->unk48, obj->unk40, x, y, w >> 24, h >> 24, 0xC800);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0805335C/textbox_emit_oam.s", void textbox_emit_oam(void))
 
@@ -312,7 +327,27 @@ void textbox_update(struct TextboxObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(struct TextboxObj *obj))
+NONMATCH("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(struct TextboxObj *obj))
+{
+    const u8 *sz = gLangBoxSizes;
+    u32 lang;
+    u32 t;
+    u32 w;
+    u32 h;
+    u32 x;
+    u32 y;
+
+    lang = gSys[0x8C0];
+    t = (u32)sz[lang * 4] << 24;
+    w = t >> 24;
+    x = (u8)(0xF - (t >> 25));
+    t = (u32)sz[(lang * 2 + 1) * 2] << 24;
+    h = t >> 24;
+    y = (u8)(0xA - (t >> 25));
+    window_place(&obj->unk38, obj->unk34, x, y, w, h, 0xE000);
+    *(gBgRequestPtr + 0x4A) |= 0x10;
+}
+END_NONMATCH
 
 void textbox_task_free(struct TextboxObj *obj, u32 kind)
 {
