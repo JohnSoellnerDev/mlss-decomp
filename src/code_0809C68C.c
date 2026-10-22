@@ -533,7 +533,79 @@ void spawn_five_children(struct ActorBody *body)
     child->index = body->index - 5;
 }
 
-ASM_FUNC("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct ActorBody *body))
+NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct ActorBody *body))
+{
+    struct ActorBody *child;
+    const s8 *table;
+    const s8 *cursor;
+    const s8 *q;
+    const s8 *t1p;
+    s32 offset;
+    s32 b1;
+    s32 b2;
+    s32 b3;
+    s32 x;
+    s32 y;
+    s32 z;
+    u32 *srcTime;
+    u32 *srcA0;
+    u32 *srcA4;
+
+    if (body->sprite->flags & 0x8)
+    {
+        if (body->child == NULL)
+        {
+            body->state = enter_start_pose_4;
+        }
+        else
+        {
+            sprite_set_action(body, 3, -1, 0);
+            ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 1;
+            apply_pose_to_parts(body);
+            child = body->child;
+            srcTime = &body->timeLink;
+            srcA0 = &body->unkA0;
+            srcA4 = &body->unkA4;
+            table = gChildChainOffsetTable;
+            cursor = table;
+            offset = 0;
+            while (child->child != NULL && child->child->state == NULL)
+            {
+                cursor += 3;
+                offset += 3;
+                child = child->child;
+            }
+            b1 = cursor[0];
+            t1p = table + 1;
+            q = offset + t1p;
+            b2 = q[0];
+            b3 = cursor[2];
+            x = child->x + (b1 << 8);
+            child->x = x;
+            y = child->y + (b2 << 8);
+            child->y = y;
+            z = child->z + (b3 << 8);
+            child->z = z;
+            effect_spawn_at(0xE82, x / 0x100, y / 0x100, z / 0x100, child);
+            set_slot_value(0x86, -1);
+            child->flags &= ~8;
+            sprite_set_action(child, 0, 0x40EF, 0);
+            ((struct SpriteFlagBits *)&child->sprite->flags)->mode = 0;
+            child->partner = body->partner;
+            child->timeLink = *srcTime;
+            child->unkA0 = *srcA0;
+            child->unkA4 = *srcA4;
+            child->unk6C = body->unk6C;
+            child->flags &= ~1;
+            child->unk78 = (child->unk78 & 0x1F) | 0x40;
+            child->unk50 = 0;
+            child->state = place_beside_partner;
+            child->unk7C = 0x100;
+            body->state = clear_state_if_sprite_active;
+        }
+    }
+}
+END_NONMATCH
 
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 arg);
 ASM_FUNC("asm/code_0809C68C/float_above_focus.s", void float_above_focus(struct ActorBody *body))
