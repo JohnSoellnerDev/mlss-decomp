@@ -195,8 +195,8 @@ NONMATCH("asm/code_0801931C/set_slot_fields.s", void set_slot_fields(u32 idx, u8
         SYS_AREA->unk8AA[idx] = 0;
         SYS_AREA->speed8B0[idx] = (target - SYS_AREA->slot89C[idx]) / period;
         {
-            u8 *fp;
             u8 fb;
+            u8 *fp;
             u32 bit;
             if (idx == 0)
             {
@@ -231,8 +231,8 @@ NONMATCH("asm/code_0801931C/set_slot_fields_45.s", void set_slot_fields_45(u32 i
         SYS_AREA->unk8B6[idx] = 0;
         SYS_AREA->speed8BC[idx] = (target - (SYS_AREA->slot8A4[idx] << 8)) / period;
         {
-            u8 *fp;
             u8 fb;
+            u8 *fp;
             u32 bit;
             if (idx == 0)
             {
@@ -571,7 +571,26 @@ void serial_link_shutdown(void)
 
 ASM_FUNC("asm/code_0801931C/serial_frame.s", void serial_frame(void))
 
-ASM_FUNC("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
+NONMATCH("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
+{
+    u16 *hw;
+    u32 sum;
+    s32 i;
+    u16 zero;
+
+    gUnk_03000D0C->buf1C[0] = gUnk_03000D0C->unkB;
+    zero = 0;
+    gUnk_03000D0C->buf1C[1] = gUnk_03000D0C->unk2 ^ gUnk_03000D0C->unk3;
+    ((u16 *)gUnk_03000D0C->buf1C)[1] = zero;
+    cpu_set(gUnk_03000D10 + 2, gUnk_03000D0C->buf1C + 4, 0x04000004);
+    hw = (u16 *)gUnk_03000D0C->buf1C;
+    sum = 0;
+    for (i = 0; i < 10; i++)
+        sum += hw[i];
+    hw[1] = ~sum - 12;
+    gUnk_03000D0C->unk4 = 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base, u32 unused, u32 arg2, u32 arg3))
 
