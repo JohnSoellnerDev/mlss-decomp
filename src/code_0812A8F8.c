@@ -199,15 +199,15 @@ void sub_0812B68C(struct MenuObj *obj)
 
 NONMATCH("asm/code_0812A8F8/draw_two_values_dispatch.s", void *draw_two_values_dispatch(struct StatusView *view, void *oam))
 {
-    u8 a;
-    u8 b;
-    u8 flag;
-
+    s32 k2 = 2;
+    s32 a;
+    s32 b;
+    s32 flag;
     if (view->unkB1 != 0)
     {
         a = gParty[0x30];
         b = gParty[0x6C];
-        flag = view->flagsAF & 2;
+        flag = view->flagsAF & k2;
     }
     else
     {
@@ -215,7 +215,8 @@ NONMATCH("asm/code_0812A8F8/draw_two_values_dispatch.s", void *draw_two_values_d
         b = view->unk85;
         flag = view->flagsAF & 1;
     }
-    return draw_two_values(oam, a, b, flag);
+    oam = draw_two_values(oam, a, b, flag);
+    return oam;
 }
 END_NONMATCH
 
@@ -226,7 +227,39 @@ void *sub_0812B730(void *obj, u8 kind)
     return obj;
 }
 
-ASM_FUNC("asm/code_0812A8F8/menu_screen_init.s", void menu_screen_init(void))
+struct MenuObj *menu_screen_init(struct MenuObj *obj, u8 prio, const void *tag, u32 flagsBD, u32 flagsBE)
+{
+    struct SubObj *sub;
+    struct SubObj *subB;
+    struct KeyBlock *keys;
+    u16 mask;
+
+    task_insert(obj, prio, tag);
+    obj->cb18 = gScreenCallbacks;
+    *(u16 *)0x02000000 = 0;
+    *(u16 *)0x02000050 = 0;
+    keys = (struct KeyBlock *)gUnk_03000388;
+    obj->keys3C = keys;
+    mask = keys->enableMask3C;
+    obj->keyMask8E = ((u32)mask << 22) >> 22;
+    keys->enableMask3C = mask | 0x3FF;
+    obj->repeatDelay90 = obj->keys3C->repeatDelay8;
+    obj->repeatRate91 = obj->keys3C->repeatRate9;
+    obj->keys3C->repeatDelay8 = 0xA;
+    obj->keys3C->repeatRate9 = 8;
+    obj->flagsBD = flagsBD;
+    obj->flagsBE = flagsBE;
+    sub = heap_alloc2(0x1C, 0, gScreenTagTask, 1);
+    task_insert(sub, 8, gScreenTagTask);
+    ((struct SubObj *)sub)->cb18 = gSubCallbacks;
+    obj->sub1C = sub;
+    subB = heap_alloc2(0x5C, 0, gScreenTagMenu, 1);
+    obj->sub20 = menu_obj_init(subB, 8, gScreenTagMenu, 8);
+    obj->anim28 = clear_anim_record(heap_alloc2(0x10, 0, gScreenTagAnim, 1));
+    obj->sub1C->owner14 = obj;
+    obj->sub20->owner14 = obj;
+    return obj;
+}
 
 void menu_screen_destroy(struct MenuObj *obj, u32 arg)
 {
