@@ -88,7 +88,7 @@ struct SceneObj
 
 extern s16 gSineTable[];
 extern s16 gCosineTable[];
-u8 *tile_ptr_at(u8 *map, s16 x, s16 y);
+u8 *tile_ptr_at(u8 *map, s32 x, s32 y);
 void pair_set_mode(struct SceneObj *obj, u32 mode, u32 flag);
 void advance_anim_frame(struct SceneObj *obj, struct SubPart *sub, u32 a, u32 b);
 void obj_shift_state_slots(void *sub);
@@ -112,7 +112,7 @@ ASM_FUNC("asm/code_0802D558/queue_sub_motion.s", void queue_sub_motion(void))
 
 ASM_FUNC("asm/code_0802D558/follow_anchor.s", void follow_anchor(void))
 
-NONMATCH("asm/code_0802D558/anchor_tile_matches.s", u32 anchor_tile_matches(struct SceneObj *obj, u32 mode))
+u32 anchor_tile_matches(struct SceneObj *obj, u32 mode)
 {
     struct SubPart *anchor;
     s32 kind;
@@ -123,6 +123,8 @@ NONMATCH("asm/code_0802D558/anchor_tile_matches.s", u32 anchor_tile_matches(stru
     u8 *map;
     u8 *tile;
     u32 k;
+    s32 tx;
+    s32 ty;
 
     anchor = obj->subA;
     kind = anchor->kind >> 5;
@@ -147,9 +149,17 @@ NONMATCH("asm/code_0802D558/anchor_tile_matches.s", u32 anchor_tile_matches(stru
         break;
     }
     map = obj->map;
-    px = (x < 0) ? x + 0xFFF : x;
-    py = (y < 0) ? y + 0xFFF : y;
-    tile = tile_ptr_at(map, (s16)((px << 4) >> 16), (s16)((py << 4) >> 16));
+    px = x;
+    if (px < 0) {
+        px += 0xFFF;
+    }
+    tx = (px << 4) >> 16;
+    py = y;
+    if (py < 0) {
+        py += 0xFFF;
+    }
+    ty = (py << 4) >> 16;
+    tile = tile_ptr_at(map, tx, ty);
     if (mode == 0) {
         if ((*tile & 0x78) == 0x18) {
             return 1;
@@ -165,7 +175,6 @@ NONMATCH("asm/code_0802D558/anchor_tile_matches.s", u32 anchor_tile_matches(stru
     }
     return 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0802D558/set_sub_pair_mode.s", void set_sub_pair_mode(void))
 
