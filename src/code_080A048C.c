@@ -180,7 +180,83 @@ ASM_FUNC("asm/code_080A048C/place_chain_nodes.s", void place_chain_nodes(void))
 
 ASM_FUNC("asm/code_080A048C/build_twin_part_chain.s", void build_twin_part_chain(struct Body *body))
 
-ASM_FUNC("asm/code_080A048C/start_script_step.s", void start_script_step(void))
+NONMATCH("asm/code_080A048C/start_script_step.s", void start_script_step(struct Body *body))
+{
+    s32 count;
+    u32 pos;
+    s8 entry;
+    s8 byte;
+    u8 *tb;
+    u8 *script;
+    u8 *outer;
+    u8 *inner;
+    s32 res;
+    s32 sx;
+    s32 lim;
+
+    pos = 0;
+    count = body->height;
+    script = gEllipseStepScript;
+    if (count > 0)
+    {
+        outer = script;
+        inner = script;
+        for (;;)
+        {
+            entry = (s8)outer[pos];
+            pos++;
+            count--;
+            if (entry != 0)
+            {
+                tb = inner;
+                do
+                {
+                    byte = (s8)tb[pos];
+                    pos++;
+                } while (byte != 0);
+            }
+            if (count <= 0)
+            {
+                break;
+            }
+        }
+    }
+    body->scriptPos = pos;
+    body->scriptB0 = (s8)script[pos];
+    body->scriptPos = pos + 1;
+    res = ((s32 (*)(s32, u8 *, u8 **, u8 *))gMathRoutines)(0x4C4, gMathRoutines, &gMathRoutines, tb);
+    body->speedZ = res / 2;
+    if ((s16)body->scriptB0 < 0)
+    {
+        sx = *(s32 *)&body->spanA;
+        if (sx < 0)
+        {
+            sx += 0xFF;
+        }
+        lim = 0x80;
+        if ((u8)(sx >> 8) <= 0x80)
+        {
+            lim = -0x80;
+        }
+    }
+    else
+    {
+        sx = *(s32 *)&body->spanA;
+        if (sx < 0)
+        {
+            sx += 0xFF;
+        }
+        lim = 0x80;
+        if ((sx << 16) < 0)
+        {
+            lim = 0x180;
+        }
+    }
+    body->timer = lim;
+    body->baseY = (s16)body->scriptB0 << 3;
+    body->state = (u32)move_base_toward_target;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080A048C/move_base_toward_target.s", void move_base_toward_target(struct Body *body))
 
