@@ -196,4 +196,20 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_08069220/actor_begin_action_c_or_f.s", void actor_begin_action_c_or_f(struct ActorObj *obj))
+void actor_begin_action_c_or_f(struct ActorObj *obj)
+{
+    if (obj->pose->flags & 8)
+    {
+        if (obj->paramA8 == 0)
+        {
+            sprite_set_action(obj, 0xC, 0, 0);
+            obj->timer = 1;
+        }
+        else
+        {
+            sprite_set_action(obj, 0xF, 0, 0);
+            obj->timer = 1;
+        }
+        obj->state = actor_wait_then_action_d;
+    }
+}
