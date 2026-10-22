@@ -280,8 +280,6 @@ NONMATCH("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_til
 {
     u16 timer = owner->timer;
     s32 step = timer + 1;
-    u32 cell;
-    u32 pos;
 
     owner->timer = step;
     if ((s16)step > 12)
@@ -289,11 +287,9 @@ NONMATCH("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_til
         owner->timer = 0;
         owner->posX = (u16)owner->posX ^ 1;
         copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0, 0x1E, 2,
-                          (u8 *)(cell = ((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable,
-                                 pos = ((s32)owner->posX << 2) + (u32)gMapTable, *(u32 *)cell + pos), 0x8000);
+                          (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + ((s32)owner->posX << 2) + (u32)gMapTable), 0x8000);
         copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0x12, 0x1E, 2,
-                          (u8 *)(cell = ((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable,
-                                 pos = ((s32)owner->posX << 2) + (u32)gMapTable, *(u32 *)cell + pos), 0x8000);
+                          (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + ((s32)owner->posX << 2) + (u32)gMapTable), 0x8000);
     }
 } END_NONMATCH
 
@@ -372,7 +368,35 @@ ASM_FUNC("asm/code_08105A30/state_build_hero_sprites.s", void state_build_hero_s
 void obj_release(void *obj);
 s32 obj_last_x(void *obj);
 
-ASM_FUNC("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(struct Owner *owner))
+NONMATCH("asm/code_08105A30/state_orbit_sprites.s", void state_orbit_sprites(struct Owner *owner))
+{
+    struct OrbitRoot *chain;
+    struct OrbitNode *node;
+    s32 *radius;
+    s32 i;
+    u32 angle;
+    s32 centerX;
+
+    chain = gWorld->orbit378;
+    radius = &chain->scale;
+    *radius += 6;
+    node = &chain->head;
+    for (i = 0; i < 12; i++)
+    {
+        angle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(i << 8, 0xC);
+        centerX = ((s32)(obj_last_x(gWorld->obj24C) << 16) >> 8) + 0x7800;
+        node->x = centerX + (gCosineTable[angle & 0xFF] / 0x40) * *radius;
+        node->y = (gSineTable[angle & 0xFF] / 0x40) * *radius + 0x5000;
+        node = node->next;
+    }
+    if (*radius > 159)
+    {
+        obj_release(chain);
+        gWorld->orbit378 = 0;
+        owner->timer = 0x28;
+        owner->state = 0;
+    }
+} END_NONMATCH
 
 void set_cur_flags_pending(u32 flags);
 void state_menu_open_wait(struct Owner *owner);
