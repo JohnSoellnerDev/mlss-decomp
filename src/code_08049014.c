@@ -71,6 +71,24 @@ struct Mode12Byte
     u8 rest : 5;
 };
 
+struct Bits6Low
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 rest : 2;
+};
+
+struct Lo4Hi2Byte
+{
+    u8 lo4 : 4;
+    u8 hi2 : 2;
+    u8 rest : 2;
+};
+
 struct SpriteObj
 {
     u16 posX;
@@ -215,7 +233,60 @@ void obj_set_id(struct UnitObj *obj, u16 id)
     }
 }
 
-ASM_FUNC("asm/code_08049014/flags_obj_update_stage.s", void flags_obj_update_stage(void))
+void flags_obj_update_stage(struct UnitObj *obj, u8 flag)
+{
+    u32 id;
+
+    if (!(obj->flags20C & 1))
+        return;
+    if (obj->flags216 & 0x20)
+        return;
+    if (obj->counter25C >= 0)
+    {
+        if (flag != 0 && (obj->flags2B5 & 0xF) == 0)
+        {
+            obj->state4 = 4;
+            if (obj->variant54 == 0)
+                id = (obj->flags35B & 8) ? 0x103C : 0x103B;
+            else
+                id = 0x1052;
+            obj_set_id(obj, id);
+            if (((struct StageBits *)&obj->bits214)->stage != 4)
+                ((struct StageBits *)&obj->bits214)->stage = 5;
+        }
+        else
+        {
+            if (obj->unk14 + obj->unk18 >= obj->unk3C + obj->unk40)
+                obj->state4 = 2;
+            else
+                obj->state4 = 3;
+        }
+    }
+    else
+    {
+        if (obj->unk242 != 0)
+            obj->state4 = 1;
+        else if (obj->unk244 != 0)
+            obj->state4 = 1;
+        else
+            obj->state4 = 0;
+    }
+    if (flag == 0)
+        return;
+    if (obj->flags2B5 & 0xF)
+        return;
+    if (obj->unk2C != 4)
+        return;
+    if (obj->state4 == 4)
+        return;
+    if (obj->variant54 == 0)
+        id = (obj->flags35B & 8) ? 0x1028 : 0x1001;
+    else
+        id = 0x1002;
+    obj_set_id(obj, id);
+    ((struct StageBits *)&obj->bits214)->stage = 3;
+}
+
 
 void obj_enter_stage4(struct UnitObj *obj)
 {
@@ -346,7 +417,33 @@ void obj_enter_stage3_unlink(struct UnitObj *obj)
     obj->state4 = 0;
 }
 
-ASM_FUNC("asm/code_08049014/obj_setup_aux_sprite.s", void obj_setup_aux_sprite(struct UnitObj *obj, u32 aux))
+NONMATCH("asm/code_08049014/obj_setup_aux_sprite.s", void obj_setup_aux_sprite(struct UnitObj *obj, u32 aux))
+{
+    u32 id;
+    u8 *table;
+
+    id = 0x105A;
+    if (obj->variant54 == 0)
+        id = 0x1059;
+    obj->auxId370 = id;
+    setup_obj_10bc(obj->aux36C, 0, obj->auxId370, 1, -1, -1, -1, -1);
+    obj_load_record(obj->aux36C, 0, -1, 0, 0);
+    obj_queue_update(obj->aux36C);
+    table = gAuxOffsetTable + aux * 24;
+    ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
+    obj->auxOfs372 = table[((u32)obj->flags24 << 29 >> 29) * 3];
+    obj->auxOfs373 = table[((u32)obj->flags24 << 29 >> 29) * 3 + 1];
+    obj->auxOfs374 = table[((u32)obj->flags24 << 29 >> 29) * 3 + 2];
+    ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
+    ((struct Bits1F *)&obj->aux36C->flags1F)->b01 = ((u32)obj->sub->flags1F << 30) >> 30;
+    ((struct Bits1F *)&obj->aux36C->flags1F)->b23 = (obj->sub->flags1F & 0xC) >> 2;
+    obj->aux36C->posX = obj->auxOfs372 + obj->sub->posX;
+    obj->aux36C->posY = obj->auxOfs373 + obj->sub->posY;
+    obj->aux36C->unkE = obj->auxOfs374 + obj->sub->unkE;
+    ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 0;
+}
+END_NONMATCH
+
 
 void obj_setup_aux_1045(struct UnitObj *obj)
 {
@@ -519,10 +616,112 @@ void obj_set_slot_value(struct UnitObj *obj, u32 value)
 
 ASM_FUNC("asm/code_08049014/sync_levels_with_list.s", void sync_levels_with_list(void))
 
-ASM_FUNC("asm/code_08049014/find_table_entry.s", void find_table_entry(void))
+NONMATCH("asm/code_08049014/find_table_entry.s", u8 *find_table_entry(struct UnitObj *obj, u8 *table))
+{
+        s32 px;
+        s32 py;
+        s32 pz;
+        s32 extY;
+        s32 count;
+        s32 i;
+        s32 margin;
+        s32 dz;
+        s32 x0;
+        s32 x1;
+        s32 xe;
+        s32 y0;
+        s32 y1;
+        s32 yh;
+        s32 z0;
+        s32 z1;
+        s32 zmax;
+        s32 zh;
+        u8 *e;
+
+    if ((*(u32 *)&obj->flags20C & 0x01000001) == 0x01000001)
+    {
+        px = obj->x / 0x100;
+        py = obj->y / 0x100;
+        dz = obj->unk18;
+        pz = (obj->unk14 + dz) / 0x100;
+        margin = (obj->unk278 >> 8) >> 1;
+        extY = obj->unk27C >> 8;
+        count = table[4];
+        e = table - ((table[6] << 8) | table[5]);
+        for (i = 0; i < count; i++, e += 11)
+        {
+            x0 = e[0] << 4;
+            x1 = x0 + (e[2] << 4);
+            xe = x1 - 1;
+            y0 = e[1] << 4;
+            y1 = y0 + (e[3] << 4);
+            yh = y1 - 1;
+            z0 = (e[4] & 0x7F) << 3;
+            zh = e[5] & 0x7F;
+            zmax = 0xFF << 3;
+            if (zh != 0x7F)
+                zmax = zh << 3;
+            z1 = z0 + zmax;
+            if ((e[6] & 3) == 0)
+            {
+                x0 -= margin;
+                xe += margin;
+                y0 -= 1;
+                yh = y1 - 2;
+                yh += extY;
+            }
+            else
+            {
+                x0 += 4;
+                xe = x1 - 5;
+                y0 += 7;
+            }
+            if (px < x0 || px > xe || py < y0 || py > yh || pz < z0 || pz > z1)
+                continue;
+            if (zmax == 0 && dz > 0)
+                continue;
+            return e;
+        }
+    }
+    return 0;
+}
+END_NONMATCH
+
 
 ASM_FUNC("asm/code_08049014/find_zone_offset.s", void find_zone_offset(void))
 
-ASM_FUNC("asm/code_08049014/obj_reset_anim_code.s", void obj_reset_anim_code(void))
+void obj_reset_anim_code(struct UnitObj *obj)
+{
+    u8 code;
+    s32 one;
+
+    obj_reset_link_fields(obj);
+    ((struct Flag7Byte *)&obj->unk33C)->lo7 = 0x7F;
+    ((struct Bit6Byte *)&obj->flags350)->bit6 = 0;
+    ((struct Flag7Byte *)&obj->unk33C)->bit7 = 0;
+    ((struct Lo4Hi2Byte *)&obj->flags350)->lo4 = 0;
+    ((struct Lo4Hi2Byte *)&obj->flags350)->hi2 = 0;
+    obj->unk33E = 0xFF;
+    obj->unk340 = 0;
+    obj->unk342 = 0xFF;
+    ((struct Bit6Byte *)&obj->flags353)->bit6 = 0;
+    if (obj->flags351 & 0x80)
+        code = 2;
+    else
+        code = gAttachedSpriteCodePtrTable[(obj->flags352 >> 7) ^ 1][obj->state4];
+    one = 1;
+    ((struct Bits6Low *)&obj->flags352)->b0 = code & one;
+    code >>= 1;
+    ((struct Bits6Low *)&obj->flags352)->b1 = code & one;
+    code >>= 1;
+    ((struct Bits6Low *)&obj->flags352)->b2 = code & one;
+    code >>= 1;
+    ((struct Bits6Low *)&obj->flags352)->b3 = code & one;
+    code >>= 1;
+    ((struct Bits6Low *)&obj->flags352)->b4 = code & one;
+    code >>= 1;
+    ((struct Bits6Low *)&obj->flags352)->b5 = code & one;
+}
+
 
 ASM_FUNC("asm/code_08049014/obj_resolve_entry_contacts.s", void obj_resolve_entry_contacts(void))
