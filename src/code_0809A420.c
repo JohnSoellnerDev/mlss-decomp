@@ -1,6 +1,19 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBit2
+{
+    u16 lo : 2;
+    u16 bit2 : 1;
+    u16 hi : 13;
+};
+
+struct HalfBit0
+{
+    u16 bit0 : 1;
+    u16 hi : 15;
+};
+
 struct HeroSprite
 {
     u16 unk0;
@@ -619,7 +632,7 @@ void play_anim_by_flag2(struct HeroBody *body)
 }
 
 
-NONMATCH("asm/code_0809A420/spawn_two_children.s", void spawn_two_children(struct HeroBody *body))
+void spawn_two_children(struct HeroBody *body)
 {
     BodyFunc init;
     struct HeroBody *child;
@@ -631,16 +644,16 @@ NONMATCH("asm/code_0809A420/spawn_two_children.s", void spawn_two_children(struc
         ((struct ModeByte *)&body->sprite->flags)->mode = 1;
         art = 0x40C0;
         child = obj_spawn_linked(body, art, 0);
-        child->flags |= 1;
-        child->flags |= 4;
+        ((struct HalfBit0 *)&child->flags)->bit0 = 1;
+        ((struct HalfBit2 *)&child->flags)->bit2 = 1;
         init = init_random_timer;
         child->state = init;
         init(child);
         child->unk34 = (u8 *)gPoseTable[0];
         child->unk20 = 0;
         child = obj_spawn_linked(body, art, 0);
-        child->flags |= 1;
-        child->flags |= 4;
+        ((struct HalfBit0 *)&child->flags)->bit0 = 1;
+        ((struct HalfBit2 *)&child->flags)->bit2 = 1;
         child->state = init;
         init(child);
         child->unk34 = (u8 *)gPoseTable[0x12];
@@ -650,7 +663,6 @@ NONMATCH("asm/code_0809A420/spawn_two_children.s", void spawn_two_children(struc
         body->state = random_timers_init;
     }
 }
-END_NONMATCH
 
 void update_pose_timers(struct HeroBody *body)
 {
