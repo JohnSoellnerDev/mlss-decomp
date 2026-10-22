@@ -1,5 +1,26 @@
 #include "global.h"
 
+struct ByteBit1
+{
+    u8 lo : 1;
+    u8 bit1 : 1;
+    u8 hi : 6;
+};
+
+struct HalfBit5
+{
+    u16 lo : 5;
+    u16 bit5 : 1;
+    u16 hi : 10;
+};
+
+struct HalfBit4
+{
+    u16 lo : 4;
+    u16 bit4 : 1;
+    u16 hi : 11;
+};
+
 struct SysBits888
 {
     u8 bit0 : 1;
@@ -107,8 +128,8 @@ NONMATCH("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
     buf[6] = 0;
     buf[7] = 0;
     v = (buf[8] | 7) & -9;
-    v &= -17;
-    v &= -33;
+    ((struct HalfBit4 *)&v)->bit4 = 0;
+    ((struct HalfBit5 *)&v)->bit5 = 0;
     buf[8] = v;
     v = buf[8];
     for (i = 9; i <= 0xE; i++)
@@ -168,7 +189,7 @@ NONMATCH("asm/code_08124F38/save_game_flush_sound_off.s", void save_game_flush_s
     sq[0] = ((struct SysSlots *)gSys)->songSlot[0];
     slot_reset(0);
     if ((u8)slot_bit_test(1) == 1)
-        flags |= 2;
+        ((struct ByteBit1 *)&flags)->bit1 = 1;
     sq[1] = ((struct SysSlots *)gSys)->songSlot[1];
     slot_reset(1);
     sound_dma_reset();
