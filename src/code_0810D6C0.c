@@ -329,7 +329,7 @@ void set_mark_callbacks(void)
     }
 }
 
-NONMATCH("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(u32 index, u32 value))
+void set_mark_state(u32 index, u32 value)
 {
     struct Obj *mark = gWorld->marks[index];
     void *callback;
@@ -340,31 +340,24 @@ NONMATCH("asm/code_0810D6C0/set_mark_state.s", void set_mark_state(u32 index, u3
         {
             mark->unk16 = value;
             dma_copy_or_queue((u32)(gWorld->tileBank + (((value * 3) << 8) + 0x1880)), 0x06010DE0, 0x300, 0x20, 0);
-            if (value == 1)
+            switch ((s32)value)
             {
-                callback = draw_counter_display;
-            }
-            else if ((s32)value <= 1)
-            {
-                if (value != 0)
-                {
-                    return;
-                }
+            case 0:
                 callback = draw_panel_values;
-            }
-            else
-            {
-                if (value != 2)
-                {
-                    return;
-                }
+                break;
+            case 1:
                 callback = draw_counter_display;
+                break;
+            case 2:
+                callback = draw_counter_display;
+                break;
+            default:
+                return;
             }
             mark->unk4 = callback;
         }
     }
 }
-END_NONMATCH
 
 void queue_mark_display(void)
 {
@@ -556,7 +549,6 @@ void scroll_text_step(struct Obj *obj)
 
 NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
 {
-    vu16 *win;
     struct Obj *timer;
     struct Obj *child;
 
@@ -568,10 +560,12 @@ NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(voi
         child = raster_line_add(timer_window_setup, 0x86, (u32)update_voice_message);
         gWorld->timerObj->unkC = child;
         child->unk16 = gUnk_0200001A;
-        win = (vu16 *)&gUnk_02000048;
-        *win = 0x3F3F;
-        win = win + 1;
-        *win = 0x3F3B;
+        {
+            vu16 *win = (vu16 *)&gUnk_02000048;
+            *win = 0x3F3F;
+            win++;
+            *win = 0x3F3B;
+        }
     }
 }
 END_NONMATCH
@@ -808,11 +802,10 @@ NONMATCH("asm/code_0810D6C0/status_anim_start.s", u32 status_anim_start(void))
     struct Obj *slot = *entry;
     struct Obj *active = world->active;
     s32 y = active->unk44 - 0x800;
-    s32 x;
+    s32 x = active->unk40 - 0x2000;
 
     world->statusValue = (u32)slot;
     *entry = 0;
-    x = active->unk40 - 0x2000;
     return obj_motion_start(slot, x, y, 0, 0x3800);
 }
 END_NONMATCH
