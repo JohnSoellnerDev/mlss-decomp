@@ -174,7 +174,6 @@ u32 cmd_set_value(struct Owner *owner, struct CmdRec *rec, u32 *data, u8 cur)
 NONMATCH("asm/code_080FA598/cmd_slot_value_by_kind.s", u32 cmd_slot_value_by_kind(struct Owner *owner, u32 unused, u32 *data))
 {
     u8 *obj;
-    u16 value;
 
     switch (data[0])
     {
@@ -190,21 +189,19 @@ NONMATCH("asm/code_080FA598/cmd_slot_value_by_kind.s", u32 cmd_slot_value_by_kin
     }
     case 2:
         obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
-        value = 0;
-        break;
+        *(u16 *)(obj + 0xE) = 0;
+        return 1;
     case 3:
         obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
-        value = 0xF000;
-        break;
+        *(u16 *)(obj + 0xE) = 0xF000;
+        return 1;
     case 4:
         obj = owner->list->slots[owner->state->cur9A0 - 1].obj;
-        value = 0x8000;
-        break;
+        *(u16 *)(obj + 0xE) = 0x8000;
+        return 1;
     default:
         return 1;
     }
-    *(u16 *)(obj + 0xE) = value;
-    return 1;
 }
 END_NONMATCH
 
@@ -365,7 +362,63 @@ u32 cmd_start_move_list(struct Owner *owner, struct CmdRec *rec, s32 *data)
     return 0;
 }
 
-ASM_FUNC("asm/code_080FA598/cmd_set_position.s", void cmd_set_position(void))
+NONMATCH("asm/code_080FA598/cmd_set_position.s", u32 cmd_set_position(struct Owner *owner, u32 unused, u32 *data))
+{
+    u8 index = owner->state->cur9A0 - 1;
+    struct ObjList *list;
+    u32 offset;
+    s32 oldX;
+    s32 oldY;
+    s32 rx;
+    s32 ry;
+    u8 *obj;
+
+    if (data[0] & 2)
+    {
+        s32 x = data[1] << 4;
+
+        data[1] = x;
+        {
+            s32 y = data[2] << 4;
+
+            data[2] = y;
+            if ((data[0] & 1) == 0)
+            {
+                data[1] = x + 8;
+                data[2] = y + 8;
+            }
+        }
+    }
+    if (data[0] & 1)
+    {
+        list = owner->list;
+        oldX = list->slots[index].xFix;
+        oldY = list->slots[index].yFix;
+        offset = index << 6;
+    }
+    else
+    {
+        oldX = 0;
+        oldY = 0;
+        list = owner->list;
+        offset = index << 6;
+    }
+    list->slots[index].xFix = (data[1] << 8) + oldX;
+    list->slots[index].yFix = (data[2] << 8) + oldY;
+    obj = list->slots[index].obj;
+    rx = oldX;
+    if (rx < 0)
+        rx += 0xFF;
+    *(u16 *)obj = data[1] + (rx >> 8);
+
+    obj = owner->list->slots[index].obj;
+    ry = oldY;
+    if (ry < 0)
+        ry += 0xFF;
+    *(u16 *)(obj + 2) = data[2] + (ry >> 8);
+    return 0;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080FA598/cmd_place_sprite.s", u32 cmd_place_sprite(struct Owner *owner, u32 unused1, u32 unused2, u32 *data))
 {
@@ -565,10 +618,10 @@ END_NONMATCH
 
 NONMATCH("asm/code_080FA598/cmd_aux_entry.s", u32 cmd_aux_entry(struct Owner *owner, u32 unused, u32 *data))
 {
+    u8 found;
     u8 index = owner->state->cur9A0 - 1;
     u32 py = 0;
     u32 px = 0;
-    u8 found;
 
     if (data[2] != 0)
     {
