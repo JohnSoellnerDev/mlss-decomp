@@ -619,4 +619,37 @@ void obj_spawn_two_linked(struct SceneObj *obj, void *other, s32 x, s32 y, s32 a
 }
 
 
-ASM_FUNC("asm/code_0811229C/obj_set_motion_from_keys.s", void obj_set_motion_from_keys(struct SceneObj *obj, u32 speed, u32 b))
+NONMATCH("asm/code_0811229C/obj_set_motion_from_keys.s", void obj_set_motion_from_keys(struct SceneObj *obj, u32 speed, u32 b))
+{
+    s32 out1;
+    s32 out2;
+    u32 clamped;
+    s32 spanX;
+    s32 spanZ;
+    s32 first;
+    s32 lenSq;
+    s32 len;
+    u32 result;
+
+    clamped = clamp_reflect_offsets(&out1, &out2, ((s16 *)&obj->unk88)[0] << 8, ((s16 *)&obj->unk88)[1] << 8, b << 8);
+    obj->unk92 = clamped;
+    b = (s16)clamped;
+    spanX = (obj->unk84 >> 16) - (s16)obj->unk84;
+    spanZ = (obj->unk8C >> 16) - (s16)obj->unk8C;
+    first = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(out1 * ((out1 * ((s32)b - ((s16 *)&obj->unk88)[0])) / 0x40), out2 * (out2 / 0x40));
+    lenSq = spanX * spanX + first * first + spanZ * spanZ;
+    len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(lenSq);
+    if (len != 0)
+    {
+        result = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((speed << 6) + len / 2, len);
+    }
+    else
+    {
+        result = 0x4000;
+    }
+    obj->stepX = result;
+    ((struct SceneFlag79Bits *)&obj->flags79)->bit5 = 0;
+    obj->unk94 = out1;
+    obj->orbitAngle = out2;
+}
+END_NONMATCH
