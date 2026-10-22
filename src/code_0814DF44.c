@@ -597,13 +597,16 @@ NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_f
     ((struct StateBits *)&obj->state)->low3 = 1;
     vxp = &obj->vx;
     vyp = &obj->vy;
-    if (((u16)vxp[0] | (u16)vyp[0]) != 0)
+    {
+        u32 vx0 = (u16)vxp[0];
+    if ((vx0 | (u16)vyp[0]) != 0)
     {
         ang = angle_of_vector16(vxp[0], vyp[0]);
         dir = (((s32)((u16)ang + 0x1000)) >> 13) & 7;
     }
     else
         dir = -1;
+    }
     fp = &obj->facing;
     dir &= 7;
     f = (*fp & -8) | dir;
@@ -624,6 +627,8 @@ NONMATCH("asm/code_0814DF44/ai_set_facing_from_velocity.s", void ai_set_facing_f
     obj->angle = angle;
 }
 END_NONMATCH
+
+
 
 void ai_reload_sprite_mirrored(void *parent, struct CompanionObj *obj)
 {
@@ -736,7 +741,12 @@ void pick_next_handler(struct CompanionObj *parent, struct CompanionObj *obj, u3
         *slot = (u32)ai_wander_random;
 }
 
-NONMATCH("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void *parent, struct CompanionObj *obj))
+static inline void clear_child_handler(struct CompanionObj *c)
+{
+    c->handler = 0;
+}
+
+void enter_owner_follow(void *parent, struct CompanionObj *obj)
 {
     struct Sprite **sprp;
     struct CompanionObj *child;
@@ -763,7 +773,7 @@ NONMATCH("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void 
     obj->homeX = obj->x;
     obj->homeY = obj->y;
     obj->index1D0 = rand_below(4, mt19937_next());
-    child->handler = 0;
+    clear_child_handler(child);
     obj->altHandler = (u32)companion_chase_tick;
     obj->handler = (u32)entry_switch_handler;
     if (((struct OwnerObj *)parent)->kind == 0x197)
@@ -773,7 +783,7 @@ NONMATCH("asm/code_0814DF44/enter_owner_follow.s", void enter_owner_follow(void 
         obj->nextHandler = (u32)entry_switch_handler;
     }
 }
-END_NONMATCH
+
 
 void enter_idle_wait(struct CompanionObj *obj, u32 *slot);
 NONMATCH("asm/code_0814DF44/companion_chase_tick.s", void companion_chase_tick(void *parent, struct CompanionObj *obj))
