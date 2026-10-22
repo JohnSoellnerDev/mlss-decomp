@@ -343,54 +343,44 @@ void child_box_state(void *ctx, struct Enemy *obj)
 }
 
 
+static inline s32 half_dist(s32 d)
+{
+    s32 t = d;
+    s32 prod;
+
+    if (d < 0)
+    {
+        t = d + 3;
+    }
+    prod = d * (t >> 2);
+    if (prod < 0)
+    {
+        prod += 3;
+    }
+    return prod >> 2;
+}
+
 NONMATCH("asm/code_0813DE50/move_toward_partner.s", void move_toward_partner(void *ctx, struct Enemy *obj, EnemyFn *slot))
 {
+    struct Enemy *sprite;
     struct Partner *partner;
-    struct Enemy *sprite = obj->body;
+    u32 rnd;
     s32 dx;
     s32 dy;
-    s32 t;
-    s32 q;
-    s32 prod;
     s32 px;
     s32 py;
     s32 dist;
-    u32 rnd;
     s32 idx;
     s32 sign;
     s32 ux;
     s32 tx;
     s32 ty;
-
+    sprite = obj->body;
     partner = owner_entry(ctx, 0xFF);
     dx = partner->posX - sprite->posX;
-    t = dx;
-    if (dx < 0)
-    {
-        t = dx + 3;
-    }
-    q = t >> 2;
-    prod = dx * q;
-    if (prod < 0)
-    {
-        prod += 3;
-    }
-    px = prod >> 2;
-
+    px = half_dist(dx);
     dy = partner->posY - sprite->posY;
-    t = dy;
-    if (dy < 0)
-    {
-        t = dy + 3;
-    }
-    q = t >> 2;
-    prod = dy * q;
-    if (prod < 0)
-    {
-        prod += 3;
-    }
-    py = prod >> 2;
-
+    py = half_dist(dy);
     dist = ((s32 (*)(s32))gMathRoutines)(px + py);
     rnd = mt19937_next();
     idx = rand_below(2, rnd);
@@ -403,7 +393,7 @@ NONMATCH("asm/code_0813DE50/move_toward_partner.s", void move_toward_partner(voi
     obj_start_hop(sprite, 0, tx, ty);
     obj_approach_step(sprite);
 
-    sprite->unk20D |= 8;
+    ((struct Flags20D *)&sprite->unk20D)->bit3 = 1;
     *(u32 *)&sprite->unk20C &= 0xFFFC7FFF;
     *(u32 *)&sprite->unk20C |= 0x8000;
     ((struct Flags1D6 *)&obj->unk1D6)->bit0 = 0;
@@ -799,6 +789,7 @@ void probe_zone_point(void *ctx, struct Enemy *obj, EnemyFn *out)
 NONMATCH("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owner *ctx, struct Enemy *body, EnemyFn *out))
 {
     struct Partner *partner;
+    u8 *ai;
     u16 hit16;
     u8 flag;
     u8 *map;
@@ -817,10 +808,10 @@ NONMATCH("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owne
     u8 subHit;
     struct Sprite *sprite;
 
-    zero = 0;
-    flag = 1;
+    ai = (u8 *)body + 0x58;
     partner = owner_entry(ctx, 0xFF);
     obj_random_orbit_offset(body, partner);
+    zero = 0;
     hit16 = zero;
 
     t = (body->vecX << 8) - body->posX;
@@ -847,6 +838,7 @@ NONMATCH("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owne
     body->unk18 = zero;
 
     map = *(u8 **)((u8 *)ctx + 0x304);
+    flag = 1;
     tile_query(map, x, y, &height, &outB, &outC, (u8)0, flag);
     body->posZ = height;
     hit = probe_body_hit(ctx, body, body->posX, body->posY, height + body->unk18, 1, &hit16);
@@ -874,15 +866,15 @@ NONMATCH("asm/code_0813DE50/tile_step_probe.s", void tile_step_probe(struct Owne
             }
         }
     }
-    if (*(u16 *)((u8 *)body + 0x58 + 0x17A) != 0)
+    if (*(u16 *)(ai + 0x17A) != 0)
     {
         *out = tick_store;
     }
     else
     {
         out[0] = out[1];
-        ((struct Flags1D6 *)((u8 *)body + 0x58 + 0x17E))->bit0 = 1;
-        ((struct Flags1D6 *)((u8 *)body + 0x58 + 0x17E))->bit1 = 0;
+        ((struct Flags1D6 *)(ai + 0x17E))->bit0 = 1;
+        ((struct Flags1D6 *)(ai + 0x17E))->bit1 = 0;
     }
 }
 END_NONMATCH
@@ -1225,7 +1217,7 @@ void load_record_state_b(u8 *owner, struct Enemy *ent, EnemyFn *out)
 void start_move_to(struct Enemy *obj, u32 x, u32 y, u32 speed, ByteArg flag);
 void enemy_box_point_then_collide();
 
-NONMATCH("asm/code_0813DE50/aim_and_start_move.s", void aim_and_start_move(void *ctx, struct Enemy *obj, EnemyFn *out))
+void aim_and_start_move(void *ctx, struct Enemy *obj, EnemyFn *out)
 {
     u8 *zone = (u8 *)obj + 0x58;
     u8 *tab = (u8 *)obj->rec;
@@ -1238,6 +1230,7 @@ NONMATCH("asm/code_0813DE50/aim_and_start_move.s", void aim_and_start_move(void 
     s32 cell;
     u32 speed;
     s32 (*divFn)(s32, s32);
+    u8 zero = 0;
 
     if ((dx | dy) != 0)
     {
@@ -1270,10 +1263,9 @@ NONMATCH("asm/code_0813DE50/aim_and_start_move.s", void aim_and_start_move(void 
     cell = divFn(dir2, 2);
     obj_set_cell_coord(obj, cell, 0);
     speed = ((u16 *)(tab + 0x3A))[*(u16 *)(zone + 0x178)];
-    start_move_to(obj, *(s32 *)(zone + 0x184), *(s32 *)(zone + 0x188), speed, (u8)0);
+    start_move_to(obj, *(s32 *)(zone + 0x184), *(s32 *)(zone + 0x188), speed, zero);
     *out = enemy_box_point_then_collide;
 }
-END_NONMATCH
 
 
 void init_state_from_box(void *ctx, struct Enemy *obj)
@@ -1489,6 +1481,9 @@ s32 rand_below(s32 range, u32 seed);
 
 NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
 {
+    u8 one = 1;
+    u16 pick;
+    u16 pick2;
     u8 *ai = (u8 *)ent + 0x58;
     struct Record *rec = ent->rec;
     u8 idx;
@@ -1517,7 +1512,8 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
     partner = *(struct Partner **)((u8 *)owner + 0x28 + (partnerIdx << 2));
 
     *(u16 *)(ai + 0x178) = rand_below(4, mt19937_next());
-    stepH = *(u8 *)((u8 *)ent->rec + *(u16 *)(ai + 0x178) + 0x34);
+    pick = *(u16 *)(ai + 0x178);
+    stepH = *(u8 *)(*(u8 **)(ai + 0x158) + pick + 0x34);
 
     partnerTop = partner->posZ + partner->unk18;
     entTop = ent->posZ + ent->unk18;
@@ -1530,8 +1526,9 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
         jumpDz = partnerTop + (stepH << 12) - entTop;
     }
 
-    speed = *(u16 *)((u8 *)ent->rec + (*(u16 *)(ai + 0x178) << 1) + 0x2C);
-    start_move_to_3d(ent, 0, 0, jumpDz, speed, (u8)1);
+    pick2 = *(u16 *)(ai + 0x178);
+    speed = *(u16 *)(*(u8 **)(ai + 0x158) + (pick2 * 2) + 0x2C);
+    start_move_to_3d(ent, 0, 0, jumpDz, speed, one);
 
     dx = partner->posX - ent->posX;
     absDx = dx;
@@ -1548,15 +1545,22 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
 
     if (absDx > absDy)
     {
-        ((struct Flags12b *)&ent->unk24)->low3 = (dx < 0) ? 6 : 2;
+        if (dx >= 0)
+        {
+            ((struct Flags12b *)&ent->unk24)->low3 = 2;
+        }
+        else
+        {
+            ((struct Flags12b *)&ent->unk24)->low3 = 6;
+        }
     }
-    else if (dy < 0)
+    else if (dy >= 0)
     {
-        ((struct Flags12b *)&ent->unk24)->low3 = 0;
+        ((struct Flags12b *)&ent->unk24)->low3 = 4;
     }
     else
     {
-        ((struct Flags12b *)&ent->unk24)->low3 = 4;
+        ((struct Flags12b *)&ent->unk24)->low3 = 0;
     }
 
     ((struct Flags214 *)&ent->unk214)->low3 = 1;
