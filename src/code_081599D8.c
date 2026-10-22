@@ -955,20 +955,21 @@ NONMATCH("asm/code_081599D8/cam_target_within_range.s", s32 cam_target_within_ra
     s32 dist;
     s32 acc;
     s32 limit;
+    s32 *fp;
 
     ox = origin->unk00 + cam->unk508;
     oy = origin->unk04 + cam->unk50C;
     dx = target->unk00 - ox;
     dy = target->unk04 - oy;
     dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+    fp = &cam->unk52C;
     acc = cam->unk530;
     if (acc < 0)
     {
         acc += 0xFF;
     }
     acc >>= 8;
-    limit = acc * cam->unk52C;
-    limit = limit * 3;
+    limit = acc * *fp * 3;
     if (limit < 0)
     {
         limit += 3;
