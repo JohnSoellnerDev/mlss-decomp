@@ -305,7 +305,74 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(struct Owner *owner))
 
-ASM_FUNC("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
+NONMATCH("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
+{
+    s32 attrHi = 0xFFFFD800;
+    s32 attrBit = 0x4000;
+    struct OamEntry *cursor;
+    struct OamEntry *nextEntry;
+    struct OamEntry *prevEntry;
+    struct OamEntry *anchorNext;
+    struct OamEntry *anchor;
+    struct Obj *slot;
+    struct Pic *pic;
+    s32 i;
+    s32 kind;
+    s32 posX;
+    s32 posY;
+    s32 attrX;
+    s32 tile;
+
+    cursor = gModelCtx->head;
+    for (i = 0; i < 5; i++)
+    {
+        slot = gWorld->slots[i];
+        if (slot != 0)
+        {
+            pic = slot->pic;
+            kind = pic->kind;
+            if (kind == 5)
+            {
+                kind = 4;
+            }
+            if (kind > 4)
+            {
+                kind -= 5;
+            }
+            posX = pic->posX;
+            posY = pic->posY;
+            tile = gOamTileTable[kind] + 0x5D;
+            if (kind == 3)
+            {
+                attrX = (posX - 8) & 0x1FF;
+                cursor->attr0 = ((posY - 4) & 0xFF) | 0x4000;
+            }
+            else
+            {
+                cursor->attr0 = ((posY - 4) & 0xFF) | 0x4000;
+                attrX = ((posX - 0x10) & 0x1FF) | attrBit;
+            }
+            cursor->attr1 = attrX;
+            cursor->attr2 = tile | attrHi;
+            nextEntry = cursor->unk10;
+            prevEntry = cursor->unkC;
+            anchor = slot->pic->anchor;
+            anchorNext = anchor->unkC;
+            cursor->unk6 = 0;
+            cursor->unk8 = anchorNext->unk8;
+            nextEntry->unkC = prevEntry;
+            prevEntry->unk10 = nextEntry;
+            cursor->unkC = anchorNext;
+            cursor->unk10 = anchor;
+            anchorNext->unk10 = cursor;
+            anchor->unkC = cursor;
+            gModelCtx->count++;
+            cursor = nextEntry;
+        }
+    }
+    gModelCtx->head = cursor;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(struct Obj *obj, s32 x, s32 y, s32 height, s32 kind))
 {
