@@ -305,7 +305,81 @@ void hero_b_bind_partner_fx(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080B1D44/hero_pair_scale_and_settle.s", void hero_pair_scale_and_settle(struct HeroBody *body))
+NONMATCH("asm/code_080B1D44/hero_pair_scale_and_settle.s", void hero_pair_scale_and_settle(struct HeroBody *body))
+{
+    struct World *world = gWorld;
+    struct HeroBody *body_a = &world->heroA->body;
+    struct Hero *hero_b = world->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    struct HeroBody *partner = body->partner;
+    s32 ratio;
+    s32 inRange;
+    s32 ratioLo;
+    u16 scale;
+
+    step_motion(body_b);
+    scale = partner->sprite->scale;
+    if ((s16)partner->sprite->scale <= 0xFF)
+    {
+        partner->sprite->scale = scale + 8;
+        if ((s16)partner->sprite->scale > 0x100)
+            partner->sprite->scale = 0x100;
+    }
+    body_a->posX = *(s32 *)&body_a->spanA * 2 - body_b->posX;
+    body_a->posY = body_b->posY;
+    body_a->posZ = body_b->posZ;
+    ratio = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(body_b->ratioHi << 14, body_b->ratioLo);
+
+    inRange = 0;
+    if (body_b->step <= ratio && body_b->progress >= ratio)
+        inRange = 1;
+    if (inRange)
+    {
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            if (body_a->data->pose == -1)
+                sprite_set_action(body_a, 6, 0x2000, 0);
+            else
+                sprite_set_action(body_a, 6, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->pose == -1)
+                sprite_set_action(body_b, 6, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 6, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+    }
+    if ((body_b->flags & 0x20) != 0)
+    {
+        s32 minus1 = -1;
+
+        set_slot_value(0x2E, minus1);
+        partner->sprite->scale = 0x100;
+        effect_spawn_at(0x1E, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+        effect_spawn_at(0x1E, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100, body_a);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            if (body_a->data->pose == minus1)
+                sprite_set_action(body_a, 8, 0x2000, 0);
+            else
+                sprite_set_action(body_a, 8, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            if (body_b->data->pose == minus1)
+                sprite_set_action(body_b, 8, 0x2000, 0);
+            else
+                sprite_set_action(body_b, 8, 0x204D, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+        }
+        body->state = pair_end_place_both_b;
+    }
+}
+END_NONMATCH
 
 void pair_end_place_both_b(struct HeroBody *body)
 {
