@@ -299,7 +299,7 @@ void state_show_and_scale(struct SpriteTask *task)
 }
 
 void state_start_motion(struct SpriteTask *task);
-NONMATCH("asm/code_08081DA4/state_random_step.s", void state_random_step(struct SpriteTask *task))
+void state_random_step(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
     s32 speed;
@@ -308,8 +308,9 @@ NONMATCH("asm/code_08081DA4/state_random_step.s", void state_random_step(struct 
     s32 second;
     s32 code;
     s16 *timer;
-    s32 (*fn)(s32, s32);
     s32 three;
+    s32 *pD8;
+    s32 (*fn)(s32, s32);
 
     sprite_sum_parts(obj);
     speed = rand_below(3, mt19937_next()) + 1;
@@ -337,16 +338,15 @@ NONMATCH("asm/code_08081DA4/state_random_step.s", void state_random_step(struct 
     ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
     task->timer = 4;
     fn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    pD8 = &obj->head->unkD8;
     three = 3;
-    first = fn((obj->head->unkD8 + obj->unk38 * three) / 0x100, 4);
-    fn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
-    second = fn((obj->head->unkDC + obj->unk3C * three) / 0x100, 4);
+    first = fn((*pD8 + obj->unk38 * three) / 0x100, 4);
+    second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * three) / 0x100, 4);
     place_targets(obj, first, second, 0, 0x100);
     set_step_and_offsets(obj, 0x700, obj->unk40 / 0x100 + 0x18);
     task->timer--;
     task->next = state_start_motion;
 }
-END_NONMATCH
 
 
 void state_timed_motion(struct SpriteTask *task)
@@ -949,12 +949,13 @@ void state_wait_mode_bit1(struct SpriteTask *task)
 
 ASM_FUNC("asm/code_08081DA4/init_sprite_pools.s", void init_sprite_pools(void))
 
-NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_display(void))
+void refresh_sprite_display(void)
 {
     u32 mask;
     u8 *dst;
     u8 *src;
     u16 *keys;
+    u8 *sys;
     struct DispEntry *ent;
     s32 kind;
     s32 code;
@@ -962,8 +963,10 @@ NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_displ
 
     if ((u8)sub_obj_running(gWorld->unk248) != 0)
     {
-        keys = (u16 *)&gSys[0x884];
-        mask = *(u16 *)gSys & keys[1];
+        sys = gSys;
+        keys = (u16 *)(sys + 0x884);
+        mask = keys[1];
+        mask &= *(u16 *)sys;
         mask &= gWorld->unk12;
         dst = gUnk_02000280;
         src = *(u8 **)((u8 *)gWorld->unk248 + 0x1C) + 0x200;
@@ -986,16 +989,26 @@ NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_displ
     if (ent != 0)
     {
         kind = ent->flag8;
-        if (kind == 0)
+        if (kind != 0)
+        {
+            if (kind == 1)
+            {
+                table_register((u8 *)ent + 8);
+            }
+        }
+        else
         {
             code = (((u32)*(u8 *)ent) << 30) >> 30;
-            if (code == 1)
+            switch (code)
             {
+            case 1:
                 MEM_ROUTINE(void (*)(u8 *, u32, s32), iwram_copy)((u8 *)ent->value + ent->arg2, ent->val, (((s16)ent->head) >> 2) << 5);
-            }
-            else if (code == 2)
-            {
+                break;
+            case 2:
                 dma_copy_or_queue((u8 *)ent->value + ent->arg2, (void *)ent->val, (((s16)ent->head) >> 2) << 5, 0x20, kind);
+                break;
+            case 0:
+                break;
             }
             if (ent == (struct DispEntry *)(gWorkBuf + 0x3668))
             {
@@ -1005,10 +1018,6 @@ NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_displ
             {
                 gWorld->list1F8 = gWorld->list1F8 - 1;
             }
-        }
-        else if (kind == 1)
-        {
-            table_register((u8 *)ent + 8);
         }
     }
     ((struct SpriteBit4Bits *)&gWorld->unkB)->bit4 = 0;
@@ -1021,7 +1030,6 @@ NONMATCH("asm/code_08081DA4/refresh_sprite_display.s", void refresh_sprite_displ
         }
     }
 }
-END_NONMATCH
 
 void unknown_code_08082f54(u16 *list)
 {
