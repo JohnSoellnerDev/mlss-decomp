@@ -1,6 +1,19 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBits1_2
+{
+    u16 lo : 1;
+    u16 bits1_2 : 2;
+    u16 hi : 13;
+};
+
+struct HalfBit0
+{
+    u16 bit0 : 1;
+    u16 hi : 15;
+};
+
 struct ActorDesc
 {
     u8 filler0[0x04];
@@ -410,12 +423,12 @@ NONMATCH("asm/code_08062ADC/obj_begin_chain.s", void obj_begin_chain(struct Acto
                           obj->posH / 0x100 + 0x18, ((u32)obj->pose->flip << 25) >> 31, 1);
         obj->child = child;
         child->dx = 0;
-        child->flags79 |= 1;
+        ((struct HalfBit0 *)&child->flags79)->bit0 = 1;
         child->targetX = child->baseX;
         child->targetY = child->baseY;
         child->targetH = child->baseH;
         child->tag = 0;
-        child->unk76 |= 6;
+        ((struct HalfBits1_2 *)&child->unk76)->bits1_2 = 3;
         child->owner = obj->owner;
         child->param9C = obj->param9C;
         child->paramA0 = obj->paramA0;
