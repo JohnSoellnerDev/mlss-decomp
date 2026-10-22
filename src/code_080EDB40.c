@@ -185,6 +185,13 @@ struct Mid5Half
     u16 rest : 6;
 };
 
+struct Mid4Bits
+{
+    u8 lo1 : 1;
+    u8 mid4 : 4;
+    u8 rest : 3;
+};
+
 struct MotionSlot
 {
     u32 unk0[4];
@@ -818,10 +825,7 @@ NONMATCH("asm/code_080EDB40/set_motion_slot.s", u32 set_motion_slot(void *unused
     s32 old = gEffectState[0x55B];
     u32 bits = (((u32)old << 27) >> 28) | (1 << k);
 
-    {
-        s32 mask = -0x1F;
-        gEffectState[0x55B] = (mask & old) | ((bits & 0xF) << 1);
-    }
+    ((struct Mid4Bits *)(gEffectState + 0x55B))->mid4 = bits & 0xF;
 
     p[1] = -p[1];
     p[2] = -p[2];
