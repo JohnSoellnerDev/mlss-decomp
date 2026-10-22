@@ -373,7 +373,14 @@ NONMATCH("asm/code_080A814C/hero_a_wait_reach_rate.s", void hero_a_wait_reach_ra
     distLo = hero_a->body.distLo;
     distHi = hero_a->body.distHi;
     reach = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(distHi << 14, distLo);
-    reached = body_a->step <= reach && body_a->progress >= reach;
+    if (body_a->step > reach)
+        reached = 0;
+    else
+    {
+        reached = 1;
+        if (body_a->progress < reach)
+            reached = 0;
+    }
     if (reached != 0)
     {
         set_slot_value(0x62, -1);
