@@ -10,6 +10,13 @@ struct MsBits
     u8 rest : 3;
 };
 
+struct PoseTail
+{
+    u8 filler0[0xC4];
+    s8 unkC4;
+    s8 unkC5;
+};
+
 struct Sprite
 {
     s16 x;
@@ -331,9 +338,10 @@ NONMATCH("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digi
 {
     u16 timer = owner->timer;
     s32 signedTimer = owner->timer;
+    u32 digits;
     u32 cell;
     u32 vram;
-    u32 digits;
+    u8 **mr;
     s32 idx;
     u8 *hero;
 
@@ -348,20 +356,23 @@ NONMATCH("asm/code_08105A30/state_draw_pose_digits.s", void state_draw_pose_digi
         digits = to_bcd(hero[0x30]);
         gWorld->digit370->unk8 = digits;
         gWorld->digit370->unk10 = 0x1E;
+        mr = &gMemRoutines;
         vram = 0x06010000;
-        MEM_ROUTINE(void (*)(u32, void *, u32), iwram_fill)(0, (void *)0x06017200, 0x400);
+        ((void (*)(u32, void *, u32))*mr)(0, (void *)0x06017200, 0x400);
         MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)((((cell = (digits & 0xF) << 1) + 0x49) << 5) + vram), (u8 *)(vram + 0x72C0), 0x20);
         MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x4A) << 5) + vram), (u8 *)(vram + 0x7340), 0x20);
         digits >>= 4;
         if (digits != 0)
         {
-            cell = (digits & 0xF) << 1;
-            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x49) << 5) + 0x06010000), (u8 *)0x060174A0, 0x20);
-            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((cell + 0x4A) << 5) + 0x06010000), (u8 *)0x06017520, 0x20);
+            u32 hcell;
+
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)((((hcell = (digits &= 0xF) << 1) + 0x49) << 5) + 0x06010000), (u8 *)0x060174A0, 0x20);
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)(((hcell + 0x4A) << 5) + 0x06010000), (u8 *)0x06017520, 0x20);
         }
         owner->state = state_build_hero_sprites;
     }
 }
+
 END_NONMATCH
 
 ASM_FUNC("asm/code_08105A30/state_build_hero_sprites.s", void state_build_hero_sprites(struct Owner *owner))
@@ -730,7 +741,66 @@ void state_marker_place_hero(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08105A30/state_marker_text_place.s", void state_marker_text_place(void))
+void state_marker_text_place(struct Owner *owner)
+{
+    u16 timer = owner->timer;
+    s32 signedTimer = owner->timer;
+
+    if (signedTimer != 0)
+    {
+        owner->timer = timer - 1;
+    }
+    else
+    {
+        struct Owner *pose = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
+        struct Sprite *marker = owner->sprite;
+        s32 noValue;
+        s32 vx;
+        s32 vy;
+
+        sprite_set_action(pose, 1, 0, 0);
+        ((struct MsBits *)&pose->sprite->flags)->mode = 1;
+        switch (gSys[0x8C0])
+        {
+        case 0:
+            obj_setup_load(marker, 0x2088);
+            break;
+        case 1:
+            obj_setup_load(marker, 0x20A2);
+            break;
+        case 2:
+            obj_setup_load(marker, 0x209E);
+            break;
+        case 3:
+            obj_setup_load(marker, 0x209A);
+            break;
+        case 4:
+            obj_setup_load(marker, 0x20A6);
+            break;
+        }
+        noValue = -1;
+        obj_load_record(marker, 6, noValue, 0, 0);
+        sprite_entry_update(marker);
+        vx = ((struct Pos38 *)pose)->x;
+        if (vx < 0)
+        {
+            vx += 0xFF;
+        }
+        marker->x = vx >> 8;
+        vy = ((struct Pos38 *)pose)->y - ((struct Pos38 *)pose)->z;
+        if (vy < 0)
+        {
+            vy += 0xFF;
+        }
+        vy >>= 8;
+        marker->y = ((struct PoseTail *)pose)->unkC4 + vy - ((struct PoseTail *)pose)->unkC5;
+        ((struct MsBits *)&marker->flags)->mode = 1;
+        set_slot_value(0x155, noValue);
+        owner->timer = 0x40;
+        owner->state = state_marker_reset_then_anim;
+        owner->state(owner);
+    }
+}
 
 void state_marker_gfx_place(struct Owner *owner)
 {
@@ -846,7 +916,69 @@ void state_heroes_anim_stop(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08105A30/state_menu_build.s", void state_menu_build(void))
+static inline struct Menu *menu_root(void)
+{
+    return gWorld->menu248;
+}
+
+NONMATCH("asm/code_08105A30/state_menu_build.s", void state_menu_build(struct Owner *owner))
+{
+    u16 timer = owner->timer;
+    s32 signedTimer = owner->timer;
+    s32 entry;
+    s32 idx;
+    struct Sprite *obj;
+    u32 a;
+    u32 b;
+    s32 value;
+
+    if (signedTimer != 0)
+    {
+        owner->timer = timer - 1;
+    }
+    else if (!is_state_busy())
+    {
+        entry = 0;
+        do
+        {
+            menu_entry_refresh(menu_root(), (u8)entry, 0);
+            idx = entry + 1;
+            menu_entry_refresh(menu_root(), (u8)idx, 0);
+            idx = entry + 2;
+            menu_entry_refresh(menu_root(), (u8)idx, 0);
+            idx = entry + 3;
+            menu_entry_refresh(menu_root(), (u8)idx, 0);
+            entry += 4;
+            if (entry > 7)
+            {
+                break;
+            }
+        } while (1);
+
+        obj = spawn_obj_by_id(0x7009, gSys[0x8C0], 0, 1);
+        gWorld->menu368 = obj;
+        sprite_entry_update(obj);
+        obj->x = 0x78;
+        obj->y = 0xFFF0;
+        obj->unk0E = 0;
+        ((struct MsBits *)&obj->flags)->b4 = 1;
+        a = gWorld->fig80[0]->link->unk14;
+        b = obj->unk14;
+        if (gWorld->fig80[1] != 0)
+        {
+            value = ~(gWorld->fig80[1]->link->unk14 | a | b);
+        }
+        else
+        {
+            value = ~(a | b);
+        }
+        draw_sprite_block(4, 0, 0x40, 0xFFFF, (u16)value);
+        set_mark_callbacks();
+        owner->timer = 0x10;
+        owner->state = state_wait_menu_clear;
+    }
+}
+END_NONMATCH
 
 void state_menu_slide_in(struct Owner *owner)
 {
