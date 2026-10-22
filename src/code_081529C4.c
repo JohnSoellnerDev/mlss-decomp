@@ -403,8 +403,10 @@ void *obj_create(void *unused, struct ObjRecord *record)
     }
 }
 
-NONMATCH("asm/code_081529C4/game_set_chars_active.s", void game_set_chars_active(struct GameState *game, u32 on))
+void game_set_chars_active(struct GameState *game, u32 on)
 {
+    u16 clearMask = 0xFFEF;
+    u16 setMask = 9;
     if (on != 0)
     {
         game->flags = (game->flags & 0xFFF6) | 0x10;
@@ -413,12 +415,11 @@ NONMATCH("asm/code_081529C4/game_set_chars_active.s", void game_set_chars_active
     }
     else
     {
-        game->flags = (game->flags | 9) & 0xFFEF;
+        game->flags = (game->flags | setMask) & clearMask;
         obj_set_char_offset(game->charA);
         obj_set_char_offset(game->charB);
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081529C4/scene_update_screen.s", void scene_update_screen(void))
 
