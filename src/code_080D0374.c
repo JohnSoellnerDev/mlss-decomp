@@ -185,7 +185,62 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
 void body_step_window_d16c0(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080D0374/hero_body_blend_to_a.s", void hero_body_blend_to_a(void))
+NONMATCH("asm/code_080D0374/hero_body_blend_to_a.s", void hero_body_blend_to_a(struct HeroBody *body))
+{
+    struct HeroBody *node = &gWorld->heroA->body;
+    u32 counter;
+    s32 v;
+    void (*next)(struct HeroBody *);
+
+    v = body->posX * 0xE6 + node->posX * 0x1A;
+    if (v < 0)
+        v += 0xFF;
+    body->posX = v >> 8;
+    v = body->posY * 0xE6 + node->posY * 0x1A;
+    if (v < 0)
+        v += 0xFF;
+    body->posY = v >> 8;
+    v = body->posZ * 0xE6 + 0x82000;
+    if (v < 0)
+        v += 0xFF;
+    body->posZ = v >> 8;
+    if (body->targetZ + 0x80 < body->posZ)
+        return;
+    set_slot_value(0x120, -1);
+    body->posZ -= 0x300;
+    do
+    {
+        node = node->child;
+    } while (node->child != 0);
+    if (body != node)
+    {
+        obj_release(body);
+        body = node;
+    }
+    else
+    {
+        body->unk9C = 0;
+    }
+    counter = body->unk9C + 1;
+    body->unk9C = counter;
+    if (((counter ^ 1) & 1) != 0 || body->sprite->anim > 0xA)
+    {
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+            next = hero_start_step_eighth;
+        else
+            return;
+    }
+    else
+    {
+        u32 q = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(counter, 3);
+        body->unk78 = (q << 5) | (body->unk78 & 0x1F);
+        sprite_set_action(body, body->sprite->anim + 1, 0, 0);
+        ((struct HeroSpriteBits *)&body->sprite->flags)->mode = 1;
+        next = body_anim_next_then_end;
+    }
+    body->state = next;
+}
+END_NONMATCH
 
 void hero_start_step_eighth(struct HeroBody *body)
 {
