@@ -174,4 +174,70 @@ void hero_b_pose_anim(struct HeroBody *body);
 void noop_state_080acec0(struct HeroBody *body);
 void hero_b_on_object(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080ACF58/hero_b_on_object.s", void hero_b_on_object(struct HeroBody *body))
+s32 obj_last_x(void *obj);
+s32 obj_last_y(void *obj);
+void hero_a_stop_anim(struct HeroBody *body);
+
+static inline void *tracked_obj(void)
+{
+    return gWorld->trackedObj;
+}
+
+void hero_b_on_object(struct HeroBody *body)
+{
+    struct World *world;
+    struct HeroBody *bodyA;
+    struct HeroBody *bodyB;
+    s16 *span;
+    u32 poseHi;
+    u32 poseC;
+    u8 poseBit;
+    u32 poseLo;
+    u32 poseMode;
+
+    gWorld->enableByte = 1;
+    world = gWorld;
+    poseBit = ((*(u32 *)(gParty + 8) << 14) >> 27) & 1;
+    poseHi = gParty[0xB] >> 6;
+    poseC = gParty[0xC];
+    poseLo = ((((poseC & 0xF) << 2) | poseHi) >> 1) & 1;
+    poseMode = (poseBit + (poseLo << 1)) << 6;
+    world->modeByte = (world->modeByte & 0x3F) | poseMode;
+    bodyA = &gWorld->heroA->body;
+    bodyB = &gWorld->heroB->body;
+    set_slot_value(0x53, -1);
+    if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+    {
+        place_targets(bodyB, (s16)obj_last_x(tracked_obj()) + 0x50, (s16)obj_last_y(tracked_obj()) + 0x6E, 0, -1);
+        set_motion_start(bodyB, 0x200);
+    }
+    if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+    {
+        if (bodyB->data->poseIndex == -1)
+            sprite_set_action(bodyB, 0, 0x2002, 0);
+        else
+            sprite_set_action(bodyB, 0, 0x204F, 0);
+        ((struct HeroMirrorBits *)&bodyB->sprite->mirror)->flip = (span = (s16 *)&bodyB->span)[0] >= span[1];
+        ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 0;
+    }
+    if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+    {
+        bodyB->state = 0;
+        enter_finish_rebuild(bodyB);
+    }
+    if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+    {
+        place_targets(bodyA, (s16)obj_last_x(tracked_obj()) + 0x28, (s16)obj_last_y(tracked_obj()) + 0x6E, 0, -1);
+        set_motion_start(bodyA, 0x200);
+    }
+    if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+    {
+        if (bodyA->data->poseIndex == -1)
+            sprite_set_action(bodyA, 0, 0x2002, 0);
+        else
+            sprite_set_action(bodyA, 0, 0x204F, 0);
+        ((struct HeroMirrorBits *)&bodyA->sprite->mirror)->flip = (span = (s16 *)&bodyA->span)[0] >= span[1];
+        ((struct HeroSpriteBits *)&bodyA->sprite->flags)->mode = 0;
+    }
+    body->state = hero_a_stop_anim;
+}
