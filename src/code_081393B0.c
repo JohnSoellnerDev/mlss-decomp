@@ -1114,8 +1114,9 @@ void enter_idle_hop_a689(void *ctx, struct Enemy *ent)
     fn(ctx, ent);
 }
 
-NONMATCH("asm/code_081393B0/reset_record_fields.s", void reset_record_fields(struct Enemy *obj))
+void reset_record_fields(struct Enemy *obj)
 {
+    s32 high;
     u8 *fields = (u8 *)obj + 0x100;
     u8 *ptr;
     u8 *cursor;
@@ -1173,12 +1174,13 @@ NONMATCH("asm/code_081393B0/reset_record_fields.s", void reset_record_fields(str
         *((u8 *)obj + 0x140) = cursor[0];
         *((u8 *)obj + 0x141) = cursor[1];
     }
-    if ((flags & 0xF000) != 0)
+    high = 0xF000;
+    high &= flags;
+    if (high != 0)
     {
         ((struct Nibble33D *)obj)->hi4 = hi >> 28;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/obj_box_to_stack.s", void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
 
