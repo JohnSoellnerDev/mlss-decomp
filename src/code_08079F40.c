@@ -292,7 +292,32 @@ void timer2_anim0(struct SpriteObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08079F40/random_anim_by_mode.s", void random_anim_by_mode(struct SpriteObj *obj))
+void random_anim_by_mode(struct SpriteObj *obj)
+{
+    s32 rnd;
+    s32 mode;
+
+    rnd = mt19937_next();
+    obj->mode = mode = rnd & 3;
+    switch (mode)
+    {
+    case 0:
+        sprite_set_action(obj, 7, 0, 0);
+        break;
+    case 1:
+        sprite_set_action(obj, 8, 0, 0);
+        break;
+    case 2:
+        sprite_set_action(obj, 9, 0, 0);
+        break;
+    default:
+        sprite_set_action(obj, 0xA, 0, 0);
+        break;
+    }
+    obj->callback = countdown_set_anim_0b_place_part;
+    obj->timer = 4;
+    set_slot_value(0x42, -1);
+}
 
 void timer_anim_5_or_9(struct SpriteObj *obj)
 {
