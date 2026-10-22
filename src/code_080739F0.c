@@ -623,19 +623,21 @@ void wait_timer_then_stop(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080739F0/action_by_owner_slot_then_wait.s", void action_by_owner_slot_then_wait(struct ActorObj *obj))
+void action_by_owner_slot_then_wait(struct ActorObj *obj)
 {
-    u32 action;
+    u16 *tm;
     if (obj->owner->part->slot == -1) {
-        action = 0xC;
+        sprite_set_action(obj, 0xC, 0, 0);
+        tm = &obj->timer;
+        *tm = 4;
+        obj->state = wait_timer_then_settle;
     } else {
-        action = 0xD;
+        sprite_set_action(obj, 0xD, 0, 0);
+        tm = &obj->timer;
+        *tm = 4;
+        obj->state = wait_timer_then_settle;
     }
-    sprite_set_action(obj, action, 0, 0);
-    obj->timer = 4;
-    obj->state = wait_timer_then_settle;
 }
-END_NONMATCH
 
 void wait_index_then_timer(struct ActorObj *obj)
 {
@@ -683,7 +685,7 @@ void wait_child_then_count(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080739F0/place_parts_by_phase_then_wait.s", void place_parts_by_phase_then_wait(struct ActorObj *obj))
+void place_parts_by_phase_then_wait(struct ActorObj *obj)
 {
     s32 t;
     s32 wait;
@@ -702,24 +704,21 @@ NONMATCH("asm/code_080739F0/place_parts_by_phase_then_wait.s", void place_parts_
         wait = obj->targetX - 1;
         obj->targetX = wait;
         if (wait <= 0) {
-            s32 action;
             sound_stop_song(0x6C);
             switch (obj->phase) {
             case 0:
-                action = 4;
+                sprite_set_action(obj, 4, 0, 0);
                 break;
             case 1:
-                action = 8;
+                sprite_set_action(obj, 8, 0, 0);
                 break;
             default:
-                action = 0xC;
+                sprite_set_action(obj, 0xC, 0, 0);
                 break;
             }
-            sprite_set_action(obj, action, 0, 0);
             obj->state = spawn_phase_child;
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080739F0/spawn_phase_child.s", void spawn_phase_child(void))
