@@ -429,11 +429,13 @@ NONMATCH("asm/code_08026EA8/object_teardown.s", void object_teardown(struct Scen
     ((struct HalfLow10 *)&obj->half120)->low10 = t;
     s79 = gSys[0x79];
     {
-        u32 f = (s79 & 0xC) | (((u8 *)obj)[0x121] & -0xD);
+        u8 *b = &((u8 *)obj)[0x121];
+        u32 t = s79 & 0xC;
+        u32 f = t | (*b & -0xD);
 
-        f = (f & -0x11) | (s79 & 0x10);
+        f = (s79 & 0x10) | (f & -0x11);
         f = (f & -0x21) | (s79 & 0x20);
-        ((u8 *)obj)[0x121] = f;
+        *b = f;
     }
     if (obj->sub1FC != 0)
     {
