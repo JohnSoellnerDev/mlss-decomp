@@ -49,6 +49,13 @@ struct Bits33E
     u8 rest : 5;
 };
 
+struct Bits45
+{
+    u8 lo4 : 4;
+    u8 f : 2;
+    u8 rest : 2;
+};
+
 struct SlotState
 {
     u8 unk0;
@@ -200,7 +207,13 @@ u8 *cell_offsets(struct Obj *obj, s16 x, s16 y, u32 *outA, u32 *outB, u32 *outC)
     return cell;
 }
 
-ASM_FUNC("asm/code_0804EA7C/write_oam_entry.s", void write_oam_entry(void))
+NONMATCH("asm/code_0804EA7C/write_oam_entry.s", void write_oam_entry(struct Obj *obj, u16 a, u16 b))
+{
+    obj->oam44->attr0 = (obj->unk8 / 0x100) - (s16)a;
+    obj->oam44->attr1 = ((obj->unkC - obj->unk10 - obj->unk14) / 0x100) - (s16)b;
+    obj->oam44->attrE = ((((u32)*(u16 *)obj << 21) >> 28) << 12) | (0x800 - (obj->unkC / 0x100));
+}
+END_NONMATCH
 
 void obj_release_oam(struct Obj *obj)
 {
@@ -274,11 +287,7 @@ NONMATCH("asm/code_0804EA7C/update_facing_bits.s", void update_facing_bits(struc
         u32 idx = ((obj->flags2 >> 5) << 2) + (((u32)((u8 *)obj)[0x26] << 28) >> 30);
         u8 value = table[idx];
         u8 *dst = &obj->unk353;
-        s32 bits = (value & 3) << 4;
-        s32 cur = *dst;
-        cur &= -0x31;
-        cur |= bits;
-        *dst = cur;
+        ((struct Bits45 *)dst)->f = value & 3;
     }
 }
 END_NONMATCH
@@ -484,4 +493,21 @@ NONMATCH("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(struct Obj 
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0804EA7C/obj_refresh_child_sprite.s", void obj_refresh_child_sprite(void))
+NONMATCH("asm/code_0804EA7C/obj_refresh_child_sprite.s", void obj_refresh_child_sprite(struct Obj *obj))
+{
+    struct VtEntry *e;
+
+    *((u8 *)obj + 0x20C) &= -2;
+    ((struct Bits33C *)((u8 *)obj + 0x33C))->mid12 = 1;
+    obj->sprite294->unk12 |= 0x10;
+    e = &obj->vtable338->e80;
+    e->fn((u8 *)obj + e->off, 2);
+    if (obj->child344 != 0 && (obj->child344->unk20F & 2) != 0) {
+        *((u8 *)obj->child344 + 0x20C) &= -2;
+        obj->child344->sprite294->unk12 |= 0x10;
+        e = &obj->child344->vtable338->e80;
+        e->fn((u8 *)obj->child344 + e->off, 2);
+    }
+    set_flag(gUnk_03000FC0 + 0x38C, 0, ((obj->unk22C << 10) >> 20) + 0x960, 1);
+}
+END_NONMATCH
