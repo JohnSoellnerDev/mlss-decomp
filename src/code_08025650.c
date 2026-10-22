@@ -178,82 +178,79 @@ struct TestTab
 
 extern u8 gUnk_02000100[];
 
-NONMATCH("asm/code_08025650/obj_test_mode.s", u32 obj_test_mode(struct Obj *obj, u32 mode))
+u32 obj_test_mode(struct Obj *obj, u32 mode)
 {
-    struct TestTab *tab;
-    struct TestRec *rec;
-
     if (obj->testLevel <= 1)
         return 0;
     if (mode > 7)
         return 0;
+    switch (mode)
     {
+    case 0:
+    {
+        struct TestRec *rec = (struct TestRec *)obj->record;
+        if ((rec->h0 & 0x300) == 0)
         {
-            switch (mode)
-            {
-            case 0:
-                rec = (struct TestRec *)obj->record;
-                if ((rec->h0 & 0x300) == 0)
-                {
-                    tab = (struct TestTab *)obj->sub200->table;
-                    if (rec->h2 & tab->h4)
-                        return 1;
-                }
-                break;
-            case 1:
-                rec = (struct TestRec *)obj->record;
-                if ((rec->h0 & 0x300) == 0)
-                {
-                    tab = (struct TestTab *)obj->sub204->table;
-                    if (rec->h2 & tab->h4)
-                        return 1;
-                }
-                break;
-            case 2:
-                rec = (struct TestRec *)obj->record;
-                tab = (struct TestTab *)obj->sub204->table;
-                if (rec->h0 & tab->h6)
-                    break;
-                tab = (struct TestTab *)obj->sub200->table;
-                if (rec->h2 & tab->h6)
-                    return 1;
-                break;
-            case 3:
-                rec = (struct TestRec *)obj->record;
-                tab = (struct TestTab *)obj->sub200->table;
-                if (rec->h0 & tab->h6)
-                    break;
-                tab = (struct TestTab *)obj->sub204->table;
-                if (rec->h2 & tab->h6)
-                    return 1;
-                break;
-            case 4:
-                rec = (struct TestRec *)obj->record;
-                if (rec->h2 & 8)
-                    return 1;
-                break;
-            case 5:
-                rec = (struct TestRec *)obj->record;
-                if ((*(u32 *)rec & 0xFFFF0300) == 0x40000)
-                    return 1;
-                break;
-            case 6:
-                rec = (struct TestRec *)obj->record;
-                if ((*(u32 *)rec & 0x01000200) == 0x01000200)
-                    return 1;
-                if ((*(u32 *)rec & (u32)gUnk_02000100) == (u32)gUnk_02000100)
-                    return 1;
-                break;
-            case 7:
-                if ((gSys.keys28 & 0x300) == 0x300)
-                    return 1;
-                break;
-            }
+            struct TestTab *tab = (struct TestTab *)obj->sub200->table;
+            if (rec->h2 & tab->h4)
+                return 1;
         }
+        break;
+    }
+    case 1:
+    {
+        struct TestRec *rec = (struct TestRec *)obj->record;
+        if ((rec->h0 & 0x300) == 0)
+        {
+            struct TestTab *tab = (struct TestTab *)obj->sub204->table;
+            if (rec->h2 & tab->h4)
+                return 1;
+        }
+        break;
+    }
+    case 2:
+    {
+        struct TestRec *rec = (struct TestRec *)obj->record;
+        struct TestTab *tab = (struct TestTab *)obj->sub204->table;
+        if (rec->h0 & tab->h6)
+            break;
+        tab = (struct TestTab *)obj->sub200->table;
+        if (rec->h2 & tab->h6)
+            return 1;
+        break;
+    }
+    case 3:
+    {
+        struct TestRec *rec = (struct TestRec *)obj->record;
+        struct TestTab *tab = (struct TestTab *)obj->sub200->table;
+        if (rec->h0 & tab->h6)
+            break;
+        tab = (struct TestTab *)obj->sub204->table;
+        if (rec->h2 & tab->h6)
+            return 1;
+        break;
+    }
+    case 4:
+        if (((struct TestRec *)obj->record)->h2 & 8)
+            return 1;
+        break;
+    case 5:
+        if ((*(u32 *)obj->record & 0xFFFF0300) == 0x40000)
+            return 1;
+        break;
+    case 6:
+        if ((*(u32 *)obj->record & 0x01000200) == 0x01000200)
+            return 1;
+        if ((*(u32 *)obj->record & (u32)gUnk_02000100) == (u32)gUnk_02000100)
+            return 1;
+        break;
+    case 7:
+        if ((gSys.keys28 & 0x300) == 0x300)
+            return 1;
+        break;
     }
     return 0;
 }
-END_NONMATCH
 
 u32 obj_sequence_step(struct Obj *obj)
 {
@@ -330,10 +327,10 @@ NONMATCH("asm/code_08025650/obj_find_hit_entry.s", u32 obj_find_hit_entry(struct
                 continue;
             x0 = e->gx << 4;
             x1 = x0 + 0xF;
-            y0 = e->gy << 4;
-            y1 = y0 + 0xF;
             xa = x0 + 4;
             xb = x1 - 4;
+            y0 = e->gy << 4;
+            y1 = y0 + 0xF;
             ya = y0 + 7;
             if ((s16)px >= xa && (s16)px <= xb && (s16)py >= ya && (s16)py <= y1)
                 return i;
