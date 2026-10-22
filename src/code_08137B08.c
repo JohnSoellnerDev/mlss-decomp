@@ -392,16 +392,19 @@ void obj_start_move_to_target(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
 }
 
 
-NONMATCH("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty))
+void obj_start_move_quarter(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
 {
     u8 *bahn;
     u8 **routines;
     u16 *flagp;
+    u16 flagValue;
     s16 *vx;
     s16 *vy;
     s32 len;
     s32 dx;
     s32 dy;
+    u16 hx;
+    u16 hy;
 
     bahn = (u8 *)obj + 0x58;
     obj->unk1C4 = obj->posX / 0x100;
@@ -431,7 +434,9 @@ NONMATCH("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quart
     obj->unk2E0 = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(len, (s16)obj->unk23E) << 2;
     obj->unk1CC = len << 2;
     obj->unk2DE = 0;
-    if ((*(u16 *)vx | *(u16 *)vy) != 0)
+    hx = *(u16 *)vx;
+    hy = *(u16 *)vy;
+    if ((hx | hy) != 0)
     {
         obj->heading = (u32)((u16)angle_of_vector16(*vx, *vy) + 0x10) >> 8;
     }
@@ -440,9 +445,9 @@ NONMATCH("asm/code_08137B08/obj_start_move_quarter.s", void obj_start_move_quart
         obj->heading = 0xFF;
     }
     flagp = (u16 *)(bahn + 0xA0);
-    *flagp = 0x800 | *flagp;
+    flagValue = *flagp | 0x800;
+    *flagp = flagValue;
 }
-END_NONMATCH
 
 void obj_start_hop(struct Enemy *obj, u8 mode, s32 tx, s32 ty)
 {
