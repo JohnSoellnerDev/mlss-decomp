@@ -513,13 +513,13 @@ NONMATCH("asm/code_08147904/enemy_move_checked.s", void enemy_move_checked(struc
     ent->posY = ent->body->posY;
     ent->posZ = ent->body->posZ;
     dy = ent->body->homeY - partner->posY;
-    if (dy < 0)
+    if (dy >= 0)
     {
-        dzAdd = 0xA000;
+        dzAdd = dy + 0xA000;
     }
     else
     {
-        dzAdd = dy + 0xA000;
+        dzAdd = 0xA000;
     }
     ent->unk18 = partner->unk18 + dzAdd;
     rec = *(struct Record **)(ai + 0x158);
@@ -704,8 +704,8 @@ NONMATCH("asm/code_08147904/enemy_hop_start.s", void enemy_hop_start(struct Owne
     u32 index;
     u16 speed;
     u8 kind;
-    u8 zero;
     u8 zb;
+    u8 zero = 0;
     s32 (*divFn)(s32, s32);
     s32 value;
 
@@ -719,7 +719,7 @@ NONMATCH("asm/code_08147904/enemy_hop_start.s", void enemy_hop_start(struct Owne
     }
     partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
     speed = *(u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2 + 0x3E);
-    start_move_to(ent, partner->posX, partner->posY, speed, zero = 0);
+    start_move_to(ent, partner->posX, partner->posY, speed, zero);
     zb = *(u8 *)((u8 *)rec + *(u16 *)(ai + 0x178) + 0x3A);
     start_z_move(ent, ent->posZ + ent->unk18 + (zb << 8), speed, 0, 0);
     divFn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
@@ -870,7 +870,6 @@ NONMATCH("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(struct Ow
 {
     struct Record *rec = ent->rec;
     struct Partner *partner;
-    struct Sprite **spr;
     u8 idx;
     u32 index;
     s32 dx;
@@ -881,16 +880,15 @@ NONMATCH("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(struct Ow
     u32 face;
     s32 ymask;
 
-    spr = &ent->sprite;
     if (((struct Flags8 *)&ent->unk1D6)->bit0 != 0)
     {
-        if (((*spr)->unk12 & 8) == 0)
+        if ((ent->sprite->unk12 & 8) == 0)
         {
             return;
         }
-        ent->unk1D2 = *(s8 *)((u8 *)rec + ent->index + 0x26);
+        ent->unk1D2 = *(s8 *)(ent->index + (u8 *)rec + 0x26);
         obj_set_cell_coord(ent, gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8] + 8, 0);
-        ((struct SpriteBits12 *)&(*spr)->unk12)->field1 = 0;
+        ((struct SpriteBits12 *)&ent->sprite->unk12)->field1 = 0;
         ((struct Flags8 *)&ent->unk1D6)->bit0 = 0;
         return;
     }
@@ -908,7 +906,7 @@ NONMATCH("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(struct Ow
     {
         index = (u32)(*(u8 *)&owner->flags208 << 30) >> 31;
     }
-    partner = owner->party[index];
+    partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
     dx = partner->posX - ent->posX;
     dy = partner->posY - ent->posY;
     absDx = dx;
@@ -923,8 +921,8 @@ NONMATCH("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(struct Ow
     }
     if (absDx > absDy)
     {
-        (*spr)->unk21 = 1;
-        ((struct SpriteBits11 *)&(*spr)->unk11)->bit6 = (u32)dx >> 31;
+        ent->sprite->unk21 = 1;
+        ((struct SpriteBits11 *)&ent->sprite->unk11)->bit6 = (u32)dx >> 31;
         face = 2;
         if (dx < 0)
         {
@@ -935,12 +933,12 @@ NONMATCH("asm/code_08147904/enemy_face_owner.s", void enemy_face_owner(struct Ow
     else
     {
         ymask = (~dy) >> 31;
-        (*spr)->unk21 = ymask & 2;
+        ent->sprite->unk21 = ymask & 2;
         ((struct Mode3 *)&ent->unk24)->mode = ymask & 4;
     }
     obj_set_cell_coord(ent, gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8] + 0xC, 0);
     ((struct Mode3 *)&ent->unk214)->mode = 1;
-    ((struct SpriteBits12 *)&(*spr)->unk12)->field1 = 1;
+    ((struct SpriteBits12 *)&ent->sprite->unk12)->field1 = 1;
     out[0] = (u32)enemy_place_on_owner;
 }
 END_NONMATCH
