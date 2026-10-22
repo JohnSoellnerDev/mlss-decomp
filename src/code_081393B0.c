@@ -288,6 +288,13 @@ struct Nibble33D
     u8 hi4 : 4;
 };
 
+struct PathFlags130
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+};
+
 void obj_hop_landing_step(struct Enemy *obj)
 {
     if (obj->jumpFrames != -1)
@@ -407,7 +414,41 @@ ASM_FUNC("asm/code_081393B0/load_record_fields_scaled.s", void load_record_field
 
 ASM_FUNC("asm/code_081393B0/load_hit_box.s", void load_hit_box(struct Enemy *obj, s16 index))
 
-ASM_FUNC("asm/code_081393B0/load_path_points.s", void load_path_points(struct Enemy *obj, s16 index))
+NONMATCH("asm/code_081393B0/load_path_points.s", void load_path_points(struct Enemy *obj, s16 index))
+{
+    u8 *rec = (u8 *)(obj->box + index);
+    u16 *ptr = (u16 *)(rec + 2);
+    struct PathFlags130 *fl = (struct PathFlags130 *)((u8 *)obj + 0x130);
+    u16 *xs;
+    u16 *ys;
+    u16 count;
+    u16 left;
+    s32 zero;
+
+    fl->lo2 = rec[0] & 3;
+    fl->bit2 = rec[1] & 1;
+    xs = (u16 *)((u8 *)obj + 0x132);
+    ys = (u16 *)((u8 *)obj + 0x152);
+    count = *ptr;
+    zero = 0;
+    *((u8 *)obj + 0x131) = count;
+    ptr++;
+    *((u8 *)obj + 0x193) = zero;
+    *((u8 *)obj + 0x192) = zero;
+    fl->bit3 = 0;
+    left = count;
+    do
+    {
+        *xs = *ptr;
+        xs++;
+        ptr++;
+        *ys = *ptr;
+        ys++;
+        ptr++;
+        left--;
+    } while ((s16)left > 0);
+}
+END_NONMATCH
 
 void load_part_offsets(struct Enemy *obj, s16 index)
 {
@@ -427,13 +468,13 @@ void load_part_offsets(struct Enemy *obj, s16 index)
 
 ASM_FUNC("asm/code_081393B0/advance_move_step.s", u32 advance_move_step(void *ctx, struct Enemy *obj))
 
-NONMATCH("asm/code_081393B0/position_blocked.s", u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z))
+u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z)
 {
     struct Partner *partner;
     s32 t;
     s32 partnerX, partnerY, partnerZ;
     s32 px = x, py = y, pz = z;
-    s32 partnerW, partnerH, halfW, myHalfW;
+    s32 partnerW, partnerH, halfW, myHalfW, lo;
 
     partner = owner->party[1];
     t = partner->posX;
@@ -488,8 +529,9 @@ NONMATCH("asm/code_081393B0/position_blocked.s", u32 position_blocked(struct Own
         return 0;
     }
     halfW = (u16)partnerW >> 1;
+    lo = partnerX - halfW - 2;
     myHalfW = *(u16 *)((u8 *)obj + 0x278) >> 9;
-    if (partnerX - halfW - 2 > px + myHalfW)
+    if (lo > px + myHalfW)
     {
         return 0;
     }
@@ -507,7 +549,6 @@ NONMATCH("asm/code_081393B0/position_blocked.s", u32 position_blocked(struct Own
     }
     return 1;
 }
-END_NONMATCH
 
 u32 div_scaled_fixed(u32 a, u32 x, u32 b, u32 k)
 {
@@ -615,13 +656,14 @@ void sub_08139F08(void)
 NONMATCH("asm/code_081393B0/body_timer_tick.s", void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out))
 {
     struct Enemy *body = ent->body;
+    struct Flags8 *fl = (struct Flags8 *)&ent->unk1D6;
     EnemyFn handler;
 
     body->unk1D2--;
     if (ent->unk1D2 == 0)
     {
-        ((struct Flags8 *)&ent->unk1D6)->bit0 = 1;
-        ((struct Flags8 *)&ent->unk1D6)->bit1 = 0;
+        fl->bit0 = 1;
+        fl->bit1 = 0;
         handler = body->unk1AC;
         *out = handler;
         handler(ctx, ent, out);
@@ -1140,6 +1182,40 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/obj_box_to_stack.s", void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
 
-ASM_FUNC("asm/code_081393B0/obj_box_mirror_to_stack.s", void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
+NONMATCH("asm/code_081393B0/obj_box_mirror_to_stack.s", void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
+{
+    u32 sel = 1 & ~(flags >> 4);
+    u8 *tab = (u8 *)obj + 0x1B0;
+    s32 last;
+
+    if (flags & 4)
+    {
+        s8 *s = (s8 *)((u8 *)((void **)tab)[sel] + index);
+
+        out[0] = (-s[0]) << 4;
+        out[3] = (-s[1]) << 4;
+        out[1] = s[2] << 4;
+        last = s[3];
+    }
+    else if (flags & 8)
+    {
+        s16 *w = (s16 *)((u8 *)((void **)tab)[sel] + index);
+        s32 v;
+
+        v = w[0];
+        out[0] = (-v) << 4;
+        v = w[1];
+        out[3] = (-v) << 4;
+        v = w[2];
+        out[1] = v << 4;
+        last = w[3];
+    }
+    else
+    {
+        return;
+    }
+    out[2] = last << 4;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/load_box_oriented.s", void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset))
