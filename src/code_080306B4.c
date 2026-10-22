@@ -109,9 +109,61 @@ void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
 void contacts_obj_start_move(void *obj, s32 a, s32 b, s32 x, s32 y, s32 zero, s32 mode);
 void motion_obj_set_move_target(void *obj, u32 a, s32 b, s32 c);
 
+static inline void sync_pair_sprite_values(struct PairObj *obj)
+{
+    struct PairSub *a;
+    struct PairSpr *aSprite;
+    struct PairSub *b;
+    struct PairSpr *bSprite;
+    u8 value;
+
+    a = obj->subA;
+    aSprite = a->sprite;
+    b = obj->subB;
+    bSprite = b->sprite;
+    value = obj->flagsFB >> 3;
+    bSprite->value20 = value;
+    b->field239 = value;
+    aSprite->value20 = value;
+    a->field239 = value;
+}
+
 ASM_FUNC("asm/code_080306B4/pair_b_state_10_1c.s", void pair_b_state_10_1c(void))
 
-ASM_FUNC("asm/code_080306B4/pair_start_state_2e.s", void pair_start_state_2e(void))
+NONMATCH("asm/code_080306B4/pair_start_state_2e.s", void pair_start_state_2e(struct PairObj *obj))
+{
+    s32 dist;
+
+    update_pair_facing(obj, 1, 1);
+    obj_shift_state_slots(obj->subA);
+    advance_anim_frame(obj, obj->subA, 0, 0);
+    ((struct Bit1Clear *)&obj->state246)->b1 = 0;
+    obj->pixX = obj->subB->posX / 0x100;
+    obj->pixY = obj->subB->posY / 0x100;
+    {
+        struct PairSub *b = obj->subB;
+        obj->subA->state4 = 0x2E;
+        b->state4 = 0x2E;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bits352 *)&obj->subA->flags351)->bit6 = 1;
+        ((struct Bits352 *)&b->flags351)->bit6 = 1;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        obj->subA->flags358 |= 8;
+        b->flags358 |= 8;
+    }
+    dist = (obj->subA->posZ - obj->subB->posZ) / 0x100 + 0x20;
+    motion_obj_set_move_target(obj->subB, dist, 0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
+    contacts_obj_start_move(obj->subB, 2, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
+        (obj->flagsFB & 4) ? 0x10 : 0xA);
+    sync_pair_sprite_values(obj);
+    ((struct Bit7 *)&obj->select20B)->bit7 = 1;
+    set_slot_value(0x2B, -1);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080306B4/pair_start_state_37.s", void pair_start_state_37(void))
 
