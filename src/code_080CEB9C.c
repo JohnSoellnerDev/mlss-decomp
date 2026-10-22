@@ -11,7 +11,14 @@ struct HeroSprite
     u8 mirror;
     u8 flags;
     u8 filler13[0x20 - 0x13];
-    u8 frame;
+    u8 layer;
+};
+
+struct DrawNode
+{
+    struct DrawNode *next;
+    u8 filler4[0x08 - 0x04];
+    struct HeroSprite *sprite;
 };
 
 struct HeroMirrorBits
@@ -110,8 +117,8 @@ struct HeroBody
     u8 mode;
     u8 filler77[0x79 - 0x77];
     u8 flags;
-    u16 rate;
-    u16 frame;
+    s16 rate;
+    u16 speed;
     s16 progress;
     u8 filler80[0x84 - 0x80];
     struct HeroSpan span;
@@ -119,9 +126,9 @@ struct HeroBody
     u16 height;
     u8 filler94[0xA0 - 0x94];
     u32 unkA0;
-    u8 filler0A4[0xA8 - 0xA4];
+    u32 poseCount;
     u32 unkA8;
-    s16 step;
+    s16 prevProgress;
     u16 timer;
     u8 filler0B0[0xC3 - 0xB0];
     s8 ofsX;
@@ -183,6 +190,21 @@ void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct HeroBody *owner);
 extern const u8 gUnk_0800E210[];
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct HeroBody *body, u32 offsets);
+void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
+void body_set_pose(u32 art, struct HeroBody *body, s32 x, s32 y);
+void obj_free_parts(struct HeroBody *body);
+void display_flush(void);
+void sprite_objects_draw_obj_tiles(u32 col, u32 row);
+void hero_b_anim_and_step_rate8(struct HeroBody *body);
+void hero_b_follow_tracked_place(struct HeroBody *body);
+
+struct KeyState
+{
+    u8 filler0[0x3E];
+    u16 pressed;
+};
+
+extern struct KeyState gSys;
 
 static inline void *tracked_obj(void)
 {
