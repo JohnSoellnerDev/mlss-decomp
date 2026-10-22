@@ -641,4 +641,63 @@ void timer_place_then_fire_b(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0807544C/loop_targets_then_move.s", void loop_targets_then_move(struct ActorObj *obj))
+NONMATCH("asm/code_0807544C/loop_targets_then_move.s", void loop_targets_then_move(struct ActorObj *obj))
+{
+    s32 motionSpeedVal = 0x180;
+    struct ActorObj *node;
+    s32 *tx;
+    s32 *ty;
+    s32 *th;
+    u8 *flags;
+    s16 *mstart;
+    s16 *speed;
+    s32 *count;
+    u16 *wp;
+    s32 idx;
+    s32 zero;
+    s32 cur;
+
+    obj->wait--;
+    if (obj->wait <= 0)
+    {
+        obj->timer--;
+        if (obj->timer <= 0)
+        {
+            obj->state = pose_action7_place_then_move;
+        }
+        else
+        {
+            wp = &obj->wait;
+            tx = &obj->targetX;
+            ty = &obj->targetY;
+            th = &obj->targetH;
+            flags = &obj->flags79;
+            speed = &obj->motionSpeed;
+            mstart = &obj->motionStart;
+            count = &obj->paramA8;
+            do
+            {
+                idx = (*count + 1) & 1;
+                *count = idx;
+                node = &((struct ActorCand *)gWorld->actors[idx + 6])->obj;
+                cur = node->part->cursorX;
+                zero = 1;
+                if (cur != 0)
+                {
+                    zero = 0;
+                }
+            } while (zero != 0);
+            sprite_set_action(obj, 3, 0, 0);
+            *tx = node->part->targetX + 0x1C00;
+            *ty = node->part->targetY;
+            *th = node->part->targetH;
+            *flags |= 0x20;
+            *speed = motionSpeedVal;
+            *mstart = zero;
+            start_motion(obj);
+            *wp = 8;
+            obj->state = timer_place_then_fire;
+        }
+    }
+}
+END_NONMATCH
