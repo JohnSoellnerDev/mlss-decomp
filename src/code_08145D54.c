@@ -653,7 +653,63 @@ NONMATCH("asm/code_08145D54/enemy_seek_partner.s", void enemy_seek_partner(struc
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08145D54/enemy_guard_aim.s", void enemy_guard_aim(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_guard_aim(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    u8 *rec = ent->unk1B0;
+    u8 idx;
+    u32 (*math)(u32, u32);
+    u8 *slot;
+    struct Partner *partner;
+    s32 dx;
+    s32 dy;
+    s32 dir;
+
+    if ((ent->unk1D6 & 0x10) != 0)
+    {
+        if (ent->unk1D4 != 0)
+        {
+            u32 k = find_active_entry(owner, &idx) ? idx : ((u32)owner->unk208 << 30) >> 31;
+            partner = *(struct Partner **)((u8 *)owner + k * 4 + 0x28);
+            slot = &idx;
+            math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+            dx = partner->posX - ent->unkC;
+            dy = partner->posY - ent->unk10;
+            if (dx | dy)
+            {
+                dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+            }
+            else
+            {
+                dir = -1;
+            }
+            *slot = math(dir, 2);
+            if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2) != idx)
+            {
+                obj_set_cell_coord(ent, idx, 0);
+            }
+            {
+                u8 z = rec[rand_below(4, mt19937_next()) + 0x22];
+                u16 spd = ((u16 *)rec)[rand_below(4, mt19937_next()) + 0x13];
+                start_z_move(ent, z << 8, spd, 0, 0);
+            }
+            ai->unk17C--;
+            ((struct Flags8 *)&ai->unk17E)->bit4 = 0;
+        }
+        else
+        {
+            ((struct Flags8 *)&ent->unk20F)->bit2 = 0;
+            state_out->state = enemy_move_to_partner;
+        }
+    }
+    else
+    {
+        if (z_approach(ent) == 0)
+        {
+            ((struct Flags8 *)&ent->unk1D6)->bit4 = 1;
+        }
+    }
+}
 
 void enemy_begin_wait(struct Owner *owner, struct Enemy *ent)
 {
@@ -671,7 +727,64 @@ void enemy_begin_wait(struct Owner *owner, struct Enemy *ent)
     ent->unk1A0[0] = enemy_wait_scan;
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_wait_scan.s", void enemy_wait_scan(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_wait_scan.s", void enemy_wait_scan(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    u8 idx;
+    u8 cell;
+    u32 cell0;
+    u32 (*math)(u32, u32);
+    struct Partner *partner;
+    s32 dx;
+    s32 dy;
+    s32 dir;
+    u16 *timer;
+
+    if ((ent->unk1D6 & 4) != 0)
+    {
+        ((struct Flags8 *)&ent->unk1D6)->bit2 = 0;
+        state_out->state = enemy_start_run;
+        state_out->unk8 = enemy_chase_partner;
+        return;
+    }
+    timer = &ent->unk1D2;
+    if (*timer != 0)
+    {
+        *timer = *timer - 1;
+    }
+    else
+    {
+        s32 pick = rand_below(8, mt19937_next());
+        s32 v = pick & 7;
+        ((struct Mode3 *)&ent->unk24)->mode = v;
+        cell0 = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+        obj_set_cell_coord(ent, cell0, 0);
+        *timer = 0x1E;
+    }
+    if (box_hit_kind(owner, ent, 0x11, 0, 3) != 0)
+    {
+        u32 k = find_active_entry(owner, &idx) ? idx : ((u32)owner->unk208 << 30) >> 31;
+        partner = *(struct Partner **)((u8 *)owner + k * 4 + 0x28);
+        math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+        dx = partner->posX - ent->unkC;
+        dy = partner->posY - ent->unk10;
+        if (dx | dy)
+        {
+            dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
+        }
+        else
+        {
+            dir = -1;
+        }
+        cell = math(dir, 2);
+        if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2) != cell)
+        {
+            obj_set_cell_coord(ent, cell, 0);
+        }
+        ((struct Flags8 *)&ai->unk17E)->bit2 = 1;
+    }
+}
+END_NONMATCH
 
 void enemy_start_run(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
@@ -748,13 +861,12 @@ void enemy_run_step(struct Owner *owner, struct Enemy *ent, struct StateOut *sta
 
 ASM_FUNC("asm/code_08145D54/enemy_chase_partner.s", void enemy_chase_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
 
-NONMATCH("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+void enemy_run_wait(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
     struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
     s32 step;
     s32 timer;
     s32 left;
-    s32 flags;
 
     timer = ent->unk1D4 + 1;
     ent->unk1D4 = timer;
@@ -776,16 +888,19 @@ NONMATCH("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner 
         ent->unkC += step;
         if (ai->unk17A > 1)
         {
-            flags = ai->unk17E;
-            if ((4 & flags) == 0)
+            u8 *flag = &ai->unk17E;
+            u8 f = *flag;
+            s32 g;
+
+            if (f & 4)
             {
-                flags = 4 | flags;
+                g = f & -5;
             }
             else
             {
-                flags = -5 & flags;
+                g = f | 4;
             }
-            ai->unk17E = flags;
+            *flag = g;
             ai->unk17A = 0;
         }
         ai->unk17C = 0;
@@ -795,17 +910,14 @@ NONMATCH("asm/code_08145D54/enemy_run_wait.s", void enemy_run_wait(struct Owner 
     if ((u16)left == 0)
     {
         obj_set_sprite_link(ent, 1);
-        flags = ent->unk20C;
-        flags |= 0x20;
-        flags |= 0x80;
-        flags |= 0x40;
-        ent->unk20C = flags;
+        ((struct Flags8 *)&ent->unk20C)->bit5 = 1;
+        ((struct Flags8 *)&ent->unk20C)->bit7 = 1;
+        ((struct Flags8 *)&ent->unk20C)->bit6 = 1;
         ((struct Flags8 *)&ent->unk210)->bit4 = 1;
         ((struct Flags8 *)&ent->unk20D)->bit2 = 1;
         state_out->state = enemy_face_partner;
     }
 }
-END_NONMATCH
 
 void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out)
 {
