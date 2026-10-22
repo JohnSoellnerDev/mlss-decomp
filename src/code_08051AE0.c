@@ -17,6 +17,25 @@ extern u8 gWindowStateClass[];
 extern u8 gWindowSubBlockClass[];
 extern u8 gSys[];
 extern u32 gVoiceListTable[];
+extern u8 *gBgRequestPtr;
+
+struct AnimWin
+{
+    u8 mode;
+    s8 count;
+    u8 base0;
+    u8 base1;
+    u8 speed0;
+    u8 speed1;
+};
+
+struct BgReqBits
+{
+    u8 filler0;
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 rest : 2;
+};
 
 struct Track
 {
@@ -123,7 +142,59 @@ void *window_sub_block_init(void *obj, u8 kind, u32 data)
 
 ASM_FUNC("asm/code_08051AE0/window_place.s", void window_place(void))
 
-ASM_FUNC("asm/code_08051AE0/window_anim_step.s", void window_anim_step(void))
+NONMATCH("asm/code_08051AE0/window_anim_step.s", void window_anim_step(struct AnimWin *win))
+{
+    s32 countdown;
+    s32 prod;
+    s32 next;
+    u32 speedA;
+    u8 scaledA;
+    u8 scaledB;
+    u8 mode;
+    u8 count;
+
+    if (win->count == 0)
+    {
+        return;
+    }
+    speedA = win->speed0;
+    countdown = win->count;
+    prod = speedA * countdown;
+    scaledA = prod / 0x10;
+    prod = win->speed1 * countdown;
+    scaledB = prod / 0x10;
+
+    gBgRequestPtr[0x40] = scaledA + ((speedA >> 1) + win->base0);
+    gBgRequestPtr[0x41] = ((win->speed0 >> 1) + win->base0) - scaledA;
+    gBgRequestPtr[0x44] = scaledB + ((win->speed1 >> 1) + win->base1);
+    gBgRequestPtr[0x45] = ((win->speed1 >> 1) + win->base1) - scaledB;
+
+    mode = win->mode & 1;
+    if (mode == 0)
+    {
+        count = win->count;
+        if (win->count == 8)
+        {
+            ((struct BgReqBits *)gBgRequestPtr)->bit5 = 0;
+            win->count = mode;
+        }
+        else
+        {
+            win->count = count + 1;
+        }
+    }
+    else
+    {
+        next = (u8)win->count - 1;
+        win->count = next;
+        if ((next << 24) == 0)
+        {
+            ((struct BgReqBits *)gBgRequestPtr)->bit5 = 0;
+            *(u16 *)0x02000000 &= 0xFDFF;
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08051AE0/textbox_open.s", void textbox_open(void))
 
