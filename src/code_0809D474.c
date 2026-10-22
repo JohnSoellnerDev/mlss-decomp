@@ -541,15 +541,18 @@ void step_then_effect(struct ActorBody *body)
 
 NONMATCH("asm/code_0809D474/reset_heroes_mode.s", void reset_heroes_mode(struct ActorBody *body))
 {
+    s32 heroFirst = 6;
     struct ActorBody *hero;
     s32 i;
+    s32 keep;
 
-    for (i = 6; i <= 7; i++)
+    keep = ~0x38;
+    for (i = heroFirst; i <= 7; i++)
     {
         hero = (struct ActorBody *)(gWorld->partners[i] + 8);
-        if ((6 & hero->mode) == 2)
+        if ((heroFirst & hero->mode) == 2)
         {
-            ((struct ModeBits *)&hero->mode)->mode = 1;
+            hero->mode = (hero->mode & keep) | 8;
         }
     }
     body->state = place_by_heroes;
