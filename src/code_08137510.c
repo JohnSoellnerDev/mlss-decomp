@@ -258,8 +258,9 @@ struct SysKeys2A
     u16 keys;
 };
 
-NONMATCH("asm/code_08137510/fade_tick.s", void fade_tick(struct Fade *obj))
+void fade_tick(struct Fade *obj)
 {
+    s32 down;
     u16 keys;
     u16 key40;
     s32 count;
@@ -281,13 +282,18 @@ NONMATCH("asm/code_08137510/fade_tick.s", void fade_tick(struct Fade *obj))
             obj->unk28 = 1;
         }
     }
-    else if (keys & 0x80)
+    else
     {
-        count = obj->unk28 + 1;
-        obj->unk28 = count;
-        if ((s8)count > 1)
+        down = 0x80;
+        down &= keys;
+        if (down)
         {
-            obj->unk28 = key40;
+            count = obj->unk28 + 1;
+            obj->unk28 = count;
+            if ((s8)count > 1)
+            {
+                obj->unk28 = key40;
+            }
         }
     }
     if ((((struct SysKeys2A *)gSys)->keys & 1) != 0)
@@ -306,7 +312,6 @@ NONMATCH("asm/code_08137510/fade_tick.s", void fade_tick(struct Fade *obj))
         fade_end(obj);
     }
 }
-END_NONMATCH
 
 void task_remove_noop(void)
 {
