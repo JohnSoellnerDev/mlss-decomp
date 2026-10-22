@@ -254,7 +254,26 @@ void update_key_state(u32 keys, u32 slot)
     rec->held = k;
 }
 
-ASM_FUNC("asm/code_08017A00/dma_stop_and_reset.s", void dma_stop_and_reset(void))
+NONMATCH("asm/code_08017A00/dma_stop_and_reset.s", void dma_stop_and_reset(void))
+{
+    struct DmaRegs *dma;
+    s32 i;
+    u8 f;
+
+    f = ((struct SysArea *)gSys)->sysFlags;
+    f |= 1;
+    ((struct SysArea *)gSys)->sysFlags = f;
+    dma = (struct DmaRegs *)0x040000B0;
+    for (i = 0; i < 4; i++)
+    {
+        ((vu16 *)&dma->ctl)[1] = ((vu16 *)&dma->ctl)[1] & 0xC5FF;
+        ((vu16 *)&dma->ctl)[1] = ((vu16 *)&dma->ctl)[1] & 0x7FFF;
+        (void)((vu16 *)&dma->ctl)[1];
+        dma++;
+    }
+    sub_081DB79C(0xFC);
+}
+END_NONMATCH
 
 void stub_nop_08018A5C(void)
 {
@@ -330,14 +349,13 @@ ASM_FUNC("asm/code_08017A00/init_heaps.s", void init_heaps(void))
 NONMATCH("asm/code_08017A00/heap_free.s", void heap_free(void *p))
 {
     const u8 *src;
-    struct HeapBlock *blk;
+    struct HeapBlock *blk = (struct HeapBlock *)p - 1;
     struct HeapBlock *prev;
     struct HeapBlock *next;
     struct HeapBlock *link;
 
     if (p == 0)
         return;
-    blk = (struct HeapBlock *)p - 1;
     prev = blk->prev;
     next = blk->next;
     blk->size = blk->size | 1;
@@ -365,7 +383,60 @@ NONMATCH("asm/code_08017A00/heap_free.s", void heap_free(void *p))
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08017A00/heap_alloc_raw.s", void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag))
+NONMATCH("asm/code_08017A00/heap_alloc_raw.s", void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag))
+{
+    struct HeapBlock *cur;
+    struct HeapBlock *rest;
+    struct HeapBlock *next;
+    u32 needed;
+    u32 avail;
+    u32 flags;
+    u32 k;
+
+    if (size == 0)
+        return 0;
+    if (pool != 0)
+        cur = (struct HeapBlock *)gUnk_02000C80;
+    else
+        cur = (struct HeapBlock *)gUnk_03001BD8;
+    size = (size + 3) & ~3;
+    needed = size + 0x10;
+    do
+    {
+        flags = cur->size;
+        if ((flags & 1) != 0)
+        {
+            if (flags >= needed)
+            {
+                avail = flags & ~1;
+                if (avail > size + 0x20)
+                {
+                    rest = (struct HeapBlock *)((u8 *)cur + needed);
+                    rest->size = (avail - 0x10 - size) | 1;
+                    rest->prev = cur;
+                    next = cur->next;
+                    rest->next = next;
+                    for (k = 0; k < 4; k++)
+                        rest->tag[k] = gHeapTags[0x40 + k];
+                    if (next != 0)
+                        next->prev = rest;
+                    cur->size = needed;
+                    cur->next = rest;
+                }
+                else
+                {
+                    cur->size = avail;
+                }
+                for (k = 0; k < 4; k++)
+                    cur->tag[k] = tag[k];
+                return (u8 *)cur + 0x10;
+            }
+        }
+        cur = cur->next;
+    } while (cur != 0);
+    return 0;
+}
+END_NONMATCH
 
 
 void heap_free_a(void *p)
