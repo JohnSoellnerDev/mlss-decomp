@@ -214,7 +214,37 @@ NONMATCH("asm/code_0814F8E4/zone_entry_handler.s", void zone_entry_handler(struc
 END_NONMATCH
 
 
-ASM_FUNC("asm/code_0814F8E4/enter_zone_move.s", void enter_zone_move(void))
+NONMATCH("asm/code_0814F8E4/enter_zone_move.s", void enter_zone_move(s32 unused, struct Obj *obj, void **slot))
+{
+    u16 *table;
+    u8 moving;
+    u32 rnd;
+    u32 pick;
+    u16 step;
+
+    table = (u16 *)obj->tbl;
+    if ((obj->flags1D6 & 4) == 0)
+    {
+        obj_set_sprite_link(obj, 1);
+        rnd = mt19937_next();
+        pick = rand_below(4, rnd);
+        step = table[pick + 20];
+        obj_set_motion_a_08046AA4(obj, 2, 0, 0x100, step);
+        obj_advance_axes(obj);
+        ((struct Bits *)&obj->flags1D6)->b2 = 1;
+    }
+    moving = obj_flags_2b5_30_set(obj);
+    if (moving == 0)
+    {
+        obj_clear_flags_2b5_30(obj);
+        ((struct Bits *)&obj->flags20C)->b7 = 1;
+        ((struct Bits *)&obj->flags20C)->b6 = 1;
+        ((struct Bits *)&obj->flags20C)->b5 = 1;
+        ((struct Bits *)&obj->flags1D6)->b2 = 0;
+        *slot = (void *)zone_move_handler;
+    }
+}
+END_NONMATCH
 
 void enter_zone_entry(s32 unused, struct Obj *obj, void **slot)
 {
@@ -253,7 +283,31 @@ void enter_zone_entry(s32 unused, struct Obj *obj, void **slot)
 }
 
 
-ASM_FUNC("asm/code_0814F8E4/load_anim_tables_plain.s", void load_anim_tables_plain(void))
+NONMATCH("asm/code_0814F8E4/load_anim_tables_plain.s", void load_anim_tables_plain(struct Obj *obj))
+{
+    s16 *tbl;
+    s8 *rec;
+
+    tbl = obj->tbl;
+    rec = obj->animTbl;
+    cpu_set(rec, tbl, 4);
+    rec += 8;
+    tbl[4] = rec[0];
+    tbl[5] = rec[1];
+    rec += 2;
+    tbl[6] = rec[0];
+    rec += 1;
+    tbl[7] = rec[0];
+    rec += 1;
+    cpu_set(rec, (u8 *)obj + 0x110, 4);
+    rec += 8;
+    tbl[20] = rec[0];
+    tbl[21] = rec[1];
+    rec += 2;
+    tbl[22] = rec[0];
+    tbl[23] = rec[1];
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0814F8E4/obj_target_in_reach.s", void obj_target_in_reach(void))
 
