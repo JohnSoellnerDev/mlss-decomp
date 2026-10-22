@@ -158,6 +158,26 @@ struct Flags8
     u8 bit7 : 1;
 };
 
+struct SubBits11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Lo3Bits
+{
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
+struct Lo2Bits
+{
+    u8 lo2 : 2;
+    u8 rest : 6;
+};
+
 struct Mid5Half
 {
     u16 lo5 : 5;
@@ -199,11 +219,6 @@ extern u8 *gEffectState;
 void set_flag_f8_40(void *host);
 void camera_track_entity(void *list, u32 field, u32 zero);
 
-static inline void set_u8_bit6(u8 *p, u32 v)
-{
-    ((struct Flags8 *)p)->bit6 = v;
-}
-
 static inline void set_bit6_f8(void *host, u32 v)
 {
     ((struct Flags8 *)((u8 *)host + 0xF8))->bit6 = v;
@@ -228,7 +243,7 @@ u32 set_host_flags(struct OwnerObj *owner, void *unused1, u32 *args)
     return 1;
 }
 
-NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct OwnerObj *owner, void *unused, u32 *args))
+u32 reset_host_entry(struct OwnerObj *owner, void *unused, u32 *args)
 {
     u32 idx = args[0];
     struct ObjList *list = owner->list;
@@ -240,14 +255,12 @@ NONMATCH("asm/code_080EDB40/reset_host_entry.s", u32 reset_host_entry(struct Own
     ((struct Flags8 *)&entry->unk215)->bit1 = 0;
     ((struct SubFlags *)&entry->sub294->unk12)->mid = 0;
     {
-        u32 old = entry->sub294->unk11;
-        u32 bit = (old << 25) >> 31;
-        bit = args[2] ^ bit;
-        set_u8_bit6(&entry->sub294->unk11, bit);
+        u32 bit = ((struct SubBits11 *)entry->sub294)->bit6;
+        bit = bit ^ args[2];
+        ((struct SubBits11 *)entry->sub294)->bit6 = bit;
     }
     return 1;
 }
-END_NONMATCH
 
 u32 set_obj_via_ptr(struct OwnerObj *owner, struct Entity *obj, struct Record *dst, struct ObjArgs *args)
 {
@@ -536,7 +549,43 @@ u32 set_quad_coords(void *unused0, struct Entity *entity, void *unused2, u32 *cm
     return 1;
 }
 
-ASM_FUNC("asm/code_080EDB40/set_entity_field.s", void set_entity_field(void))
+NONMATCH("asm/code_080EDB40/set_entity_field.s", u32 set_entity_field(void *unused0, struct Entity *entity, void *unused2, u32 *cmds))
+{
+    struct Entity *target;
+    if (*cmds++ != 0)
+        target = entity->link344;
+    else
+        target = entity;
+    switch (*cmds++)
+    {
+    case 0:
+        target->unk131 = *cmds;
+        break;
+    case 1:
+        target->unk2F4 = *cmds;
+        break;
+    case 2:
+        target->unk2F8 = *cmds;
+        break;
+    case 3:
+        target->unk136 = *cmds;
+        break;
+    case 4:
+        ((struct Lo3Bits *)&target->unk137)->lo3 = *cmds;
+        break;
+    case 5:
+        ((struct Lo2Bits *)&target->unk130)->lo2 = *cmds;
+        break;
+    case 6:
+        ((struct Flags8 *)&target->unk130)->bit2 = *cmds;
+        break;
+    case 7:
+        target->unk134 = *cmds;
+        break;
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 set_box_fields(void *unused0, struct Entity *entity, void *unused2, u32 *cmds)
 {
