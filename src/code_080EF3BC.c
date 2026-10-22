@@ -785,7 +785,124 @@ ASM_FUNC("asm/code_080EF3BC/update_object_states.s", void update_object_states(u
 
 ASM_FUNC("asm/code_080EF3BC/step_bobbing_offset.s", void step_bobbing_offset(u8 **task))
 
-ASM_FUNC("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u8 **task))
+struct MotionSlot
+{
+    s32 x;
+    s32 y;
+    s32 xBase;
+    s32 yBase;
+    s16 xLim;
+    s16 yLim;
+    s32 vx;
+    s32 vy;
+};
+
+void offset_obj_pos_by_mode(u8 *obj, u32 kind, s32 dx, s32 dy);
+
+NONMATCH("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u8 **task))
+{
+    struct MotionSlot *e;
+    s32 i;
+    s16 flags;
+    s32 mask;
+    s32 v;
+
+    e = (struct MotionSlot *)(gEffectState + 0x2A0);
+    i = 0;
+    mask = ~0xFF;
+    for (; i <= 3; e = (struct MotionSlot *)((u8 *)e + 0x20), i++)
+    {
+        v = ((u32)gEffectState[0x55B] << 27) >> 28;
+        if (((v >> i) & 1) != 0)
+        {
+            flags = 0;
+            if (e->vx >= 0)
+            {
+                if (e->x - e->xBase > 0xFF)
+                {
+                    e->xBase = e->x & mask;
+                }
+                e->x = e->x + e->vx;
+                if (((s32)e->xLim << 8) <= e->x)
+                {
+                    e->x = (s32)e->xLim << 8;
+                    flags = 1;
+                }
+            }
+            else
+            {
+                if (e->xBase - e->x > 0xFF)
+                {
+                    e->xBase = e->x & mask;
+                }
+                e->x = e->x + e->vx;
+                if (((s32)e->xLim << 8) >= e->x)
+                {
+                    e->x = (s32)e->xLim << 8;
+                    flags = 1;
+                }
+            }
+            if (e->vy >= 0)
+            {
+                if (e->y - e->yBase > 0xFF)
+                {
+                    e->yBase = e->y & mask;
+                }
+                e->y = e->y + e->vy;
+                if (((s32)e->yLim << 8) <= e->y)
+                {
+                    e->y = (s32)e->yLim << 8;
+                    flags = (s16)(flags | 2);
+                }
+            }
+            else
+            {
+                if (e->yBase - e->y > 0xFF)
+                {
+                    e->yBase = e->y & mask;
+                }
+                e->y = e->y + e->vy;
+                if (((s32)e->yLim << 8) >= e->y)
+                {
+                    e->y = (s32)e->yLim << 8;
+                    flags = (s16)(flags | 2);
+                }
+            }
+                        if (i <= 2)
+            if (i >= 1)
+            {
+                u8 *list = *(u8 **)(*task + 0x14);
+                u32 handle = *(u32 *)(list + 0x304);
+                u8 idx = i - 1;
+                s32 dx = e->x - e->xBase;
+                s32 dy;
+                s32 dx2;
+                s32 dy2;
+                if (dx < 0)
+                {
+                    dx += 0xFF;
+                }
+                dx2 = ((s32)((u32)dx << 8)) >> 16;
+                dy = e->y - e->yBase;
+                if (dy < 0)
+                {
+                    dy += 0xFF;
+                }
+                dy2 = ((s32)((u32)dy << 8)) >> 16;
+                offset_obj_pos_by_mode((u8 *)handle, idx, dx2, dy2);
+            }
+            if (flags == 3)
+            {
+                s32 bv = gEffectState[0x55B];
+                s32 v2 = ((u32)bv << 27) >> 28;
+                s32 cleared = v2 & ~(1 << i);
+                s32 sh = cleared << 1;
+                gEffectState[0x55B] = (bv & ~0x1E) | sh;
+            }
+        }
+    }
+}
+END_NONMATCH
 
 void free_effect_state(void)
 {
