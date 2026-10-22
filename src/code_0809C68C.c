@@ -535,6 +535,7 @@ void spawn_five_children(struct ActorBody *body)
 
 NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct ActorBody *body))
 {
+    s32 animId = 0x40EF;
     struct ActorBody *child;
     const s8 *table;
     const s8 *cursor;
@@ -589,7 +590,7 @@ NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct 
             effect_spawn_at(0xE82, x / 0x100, y / 0x100, z / 0x100, child);
             set_slot_value(0x86, -1);
             child->flags &= ~8;
-            sprite_set_action(child, 0, 0x40EF, 0);
+            sprite_set_action(child, 0, animId, 0);
             ((struct SpriteFlagBits *)&child->sprite->flags)->mode = 0;
             child->partner = body->partner;
             child->timeLink = *srcTime;
@@ -608,7 +609,35 @@ NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct 
 END_NONMATCH
 
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 arg);
-ASM_FUNC("asm/code_0809C68C/float_above_focus.s", void float_above_focus(struct ActorBody *body))
+void float_above_focus(struct ActorBody *body)
+{
+    s32 focusX;
+    s32 x;
+    s32 dx;
+
+    step_motion(body);
+    if (body->link++ > 5)
+    {
+        body->link = 0;
+        effect_spawn_at(0xE89, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
+    }
+    if (body->flags & 0x20)
+    {
+        obj_list_push_default(body);
+        body->unk5C = approach_contact;
+        body->unk60 = approach_slot;
+        body->vspeed = 0xFE00;
+        if (body->data->effect != 0)
+        {
+            focusX = (s16)obj_last_x(world_focus(gWorld));
+            dx = focusX - body->targetX / 0x100;
+            x = body->targetX / 0x100 + dx;
+            place_targets(body, x, body->targetY / 0x100, body->targetZ / 0x100, -1);
+            set_motion_speed_aux(body, 0x100, 0xC);
+        }
+        body->state = draw_while_group_busy;
+    }
+}
 
 void draw_while_group_busy(struct ActorBody *body)
 {
