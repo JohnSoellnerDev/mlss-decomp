@@ -310,9 +310,8 @@ END_NONMATCH
 NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flags_from_child(u8 *obj))
 {
     u8 **childSlot;
-    u8 *child;
     u32 link;
-    u32 t;
+    u32 tc;
 
     link = obj[0x33C] & 6;
     if (link != 0)
@@ -323,28 +322,27 @@ NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flag
             {
                 ((struct Bit0 *)(obj + 0x20C))->bit0 = 1;
                 childSlot = (u8 **)(obj + 0x344);
-                child = *childSlot;
-                if (child != NULL)
+                if (*childSlot != NULL)
                 {
-                    if (child[0x20F] & 2)
+                    if ((*childSlot)[0x20F] & 2)
                     {
-                        ((struct Bit0 *)(child + 0x20C))->bit0 = 1;
-                        child = *childSlot;
-                        t = child[0x33C];
-                        if (2 & t)
+                        u8 bc;
+
+                        ((struct Bit0 *)((*childSlot) + 0x20C))->bit0 = 1;
+                        bc = (*childSlot)[0x33C];
+                        if (2 & bc)
                         {
-                            t = t << 27;
-                            ((struct Mode3 *)(child + 0x214))->mode = t >> 29;
-                            child = *childSlot;
-                            ((struct Bit1 *)(child + 0x33C))->bit1 = 0;
+                            tc = bc << 27;
+                            ((struct Mode3 *)((*childSlot) + 0x214))->mode = tc >> 29;
+                            ((struct Bit1 *)((*childSlot) + 0x33C))->bit1 = 0;
                         }
                     }
                 }
                 if (obj[0x33C] & 0x80)
                 {
-                    t = obj[0x33D];
-                    t = t << 29;
-                    ((struct Mode3 *)(obj + 0x214))->mode = t >> 29;
+                    u32 t2 = obj[0x33D];
+                    t2 = t2 << 29;
+                    ((struct Mode3 *)(obj + 0x214))->mode = t2 >> 29;
                     ((struct Bits8 *)(obj + 0x33C))->b7 = 0;
                 }
                 ((struct Bit0 *)(obj + 0x33C))->bit0 = 1;
@@ -883,8 +881,8 @@ void sub_080514D4(void)
 
 NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 *obj, u32 *state))
 {
-    s16 *slot;
     u16 entry;
+    s16 *table;
     u32 off;
     u8 *base;
     s16 value;
@@ -893,12 +891,11 @@ NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 
     u16 *pb;
     u16 xa;
 
-    slot = (s16 *)(obj + 0x100);
+    table = (s16 *)(obj + 0x100);
     off = rand_below(2, mt19937_next()) << 1;
     base = obj + 0x130;
     entry = *(u16 *)(base + off);
-    slot += rand_below(4, mt19937_next());
-    value = *slot;
+    value = table[rand_below(4, mt19937_next())];
     wander_to_edge(obj, entry, value);
     pa = (u16 *)(obj + 0x242);
     pb = (u16 *)(obj + 0x244);
