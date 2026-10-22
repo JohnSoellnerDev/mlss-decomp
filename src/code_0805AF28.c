@@ -145,9 +145,98 @@ void heap_free_a(void *p);
 u32 dma_cancel_request(u32 dst);
 void task_remove(void *node, u32 kind);
 
-ASM_FUNC("asm/code_0805AF28/map_load_chunks.s", void map_load_chunks(void))
+extern const u32 gChunkGrids[];
 
-ASM_FUNC("asm/code_0805AF28/map_blit_chunks.s", void map_blit_chunks(void))
+NONMATCH("asm/code_0805AF28/map_load_chunks.s", void map_load_chunks(struct MapLoaderObj *obj))
+{
+    u8 *grids;
+    u8 set;
+    u32 next;
+    u16 layer;
+    u16 row;
+    u16 col;
+
+    grids = (u8 *)gChunkGrids;
+    set = gSelTable[obj->selector].chunkSet;
+    layer = 0;
+    do
+    {
+        u16 chunk = gChunkSetTable[set][layer];
+
+        next = layer + 1;
+        if (chunk != 0xFFFF)
+        {
+            u8 *data = grids + gChunkGrids[chunk];
+            u16 *dst = obj->chunks;
+
+            row = 0;
+            do
+            {
+                col = 0;
+                do
+                {
+                    dst[(row << 5) + ((layer << 9) + col)] = data[(row << 5) + col];
+                    col++;
+                } while (col <= 0x1F);
+                row++;
+            } while (row <= 0xF);
+        }
+        else
+        {
+            u16 *dst = obj->chunks;
+
+            row = 0;
+            do
+            {
+                col = 0;
+                do
+                {
+                    dst[(row << 5) + ((layer << 9) + col)] = 0;
+                    col++;
+                } while (col <= 0x1F);
+                row++;
+            } while (row <= 0xF);
+        }
+        layer = next & 0xFFFF;
+    } while (layer <= 1);
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0805AF28/map_blit_chunks.s", void map_blit_chunks(struct MapLoaderObj *obj))
+{
+    u32 set;
+    u32 next;
+    u16 layer;
+    u16 row;
+    u16 col;
+
+    set = gSelTable[obj->selector].chunkSet;
+    layer = 0;
+    do
+    {
+        u16 chunk = gChunkSetTable[set][layer];
+
+        next = layer + 1;
+        if (chunk != 0xFFFF)
+        {
+            row = 0;
+            do
+            {
+                col = 0;
+                do
+                {
+                    u16 tile = ((u16 *)obj->chunks)[(row << 5) + (layer << 9) + col];
+
+                    map_blit_tile(obj, layer, (s16)col, (s16)row, tile);
+                    col++;
+                } while (col <= 0x1F);
+                row++;
+            } while (row <= 0xF);
+        }
+        layer = next & 0xFFFF;
+    } while (layer <= 1);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0805AF28/map_blit_tile.s", void map_blit_tile(struct MapLoaderObj *obj, u16 layer, s16 col, u16 row, u32 tile))
 {
