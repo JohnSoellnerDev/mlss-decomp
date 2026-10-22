@@ -116,6 +116,13 @@ struct Bits2B6
     u8 bit7 : 1;
 };
 
+struct Bits2B5
+{
+    u8 low3 : 3;
+    u8 bit3 : 1;
+    u8 high4 : 4;
+};
+
 struct Bits1D6
 {
     u8 bit0 : 1;
@@ -603,12 +610,9 @@ void obj_velocity_from_facing(struct Enemy *obj)
     obj->unkF8 |= 0x800;
 }
 
-NONMATCH("asm/code_08137B08/obj_try_start_hop.s", void obj_try_start_hop(struct Enemy *obj))
+void obj_try_start_hop(struct Enemy *obj)
 {
     u16 hop;
-    u32 mask;
-    u32 value;
-    u8 *flags;
 
     hop = obj->unk120[obj->unk1D0];
     if (obj->unk25C == -1)
@@ -623,30 +627,22 @@ NONMATCH("asm/code_08137B08/obj_try_start_hop.s", void obj_try_start_hop(struct 
             obj->unk250 = obj->unk18;
             obj->unk254 = (s16)obj->unk23E;
             obj->unk25C = 0;
-            flags = &obj->unk2B5;
-            value = *flags;
-            mask = 8;
+            ((struct Bits2B5 *)&obj->unk2B5)->bit3 = 1;
         }
         else
         {
-            flags = &obj->unk2B6;
-            value = *flags | 0x80;
-            mask = 0x40;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 1;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 1;
         }
-        *flags = value | mask;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(struct Enemy *obj))
+void obj_try_start_jump(struct Enemy *obj)
 {
     u16 a_raw;
     u16 b_raw;
     s32 a;
     s32 b;
-    u8 *flags;
-    u8 value;
-    u8 mask;
 
     a_raw = obj->unk110[obj->unk1D0];
     b_raw = obj->unk118[obj->unk1D0];
@@ -663,28 +659,20 @@ NONMATCH("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(struc
             obj->unk254 = obj->unk258 = a;
             obj->unk248 = b;
             obj->unk25C = 0;
-            flags = &obj->unk2B5;
-            value = *flags;
-            mask = 8;
+            ((struct Bits2B5 *)&obj->unk2B5)->bit3 = 1;
         }
         else
         {
-            flags = &obj->unk2B6;
-            value = *flags | 0x80;
-            mask = 0x40;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 1;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 1;
         }
-        *flags = value | mask;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(struct Enemy *obj))
+void obj_flags_2b6_update(struct Enemy *obj)
 {
     s32 t;
     s32 half;
-    u8 *flags;
-    u32 value;
-    u32 mask;
 
     if (obj->unk25C == -1)
     {
@@ -705,20 +693,15 @@ NONMATCH("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(s
             obj->unk250 = 0;
             obj->unk254 = half = (s16)obj->unk23E / 2;
             obj->unk25C = obj->unk1C0 / (half * 8);
-            flags = &obj->unk2B5;
-            value = *flags;
-            mask = 8;
+            ((struct Bits2B5 *)&obj->unk2B5)->bit3 = 1;
         }
         else
         {
-            flags = &obj->unk2B6;
-            value = *flags | 0x80;
-            mask = 0x40;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit7 = 1;
+            ((struct Bits2B6 *)&obj->unk2B6)->bit6 = 1;
         }
-        *flags = value | mask;
     }
 }
-END_NONMATCH
 
 void obj_step_toward_target_08138FDC(struct Enemy *obj)
 {
