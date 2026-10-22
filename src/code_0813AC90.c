@@ -128,6 +128,8 @@ void load_box_oriented(s16 *out, struct Obj *obj, u32 flags, u32 offset);
 u32 mt19937_next(void);
 s32 rand_below(s32 range, u32 seed);
 u32 tile_blocks_move(struct Obj *obj, s32 x, s32 y, s32 pos, s32 span, u8 dir, u16 *flags);
+extern u8 gFrameAttrTable[];
+void obj_set_cell_coord(struct Obj *obj, u32 cell, u32 arg);
 
 s8 zone_point_code(struct Obj *obj, struct Obj *zone, s32 margin)
 {
@@ -292,7 +294,25 @@ NONMATCH("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0813AC90/start_move_to_b.s", void start_move_to_b(void))
+void start_move_to_b(struct Obj *obj, s32 z, s32 speed, ByteArg rel)
+{
+    s32 frames;
+
+    if (rel.value != 0)
+        z += obj->z + obj->dz;
+    obj->zStart = obj->z + obj->dz;
+    obj->zTarget = z;
+    z -= obj->zStart;
+    z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(z, 0x10);
+    obj->zSpan = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(z * z) << 4;
+    frames = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zSpan, speed);
+    obj->moveFrames = frames;
+    obj->steps = frames;
+    if ((u16)frames != 0)
+        obj->zSpeed = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(z << 4, obj->steps);
+    else
+        obj->zSpeed = 0;
+}
 
 void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, s32 speed, ByteArg zero)
 {
@@ -410,8 +430,9 @@ done:
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
+u32 z_approach(struct Obj *obj)
 {
+    s32 *lim;
     s32 part;
     s32 root;
     s32 rem;
@@ -419,7 +440,6 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
     s32 *rest;
     s32 dz;
     s32 limit;
-    s32 *lim;
 
     part = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zTarget - obj->zStart, 4);
     if (part != 0)
@@ -437,27 +457,28 @@ NONMATCH("asm/code_0813AC90/z_approach.s", u32 z_approach(struct Obj *obj))
     if (*rest > 0)
     {
         if ((s16)rem > 0)
-            return 1;
+            goto moving;
         lim = &obj->zLimit;
         dz = obj->dz;
         limit = *lim;
         if (dz > limit)
-            return 1;
+            goto moving;
     }
     else
     {
         if ((s16)rem > 0)
-            return 1;
+            goto moving;
         lim = &obj->zLimit;
         dz = obj->dz;
         limit = *lim;
         if (dz < limit)
-            return 1;
+            goto moving;
     }
     obj->dz = limit;
     return 0;
+moving:
+    return 1;
 }
-END_NONMATCH
 
 u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 param5, u16 param6, u16 param7)
 {
@@ -503,7 +524,31 @@ u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 p
     return result;
 }
 
-ASM_FUNC("asm/code_0813AC90/random_cell_setup.s", void random_cell_setup(struct Obj *obj, u32 callback))
+NONMATCH("asm/code_0813AC90/random_cell_setup.s", void random_cell_setup(struct Obj *obj, u32 callback))
+{
+    u8 *table;
+    u8 *rec;
+    u16 valueA;
+    s16 valueB;
+    u16 valueC;
+    s32 idx;
+    u8 cell;
+
+    table = (u8 *)obj + 0x100;
+    idx = rand_below(2, mt19937_next());
+    valueA = ((u16 *)(table + 0x30))[idx];
+    idx = rand_below(4, mt19937_next());
+    valueB = ((s16 *)table)[idx];
+    ((void (*)(struct Obj *, u32, u32))callback)(obj, valueA, valueB);
+    idx = rand_below(4, mt19937_next());
+    rec = obj->rec;
+    valueC = ((u16 *)(table + 8))[idx];
+    rec[0x20] = valueC;
+    cell = gFrameAttrTable[(((u32)obj->unk216 << 28) >> 30 << 4) + (((u32)obj->sector << 29) >> 29) + 8];
+    obj_set_cell_coord(obj, cell, 0);
+    ((struct Lo3 *)&obj->mode)->lo3 = 3;
+}
+END_NONMATCH
 
 u32 box_contains_fixed(struct Box6 *box, struct Obj *a, struct Obj *b)
 {
@@ -560,16 +605,19 @@ u32 boxes_overlap(s16 *bounds, struct Obj *a, struct Obj *b, s32 zAbove, s32 zBe
 u32 boxes_overlap_oriented(s16 *box, struct Obj *a, struct Obj *b, s32 zAbove, s32 zBelow);
 void obj_box_to_stack(s16 *out, struct Obj *obj, u16 flags, u16 index);
 void load_box_oriented(s16 *out, struct Obj *obj, u32 flags, u32 offset);
-NONMATCH("asm/code_0813AC90/tick_store.s", void tick_store(void *ctx, struct State *st, u32 *out))
+void tick_store(void *ctx, struct State *st, u32 *out)
 {
-    if (--st->timer == 0)
+    u8 *base = (u8 *)st;
+    s32 timerOff = 0x1D2;
+    s32 flagsOff = 0x1D6;
+    s32 cbOff = 0x1AC;
+    if (--*(u16 *)(base + timerOff) == 0)
     {
-        ((struct Flags8 *)&st->flags)->bit0 = 1;
-        ((struct Flags8 *)&st->flags)->bit1 = 0;
-        *out = st->callback;
+        ((struct Flags8 *)(base + flagsOff))->bit0 = 1;
+        ((struct Flags8 *)(base + flagsOff))->bit1 = 0;
+        *out = *(u32 *)(base + cbOff);
     }
 }
-END_NONMATCH
 
 u32 angle_of_vector16(s32 x, s32 y);
 void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
