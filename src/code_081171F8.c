@@ -273,6 +273,7 @@ NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTabl
 }
 END_NONMATCH
 
+struct SprHead { u16 w0; u16 w2; };
 NONMATCH("asm/code_081171F8/screen_obj_setup.s", struct ScreenObj *screen_obj_setup(struct ScreenObj *obj, u8 prio, u32 arg))
 {
     struct ScreenChild *child;
@@ -302,8 +303,8 @@ NONMATCH("asm/code_081171F8/screen_obj_setup.s", struct ScreenObj *screen_obj_se
     attr = ((u8 *)obj->unk1C)[0x12];
     attr = (attr & -7) | 2;
     ((u8 *)obj->unk1C)[0x12] = attr;
-    *(u16 *)obj->unk1C = 0x50;
-    *(u16 *)((u8 *)obj->unk1C + 2) = 0x78;
+    ((struct SprHead *)obj->unk1C)->w0 = 0x50;
+    ((struct SprHead *)obj->unk1C)->w2 = 0x78;
     cpu_fast_set(gScreenBgTilesBlock0, (void *)0x06000000, 0x1E0);
     cpu_fast_set(gScreenBgTilesBlock1, (void *)0x06001000, 0x160);
     cpu_set(gScreenBgPalette, gUnk_02000080, 0x04000008);
@@ -463,22 +464,19 @@ lookup:
     {
         goto lookupWord;
     }
-    tab = gDropRollTable;
-    look = tab + (item << 2);
+    look = gDropRollTable + (item << 2);
     item = ((u32)look[0] << 26) >> 28;
     raw = *(u16 *)look;
     goto halfAmount;
 lookupWord:
-    tab = gDropRollTable;
-    look = tab + (item << 2);
+    look = gDropRollTable + (item << 2);
     item = (*(u32 *)look << 15) >> 28;
     raw = look[2];
     goto wordAmount;
 random:
     roll = mt19937_next();
     chance = rand_below(4, roll);
-    tab = gDropRollTable;
-    entry = tab + (item << 2);
+    entry = gDropRollTable + (item << 2);
     low = entry[0];
     if (chance > ((low << 30) >> 30))
     {
