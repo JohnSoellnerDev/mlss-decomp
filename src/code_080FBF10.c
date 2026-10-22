@@ -4,6 +4,54 @@ extern const u32 gEffectArgTable[];
 extern const u32 gSceneObjDataPtrTable[];
 extern const u32 gRecordPtrTable[];
 
+struct GAt351_u8
+{
+    u8 pad[0x351];
+    u8 f;
+};
+
+struct GAt34F_u8
+{
+    u8 pad[0x34F];
+    u8 f;
+};
+
+struct GAt34D_u8
+{
+    u8 pad[0x34D];
+    u8 f;
+};
+
+struct GAt34B_u8
+{
+    u8 pad[0x34B];
+    u8 f;
+};
+
+struct GAt350_u8
+{
+    u8 pad[0x350];
+    u8 f;
+};
+
+struct GAt34E_u8
+{
+    u8 pad[0x34E];
+    u8 f;
+};
+
+struct GAt34C_u8
+{
+    u8 pad[0x34C];
+    u8 f;
+};
+
+struct GAt34A_u8
+{
+    u8 pad[0x34A];
+    u8 f;
+};
+
 struct SceneObj
 {
     s8 kind;
@@ -1007,14 +1055,14 @@ NONMATCH("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(u32
     {
         load_vram_tiles(*(void **)(gWorld + 0x250));
         set_text_ptrs(0);
-        *(u8 *)(gWorld + 0x34A) = 0xFF;
-        *(u8 *)(gWorld + 0x34C) = 0xFF;
-        *(u8 *)(gWorld + 0x34E) = 0xFF;
-        *(u8 *)(gWorld + 0x350) = 0x80;
-        *(u8 *)(gWorld + 0x34B) = 0xFF;
-        *(u8 *)(gWorld + 0x34D) = 0xFF;
-        *(u8 *)(gWorld + 0x34F) = 0xFF;
-        *(u8 *)(gWorld + 0x351) = 0x80;
+        ((struct GAt34A_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt34C_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt34E_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt350_u8 *)gWorld)->f = 0x80;
+        ((struct GAt34B_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt34D_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt34F_u8 *)gWorld)->f = 0xFF;
+        ((struct GAt351_u8 *)gWorld)->f = 0x80;
         ((void (*)(u32, void *, u32))gMemRoutines)(0x33333333, (void *)0x06017600, 0x200);
         ((struct Lo2Bits *)(gWorld + 0xA))->lo2 = 2;
         set_cur_flags_both(1);
