@@ -621,6 +621,7 @@ NONMATCH("asm/code_08100FFC/state_setup_status_display.s", void state_setup_stat
 {
     struct World *world;
     struct FigSlot *fig_slot;
+    u32 mode;
     u32 fig_kind;
     u32 value;
     u32 *entry;
@@ -630,10 +631,11 @@ NONMATCH("asm/code_08100FFC/state_setup_status_display.s", void state_setup_stat
     u32 id_c;
 
     world = gWorld;
-    fig_kind = world->figMode & 3;
+    mode = world->figMode;
+    fig_kind = mode & 3;
     if (fig_kind != 0)
     {
-        fig_slot = *(struct FigSlot **)((u8 *)world + 0x80 + (world->figMode & 4));
+        fig_slot = *(struct FigSlot **)((u8 *)world + 0x80 + (mode & 4));
         value = fig_slot->inner->unk14;
     }
     else
