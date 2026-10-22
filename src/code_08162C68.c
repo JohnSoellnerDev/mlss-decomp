@@ -559,6 +559,8 @@ NONMATCH("asm/code_08162C68/create_obj_group_500b.s", struct BigObj *create_obj_
     u32 *cls;
     struct BigObj *child;
     u32 k40 = 0x40;
+    s32 f;
+    s32 mk;
 
     lookup_or_alloc_13b4(4, 0x500B, -1, 1);
     lookup_or_alloc_14b8(4, 0x500B, -1, 1);
@@ -572,7 +574,9 @@ NONMATCH("asm/code_08162C68/create_obj_group_500b.s", struct BigObj *create_obj_
         child->unk10 = (u32)create_obj_de4(4, 0x500B, 0, -1, -1, -1, -1);
         obj_load_record((void *)child->unk10, 0, -1, 0, 0);
         sprite_update_cd0((void *)child->unk10);
-        *(u8 *)(child->unk10 + 0x1F) = (((((((*(u8 *)(child->unk10 + 0x1F) & 0x3F) | k40) & -0x31) | 0x10) & -0xD) | 4) & -4) | 1;
+        mk = -0x31;
+        f = (((((((*(u8 *)(child->unk10 + 0x1F) & 0x3F) | k40) & mk) | 0x10) & (mk + 0x24)) | 4) & (mk + 0x24 + 9)) | 1;
+        *(u8 *)(child->unk10 + 0x1F) = f;
         *(u16 *)(child->unk10 + 0xE) = 0;
         child->unk14 = 0;
         cls = (u32 *)((u8 *)gObjGroup500bClasses + off);
