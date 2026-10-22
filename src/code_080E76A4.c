@@ -93,6 +93,24 @@ struct FlagBits8
     u8 hi5 : 5;
 };
 
+// Sprite record of an object (the 0x4C-byte slot records are separate): position, flags and
+// the two signed offsets added to the position when the entry is emitted.
+struct SpriteRec
+{
+    u8 filler0[0x34];
+    u16 x;
+    u16 y;
+    u8 filler38[0x3C - 0x38];
+    u16 flags;
+    u8 filler3E[0x42 - 0x3E];
+    u8 b42;
+    u8 b43;
+    s32 ofsX;
+    s32 ofsY;
+};
+
+extern u8 gSys[];
+
 void free_list_move(void *head, void *block);
 
 ASM_FUNC("asm/code_080E76A4/clear_active_slot_rects.s", void clear_active_slot_rects(struct ObjWithState *obj))
@@ -165,19 +183,17 @@ NONMATCH("asm/code_080E76A4/copy_map_rects.s", void copy_map_rects(struct ObjWit
         vram = (u8 *)((((u32)*st->header & 0x1F00) << 3) + 0x06000000);
         for (i = 0, slot = st->slots; i < 5; i++, slot++)
         {
-            s32 skip = mask >> i;
-            skip ^= 1;
-            skip &= 1;
+            u8 skip = ((mask >> i) ^ 1) & 1;
             if (skip == 0)
             {
                 u16 x = slot->x >> 3;
                 u16 y = slot->y >> 3;
                 u32 cell = (y << 5) + x;
-                u8 **pmap = &obj->state->map;
                 u32 index = cell << 1;
+                u8 **pmap = &obj->state->map;
                 u8 *dst = *pmap + index;
-                u8 *src = vram + index;
                 u8 *end = *pmap + ((slot->rows + y + 1) << 6) + ((slot->cols + x) << 1) + 4;
+                u8 *src = vram + index;
                 dma_copy_or_queue(dst, src, end - dst, 0x20, skip);
             }
         }
@@ -191,7 +207,48 @@ ASM_FUNC("asm/code_080E76A4/update_box_and_scroll.s", void update_box_and_scroll
 
 ASM_FUNC("asm/code_080E76A4/emit_box_oam.s", void emit_box_oam(void))
 
-ASM_FUNC("asm/code_080E76A4/emit_oam_entry.s", void emit_oam_entry(void))
+NONMATCH("asm/code_080E76A4/emit_oam_entry.s", void emit_oam_entry(struct ObjWithState *obj, struct SpriteRec *ent))
+{
+    struct ObjState *st;
+    u8 *base;
+    u16 **oamPtr;
+    u16 *oam;
+    s32 xSum;
+    s32 t;
+    s32 x;
+    u16 y;
+
+    if ((ent->flags & 0x38) != 0)
+    {
+        s32 w44 = ent->ofsX;
+        xSum = ent->x + w44;
+        st = obj->state;
+        xSum += st->prevX;
+        y = ent->y + ent->ofsY + st->prevY;
+        t = xSum << 16;
+        x = t >> 16;
+        if ((u32)(t + 0xC0000) <= 0x1080000)
+        {
+            if ((s16)y >= -12)
+            {
+                if ((s16)y <= 0xAC)
+                {
+                    base = gSys;
+                    oamPtr = (u16 **)(base + 0x880);
+                    oam = *oamPtr;
+                    *oam = (((u32)ent->b43 << 29) >> 31 << 15) | ((s16)y & 0xFF);
+                    oam++;
+                    *oam = ((((u32)ent->b43 << 30) >> 31) << 14) | (x & 0x1FF) | ((ent->b42 >> 7) << 13) | (((u32)ent->b43 << 31) >> 31 << 12);
+                    oam++;
+                    *oam = (ent->b43 >> 3) | 0xF000;
+                    oam += 2;
+                    *oamPtr = oam;
+                }
+            }
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E76A4/draw_obj_dma_tiles.s", void draw_obj_dma_tiles(void))
 
