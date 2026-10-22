@@ -7,6 +7,12 @@ struct ByteBit0
     u8 hi : 7;
 };
 
+struct ByteBit7
+{
+    u8 low7 : 7;
+    u8 bit7 : 1;
+};
+
 struct ActorSprite
 {
     s16 unk0;
@@ -208,13 +214,112 @@ void place_by_heroes(struct ActorBody *body);
 void hero_pair_link(struct ActorBody *body);
 void step_then_effect(struct ActorBody *body);
 void sound_stop_song(u32 song);
+s32 obj_last_x(void *obj);
+s32 obj_last_y(void *obj);
+struct PartNode *sprite_node_release(struct PartNode *node);
+struct ActorData *active_candidate(struct ActorData *data);
 
-ASM_FUNC("asm/code_0809D474/orbit_parts_falling.s", void orbit_parts_falling(void))
+NONMATCH("asm/code_0809D474/orbit_parts_falling.s", void orbit_parts_falling(struct ActorBody *body))
+{
+    struct PartNode *node;
+    struct PartNode *prev;
+    struct ActorBody *partner;
+    struct ActorBody *cand;
+    struct ActorData *candData;
+    s32 flag;
+    s32 index;
+    s32 h;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 x;
+    s32 y;
+    s32 ix;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
 
-NONMATCH("asm/code_0809D474/spawn_small_child.s", void spawn_small_child(struct ActorBody *body))
+    body->vspeed += 0x23;
+    body->height += body->vspeed;
+    h = body->height / 0x100;
+    node = (struct PartNode *)&body->parts;
+    prev = node;
+    flag = 0;
+    index = 0;
+    for (; node != 0; index++, prev = node, node = node->next)
+    {
+        cb = gCosineTable;
+        ix = (MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((index * 3) << 5, 6) + 0x50) & 0xFF;
+        cs = cb + ix;
+        x = body->baseX + (*cs / 0x40) * h;
+        sn = gSineTable + ix;
+        y = body->baseY + ((*sn / 0x40) * h) / 2;
+        if ((((s16)obj_last_x(gWorld->focus24C) << 8) - 0x1000) < x
+            && (((s16)obj_last_x(gWorld->focus24C) << 8) + 0x10000) > x
+            && ((s16)obj_last_y(gWorld->focus24C) << 8) < y
+            && (((s16)obj_last_y(gWorld->focus24C) << 8) + 0xC000) > y)
+        {
+            flag |= 1;
+        }
+        node->x = x;
+        node->y = y;
+        if (y > 0x9600)
+        {
+            ((struct ByteBit7 *)&node->flags1B)->bit7 = 1;
+        }
+        if (node->y <= 0x4000)
+        {
+            prev->next = 0;
+            if (node != 0)
+            {
+                do
+                {
+                    node = sprite_node_release(node);
+                } while (node != 0);
+            }
+            break;
+        }
+
+    }
+    partner = body->partner;
+    dx = (partner->targetX - body->baseX) / 0x100;
+    dy = (partner->targetY - body->baseY) / 0x100;
+    dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * (dy * 4));
+    if (dist - 8 < h && h < dist + 8 && partner->targetZ <= 0x7FF && (partner->mode & 0x86) == 2)
+    {
+        partner_link_update(body, partner, 0xFF);
+    }
+    candData = active_candidate(partner->data);
+    if (candData != 0)
+    {
+        cand = (struct ActorBody *)((u8 *)candData + 8);
+        dx = (cand->targetX - body->baseX) / 0x100;
+        dy = (cand->targetY - body->baseY) / 0x100;
+        dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * (dy * 4));
+        if (dist - 8 < h && h < dist + 8 && cand->targetZ <= 0x7FF && (cand->mode & 0x86) == 2)
+        {
+            partner_link_update(body, cand, 0xFF);
+        }
+    }
+    if (flag == 0)
+    {
+        obj_release(body);
+    }
+}
+END_NONMATCH
+
+static inline void push_node_part(struct ActorBody *child)
+{
+    struct SpriteNode *node;
+
+    node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
+    node->next = child->parts;
+    child->parts = node;
+}
+
+void spawn_small_child(struct ActorBody *body)
 {
     struct ActorBody *child;
-    struct SpriteNode *node;
     s32 minusOne;
 
     if ((body->sprite->flags & 8) != 0)
@@ -238,22 +343,102 @@ NONMATCH("asm/code_0809D474/spawn_small_child.s", void spawn_small_child(struct 
         child->baseX = child->x;
         child->baseY = child->y;
         child->vspeed = 2;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        node->next = child->parts;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        node->next = child->parts;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        node->next = child->parts;
-        child->parts = node;
+        push_node_part(child);
+        push_node_part(child);
+        push_node_part(child);
         child->state = orbit_parts_gentle;
         body->state = pose_update_a;
     }
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_0809D474/orbit_parts_gentle.s", void orbit_parts_gentle(struct ActorBody *body))
+NONMATCH("asm/code_0809D474/orbit_parts_gentle.s", void orbit_parts_gentle(struct ActorBody *body))
+{
+    struct PartNode *node;
+    struct PartNode *prev;
+    struct ActorBody *partner;
+    struct ActorBody *cand;
+    struct ActorData *candData;
+    s32 flag;
+    s32 index;
+    s32 h;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 x;
+    s32 y;
+    s32 ix;
+    s16 *cs;
+    s16 *sn;
+    s16 *cb;
+
+    body->vspeed += 5;
+    body->height += body->vspeed;
+    h = body->height / 0x100;
+    node = (struct PartNode *)&body->parts;
+    prev = node;
+    flag = 0;
+    index = 0;
+    for (; node != 0; index++, prev = node, node = node->next)
+    {
+        cb = gCosineTable;
+        ix = (MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((index * 3) << 5, 4) + 0x50) & 0xFF;
+        cs = cb + ix;
+        x = body->baseX + (*cs / 0x40) * h;
+        sn = gSineTable + ix;
+        y = body->baseY + ((*sn / 0x40) * h) / 2;
+        if ((((s16)obj_last_x(gWorld->focus24C) << 8) - 0x1000) < x
+            && (((s16)obj_last_x(gWorld->focus24C) << 8) + 0x10000) > x
+            && ((s16)obj_last_y(gWorld->focus24C) << 8) < y
+            && (((s16)obj_last_y(gWorld->focus24C) << 8) + 0xC000) > y)
+        {
+            flag |= 1;
+        }
+        node->x = x;
+        node->y = y;
+        if (y > 0x9600)
+        {
+            ((struct ByteBit7 *)&node->flags1B)->bit7 = 1;
+        }
+        if (node->y <= 0x4000)
+        {
+            prev->next = 0;
+            if (node != 0)
+            {
+                do
+                {
+                    node = sprite_node_release(node);
+                } while (node != 0);
+            }
+            break;
+        }
+
+    }
+    partner = body->partner;
+    dx = (partner->targetX - body->baseX) / 0x100;
+    dy = (partner->targetY - body->baseY) / 0x100;
+    dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * (dy * 4));
+    if (dist - 8 < h && h < dist + 8 && partner->targetZ <= 0x7FF && (partner->mode & 0x86) == 2)
+    {
+        partner_link_update(body, partner, 0xFF);
+    }
+    candData = active_candidate(partner->data);
+    if (candData != 0)
+    {
+        cand = (struct ActorBody *)((u8 *)candData + 8);
+        dx = (cand->targetX - body->baseX) / 0x100;
+        dy = (cand->targetY - body->baseY) / 0x100;
+        dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * (dy * 4));
+        if (dist - 8 < h && h < dist + 8 && cand->targetZ <= 0x7FF && (cand->mode & 0x86) == 2)
+        {
+            partner_link_update(body, cand, 0xFF);
+        }
+    }
+    if (flag == 0)
+    {
+        obj_release(body);
+    }
+}
+END_NONMATCH
 
 void pose_update_a(struct ActorBody *body)
 {
