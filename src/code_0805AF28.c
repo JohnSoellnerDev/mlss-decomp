@@ -4,15 +4,16 @@ struct MapAnimSlot
 {
     u8 state;
     u8 filler01;
-    u16 animId;
-    u8 unk04;
-    u8 filler05;
-    u8 frame;
+    u16 value;
+    u8 sub;
     u8 timer;
-    u8 unk08;
+    u8 limit;
+    u8 index;
+    u8 flags;
     u8 filler09;
-    u16 x[16];
-    u16 y[16];
+    u16 tiles[16];
+    u16 offsets[16];
+    u8 filler4A[0x4C - 0x4A];
 };
 
 struct MapLoaderObj
@@ -39,7 +40,12 @@ struct MapLoaderObj
     void *chunks;
     void *gfx;
     void *metatiles;
-    u8 filler48[0xAC - 0x48];
+    u8 filler48[0x4E - 0x48];
+    u16 trackA[3];
+    u16 trackB[3];
+    u8 filler5A[0x98 - 0x5A];
+    void *layerTiles;
+    u8 filler9C[0xAC - 0x9C];
     struct MapAnimSlot anim[16];
     u8 entryFlags;
     u8 entryCounter;
@@ -77,6 +83,8 @@ struct MapLoaderObj
 extern u16 gUnk_02000010;
 extern u16 gUnk_02000014;
 extern u16 gUnk_02000016;
+extern u16 gUnk_02000050;
+extern u16 gUnk_02000052;
 extern const u32 gObjectTilesets[];
 extern const u32 gMapObjDescriptor[];
 extern const u32 gMetatileSets[];
@@ -144,6 +152,14 @@ void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 void heap_free_a(void *p);
 u32 dma_cancel_request(u32 dst);
 void task_remove(void *node, u32 kind);
+
+struct EntryRec
+{
+    u32 low5 : 5;
+    u32 mid5 : 5;
+    u32 t8 : 8;
+    u32 rest : 14;
+};
 
 extern const u32 gChunkGrids[];
 
@@ -410,22 +426,22 @@ void map_anim2_start_0805BCCC(struct MapLoaderObj *obj, u16 animId)
                 const struct MapAnimChunk *chunk;
 
                 obj->anim[slot].state = (((u32)list[animId].type << 30) >> 30) + 0x20;
-                obj->anim[slot].animId = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
-                obj->anim[slot].unk04 = ((u32)list[animId].unk2 << 23) >> 27;
+                obj->anim[slot].value = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
+                obj->anim[slot].sub = ((u32)list[animId].unk2 << 23) >> 27;
 
                 chunk = (const struct MapAnimChunk *)list[animId].chunks;
                 i = 0;
                 do
                 {
                     j = i;
-                    obj->anim[slot].x[j] = chunk[j].x;
-                    obj->anim[slot].y[j] = chunk[j].y & 0x7FFF;
+                    obj->anim[slot].tiles[j] = chunk[j].x;
+                    obj->anim[slot].offsets[j] = chunk[j].y & 0x7FFF;
                     i = (u8)(i + 1);
                 } while (!(chunk[j].y & 0x8000));
 
-                obj->anim[slot].frame = i;
-                obj->anim[slot].timer = 0;
-                obj->anim[slot].unk08 = 0;
+                obj->anim[slot].limit = i;
+                obj->anim[slot].index = 0;
+                obj->anim[slot].flags = 0;
             }
         }
     }
@@ -502,7 +518,60 @@ ASM_FUNC("asm/code_0805AF28/map_put_rect.s", void map_put_rect(struct MapLoaderO
 
 ASM_FUNC("asm/code_0805AF28/map_refresh_entry.s", void map_refresh_entry(void))
 
-ASM_FUNC("asm/code_0805AF28/map_entry_step.s", void map_entry_step(void))
+void map_entry_step(struct MapLoaderObj *obj)
+{
+    if (obj->entryFlags & 0x80)
+    {
+        u32 timer = obj->entryTimer - 1;
+
+        obj->entryTimer = timer;
+        if ((timer << 16) == 0)
+        {
+            u32 mode = obj->entryFlags & 3;
+
+            if (mode == 1)
+            {
+                if ((mode &= obj->entryCounter) != 0)
+                {
+                    if (obj->entryIndex == 0)
+                    {
+                        obj->entryIndex++;
+                        obj->entryCounter++;
+                    }
+                    else
+                        obj->entryIndex--;
+                }
+                else
+                {
+                    u8 index = obj->entryIndex;
+                    u8 *e = (u8 *)obj->entryTable;
+
+                    if (e[(index << 2) + 2] & 4)
+                    {
+                        obj->entryIndex--;
+                        obj->entryCounter++;
+                    }
+                    else
+                        obj->entryIndex++;
+                }
+            }
+            else if (mode == 0)
+            {
+                u8 index = obj->entryIndex;
+                u8 *e = (u8 *)obj->entryTable;
+
+                if (e[(index << 2) + 2] & 4)
+                    obj->entryIndex = 0;
+                else
+                    obj->entryIndex = index + 1;
+            }
+
+            obj->entryTimer = ((struct EntryRec *)obj->entryTable)[obj->entryIndex].t8;
+            gUnk_02000052 = ((((struct EntryRec *)obj->entryTable)[obj->entryIndex].mid5 << 8) + ((struct EntryRec *)obj->entryTable)[obj->entryIndex].low5);
+        }
+        gUnk_02000050 = obj->entryBldcnt;
+    }
+}
 
 NONMATCH("asm/code_0805AF28/map_obj_setup_state_sprites.s", void map_obj_setup_state_sprites(struct MapLoaderObj *obj))
 {
@@ -552,4 +621,51 @@ void update_scanline_offsets();
 void set_0d80_slot(void (*fn)(void), u32 slot);
 void bg3_line_scroll_frame(void);
 
-ASM_FUNC("asm/code_0805AF28/map_obj_init_display.s", void map_obj_init_display(void))
+NONMATCH("asm/code_0805AF28/map_obj_init_display.s", void map_obj_init_display(struct MapLoaderObj *obj))
+{
+    u8 *fp = &obj->displayFlag584;
+    u8 flag = *fp;
+
+    if (flag == 0)
+    {
+        u8 two = 2;
+        u16 i;
+        void **bufA = &gUnk_03000E08;
+        void **bufB = &gUnk_03000E0C;
+
+        u8 *index = &obj->displayIndex585;
+        *index = two;
+        obj->display58A = 3;
+        obj->display58C = flag;
+        obj->display590 = 6;
+        obj->display592 = flag;
+        obj->display588 = two;
+        obj->display596 = 8;
+        obj->display58E = flag;
+        obj->display594 = flag;
+        obj->display597 = 3;
+        *fp = 1;
+        obj->display598 = 0;
+        *bufA = heap_alloc(0x500, 1, gHeapTagDisplayBufA, 0);
+        *bufB = heap_alloc(0x500, 0, gHeapTagDisplayBufB, 0);
+        {
+            i = 0;
+            do
+            {
+                u16 *a = (u16 *)((u8 *)*bufA + (i << 2));
+                u16 *b = (u16 *)((u8 *)*bufB + (i << 2));
+                u16 v = ((u16 *)((u8 *)obj + 0x5A))[*index];
+
+                b[0] = v;
+                a[0] = v;
+                v = ((u16 *)((u8 *)obj + 0x60))[*index];
+                b[1] = v;
+                a[1] = v;
+                i++;
+            } while (i <= 0x9F);
+        }
+        update_scanline_offsets(obj);
+        set_0d80_slot(bg3_line_scroll_frame, 0);
+    }
+}
+END_NONMATCH
