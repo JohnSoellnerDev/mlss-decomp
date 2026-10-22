@@ -365,6 +365,8 @@ NONMATCH("asm/code_0813AC90/collide_wander_diag.s", s8 collide_wander_diag(u32 u
     u8 code;
     s32 keep;
     u32 facing;
+    u16 vel1;
+    u16 vel2;
     s32 sector;
 
     keep = 1;
@@ -415,16 +417,19 @@ NONMATCH("asm/code_0813AC90/collide_wander_diag.s", s8 collide_wander_diag(u32 u
 wander:
     code = wander_diag(obj, size, speed);
 done:
-    if (((u16)obj->vx | (u16)obj->vy) != 0)
+    vel1 = (u16)obj->vx;
+    vel1 |= (u16)obj->vy;
+    if (vel1 != 0)
         facing = ((u32)(u16)angle_of_vector16(obj->vx, obj->vy) + 0x10) >> 8;
     else
         facing = 0xFF;
     obj->facing = facing;
-    if (((u16)obj->vx | (u16)obj->vy) != 0)
+    vel2 = (u16)obj->vx;
+    vel2 |= (u16)obj->vy;
+    if (vel2 != 0)
         sector = (((u16)angle_of_vector16(obj->vx, obj->vy) + 0x1000) >> 13) & 7;
     else
         sector = -1;
-    sector &= 7;
     ((struct Lo3 *)&obj->sector)->lo3 = sector;
     return (s8)code;
 }
