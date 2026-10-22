@@ -417,7 +417,26 @@ void obj_free_flag_e976(void *p, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_0816E57C/obj_init_pair_e990.s", void obj_init_pair_e990(void))
+NONMATCH("asm/code_0816E57C/obj_init_pair_e990.s", struct EffectObj *obj_init_pair_e990(struct EffectObj *obj, void *list))
+{
+    const u8 *tag = gHeapTagSceneBlock;
+    u32 kind = 0x5007;
+
+    obj->unk0 = (u32)obj_init_big(heap_alloc2(0x6C, 0, tag, 0), 9);
+    list_insert(list, (void *)obj->unk0);
+    obj_create_sprite_10((void *)obj->unk0, 4, kind, 0, 0x1B, 3);
+    ((struct EffectObj *)obj->unk0)->unk18 = 0x7000;
+    ((struct EffectObj *)obj->unk0)->unk1C = 0x3000;
+    obj->unk4 = (u32)obj_init_big(heap_alloc2(0x6C, 0, tag, 0), 9);
+    list_insert(list, (void *)obj->unk4);
+    obj_create_sprite_10((void *)obj->unk4, 4, kind, 0, 0x1B, 3);
+    ((struct EffectObj *)obj->unk4)->unk18 = 0x8000;
+    ((struct EffectObj *)obj->unk4)->unk1C = 0x3000;
+    obj_set_wait_60(obj);
+    obj_update_anim_pair(obj, 1, 0);
+    return obj;
+}
+END_NONMATCH
 
 void obj_remove_ebf0(struct EffectObj *obj, u32 flags)
 {
@@ -481,7 +500,6 @@ ASM_FUNC("asm/code_0816E57C/obj_create_hud_counter.s", void obj_create_hud_count
 ASM_FUNC("asm/code_0816E57C/obj_build_jitter_table.s", void obj_build_jitter_table(void))
 
 ASM_FUNC("asm/code_0816E57C/obj_setup_slots_6x3.s", void obj_setup_slots_6x3(void))
-
 ASM_FUNC("asm/code_0816E57C/obj_fill_row_shuffled.s", void obj_fill_row_shuffled(void))
 
 ASM_FUNC("asm/code_0816E57C/obj_fill_col_shuffled.s", void obj_fill_col_shuffled(void))
