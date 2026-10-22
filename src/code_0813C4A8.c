@@ -548,14 +548,18 @@ void vec2_store(s32 a, s32 b, s32 *out)
     out[1] = b;
 }
 
-NONMATCH("asm/code_0813C4A8/active_hit_state.s", void active_hit_state(struct Owner *owner, struct Actor *ent, void **out))
+void active_hit_state(struct Owner *owner, struct Actor *ent, void **out)
 {
     u8 idx[4];
     s16 box[8];
     s8 *rect;
     void *entry;
 
-    if (find_active_entry(owner, idx) != 0)
+    if (find_active_entry(owner, idx) == 0)
+    {
+        *out = (void *)setup_random_offset_state;
+    }
+    else
     {
         entry = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
         rect = ent->rect;
@@ -565,23 +569,18 @@ NONMATCH("asm/code_0813C4A8/active_hit_state.s", void active_hit_state(struct Ow
         box[1] = rect[0x1D] << 4;
         box[3] = rect[0x1E] << 4;
         box[5] = rect[0x1F] << 4;
-        if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) != 0)
+        if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) == 0)
+        {
+            *out = (void *)setup_random_offset_state;
+        }
+        else
         {
             *out = (void *)pick_active_target;
             ((struct Flags1D6Bits *)&ent->flags1D6)->bit0 = 0;
             ((struct Flags1D6Bits *)&ent->flags1D6)->bit1 = 1;
         }
-        else
-        {
-            *out = (void *)setup_random_offset_state;
-        }
-    }
-    else
-    {
-        *out = (void *)setup_random_offset_state;
     }
 }
-END_NONMATCH
 
 void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out);
 void pair_div256(s32 *dst, s32 *src);
@@ -822,7 +821,40 @@ void box_hit_state_d4a5(struct Owner *owner, struct Actor *obj)
     }
 }
 
-ASM_FUNC("asm/code_0813C4A8/box_hit_state_d4ed.s", void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj))
+void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj)
+{
+    void *entry;
+    s16 box[8];
+    u8 idx;
+    s16 *p;
+    s32 v;
+    void **handler;
+    s16 *bp;
+
+    handler = (void **)&obj->handler;
+    ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
+    if ((obj->flags1D6 & 1) != 0)
+    {
+        if (find_active_entry(owner, &idx) != 0)
+        {
+            p = obj->sensor;
+            entry = *(void **)((u8 *)owner + 0x28 + (idx << 2));
+            bp = box;
+            v = p[0];
+            bp[0] = (v << 4) + 8;
+            p++;
+            v = p[0];
+            bp[3] = (v << 4) + 8;
+            p++;
+            v = p[0];
+            bp[1] = (v << 4) + 8;
+            v = p[1];
+            bp[2] = (v << 4) + 8;
+            if (point_in_box(box, entry, 0x7FFF, 0) == 0)
+                obj->update = (void *)start_state_d385;
+        }
+    }
+}
 
 void start_state_d405(s32 arg, struct Actor *obj)
 {
