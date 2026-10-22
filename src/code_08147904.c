@@ -545,7 +545,33 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08147904/enemy_update_landing.s", void enemy_update_landing(void))
 
-ASM_FUNC("asm/code_08147904/enemy_start_bump.s", void enemy_start_bump(struct Owner *owner, struct Enemy *ent, u32 *out))
+NONMATCH("asm/code_08147904/enemy_start_bump.s", void enemy_start_bump(struct Owner *owner, struct Enemy *ent, u32 *out))
+{
+    u16 *table = ent->wanderDist;
+    u8 pick = rand_below(4, mt19937_next());
+    u16 *entry;
+    u8 idx;
+    u32 index;
+    struct Partner *partner;
+    u16 part;
+
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = (u32)(*(u8 *)&owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
+    part = table[rand_below(2, mt19937_next()) + 0x18];
+    entry = table + pick;
+    collide_react(owner, ent, partner, part, entry[0], *(s8 *)((u8 *)table + 0x40), *(s8 *)((u8 *)table + 0x41), 0x22, 0);
+    ((struct Mode3 *)&ent->unk214)->mode = 3;
+    ent->sprite->unk20 = entry[4];
+    *out = (u32)enemy_bump_wait;
+}
+END_NONMATCH
 
 void enemy_bump_wait(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
@@ -630,7 +656,43 @@ void enemy_aim_and_move(struct Owner *owner, struct Enemy *ent, u32 *out)
     *out = (u32)enemy_move_to_target;
 }
 
-ASM_FUNC("asm/code_08147904/enemy_move_to_target.s", void enemy_move_to_target(struct Owner *owner, struct Enemy *ent, u32 *out))
+NONMATCH("asm/code_08147904/enemy_move_to_target.s", void enemy_move_to_target(struct Owner *owner, struct Enemy *ent, u32 *out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct Partner *partner;
+    s16 box[8];
+    u8 idx;
+    u32 index;
+    u16 counter;
+    u32 next;
+
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = (u32)(*(u8 *)&owner->flags208 << 30) >> 31;
+    }
+    partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
+    obj_box_mirror_to_stack(box, ent, 0x14, 0x26);
+    if (boxes_overlap(box, ent, partner, 0x7FFF, 0x7FFF) == 0)
+    {
+        next = (u32)enemy_hop_start;
+    }
+    else
+    {
+        counter = *(u16 *)(ai + 0x17A) - 1;
+        *(u16 *)(ai + 0x17A) = counter;
+        if (counter != 0 && step_pos_xy_plain(ent) != 0)
+        {
+            return;
+        }
+        next = (u32)enemy_aim_and_move;
+    }
+    *out = next;
+}
+END_NONMATCH
 
 void start_z_move(struct Enemy *ent, s32 z, u32 a, u32 b, u32 c);
 NONMATCH("asm/code_08147904/enemy_hop_start.s", void enemy_hop_start(struct Owner *owner, struct Enemy *ent, u32 *out))
