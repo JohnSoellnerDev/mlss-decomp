@@ -95,6 +95,25 @@ struct Body
     u16 unkB8;
 };
 
+struct Flags78Bits
+{
+    u8 low5 : 5;
+    u8 kind : 3;
+};
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+extern struct Body *obj_spawn(struct BodyData *data, s32 kind, s32 x, s32 y, s32 h, s32 a, s32 b);
+extern void contact_effect(void);
+extern void slot_contact_effect(void);
+
 extern void spawn_hero_children(void);
 extern void spawn_hero_children(void);
 extern void move_between_poses(struct Body *body);
@@ -233,7 +252,79 @@ void move_between_poses(struct Body *body)
     body->state = (void *)start_timed_motion_if_free;
 }
 
-ASM_FUNC("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(struct Body *body))
+NONMATCH("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(struct Body *body))
+{
+    struct Sprite *spr = body->sprite;
+    struct Body *part;
+    struct Body *partner;
+    struct BodyData *data;
+    struct BodyData *partnerData;
+    s32 neg;
+    s32 art;
+    s32 zero;
+    s32 cellsX;
+    s32 cellsY;
+    s32 cellsZ;
+    s32 dist;
+    s32 timer;
+    s32 span;
+    s32 half;
+    s32 *src;
+    s32 (*divFn)(s32, s32);
+
+    if ((spr->flags & 8) != 0)
+    {
+        partner = body->partner;
+        neg = -1;
+        zero = 0;
+        art = 0x4063;
+        if (partner->data->pose == neg)
+        {
+            art--;
+        }
+        data = body->data;
+        part = obj_spawn(data, art,
+                         body->targetX / 0x100 - 0xA,
+                         body->targetY / 0x100,
+                         body->targetZ / 0x100 + 0xD,
+                         ((u32)spr->b11 << 25) >> 31, 1);
+        body->child = part;
+        part->flags78 = (part->flags78 & 0x1F) | 0x20;
+        ((struct ObjFlags77 *)part)->bit6 = ((struct ObjFlags77 *)body)->bit6;
+        ((struct ObjFlags77 *)part)->bit5 = ((struct ObjFlags77 *)body)->bit5;
+        part->state = (void *)companion_jump_land_step_toward_partner;
+        part->unk68 = (void *)on_arrive;
+        part->unk54 = (void *)reset_to_counter_state;
+        part->unk6C = body->unk6C;
+        obj_list_push_default(part);
+        part->unk5C = (void *)contact_effect;
+        part->unk60 = (void *)slot_contact_effect;
+        src = &body->unk9C;
+        part->unk9C = *src;
+        part->unkA0 = body->unkA0;
+        part->unkA4 = body->unkA4;
+        part->unkA8 = body->unkA8;
+        partner = body->partner;
+        part->partner = partner;
+        partnerData = partner->data;
+        cellsX = (partnerData->limitX - part->targetX) / 4;
+        cellsY = (partnerData->height - part->targetY) / 4;
+        cellsZ = (partnerData->targetH - part->targetZ + 0x800) / 4;
+        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(cellsX * cellsX + cellsY * cellsY + cellsZ * cellsZ);
+        part->jumpDX = *src;
+        timer = part->jumpDX;
+        span = timer + (dist << 3);
+        divFn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+        half = span / 2;
+        part->jumpDY = divFn((-timer) * timer + half, span);
+        set_slot_value(0x89, neg);
+        sprite_set_action(body, 0x12, 0, 0);
+        body->unk6C = zero;
+        body->state = (void *)zero;
+        body->unk68 = (void *)zero;
+    }
+}
+END_NONMATCH
 
 void companion_jump_land_step_toward_partner(struct Body *body)
 {
