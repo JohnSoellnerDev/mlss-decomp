@@ -184,6 +184,11 @@ extern const u8 gUnk_0800E210[];
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct HeroBody *body, u32 offsets);
 
+static inline void *tracked_obj(void)
+{
+    return gWorld->trackedObj;
+}
+
 void hero_a_child_place_on_b(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
@@ -236,4 +241,30 @@ void hero_a_child_fade_b_step30(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080CE340/hero_b_follow_tracked.s", void hero_b_follow_tracked(struct HeroBody *body))
+void hero_b_follow_tracked(struct HeroBody *body)
+{
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 x;
+    s32 y;
+
+    state_stack_advance_progress(body_b);
+    if ((body_b->flags & 0x20) != 0)
+    {
+        set_slot_value(0xA7, -1);
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 1, 0x2065, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            s32 offY = body_b->sprite->ofsY;
+            x = (s16)obj_last_x(tracked_obj()) - 0x10;
+            y = (s16)obj_last_y(tracked_obj()) + offY;
+            place_targets(body_b, x, y, 0, -1);
+            set_motion_start(body_b, 0x380);
+        }
+        body->state = hero_b_child_follow_partner;
+    }
+}
