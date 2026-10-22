@@ -309,4 +309,53 @@ void jump_orbit_spawn_orbit_child_c(struct HoldActor *obj)
     orbit_step_e(obj);
 }
 
-ASM_FUNC("asm/code_0808F758/orbit_step_e.s", void orbit_step_e(struct HoldActor *obj))
+NONMATCH("asm/code_0808F758/orbit_step_e.s", void orbit_step_e(struct HoldActor *obj))
+{
+    s32 busy;
+    u8 act;
+
+    obj->state = orbit_step_e;
+    act = obj->action;
+    busy = 0x38;
+    busy &= act;
+    if (busy != 0)
+    {
+        end_action(obj);
+    }
+    else
+    {
+        if ((s16)obj->step == 0)
+        {
+            sprite_set_action(obj, 0, 0x2025, 0);
+        }
+        if ((s16)obj->step == 1)
+        {
+            sprite_set_action(obj, 0, 0x2025, 1);
+        }
+        if ((s16)obj->step == 2)
+        {
+            sprite_set_action(obj, 0, 0x2025, 2);
+        }
+        if ((s16)obj->step == 3)
+        {
+            sprite_set_action(obj, 0, 0x2025, 3);
+        }
+        if ((s16)obj->step != 4)
+        {
+            if ((gSys.held & obj->buttons) == 0)
+            {
+                obj->state = orbit_wait_c;
+                return;
+            }
+        }
+        else
+        {
+            sprite_set_action(obj, 1, 0, 0);
+            obj->step = busy;
+            obj->state = hold_wait_a;
+        }
+        ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
+        obj->step++;
+    }
+}
+END_NONMATCH
