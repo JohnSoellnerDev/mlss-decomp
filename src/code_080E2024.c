@@ -305,30 +305,25 @@ void update_scroll_shadows(struct ScrollObj *obj)
 
 NONMATCH("asm/code_080E2024/dma_win0_from_buffer.s", void dma_win0_from_buffer(u32 arg0, u32 arg1, u32 arg2, u32 arg3))
 {
-    void *callback;
+    u32 callback;
     u32 bank;
-    u8 *draw;
-    u32 value;
-    vu32 *dma;
     u32 win;
-    u8 *world;
-    callback = *(void **)(gWorld + 0x260);
-    ((void (*)(void *, u32, u32, u32))callback)(callback, 0x260, arg2, arg3);
-    dma = (vu32 *)REG_ADDR_DMA0SAD;
+    vu32 *dma;
+
+    callback = *(u32 *)(gWorld + 0x260);
+    ((void (*)(u32, u32, u32, u32))callback)(callback, 0x260, arg2, arg3);
+    dma = (vu32 *)0x040000B0;
     ((vu16 *)dma)[5] &= 0xC5FF;
     ((vu16 *)dma)[5] &= 0x7FFF;
     ((vu16 *)dma)[5];
-    world = gWorld;
-    bank = ((u32)*(u8 *)(world + 0xB) << 26) >> 31;
-    draw = gWorkBuf;
-    dma[0] = ((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)draw;
-    win = REG_ADDR_WIN0H;
+    bank = ((u32)*(u8 *)(gWorld + 0xB) << 26) >> 31;
+    dma[0] = ((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)gWorkBuf;
+    win = 0x04000040;
     dma[1] = win;
     dma[2] = 0xA6600001;
     dma[2];
-    bank = ((u32)*(u8 *)(world + 0xB) << 26) >> 31;
-    value = *(u32 *)(((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)draw);
-    *(vu32 *)win = value;
+    bank = ((u32)*(u8 *)(gWorld + 0xB) << 26) >> 31;
+    *(vu32 *)win = *(u32 *)((((((bank << 2) + bank) << 7) + (u32)gWorkBuf)) + 0x3EF0);
 }
 END_NONMATCH
 
@@ -435,6 +430,8 @@ NONMATCH("asm/code_080E2024/sub_080E377C.s", void sub_080E377C(void))
     u16 *shadow;
     s32 i;
     u8 *sys;
+    u16 ff;
+    u8 *root;
     u8 *base;
     u32 off;
 
@@ -442,18 +439,20 @@ NONMATCH("asm/code_080E2024/sub_080E377C.s", void sub_080E377C(void))
     *shadow = 0x1E04;
     shadow += 6;
     *shadow = 0;
-    shadow = (u16 *)((u32)shadow + 2);
+    shadow++;
     *shadow = 8;
     for (i = 0; i < 0x150; i++)
     {
+        root = gWorkBuf;
         off = i * 4;
-        base = gWorkBuf + 0x5470;
+        base = root + 0x5470;
         *(u32 *)(base + off) = gTileBlock5x2Table[i] + 0x80008000;
     }
     dma_copy_or_queue(gWorkBuf + 0x5470, (void *)0x0600F000, 0x540, 0x20, 0);
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gPaletteGrayPink, gUnk_02000180, 0x20);
     sys = gSys;
-    *(u16 *)(sys + 2) = 0xFFFF;
+    ff = 0xFFFF;
+    *(u16 *)(sys + 2) = ff;
     *(s32 *)(sys + 0x884) = -1;
 }
 END_NONMATCH
