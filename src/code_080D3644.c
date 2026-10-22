@@ -137,6 +137,12 @@ struct KeyState
     u16 pressed;
 };
 
+struct PoseFlags47
+{
+    u8 low6 : 6;
+    u8 high2 : 2;
+};
+
 struct World
 {
     u8 filler0[0x0A];
@@ -156,6 +162,11 @@ struct World
 extern struct World *gWorld;
 extern u8 *gParty;
 extern struct KeyState gSys;
+
+static inline void *focus_obj(void)
+{
+    return gWorld->focus24C;
+}
 
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -282,7 +293,74 @@ u32 hero_pair_start_with_pose(struct HeroBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_place_both_tracked(struct HeroBody *body))
+NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_place_both_tracked(struct HeroBody *body))
+{
+    struct World *world = gWorld;
+    struct HeroBody *body_a = &world->heroA->body;
+    struct HeroBody *body_b = &world->heroB->body;
+    struct HeroSprite *sprite;
+    struct HeroSpan *span;
+
+    world->unk0E = 7;
+    ((struct WorldModeBits *)&gWorld->modeByte)->high =
+        (((struct PoseFlags47 *)&gParty[0x47])->low6 & 1) + ((gParty[0x49] >> 2) & 1) * 2;
+    set_slot_value(0x53, -1);
+
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        place_targets(body_a, (s16)obj_last_x(focus_obj()) + 0x40,
+                      (s16)obj_last_y(focus_obj()) + 0x6E, 0, -1);
+        set_motion_start(body_a, 0x200);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        if (body_a->data->poseIndex == -1)
+            sprite_set_action(body_a, 0, 0x2002, 0);
+        else
+            sprite_set_action(body_a, 0, 0x204F, 0);
+        sprite = body_a->sprite;
+        {
+            s32 flip = 0;
+
+            span = &body_a->span;
+            if (span->a >= span->b)
+                flip = 1;
+            ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
+        }
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        body_a->state = 0;
+        enter_finish_rebuild(body_a);
+    }
+
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        place_targets(body_b, (s16)obj_last_x(focus_obj()) + 0x1E,
+                      (s16)obj_last_y(focus_obj()) + 0x6E, 0, -1);
+        set_motion_start(body_b, 0x200);
+    }
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        if (body_b->data->poseIndex == -1)
+            sprite_set_action(body_b, 0, 0x2002, 0);
+        else
+            sprite_set_action(body_b, 0, 0x204F, 0);
+        sprite = body_b->sprite;
+        {
+            s32 flip = 0;
+
+            span = &body_b->span;
+            if (span->a >= span->b)
+                flip = 1;
+            ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
+        }
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+    }
+    body->state = hero_b_end_a;
+}
+END_NONMATCH
 
 void hero_b_step16_when_a_free(struct HeroBody *body)
 {
