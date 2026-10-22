@@ -149,15 +149,17 @@ void set_flag_2_2(void *p);
 struct AnimTask *anim_task_create(void *obj, u32 prio, const void *data);
 void task_insert(void *node, u8 kind, u32 data);
 
-NONMATCH("asm/code_0801ABFC/serial_schedule.s", void serial_schedule(u16 a, u16 b, u32 c))
+void serial_schedule(u16 a, u16 b, u32 c)
 {
+    u32 value = b;
+
     if ((gSys[0x888] & 6) == 2)
     {
         if (a != 0)
         {
             ((struct SchedBits *)gUnk_03000D28)->lo2 = 1;
             ((struct SchedBits *)gUnk_03000D28)->bit2 = c & 1;
-            *(u16 *)(gUnk_03000D28 + 2) = b;
+            *(u16 *)(gUnk_03000D28 + 2) = value;
             *(u16 *)(gUnk_03000D28 + 4) = a;
         }
         else
@@ -167,13 +169,59 @@ NONMATCH("asm/code_0801ABFC/serial_schedule.s", void serial_schedule(u16 a, u16 
                 ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
             }
             ((struct Bits28 *)gUnk_03000D28)->lo2 = 2;
-            *(u16 *)(gUnk_03000D28 + 4) = b;
+            *(u16 *)(gUnk_03000D28 + 4) = value;
+        }
+    }
+}
+
+NONMATCH("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
+{
+    if ((gSys[0x888] & 6) == 2)
+    {
+        u8 *timer = gUnk_03000D28;
+        u32 st = timer[0];
+        u32 state = (st << 30) >> 30;
+
+        if (state == 1)
+        {
+            s32 count = *(u16 *)(timer + 4) - 1;
+
+            *(u16 *)(timer + 4) = count;
+            if ((u16)count == 0)
+            {
+                if ((state & gSys[0x88B]) != 0)
+                {
+                    ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
+                }
+                ((struct SchedBits *)timer)->lo2 = 2;
+                *(u16 *)(timer + 4) = *(u16 *)(timer + 2);
+            }
+        }
+        else if (state == 2)
+        {
+            s32 count = *(u16 *)(timer + 4);
+
+            if (count != 0)
+            {
+                count--;
+                *(u16 *)(timer + 4) = count;
+                if ((u16)count == 0)
+                {
+                    if ((st & 4) == 0)
+                    {
+                        ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
+                    }
+                    else
+                    {
+                        ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
+                    }
+                    ((struct SchedBits *)timer)->lo2 = 0;
+                }
+            }
         }
     }
 }
 END_NONMATCH
-
-ASM_FUNC("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
 
 void serial_enter_phase_1(void)
 {
@@ -193,7 +241,7 @@ void serial_clear_phase(void)
     }
 }
 
-NONMATCH("asm/code_0801ABFC/serial_start_phase_2.s", void serial_start_phase_2(void))
+void serial_start_phase_2(void)
 {
     if ((gSys[0x888] & 6) == 2)
     {
@@ -203,13 +251,13 @@ NONMATCH("asm/code_0801ABFC/serial_start_phase_2.s", void serial_start_phase_2(v
         }
         {
             u8 *timer = gUnk_03000D28;
+            u16 zero = 0;
 
-            *(u16 *)(timer + 4) = 0;
+            *(u16 *)(timer + 4) = zero;
             ((struct Bits28 *)timer)->lo2 = 2;
         }
     }
 }
-END_NONMATCH
 
 void serial_clear_timer(void)
 {
@@ -299,12 +347,16 @@ NONMATCH("asm/code_0801ABFC/link_window_open.s", void link_window_open(u32 mode)
 {
     u8 buf[8];
     void *block;
-    u32 arg;
+    s32 arg;
 
     block = heap_alloc2(0x324, 0, gHeapTagLinkWindow, 0);
-    arg = mode == 0 ? 0x73 : -1;
-    buf[0] = 1;
+    arg = -1;
+    if (mode == 0)
+    {
+        arg = 0x73;
+    }
     *(u8 *)(buf + 4) = 0;
+    buf[0] = 1;
     init_scene_obj(block, 8, gHeapTagLinkWindow, arg);
 }
 END_NONMATCH
