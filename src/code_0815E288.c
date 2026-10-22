@@ -89,6 +89,7 @@ extern const u8 gReleaseVtableE920[];
 extern const u8 gClassE4a0[];
 
 ASM_FUNC("asm/code_0815E288/sprite_group5_init.s", void sprite_group5_init(void))
+
 ASM_FUNC("asm/code_0815E288/sprite_group5_update.s", void sprite_group5_update(void))
 
 ASM_FUNC("asm/code_0815E288/obj_create_group_e4a0.s", void obj_create_group_e4a0(void))
@@ -240,6 +241,7 @@ NONMATCH("asm/code_0815E288/transition_children_obj_init_scan_pool.s", void *tra
     obj->unk10 = 0;
     obj->unk14 = 0;
     *(void **)&obj->filler18 = 0;
+    i = 0;
     pool = (void **)(game + 0x1898);
     slot = pool;
     for (i = 0; i <= 0xFF; i += 4)
