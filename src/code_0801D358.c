@@ -88,7 +88,7 @@ void fill_span_rows(void *obj, u8 color);
 
 ASM_FUNC("asm/code_0801D358/draw_triangle_checked.s", void draw_triangle_checked(void))
 
-NONMATCH("asm/code_0801D358/build_gradient_table.s", void build_gradient_table(struct GradObj *obj))
+void build_gradient_table(struct GradObj *obj)
 {
     struct GradObj *g = obj;
     u16 *p = g->buf4;
@@ -96,13 +96,11 @@ NONMATCH("asm/code_0801D358/build_gradient_table.s", void build_gradient_table(s
 
     for (i = 0; i <= 0x27F; i++)
     {
-        s32 entry = (((g->level & 0x7FFF) >> 5) + i) | 0xFFFFF000;
-        *p = entry;
+        *p = (((g->level & 0x7FFF) >> 5) + i) | 0xF000;
         p++;
     }
     dma_copy_or_queue(g->buf4, (void *)(0x06000000 + g->vramOff), 0x500, 0x20, 0);
 }
-END_NONMATCH
 
 void obj_dma_cancel_and_free(struct DmaObj *obj, u32 flags)
 {
