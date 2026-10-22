@@ -474,7 +474,7 @@ void obj_copy_sub_fields(struct FieldObj *obj)
     ((struct Flags298Bits *)&obj->flags298)->bit0 = 1;
 }
 
-NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion_state(struct FieldObj *obj, u32 force))
+void obj_refresh_motion_state(struct FieldObj *obj, u32 force)
 {
     s32 flag;
     s32 moving;
@@ -482,6 +482,7 @@ NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion
     u32 idx;
     u32 t;
     u32 b216;
+    u32 m;
     struct FieldVtable *vt;
     u8 *tbl;
 
@@ -494,7 +495,9 @@ NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion
             {
                 tbl = (u8 *)gSpriteFacingTable;
                 idx = obj->unk02 >> 4;
-                if ((b216 & 0xC) != 4)
+                m = 0xC;
+                m &= b216;
+                if (m != 4)
                 {
                     idx += 0x10;
                 }
@@ -549,7 +552,6 @@ NONMATCH("asm/code_0803F510/obj_refresh_motion_state.s", void obj_refresh_motion
         }
     }
 }
-END_NONMATCH
 
 void obj_sync_sub_state(struct FieldObj *obj, u8 force)
 {
