@@ -158,6 +158,7 @@ u8 step_pos_xy_plain(struct Enemy *ent);
 void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset);
 u8 boxes_overlap_oriented(s16 *box, struct Enemy *a, struct Enemy *b, s32 zAbove, s32 zBelow);
 
+
 ASM_FUNC("asm/code_0813F77C/enemy_hop_land_on_partner.s", void enemy_hop_land_on_partner(void))
 
 ASM_FUNC("asm/code_0813F77C/enemy_hop_land_next.s", void enemy_hop_land_next(void))
@@ -502,6 +503,7 @@ NONMATCH("asm/code_0813F77C/enemy_kick_after_probe.s", void enemy_kick_after_pro
     *out = enemy_run_until_contact;
 }
 END_NONMATCH
+
 
 
 ASM_FUNC("asm/code_0813F77C/enemy_run_until_contact.s", void enemy_run_until_contact(void))
