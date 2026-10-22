@@ -115,6 +115,38 @@ struct HeroSpriteBits
     u8 unk3 : 5;
 };
 
+struct Flags77Packed
+{
+    u8 unk0 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 unk7 : 1;
+} __attribute__((packed));
+
+struct DataLow5Packed
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+} __attribute__((packed));
+
+struct OrbitNode
+{
+    struct OrbitNode *next;
+    s32 x;
+    s32 y;
+    s32 z;
+    u8 filler10[0x1B - 0x10];
+    u8 flags1B;
+};
+
+struct OrbitFlags
+{
+    u8 unk0 : 7;
+    u8 bit7 : 1;
+};
+
 struct HeroFlags77Bits
 {
     u8 unk0 : 3;
@@ -142,6 +174,11 @@ struct Entry
 {
     u8 filler0[0x10];
     struct Part *part;
+};
+
+struct SysHead0
+{
+    u16 unk0;
 };
 
 struct World
@@ -240,6 +277,9 @@ void anim_0d_fx_then_spawn_c(struct HeroBody *body);
 void focus_follow_spawn_orbit_child_a(struct HeroBody *body);
 void focus_follow_spawn_orbit_child_b(struct HeroBody *body);
 void focus_follow_spawn_orbit_child_c(struct HeroBody *body);
+u32 find_frame_entry(struct HeroBody *obj, u32 index);
+void obj_list_push_default(struct HeroBody *body);
+u32 lookup_part_or_wait(struct HeroBody *body, u32 arg1, u32 arg2);
 
 void follow_spawn_child(struct HeroBody *body)
 {
@@ -665,7 +705,93 @@ void focus_follow_spawn_orbit_child_b(struct HeroBody *body)
 struct TileNode *sprite_node_release(struct TileNode *node);
 void partner_link_update(struct HeroBody *body, struct HeroBody *other, u32 mode);
 struct Hero *active_candidate(struct HeroData *data);
-ASM_FUNC("asm/code_08098B18/orbit_nodes_b.s", void orbit_nodes_b(struct HeroBody *body))
+NONMATCH("asm/code_08098B18/orbit_nodes_b.s", void orbit_nodes_b(struct HeroBody *body))
+{
+    struct OrbitNode *node;
+    struct OrbitNode *prev;
+    struct HeroBody *partner;
+    struct Hero *cand;
+    s32 *base;
+    s32 *cx;
+    s32 *cy;
+    s32 radius;
+    s32 index;
+    s32 angle;
+    s32 idx;
+    s32 cos;
+    s32 sin;
+    s32 prod;
+    s32 dx;
+    s32 dy;
+    s32 dxp;
+    s32 dyp;
+    s32 dist;
+    s32 d;
+    u16 *timer;
+
+    timer = &body->timerE;
+    *timer += 0x19;
+    body->phase += *(s16 *)&body->timerE;
+    radius = body->phase / 0x100;
+    node = (struct OrbitNode *)&body->nodes;
+    prev = node;
+    cx = &body->centerX;
+    cy = &body->centerY;
+    base = cx;
+    index = 0;
+    while (node != 0)
+    {
+        angle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(index, 9);
+        cos = gCosineTable[(angle + 0x50) & 0xFF];
+        node->x = *base + radius * (cos / 0x40);
+        sin = gSineTable[(angle + 0x50) & 0xFF];
+        prod = radius * (sin / 0x40);
+        node->y = *cy + prod / 2;
+        if (node->y > 0x8C00)
+        {
+            ((struct OrbitFlags *)&node->flags1B)->bit7 = 1;
+        }
+        if (node->y <= 0x4000)
+        {
+            prev->next = 0;
+            if (node != 0)
+            {
+                do
+                {
+                    node = (struct OrbitNode *)sprite_node_release((struct TileNode *)node);
+                } while (node != 0);
+            }
+            break;
+        }
+        index += 0x60;
+        prev = node;
+        node = node->next;
+    }
+
+    partner = body->partner;
+    dx = partner->targetX - *cx;
+    dxp = dx / 0x100;
+    dy = partner->targetY - *cy;
+    dyp = dy / 0x100;
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dxp * dxp + dyp * (dyp << 2));
+    if (dist - 8 < radius && radius < dist - 8 + 0x10 && partner->targetZ >= 0 && partner->targetZ <= 0x7FF && (partner->mode & 0x80) == 0)
+    {
+        partner_link_update(body, partner, 0xFF);
+    }
+    cand = active_candidate(partner->data);
+    if (cand != 0)
+    {
+        if (dist - 8 < radius && radius < dist - 8 + 0x10 && cand->body.targetZ >= 0 && cand->body.targetZ <= 0x7FF && (cand->body.mode & 0x86) == 2)
+        {
+            partner_link_update(body, &cand->body, 0xFF);
+        }
+    }
+    if (radius > 0xC7)
+    {
+        obj_release(body);
+    }
+}
+END_NONMATCH
 
 void pose_update_if_active_b(struct HeroBody *body)
 {
@@ -727,7 +853,93 @@ void focus_follow_spawn_orbit_child_c(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/orbit_nodes_c.s", void orbit_nodes_c(struct HeroBody *body))
+NONMATCH("asm/code_08098B18/orbit_nodes_c.s", void orbit_nodes_c(struct HeroBody *body))
+{
+    struct OrbitNode *node;
+    struct OrbitNode *prev;
+    struct HeroBody *partner;
+    struct Hero *cand;
+    s32 *base;
+    s32 *cx;
+    s32 *cy;
+    s32 radius;
+    s32 index;
+    s32 angle;
+    s32 idx;
+    s32 cos;
+    s32 sin;
+    s32 prod;
+    s32 dx;
+    s32 dy;
+    s32 dxp;
+    s32 dyp;
+    s32 dist;
+    s32 d;
+    u16 *timer;
+
+    timer = &body->timerE;
+    *timer += 0x19;
+    body->phase += *(s16 *)&body->timerE;
+    radius = body->phase / 0x100;
+    node = (struct OrbitNode *)&body->nodes;
+    prev = node;
+    cx = &body->centerX;
+    cy = &body->centerY;
+    base = cx;
+    index = 0;
+    while (node != 0)
+    {
+        angle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(index, 9);
+        cos = gCosineTable[(angle + 0x50) & 0xFF];
+        node->x = *base + radius * (cos / 0x40);
+        sin = gSineTable[(angle + 0x50) & 0xFF];
+        prod = radius * (sin / 0x40);
+        node->y = *cy + prod / 2;
+        if (node->y > 0x8C00)
+        {
+            ((struct OrbitFlags *)&node->flags1B)->bit7 = 1;
+        }
+        if (node->y <= 0x4000)
+        {
+            prev->next = 0;
+            if (node != 0)
+            {
+                do
+                {
+                    node = (struct OrbitNode *)sprite_node_release((struct TileNode *)node);
+                } while (node != 0);
+            }
+            break;
+        }
+        index += 0x60;
+        prev = node;
+        node = node->next;
+    }
+
+    partner = body->partner;
+    dx = partner->targetX - *cx;
+    dxp = dx / 0x100;
+    dy = partner->targetY - *cy;
+    dyp = dy / 0x100;
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dxp * dxp + dyp * (dyp << 2));
+    if (dist - 8 < radius && radius < dist - 8 + 0x10 && partner->targetZ >= 0 && partner->targetZ <= 0x7FF && (partner->mode & 0x80) == 0)
+    {
+        partner_link_update(body, partner, 0xFF);
+    }
+    cand = active_candidate(partner->data);
+    if (cand != 0)
+    {
+        if (dist - 8 < radius && radius < dist - 8 + 0x10 && cand->body.targetZ >= 0 && cand->body.targetZ <= 0x7FF && (cand->body.mode & 0x86) == 2)
+        {
+            partner_link_update(body, &cand->body, 0xFF);
+        }
+    }
+    if (radius > 0xC7)
+    {
+        obj_release(body);
+    }
+}
+END_NONMATCH
 
 void pose_update_if_active_c(struct HeroBody *body)
 {
@@ -792,7 +1004,51 @@ void focus_follow_step_toward_partner(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(struct HeroBody *body))
+NONMATCH("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(struct HeroBody *body))
+{
+    struct Hero *node;
+    struct HeroBody *part;
+    s32 *startA = &body->phase;
+    s32 *startB = &body->clock;
+    u16 *counter = (u16 *)&body->step;
+    s32 zero = 0;
+    u8 *style = &body->flags77;
+    s32 *startC = &body->repeats;
+
+    *counter += 1;
+    if ((s16)*counter > 0x1F)
+    {
+        sprite_set_action(body, 5, 0, 0);
+        set_slot_value(0x11A, -1);
+        node = body->data->first;
+        while (1)
+        {
+            part = &node->body;
+            find_frame_entry(part, 0);
+            part->partner = body->partner;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit3 = 0;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit4 = 0;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit6 = ((struct Flags77Packed *)style)->bit6;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit5 = ((struct Flags77Packed *)style)->bit5;
+            part->anim = body->anim;
+            ((struct DataLow5Packed *)&part->data->unk110)->lo5 = ((struct DataLow5Packed *)&body->data->unk110)->lo5;
+            part->phase = *startA;
+            part->clock = *startB;
+            part->repeats = *startC;
+            obj_list_push_default(part);
+            part->unk5C = (void (*)(struct HeroBody *))lookup_part_or_wait;
+            part->unk60 = zero;
+            if ((void *)node == (void *)body->data)
+            {
+                break;
+            }
+            node = node->next;
+        }
+        *counter = zero;
+        body->state = drop_to_focus;
+    }
+}
+END_NONMATCH
 
 s32 obj_last_x(void *obj);
 void drop_to_focus(struct HeroBody *body)
@@ -907,7 +1163,51 @@ void approach_partner(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/start_parts_after_16.s", void start_parts_after_16(struct HeroBody *body))
+NONMATCH("asm/code_08098B18/start_parts_after_16.s", void start_parts_after_16(struct HeroBody *body))
+{
+    struct Hero *node;
+    struct HeroBody *part;
+    s32 *startA = &body->phase;
+    s32 *startB = &body->clock;
+    u16 *counter = (u16 *)&body->step;
+    s32 zero = 0;
+    u8 *style = &body->flags77;
+    s32 *startC = &body->repeats;
+
+    *counter += 1;
+    if ((s16)*counter > 0x0F)
+    {
+        sprite_set_action(body, 5, 0, 0);
+        set_slot_value(0x11A, -1);
+        node = body->data->first;
+        while (1)
+        {
+            part = &node->body;
+            find_frame_entry(part, 0);
+            part->partner = body->partner;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit3 = 0;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit4 = 0;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit6 = ((struct Flags77Packed *)style)->bit6;
+            ((struct HeroFlags77Bits *)&part->flags77)->bit5 = ((struct Flags77Packed *)style)->bit5;
+            part->anim = body->anim;
+            ((struct DataLow5Packed *)&part->data->unk110)->lo5 = ((struct DataLow5Packed *)&body->data->unk110)->lo5;
+            part->phase = *startA;
+            part->clock = *startB;
+            part->repeats = *startC;
+            obj_list_push_default(part);
+            part->unk5C = (void (*)(struct HeroBody *))lookup_part_or_wait;
+            part->unk60 = zero;
+            if ((void *)node == (void *)body->data)
+            {
+                break;
+            }
+            node = node->next;
+        }
+        *counter = zero;
+        body->state = drop_to_focus_b;
+    }
+}
+END_NONMATCH
 
 void drop_to_focus_b(struct HeroBody *body)
 {
@@ -963,7 +1263,7 @@ void drop_to_focus_b(struct HeroBody *body)
     }
 }
 
-NONMATCH("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struct HeroBody *body))
+void update_layer_tiles(struct HeroBody *body)
 {
     struct HeroSprite *sprite = body->sprite;
     struct TileNode *tile;
@@ -985,7 +1285,7 @@ NONMATCH("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struc
     else
     {
         MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3CD0, gUnk_02000460, 0x20);
-        *(u16 *)gSys |= 0x8000;
+        ((struct SysHead0 *)gSys)->unk0 |= 0x8000;
         gModelCtx->cells[15] = gModelCtx->cells[14];
         gModelCtx->cells[14] = gModelCtx->cells[13];
         for (i = 0; i < 15; i++)
@@ -998,4 +1298,3 @@ NONMATCH("asm/code_08098B18/update_layer_tiles.s", void update_layer_tiles(struc
         body->list = 0;
     }
 }
-END_NONMATCH
