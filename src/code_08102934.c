@@ -7,9 +7,20 @@ struct Sprite
     u8 flags;
 };
 
+struct SpriteFlags
+{
+    u8 filler0[0x12];
+    u8 bit0 : 1;
+    u8 mode : 2;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 high : 3;
+};
+
 struct Figure
 {
-    u8 filler0[0x10];
+    u8 filler0[0x8];
+    u8 sprite[0x8];
     struct Sprite *link;
     u8 filler14[0x7E - 0x14];
     u8 ctrl;
@@ -118,7 +129,53 @@ extern u32 gMapTable[];
 
 ASM_FUNC("asm/code_08102934/state_draw_rows.s", void state_draw_rows(void))
 
-ASM_FUNC("asm/code_08102934/create_display_entry.s", struct DisplayEntry *create_display_entry(void *data, u32 value, u32 stat, u32 mode, s32 s0, s32 s1, s32 s2, s32 s3, s32 s4, u32 s5, u32 s6, u32 s7, s32 width))
+typedef struct { u16 value; } HalfArg;
+
+NONMATCH("asm/code_08102934/create_display_entry.s", struct DisplayEntry *create_display_entry(void *data, u32 value, u32 stat, u32 mode, HalfArg s0, HalfArg s1, HalfArg s2, HalfArg s3, u32 s4, u32 s5, u32 s6, u32 s7, s32 width))
+{
+    struct DisplayEntry *entry;
+    struct DisplaySub *sub;
+    u32 bcdA;
+    u32 bcdB;
+    s32 k1FF = 0x1FF;
+    u32 arg34;
+    u32 kHi;
+
+    entry = list_add_task(gWorld->list48, state_display_entry_draw);
+    sub = sprite_node_alloc_default();
+    bcdA = to_bcd(value);
+    bcdB = to_bcd(stat);
+    entry->data = data;
+    entry->sub = sub;
+    entry->mode18 = mode;
+    sub->unk16 = value;
+    sub->unk4 = bcdA;
+    sub->unk8 = stat;
+    sub->unkC = bcdB;
+    sub->unk10 = s0.value;
+    entry->unk10 = s1.value;
+    sub->unk12 = s2.value;
+    sub->unk14 = s3.value;
+    kHi = 0xFFFFF000;
+    arg34 = s4 & k1FF;
+    sub->unk1A = (sub->unk1A & kHi) | arg34;
+    sub->unk18 = s5 & 0xFF;
+    entry->unk12 = s6 & k1FF;
+    entry->unk14 = s7 & 0xFF;
+    if (width == 0xFFFFFB2E)
+    {
+        width = s4 - 8;
+        do
+        {
+            bcdA = (s32)bcdA >> 4;
+            width -= 8;
+        } while (bcdA != 0);
+    }
+    entry->unk16 = width & 0x1FF;
+    gWorld->timer2D4 = 0;
+    return entry;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08102934/state_display_entry_draw.s", void state_display_entry_draw(struct DisplayEntry *entry))
 {
@@ -249,7 +306,49 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08102934/state_create_display_entries.s", void state_create_display_entries(void))
 
-ASM_FUNC("asm/code_08102934/obj_apply_world_mode.s", void obj_apply_world_mode(void))
+NONMATCH("asm/code_08102934/obj_apply_world_mode.s", void obj_apply_world_mode(struct Figure *fig))
+{
+    u32 mode;
+    u32 bits;
+    s32 kA;
+    s32 kB;
+    kA = 0x2003;
+    kB = 0x2050;
+
+    if (fig == 0)
+    {
+        return;
+    }
+    if ((fig->ctrl & 6) != 2)
+    {
+        return;
+    }
+    bits = (u32)gWorld->spriteMode << 28;
+    mode = (bits >> 28) & 3;
+    if (mode == 0)
+    {
+        mode = (bits >> 30) & 3;
+        if (mode == 0)
+        {
+            mode = 1;
+        }
+    }
+    if (fig != 0 && (fig->ctrl & 6) == 2)
+    {
+        if (fig->anim == -1)
+        {
+            sprite_set_action(fig->sprite, mode, kA, 0);
+        }
+        else
+        {
+            sprite_set_action(fig->sprite, mode, kB, 0);
+        }
+        ((struct SpriteFlags *)fig->link)->bit4 = 0;
+        ((struct SpriteFlags *)fig->link)->mode = 0;
+    }
+    ((struct SpriteFlags *)fig->link)->mode = 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08102934/state_result_wait_confirm.s", void state_result_wait_confirm(void))
 
