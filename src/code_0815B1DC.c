@@ -18,9 +18,18 @@ struct CamChar
 
 struct ClassObj
 {
-    u8 filler0[0x18];
+    u8 filler0[4];
+    s32 posX;
+    s32 posY;
+    u8 filler0C[0x14 - 0x0C];
+    u16 unk14;
+    u8 filler16[0x18 - 0x16];
     u16 vy;
-    u8 filler1A[0x24 - 0x1A];
+    u8 filler1A[0x1C - 0x1A];
+    u16 unk1C;
+    u8 filler1E[0x20 - 0x1E];
+    u16 unk20;
+    u8 filler22[0x24 - 0x22];
     u8 state;
     u8 kind;
     u8 filler26[0x2C - 0x26];
@@ -48,6 +57,14 @@ struct SpriteObj
     u8 b6 : 2;
     u8 filler20;
     u8 kind;
+};
+
+struct Bits12
+{
+    u8 filler0[0x12];
+    u8 low : 5;
+    u8 bit5 : 1;
+    u8 high : 2;
 };
 
 struct ObjClassVt
@@ -113,6 +130,51 @@ void obj_release_children_5(void *obj, u32 flags);
 void obj_release_children_9(void *obj, u32 flags);
 void window_destroy(void *win, u32 flags);
 void obj_free_tile_bufs(void *obj);
+void obj_release_sprite(void *obj);
+u32 view_coord(u32 a, s32 b);
+void cam_start_wobble(void *cam, s32 value);
+void *heap_alloc2(u32 size, u32 pool, const u8 *tag, u32 zero);
+void obj_finish_sprites(void *obj);
+void *set_class_e8e0_ex(void *obj, void *rec, u32 idx);
+void *set_class_e820_ex(void *obj, void *rec, u32 idx);
+void *set_class_e760_ex(void *obj, void *rec, u32 idx);
+void *set_class_e720_ex(void *obj, void *rec, u32 idx);
+void *set_class_e6e0_ex(void *obj, void *rec, u32 idx);
+void *set_class_e6a0_ex(void *obj, void *rec, u32 idx);
+void *set_class_e660_ex(void *obj, void *rec, u32 idx);
+void *set_class_e5e0_ex(void *obj, void *rec, u32 idx);
+void *set_class_e5a0_ex(void *obj, void *rec, u32 idx);
+void *set_class_e560_ex(void *obj, void *rec, u32 idx);
+void *set_class_e520_ex(void *obj, void *rec, u32 idx);
+void *set_class_e4e0_ex(void *obj, void *rec, u32 idx);
+u32 obj_init_e8a0(void *obj, void *rec, u32 idx);
+u32 obj_init_e620(void *obj, void *rec, u32 idx);
+struct ClassObj *set_class_e7e0_ex(struct ClassObj *obj, void *rec, u16 idx);
+struct ClassObj *set_class_e7a0_ex(struct ClassObj *obj, void *rec, u16 idx);
+extern const u8 gHeapTagSpawnE8e0A[];
+extern const u8 gHeapTagSpawnE8e0B[];
+extern const u8 gHeapTagSpawnE8a0[];
+extern const u8 gHeapTagSpawnE820[];
+extern const u8 gHeapTagSpawnE7e0[];
+extern const u8 gHeapTagSpawnE7a0[];
+extern const u8 gSpawnTagKoum[];
+extern const u8 gSpawnTagKoub[];
+extern const u8 gSpawnTagCoin[];
+extern const u8 gSpawnTagCgoa[];
+extern const u8 gSpawnTagJump[];
+extern const u8 gSpawnTagJumb[];
+extern const u8 gSpawnTagPuku[];
+extern const u8 gSpawnTagDenc[];
+extern const u8 gSpawnTagLamp[];
+extern const u8 gSpawnTagFlam[];
+
+struct KlassInit
+{
+    u8 filler0[0x10];
+    s16 thisOffset10;
+    u16 filler12;
+    void (*fn14)(void *self, u32 a, u32 b, u32 c, u32 d);
+};
 
 ASM_FUNC("asm/code_0815B1DC/scene_init_objects.s", void scene_init_objects(void))
 
@@ -208,7 +270,74 @@ void camera_follow_chars(u8 *game)
     }
 }
 
-ASM_FUNC("asm/code_0815B1DC/obj_spawn_by_kind.s", void obj_spawn_by_kind(void))
+void *obj_spawn_by_kind(void *game, u8 *spec)
+{
+    struct ClassObj *obj;
+    struct KlassInit *k;
+    const u8 *tag;
+
+    switch (spec[0xC])
+    {
+    case 0:
+        tag = gHeapTagSpawnE8e0A;
+        goto spawn_e8e0;
+    case 1:
+        tag = gHeapTagSpawnE8e0B;
+    spawn_e8e0:
+        obj = set_class_e8e0_ex(heap_alloc2(0x48, 1, tag, 0), spec, 0);
+        k = (struct KlassInit *)obj->klass;
+        k->fn14((u8 *)obj + k->thisOffset10, 0, 0, 0, 1);
+        return obj;
+    case 2:
+        obj = (struct ClassObj *)obj_init_e8a0(heap_alloc2(0x44, 1, gHeapTagSpawnE8a0, 0), spec, 0);
+        return obj;
+    case 4:
+        obj = set_class_e820_ex(heap_alloc2(0x40, 1, gHeapTagSpawnE820, 0), spec, 0);
+        obj_finish_sprites(obj);
+        return obj;
+    case 5:
+        obj = (struct ClassObj *)set_class_e7e0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7e0, 0), spec, 0);
+        return obj;
+    case 6:
+        obj = (struct ClassObj *)set_class_e7a0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7a0, 0), spec, 0);
+        return obj;
+    case 7:
+        obj = (struct ClassObj *)set_class_e760_ex(heap_alloc2(0x3C, 1, gSpawnTagKoum, 0), spec, 0);
+        return obj;
+    case 9:
+        obj = (struct ClassObj *)set_class_e720_ex(heap_alloc2(0x3C, 1, gSpawnTagKoub, 0), spec, 0);
+        return obj;
+    case 8:
+        obj = (struct ClassObj *)set_class_e6e0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), spec, 0);
+        return obj;
+    case 16:
+        obj = (struct ClassObj *)set_class_e6a0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), spec, 0);
+        return obj;
+    case 11:
+        obj = (struct ClassObj *)set_class_e660_ex(heap_alloc2(0x38, 1, gSpawnTagCgoa, 0), spec, 0);
+        return obj;
+    case 12:
+        obj = (struct ClassObj *)obj_init_e620(heap_alloc2(0x3C, 1, gSpawnTagJump, 0), spec, 0);
+        return obj;
+    case 13:
+        obj = (struct ClassObj *)set_class_e5e0_ex(heap_alloc2(0x38, 1, gSpawnTagJumb, 0), spec, 0);
+        return obj;
+    case 14:
+        obj = (struct ClassObj *)set_class_e5a0_ex(heap_alloc2(0x38, 1, gSpawnTagPuku, 0), spec, 0);
+        return obj;
+    case 17:
+        obj = (struct ClassObj *)set_class_e520_ex(heap_alloc2(0x40, 1, gSpawnTagDenc, 0), spec, 0);
+        return obj;
+    case 15:
+        obj = (struct ClassObj *)set_class_e560_ex(heap_alloc2(0x3C, 1, gSpawnTagLamp, 0), spec, 0);
+        return obj;
+    case 18:
+        obj = (struct ClassObj *)set_class_e4e0_ex(heap_alloc2(0x38, 1, gSpawnTagFlam, 0), spec, 0);
+        return obj;
+    default:
+        return 0;
+    }
+}
 
 
 ASM_FUNC("asm/code_0815B1DC/update_bg_scroll_shadows.s", void update_bg_scroll_shadows(void))
@@ -300,7 +429,86 @@ struct ClassObj *set_class_e7e0_ex(struct ClassObj *obj, void *rec, u16 idx)
     return obj;
 }
 
-ASM_FUNC("asm/code_0815B1DC/obj_cmd_follow_a.s", void obj_cmd_follow_a(void))
+u32 obj_cmd_follow_a(struct ClassObj *obj, u32 view, u16 speed, u32 cmd_arg, u8 mode)
+{
+    struct ObjClassVt *cls;
+    struct SpriteObj *sprite;
+    u8 *b2d;
+    s32 dx;
+    s32 spd;
+
+    switch (mode)
+    {
+    case 3:
+        cls = (struct ObjClassVt *)obj->klass;
+        ((void (*)(void *))cls->fn34)((u8 *)obj + cls->thisOffset30);
+        ((struct Bits12 *)obj->childA)->bit5 = 0;
+        obj->state = 1;
+        break;
+    case 4:
+        obj_release_sprite(obj);
+        obj->state = 0;
+        break;
+    case 1:
+    case 2:
+        break;
+    default:
+        obj->angle = (s32)((s16)view_coord(view, obj->posX) << 8);
+        switch (obj->state)
+        {
+        case 0:
+        case 4:
+            break;
+        case 1:
+            dx = obj->posX - ((struct CamChar *)*(u32 *)(gUnk_03001020 + 0x1C98))->x;
+            if (dx <= 0x81FF)
+            {
+                obj->timer = 0xF;
+                obj_set_sprite_kind(obj, 0x19);
+                obj->state = 2;
+                break;
+            }
+            ((struct Bits12 *)obj->childA)->bit5 = 0;
+            obj->childA->counter = 10;
+            obj->childA->lo2 = obj_get_sprite(obj)->lo2 - 1;
+            break;
+        case 2:
+            obj->timer--;
+            if ((s16)obj->timer > 0)
+                break;
+            obj_set_sprite_kind(obj, 0x1A);
+            obj->unk14 += obj->unk1C;
+            spd = (s16)speed;
+            obj->vy += spd + obj->unk20;
+            obj->posX += (s16)obj->unk14;
+            obj->posY += (s16)obj->vy;
+            if (obj->posY > (s32)obj->angle)
+            {
+                ((struct Bits12 *)obj->childA)->bit5 = 1;
+                set_slot_value(0x44, -1);
+                sprite = obj_get_sprite(obj);
+                b2d = &obj->byte2D;
+                sprite->lo2 = *b2d - 1;
+                obj_get_sprite(obj)->b2 = *b2d - 1;
+                obj_get_sprite(obj)->b4 = *b2d - 1;
+                ((struct Bits12 *)obj->childB)->bit5 = 0;
+                cam_start_wobble(*(void **)(gUnk_03001020 + 0x1CBC), (s16)obj->vy);
+                obj->timer = 0x14;
+                obj->state = 3;
+            }
+            break;
+        case 3:
+            obj->timer--;
+            if ((s16)obj->timer > 0)
+                break;
+            ((struct Bits12 *)obj->childB)->bit5 = 1;
+            obj->state = 4;
+            break;
+        }
+        break;
+    }
+    return 0;
+}
 
 struct ClassObj *set_class_e7a0_ex(struct ClassObj *obj, void *rec, u16 idx)
 {
