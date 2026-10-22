@@ -210,13 +210,18 @@ void setup_status_panel(void)
     raster_line_add(bg_restore_while_busy, 0x18, 0)->unk8 = (struct Child *)line;
 }
 
+static inline __typeof__(gWorld->timerObj) get_world_timerObj(void)
+{
+    return gWorld->timerObj;
+}
+
 NONMATCH("asm/code_0810BB0C/create_status_objects.s", void create_status_objects(void))
 {
     struct Obj *head;
     struct Obj *sub;
     u16 *reg;
 
-    if (gWorld->timerObj == 0)
+    if (get_world_timerObj() == 0)
     {
         if (gWorld->timerObj == 0)
         {
