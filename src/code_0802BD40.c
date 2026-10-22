@@ -90,6 +90,9 @@ struct SysKeys78
 extern u8 gSys[];
 extern u8 gRomTileOfsA[];
 extern u8 gRomTileOfsB[];
+extern u8 gRomFacingTable[];
+extern s16 gDirVectors[];
+u32 arc_tan2(s32 x, s32 y);
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 u32 obj_test_mode(struct FollowObj *obj, u32 mode);
 void reset_slot_50(struct FollowObj *obj);
@@ -98,17 +101,51 @@ void obj_state_tick(struct FollowObj *obj, struct FollowObj *sub);
 
 ASM_FUNC("asm/code_0802BD40/obj_follow_step.s", void obj_follow_step(void))
 
-ASM_FUNC("asm/code_0802BD40/set_dir_and_offsets.s", void set_dir_and_offsets(void))
+void set_dir_and_offsets(struct FollowObj *a, u8 dir)
+{
+    s16 *tab;
+    s32 x;
+    s32 y;
+    u32 shift;
+
+    a->partA->dir2 = dir;
+    tab = &gDirVectors[((dir >> 5) & 7) << 1];
+    x = (a->partA->speed * tab[0]) / 0x100;
+    shift = ((u32)a->partA->flags353 << 26) >> 30;
+    x >>= shift;
+    y = (a->partA->speed * tab[1]) / 0x100;
+    y >>= shift;
+    if (x > 0)
+        x = (x + 0x3F) & -0x40;
+    else if (x < 0)
+    {
+        x = -x;
+        x = (x + 0x3F) & -0x40;
+        x = -x;
+    }
+    if (y > 0)
+        y = (y + 0x3F) & -0x40;
+    else if (y < 0)
+    {
+        y = -y;
+        y = (y + 0x3F) & -0x40;
+        y = -y;
+    }
+    a->partA->offX = x;
+    a->partA->offY = y;
+}
 
 ASM_FUNC("asm/code_0802BD40/follow_obj_move_step.s", void follow_obj_move_step(void))
 
 ASM_FUNC("asm/code_0802BD40/anchor_frame_update.s", void anchor_frame_update(void))
 
-NONMATCH("asm/code_0802BD40/step_offset_244.s", void step_offset_244(struct FollowObj *obj))
+void step_offset_244(struct FollowObj *obj)
 {
     u32 k;
     u32 cur;
     s32 v;
+    u32 cur2;
+    s32 v2;
 
     k = obj->unk20A & 0x180;
     if (k == 0x100 || (k == 0 && (((struct SysKeys78 *)gSys)->keyEnable & 0x33) == 0))
@@ -123,14 +160,13 @@ NONMATCH("asm/code_0802BD40/step_offset_244.s", void step_offset_244(struct Foll
         k = obj->unk20A & 0x180;
         if (k == 0x80 || (k == 0 && (((struct SysKeys78 *)gSys)->keyEnable & 0x33) != 0))
         {
-            cur = (u16)obj->offY;
-            v = obj->offY;
-            if (v < 0)
-                obj->offY = cur + 8;
+            cur2 = (u16)obj->offY;
+            v2 = obj->offY;
+            if (v2 < 0)
+                obj->offY = cur2 + 8;
         }
     }
 }
-END_NONMATCH
 
 void obj_anim_tick_queue_tiles(struct FollowObj *p, u32 idx, s32 v)
 {
@@ -162,7 +198,54 @@ void obj_anim_tick_queue_tiles(struct FollowObj *p, u32 idx, s32 v)
         gRomTileOfsB[kind] << 5, 0x20, 0);
 }
 
-ASM_FUNC("asm/code_0802BD40/update_pair_facing.s", void update_pair_facing(void))
+NONMATCH("asm/code_0802BD40/update_pair_facing.s", void update_pair_facing(struct FollowObj *obj, u8 reset, u8 enable))
+{
+    struct FollowObj *me;
+    struct FollowObj *other;
+    s32 dx;
+    s32 dy;
+    u32 ang;
+    u8 t;
+    u8 tb;
+    u32 off;
+    u8 zero;
+
+    other = obj->partB;
+    me = obj->partA;
+    zero = 0;
+    if (reset != 0)
+    {
+        off = 0x242;
+        *(s16 *)((u8 *)me + off) = zero;
+        off += 2;
+        *(s16 *)((u8 *)me + off) = zero;
+    }
+    if (other != 0 && enable != 0)
+    {
+        off = 0x242;
+        *(s16 *)((u8 *)other + off) = zero;
+        off += 2;
+        *(s16 *)((u8 *)other + off) = zero;
+        if ((obj->unk208 & 0x10) != 0)
+        {
+            dx = me->posX - other->posX;
+            dy = me->posY - other->posY;
+            if (dx != 0 || dy != 0)
+            {
+                ang = arc_tan2((s16)(-dy), (s16)dx);
+                tb = gRomFacingTable[(ang << 16) >> 28];
+                t = tb & 7;
+                other->dir2 = t << 5;
+                if ((other->unk214 & 7) > 2)
+                {
+                    s32 low = other->unk24;
+                    other->unk24 = (low & -8) | t;
+                }
+            }
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0802BD40/obj_state_tick.s", void obj_state_tick(struct FollowObj *obj, struct FollowObj *sub))
 
