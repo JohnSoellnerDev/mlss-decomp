@@ -526,7 +526,15 @@ NONMATCH("asm/code_080E9020/bump_record.s", void bump_record(struct SlotState *s
     }
     else
     {
-        ((struct RecBits *)q)->field = (((u32)rec << 25) >> 28) + 1;
+        s32 f = ((((u32)rec << 25) >> 28) + 1) & 0xF;
+        s32 t;
+
+        f <<= 3;
+        t = 0x79;
+        t = -t;
+        t &= rec;
+        t |= f;
+        *q = t;
     }
 }
 END_NONMATCH
@@ -733,7 +741,43 @@ u32 angle_of_vector16(s32 x, s32 y)
     return (u16)(arc_tan2((s16)a, (s16)b) + 0x5000);
 }
 
-ASM_FUNC("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e2e(void))
+NONMATCH("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e2e(s16 idx, s16 mode, u16 bit))
+{
+    u8 *entry;
+    u32 b;
+    u32 f;
+    s32 t;
+
+    entry = gParty + idx * 60;
+    switch (mode)
+    {
+    case 0:
+        b = entry[7];
+        f = (b >> 2) | (1 << (s16)bit);
+        t = 3;
+        t &= b;
+        t |= f << 2;
+        entry[7] = t;
+        break;
+    case 1:
+        b = entry[8];
+        f = (((b << 26) >> 26) | (1 << (s16)bit)) & 0x3F;
+        t = -0x40;
+        t &= b;
+        t |= f;
+        entry[8] = t;
+        break;
+    case 2:
+        b = *(u16 *)(entry + 8);
+        f = ((((b << 20) >> 26) | (1 << (s16)bit)) & 0x3F) << 6;
+        t = 0xFFFFF03F;
+        t &= b;
+        t |= f;
+        *(u16 *)(entry + 8) = t;
+        break;
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080E9020/sub_080E9EC4.s", void sub_080E9EC4(s16 idx, s16 mode, u16 bit))
 {
