@@ -160,7 +160,40 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 void hero_pair_finish(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner_pos(void))
+NONMATCH("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner_pos(struct HeroBody *body))
+{
+    struct World *world = gWorld;
+    struct HeroBody *body_a = &world->heroA->body;
+    struct HeroBody *body_b = &world->heroB->body;
+    struct HeroBody *partner = body->partner;
+    u32 mask;
+    u32 timer2;
+
+    step_motion(body_a);
+    step_motion(body_b);
+    if (body_a->posX >= body_b->posX)
+    {
+        set_slot_value(0xAE, -1);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 0xB, 0x2032, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+        }
+        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        {
+            sprite_set_action(body_b, 0xF, 0x2061, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+        }
+        *(s32 *)&body_a->spanA = partner->posX + (partner->ofsX << 8);
+        *(s32 *)&body_a->filler88 = partner->posY + (partner->ofsY << 8);
+        body_a->spanZ = partner->posZ + (partner->ofsZ << 8) + 0x3000;
+        timer2 = body_a->timer2;
+        mask = 0xFFFFF000;
+        body_a->timer2 = (timer2 & mask) | 1;
+        body->state = hero_a_walk_toward_partner;
+    }
+}
+END_NONMATCH
 
 void hero_a_walk_toward_partner(struct HeroBody *body)
 {
