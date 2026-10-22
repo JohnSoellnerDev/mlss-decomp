@@ -123,7 +123,56 @@ struct T3dF *t3d_f_init(struct T3dF *f);
 void t3d_node_update(struct T3dNode *node, struct Mat4 *m);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 
-ASM_FUNC("asm/code_08136260/mat4_apply_translate.s", void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z))
+static inline void mat4_copy_words(struct Mat4 *d, struct Mat4 *s)
+{
+    d->m[0] = s->m[0];
+    d->m[1] = s->m[1];
+    d->m[2] = s->m[2];
+    d->m[3] = s->m[3];
+    d->m[4] = s->m[4];
+    d->m[5] = s->m[5];
+    d->m[6] = s->m[6];
+    d->m[7] = s->m[7];
+    d->m[8] = s->m[8];
+    d->m[9] = s->m[9];
+    d->m[10] = s->m[10];
+    d->m[11] = s->m[11];
+    d->m[12] = s->m[12];
+    d->m[13] = s->m[13];
+    d->m[14] = s->m[14];
+    d->m[15] = s->m[15];
+}
+
+NONMATCH("asm/code_08136260/mat4_apply_translate.s", void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z))
+{
+    s32 kc = 0x100;
+    s32 kz = 0;
+    struct Mat4 tr;
+    struct Mat4 out;
+
+    tr.cb40 = gAppearCallback40Class;
+    tr.m[0] = kc;
+    tr.m[1] = kz;
+    tr.m[2] = kz;
+    tr.m[3] = kz;
+    tr.m[4] = kz;
+    tr.m[5] = kc;
+    tr.m[6] = kz;
+    tr.m[7] = kz;
+    tr.m[8] = kz;
+    tr.m[9] = kz;
+    tr.m[10] = kc;
+    tr.m[11] = kz;
+    tr.m[12] = x;
+    tr.m[13] = y;
+    tr.m[14] = z;
+    tr.m[15] = kc;
+    mat4_mul(&out, m, &tr);
+    mat4_copy_words(m, &out);
+    out.cb40 = gAppearCallback40Class;
+    tr.cb40 = gAppearCallback40Class;
+}
+END_NONMATCH
 
 struct T3dF *t3d_f_init(struct T3dF *f)
 {
