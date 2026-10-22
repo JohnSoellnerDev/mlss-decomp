@@ -1,6 +1,13 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct HalfBit5
+{
+    u16 lo : 5;
+    u16 bit5 : 1;
+    u16 hi : 10;
+};
+
 struct ActorPose
 {
     u8 filler0[0x11];
@@ -278,7 +285,7 @@ NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_
             parent6 &= 0x40;
             bits = child->flags77;
             bits = (bits & ~0x40) | parent6;
-            bits &= ~0x20;
+            ((struct HalfBit5 *)&bits)->bit5 = 0;
             child->flags77 = bits;
             child->handler68 = on_arrive;
             child->unk6C = obj->unk6C;
@@ -290,7 +297,7 @@ NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_
             child->targetX = obj->owner->part->targetX;
             child->targetY = obj->owner->part->targetY;
             child->targetH = obj->baseH;
-            *(u8 *)&child->flags79 |= 0x20;
+            ((struct HalfBit5 *)&*(u8 *)&child->flags79)->bit5 = 1;
             child->motionSpeed = 0x300;
             child->motionStart = 0;
             start_motion(child);
