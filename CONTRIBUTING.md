@@ -102,6 +102,12 @@ function start, calls show the relocation (the called symbol). A worked example 
 - A teardown that sets a class pointer, calls a child, then sets the base class pointer again
   and frees the object: the second half is an inlined helper. Written directly, GCC keeps the
   field address in a register across the call (`obj_teardown` in src/code_080502DC.c).
+- The same field of a global read before two calls (`obj_last_x(gWorld->focus24C)`,
+  `obj_last_y(gWorld->focus24C)`), where your C keeps the offset (`0x24C`) in a callee-saved
+  register and every other register moves up by one: read the field through a `static inline`
+  getter (`static inline void *focus_obj(void) { return gWorld->focus24C; }`), as the original
+  did (`hero_b_place_last_pose` in src/code_080BC734.c, `hero_b_fx_place_tracked` in
+  src/code_080D5E34.c).
 - A halfword/byte field is tested sign-extended (`ldrsh rX` + `cmp`) and later re-read with
   `ldrh`/`ldrb` for an update, but your C loads the `ldrh` first: read the field into an `s32`
   local (`s32 t = obj->timer; if (t != 0) obj->timer--;`). An `s16` local or a direct
