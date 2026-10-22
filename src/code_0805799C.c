@@ -130,7 +130,9 @@ NONMATCH("asm/code_0805799C/map_scene_free.s", void map_scene_free(struct MapObj
     vu16 *dma;
     u8 *sys;
     u16 zero;
+    u16 one;
 
+    one = 1;
     obj->unk18 = gMapSceneClass;
     dma = (vu16 *)REG_ADDR_DMA0SAD;
     dma[5] = dma[5] & 0xC5FF;
@@ -145,7 +147,7 @@ NONMATCH("asm/code_0805799C/map_scene_free.s", void map_scene_free(struct MapObj
     run_pending_obj_callbacks();
     *(u16 *)gUnk_02000080 = 0x7FFF;
     sys = gSys;
-    *(u16 *)(sys + 2) = *(u16 *)(sys + 2) | 1;
+    *(u16 *)(sys + 2) = *(u16 *)(sys + 2) | one;
     zero = 0;
     *(u16 *)0x02000000 = zero;
     sys[0x31] = 2;
@@ -300,7 +302,6 @@ ASM_FUNC("asm/code_0805799C/map_obj_slots_obj_state_step.s", void map_obj_slots_
 NONMATCH("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mode(struct TrackObj *obj, u8 kind, s16 dx, s16 dy))
 {
     s32 v;
-    u16 *pos;
 
     switch (kind)
     {
@@ -309,23 +310,24 @@ NONMATCH("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mo
         {
             return;
         }
-        pos = obj->baseA;
+        v = dx;
+        obj->baseA[0] = v + obj->baseA[0];
+        v = dy;
+        obj->baseB[0] = v + obj->baseB[0];
         break;
     case 1:
         if ((((struct MapStateScroll *)gUnk_03000DD0)->scroll & 0x3000) != 0x2000)
         {
             return;
         }
-        pos = &obj->baseA[1];
+        v = dx;
+        obj->baseA[1] = v + obj->baseA[1];
+        v = dy;
+        obj->baseB[1] = v + obj->baseB[1];
         break;
     default:
         return;
     }
-    v = dx;
-    pos[0] = v + pos[0];
-    pos += 3;
-    v = dy;
-    pos[0] = v + pos[0];
 }
 END_NONMATCH
 
