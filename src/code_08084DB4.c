@@ -47,6 +47,28 @@ struct TileSlotFlags
     u8 bit7 : 1;
 };
 
+struct MoveObj
+{
+    u8 filler0[0x10];
+    s32 posX;
+    s32 posY;
+    s32 posH;
+    u8 filler1C[0x7C - 0x1C];
+    u16 rate;
+    u16 timer;
+    u8 filler80[0x84 - 0x80];
+    s32 baseX;
+    s32 baseY;
+    s32 baseH;
+    u8 filler90[0x94 - 0x90];
+    s32 phase;
+    s32 unk98;
+    u8 filler9C[0xAE - 0x9C];
+    s16 velX;
+    s16 velY;
+    s16 velH;
+};
+
 NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx, u32 flag, u32 value, u32 p5, u32 p6, u32 p7))
 {
     struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
@@ -148,6 +170,7 @@ NONMATCH("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8
     u32 attr;
     u32 width;
     s32 rows;
+    s32 rowsNext;
     u32 left;
     u16 *p;
     u16 *cell;
@@ -176,19 +199,25 @@ NONMATCH("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8
         rows = slot->unk3;
         cell = *(u16 **)(obj + 0x288) + slot->pos;
         attr = ((palette & 0xF) << 12) | tile;
-        while (--rows >= 0)
+        rows--;
+        if (rows >= 0)
         {
-            next = cell + 0x20;
-            if (width != 0)
+            do
             {
-                left = width;
-                p = cell;
-                do
+                rowsNext = rows - 1;
+                next = cell + 0x20;
+                if (width != 0)
                 {
-                    *p++ = attr++;
-                } while (--left != 0);
-            }
-            cell = next;
+                    p = cell;
+                    left = width;
+                    do
+                    {
+                        *p++ = attr++;
+                    } while (--left != 0);
+                }
+                cell = next;
+                rows = rowsNext;
+            } while (rows >= 0);
         }
         insert_span(obj, slot->pos, slot->end);
     }
@@ -617,4 +646,74 @@ u32 motion_step(struct MotionObj *m)
 
 ASM_FUNC("asm/code_08084DB4/start_motion.s", void start_motion(void))
 
-ASM_FUNC("asm/code_08084DB4/unknown_code_0808645c.s", void unknown_code_0808645c(void))
+NONMATCH("asm/code_08084DB4/unknown_code_0808645c.s", u32 unknown_code_0808645c(u8 *obj))
+{
+    struct MoveObj *o = (struct MoveObj *)obj;
+    s32 tm;
+    s32 inv;
+    s32 k;
+    s32 x;
+    s32 a;
+    s32 b;
+    s32 h;
+    s32 u;
+    s32 nu;
+    s32 bh;
+
+    o->timer = o->timer - o->rate;
+    if ((s16)o->timer > 0)
+    {
+        tm = (s16)o->timer;
+        o->posX = o->baseX - ((s16)o->velX * tm) / 0x1000;
+        o->posY = o->baseY - ((s16)o->velY * tm) / 0x1000;
+        if (o->phase != 0)
+        {
+            inv = 0x4000 - tm;
+            u = o->unk98;
+            bh = o->baseH;
+            if (u < 0)
+            {
+                a = (o->phase * (0x4000 - inv)) / 0x4000 - u;
+                b = o->phase - u;
+                h = bh - (u * u) / 0x100 - (b * b) / 0x100 + (a * a) / 0x100;
+            }
+            else
+            {
+                x = (o->phase * inv) / 0x4000 - u;
+                h = bh - (x * x) / 0x100;
+            }
+        }
+        else
+        {
+            h = o->baseH - ((s16)o->velH * tm) / 0x1000;
+        }
+        o->posH = h;
+        return 0;
+    }
+    o->posX = o->baseX;
+    o->posY = o->baseY;
+    if (o->phase != 0)
+    {
+        u = o->unk98;
+        bh = o->baseH;
+        if (u < 0)
+        {
+            nu = -u;
+            b = o->phase - u;
+            h = bh - (u * u) / 0x100 - (b * b) / 0x100 + (nu * nu) / 0x100;
+        }
+        else
+        {
+            x = (o->phase << 14) / 0x4000 - u;
+            h = bh - (x * x) / 0x100;
+        }
+    }
+    else
+    {
+        h = o->baseH;
+    }
+    o->posH = h;
+    o->timer = 0;
+    return 1;
+}
+END_NONMATCH
