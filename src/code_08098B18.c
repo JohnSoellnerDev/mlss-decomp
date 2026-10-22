@@ -146,7 +146,9 @@ struct Entry
 
 struct World
 {
-    u8 filler0[0x58];
+    u8 filler0[0x0C];
+    u8 flags;
+    u8 filler0D[0x58 - 0x0D];
     struct Entry *entries[6];
     struct Hero *heroA;
     struct Hero *heroB;
@@ -165,6 +167,17 @@ extern u8 gSys[];
 extern struct LayerCtx *gModelCtx;
 extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
+
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
+static inline void *focus_obj(void)
+{
+    return gWorld->focus;
+}
 
 void sprite_set_action(struct HeroBody *body, u32 action, u32 arg, u32 extra);
 void on_arrive(struct HeroBody *body);
@@ -208,6 +221,10 @@ void start_parts_after_32(struct HeroBody *body);
 void follow_spawn_child(struct HeroBody *body);
 void follow_focus_x(struct HeroBody *body);
 s32 obj_last_x(void *obj);
+s32 obj_last_y(void *obj);
+void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
+void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
+void set_motion_start(struct HeroBody *body, u32 speed);
 void release_other_hero(struct HeroBody *body);
 void prepare_follow_focus(struct HeroBody *body);
 void follow_focus_settle(struct HeroBody *body);
@@ -243,7 +260,66 @@ void follow_spawn_child(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_08098B18/follow_focus_x.s", void follow_focus_x(struct HeroBody *body))
+void follow_focus_x(struct HeroBody *body)
+{
+    struct World *world = gWorld;
+    struct HeroBody *hero_a = &world->heroA->body;
+    struct HeroBody *hero_b = &world->heroB->body;
+    s32 roll;
+    s32 step;
+    s32 target;
+
+    {
+        s32 wflags = world->flags;
+
+        world->flags = wflags | 0x10;
+    }
+    if (body == hero_a)
+        set_body_part(body, 1, 0, -0x24, 1);
+    else
+        set_body_part(body, 2, 0, -0x24, 1);
+
+    roll = rand_below(4, mt19937_next()) + 0x10;
+    if ((u32)roll < (u32)body->clock)
+    {
+        body->clock = 0;
+        spawn_fall_particle(body);
+    }
+    body->clock++;
+
+    if ((body == hero_a && (((struct SysKeys3E *)gSys)->keys & 1) != 0)
+        || (body == hero_b && (((struct SysKeys3E *)gSys)->keys & 2) != 0))
+    {
+        body->phase -= 0x400;
+        if (body->sprite->unk21 != 2)
+            sprite_set_action(body, 2, 0, 0);
+    }
+    if (body->sprite->flags & 8)
+        sprite_set_action(body, 1, 0, 0);
+    body->phase -= 0x19;
+
+    step = (s32)(((double)(body->data->unk106 / ((body->unk20 * 0x99) / 0x100)) + 1.2) * 256.0);
+    body->posX -= step;
+    if (body->posX < body->phase)
+        body->posX = body->phase;
+
+    target = (s16)obj_last_x(focus_obj()) * 0x100 + 0xC00;
+    if (target >= body->posX)
+    {
+        body->posX = target;
+        obj_free_parts(body);
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
+        {
+            s32 y0 = body->sprite->unk2;
+            s32 x = (s16)obj_last_x(focus_obj()) - 0x30;
+            s32 y = (s16)obj_last_y(focus_obj()) + y0;
+
+            place_targets(body, x, y, 0, -1);
+            set_motion_start(body, 0x200);
+        }
+        body->state = release_other_hero;
+    }
+}
 
 void prepare_follow_focus(struct HeroBody *body)
 {
