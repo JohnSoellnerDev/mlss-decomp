@@ -126,7 +126,63 @@ void hero_b_go_to_a_speed(struct HeroBody *body)
     body->state = hero_b_step_scaled_flags;
 }
 
-ASM_FUNC("asm/code_080B55B8/hero_b_step_scaled_flags.s", void hero_b_step_scaled_flags(struct HeroBody *body))
+NONMATCH("asm/code_080B55B8/hero_b_step_scaled_flags.s", void hero_b_step_scaled_flags(struct HeroBody *body))
+{
+    struct World *world = gWorld;
+    struct Hero *hero_a = world->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct Hero *hero_b = world->heroB;
+    struct HeroBody *body_b = &hero_b->body;
+    s32 z;
+    s32 ofs_z;
+    s32 limit_a = 0x4000;
+    s32 limit_b = 0x4000;
+    s32 reached_a;
+    s32 reached_b;
+
+    step_motion_scaled(body_b);
+    z = body_b->posZ / 0x100;
+    ofs_z = hero_a->body.ofsZ;
+    if (z < ofs_z)
+    {
+        if (body_a->sprite->scale == 0x100)
+        {
+            set_slot_value(0x7C, -1);
+            if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+            {
+                sprite_set_action(body_b, 1, 0x2060, 0);
+                ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+            }
+        }
+        body_a->sprite->scale = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(z << 8, ofs_z);
+    }
+    if (limit_a > 0x7FFF)
+        limit_a = 0x7FFF;
+    reached_a = 0;
+    if (body_b->step <= limit_a)
+    {
+        if (body_b->progress >= limit_a)
+            reached_a = 1;
+    }
+    if (reached_a)
+        set_cur_flags_both(0x40000000);
+    if (limit_b > 0x7FFF)
+        limit_b = 0x7FFF;
+    reached_b = 0;
+    if (body_b->step <= limit_b)
+    {
+        if (body_b->progress >= limit_b)
+            reached_b = 1;
+    }
+    if (reached_b)
+        set_cur_flags_both(0x40000000);
+    if ((body_b->flags & 0x20) != 0)
+    {
+        effect_spawn_at(0x2F7D, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+        body->state = hero_b_go_to_partner_height_2;
+    }
+}
+END_NONMATCH
 
 void hero_b_go_to_partner_height_2(struct HeroBody *body)
 {
