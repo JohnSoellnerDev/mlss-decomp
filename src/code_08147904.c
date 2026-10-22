@@ -800,13 +800,12 @@ NONMATCH("asm/code_08147904/enemy_collide_settle.s", void enemy_collide_settle(s
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(struct Owner *owner, struct Enemy *ent, u32 *out))
+void enemy_idle_walk(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     struct Record *rec = ent->rec;
     u16 *table = ent->wanderDist;
     u16 *timer = &ent->unk1D4;
-    s32 next;
     u32 roll;
 
     if (*timer == 0)
@@ -816,13 +815,12 @@ NONMATCH("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(struct Owne
             out[0] = (u32)enemy_pose_a;
             return;
         }
-        next = rec->unk1A;
+        *timer = rec->unk1A;
     }
     else
     {
-        next = *timer - 1;
+        (*timer)--;
     }
-    *timer = next;
     if (step_pos_xy_c(ent) != 0)
     {
         return;
@@ -848,7 +846,6 @@ NONMATCH("asm/code_08147904/enemy_idle_walk.s", void enemy_idle_walk(struct Owne
     out[0] = (u32)tick_store;
     out[3] = (u32)enemy_collide_settle;
 }
-END_NONMATCH
 
 void enemy_pose_a(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
