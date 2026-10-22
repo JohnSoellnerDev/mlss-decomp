@@ -1,5 +1,12 @@
 #include "global.h"
 
+struct HalfBit6
+{
+    u16 lo : 6;
+    u16 bit6 : 1;
+    u16 hi : 9;
+};
+
 struct PairFrames
 {
     u8 count;
@@ -535,8 +542,8 @@ NONMATCH("asm/code_0803C438/set_sub_pair_action.s", void set_sub_pair_action(str
     sp = (struct PairSub **)&obj->subA;
     b = sp[1];
     a = sp[0];
-    b->flags351 |= 0x40;
-    a->flags351 |= 0x40;
+    ((struct HalfBit6 *)&b->flags351)->bit6 = 1;
+    ((struct HalfBit6 *)&a->flags351)->bit6 = 1;
     set_slot_fields(0, 0, 0x10);
     if (f != 0)
     {
