@@ -123,15 +123,15 @@ NONMATCH("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display
     u8 flag = *flagp;
     u8 *indexp;
     u8 *table;
+    s32 zero;
+    s32 value;
     u32 i;
 
     if (flag == 0)
     {
-        s32 value;
-        u8 entry;
-
         indexp = obj + 0x585;
         *indexp = 2;
+        zero = 0;
         *(u16 *)(obj + 0x58A) = 3;
         *(u16 *)(obj + 0x58C) = 2;
         *(u16 *)(obj + 0x590) = 6;
@@ -144,16 +144,17 @@ NONMATCH("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display
         *flagp = 1;
         table = obj + 0x60;
         value = *(s16 *)(table + (*indexp << 1));
-        if (value > 0x97)
+        if (value <= 0x97)
         {
-            obj[0x586] = 0xA0;
-            obj[0x587] = 0;
+            s32 base = -104;
+
+            obj[0x586] = zero;
+            obj[0x587] = (u8)(base - table[*indexp << 1]);
         }
         else
         {
-            obj[0x586] = 0;
-            entry = table[*indexp << 1];
-            obj[0x587] = (u8)(-104 - entry);
+            obj[0x586] = 0xA0;
+            obj[0x587] = zero;
         }
         gUnk_03000E08 = heap_alloc(0x500, 1, gHeapTagDisplayBufA, 0);
         gUnk_03000E0C = heap_alloc(0x500, 0, gHeapTagDisplayBufB, 0);
@@ -161,13 +162,15 @@ NONMATCH("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display
         do
         {
             u32 off = i << 2;
+            u16 *a = (u16 *)((u8 *)gUnk_03000E08 + off);
+            u16 *b = (u16 *)((u8 *)gUnk_03000E0C + off);
             u16 v = *(u16 *)(obj + 0x5A + (*indexp << 1));
 
-            *(u16 *)((u8 *)gUnk_03000E08 + off) = v;
-            *(u16 *)((u8 *)gUnk_03000E0C + off) = v;
+            b[0] = v;
+            a[0] = v;
             v = *(u16 *)(table + (*indexp << 1));
-            *(u16 *)((u8 *)gUnk_03000E08 + off + 2) = v;
-            *(u16 *)((u8 *)gUnk_03000E0C + off + 2) = v;
+            b[1] = v;
+            a[1] = v;
             i = (u16)(i + 1);
         } while (i <= 0x9F);
         update_scanline_offsets(obj);
@@ -419,7 +422,71 @@ NONMATCH("asm/code_0805C82C/init_bg_view.s", u32 init_bg_view(u8 *obj, u8 mode))
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0805C82C/map_view_transition_step.s", void map_view_transition_step(void))
+NONMATCH("asm/code_0805C82C/map_view_transition_step.s", u32 map_view_transition_step(u8 *obj))
+{
+    const u8 *bits;
+    u8 *buf;
+    u32 k;
+
+    if (obj[0xA] == 0)
+        return 0;
+    bits = gBgViewTable[obj[0xB]].unk8;
+    k = 0;
+    buf = *(u8 **)(obj + 4);
+    do
+    {
+        u32 step = *(u16 *)(obj + 8);
+        u32 next = k + 1;
+
+        if (k <= step)
+        {
+            u32 n = (u16)(step - k);
+            u32 row;
+            s32 three;
+            u8 j;
+
+            if (n > 0xF)
+                n = 0xF;
+            j = 0;
+            three = 3;
+            row = k << 5;
+            do
+            {
+                    s32 v = (bits[((j >> 2) << 4) + n] >> ((three & ~j) << 1)) & three;
+                    if (v == 0)
+                        *(*(u8 **)(obj + 4) + (row + j)) = 0;
+                    else if (v == 1)
+                        *(*(u8 **)(obj + 4) + (row + j)) = 0x90;
+                    else if (v == 2)
+                        *(*(u8 **)(obj + 4) + (row + j)) = 9;
+                    else if (v == 3)
+                        *(*(u8 **)(obj + 4) + (row + j)) = 0x99;
+                j = (u8)(j + 1);
+                buf = *(u8 **)(obj + 4);
+            } while (j <= 0x1F);
+        }
+        k = (u16)next;
+    } while (k <= 0xF);
+    dma_copy_or_queue(buf, (void *)0x06003E00, 0x200, 0x20, 0);
+    {
+        u32 step = *(u16 *)(obj + 8) + 1;
+
+        *(u16 *)(obj + 8) = step;
+        if ((u16)step > 0x20)
+        {
+            obj[0xA] = 0;
+            if (*(void **)(obj + 4) != NULL)
+                heap_free_a(*(void **)(obj + 4));
+            if (*(void **)obj != NULL)
+                heap_free_a(*(void **)obj);
+            if (gBgViewTable[obj[0xB]].unkC != 0)
+                gUnk_02000008 = 0x1508;
+            return 0;
+        }
+    }
+    return 1;
+}
+END_NONMATCH
 
 void map_obj_free_bufs(u8 *obj)
 {
@@ -444,6 +511,7 @@ void clear_byte_0a(u8 *obj)
 }
 
 ASM_FUNC("asm/code_0805C82C/init_map_obj.s", void init_map_obj(void))
+
 
 void upload_map_palettes(u8 *obj);
 void anim_slots_load(struct MapLoaderObj *obj);
@@ -491,6 +559,7 @@ NONMATCH("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(u8 
 END_NONMATCH
 
 ASM_FUNC("asm/code_0805C82C/load_layer_columns.s", void load_layer_columns(void))
+
 
 NONMATCH("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(u8 *obj))
 {
@@ -562,6 +631,7 @@ NONMATCH("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a,
 END_NONMATCH
 ASM_FUNC("asm/code_0805C82C/map_anim_slots_update.s", void map_anim_slots_update(u8 *obj))
 
+
 void anim_slots_clear(struct MapLoaderObj *obj)
 {
     u8 i;
@@ -585,6 +655,7 @@ void anim_slots_clear(struct MapLoaderObj *obj)
 }
 
 ASM_FUNC("asm/code_0805C82C/anim_slots_load.s", void anim_slots_load(struct MapLoaderObj *obj))
+
 
 extern const void *gAnimListTable[];
 void map_anim2_start_0805E018(struct MapLoaderObj *obj, u16 animId)
