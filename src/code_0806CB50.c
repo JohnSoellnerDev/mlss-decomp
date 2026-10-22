@@ -316,7 +316,71 @@ void actor_spawn_lift_child(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806CB50/actor_random_partner_link.s", void actor_random_partner_link(struct ActorObj *obj))
+NONMATCH("asm/code_0806CB50/actor_random_partner_link.s", void actor_random_partner_link(struct ActorObj *obj))
+{
+    s32 mask;
+    s32 found;
+    s32 coin;
+    u8 *aFlags;
+    u8 *partnerA;
+    u8 *partnerB;
+    struct ActorObj *baseA;
+    struct ActorObj *baseB;
+    struct ActorPart *part;
+
+    partnerA = gWorld->partners[6];
+    baseA = (struct ActorObj *)(partnerA + 8);
+    partnerB = gWorld->partners[7];
+    baseB = (struct ActorObj *)(partnerB + 8);
+    found = 0;
+    aFlags = partnerA + 0x7E;
+    mask = 6;
+    do
+    {
+        u8 *bFlags;
+        s32 ok;
+
+        coin = mt19937_next() & 1;
+        if (coin == 0)
+        {
+            ok = (mask & *aFlags) == 2;
+            bFlags = (u8 *)baseB + 0x76;
+        }
+        else
+        {
+            bFlags = (u8 *)baseB + 0x76;
+            ok = (mask & *bFlags) == 2;
+        }
+        if (ok)
+        {
+            found = 1;
+        }
+        if ((mask & *bFlags) != 2)
+        {
+            if ((mask & *aFlags) != 2)
+            {
+                obj_release(obj);
+                return;
+            }
+        }
+    } while (found == 0);
+    if (coin == 0)
+    {
+        obj->targetX = baseA->part->targetX - obj->baseX;
+        obj->targetY = baseA->part->targetY - obj->baseY;
+    }
+    else
+    {
+        obj->targetX = baseB->part->targetX - obj->baseX;
+        obj->targetY = baseB->part->targetY - obj->baseY;
+    }
+    obj->dx = obj->baseX / 0x100;
+    obj->dy = obj->baseY / 0x100;
+    obj->targetH = obj->baseH;
+    obj->paramA0 = 0;
+    obj->state = actor_linear_wave_step;
+}
+END_NONMATCH
 
 void actor_linear_wave_step(struct ActorObj *obj)
 {
