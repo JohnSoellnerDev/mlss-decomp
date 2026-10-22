@@ -233,6 +233,11 @@ extern u8 gUnk_02000080[];
 u8 sub_obj_running(void *obj);
 void obj_draw_tile_rows(void *disp, void *rows, void *palette, u32 res, u32 height, u32 p30, u32 zero);
 
+static inline __typeof__(gWorld->display) get_world_display(void)
+{
+    return gWorld->display;
+}
+
 NONMATCH("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_objects_draw_obj_tiles(u32 col, u32 row))
 {
     if (gWorld->flags0C & 4)
@@ -259,7 +264,7 @@ NONMATCH("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_object
             struct DispObj *disp = gWorld->display;
             u16 res = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(disp->unk4A << 5, disp->unk34);
 
-            disp = gWorld->display;
+            disp = get_world_display();
             obj_draw_tile_rows(disp, disp->rows, gUnk_02000080, res, disp->unk36, disp->unk30, 0);
         }
         ((struct SysHalves *)&gSys)->w2 |= ((struct DispObj *)gWorld->display)->unk36;
