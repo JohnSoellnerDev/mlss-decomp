@@ -53,6 +53,24 @@ struct Bit6Byte
     u8 rest : 1;
 };
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, s32 v, ByteArg f);
+
+struct ReinitBlock
+{
+    u16 id;
+    u16 unk2;
+    u32 flags;
+    u8 b8;
+    u8 filler9[3];
+    s32 x;
+    s32 y;
+    s32 z;
+    s8 v;
+    u8 filler19[3];
+    s32 w;
+};
+
 void obj_set_state(void *obj, u32 state);
 void obj_sync_sub_slot(void *obj, u32 value);
 void obj_set_cell_coord(void *ent, u32 cell, u32 arg);
@@ -744,11 +762,66 @@ ASM_FUNC("asm/code_080F0C04/write_packed_entry.s", void write_packed_entry(void)
 
 ASM_FUNC("asm/code_080F0C04/start_move_params.s", void start_move_params(void))
 
-ASM_FUNC("asm/code_080F0C04/reinit_object_block.s", void reinit_object_block(void))
+u32 reinit_object_block(struct OwnerObj *owner, void *unused, struct ReinitBlock *rec)
+{
+    s32 flags;
+    s32 one;
+    rec->x = rec->x << 8;
+    rec->y = rec->y << 8;
+    rec->z = rec->z << 8;
+    if (rec->w == -1)
+        rec->w = 0;
+    obj_reinit(owner->list, rec->id, (flags = rec->flags) & (one = 1), rec->b8, rec->x, rec->y, rec->z, 0, rec->w, rec->v, (u8)((flags >> 1) & one));
+    return 0;
+}
 
-ASM_FUNC("asm/code_080F0C04/reinit_object_block_scaled.s", void reinit_object_block_scaled(void))
 
-ASM_FUNC("asm/code_080F0C04/store_param_block.s", void store_param_block(void))
+u32 reinit_object_block_scaled(struct OwnerObj *owner, void *unused, struct ReinitBlock *rec)
+{
+    s32 flags;
+    s32 one;
+    rec->x = rec->x << 12;
+    rec->y = rec->y << 12;
+    rec->z = (rec->z << 11) / 5;
+    if (rec->w == -1)
+        rec->w = 0;
+    obj_reinit(owner->list, rec->id, (flags = rec->flags) & (one = 1), rec->b8, rec->x, rec->y, rec->z, 0, rec->w, rec->v, (u8)((flags >> 1) & one));
+    return 0;
+}
+
+
+NONMATCH("asm/code_080F0C04/store_param_block.s", u32 store_param_block(void *unused0, u8 *obj, void *unused2, u32 *block))
+{
+    s32 mode;
+    s32 v;
+    if (*block++ != 0)
+        obj = *(u8 **)(obj + 0x344);
+    mode = block[0];
+    if ((mode & 1) != 0)
+    {
+        block[1] <<= 4;
+        block[2] <<= 4;
+        block[3] <<= 4;
+    }
+    v = mode;
+    block++;
+    if (v >= 0)
+    {
+        if (v <= 1)
+        {
+            *(u32 *)(obj + 0x2BC) = *block++;
+            *(u32 *)(obj + 0x2C0) = *block++;
+            *(u32 *)(obj + 0x2C8) = *block;
+        }
+        else if (v <= 3)
+        {
+            *(u32 *)(obj + 0x2CC) = *block++;
+            *(u32 *)(obj + 0x2D0) = *block;
+        }
+    }
+    return 1;
+}
+END_NONMATCH
 
 void sprites_obj_set_move_target(void *list, u32 type, u32 one, s32 x, s32 y, s32 z);
 struct ScaledPair
@@ -760,16 +833,22 @@ struct ScaledPair
 
 NONMATCH("asm/code_080F0C04/store_scaled_pair.s", u32 store_scaled_pair(void *unused0, u8 *obj, void *unused2, u32 *block))
 {
-    u8 *base = obj;
-    u32 flags = block[0];
+    u32 flags;
+    u8 *base;
     u32 scale;
     struct ScaledPair *rec;
+
+    flags = block[0];
+    base = obj;
     if ((flags & 2) != 0)
-        base = *(u8 **)(obj + 0x344);
-    scale = (flags & 1) ? 0x10 : 1;
+        base = *(u8 **)(base + 0x344);
+    block++;
+    scale = 1;
+    if ((flags & 1) != 0)
+        scale = 0x10;
     rec = (struct ScaledPair *)(base + 0x100);
-    rec->unk30 = block[1] * scale;
-    rec->unk32 = block[2] * scale;
+    rec->unk30 = *block++ * scale;
+    rec->unk32 = *block * scale;
     return 1;
 }
 END_NONMATCH
@@ -1074,7 +1153,30 @@ u32 obj_request_halfword(void *unused0, void *obj, void *unused2, u16 *block)
     return 1;
 }
 
-ASM_FUNC("asm/code_080F0C04/obj_state_entry.s", void obj_state_entry(void))
+NONMATCH("asm/code_080F0C04/obj_state_entry.s", u32 obj_state_entry(struct OwnerObj *owner, void *unused, u32 *block))
+{
+    struct Entity *obj;
+    u8 *addr;
+    s32 mask;
+    obj = ((struct Entity **)((u8 *)owner->list + 0x28))[block[0]];
+    obj_set_state(obj, 1);
+    obj_sync_sub_slot(obj, block[3]);
+    obj_set_cell_coord(obj, block[1], 0);
+    if (block[3] != 0)
+    {
+        addr = &obj->unk215;
+        mask = -2;
+    }
+    else
+    {
+        addr = &obj->unk214;
+        mask = 0x7F;
+    }
+    *addr = mask & *addr;
+    *(u16 *)((u8 *)obj + 0xF8) |= 0x200;
+    return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, (u8 *)obj + 0x58, obj->sub294, (u8)block[3], (u8)block[2]);
+}
+END_NONMATCH
 
 NONMATCH("asm/code_080F0C04/obj_state_direct.s", u32 obj_state_direct(struct OwnerObj *owner, struct Entity *obj, u8 *dst, s32 *block))
 {
@@ -1231,7 +1333,7 @@ NONMATCH("asm/code_080F0C04/obj_sub_pair_command.s", u32 obj_sub_pair_command(st
         u32 flags = owner->list->unk208;
         if (((flags << 29) >> 31) != value)
         {
-            if ((flags & 0x10) != 0)
+            if (((flags >> 4) & 1) != 0)
                 swap_sub_pair(owner->list, block[1]);
             else
                 start_sub_pair_step(owner->list, block[1]);
@@ -1259,8 +1361,9 @@ NONMATCH("asm/code_080F0C04/obj_state_read_command.s", u32 obj_state_read_comman
     obj->unk214 &= 0x7F;
     {
         struct SubObj *sub = obj->sub294;
-        u32 bit = ((u32)sub->unk11 << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = block[2] ^ bit;
+        u8 byte = sub->unk11;
+        u32 bit = ((u32)byte << 25) >> 31;
+        ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ block[2];
     }
     return 1;
 }
@@ -1269,7 +1372,7 @@ END_NONMATCH
 NONMATCH("asm/code_080F0C04/cmd_set_obj_state.s", u32 cmd_set_obj_state(struct OwnerObj *owner, struct Entity *obj, u8 *dst, u32 *args))
 {
     u8 *flags;
-    u32 byte;
+    u8 byte;
     s32 mask;
     obj_set_state(obj, 1);
     obj_sync_sub_slot(obj, args[2]);
@@ -1277,14 +1380,14 @@ NONMATCH("asm/code_080F0C04/cmd_set_obj_state.s", u32 cmd_set_obj_state(struct O
     if (args[2] != 0)
     {
         flags = (u8 *)obj + 0x215;
-        byte = *flags;
         mask = -2;
+        byte = *flags;
     }
     else
     {
         flags = (u8 *)obj + 0x214;
-        byte = *flags;
         mask = 0x7F;
+        byte = *flags;
     }
     *flags = mask & byte;
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, obj->sub294, (u8)args[2], (u8)args[1]);
@@ -1302,7 +1405,7 @@ NONMATCH("asm/code_080F0C04/cmd_place_object_toggle.s", u32 cmd_place_object_tog
     {
         struct SubObj *sub = obj->sub294;
         u32 bit = ((u32)sub->unk11 << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ cmd[3];
+        ((struct Bit6Byte *)&sub->unk11)->bit6 = cmd[3] ^ bit;
     }
     return 1;
 }
@@ -1344,14 +1447,15 @@ u32 cmd_commit_or_activate(void *unused0, void *obj, void *unused2, u32 *kind)
 
 NONMATCH("asm/code_080F0C04/cmd_toggle_flag.s", u32 cmd_toggle_flag(struct OwnerObj *owner, struct Entity *obj, void *unused, u32 *block))
 {
-    if (block[0] != 0x3F)
-        obj = owner->list->entries[block[0]];
+    u32 index = block[0];
+    struct Bit6Byte *bits;
+    u8 byte;
+    if (index != 0x3F)
+        obj = ((struct Entity **)((u8 *)owner->list + 0x28))[index];
     block++;
-    {
-        struct SubObj *sub = obj->sub294;
-        u32 bit = ((u32)sub->unk11 << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ block[0];
-    }
+    bits = (struct Bit6Byte *)&obj->sub294->unk11;
+    byte = bits->bit6;
+    bits->bit6 = byte ^ block[0];
     return 1;
 }
 END_NONMATCH
