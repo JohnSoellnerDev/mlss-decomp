@@ -80,8 +80,10 @@ void sound_dma_reset(void);
 void sound_driver_init(void);
 u16 eeprom_write_block_wait(u16 idx, void *data);
 u32 eeprom_verify(u16 idx, void *data);
+u16 eeprom_read_block(u16 idx, void *data);
 extern u8 gUnk_03001004;
 extern u8 gUnk_03001006[];
+extern u8 *gUnk_03001BD0;
 
 NONMATCH("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
 {
@@ -144,7 +146,61 @@ ASM_FUNC("asm/code_08124F38/eeprom_save_slots.s", void eeprom_save_slots(void))
 
 ASM_FUNC("asm/code_08124F38/save_game_flush_dma_off.s", void save_game_flush_dma_off(void))
 
-ASM_FUNC("asm/code_08124F38/save_game_flush_sound_off.s", void save_game_flush_sound_off(void))
+NONMATCH("asm/code_08124F38/save_game_flush_sound_off.s", void save_game_flush_sound_off(u8 *buf, u16 block))
+{
+    u16 ie[2];
+    u8 unused[8];
+    u8 slots[2];
+    s32 i;
+    s32 n;
+    u8 *p;
+    u32 flags;
+    u32 mask;
+    u8 *sq;
+
+    ie[0] = *(u16 *)0x04000200;
+    *(u16 *)0x04000208 = 0;
+    *(u16 *)0x04000200 = 0;
+    sq = slots;
+    flags = 0;
+    if ((u8)slot_bit_test(0) == 1)
+        flags = 1;
+    sq[0] = ((struct SysSlots *)gSys)->songSlot[0];
+    slot_reset(0);
+    if ((u8)slot_bit_test(1) == 1)
+        flags |= 2;
+    sq[1] = ((struct SysSlots *)gSys)->songSlot[1];
+    slot_reset(1);
+    sound_dma_reset();
+    mask = flags;
+    n = 0x400;
+    if ((block & 7) != 0)
+        n = 0x3FF - (block >> 3);
+    else
+        n -= (block >> 3);
+    p = buf;
+    for (i = n; i < *(u16 *)(gUnk_03001BD0 + 4); i++)
+    {
+        eeprom_write_block_wait(i, p);
+        p += 8;
+    }
+    p = buf;
+    for (i = n; i < *(u16 *)(gUnk_03001BD0 + 4); i++)
+    {
+        eeprom_verify(i, p);
+        p += 8;
+    }
+    sound_driver_init();
+    if (mask != 0)
+    {
+        if (mask & 1)
+            slot_set_mode(0, 0xFF, 0x1E);
+        if (mask & 2)
+            slot_set_mode(1, 0xFF, 0x1E);
+    }
+    *(u16 *)0x04000200 = ie[0];
+}
+END_NONMATCH
 
 NONMATCH("asm/code_08124F38/eeprom_write_block_muted.s", u16 eeprom_write_block_muted(u32 unused0, u32 unused1, u16 block))
 {
@@ -153,6 +209,9 @@ NONMATCH("asm/code_08124F38/eeprom_write_block_muted.s", u16 eeprom_write_block_
     s32 i;
     u32 flags;
     u8 *sys;
+    u8 *slots;
+    vu16 *ieReg;
+    vu16 *imeReg;
 
     ie[0] = *(u16 *)0x04000200;
     *(u16 *)0x04000208 = 0;
@@ -160,15 +219,16 @@ NONMATCH("asm/code_08124F38/eeprom_write_block_muted.s", u16 eeprom_write_block_
     if (block == 0)
     {
         sys = gSys;
-        flags = 0;
         sys[0x888] |= 0x40;
+        slots = gUnk_03001006;
+        flags = 0;
         if ((u8)slot_bit_test(0) == 1)
             flags = 1;
-        gUnk_03001006[0] = ((struct SysSlots *)sys)->songSlot[0];
+        slots[0] = ((struct SysSlots *)sys)->songSlot[0];
         slot_reset(0);
         if ((u8)slot_bit_test(1) == 1)
             flags |= 2;
-        gUnk_03001006[1] = ((struct SysSlots *)sys)->songSlot[1];
+        slots[1] = ((struct SysSlots *)sys)->songSlot[1];
         slot_reset(1);
         sound_dma_reset();
         gUnk_03001004 = flags;
