@@ -199,7 +199,64 @@ struct NodeDesc
     u32 unkC;
 };
 
-ASM_FUNC("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_objects_draw_obj_tiles(void))
+struct DispObj
+{
+    u8 filler0[0x1C];
+    u8 *rows;
+    u8 filler20[0x30 - 0x20];
+    u16 unk30;
+    u8 filler32[0x34 - 0x32];
+    u16 unk34;
+    u16 unk36;
+    u8 filler38[0x4A - 0x38];
+    u16 unk4A;
+};
+
+struct SysHalves
+{
+    u16 w0;
+    u16 w2;
+};
+
+extern u8 gUnk_02000080[];
+u8 sub_obj_running(void *obj);
+void obj_draw_tile_rows(void *disp, void *rows, void *palette, u32 res, u32 height, u32 p30, u32 zero);
+
+NONMATCH("asm/code_0807ED70/sprite_objects_draw_obj_tiles.s", void sprite_objects_draw_obj_tiles(u32 col, u32 row))
+{
+    if (gWorld->flags0C & 4)
+    {
+        if (sub_obj_running(gWorld->display) == 1)
+        {
+            u16 mark = ((struct DispObj *)gWorld->display)->unk34;
+
+            sub_0811733C(gWorld->display, 1);
+            ((struct DispObj *)gWorld->display)->unk34 = mark;
+        }
+        else
+        {
+            u8 busy = sub_obj_running(gWorld->display);
+            u16 res;
+
+            if (busy != 0)
+                return;
+            res = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((row << 8) + ((s32)col / 2), col);
+            sub_08115F54(gWorld->display, 4, 0, res, 0xFF, busy, busy, busy);
+        }
+        ((struct DispObj *)gWorld->display)->unk4A = row;
+        {
+            struct DispObj *disp = gWorld->display;
+            u16 res = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(disp->unk4A << 5, disp->unk34);
+
+            disp = gWorld->display;
+            obj_draw_tile_rows(disp, disp->rows, gUnk_02000080, res, disp->unk36, disp->unk30, 0);
+        }
+        ((struct SysHalves *)&gSys)->w2 |= ((struct DispObj *)gWorld->display)->unk36;
+        sub_08117380(gWorld->display);
+        gWorld->flags0C |= 2;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0807ED70/set_body_part.s", void set_body_part(void))
 void obj_free_parts(struct SpriteObj *obj)
