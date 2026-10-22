@@ -670,8 +670,7 @@ NONMATCH("asm/code_08137B08/obj_try_start_jump.s", void obj_try_start_jump(struc
         else
         {
             flags = &obj->unk2B6;
-            value = *flags;
-            value |= 0x80;
+            value = *flags | 0x80;
             mask = 0x40;
         }
         *flags = value | mask;
@@ -713,8 +712,7 @@ NONMATCH("asm/code_08137B08/obj_flags_2b6_update.s", void obj_flags_2b6_update(s
         else
         {
             flags = &obj->unk2B6;
-            value = *flags;
-            value |= 0x80;
+            value = *flags | 0x80;
             mask = 0x40;
         }
         *flags = value | mask;
