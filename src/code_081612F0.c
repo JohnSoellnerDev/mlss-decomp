@@ -467,7 +467,7 @@ void effect_release_cls980(struct EffectObj *obj, u32 kind)
 NONMATCH("asm/code_081612F0/effect_ctor_cls980.s", struct EffectObj *effect_ctor_cls980(struct EffectObj *obj, u8 kind, void *data))
 {
     struct EffectObj *child;
-    vu16 *p;
+    u16 *p;
 
     task_insert(obj, kind, data);
     obj->unk18 = (s32)gClassE980;
@@ -481,7 +481,7 @@ NONMATCH("asm/code_081612F0/effect_ctor_cls980.s", struct EffectObj *effect_ctor
     obj->unk28 = 0;
     obj->unk40 = 0;
     obj->unk44 = 0;
-    p = (vu16 *)gUnk_02000050;
+    p = (u16 *)gUnk_02000050;
     *p = 0xdf;
     p += 2;
     *p = 0x1f;
