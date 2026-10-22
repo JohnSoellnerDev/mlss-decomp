@@ -117,6 +117,7 @@ static inline void set_bit1_26A(struct PairObj *obj, u32 v)
 
 NONMATCH("asm/code_08039A14/sub_08039A14.s", void sub_08039A14(struct PairObj *obj))
 {
+    s32 idB = 0x1026;
     struct PairPart **slot;
     struct PairPart **pa;
     struct PairPart **pb;
@@ -159,7 +160,7 @@ NONMATCH("asm/code_08039A14/sub_08039A14.s", void sub_08039A14(struct PairObj *o
     v &= -8;
     v |= 4;
     (*pb)->state214 = v;
-    obj_set_id(*pb, 0x1026);
+    obj_set_id(*pb, idB);
 
     (*pa)->sprite[0x20] = 8;
     (*pa)->field239 = 8;
@@ -216,6 +217,7 @@ ASM_FUNC("asm/code_08039A14/pair_b_state_90_9f_step.s", void pair_b_state_90_9f_
 
 NONMATCH("asm/code_08039A14/init_sub_pair.s", void init_sub_pair(struct PairObj *obj))
 {
+    s32 bit3 = 0x08;
     struct PairPart *a;
     struct PairPart *b;
     s32 anim;
@@ -248,7 +250,7 @@ NONMATCH("asm/code_08039A14/init_sub_pair.s", void init_sub_pair(struct PairObj 
 
     obj->field26E = 0;
     obj->flags20B |= 0x80;
-    obj->flags20A |= 0x08;
+    obj->flags20A |= bit3;
 
     ((struct Lo3Bits *)&obj->subs[0]->cell24)->lo3 = ((struct Lo3Bits *)&obj->subs[1]->cell24)->lo3;
 
@@ -281,6 +283,9 @@ NONMATCH("asm/code_08039A14/shift_sub_pair_frames.s", void shift_sub_pair_frames
     struct PairPart **pa;
     struct PairPart **pb;
     u8 *flags;
+    u8 *fa;
+    u8 *fb;
+    u8 zero;
 
     flags = &obj->flags208;
     *flags |= 0x10;
@@ -292,18 +297,21 @@ NONMATCH("asm/code_08039A14/shift_sub_pair_frames.s", void shift_sub_pair_frames
     obj_shift_state_slots(*slot);
     advance_anim_frame(obj, *slot, ((u32)obj->flags208 << 27) >> 31, 0);
     pb = &obj->subs[1];
+    fb = (*pb)->frames;
     pa = &obj->subs[0];
-    (*pa)->frames[0] = 0x12;
-    (*pb)->frames[0] = 0x12;
+    fa = (*pa)->frames;
+    fa[0] = 0x12;
+    fb[0] = 0x12;
+    zero = 0;
     (*pa)->state4 = 0xA0;
     (*pb)->state4 = 0xA0;
     (*pa)->flags358 |= 0x08;
     (*pb)->flags358 |= 0x08;
 
     (*pa)->frames[0x12] = (*pa)->frames[0x10];
-    (*pa)->frames[0x10] = 0;
+    (*pa)->frames[0x10] = zero;
     (*pb)->frames[0x15] = (*pb)->frames[0x11];
-    (*pb)->frames[0x11] = 0;
+    (*pb)->frames[0x11] = zero;
 
     ((struct Bit1 *)flags)->bit0 = 0;
     *(u32 *)flags = (*(u32 *)flags & 0xFFFE7FFF) | 0x10000;
@@ -339,6 +347,7 @@ void probe_sub_pair_target(struct PairObj *obj, u8 flag)
 
 NONMATCH("asm/code_08039A14/clear_sub_pair.s", void clear_sub_pair(struct PairObj *obj))
 {
+    s32 idB = 0x1001;
     struct PairPart **pa;
     struct PairPart **pb;
     u8 *fa;
@@ -382,7 +391,7 @@ NONMATCH("asm/code_08039A14/clear_sub_pair.s", void clear_sub_pair(struct PairOb
     (*pa)->frames[0x12] = 0xFF;
     (*pb)->frames[0x11] = (*pb)->frames[0x15];
     (*pb)->frames[0x15] = -1;
-    obj_set_id(*pb, 0x1001);
+    obj_set_id(*pb, idB);
     obj_set_id(*pa, 0x1002);
     follow_anchor(obj, 1);
 }
