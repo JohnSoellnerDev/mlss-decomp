@@ -189,7 +189,7 @@ NONMATCH("asm/code_0815CA80/obj_init_e620.s", u32 obj_init_e620(struct E620Obj *
     struct ChildSprite *child;
     u32 zero;
     s32 none;
-    u32 index;
+    u8 index;
     u32 bits;
     s32 cur;
 
@@ -210,7 +210,7 @@ NONMATCH("asm/code_0815CA80/obj_init_e620.s", u32 obj_init_e620(struct E620Obj *
         obj_load_record(obj->child34, 0x30, none, 0, zero);
     }
     sprite_update_cd0(obj->child34);
-    obj->child34->unk12 = obj->child34->unk12 | 0x20;
+    ((struct SprBits12 *)obj->child34)->bit5 = 1;
     sprite = obj_get_sprite(obj);
     obj->child34->unk0 = sprite->x;
     sprite = obj_get_sprite(obj);
@@ -218,7 +218,9 @@ NONMATCH("asm/code_0815CA80/obj_init_e620.s", u32 obj_init_e620(struct E620Obj *
     obj->child34->unkE = 0x13;
     sprite = obj_get_sprite(obj);
     child = obj->child34;
-    bits = ((u32)sprite->flags1F << 30) >> 30;
+    bits = sprite->flags1F;
+    bits = bits << 30;
+    bits = bits >> 30;
     cur = ((u8 *)child)[0x1F];
     cur = (cur & -4) | bits;
     ((u8 *)child)[0x1F] = cur;
@@ -236,11 +238,14 @@ NONMATCH("asm/code_0815CA80/obj_init_e620.s", u32 obj_init_e620(struct E620Obj *
     ((u8 *)child)[0x1F] = cur;
     sprite = obj_get_sprite(obj);
     child = obj->child34;
-    bits = (sprite->flags1F >> 6) << 6;
+    bits = sprite->flags1F;
+    bits = bits >> 6;
+    bits = bits << 6;
     cur = ((u8 *)child)[0x1F];
     cur = (cur & 0x3F) | bits;
     ((u8 *)child)[0x1F] = cur;
     return (u32)obj;
+
 }
 END_NONMATCH
 
@@ -293,6 +298,11 @@ NONMATCH("asm/code_0815CA80/obj_cmd_drop.s", u32 obj_cmd_drop(struct MotionObj *
 }
 END_NONMATCH
 
+static inline void *spawn_5008(void)
+{
+    return create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+}
+
 NONMATCH("asm/code_0815CA80/sprite_group4_init.s", struct SpriteGroup *sprite_group4_init(struct SpriteGroup *g))
 {
     u16 k;
@@ -307,34 +317,34 @@ NONMATCH("asm/code_0815CA80/sprite_group4_init.s", struct SpriteGroup *sprite_gr
     g->unk1D = 0;
     g->unk10 = 0xE800;
     g->unk14 = 0x1400;
-    g->child0 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    g->child0 = spawn_5008();
     obj_load_record(g->child0, 0xA, -1, 0, 0);
     sprite_update_cd0(g->child0);
     g->child0->unk0 = 0xD8;
-    k = 0x10;
-    g->child0->unk2 = k;
-    g->child4 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    g->child0->unk2 = k = 0x10;
+    g->child4 = spawn_5008();
     obj_load_record(g->child4, 0xA, -1, 0, 0);
     sprite_update_cd0(g->child4);
     g->child4->unk0 = 0xE0;
     g->child4->unk2 = k;
-    g->child8 = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    g->child8 = spawn_5008();
     obj_load_record(g->child8, 0xA, -1, 0, 0);
     sprite_update_cd0(g->child8);
     g->child8->unk0 = 0xE8;
     g->child8->unk2 = k;
-    g->childC = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
+    g->childC = spawn_5008();
     obj_load_record(g->childC, 0x26, -1, 0, 0);
     sprite_update_cd0(g->childC);
     g->childC->unk0 = 0xFFF0;
     g->childC->unk2 = 0xFFF0;
     return g;
+
 }
 END_NONMATCH
 
 NONMATCH("asm/code_0815CA80/obj_update_sprites_e130.s", void obj_update_sprites_e130(struct SpriteGroup *obj))
 {
-    s32 clearMask = 0xFFFE;
+    s32 clearMask;
     struct ChildSprite *sa;
     struct ChildSprite *sb;
     struct ChildSprite *sc;
@@ -381,6 +391,7 @@ NONMATCH("asm/code_0815CA80/obj_update_sprites_e130.s", void obj_update_sprites_
             obj->childC->unk0 = 0xFFF0;
             obj->childC->unk2 = 0xFFF0;
             obj->unk1C = 4 - obj->unk1C;
+            clearMask = 0xFFFE;
             obj->child0->unk0 = obj->unk1C + clearMask + obj->child0->unk0;
             obj->child4->unk0 = obj->unk1C + clearMask + obj->child4->unk0;
             obj->child8->unk0 = obj->unk1C + clearMask + obj->child8->unk0;
@@ -403,7 +414,8 @@ NONMATCH("asm/code_0815CA80/obj_update_sprites_e130.s", void obj_update_sprites_
                 obj->unk1D = obj->unk1D + 1;
                 base = obj->unk10;
                 cos = gCosineTable[obj->unk1D];
-                obj->childC->unk0 = (base + (cos / 0x40) * 8) >> 8;
+                base = base + (cos / 0x40) * 8;
+                obj->childC->unk0 = base >> 8;
                 obj->childC->unk2 = obj->unk14 >> 8;
             }
         }
