@@ -1,6 +1,13 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct ByteBit5
+{
+    u8 lo : 5;
+    u8 bit5 : 1;
+    u8 hi : 2;
+};
+
 struct EntrySlot
 {
     struct SpriteEntry *sprite;
@@ -425,7 +432,7 @@ NONMATCH("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(struct Sc
         ((struct KeyRegs *)gSys)->held40 = ((struct KeyRegs *)gSys)->raw2C & block;
         ((struct KeyRegs *)gSys)->held42 = ((struct KeyRegs *)gSys)->raw2E & block;
     }
-    obj->keyFlags |= 0x20;
+    ((struct ByteBit5 *)&obj->keyFlags)->bit5 = 1;
 }
 END_NONMATCH
 
