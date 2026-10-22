@@ -70,6 +70,10 @@ struct WorldSlotTable
 extern u8 *gWorld;
 extern void (*gMemRoutines)(u32 a, void *b, u32 c);
 extern const u8 gTextEntryTag[];
+extern const u8 gLayerEntryTag[];
+extern u8 *gCurObj;
+void *init_obj_slot_table(void *block);
+void flags_vars_setup_bg_layer(void *holder, u32 zero, u32 flags, void *block, u32 a4, u32 a5, void *a6, void *a7, void *a8);
 extern u8 gSys[];
 extern u8 *gWorkBuf;
 void state_apply_hero_stats(struct OwnerObj *owner);
@@ -141,6 +145,13 @@ u32 cmd_slot_flag_20(void *obj, u32 unused, u32 *p)
     return 1;
 }
 
+struct CurFlags28
+{
+    u8 lo2 : 2;
+    u8 mid4 : 4;
+    u8 hi2 : 2;
+};
+
 struct Lo7Bits
 {
     u8 lo7 : 7;
@@ -151,7 +162,7 @@ NONMATCH("asm/code_080F8900/cmd_slot_set_fields.s", u32 cmd_slot_set_fields(stru
 {
     u8 *entry = ((struct WorldSlotTable *)gWorld)->slots[*p++];
     u32 v = *p++;
-    u32 low;
+    u8 low;
     u32 hi;
     u8 *flags;
 
@@ -170,7 +181,7 @@ NONMATCH("asm/code_080F8900/obj_slot_set_fields.s", u32 obj_slot_set_fields(stru
 {
     u8 *entry = ((struct WorldSlotTable *)gWorld)->slots[((u32)node[0xFD] << 28) >> 28];
     u32 v = *p++;
-    u32 low;
+    u8 low;
     u32 hi;
     u8 *flags;
 
@@ -213,6 +224,8 @@ u32 cmd_call_cf0(void *obj, u32 unused, s32 *p)
 
 NONMATCH("asm/code_080F8900/cmd_obj_chain.s", u32 cmd_obj_chain(struct OwnerObj *obj, u8 *dst, u32 *p))
 {
+    u32 bitv = 0x200;
+
     switch (p[0])
     {
     case 0:
@@ -233,9 +246,9 @@ NONMATCH("asm/code_080F8900/cmd_obj_chain.s", u32 cmd_obj_chain(struct OwnerObj 
         }
         {
             u16 *flags = (u16 *)(dst + 0xA0);
-            u16 m = *flags;
 
-            *flags = m | 0x200;
+
+            *flags = *flags | bitv;
         }
         break;
     }
@@ -572,7 +585,32 @@ u32 cmd_slot_resync_pos(struct OwnerObj *obj, u32 unused, s16 *p)
     return 0;
 }
 
-ASM_FUNC("asm/code_080F8900/cmd_slot_flag_copy.s", u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p))
+NONMATCH("asm/code_080F8900/cmd_slot_flag_copy.s", u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p))
+{
+    u32 zero = 0;
+    s32 idx;
+    u8 *entry;
+
+    idx = p[0];
+    if (idx < 8)
+    {
+        entry = ((struct WorldSlotTable *)gWorld)->slots[idx] + 8;
+    }
+    else
+    {
+        entry = (u8 *)(((struct WorkRec *)gWorkBuf) + idx) + 0x300;
+    }
+    if (*(u32 *)(entry + 0x94) == 0)
+    {
+        zero = 1;
+    }
+    if (zero != p[1])
+    {
+        *dst = p[2];
+    }
+    return 1;
+}
+END_NONMATCH
 
 u32 cmd_slot_set_stream(struct OwnerObj *obj, u8 *node, u32 *p)
 {
@@ -808,8 +846,9 @@ u32 slot_find_max_key(void *unused0, s32 threshold);
 u32 slot_find_min_key(void *unused0, s32 threshold);
 u32 slot_widest_span(void *unused0, s32 threshold);
 s32 slot_get_field(void *obj, s32 idx, s32 field);
-NONMATCH("asm/code_080F8900/cmd_part_flag4.s", u32 cmd_part_flag4(struct OwnerObj *obj, u32 unused, u32 *p))
+u32 cmd_part_flag4(struct OwnerObj *obj, u32 unused, u32 *p)
 {
+    u16 flagBit = 4;
     u8 *part = obj->state + (p[1] << 8);
 
     u16 *flags;
@@ -818,7 +857,7 @@ NONMATCH("asm/code_080F8900/cmd_part_flag4.s", u32 cmd_part_flag4(struct OwnerOb
     {
     case 0:
         flags = (u16 *)(part + 0x7A0);
-        *flags |= 4;
+        *flags |= flagBit;
         break;
     case 1:
         flags = (u16 *)(part + 0x7A0);
@@ -829,7 +868,6 @@ NONMATCH("asm/code_080F8900/cmd_part_flag4.s", u32 cmd_part_flag4(struct OwnerOb
     }
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_node_stream(struct OwnerObj *obj, u8 *node)
 {
@@ -914,7 +952,27 @@ void slot_clear_flag800_if_idle(struct OwnerObj *obj, u8 *node)
     }
 }
 
-ASM_FUNC("asm/code_080F8900/setup_bg_entry.s", void setup_bg_entry(void))
+void setup_bg_entry(struct OwnerObj *obj, u8 idx, u8 layer, u8 pal, u32 arg5, u16 arg6, u16 arg7, u8 arg8)
+{
+    u8 *state = obj->state;
+    u8 *global = gCurObj;
+    u8 **table;
+    u8 *tile;
+    u8 *block;
+    u32 zero;
+    s32 off;
+
+    zero = 0;
+    *(u16 *)(global + 0x20) = arg7;
+    ((struct CurFlags28 *)(global + 0x28))->mid4 = arg8;
+    off = idx << 2;
+    table = (u8 **)((u8 *)obj + 0x20);
+    tile = *(u8 **)((u8 *)table + off);
+    *(u8 **)((u8 *)obj + 0x30) = tile;
+    flags_vars_setup_bg_layer(tile, layer, pal, (void *)arg5, 2, arg6, state + 0x1790, (void *)zero, (void *)zero);
+    block = heap_alloc2(4, 0, gLayerEntryTag, 0);
+    *(void **)((u8 *)obj + 0x28) = init_obj_slot_table(block);
+}
 
 void set_mark_callbacks(void);
 void spawn_slot_markers(void);
@@ -977,8 +1035,10 @@ NONMATCH("asm/code_080F8900/sub_080F9674.s", void sub_080F9674(struct OwnerObj *
 {
     u32 off = (u32)idx << 8;
     u32 size = 0x100;
+    u8 *st;
 
-    gMemRoutines(0, obj->state + (off + size), size);
+    st = obj->state;
+    gMemRoutines(0, st + (off + size), size);
     off += 0x700;
     gMemRoutines(0, obj->state + off, size);
 }
@@ -1150,13 +1210,6 @@ extern const u8 gOwnerEntryTag[];
 extern const u8 gOwnerAuxTag[];
 void *init_slot_table(void *state);
 void flags_vars_setup_bg_layer(void *holder, u32 zero, u32 flags, void *block, u32 a4, u32 a5, void *a6, void *a7, void *a8);
-
-struct CurFlags28
-{
-    u8 lo2 : 2;
-    u8 mid4 : 4;
-    u8 hi2 : 2;
-};
 
 struct Bit1Byte
 {
