@@ -70,7 +70,7 @@ struct Entry
     u16 unk7C;
     u8 filler7E[0x90 - 0x7E];
     u16 unk90;
-    u8 filler92[0x94 - 0x92];
+    u16 unk92;
     s32 unk94;
 };
 
@@ -117,6 +117,7 @@ void obj_detach_active(void *obj);
 void slot_set_bias(struct Owner *owner, u32 idx, s32 value);
 void slot_read_pos(struct Owner *owner, s32 idx, s16 *x, s16 *y, s16 *z);
 void apply_pose_to_parts(void *obj);
+void task_spawn_wait_idle(void *obj);
 void reset_obj_params_a(void *ctx, void *rec, u32 a, u32 b, u32 mode, u32 sub);
 void reset_obj_params_b(void *ctx, void *rec, u32 a, u32 b, u32 mode, u32 sub);
 
@@ -309,7 +310,33 @@ ASM_FUNC("asm/code_080F3F2C/cmd_slot_set_step.s", void cmd_slot_set_step(void))
 
 ASM_FUNC("asm/code_080F3F2C/cmd_copy_slot_flag.s", void cmd_copy_slot_flag(void))
 
-ASM_FUNC("asm/code_080F3F2C/cmd_slot_restart.s", void cmd_slot_restart(void))
+NONMATCH("asm/code_080F3F2C/cmd_slot_restart.s", u32 cmd_slot_restart(struct Owner *owner, struct Obj *dst, struct Cmd *cmd))
+{
+    u8 idx;
+    struct Entry *entry;
+    s16 x;
+    s16 y;
+    s16 z;
+    u16 w;
+
+    if (owner->state->slotCode <= 6)
+        idx = (u8)(owner->state->slotCode - 1);
+    else
+        idx = (u8)(owner->state->slotCode - 7);
+    if (idx <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * idx);
+    w = entry->unk90;
+    entry->unk7C = w;
+    entry->unk7A = 0;
+    slot_read_pos(owner, *(s16 *)cmd, &x, &y, &z);
+    slot_set_vec(idx, x, y, z, 1);
+    slot_start_motion(idx, 1);
+    dst->unkA0 |= 2;
+    return 0;
+}
+END_NONMATCH
 
 
 NONMATCH("asm/code_080F3F2C/cmd_slot_set_object_state.s", u32 cmd_slot_set_object_state(struct Owner *owner, void *dst, struct Cmd *cmd))
@@ -392,10 +419,69 @@ NONMATCH("asm/code_080F3F2C/cmd_slot_set_flags.s", u32 cmd_slot_set_flags(struct
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F3F2C/cmd_slot_apply_state.s", void cmd_slot_apply_state(void))
+NONMATCH("asm/code_080F3F2C/cmd_slot_apply_state.s", u32 cmd_slot_apply_state(struct Owner *owner, void *dst, struct Cmd *cmd))
+{
+    u8 idx;
+    struct Entry *entry;
+    struct Obj *obj;
+
+    if (owner->state->slotCode <= 6)
+        idx = (u8)(owner->state->slotCode - 1);
+    else
+        idx = (u8)(owner->state->slotCode - 7);
+    refresh_slot_view(owner, idx);
+    if (idx <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+    sprite_set_action(entry, *(u32 *)cmd, 0, 0);
+    slot_set_flag6(owner, idx, *(s8 *)((u8 *)cmd + 4));
+    if (idx <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+    obj = entry->obj8;
+    ((struct StatusBits *)&obj->status)->bit4 = 0;
+    return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, obj, *(u8 *)((u8 *)cmd + 8), 0);
+}
+END_NONMATCH
 
 
-ASM_FUNC("asm/code_080F3F2C/cmd_slot_reset_record.s", void cmd_slot_reset_record(void))
+NONMATCH("asm/code_080F3F2C/cmd_slot_reset_record.s", u32 cmd_slot_reset_record(struct Owner *owner, void *dst, struct Cmd *cmd))
+{
+    u8 idx;
+    struct Entry *entry;
+    struct Obj *obj;
+
+    if (owner->state->slotCode <= 6)
+        idx = (u8)(owner->state->slotCode - 1);
+    else
+        idx = (u8)(owner->state->slotCode - 7);
+    if (idx <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+    obj = entry->obj8;
+    refresh_slot_view(owner, idx);
+    if (*(u32 *)cmd == 0xFF)
+    {
+        if (obj != 0)
+            *(u32 *)cmd = obj->unk21;
+        else
+            *(u32 *)cmd = (u32)obj;
+    }
+    if (idx <= 7)
+        entry = (struct Entry *)((u8 *)gWorld->slots[idx] + 8);
+    else
+        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+    sprite_set_action(entry, *(u32 *)cmd, 0, 0);
+    slot_reload_record(owner, idx, *(s16 *)((u8 *)cmd + 4));
+    slot_set_flag6(owner, idx, *(s8 *)((u8 *)cmd + 8));
+    if (obj != 0)
+        obj->status |= 0x10;
+    return 1;
+}
+END_NONMATCH
 
 
 NONMATCH("asm/code_080F3F2C/cmd_slot_set_record_state.s", u32 cmd_slot_set_record_state(struct Owner *owner, u8 *dst, struct Cmd *cmd))
@@ -447,7 +533,7 @@ NONMATCH("asm/code_080F3F2C/cmd_slot_reload_object.s", u32 cmd_slot_reload_objec
     if ((s32)cmd->unk0 <= 7)
         entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     inner = entry->obj8;
     if (inner != 0)
         shade = (s8)inner->unk20;
@@ -456,14 +542,14 @@ NONMATCH("asm/code_080F3F2C/cmd_slot_reload_object.s", u32 cmd_slot_reload_objec
     if ((s32)cmd->unk0 <= 7)
         entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     sprite_set_action(entry, cmd->unk8, cmd->unk4, 0);
     slot_reload_record(owner, *(s16 *)cmd, *(s16 *)((u8 *)cmd + 0xC));
     slot_set_flag6(owner, *(s16 *)cmd, *(s8 *)((u8 *)cmd + 0x10));
     if ((s32)cmd->unk0 <= 7)
         entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     inner = entry->obj8;
     inner->unk20 = shade;
     ((struct StatusBits *)&inner->status)->bit4 = 1;
@@ -487,13 +573,13 @@ NONMATCH("asm/code_080F3F2C/cmd_slot_set_cmd_state.s", u32 cmd_slot_set_cmd_stat
     if ((s32)cmd->unk0 <= 7)
         entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     sprite_set_action(entry, cmd->unk4, 0, 0);
     slot_set_flag6(owner, *(s16 *)cmd, *(s8 *)((u8 *)cmd + 8));
     if ((s32)cmd->unk0 <= 7)
         entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * cmd->unk0 + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     inner = entry->obj8;
     ((struct StatusBits *)&inner->status)->bit4 = 0;
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, inner, *(u8 *)((u8 *)cmd + 0xC), 0);
@@ -502,22 +588,20 @@ END_NONMATCH
 
 NONMATCH("asm/code_080F3F2C/cmd_slot_reload_flagged.s", u32 cmd_slot_reload_flagged(struct Owner *owner, void *unused, struct Cmd *cmd))
 {
-    s32 idx;
     struct Entry *entry;
+
     refresh_slot_view(owner, *(s16 *)cmd);
-    idx = cmd->unk0;
-    if (idx <= 7)
-        entry = ((struct Entry *)((u8 *)gWorld->slots[idx] + 8));
+    if ((s32)cmd->unk0 <= 7)
+        entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     sprite_set_action(entry, cmd->unk4, 0, 0);
     slot_reload_record(owner, *(s16 *)cmd, *(s16 *)((u8 *)cmd + 8));
     slot_set_flag6(owner, *(s16 *)cmd, *(s8 *)((u8 *)cmd + 0xC));
-    idx = cmd->unk0;
-    if (idx <= 7)
-        entry = ((struct Entry *)((u8 *)gWorld->slots[idx] + 8));
+    if ((s32)cmd->unk0 <= 7)
+        entry = ((struct Entry *)((u8 *)gWorld->slots[cmd->unk0] + 8));
     else
-        entry = (struct Entry *)(gWorkBuf + 0xD0 * idx + 0x300);
+        entry = (struct Entry *)(gWorkBuf + 0x300 + 0xD0 * cmd->unk0);
     ((struct StatusBits *)&entry->obj8->status)->bit4 = 1;
     return 1;
 }
