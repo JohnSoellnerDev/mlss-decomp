@@ -644,13 +644,15 @@ void set_world_mode_byte(u8 value)
     gWorld->flags0B = flags | 0x40;
 }
 
-NONMATCH("asm/code_08107268/state_sprite_park.s", void state_sprite_park(struct Owner *owner))
+void state_sprite_park(struct Owner *owner)
 {
     struct Sprite *sprite = owner->sprite;
+    u16 timer = owner->timer;
+    s16 signedTimer = owner->timer;
 
-    if (owner->timer > 0)
+    if (signedTimer > 0)
     {
-        owner->timer--;
+        owner->timer = timer - 1;
     }
     else
     {
@@ -661,12 +663,10 @@ NONMATCH("asm/code_08107268/state_sprite_park.s", void state_sprite_park(struct 
         sprite->x = 0x78;
         sprite->y = 0x40;
         mask &= ~6;
-        mask |= 2;
-        sprite->flags = mask;
+        sprite->flags = mask | 2;
         owner->state = 0;
     }
 }
-END_NONMATCH
 
 void state_wait_obj_active(struct Owner *owner)
 {
@@ -943,7 +943,7 @@ void state_menu_open_active(struct Owner *owner)
     }
 }
 
-NONMATCH("asm/code_08107268/state_show_figs.s", void state_show_figs(struct Owner *owner))
+void state_show_figs(struct Owner *owner)
 {
     struct World *world = gWorld;
     u32 bit = ((u32)world->figMode2C0 << 29) >> 31;
@@ -956,15 +956,17 @@ NONMATCH("asm/code_08107268/state_show_figs.s", void state_show_figs(struct Owne
     {
         struct Owner *active;
         u32 mode = gWorld->figMode2C0;
-        u8 *figs = (u8 *)gWorld + 0x80;
+        s32 sel = 4;
+        u8 *figs;
 
-        active = (struct Owner *)((u8 *)*(struct Obj **)(figs + (mode & 4)) + 8);
+        sel &= mode;
+        figs = (u8 *)gWorld + 0x80;
+        active = (struct Owner *)((u8 *)*(struct Obj **)(figs + sel) + 8);
         sprite_set_action(pose, 4, 0, 0);
         sprite_set_action(active, 9, 0, 0);
         owner->state = figure_sync_step;
     }
 }
-END_NONMATCH
 
 void state_fig_active_call(struct Owner *owner)
 {
@@ -1371,8 +1373,7 @@ NONMATCH("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(str
         }
         else
         {
-            x = base - 0x10;
-            x += (s8)obj->frame;
+            x = (s8)obj->frame + (base - 0x10);
         }
         node->x = x & 0xFF;
         node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
