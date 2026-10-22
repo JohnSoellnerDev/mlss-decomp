@@ -1024,10 +1024,8 @@ NONMATCH("asm/code_080DECE0/init_drift_particle.s", u32 init_drift_particle(stru
     scaleA = (0 - ((rnd & 0xFF) + 0x300)) >> 2;
     obj->dh = ((u32)src[0] * scaleA) >> 8;
     hi = rnd >> 8;
-    idx = hi;
-    idx &= 0xFF;
-    hi = hi >> 8;
-    scaleB = ((hi & 0xFF) + 0x300) >> 2;
+    idx = hi & 0xFF;
+    scaleB = ((((hi >> 8) & 0xFF)) + 0x300) >> 2;
     yScaled = ((u32)src[1] * scaleB) >> 8;
     v = gCosineTable[idx & 0xFF];
     if (v < 0)
@@ -1111,16 +1109,24 @@ ASM_FUNC("asm/code_080DECE0/orbit_point.s", void orbit_point(void))
 
 NONMATCH("asm/code_080DECE0/start_obj_frame.s", void start_obj_frame(struct FrameObj *obj))
 {
-    struct FrameRec *rec = obj->rec;
     const u16 *tbl;
+    struct FrameRec *rec;
     void (*copy)(u8 *, u8 *, u32);
     u32 frame;
     u32 frame2;
     s32 next;
     u32 off;
     s32 counter;
-
+    s32 lo;
+    s32 hi;
+    s32 hiMask;
+    s32 k;
+    s32 zero;
+    u16 sysv;
+    rec = obj->rec;
     tbl = gTileHalfTable;
+    hiMask = -16;
+    k = 0x8000;
     frame = (u32)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (tbl[rec->index] << 2));
     queue_display_entry(2, (void *)frame, (void *)0x06016800, 0x100, 0, 0);
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
@@ -1135,12 +1141,18 @@ NONMATCH("asm/code_080DECE0/start_obj_frame.s", void start_obj_frame(struct Fram
     }
     frame2 = (u32)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (*(u16 *)((u8 *)tbl + off) << 2));
     copy((u8 *)frame2, gUnk_02000460, 0x20);
-    *(u16 *)gSys |= 0x8000;
+    sysv = *(u16 *)gSys;
+    zero = 0;
+    *(u16 *)gSys = k | sysv;
     counter = gWorld[9];
-    gWorld[9] = (counter & -16) | (((((u32)counter << 28) >> 28) + 1) & 0xF);
-    obj->value8 = 0;
+    lo = ((u32)counter << 28) >> 28;
+    lo = (lo + 1) & 0xF;
+    hi = hiMask & counter;
+    hi = hi | lo;
+    gWorld[9] = hi;
+    obj->value8 = zero;
     obj->delay = rec->delay;
-    obj->zero18 = 0;
+    obj->zero18 = zero;
     obj->callback = (u32)effect_obj_frame;
 }
 END_NONMATCH
