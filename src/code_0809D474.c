@@ -1,6 +1,12 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct ByteBit0
+{
+    u8 bit0 : 1;
+    u8 hi : 7;
+};
+
 struct ActorSprite
 {
     s16 unk0;
@@ -222,7 +228,7 @@ NONMATCH("asm/code_0809D474/spawn_small_child.s", void spawn_small_child(struct 
                           body->targetZ / 0x100, 1, 1);
         child->child = body->child;
         body->child = child;
-        child->flags |= 1;
+        ((struct ByteBit0 *)&child->flags)->bit0 = 1;
         child->height = 0;
         child->node = sprite_node_take();
         child->node->sprite = child->sprite;
