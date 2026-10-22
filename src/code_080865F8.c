@@ -240,7 +240,7 @@ struct ObjFlags77
 
 void sub_08087FCC(struct Actor *obj, s32 divisor);
 
-NONMATCH("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 h))
+void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 h)
 {
     s32 *p94;
     s32 *p98;
@@ -251,7 +251,7 @@ NONMATCH("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(struct Actor *obj
     s32 neg;
 
     x <<= 8;
-    y <<= 8;
+    y = y * 0x100;
     z <<= 8;
     h <<= 8;
     obj->targetX = x;
@@ -287,7 +287,7 @@ NONMATCH("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(struct Actor *obj
             zt = z;
         f1 = ((s32 (*)(s32))gMathRoutines)((zt - z) << 8);
         f2 = ((s32 (*)(s32))gMathRoutines)((zt - pz) << 8);
-        *p94 = f1 + f2;
+        *p94 = f2 + f1;
         *p98 = f2;
         if (neg)
         {
@@ -298,7 +298,6 @@ NONMATCH("asm/code_080865F8/sub_080865F8.s", void sub_080865F8(struct Actor *obj
     obj->progress = 0x4000;
     sub_08087FCC(obj, 0x20);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080865F8/contact_face.s", void contact_face(void))
 
@@ -341,6 +340,11 @@ NONMATCH("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(struct Ac
     u8 bit7;
     s32 mask;
     u8 *p110;
+    s32 m1f = 0x1F;
+    s32 m20 = -0x20;
+    u8 st8;
+    s32 m80 = -0x80;
+    u8 mk;
 
     if ((obj->mode & 6) != 4)
         return;
@@ -354,11 +358,10 @@ NONMATCH("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(struct Ac
     ((struct ObjFlags77 *)obj)->bit5 = (bits >> 6) & 1;
     obj->link = (struct Actor *)ent;
     p110 = &obj->data->status110;
-    entry &= 0x1F;
-    st = *p110;
-    st &= -0x20;
-    st |= entry;
-    *p110 = st;
+    entry &= m1f;
+    st8 = m20 & *p110;
+    st8 |= entry;
+    *p110 = st8;
     obj->activeNext = (struct Actor *)on_arrive;
     obj->field54 = (s32)set_targets_from_record;
     obj->unk9C = ent->offE;
@@ -372,8 +375,8 @@ NONMATCH("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(struct Ac
     else
     {
         obj->unkC8 = bit7;
-        mask = obj->unkCC & -0x80;
-        obj->unkCC = mask;
+        mk = m80 & obj->unkCC;
+        obj->unkCC = mk;
         obj->unkCA = bit7;
     }
     run_sequence_of_obj(obj);
@@ -401,8 +404,9 @@ NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Ac
     s32 bhq;
     s32 d2;
     s32 b2;
-    s32 flags;
+    u8 flags;
     struct Pose *pose;
+    s32 mask = -0x41;
 
     newX = obj->baseX + obj->offX;
     obj->posX = newX;
@@ -429,8 +433,7 @@ NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Ac
         obj->posZ = rec->targetH;
         sprite_set_action(obj, -1, -1, 0);
         pose = obj->pose;
-        flags = pose->flags11;
-        flags &= -0x41;
+        flags = pose->flags11 & mask;
         pose->flags11 = flags;
         obj->field58 = 0;
         obj->state = obj->savedState;
