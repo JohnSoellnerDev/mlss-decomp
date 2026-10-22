@@ -192,6 +192,29 @@ struct TileCtx
     struct TileCtxX *x;
 };
 
+struct Flags2A9
+{
+    u8 lo2 : 2;
+    u8 st : 3;
+    u8 rest : 3;
+};
+
+struct CtlBits12
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
+struct Flags291
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 mid : 3;
+    u8 rest : 2;
+};
+
 void pair_kind8_step(void *obj, u32 arg, u32 flag);
 void pair_set_mode(void *list, u32 mode, u32 flag);
 void sound_stop_song(u32 song);
@@ -476,7 +499,134 @@ void call_9a20_pair(struct PairObj *obj, u32 arg)
     pair_set_mode(obj, arg, 1);
 }
 
-ASM_FUNC("asm/code_0803C438/set_sub_pair_action.s", void set_sub_pair_action(void))
+NONMATCH("asm/code_0803C438/set_sub_pair_action.s", void set_sub_pair_action(struct PairObj *obj, u32 unused, u32 flag))
+{
+    struct Flags291 *bits;
+    struct PairSub **sp;
+    struct PairSub *a;
+    struct PairSub *b;
+    struct PairSub *unit;
+    struct PairSub *src;
+    struct PairSub *e;
+    struct PairSprite *sprite;
+    struct PairCtl *ctl;
+    u8 f;
+    u32 fl;
+    u8 fl8;
+    u32 kind;
+    u32 phase;
+    s32 sx;
+    s32 sy;
+    s32 sel;
+    s32 refY;
+    s32 xfix;
+    s32 yfix;
+    s32 xoff;
+    s32 ypx;
+    u8 *off;
+
+    f = flag;
+    bits = (struct Flags291 *)&obj->flags291;
+    bits->b0 = 1;
+    obj->half292 = 0;
+    obj->byte290 = 0xFE;
+    bits->mid = 2;
+    bits->b2 = f;
+    sp = (struct PairSub **)&obj->subA;
+    b = sp[1];
+    a = sp[0];
+    b->flags351 |= 0x40;
+    a->flags351 |= 0x40;
+    set_slot_fields(0, 0, 0x10);
+    if (f != 0)
+    {
+        set_flag_2_2(*obj->slotRef31C);
+        fl = obj->flags2a9;
+        if ((fl & 0x1C) != 0)
+        {
+            fl8 = obj->flags2a8;
+            unit = obj->entries[((u32)fl << 26) >> 31];
+            src = obj->entries[((u32)fl8 << 27) >> 27];
+            if ((fl8 & 0x20) != 0)
+            {
+                src = src->f344.ptr;
+            }
+            sx = src->sprite->posX;
+            sy = src->sprite->posY;
+            switch (((u32)fl << 27) >> 29)
+            {
+            case 1:
+            case 5:
+                motion_obj_set_move_target(unit, 0x10, -1, -1);
+                attach_sprite_mode(unit, 0, 0);
+                ctl = unit->ctl36C;
+                ((struct CtlBits12 *)&ctl->byte12)->mode = 2;
+                if (unit->half218 == 0x1001 || unit->half218 == 0x1028 || unit->half218 == 0x1002)
+                {
+                    sprite = unit->sprite;
+                    kind = sprite->byte21;
+                    phase = kind % 5;
+                    obj_load_record(sprite, (u8)phase + 5, 0, 0, 0);
+                }
+                goto offs;
+            case 2:
+                attach_sprite_mode(unit, 0, 1);
+offs:
+                unit->ctl36C->half0 = sx + 1;
+                unit->ctl36C->half2 = sy - src->byte283 + 2;
+                break;
+            case 4:
+                attach_sprite_mode(unit, 1, 0);
+                break;
+            case 3:
+                obj_stop_motion(unit);
+                motion_obj_set_move_target(unit, 0x10, -1, -1);
+                attach_sprite_mode(unit, 1, 0);
+                break;
+            }
+        }
+        if ((obj->flags2a9 & 0x40) != 0)
+        {
+            sel = (s8)obj->subB->field238;
+            if (sel != -1)
+            {
+                e = obj->entries[sel];
+                refY = e->unk14 + e->unk18;
+            }
+            else
+            {
+                refY = obj->subB->unk14;
+            }
+            xfix = obj->subB->posX0C;
+            if (xfix < 0)
+            {
+                xfix += 0xFF;
+            }
+            xoff = (xfix >> 8) - 0x78;
+            yfix = obj->subB->posY10 - refY;
+            if (yfix < 0)
+            {
+                yfix += 0xFF;
+            }
+            ypx = yfix >> 8;
+            if (obj->subB->unk25C != -1)
+            {
+                off = &obj->byte28D;
+            }
+            else
+            {
+                off = &obj->byte28F;
+            }
+            sprites_obj_set_move_target(obj, 1, 0, xoff, ypx - *off, 0xC00);
+        }
+    }
+    else
+    {
+        ((struct Flags2A9 *)&obj->flags2a9)->st = 0;
+    }
+    obj->byte12A = 0xA;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0803C438/update_obj_pair_anim.s", void update_obj_pair_anim(void))
 
