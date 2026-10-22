@@ -356,12 +356,14 @@ NONMATCH("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part
     struct ListItem *item;
     struct Obj *part;
     s32 minusOne;
-    s32 mask;
+    u8 *base;
+    s32 idx;
 
-    item = (struct ListItem *)((u32 *)((u8 *)gWorld + 0x58))[obj->unk9C];
+    base = (u8 *)gWorld;
+    idx = obj->unk9C;
+    item = ((struct ListItem **)(base + 0x58))[idx];
     part = (struct Obj *)&item->filler8;
-    mask = -0x41;
-    item->sprite->flags11 = (item->flags110 & 0x40) | (item->sprite->flags11 & mask);
+    item->sprite->flags11 = (item->flags110 & 0x40) | (item->sprite->flags11 & -0x41);
     part->dispX = item->targetX;
     part->dispY = item->targetY;
     part->dispZ = item->targetZ;
@@ -570,9 +572,10 @@ NONMATCH("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_t
     s32 dx, dy, dz;
     s32 k;
 
-    pos = (struct SpreadPos *)&obj->filler0C;
     hold = obj->chain;
     holdPos = (struct SpreadPos *)&hold->filler0C;
+    pos = (struct SpreadPos *)&obj->filler0C;
+
     hold->level = obj->level - 12;
     ox = pos->x;
     oy = pos->y;
@@ -751,7 +754,36 @@ void obj_begin_effect(struct Obj *obj)
     set_slot_value(0xD5, -1);
 }
 
-ASM_FUNC("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part(struct Obj *obj))
+NONMATCH("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part(struct Obj *obj))
+{
+    struct Obj *piece;
+    u8 *mode;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    if ((obj->sprite->mode & 8) != 0)
+    {
+        sprite_set_action(obj, 0x1F, 0, 0);
+        ((struct SpriteBits *)&obj->sprite->mode)->mode = 1;
+        piece = obj_spawn_linked(obj, 0x4036, 0);
+        x = gModeStartX[*(mode = &obj->scene->mode)];
+        piece->posX = x << 8;
+        piece->dispX = x << 8;
+        y = gModeStartY[*mode];
+        piece->posY = y << 8;
+        piece->dispY = y << 8;
+        z = gUnk_08202218[*mode];
+        piece->posZ = z << 8;
+        piece->dispZ = z << 8;
+        piece->callback = obj_start_anim1_timer;
+        effect_spawn_at(0x2AED, x, y, z, piece);
+        obj->callback = obj_stop_anim;
+        sound_stop_song(0xD5);
+        set_slot_value(0x118, -1);
+    }
+}
+END_NONMATCH
 
 void obj_release_when_motion_done(struct Obj *obj);
 NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
