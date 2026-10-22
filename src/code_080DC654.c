@@ -90,6 +90,7 @@ u32 mt19937_next(void);
 u32 rand_below(u32 n, u32 r);
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
+void set_world_flag0(u8 flag);
 void obj_list_push_default(struct ActorObj *obj);
 void obj_wait_target_h800_motion(struct ActorObj *obj);
 void obj_target_motion_action8_notify(struct ActorObj *obj);
@@ -150,6 +151,7 @@ void obj_wait_free_then_action2_slot(struct ActorObj *obj);
 void obj_begin_drop(struct ActorObj *obj);
 void obj_action2_slot_then_wait(struct ActorObj *obj);
 void obj_random_move_start(struct ActorObj *obj);
+void obj_random_move_b(struct ActorObj *obj);
 void obj_wait_then_move_screen(struct ActorObj *obj);
 void obj_wait_index_then_slot84(struct ActorObj *obj);
 void obj_wait_index_release_data(struct ActorObj *obj);
@@ -178,7 +180,71 @@ void obj_screen_cull_step(struct ActorObj *obj);
 void obj_drop_land_stop(struct ActorObj *obj);
 void obj_drop_clamp_to_limit(struct ActorObj *obj);
 
-ASM_FUNC("asm/code_080DC654/obj_random_move_start.s", void obj_random_move_start(struct ActorObj *obj))
+void obj_random_move_start(struct ActorObj *obj)
+{
+    struct ActorPart *data;
+    u8 *flags;
+    s32 x;
+    s32 y;
+    s32 h;
+    s32 v;
+    s32 n;
+    s32 roll;
+    struct ActorPose *pose;
+    s32 pflags;
+    s32 bit;
+    s32 cleared;
+
+    set_world_flag0(0);
+    sprite_set_action(obj, 2, 0, 0);
+    pose = obj->pose;
+    pflags = pose->byte11;
+    bit = ((u32)pflags << 25) >> 31;
+    bit = bit ^ 1;
+    bit = bit << 6;
+    cleared = -0x41 & pflags;
+    cleared = cleared | bit;
+    pose->byte11 = cleared;
+    set_slot_value(0x82, -1);
+    roll = rand_below(1, mt19937_next());
+    if (roll != 0)
+    {
+        obj->state = obj_random_move_b;
+    }
+    else
+    {
+        data = obj->data;
+        v = data->targetX;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        x = v >> 8;
+        v = data->targetY;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        y = v >> 8;
+        v = data->targetH;
+        if (v < 0)
+        {
+            v += 0xff;
+        }
+        h = v >> 8;
+        offset_three_words_camera(&x, &y, &h, 0);
+        n = 0x110 - x;
+        obj->targetX = obj->data->targetX + n * 0x100;
+        obj->targetY = obj->data->targetY;
+        obj->targetH = obj->data->targetH;
+        flags = &obj->flags;
+        *flags |= 0x20;
+        obj->motionSpeed = 0x400;
+        obj->motionStart = roll;
+        start_motion(obj);
+        obj->state = obj_wait_index_release_data;
+    }
+}
 
 void obj_random_move_b(struct ActorObj *obj)
 {
