@@ -1324,32 +1324,45 @@ u32 cmd_apply_list_entry(struct OwnerObj *owner, void *unused, u32 *cmd)
     return 1;
 }
 
-NONMATCH("asm/code_080F0C04/obj_sub_pair_command.s", u32 obj_sub_pair_command(struct OwnerObj *owner, void *unused, u32 *block))
+u32 obj_sub_pair_command(struct OwnerObj *owner, void *unused, u32 *block)
 {
     u32 value = block[0];
+    int bit4;
     u32 stored;
-    if (value != 0xFF)
+    u32 v;
+    u8 *state;
+
+    v = value;
+    if (v != 0xFF)
     {
         u32 flags = owner->list->unk208;
+
         if (((flags << 29) >> 31) != value)
         {
-            if (((flags >> 4) & 1) != 0)
+            bit4 = 0x10;
+            bit4 = flags & bit4;
+            if (bit4 != 0)
+            {
                 swap_sub_pair(owner->list, block[1]);
+            }
             else
+            {
                 start_sub_pair_step(owner->list, block[1]);
+            }
         }
         stored = block[0];
         set_208_bit1_copy_100(owner->list);
     }
     else
     {
-        stored = 0xFF;
+        value = 0xFF;
+        stored = value;
         clear_208_bit1_set_351_bit6(owner->list);
     }
-    *(u32 *)(gEffectState + 0x528) = stored;
+    state = gEffectState;
+    *(u32 *)(state + 0x528) = stored;
     return 0;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_080F0C04/obj_state_read_command.s", u32 obj_state_read_command(void *unused0, struct Entity *obj, void *unused2, u32 *block))
 {
