@@ -910,6 +910,7 @@ NONMATCH("asm/code_0809A420/start_anim_by_hero.s", void start_anim_by_hero(struc
     s32 x;
     s32 y;
     s32 z;
+    u32 effectCode = 0x11E6;
 
     if (body->unk9C != 0)
     {
@@ -931,7 +932,7 @@ NONMATCH("asm/code_0809A420/start_anim_by_hero.s", void start_anim_by_hero(struc
     if (z < 0)
         z += 0xFF;
     z >>= 8;
-    effect_spawn_at(0x11E6, x, y, z, body);
+    effect_spawn_at(effectCode, x, y, z, body);
     body->state = follow_hero_anim;
 }
 END_NONMATCH
