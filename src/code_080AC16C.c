@@ -201,4 +201,73 @@ void hero_a_sprite_set_targets(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080AC16C/hero_a_step_stage_fx.s", void hero_a_step_stage_fx(struct HeroBody *body))
+NONMATCH("asm/code_080AC16C/hero_a_step_stage_fx.s", void hero_a_step_stage_fx(struct HeroBody *body))
+{
+    struct HeroBody *body_a;
+    struct Hero *hero_a = gWorld->heroA;
+    s32 stage;
+    s32 limit;
+
+    body_a = &hero_a->body;
+    step_motion(body_a);
+    limit = 0x1555;
+    if (hero_a->body.step > limit)
+    {
+        stage = 0;
+    }
+    else
+    {
+        if (hero_a->body.progress < limit)
+        {
+            stage = 0;
+        }
+        else
+        {
+            stage = 1;
+        }
+    }
+    if (stage != 0)
+    {
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 9, 0x2030, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+        }
+    }
+    limit = 0x2AAA;
+    if (body_a->step > limit)
+    {
+        stage = 0;
+    }
+    else
+    {
+        if (body_a->progress < limit)
+        {
+            stage = 0;
+        }
+        else
+        {
+            stage = 1;
+        }
+    }
+    if (stage != 0)
+    {
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 3, 0x2030, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+        }
+    }
+    if (body_a->flags & 0x20)
+    {
+        set_slot_value(0x2E, -1);
+        effect_spawn_at(0x1E, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100, body_a);
+        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        {
+            sprite_set_action(body_a, 8, 0x2034, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+        }
+        body->state = active_targets_hero_pair_place_finish_b;
+    }
+}
+END_NONMATCH
