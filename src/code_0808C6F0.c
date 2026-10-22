@@ -966,9 +966,71 @@ s32 dispatch_slot_by_flags(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_0808C6F0/try_park_in_slot.s", s32 try_park_in_slot(struct Actor *obj))
+NONMATCH("asm/code_0808C6F0/try_park_in_slot.s", s32 try_park_in_slot(struct Actor *obj))
+{
+    if (obj->data->kind != 0x1C)
+        return 0;
+    if (obj->data->slot == -1)
+    {
+        if (((gSys.held ^ 1) & 1) != 0)
+            return 0;
+        sprite_set_action(obj, 0xF, -1, 0);
+    }
+    else
+    {
+        if ((gSys.held & 2) == 0)
+            return 0;
+        sprite_set_action(obj, 0xF, -1, 0);
+    }
+    obj->timer = 0xC;
+    {
+        u8 *w = gWorld;
+        s32 idx = ~obj->data->slot;
+        u32 *e = (u32 *)(w + 0x264) + idx;
+        *e = (u32)obj->state;
+    }
+    obj->state = slot_wait_then_resume;
+    return 1;
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume(struct Actor *obj))
+NONMATCH("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume(struct Actor *obj))
+{
+    u16 t;
+    s32 bit;
+    u16 keys;
+
+    t = obj->timer;
+    if ((s16)obj->timer > 0)
+    {
+        obj->timer = t - 1;
+        if (obj->data->slot == -1)
+        {
+            keys = gSys.held;
+            bit = 1;
+        }
+        else
+        {
+            keys = gSys.held;
+            bit = 2;
+        }
+        if ((bit & keys) != 0)
+            return;
+    }
+    sprite_set_action(obj, 6, -1, 0);
+    ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
+    ((struct Lo3Bits *)&obj->flags77)->lo3 = 1;
+    {
+        u8 *w = gWorld;
+        u32 *tab;
+        s32 idx = ~obj->data->slot;
+        tab = (u32 *)(w + 0x264);
+        obj->state = (void (*)(struct Actor *))tab[idx];
+        idx = ~obj->data->slot;
+        tab[idx] = 0;
+    }
+}
+END_NONMATCH
 
 
 
