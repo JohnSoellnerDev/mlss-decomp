@@ -1,6 +1,11 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct SysHead0
+{
+    u16 unk0;
+};
+
 struct PartSprite
 {
     u8 filler0[0xC];
@@ -478,7 +483,7 @@ void part_fly_drop(struct Part *obj)
     }
 }
 
-NONMATCH("asm/code_08133F08/part_refresh_tiles.s", void part_refresh_tiles(struct Part *obj))
+void part_refresh_tiles(struct Part *obj)
 {
     struct PartSprite *sprite;
     struct TileEntry *entry;
@@ -503,7 +508,7 @@ NONMATCH("asm/code_08133F08/part_refresh_tiles.s", void part_refresh_tiles(struc
     else
     {
         MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3CD0, gUnk_02000460, 0x20);
-        *(u16 *)gSys |= 0x8000;
+        ((struct SysHead0 *)gSys)->unk0 |= 0x8000;
         gModelCtx->cells[15] = gModelCtx->cells[14];
         gModelCtx->cells[14] = gModelCtx->cells[13];
         for (i = 0; i < 15; i++)
@@ -516,7 +521,6 @@ NONMATCH("asm/code_08133F08/part_refresh_tiles.s", void part_refresh_tiles(struc
         obj->unk4 = 0;
     }
 }
-END_NONMATCH
 
 void part_spawn_timed(struct Part *obj)
 {
