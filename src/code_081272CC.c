@@ -39,6 +39,15 @@ struct ObjList
     void *unk3C;
 };
 
+struct SaveEntry
+{
+    u8 filler0[0x12];
+    u16 unk12;
+    u8 filler14[0x17 - 0x14];
+    u8 unk17;
+    u8 filler18[0x1C - 0x18];
+};
+
 struct SysPal
 {
     u8 filler0[0x880];
@@ -64,6 +73,9 @@ void update_obj_list(void);
 void obj_list_pass_0a8c(void);
 void obj_redraw_box(struct SaveScreen *obj);
 u32 draw_list_rows(struct SaveScreen *obj, u32 oam);
+void cpu_set(const void *src, void *dst, u32 ctl);
+u32 table_085213b8(u32 index);
+void psg_wave_setup(u8 *base, u32 width, u32 x, u32 y, u32 glyph, s32 ch, u32 pal, u32 zero);
 
 ASM_FUNC("asm/code_081272CC/obj_anim_step.s", void obj_anim_step(void))
 
@@ -73,7 +85,43 @@ ASM_FUNC("asm/code_081272CC/draw_list_rows.s", u32 draw_list_rows(struct SaveScr
 
 ASM_FUNC("asm/code_081272CC/obj_redraw_box.s", void obj_redraw_box(struct SaveScreen *obj))
 
-ASM_FUNC("asm/code_081272CC/update_entry_flags.s", void update_entry_flags(void))
+NONMATCH("asm/code_081272CC/update_entry_flags.s", void update_entry_flags(struct SaveScreen *obj))
+{
+    u8 k;
+    u16 src;
+    struct SaveEntry *entry = (struct SaveEntry *)((u8 *)obj + 0x100);
+    u8 *count = &obj->unk157;
+    u32 listOff = 0;
+    s32 bit = 1;
+    *count = 0;
+    obj->unkF3 = 0;
+    for (k = 0; k <= 2; k++)
+    {
+        s32 visible = (obj->unkF1 >> k) & bit;
+        if (visible == 0)
+        {
+            obj->unk154[*count] = k;
+            (*count)++;
+            src = visible;
+            cpu_set(&src, entry, 0x0100000E);
+            entry->unk17 = 0;
+            if (((u8 *)obj->unk48 + listOff)[0x10] == 0xFF)
+                entry->unk12 = 0xFFFF;
+        }
+        else
+        {
+            save_slot_info(entry, k);
+            if (entry->unk12 == 0x113)
+            {
+                u8 *f3 = &obj->unkF3;
+                *f3 |= bit << k;
+            }
+        }
+        entry++;
+        listOff += 0x6F8;
+    }
+}
+END_NONMATCH
 
 void update_screen(struct SaveScreen *obj)
 {
@@ -192,4 +240,46 @@ NONMATCH("asm/code_081272CC/save_slot_info.s", void save_slot_info(void *out, u8
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_081272CC/draw_text_line.s", void draw_text_line(void))
+NONMATCH("asm/code_081272CC/draw_text_line.s", void draw_text_line(u8 *dst, u8 width, u16 x, u16 y, u8 *text, u8 palette))
+{
+    u32 *fonts;
+    u32 *font0;
+    s32 code;
+    u32 font;
+    u32 *slot;
+    u32 w;
+
+    fonts = (u32 *)table_085213b8(1);
+    font0 = (u32 *)fonts[0];
+    y = ((font0[0] & 0xF) << 2) + y;
+    y++;
+    palette &= 0xF;
+    while (*text != 0)
+    {
+        if ((s32)(x + 8) > (s32)(width << 3))
+            break;
+        do
+        {
+            code = *text;
+            text++;
+        } while (code == 0xFF);
+        font = 0xFF - code;
+        if (font == 0xFF)
+            break;
+        if ((s32)font > 1)
+            font = 0;
+        else
+        {
+            if (fonts[font] == 0)
+                continue;
+            code = *text;
+            text++;
+        }
+        slot = &fonts[font];
+        psg_wave_setup(dst, width, x, y, *slot, code, palette, 0);
+        w = *(u32 *)((u8 *)*slot + ((code >> 3) << 2) + 4);
+        w = w >> ((code & 7) << 2);
+        x = (x + 1 + (w & 0xF)) & 0xFFFF;
+    }
+}
+END_NONMATCH
