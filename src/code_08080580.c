@@ -263,11 +263,12 @@ void release_obj_131c(void *obj);
 NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
 {
     u32 count = 0;
+    struct SpritePart **list = gWorld->parts;
     s32 i;
 
     for (i = 0; i < 8; i++)
     {
-        struct SpritePart *part = gWorld->parts[i];
+        struct SpritePart *part = list[i];
 
         if (((((u32)part->mode << 29) >> 30) == mode) && (part->flags110 & 0x20) == 0)
         {
