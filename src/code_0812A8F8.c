@@ -118,7 +118,47 @@ extern u8 gUnk_0203FFB8[];
 extern void *gUnk_03000D48;
 extern void *gUnk_03000D4C;
 
-ASM_FUNC("asm/code_0812A8F8/member_panel_draw.s", void *member_panel_draw(struct StatusView *view, void *oam))
+NONMATCH("asm/code_0812A8F8/member_panel_draw.s", void *member_panel_draw(struct StatusView *view, void *oam))
+{
+    u8 hoursCl;
+    u8 minutes;
+    u32 arg1;
+    u32 arg2;
+
+    if (view->unkB1 != 0)
+        goto hours;
+    goto plain;
+hours:
+    {
+        u32 hours;
+        u32 total;
+        u32 frames;
+        frames = *(u32 *)((u8 *)view->owner5C + 0x700 + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8);
+        hours = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(frames, 216000);
+        if (hours > 0x63)
+        {
+            hoursCl = 0x63;
+            minutes = 0x3B;
+        }
+        else
+        {
+            hoursCl = hours;
+            total = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(*(u32 *)((u8 *)view->owner5C + 0x700 + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8), 0xE10);
+            minutes = MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(total, 0x3C);
+        }
+        oam = text_sprites_b(oam, hoursCl, minutes, *(u16 *)((u8 *)view->owner5C + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0xB8));
+        arg1 = *((u8 *)view->owner5C + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0xAC);
+        arg2 = *((u8 *)view->owner5C + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0xB4);
+        goto tail;
+    }
+plain:
+    oam = text_sprites_b(oam, view->unk86, view->unk87, view->unk80);
+    arg1 = view->unk74;
+    arg2 = view->unk7C;
+tail:
+    return draw_member_status(oam, arg1, arg2);
+}
+END_NONMATCH
 
 
 
