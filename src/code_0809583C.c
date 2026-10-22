@@ -252,6 +252,8 @@ u32 rand_below(u32 range, u32 seed);
 s32 contact_check(struct HeroBody *body, struct HeroBody *other);
 u32 partner_link_hook(struct HeroBody *body, u32 a, u32 b);
 
+void pair_children_end(struct HeroBody *body);
+
 void visible_action_2000(struct HeroBody *body)
 {
     if (body->sprite->flags & 8)
@@ -655,7 +657,116 @@ void move_progress_check(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809583C/pair_choose_partner.s", void pair_choose_partner(struct HeroBody *body))
+NONMATCH("asm/code_0809583C/pair_choose_partner.s", void pair_choose_partner(struct HeroBody *body))
+{
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
+    struct HeroBody *partner = body->partner;
+    struct HeroBody *child;
+    u8 *mode;
+    s32 count;
+    s32 action;
+    s32 kind;
+
+    if (body->sprite->flags & 8)
+    {
+        count = 0;
+        mode = &body->mode;
+        for (; count < 2; count++)
+        {
+            child = obj_spawn_linked(body, 0x4188 + gWorld->curEntry->kind, 0);
+            child->flags78 = (child->flags78 & 0x1F) | 0x20;
+            child->posX += 0x1000;
+            child->targetX = child->posX;
+            child->targetY = child->posY;
+            child->posZ += 0x1000;
+            child->targetZ = child->posZ;
+            if (gWorld->curEntry->switchByte == 0)
+            {
+                break;
+            }
+            partner = (partner == hero_a) ? hero_b : hero_a;
+            body->partner = partner;
+            if ((partner->mode & 6) != 2)
+            {
+                break;
+            }
+        }
+
+        kind = gWorld->curEntry->kind;
+        switch (kind)
+        {
+        case 0xD:
+        case 0xE:
+            set_slot_value(0x128, -1);
+            break;
+        default:
+            set_slot_value(0x128, -1);
+            break;
+        }
+
+        if (gWorld->curEntry->switchByte != 0)
+        {
+            if ((*mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (body == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(body, 2, action, 0);
+                ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            }
+            partner = (body == hero_a) ? hero_b : hero_a;
+        }
+        else if (body == partner)
+        {
+            if ((*mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (body == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(body, 2, action, 0);
+                ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            }
+        }
+        else
+        {
+            if ((*mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (body == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(body, 5, action, 0);
+                ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            }
+        }
+
+        if ((partner->data->input & 0x300) == 0 && (partner->mode & 6) == 2)
+        {
+            action = 0x2051;
+            if (partner == hero_a)
+            {
+                action -= 0x2F;
+            }
+            sprite_set_action(partner, 9, action, 0);
+            ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+        }
+
+        if ((*mode & 6) == 2 || (*mode & 6) == 4)
+        {
+            body->handle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 8);
+            body->phase = 0;
+            ((struct ActiveBits *)&body->flags79)->active = 0;
+        }
+        body->state = partner_chase_pair_step;
+    }
+}
+END_NONMATCH
 
 void partner_chase_pair_step(struct HeroBody *body)
 {
@@ -961,4 +1072,105 @@ NONMATCH("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struc
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0809583C/pair_partner_swap.s", void pair_partner_swap(struct HeroBody *body))
+static inline struct HeroBody *pair_child_spawn(struct HeroBody *body)
+{
+    struct HeroBody *child = obj_spawn_linked(body, 0, 0);
+
+    child->flags78 = (child->flags78 & 0x1F) | 0x20;
+    child->posX += 0x1000;
+    child->targetX = child->posX;
+    child->targetY = child->posY;
+    child->posZ += 0x1000;
+    child->targetZ = child->posZ;
+    return child;
+}
+
+NONMATCH("asm/code_0809583C/pair_partner_swap.s", void pair_partner_swap(struct HeroBody *body))
+{
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
+    struct HeroBody *partner = body->partner;
+    struct HeroBody *child;
+    struct HeroBody *list;
+    u8 *mode;
+    s32 action;
+
+    if (body->sprite->flags & 8)
+    {
+        mode = &body->mode;
+        child = pair_child_spawn(body);
+        if (gWorld->curEntry->switchByte != 0)
+        {
+            partner = (partner == hero_a) ? hero_b : hero_a;
+            body->partner = partner;
+            if ((partner->mode & 6) == 2)
+            {
+                child = pair_child_spawn(body);
+                if (gWorld->curEntry->switchByte != 0)
+                {
+                    partner = (partner == hero_a) ? hero_b : hero_a;
+                    body->partner = partner;
+                    (void)(partner->mode & 6);
+                }
+            }
+        }
+
+        list = body->child;
+        while (list->child != NULL)
+        {
+            list = list->child;
+        }
+        if (body == partner)
+        {
+            if ((*mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (body == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(body, 3, action, 0);
+                ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            }
+            sprite_set_action(list, 3, 0, 0);
+            if ((*mode & 6) == 2 || (*mode & 6) == 4)
+            {
+                body->handle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x18);
+                body->phase = 0;
+                ((struct ActiveBits *)&body->flags79)->active = 0;
+            }
+        }
+        else
+        {
+            if ((*mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (body == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(body, 4, action, 0);
+                ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            }
+            if ((partner->data->input & 0x300) == 0 && (partner->mode & 6) == 2)
+            {
+                action = 0x2051;
+                if (partner == hero_a)
+                {
+                    action -= 0x2F;
+                }
+                sprite_set_action(partner, 9, action, 0);
+                ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+            }
+            sprite_set_action(list, 4, 0, 0);
+            if ((*mode & 6) == 2 || (*mode & 6) == 4)
+            {
+                body->handle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 8);
+                body->phase = 0;
+                ((struct ActiveBits *)&body->flags79)->active = 0;
+            }
+        }
+        body->state = pair_children_end;
+    }
+}
+END_NONMATCH
