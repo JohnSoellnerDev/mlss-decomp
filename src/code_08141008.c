@@ -386,7 +386,67 @@ NONMATCH("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_run(void))
+NONMATCH("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_run(struct Owner *owner, struct Actor *ent))
+{
+    struct EnemyRec *rec = ent->rec;
+    void **handler = (void **)&ent->handler;
+    void *next;
+    u8 amp;
+    s32 *landZ;
+    s32 dzBase;
+    s32 hop;
+    s32 phaseStep;
+    s32 hopStep;
+    s8 frame;
+
+    ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, ent, handler);
+    next = *handler;
+    if (next == enemy_aim_at_partner || next == enemy_move_to_partner_3d || next == enemy_move_home_3d
+        || next == enemy_z_step_done_wait)
+    {
+        return;
+    }
+    amp = rec->amp22;
+    landZ = &ent->landZ;
+    dzBase = *landZ - ent->posZ;
+    hop = gSineTable[*(u8 *)&ent->phase] / 0x40;
+    ent->dz = dzBase + amp * hop;
+    hopStep = ent->hopStep;
+    frame = ent->sprite->frame20;
+    phaseStep = frame * hopStep + 8;
+    ent->phase = ((phaseStep / 0x10) + ent->phase) & 0xFF;
+    {
+        u16 dist = rec->dist24;
+        u16 rate = rec->rate26;
+        s32 snap = dist << 12;
+        s32 land = *landZ;
+        s32 gap = land - ent->posZ;
+        if (gap > snap)
+        {
+            land -= rate;
+            *landZ = land;
+            if (land - ent->posZ > snap)
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (gap >= snap)
+            {
+                return;
+            }
+            land += rate;
+            *landZ = land;
+            if (land - ent->posZ < snap)
+            {
+                return;
+            }
+        }
+        *landZ = ent->posZ + snap;
+    }
+}
+END_NONMATCH
 
 void enemy_wait_then_wander(u8 *owner, struct Actor *ent, void **out)
 {
