@@ -509,7 +509,48 @@ void obj_sync_sub_slot(struct FieldObj *obj, s32 slot)
     }
 }
 
-ASM_FUNC("asm/code_08045F18/obj_step_index.s", void obj_step_index(void))
+NONMATCH("asm/code_08045F18/obj_step_index.s", void obj_step_index(struct FieldObj *obj, struct FieldObj *src, u32 advance))
+{
+    u32 *word;
+    u32 cur;
+    u32 idx;
+    u32 m15;
+
+    if (src != 0)
+    {
+        m15 = 0xF;
+        cur = *(u32 *)&src->state214 & 0x1E000;
+        word = (u32 *)&obj->state214;
+        cur = (*word & 0xFFFE1FFF) | cur;
+        *word = cur;
+        if (advance)
+        {
+            idx = (cur << 15) >> 28;
+            if (idx <= 14)
+            {
+                idx = (idx + 1) & m15;
+                *word = (cur & 0xFFFE1FFF) | (idx << 13);
+            }
+        }
+        else
+        {
+            if ((cur & 0x1E000) != 0)
+            {
+                idx = (((cur << 15) >> 28) - 1) & m15;
+                *word = (cur & 0xFFFE1FFF) | (idx << 13);
+            }
+        }
+    }
+    else
+    {
+        word = (u32 *)&obj->state214;
+        if (advance)
+            *word = *word | 0x1E000;
+        else
+            *word = *word & 0xFFFE1FFF;
+    }
+}
+END_NONMATCH
 
 static inline void obj_set_state_bit6(struct FieldObj *o)
 {
@@ -518,22 +559,20 @@ static inline void obj_set_state_bit6(struct FieldObj *o)
 
 NONMATCH("asm/code_08045F18/obj_set_state.s", void obj_set_state(struct FieldObj *obj, u8 state))
 {
-    u32 m;
+    u8 *p;
     u32 old;
-    u32 prev;
     u32 v;
+    u32 m;
 
-    old = obj->state214;
     m = 7;
-    prev = (old << 29) >> 26;
-    v = (old & -0x39) | prev;
-    v = (v & -8) | (state & m);
-    obj->state214 = v;
+    p = &obj->state214;
+    old = *p;
+    v = ((old & -0x39) | ((old << 29) >> 26)) & -8;
+    v = v | (state & m);
+    *p = v;
     if ((((u32)v << 29) >> 29) > 2)
-    {
         obj->unk02 = obj->unk24 << 5;
-    }
-    if ((obj->state214 & 7) == 3)
+    if ((*p & 7) == 3)
     {
         struct FieldSub *sub = obj->sub;
         obj_load_record(sub, sub->anim21, 0, 0, 0);
