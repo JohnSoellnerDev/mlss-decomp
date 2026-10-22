@@ -426,8 +426,7 @@ NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struc
 {
     u32 cell;
     u32 high;
-    u32 low;
-    s32 t;
+    u8 low;
     u8 entry;
 
     cell = 0;
@@ -438,14 +437,14 @@ NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struc
         {
             if ((obj->flags216 & 0xC) == 4)
             {
-                t = pos / 4;
+                s32 t = pos / 4;
                 cell = (t << 1) + t;
                 pos -= t << 2;
                 pos <<= 1;
             }
             else
             {
-                t = pos / 8;
+                s32 t = pos / 8;
                 cell = (t << 2) + t;
                 pos -= t << 3;
             }
@@ -454,14 +453,14 @@ NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struc
         {
             if ((obj->flags216 & 0xC) == 4)
             {
-                t = pos / 4;
+                s32 t = pos / 4;
                 cell = t << 2;
                 pos -= cell;
                 pos <<= 1;
             }
             else
             {
-                t = pos / 8;
+                s32 t = pos / 8;
                 cell = t << 3;
                 pos -= cell;
             }
