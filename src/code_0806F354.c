@@ -173,6 +173,8 @@ s32 menu_cursor_pos(s32 x, s32 y, u32 n);
 s32 signed_byte_e4(void *part);
 void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void obj_pose_action_5(struct ActorObj *obj);
+void obj_timer_to_f870(struct ActorObj *obj);
+void obj_timer_then_table_step(struct ActorObj *obj);
 
 void obj_spawn_child_arc(struct ActorObj *obj)
 {
@@ -353,7 +355,122 @@ void obj_spawn_child_from_table(struct ActorObj *obj)
     obj->state = obj_timer_table_next;
 }
 
-ASM_FUNC("asm/code_0806F354/obj_spawn_child_seq.s", void obj_spawn_child_seq(void))
+static inline void seq_tick_a8(struct ActorObj *obj)
+{
+    obj->paramA8++;
+    if (obj->paramA8 > 1)
+    {
+        obj->state = obj_timer_then_table_step;
+    }
+}
+
+NONMATCH("asm/code_0806F354/obj_spawn_child_seq.s", void obj_spawn_child_seq(struct ActorObj *obj))
+{
+    struct ActorObj *child;
+    struct ActorObj *candB;
+    struct ActorObj *candA;
+    struct ActorPart *src;
+    struct ActorPart *part;
+    s32 pick;
+    s32 targetY;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 steps;
+    s32 half;
+    s32 factor;
+
+    sprite_set_action(obj, obj->paramA4 + 8, 0, 0);
+    obj->timer = 2;
+    obj->state = obj_timer_to_f870;
+    if (obj->paramA8 != 0)
+    {
+        pick = 0;
+        if (obj->paramA4 == 0)
+        {
+            if (obj->param9C == 0 || obj->param9C == 2)
+            {
+                pick = 2;
+            }
+        }
+        else if (obj->paramA4 == 2 && (u32)obj->param9C <= 1)
+        {
+            pick = 1;
+        }
+        if (pick != 0)
+        {
+            candA = (struct ActorObj *)(gWorld->partners[6] + 8);
+            candB = (struct ActorObj *)(gWorld->partners[7] + 8);
+            part = obj->part;
+            child = obj_spawn(part, 0x40E5, arc_px(obj->baseX) - 8, arc_px(obj->baseY),
+                              arc_px(obj->baseH) + 0x18, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child = child;
+            child->byte74 = obj->byte74;
+            child->byte75 = obj->byte75;
+            ((struct ObjBits78 *)&child->dir)->top3 = obj->dir >> 5;
+            child->state = obj_arc_to_base_sprite;
+            if (pick == 1)
+            {
+                src = candA->part;
+                child->targetX = src->targetX + 0x800;
+                targetY = src->targetY + 0x300;
+            }
+            else
+            {
+                src = candB->part;
+                child->targetX = src->targetX + 0x1000;
+                targetY = src->targetY;
+            }
+            child->targetY = targetY;
+            child->targetH = src->targetH;
+            child->dx = arc_px(child->posX);
+            child->dy = arc_px(child->posY);
+            child->dh = arc_px(child->posH);
+            dx = child->targetX - ((s16)child->dx << 8);
+            dy = child->targetY - ((s16)child->dy << 8);
+            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+            steps = dist / 0x180;
+            half = steps / 2;
+            factor = 0x3000 / (half * half);
+            if (factor == 1)
+            {
+                factor = 2;
+            }
+            child->param9C = -factor;
+            child->paramA0 = steps;
+            child->paramA4 = dx;
+            child->paramA8 = dy;
+            child->timer = 0;
+            child->targetH = 0;
+            child->targetX = pick;
+            child->link = obj->link;
+            effect_spawn_at(0x2061, arc_px(obj->baseX), arc_px(obj->baseY), arc_px(obj->baseH), obj);
+            set_slot_value(0x85, -1);
+        }
+    }
+    if (obj->paramA0 == 0)
+    {
+        obj->paramA4++;
+        if (obj->paramA4 > 9)
+        {
+            obj->paramA4 = obj->paramA0;
+            seq_tick_a8(obj);
+        }
+    }
+    else
+    {
+        obj->paramA4--;
+        if (obj->paramA4 < 0)
+        {
+            obj->paramA4 = 9;
+        }
+        if (obj->paramA4 == 0)
+        {
+            seq_tick_a8(obj);
+        }
+    }
+}
+END_NONMATCH
 
 void obj_arc_to_base_sprite(struct ActorObj *obj)
 {
