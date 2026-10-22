@@ -175,4 +175,128 @@ void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
 void obj_free_parts(struct HeroBody *body);
 void display_flush(void);
 
-ASM_FUNC("asm/code_080CC320/partner_scan_flags.s", void partner_scan_flags(void))
+/* Four passes (above, below, left, right) over the six objects in the world list. The score is
+   the squared distance divided by dy (smaller is better); the best body that is not the partner
+   sets one direction bit. */
+u32 partner_scan_flags(struct HeroBody *body)
+{
+    u32 flags = 0;
+    struct HeroBody *best;
+    s32 anchorX;
+    s32 anchorY;
+    s32 bestScore;
+
+    best = body->partner;
+    anchorX = best->targetX / 0x100 + best->data->ext->ofsA;
+    anchorY = best->targetY / 0x100 + best->data->ext->ofsB;
+
+    bestScore = 0x7FFFFFFF;
+    {
+        s32 i;
+        for (i = 0; i < 6; i++)
+        {
+            struct Hero *cand = gWorld->objList[i];
+            s32 dy = anchorY - (cand->body.targetY / 0x100 + cand->ext->ofsB);
+            s32 dx = (cand->body.targetX / 0x100 + cand->ext->ofsA) - anchorX;
+            s32 dist2;
+
+            if (cand->flags110 & 0x20)
+                continue;
+            if ((cand->body.mode & 6) != 4)
+                continue;
+            dist2 = dy * dy + dx * dx;
+            if (dy <= 0)
+                continue;
+            dist2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dist2, dy);
+            if (bestScore <= dist2)
+                continue;
+            bestScore = dist2;
+            best = &cand->body;
+        }
+    }
+    if (best != body->partner)
+        flags |= 0x40;
+    bestScore = 0x7FFFFFFF;
+    best = body->partner;
+    {
+        s32 i;
+        for (i = 0; i < 6; i++)
+        {
+            struct Hero *cand = gWorld->objList[i];
+            s32 dy = (cand->body.targetY / 0x100 + cand->ext->ofsB) - anchorY;
+            s32 dx = (cand->body.targetX / 0x100 + cand->ext->ofsA) - anchorX;
+            s32 dist2;
+
+            if (cand->flags110 & 0x20)
+                continue;
+            if ((cand->body.mode & 6) != 4)
+                continue;
+            dist2 = dy * dy + dx * dx;
+            if (dy <= 0)
+                continue;
+            dist2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dist2, dy);
+            if (bestScore <= dist2)
+                continue;
+            bestScore = dist2;
+            best = &cand->body;
+        }
+    }
+    if (best != body->partner)
+        flags |= 0x80;
+    bestScore = 0x7FFFFFFF;
+    best = body->partner;
+    {
+        s32 i;
+        for (i = 0; i < 6; i++)
+        {
+            struct Hero *cand = gWorld->objList[i];
+            s32 dy = anchorX - (cand->body.targetX / 0x100 + cand->ext->ofsA);
+            s32 dx = (cand->body.targetY / 0x100 + cand->ext->ofsB) - anchorY;
+            s32 dist2;
+
+            if (cand->flags110 & 0x20)
+                continue;
+            if ((cand->body.mode & 6) != 4)
+                continue;
+            dist2 = dy * dy + dx * dx;
+            if (dy <= 0)
+                continue;
+            dist2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dist2, dy);
+            if (bestScore <= dist2)
+                continue;
+            bestScore = dist2;
+            best = &cand->body;
+        }
+    }
+    if (best != body->partner)
+        flags |= 0x20;
+    bestScore = 0x7FFFFFFF;
+    best = body->partner;
+    {
+        s32 i;
+        for (i = 0; i < 6; i++)
+        {
+            struct Hero *cand = gWorld->objList[i];
+            s32 dy = (cand->body.targetX / 0x100 + cand->ext->ofsA) - anchorX;
+            s32 dx = (cand->body.targetY / 0x100 + cand->ext->ofsB) - anchorY;
+            s32 dist2;
+
+            if (cand->flags110 & 0x20)
+                continue;
+            if ((cand->body.mode & 6) != 4)
+                continue;
+            dist2 = dy * dy + dx * dx;
+            if (dy <= 0)
+                continue;
+            dist2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dist2, dy);
+            if (bestScore <= dist2)
+                continue;
+            bestScore = dist2;
+            best = &cand->body;
+        }
+    }
+    if (best != body->partner)
+        flags |= 0x10;
+
+    return flags;
+}
