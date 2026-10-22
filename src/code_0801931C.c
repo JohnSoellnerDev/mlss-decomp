@@ -744,8 +744,8 @@ NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct Anim
     {
     case 0:
         p->timer--;
-        *(vu16 *)&gUnk_02000054 = (s8)p->timer;
-        if ((s8)p->timer == 0)
+        gUnk_02000054 = (s8)p->timer;
+        if (*(vs8 *)&p->timer == 0)
         {
             p->timer = 0x32;
             p->state++;
@@ -761,8 +761,8 @@ NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct Anim
         break;
     case 2:
         p->timer--;
-        *(vu16 *)&gUnk_02000054 = 0x10 - (s8)p->timer;
-        if ((s8)p->timer == 0)
+        gUnk_02000054 = 0x10 - (s8)p->timer;
+        if (*(vs8 *)&p->timer == 0)
         {
             if (p != 0)
             {
@@ -783,9 +783,9 @@ NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct Anim
 
     old = p->keys;
     p->prevKeys = old;
-    keys = ~REG_KEYINPUT & 0xF0;
-    p->keys = keys;
     mask = 0xF0;
+    keys = mask & ~REG_KEYINPUT;
+    p->keys = keys;
     if ((keys & ~old & mask) == mask)
     {
         start = p->unk24;
@@ -923,43 +923,59 @@ static inline u32 fold_nibbles(u32 acc, u32 word)
 NONMATCH("asm/code_0801931C/serial_make_packet.s", u32 serial_make_packet(u8 kind, u32 unused1, u32 unused2, u32 packet))
 {
     u32 word;
-    u8 phase;
+    u32 acc;
+    u8 i;
     u32 k = kind - 2;
 
     switch (k)
     {
     case 0:
         word = 0x10000010;
-        packet = (fold_nibbles(1, word) & 0xF) | word;
+        acc = 1;
+        for (i = 6; i != 0; i--)
+            acc ^= (word >> (i << 2)) & 0xF;
+        packet = (acc & 0xF) | word;
         break;
     case 1:
         word = ((((struct LinkRam *)&gUnk_03000D18)->rx2 & 0xFFFFFF) << 4) | 0x20000000;
-        packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+        acc = 2;
+        for (i = 6; i != 0; i--)
+            acc ^= (word >> (i << 2)) & 0xF;
+        packet = (acc & 0xF) | word;
         break;
     case 2:
-        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
-        if ((phase & 0x30) == 0)
+        if ((((struct LinkRam *)&gUnk_03000D18)->phase & 0x30) == 0)
         {
-            word = ((serial_slot_bits(0, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
-            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+            word = ((serial_slot_bits(0, ((struct LinkRam *)&gUnk_03000D18)->phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            acc = 4;
+            for (i = 6; i != 0; i--)
+                acc ^= (word >> (i << 2)) & 0xF;
+            packet = (acc & 0xF) | word;
         }
-        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
-        if ((phase & 0x30) == 0x10)
+        if ((((struct LinkRam *)&gUnk_03000D18)->phase & 0x30) == 0x10)
         {
-            word = ((serial_slot_bits(1, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
-            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+            word = ((serial_slot_bits(1, ((struct LinkRam *)&gUnk_03000D18)->phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            acc = 4;
+            for (i = 6; i != 0; i--)
+                acc ^= (word >> (i << 2)) & 0xF;
+            packet = (acc & 0xF) | word;
         }
-        phase = ((struct LinkRam *)&gUnk_03000D18)->phase;
-        if ((phase & 0x30) == 0x20)
+        if ((((struct LinkRam *)&gUnk_03000D18)->phase & 0x30) == 0x20)
         {
-            word = ((serial_slot_bits(2, phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
-            packet = (fold_nibbles(word >> 28, word) & 0xF) | word;
+            word = ((serial_slot_bits(2, ((struct LinkRam *)&gUnk_03000D18)->phase, (u32)&gUnk_03000D18) & 0xFFFFFF) << 4) | 0x40000000;
+            acc = 4;
+            for (i = 6; i != 0; i--)
+                acc ^= (word >> (i << 2)) & 0xF;
+            packet = (acc & 0xF) | word;
         }
         break;
     case 3:
     case 4:
         word = 0x10000010;
-        packet = (fold_nibbles(1, word) & 0xF) | word;
+        acc = 1;
+        for (i = 6; i != 0; i--)
+            acc ^= (word >> (i << 2)) & 0xF;
+        packet = (acc & 0xF) | word;
         break;
     }
     return packet;
