@@ -1441,8 +1441,7 @@ NONMATCH("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(str
         }
         else
         {
-            x = base - 0x10;
-            x += (s8)obj->frame;
+            x = (s8)obj->frame + (base - 0x10);
         }
         node->x = x & 0xFF;
         node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
@@ -1467,7 +1466,6 @@ ASM_FUNC("asm/code_08107268/marker_cursor_update.s", void marker_cursor_update(s
 
 NONMATCH("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update(struct MarkerObj *obj))
 {
-    s32 bankStep = 0x10000;
     struct MarkerLink *link;
     struct MarkerPool *pool;
     struct MarkerNode *sprA;
@@ -1505,7 +1503,7 @@ NONMATCH("asm/code_08107268/marker_flag400_update.s", void marker_flag400_update
             bit = 1;
             do
             {
-                t = (bank << 16) + bankStep;
+                t = (bank << 16) + 0x10000;
                 bank = (u32)t >> 16;
                 pos = t >> 16;
                 if (pos > 15)
