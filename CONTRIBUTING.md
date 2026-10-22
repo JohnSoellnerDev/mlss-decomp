@@ -84,7 +84,10 @@ function start, calls show the relocation (the called symbol). A worked example 
   pointer variable; GCC then shares the address itself. `ldrsh`/`ldrsb` mean the field is
   signed (`s16`/`s8`).
 - Reading a bit field through a struct pointer compiles to a word `ldr`; when the original
-  uses `ldrb` + `lsls`/`lsrs`, read the byte and shift (`((u32)x << 25) >> 31`).
+  uses `ldrb` + `lsls`/`lsrs`, read the byte and shift (`((u32)x << 25) >> 31`). A struct of
+  `u8` bit fields cast onto a byte also loads a word (ARM aligns every struct to 4 bytes); declare
+  it `__attribute__((packed))` to get the `ldrb` (`hero_pair_place_both_tracked` in
+  src/code_080D3644.c).
 - Clearing or setting bits of a byte keeps the full int constant in the original
   (`ldrb; movs r0, #9; rsbs r0, r0, #0; ands r0, r2; strb` = and with -9). A plain
   `p->flags &= ~8` on a `u8` gets the constant narrowed and does not match. Write a bit-field
