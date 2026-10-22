@@ -296,7 +296,71 @@ u32 hero_pair_setup(struct HeroBody *body)
     return 1;
 }
 
-ASM_FUNC("asm/code_080C1420/hero_pair_place_finish_ab.s", void hero_pair_place_finish_ab(struct HeroBody *body))
+NONMATCH("asm/code_080C1420/hero_pair_place_finish_ab.s", void hero_pair_place_finish_ab(struct HeroBody *body))
+{
+    s32 modeMask = 0x3F;
+    struct World *world;
+    struct Hero *hero_a;
+    struct Hero *hero_b;
+    struct HeroBody *body_a;
+    struct HeroBody *body_b;
+    struct HeroData *data;
+    u8 *pose;
+    s32 none;
+    u32 bit_a;
+    u32 bit_b;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    gWorld->unk0E = 5;
+    world = gWorld;
+    pose = gParty;
+    bit_a = (pose[0x46] >> 2) & 1;
+    bit_b = (((u32)*(u16 *)(pose + 0x48) << 22) >> 26) & 1;
+    world->modeByte = (world->modeByte & modeMask) | ((bit_a + (bit_b << 1)) << 6);
+    hero_a = gWorld->heroA;
+    body_a = &hero_a->body;
+    hero_b = gWorld->heroB;
+    body_b = &hero_b->body;
+    none = -1;
+    set_slot_value(0x88, none);
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        data = body_a->data;
+        x = data->targetX / 0x100 + 8;
+        y = data->targetY / 0x100 + 0x10;
+        z = data->targetH / 0x100;
+        place_targets(body_a, x, y, z, none);
+        set_motion_start(body_a, 0x200);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        sprite_set_action(body_a, 0, 0x2034, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        body_a->state = 0;
+        enter_finish_flag(body_a);
+    }
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        data = body_b->data;
+        x = data->targetX / 0x100 - 0xA;
+        y = data->targetY / 0x100 - 0x10;
+        z = data->targetH / 0x100;
+        place_targets(body_b, x, y, z, -1);
+        set_motion_start(body_b, 0x200);
+    }
+    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    {
+        sprite_set_action(body_b, 0, 0x2063, 0);
+        ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+    }
+    body->state = hero_b_step_active_to_176c;
+}
+END_NONMATCH
 
 void hero_b_set_rate_if_idle(struct HeroBody *body)
 {
