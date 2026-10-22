@@ -272,6 +272,19 @@ function start, calls show the relocation (the called symbol). A worked example 
   blt else`) with the case block first is a `switch` with `case 0xD: case 0xE:` and a `default`;
   an `if` chain gives `cmp #0xc; bgt` instead (example `partner_step_wait` in
   src/code_0809583C.c).
+- A store or call that both branches end with is often written out in each branch in the
+  original (GCC merges the identical tails itself): `owner->state = status_wait_slot;` in one
+  branch and `owner->state = status_slots_update;` in the other, not a `next` variable stored after
+  the `if` (`state_status_wait_slot` in src/code_0810A2FC.c, `spawn_slot_marker` in
+  src/code_0810BB0C.c, `actor_land_and_move` in src/code_08069778.c).
+- A test of two loaded values is often one expression: `if (!((*a | *b) & 0x300))` instead of a
+  temporary that is or-ed first (`state_wait_free_slots` in src/code_08100FFC.c).
+- A pool constant loaded into one register and copied into another before a loop
+  (`ldr r0, =0xFFFFF000; adds r6, r0, #0`) is a 16-bit constant on a halfword store:
+  `*p = x | 0xF000;` (`build_gradient_table` in src/code_0801D358.c).
+- Flags set as `ldrb r0; movs r1, #0x80; orrs r0, r1` where yours swaps r0/r1 are bit-field
+  assignments (`->bit7 = 1; ->bit6 = 1;` on a `u8 x : 1` struct), in each branch
+  (`obj_try_start_hop` and two more in src/code_08137B08.c).
 - No inline assembly, `register` variables, `asm("")` tricks, `volatile` or dummy variables that
   only exist to force a register choice or instruction order.
 - If the C does the same thing but does not match after real effort, keep it as
