@@ -159,6 +159,13 @@ struct World
     u16 scroll316;
 };
 
+struct SlotMarkers
+{
+    u8 filler0[0x2C2];
+    u8 lo[3];
+    u8 hi[3];
+};
+
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
 extern struct OamList *gModelCtx;
@@ -609,15 +616,18 @@ NONMATCH("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x
     s32 handle;
     s32 slotOfs;
     s32 bits;
+    s32 *px;
+    s32 *py;
+    s32 *ph;
 
+    prio = mode;
     world = gWorld;
     slotOfs = 0x278;
-    prio = mode;
-    if ((s32)world->active != world->unk74)
+    obj = *(struct Obj **)((u8 *)world + slotOfs);
+    if ((s32)world->active == world->unk74)
     {
         prio += 1;
     }
-    obj = *(struct Obj **)((u8 *)world + slotOfs);
     if (obj == 0)
     {
         obj = obj_spawn(0, (u16)kind, x, y, z, 0, 1);
@@ -634,7 +644,11 @@ NONMATCH("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x
         }
         sub = obj->pic;
         bits = *((u8 *)sub + 0x1F);
-        *((u8 *)sub + 0x1F) = (((((((bits & 0x3F) | 0x80) & -0x31) | 0x20) & -0xD) | 8) & -4) | 2;
+        bits = (bits & 0x3F) | 0x80;
+        bits = (bits & -0x31) | 0x20;
+        bits = (bits & -0xD) | 8;
+        bits = ((bits & -4) | 2);
+        *((u8 *)sub + 0x1F) = bits;
         if (*((u8 *)obj->pic + 0x21) != prio)
         {
             sprite_set_action(obj, prio, 0, 0);
@@ -643,11 +657,14 @@ NONMATCH("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x
     x <<= 8;
     y <<= 8;
     z <<= 8;
-    if (obj->x0 != x || obj->y0 != y || obj->h != z)
+    px = &obj->x0;
+    py = &obj->y0;
+    ph = &obj->h;
+    if (*px != x || *py != y || *ph != z)
     {
-        obj->x0 = x;
-        obj->y0 = y;
-        obj->h = z;
+        *px = x;
+        *py = y;
+        *ph = z;
         *((u8 *)obj + 0x79) |= 0x20;
         obj->speed = 0x1000;
         handle = *(s32 *)((u8 *)obj + 0x80);
@@ -733,16 +750,14 @@ void refresh_world_object(struct WorldObj *obj, s32 mode)
 
 NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 value, s32 slot, s32 flag, s32 mode_base))
 {
-    s32 kc = 0x2C5;
     struct World **pw;
-    s32 pos;
+    s32 pos = value;
     s32 limit;
     s32 hi;
     u16 mode;
     s32 x;
     s32 z;
 
-    pos = value;
     switch (slot)
     {
     case 0:
@@ -761,8 +776,8 @@ NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 v
     limit = (s16)limit;
     if (limit > 5)
     {
-        hi = (s8)*((u8 *)*pw + 0x2C5 + slot);
-        pos = pos - (s8)*((u8 *)*pw + 0x2C2 + slot);
+        hi = (s8)((struct SlotMarkers *)*pw)->hi[slot];
+        pos = pos - (s8)((struct SlotMarkers *)*pw)->lo[slot];
         if (pos < 0)
         {
             pos += limit;
@@ -776,7 +791,7 @@ NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 v
             pos = hi;
         }
     }
-    *((u8 *)*pw + kc + slot) = pos;
+    ((struct SlotMarkers *)*pw)->hi[slot] = pos;
     if (flag != 0)
     {
         mode = mode_base + 9;
@@ -853,6 +868,7 @@ NONMATCH("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(s
     u32 i;
     s16 sVar;
     u16 timerVal;
+    s32 *p;
 
     timer = gWorld->timerObj;
     timerVal = timer->startY;
@@ -867,9 +883,10 @@ NONMATCH("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(s
         {
             *(s32 *)(block + 0x200 + i * 4) = zero;
         }
+        p = (s32 *)(block + 0x420);
         for (i = 0; i < 8; i++)
         {
-            *(s32 *)(block + 0x420 + i * 4) = zero;
+            p[i] = zero;
         }
         voice = &gWorld->voice29C;
         if (*(u8 *)voice->textId != 0)
