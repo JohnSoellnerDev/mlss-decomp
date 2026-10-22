@@ -14,6 +14,7 @@ extern const u32 gRomBootWords[];
 void cpu_set(const void *src, void *dst, u32 ctl);
 void cpu_fast_set(const void *src, void *dst, u32 ctl);
 extern u8 gUnk_02000080[];
+extern vu16 gUnk_02000004;
 void sub_081DB79C(u32 arg);
 void sound_driver_init(void);
 void m4a_sound_init(u8 *p);
@@ -98,6 +99,20 @@ struct HeapBlock
     u32 size;
     u8 tag[4];
 };
+
+struct SysBusyBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 unk3 : 5;
+} __attribute__((packed));
+
+struct SysBusyLine
+{
+    u16 unk0 : 3;
+    u16 line : 7;
+    u16 unk10 : 6;
+} __attribute__((packed));
 
 ASM_FUNC("asm/code_08017A00/agb_main.s", void agb_main(void))
 
@@ -491,6 +506,52 @@ void init_sys_defaults(void)
     set_vcount_mode(0, 0x64);
 }
 
-ASM_FUNC("asm/code_08017A00/set_vcount_mode.s", void set_vcount_mode(u32 mode, u32 line))
+static inline void dma_clear_enable(struct DmaRegs *dma)
+{
+    ((vu16 *)&dma->ctl)[1] = ((vu16 *)&dma->ctl)[1] & 0xC5FF;
+    ((vu16 *)&dma->ctl)[1] = ((vu16 *)&dma->ctl)[1] & 0x7FFF;
+    (void)((vu16 *)&dma->ctl)[1];
+}
+
+NONMATCH("asm/code_08017A00/set_vcount_mode.s", void set_vcount_mode(u32 mode, u32 line))
+{
+    u8 *sys;
+    u8 *flags;
+    u32 old;
+    u32 v;
+
+    sys = gSys;
+    flags = &sys[0x88C];
+    old = *flags;
+    if (mode != ((struct SysBusyBits *)flags)->mode || (mode == 1 && (old & 6) == 2 && line != ((((u32)*(u16 *)flags) << 22) >> 25)))
+    {
+        dma_clear_enable((struct DmaRegs *)0x040000BC);
+        dma_clear_enable((struct DmaRegs *)0x040000C8);
+        if ((old & 6) == 2)
+        {
+            REG_IME = 0;
+            gUnk_02000004 &= 0xFFDF;
+            REG_IE &= 0xFFFB;
+            REG_IF |= 4;
+            REG_IME = 1;
+        }
+        v = ((mode & 3) << 1);
+        v |= old & -7;
+        *flags = v;
+        if (mode == 1)
+        {
+            set_irq_callback(3, flag_88c_handler_b);
+            REG_IME = 0;
+            gUnk_02000004 &= 0xFF;
+            gUnk_02000004 = (line << 8) | 0x20 | gUnk_02000004;
+            REG_IE |= 4;
+            REG_IF |= 4;
+            REG_IME = mode;
+            *(u16 *)flags = ((*(u16 *)flags) & -1017) | ((line & 0x7F) << 3);
+        }
+    }
+    ((struct SysArea *)gSys)->busy |= 1;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08017A00/update_meter_ramps.s", void update_meter_ramps(void))
