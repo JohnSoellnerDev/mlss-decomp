@@ -367,7 +367,12 @@ NONMATCH("asm/code_081348C4/obj_pick_follow_mode.s", u32 obj_pick_follow_mode(st
     case 0:
     case 1:
         slot = mode + 6;
-        obj->unk2C = (void *)(((u32 *)(gWorld + 0x58))[slot] + 8);
+        {
+            u32 *tab;
+
+            tab = (u32 *)(gWorld + 0x58);
+            obj->unk2C = (void *)(tab[slot] + 8);
+        }
         ((struct ObjFlags77 *)obj)->bit6 = 0;
         ((struct ObjFlags77 *)obj)->bit5 = 0;
         obj_list_push_default(obj);
