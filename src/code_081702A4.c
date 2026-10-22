@@ -65,6 +65,7 @@ extern const u8 gClassEc78[];
 extern const u8 gHeapTagSpritePair0[];
 extern const u8 gHeapTagSpritePair1[];
 extern u16 gUnk_02000050[];
+extern s16 gLanguageRowOffsets[];
 u32 rand_scaled(u32 a, u32 b);
 u8 timer_tick(void *timer);
 void palette_fill(u32 v);
@@ -75,18 +76,88 @@ void obj_phase_slide_a(struct SlotObj *obj);
 void obj_phase_count_b(struct SlotObj *obj);
 void slot_hud_obj_state4_if_flag8(struct SlotObj *obj);
 void slot_hud_obj_run_stage(struct SlotObj *obj);
+void draw_two_numbers(struct SlotObj *obj);
+
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+void obj_setup_slot(void *obj, u32 a, u32 b, u32 c, s32 offset, ByteArg flag);
+void obj_claim_slot_97(void *obj);
+void obj_release_slot_97(void *obj);
+
+struct SlotPair
+{
+    void *a;
+    u8 filler4[0x14];
+    void *b;
+};
 
 ASM_FUNC("asm/code_081702A4/obj_setup_row_slots_a.s", void obj_setup_row_slots_a(void))
+
 
 ASM_FUNC("asm/code_081702A4/obj_setup_row_slots_b.s", void obj_setup_row_slots_b(void))
 
 ASM_FUNC("asm/code_081702A4/obj_setup_row_slots_c.s", void obj_setup_row_slots_c(void))
 
-ASM_FUNC("asm/code_081702A4/obj_fill_slot_group.s", void obj_fill_slot_group(void))
+NONMATCH("asm/code_081702A4/obj_fill_slot_group.s", void obj_fill_slot_group(struct SlotObj *obj, u32 group))
+{
+    struct SlotPair *s;
+    u8 *b;
+    u8 *t;
+    u8 *st;
+    s32 i;
+    u32 spawned;
+    u32 shift;
+    s32 limit;
+    u32 ofs;
+    u32 order;
+    u32 cur;
+    u16 flags;
 
-ASM_FUNC("asm/code_081702A4/draw_two_numbers.s", void draw_two_numbers(void))
+    spawned = 0;
+    i = 4;
+    ofs = group << 2;
+    t = (u8 *)obj + 8;
+    b = (u8 *)(ofs + (u32)t);
+    s = (struct SlotPair *)(b + 0x60);
+    order = 0x8A00;
+    shift = group << 12;
+    limit = 5 - group;
+    for (; i >= 0; i--)
+    {
+        cur = (u32)s->b;
+        if (cur == 0 && s->a != 0)
+        {
+            obj_setup_slot(s->a, shift + 0x4600, 0, order, 8, (u8)cur);
+            s->b = s->a;
+            *(u16 *)((u8 *)s->b + 0x50) = limit;
+            s->a = (void *)cur;
+            spawned++;
+        }
+        s = (struct SlotPair *)((u8 *)s - 0x18);
+        order -= 0x1000;
+    }
+    if (spawned != 0)
+    {
+        obj_claim_slot_97(obj);
+        st = (u8 *)obj + 0xC0;
+        *(u32 *)(st + ofs) = 8;
+        flags = 0x28 | *(u16 *)((u8 *)obj + 0xE8);
+    }
+    else
+    {
+        obj_release_slot_97(obj);
+        st = (u8 *)obj + 0xC0;
+        *(u32 *)(st + ofs) = spawned;
+        flags = 0xFF80 & *(u16 *)((u8 *)obj + 0xE8);
+    }
+    *(u16 *)((u8 *)obj + 0xE8) = flags;
+}
+END_NONMATCH
+
+
+ASM_FUNC("asm/code_081702A4/draw_two_numbers.s", void draw_two_numbers(struct SlotObj *obj))
 
 ASM_FUNC("asm/code_081702A4/hud_update_tiles.s", void hud_update_tiles(void))
+
 
 ASM_FUNC("asm/code_081702A4/obj_reset_hud_tiles.s", void obj_reset_hud_tiles(void))
 
