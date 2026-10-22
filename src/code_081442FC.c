@@ -711,11 +711,10 @@ NONMATCH("asm/code_081442FC/enemy_chase_step.s", void enemy_chase_step(struct Ow
     {
         struct Sprite *bs = body->sprite;
         s32 src = ent->sprite->unk11;
-        s32 bit6 = src & 0x40;
         s32 b = bs->unk11;
 
         b = b & -0x41;
-        b = b | bit6;
+        b = b | (src & 0x40);
         bs->unk11 = b;
     }
     obj_refresh_sub_attr(body);
@@ -828,7 +827,7 @@ void enemy_stop_tracking(struct Owner *owner, struct Enemy *ent)
 
 ASM_FUNC("asm/code_081442FC/enemy_wait_b_runner.s", void enemy_wait_b_runner(struct Owner *owner, struct Enemy *ent))
 
-NONMATCH("asm/code_081442FC/enemy_idle_runner.s", void enemy_idle_runner(struct Owner *owner, struct Enemy *ent))
+void enemy_idle_runner(struct Owner *owner, struct Enemy *ent)
 {
     u8 sel;
     u8 *ai = (u8 *)ent + 0x58;
@@ -874,12 +873,18 @@ NONMATCH("asm/code_081442FC/enemy_idle_runner.s", void enemy_idle_runner(struct 
         s8 *rec = *(s8 **)(ai + 0x158);
         s16 box[8];
 
-        box[0] = rec[0x34] << 4;
-        box[2] = rec[0x35] << 4;
-        box[4] = rec[0x36] << 4;
-        box[1] = rec[0x37] << 4;
-        box[3] = rec[0x38] << 4;
-        box[5] = rec[0x39] << 4;
+        s8 *p = rec + 0x34;
+        box[0] = *p << 4;
+        p++;
+        box[2] = *p << 4;
+        p++;
+        box[4] = *p << 4;
+        p++;
+        box[1] = *p << 4;
+        p++;
+        box[3] = *p << 4;
+        p++;
+        box[5] = *p << 4;
         if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) != 0)
         {
             *(void **)(ai + 0x140) = (void *)enemy_idle_update;
@@ -893,7 +898,6 @@ NONMATCH("asm/code_081442FC/enemy_idle_runner.s", void enemy_idle_runner(struct 
         }
     }
 }
-END_NONMATCH
 
 void enemy_idle_update(struct Owner *owner, struct Enemy *ent)
 {
