@@ -31,6 +31,12 @@ struct HeroSpriteBits
     u8 unk3 : 5;
 };
 
+struct HeroCcBits
+{
+    u8 low : 7;
+    u8 high : 1;
+};
+
 struct HeroSpan
 {
     s16 a;
@@ -348,7 +354,74 @@ void jitter_place_a_hero_pair_place_both_finish(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080C6344/hero_a_jitter_link_partner.s", void hero_a_jitter_link_partner(void))
+NONMATCH("asm/code_080C6344/hero_a_jitter_link_partner.s", void hero_a_jitter_link_partner(struct HeroBody *body))
+{
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *partner = body->partner;
+    struct HeroData *data;
+    s32 mask;
+    s32 raw;
+    s32 index;
+    s32 jx;
+    s32 jy;
+    s32 x;
+    s32 y;
+    s32 tx;
+    s32 ty;
+
+    data = partner->data;
+    data->flags111 |= 2;
+    mask = 0xFFF;
+    raw = hero_a->body.timer + 1;
+    hero_a->body.timer = raw;
+    index = mask & raw;
+    if (index <= 4)
+    {
+        hero_a->body.jitterX = gJitterTable2[index * 2];
+        hero_a->body.jitterY = gJitterTable2[(mask & hero_a->body.timer) * 2 + 1];
+    }
+    else
+    {
+        s8 *range = gJitterRange2;
+
+        if (range[0] < range[2])
+            jx = range[0] + rand_below(range[2] - range[0], mt19937_next());
+        else
+            jx = range[2] + rand_below(range[0] - range[2], mt19937_next());
+        hero_a->body.jitterX = jx;
+
+        if (range[1] < range[3])
+            jy = range[1] + rand_below(range[3] - range[1], mt19937_next());
+        else
+            jy = range[3] + rand_below(range[1] - range[3], mt19937_next());
+        body_a->jitterY = jy;
+    }
+    ((struct HeroCcBits *)&body_a->cc)->low = 0;
+    body_a->scale = 0x100;
+    resolve_contact_action(body_a, partner, 0, 0, 0x0403058B);
+    body_a->count++;
+    data = partner->data;
+    if (data->unkF6 > 0 || (data->flags111 & 2) != 0)
+    {
+        tx = partner->targetX;
+        if (tx < 0)
+            tx += 0xFF;
+        x = (tx >> 8) + partner->ofsX;
+        ty = partner->targetY;
+        if (ty < 0)
+            ty += 0xFF;
+        y = (ty >> 8) + partner->ofsY;
+        effect_spawn_at(0x2E93, x, y, 0, partner);
+    }
+    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    {
+        sprite_set_action(body_a, 6, 0x2034, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+    }
+    body->state = hero_a_phase_place_or_next;
+}
+END_NONMATCH
 
 void hero_a_phase_place_or_next(struct HeroBody *body)
 {
