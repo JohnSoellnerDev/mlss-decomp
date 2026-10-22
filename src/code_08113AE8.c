@@ -84,9 +84,13 @@ struct SpriteNode
 
 struct World
 {
-    u8 filler0[0x0C];
+    u8 filler0[0x05];
+    u8 unk5;
+    u8 filler6[0x06];
     u8 flags;
-    u8 filler0D[0x4B];
+    u8 filler0D[0x0F];
+    u8 *unk1C;
+    u8 filler20[0x38];
     struct Scene *scene;
     u8 filler5C[0x04];
     u8 *linkA;
@@ -185,6 +189,7 @@ extern const u16 gModeStartX[];
 extern const u16 gModeStartY[];
 extern const u16 gUnk_08202218[];
 extern const u32 gSlotAngle[];
+extern const u8 gRomMotionTable[];
 extern s16 gCosineTable[];
 extern s16 gSineTable[];
 
@@ -214,7 +219,9 @@ void world_link_b_setup(struct Obj *obj, u16 flag);
 void obj_move_to_scene_target(struct Obj *obj);
 void obj_setup_motion_from_scene(struct Obj *obj);
 void obj_motion_step_a(struct Obj *obj);
-void obj_query_contact_step(struct Obj *obj);
+u32 obj_query_contact_step(struct Obj *obj);
+u32 query_contact(struct Obj *obj);
+u32 place_part_in_slot(s32 slot, s32 mode, s32 a2, s32 a3, s32 s0, s32 s4, s32 s8);
 void screen_helpers_obj_show_at(struct Obj *obj);
 void partner_link_update(struct Owner *owner, struct Obj *obj, u32 flags);
 void obj_clear_when_unflagged(struct Obj *obj);
@@ -267,7 +274,7 @@ void obj_spawn_child(struct Obj *obj)
         child->callback = obj_setup_motion_from_scene;
         ((struct KindBits *)&child->kind)->kind = 2;
         obj_list_push_default(child);
-        child->cb5C = obj_query_contact_step;
+        child->cb5C = (void (*)(struct Obj *))obj_query_contact_step;
         effect_spawn_at(0x28F8, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
         obj->callback = obj_stop_anim_clear_cb;
         set_slot_value(0xA0, -1);
@@ -377,7 +384,77 @@ NONMATCH("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08113AE8/obj_query_contact_step.s", void obj_query_contact_step(struct Obj *obj))
+NONMATCH("asm/code_08113AE8/obj_query_contact_step.s", u32 obj_query_contact_step(struct Obj *obj))
+{
+    struct Obj *part;
+    u8 *table;
+    u8 *row;
+    s32 index;
+    s32 dx;
+    s32 dy;
+    s32 speed;
+    s32 q;
+    s32 *phase;
+    s32 pa;
+    s32 pb;
+    s32 pc;
+    u32 pd;
+    u32 contact;
+    u16 mid;
+    s32 len;
+
+    contact = query_contact(obj);
+    if (contact != 0)
+    {
+        return contact;
+    }
+    obj->dispZ = 0x800;
+    obj->unk92 = contact;
+    index = obj->unk9C;
+    if (index > 2)
+    {
+        table = gWorld->unk1C;
+        row = (u8 *)gRomMotionTable + ((((table[1] << 1) + table[1]) << 3) + (index << 2));
+        mid = *(u16 *)(table + (index << 2) + 8);
+        pa = (s32)((u32)*(u16 *)row << 22) >> 22;
+        pb = (s32)(*(u32 *)row << 12) >> 22;
+        pc = (s32)((u32)*(u16 *)(row + 2) << 18) >> 22;
+        pd = (*(u32 *)row << 1) >> 31;
+        part = (struct Obj *)place_part_in_slot(index, mid, pa, pb, pc, pd, contact);
+        ((u8 *)part)[0x7E] |= 6;
+        gWorld->unk5 -= 1;
+        obj->keyX = ((struct ListItem *)part)->targetX;
+        obj->keyY = ((struct ListItem *)part)->targetY;
+        obj->keyZ = ((struct ListItem *)part)->targetZ;
+        obj->pixX = obj->posX / 0x100;
+        obj->pixY = obj->posY / 0x100;
+        dx = obj->keyX - obj->posX;
+        dy = obj->keyY - obj->posY;
+        len = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
+        speed = len / 0x280;
+        q = obj->posZ / (speed * speed);
+        phase = (s32 *)&obj->phase;
+        if (q <= 1)
+        {
+            if (q < -1)
+                *phase = -q;
+            else
+                *phase = 2;
+        }
+        else
+        {
+            *phase = q;
+        }
+        obj->slot = dx / 0x100;
+        obj->unkB0 = dy / 0x100;
+        obj->unkB2 = speed;
+        obj->timer = 0;
+        obj->scene->mode = 1;
+        obj->callback = obj_motion_step_b;
+    }
+    return 0;
+}
+END_NONMATCH
 
 void obj_stop_anim_clear_cb(struct Obj *obj)
 {
@@ -642,7 +719,9 @@ NONMATCH("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struc
     part->nodeTake4 = take;
     take->sprite = part->sprite;
     take->pos = pos;
-    tail = pos->head = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    pos->head = n;
+    tail = n;
     n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
     tail->next = n;
     tail = n;
@@ -712,7 +791,9 @@ NONMATCH("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struc
     part->nodeTake4 = take;
     take->sprite = part->sprite;
     take->pos = pos;
-    tail = pos->head = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+    pos->head = n;
+    tail = n;
     n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
     tail->next = n;
     tail = n;
