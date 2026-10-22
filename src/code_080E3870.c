@@ -44,6 +44,20 @@ struct WorldRef
     struct ObjA *obj2D8;
 };
 
+struct PendingCtx
+{
+    u8 filler0[0xC];
+    u16 pending[16];
+};
+
+struct SysBlock
+{
+    s16 unk0;
+    u16 unk2;
+    u8 filler4[0x880];
+    s32 unk884;
+};
+
 extern struct WorldRef *gWorld;
 extern u8 gSys[];
 extern u8 *gMemRoutines;
@@ -165,7 +179,24 @@ void sub_080E40FC(void)
 
 ASM_FUNC("asm/code_080E3870/place_layer_tile.s", void place_layer_tile(void))
 
-ASM_FUNC("asm/code_080E3870/refresh_slot_flags.s", void refresh_slot_flags(void))
+NONMATCH("asm/code_080E3870/refresh_slot_flags.s", void refresh_slot_flags(void))
+{
+    s32 i = 0;
+    s32 key1 = 0xFFFF;
+    s32 key2 = 0x1FFF;
+    for (; i < 16; i++)
+    {
+        u8 *slot = gUnk_03000F78 + i;
+        u16 e = ((struct PendingCtx *)gModelCtx)->pending[i];
+        s32 v;
+        if (e == key1 || e == key2)
+            v = -1;
+        else
+            v = -2;
+        *slot = v;
+    }
+}
+END_NONMATCH
 
 u32 world_entry_ready(void)
 {
@@ -207,7 +238,7 @@ u32 poll_flag_bd0(void)
     return 0;
 }
 
-NONMATCH("asm/code_080E3870/clear_ewram_from_obj.s", void clear_ewram_from_obj(void))
+void clear_ewram_from_obj(void)
 {
     struct ObjA *obj;
     u32 v;
@@ -218,14 +249,10 @@ NONMATCH("asm/code_080E3870/clear_ewram_from_obj.s", void clear_ewram_from_obj(v
     ((void (*)(u32, void *, u32))gMemRoutines)(v, gUnk_02000080, 0x200);
     v |= v << 16;
     ((void (*)(u32, void *, u32))gMemRoutines)(v, gUnk_02000080, 0x400);
-    {
-        u8 *base = gSys;
-        *(u16 *)(base + 2) = 0xFFFF;
-        *(s16 *)base = -1;
-        *(u32 *)(base + 0x884) = -1;
-    }
+    ((struct SysBlock *)gSys)->unk2 = 0xFFFF;
+    ((struct SysBlock *)gSys)->unk0 = -1;
+    ((struct SysBlock *)gSys)->unk884 = -1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E3870/unknown_thumb_080e467c.s", void unknown_thumb_080e467c(void))
 
@@ -264,7 +291,7 @@ NONMATCH("asm/code_080E3870/unknown_thumb_080e4860.s", u8 *unknown_thumb_080e486
     size = (u32)var_block_routine - (u32)src;
     cpu_set(src, aligned, (size << 10) >> 11);
     gUnk_03000F88 = aligned;
-    gUnk_03000F8C = aligned + ((u8 *)rect_fill_routine - src);
+    gUnk_03000F8C = aligned + ((u32)rect_fill_routine - (u32)src);
     return aligned + size;
 }
 END_NONMATCH
