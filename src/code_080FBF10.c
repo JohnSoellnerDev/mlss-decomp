@@ -273,6 +273,7 @@ u8 zone_hit_sub_offsets(u8 *owner, struct SceneSlot *slot)
 }
 NONMATCH("asm/code_080FBF10/zone_hit_box_full.s", u8 zone_hit_box_full(u8 *owner, struct SceneSlot *slot))
 {
+    s32 heightOpen = 0x7FFF;
     s16 *bounds = slot->box;
     struct SceneObj *obj = slot->obj;
     u8 found;
@@ -305,7 +306,7 @@ NONMATCH("asm/code_080FBF10/zone_hit_box_full.s", u8 zone_hit_box_full(u8 *owner
     {
         return 0;
     }
-    return boxes_overlap_oriented((s16 *)((u8 *)bounds + 0x10), obj, entry, 0x7FFF, 0x7FFF) & 0xFF;
+    return boxes_overlap_oriented((s16 *)((u8 *)bounds + 0x10), obj, entry, heightOpen, 0x7FFF) & 0xFF;
 }
 END_NONMATCH
 
@@ -463,11 +464,7 @@ NONMATCH("asm/code_080FBF10/find_active_entry.s", u8 find_active_entry(u8 *owner
     ready = ((u32)entry->unk20C << 31) >> 31;
     ready &= ((u32)entry->unk352 << 28) >> 31;
     ready &= ((u32)entry->unk20D << 30) >> 31;
-    if (ready != 0)
-    {
-        *out = sel;
-    }
-    else
+    if (ready == 0)
     {
         slot = owner + 0x28;
         if ((select & 4) == 0)
@@ -482,6 +479,10 @@ NONMATCH("asm/code_080FBF10/find_active_entry.s", u8 find_active_entry(u8 *owner
             return 0;
         }
         *out = ((select >> 2) ^ 1) & 1;
+    }
+    else
+    {
+        *out = sel;
     }
     return 1;
 }
