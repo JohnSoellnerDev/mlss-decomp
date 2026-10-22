@@ -259,6 +259,12 @@ void obj_load_record(void *rec, u32 a, s32 b, u32 c, u32 d);
 void sprite_update_cd0(void *obj);
 void obj_gfx_step(void *obj, void *list, u8 *count);
 void release_obj_131c(void *obj);
+extern u8 gSys[];
+extern const u16 gTileHalfTable[];
+extern const u8 gUnk_089F46B0[];
+extern u8 gUnk_020003C0[];
+void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
+void state_run_handler(void);
 
 NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
 {
@@ -704,14 +710,236 @@ void task_wait_poll_flag(struct TaskNode *task)
     }
 }
 
-ASM_FUNC("asm/code_08080580/task_init_map.s", void task_init_map(struct TaskNode *task))
+void *owner_init_state(void *owner, u32 prio, const void *data);
+void free_task_state(void *state, u32 kind);
+void set_flag_2_2(void *p);
+void ensure_code_entry(u32 id);
+void *alloc_list_entry(s32 kind, u32 size, u8 sub, u16 id);
+u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g);
+extern const u8 gMapTableTag[];
+extern u32 gTaskPickMaskTable[];
+extern const u8 gPartTemplates[];
+extern const u16 gPartSetupA;
+extern const u16 gPartSetupB;
+
+NONMATCH("asm/code_08080580/task_init_map.s", void task_init_map(struct TaskNode *task))
+{
+    void **slot;
+    void *mem;
+    u8 *table;
+    u8 *cur;
+    u8 *base;
+    u32 v3;
+    u32 t;
+    u32 *dst;
+    struct PartSlot *q;
+    u32 *list;
+    u32 *e;
+    u32 first;
+    s32 left;
+    u32 weight;
+    u32 local;
+    s32 idx;
+
+    if (*(s16 *)((u8 *)gWorld->unk24C + 0x1C) != 0)
+    {
+        return;
+    }
+    if (gWorld->unk244 != 0)
+    {
+        free_task_state(gWorld->unk244, 3);
+    }
+    slot = &gWorld->unk244;
+    mem = heap_alloc2(0x34, 0, gMapTableTag, 0);
+    *slot = owner_init_state(mem, 7, gMapTableTag);
+    set_flag_2_2(gWorld->unk244);
+    table = (u8 *)gTaskPickTable + (gWorld->unk2B6 << 5);
+    gWorld->unk1C = table;
+    weight = table[0] & 0x7F;
+    left = 0x64;
+    while (weight < (u32)rand_below(left, mt19937_next()))
+    {
+        gWorld->unk2B6++;
+        gWorld->unk1C += 0x20;
+        left -= weight;
+        if (left < 0)
+        {
+            left = 0;
+        }
+        weight = gWorld->unk1C[0] & 0x7F;
+    }
+
+    cur = gWorld->unk1C;
+    e = &gTaskPickMaskTable[cur[2]];
+    list = (u32 *)((u8 *)gWorld + 0x2E0);
+    dst = (u32 *)((u8 *)gWorld + 0x2EC);
+    *dst = *e;
+    base = cur + 8;
+
+    {
+    q = (struct PartSlot *)base;
+    idx = 0;
+loop1:
+    if ((q->flags & 0xE) == 0)
+    {
+        first = lookup_or_alloc_13b4(0, *(u16 *)*(u32 *)((u8 *)gPartTemplates + 8 + q->id * 0x2C), (*e << 22) >> 22, 1);
+        goto store1;
+    }
+    if (idx == 5)
+    {
+        first = (u32)alloc_list_entry(2, ((*e << 22) >> 17) + 0x10, 0, 0);
+        goto store1;
+    }
+    q++;
+    idx++;
+    goto loop1;
+store1:
+    list[0] = first;
+    }
+
+    {
+    q = (struct PartSlot *)base;
+    idx = 0;
+loop2:
+    if ((q->flags & 0xE) == 2)
+    {
+        first = lookup_or_alloc_13b4(0, *(u16 *)*(u32 *)((u8 *)gPartTemplates + 8 + q->id * 0x2C), (*e << 12) >> 22, 1);
+        goto store2;
+    }
+    if (idx == 5)
+    {
+        first = (u32)alloc_list_entry(2, (((*e << 12) >> 22) << 5) + 0x10, 0, 0);
+        goto store2;
+    }
+    q++;
+    idx++;
+    goto loop2;
+store2:
+    list[1] = first;
+    }
+    v3 = *e;
+    t = v3 << 2;
+
+    {
+    q = (struct PartSlot *)base;
+    idx = 0;
+loop3:
+    if ((q->flags & 0xE) == 4)
+    {
+        first = lookup_or_alloc_13b4(0, *(u16 *)*(u32 *)((u8 *)gPartTemplates + 8 + q->id * 0x2C), t >> 22, 1);
+        goto store3;
+    }
+    if (idx == 5)
+    {
+        first = (u32)alloc_list_entry(2, (((v3 << 2) >> 22) << 5) + 0x10, 0, 0);
+        goto store3;
+    }
+    q++;
+    idx++;
+    goto loop3;
+store3:
+    list[2] = first;
+    }
+
+    if (gWorld->unk2B9 != 3)
+    {
+        ensure_code_entry(gPartSetupB);
+    }
+    if (gWorld->unk2B9 != 2)
+    {
+        ensure_code_entry(gPartSetupA);
+    }
+    find_or_alloc_obj_slots(0, 0x7000, 0, 0, 0, &local, 0xB);
+    task->fn = (void *)sprite_update_parts;
+}
+END_NONMATCH
 
 void task_run_parts(struct TaskNode *task);
 ASM_FUNC("asm/code_08080580/sprite_update_parts.s", void sprite_update_parts(struct TaskNode *task))
 
 u32 lookup_or_alloc_13b4(u32 a, u16 id, s32 b, u32 c);
 void task_spawn_objects(struct TaskNode *task);
-ASM_FUNC("asm/code_08080580/task_run_parts.s", void task_run_parts(struct TaskNode *task))
+NONMATCH("asm/code_08080580/task_run_parts.s", void task_run_parts(struct TaskNode *task))
+{
+    s32 index;
+    s32 parity;
+    struct SpritePart *part;
+    void *next_fn;
+    s32 next;
+
+    index = *(s16 *)&task->timer;
+    if (index > 5)
+    {
+        goto fallback;
+    }
+    parity = (6 - index) & 1;
+    if (index >= 6)
+    {
+        goto odd;
+    }
+    if (parity == 0)
+    {
+        goto pair;
+    }
+odd:
+    part = gWorld->parts[index];
+    if (part->runner != 0 && part->runner->handler != 0)
+    {
+        part->runner->handler(part);
+        task->timer = index + 1;
+        task->data = (u8 *)part + 8;
+        task->fn = (void *)state_run_handler;
+        return;
+    }
+    index++;
+    if (index > 5)
+    {
+        goto fallback;
+    }
+pair:
+    part = gWorld->parts[index];
+    if (part->runner != 0 && part->runner->handler != 0)
+    {
+        part->runner->handler(part);
+        task->timer = index + 1;
+        task->data = (u8 *)part + 8;
+        task->fn = (void *)state_run_handler;
+        return;
+    }
+    next = index + 1;
+    part = gWorld->parts[next];
+    if (part->runner != 0 && part->runner->handler != 0)
+    {
+        part->runner->handler(part);
+        task->timer = next + 1;
+        task->data = (u8 *)part + 8;
+        task->fn = (void *)state_run_handler;
+        return;
+    }
+    index += 2;
+    if (index <= 5)
+    {
+        goto pair;
+    }
+fallback:
+    gWorld->sub0 = (struct SubState *)lookup_or_alloc_13b4(0, 0x700A, -1, 1);
+    task->fn = (void *)task_spawn_objects;
+    task->timer = 0;
+    queue_display_entry(2, (u8 *)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (gTileHalfTable[54] << 2)),
+        (void *)0x06016800, 0x200, 0, 0);
+    {
+        void (*copy)(u8 *, u8 *, u32);
+        u8 *src;
+
+        copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+        src = (u8 *)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (gTileHalfTable[(gSys[0x888] & 6) != 0 ? 56 : 55] << 2));
+        copy(src, gUnk_020003C0, 0x20);
+    }
+    *(u16 *)gSys |= 0x400;
+    next_fn = (void *)task_spawn_objects;
+    task->fn = next_fn;
+}
+END_NONMATCH
 
 void task_load_part_codes(void);
 NONMATCH("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(struct TaskNode *task))
@@ -787,7 +1015,11 @@ NONMATCH("asm/code_08080580/task_spawn_objects.s", void task_spawn_objects(struc
                 r = rand_below(value, mt19937_next());
                 sprite_set_action(pose, 0, 0, r);
             }
-            part = gWorld->parts[i + 1];
+            {
+            s32 j = i + 1;
+
+            part = gWorld->parts[j];
+        }
             if ((part->mode & 6) == 4 || (part->mode & 6) == 2)
             {
                 pose = (struct SpriteObj *)((u8 *)part + 8);
@@ -803,23 +1035,30 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08080580/task_load_part_codes.s", void task_load_part_codes(void))
 
-NONMATCH("asm/code_08080580/task_free_blocks.s", void task_free_blocks(struct TaskNode *task))
+static inline u8 *task_pick_table(void)
 {
+    return (u8 *)gTaskPickTable;
+}
+
+void task_free_blocks(struct TaskNode *task)
+{
+    s32 kc = 4;
     u8 idle = is_state_busy();
 
     if (idle == 0)
     {
-        release_block(gWorld->sub0->inner48->block8);
-        set_flags_2_3(gWorld->unk244);
-        *(u32 *)(gWorld->unk250 + 0x280) = create_text_entry(gWorld->unk244, 0, 0x06004020, 0x3FE0, 0xC);
-        *(u32 *)(gWorld->unk250 + 0x284) = create_text_entry(gWorld->unk244, 1, 0x060082C0, 0x3D40, 0xC);
-        setup_bg_entry(gWorld->unk244, 0, 2, 0xF, *(u32 *)(gWorld->unk250 + 0x288), idle, 0x7000, 0xF);
-        ((struct TwBit5 *)&gWorld->flags2BF)->b5 = 0;
-        reset_root_params(gWorld->unk244, *(u32 *)(gTaskPickTable + 4 + (gWorld->unk2B6 << 5)));
+        struct TaskState **pw = &gWorld;
+
+        release_block((*pw)->sub0->inner48->block8);
+        set_flags_2_3((*pw)->unk244);
+        *(u32 *)((*pw)->unk250 + 0x280) = create_text_entry((*pw)->unk244, 0, 0x06004020, 0x3FE0, 0xC);
+        *(u32 *)((*pw)->unk250 + 0x284) = create_text_entry((*pw)->unk244, 1, 0x060082C0, 0x3D40, 0xC);
+        setup_bg_entry((*pw)->unk244, 0, 2, 0xF, *(u32 *)((*pw)->unk250 + 0x288), idle, 0x7000, 0xF);
+        ((struct TwBit5 *)&(*pw)->flags2BF)->b5 = 0;
+        reset_root_params((*pw)->unk244, *(u32 *)(task_pick_table() + kc + ((*pw)->unk2B6 << 5)));
         task->fn = (void *)state_clear_mode_bit;
     }
 }
-END_NONMATCH
 
 void task_state_machine(struct TaskNode *task)
 {
