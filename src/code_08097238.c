@@ -664,8 +664,9 @@ END_NONMATCH
 
 struct SpriteNode *sprite_node_alloc_default(void);
 
-NONMATCH("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(struct Actor *obj))
+void spawn_fall_particle(struct Actor *obj)
 {
+    s32 speedBase = 0x180;
     u16 *counter = (u16 *)(gParty + 0x88);
 
     if (*counter != 0) {
@@ -677,10 +678,10 @@ NONMATCH("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(str
         node->x = obj->targetX + 0x600;
         node->y = obj->targetY;
         node->z = obj->targetZ + ((s8)obj->offZ - 0x16) * 0x100;
-        node->vx = rand_below(0x180, mt19937_next());
-        node->vx += 0x180;
+        node->vx = rand_below(speedBase, mt19937_next());
+        node->vx += speedBase;
         node->vy = 0x4C - rand_below(0x99, mt19937_next());
-        node->vz = rand_below(0x180, mt19937_next());
+        node->vz = rand_below(speedBase, mt19937_next());
         node->vz += 0x280;
         sentinel = obj->child->slots->head;
         node->next = sentinel->next;
@@ -688,7 +689,6 @@ NONMATCH("asm/code_08097238/spawn_fall_particle.s", void spawn_fall_particle(str
         set_slot_value(0x2C, -1);
     }
 }
-END_NONMATCH
 
 void pair_switch_wait(struct Actor *obj)
 {
