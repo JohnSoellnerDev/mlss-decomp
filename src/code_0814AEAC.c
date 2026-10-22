@@ -617,6 +617,7 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
     s32 frames;
     s32 nextX;
     u32 f;
+    u32 t;
 
     beh = (u8 *)obj + 0x58;
     frames = obj->counter2DE + 1;
@@ -639,7 +640,9 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
             (*(u16 *)(beh + 0x17C))++;
         }
         f = *(beh + 0x17E);
-        ((struct Bit2Byte *)(beh + 0x17E))->bit2 = ((f >> 2) ^ 1) & 1;
+        t = f >> 2;
+        t = (t ^ 1) & 1;
+        ((struct Bit2Byte *)(beh + 0x17E))->bit2 = t;
     }
     if (*(u16 *)(beh + 0x17C) > 0x1D)
     {
