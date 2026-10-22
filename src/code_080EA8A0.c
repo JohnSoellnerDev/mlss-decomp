@@ -431,10 +431,11 @@ struct CounterRec
 NONMATCH("asm/code_080EA8A0/counter_step_and_branch.s", u32 counter_step_and_branch(void *ctx, struct ScriptObj *obj, struct CounterRec *rec))
 {
     u8 *count = &obj->countA6;
-    u32 *entry = (u32 *)((u8 *)obj + (*count << 2));
+    u32 *entry;
     u32 mode;
     u32 result;
 
+    entry = (u32 *)((u8 *)obj + (*count << 2));
     entry = (u32 *)((u8 *)entry + 0x54);
     mode = rec->word0 & ~0x18;
     mode = (u8)mode;
@@ -886,14 +887,11 @@ u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupReco
 
 NONMATCH("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
 {
-    u32 mask = 0x3FF;
-    u32 bits = mask & ~*src;
-    u32 h;
+    struct KeyRam *sys = &gSys;
+    u32 bits = ~*src;
 
-    bits &= mask;
-    h = gSys.enable78;
-    h &= 0xFFFFFC00;
-    gSys.enable78 = h | bits;
+    bits &= 0x3FF;
+    sys->enable78 = (sys->enable78 & ~0x3FF) | bits;
     poll_keys();
     return 1;
 }
@@ -1337,17 +1335,11 @@ NONMATCH("asm/code_080EA8A0/draw_text_item_raw.s", u32 draw_text_item_raw(void *
     u32 hi = (u8)((s32)attr >> 8);
     u32 width = gTextWidthTable[(attr & 0xFF) << 1];
     u32 bits;
-    u32 mask;
 
-    bits = extra << 2;
-    mask = 0x800;
-    bits &= mask;
-    mask = 0x300;
-    bits |= ((extra - 0x80) << 1) & mask;
-    mask = 0xC0;
-    bits |= (extra << 1) & mask;
-    mask = 0x1F;
-    bits |= extra & mask;
+    bits = (extra << 2) & 0x800;
+    bits |= ((extra - 0x80) << 1) & 0x300;
+    bits |= (extra << 1) & 0xC0;
+    bits |= extra & 0x1F;
     draw_text_prim(obj, rec->byte0, rec->half4, rec->half8, hi, width, rec->half10, bits, rec->byte18, rec->word1C);
     return 1;
 }
@@ -1388,8 +1380,9 @@ u32 set_obj_word0_saved(void *ctx, struct ScriptObj *obj, u32 *rec)
 
 NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ctx, struct ScriptObj *obj))
 {
-    u32 saved = obj->word10;
+    u32 saved;
 
+    saved = obj->word10;
     if (saved == 0)
     {
         obj->word4 = obj->word0;
