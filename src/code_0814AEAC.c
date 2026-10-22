@@ -406,7 +406,7 @@ void enemy_land_wait_sprite(struct Obj *parent, struct Obj *obj)
     }
 }
 
-NONMATCH("asm/code_0814AEAC/aim_ahead_step.s", void aim_ahead_step(struct Obj *parent, struct Obj *obj))
+void aim_ahead_step(struct Obj *parent, struct Obj *obj)
 {
     s32 q;
     s32 rootOut;
@@ -420,7 +420,7 @@ NONMATCH("asm/code_0814AEAC/aim_ahead_step.s", void aim_ahead_step(struct Obj *p
     q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
     if (q != 0)
     {
-        rootOut = ((s32 (*)(s32, s32))gMathRoutines)(q * q, (s32)gMathRoutines);
+        rootOut = ((s32 (*)(s32))gMathRoutines)(q * q);
         scaled = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(q * (s16)obj->zspeed, rootOut);
         obj->dz += scaled;
     }
@@ -447,8 +447,8 @@ NONMATCH("asm/code_0814AEAC/aim_ahead_step.s", void aim_ahead_step(struct Obj *p
             return;
         }
     }
-    tgt = parent->tgtA;
     vx = *(s16 *)((u8 *)obj + 0x242);
+    tgt = parent->tgtA;
     tvx = *(s16 *)((u8 *)tgt + 0x242);
     if (tvx < 0)
     {
@@ -463,7 +463,7 @@ NONMATCH("asm/code_0814AEAC/aim_ahead_step.s", void aim_ahead_step(struct Obj *p
     }
     obj->y += vy + (tvy >> 2);
 }
-END_NONMATCH
+
 
 void wait_then_box_check(struct Obj *parent, struct Obj *obj)
 {
