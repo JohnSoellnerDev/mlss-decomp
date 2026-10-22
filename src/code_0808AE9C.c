@@ -620,7 +620,7 @@ void wait_then_start_motion(struct Actor *obj)
     }
 }
 
-NONMATCH("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(struct Actor *obj))
+void set_action_by_mode(struct Actor *obj)
 {
     u16 wait;
 
@@ -639,12 +639,22 @@ NONMATCH("asm/code_0808AE9C/set_action_by_mode.s", void set_action_by_mode(struc
         break;
     }
     obj->pose->mode = 0;
-    if (obj->mode == 0 || obj->mode == 1 || obj->mode == 2 || obj->mode == 3)
+    switch (obj->mode)
+    {
+    case 1:
         wait = 0x18;
+        break;
+    case 0:
+    case 2:
+        wait = 0x18;
+        break;
+    case 3:
+        wait = 0x18;
+        break;
+    }
     obj->step = wait;
     obj->state = wait_then_set_action;
 }
-END_NONMATCH
 
 void part_jump_setup(struct Actor *obj);
 NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struct Actor *obj))
@@ -674,22 +684,26 @@ NONMATCH("asm/code_0808AE9C/spawn_part_by_mode.s", void spawn_part_by_mode(struc
         owner = obj->owner;
         switch (obj->mode)
         {
+        case 1:
+            xOff = 0x1B;
+            break;
         case 0:
         case 2:
             xOff = 0x35;
             break;
-        case 1:
         case 3:
             xOff = 0x1B;
             break;
         }
         switch (obj->mode)
         {
+        case 1:
+            yOff = -5;
+            break;
         case 0:
         case 2:
             yOff = -9;
             break;
-        case 1:
         case 3:
             yOff = -5;
             break;
