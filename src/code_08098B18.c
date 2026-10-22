@@ -167,6 +167,9 @@ extern u8 gSys[];
 extern struct LayerCtx *gModelCtx;
 extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
+extern u8 gUnk_02000280[];
+extern const u16 gTileHalfTable[];
+extern const u8 gUnk_089F46B0[];
 
 struct SysKeys3E
 {
@@ -847,7 +850,30 @@ void drop_to_focus(struct HeroBody *body)
 }
 
 extern u8 gSys[];
-ASM_FUNC("asm/code_08098B18/unknown_code_08099f58.s", void unknown_code_08099f58(s32 a, s32 b))
+void unknown_code_08099f58(s32 a, s32 b)
+{
+    s32 flags;
+    s32 tile;
+    u16 half;
+    u8 *src;
+    void (*copy)(u8 *, u8 *, u32);
+
+    flags = gWorld->entries[a]->part->flags;
+    tile = 0;
+    if ((flags & 1) == 0)
+    {
+        do
+        {
+            tile++;
+        } while (((flags >> tile) & 1) == 0);
+    }
+    tile += a;
+    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    half = gTileHalfTable[(gSys[0x888] & 6) != 0 ? b + 1 : b];
+    src = (u8 *)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (half << 2));
+    copy(src, gUnk_02000280 + (tile << 5), 0x20);
+    *(u16 *)gSys |= 1 << tile;
+}
 
 void approach_partner(struct HeroBody *body)
 {
