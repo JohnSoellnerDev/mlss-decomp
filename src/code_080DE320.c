@@ -251,6 +251,26 @@ void obj_active_spawn_then_e278(struct ActorObj *obj);
 void obj_slot_spawn_child_anim9(struct ActorObj *obj);
 void ensure_code_entry(u32 code);
 extern u8 gItemTable[];
+extern const u16 gEffectCodeTable[];
+void step_motion(struct ActorObj *obj);
+s32 menu_cursor_pos(s32 x, s32 y, u32 n);
+void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
+s32 anim_set_motion_a(struct ActorPart *data, u16 value, s32 extra);
+s32 anim_set_motion_b(struct ActorPart *data, u16 value, s32 extra);
+s32 anim_bit400_step(struct ActorPart *data, s32 value);
+s32 anim_chance_start(struct ActorPart *data, s32 value);
+void anim_stop_mode(struct ActorPart *data);
+void anim_bit100_release(struct ActorPart *data);
+void anim_end_mode(struct ActorPart *data);
+void anim_bit8_scale10a(struct ActorPart *data);
+void anim_bit20_scale10c(struct ActorPart *data);
+void anim_bit80_scale11c(struct ActorPart *data);
+void anim_clear_high_bits(struct ActorPart *data);
+
+static inline u16 entry_value_at(s32 k)
+{
+    return *(u16 *)(*(u8 **)(gWorld + k) + 8);
+}
 
 static inline void pose_set_mode_one(struct ActorObj *obj)
 {
@@ -569,4 +589,75 @@ NONMATCH("asm/code_080DE320/obj_spawn_linked_child_jump.s", void obj_spawn_linke
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080DE320/obj_rebuild_after_motion.s", void obj_rebuild_after_motion(struct ActorObj *obj))
+NONMATCH("asm/code_080DE320/obj_rebuild_after_motion.s", void obj_rebuild_after_motion(struct ActorObj *obj))
+{
+    struct ActorObj *owner = obj->owner;
+    s32 dx;
+    s32 cursor;
+    s32 t;
+    u8 **pw = &gWorld;
+
+    step_motion(obj);
+    if (((struct ObjFlags79 *)obj)->bit5)
+    {
+        effect_spawn_at(gEffectCodeTable[(*pw)[0x349]], owner->posX / 0x100, owner->posY / 0x100 + 2,
+                        owner->posH / 0x100 - 2, owner);
+        t = (*(u8 **)((*pw) + 0x2DC))[0] - 1;
+        switch (t)
+        {
+        case 0:
+            cursor = menu_cursor_pos(owner->data->cursorAX, owner->data->cursorAY, entry_value_at(0x2DC));
+            popup_digit_spawn(cursor - owner->data->cursorAX, owner->baseX / 0x100, owner->baseY / 0x100, owner->unkC5, 1);
+            owner->data->cursorAX = cursor;
+            break;
+        case 1:
+            anim_stop_mode(owner->data);
+            anim_bit100_release(owner->data);
+            anim_end_mode(owner->data);
+            anim_bit8_scale10a(owner->data);
+            anim_bit20_scale10c(owner->data);
+            anim_bit80_scale11c(owner->data);
+            anim_clear_high_bits(owner->data);
+            break;
+        case 10:
+            cursor = menu_cursor_pos(owner->data->cursorBX, owner->data->cursorBY, entry_value_at(0x2DC));
+            popup_digit_spawn(cursor - owner->data->cursorBX, owner->baseX / 0x100, owner->baseY / 0x100, owner->unkC5, 1);
+            owner->data->cursorBX = cursor;
+            break;
+        case 11:
+        {
+
+            cursor = menu_cursor_pos(owner->data->cursorBX, owner->data->cursorBY, entry_value_at(0x2DC));
+            popup_digit_spawn(cursor - owner->data->cursorBX, owner->baseX / 0x100 - 0xC, owner->baseY / 0x100 - 4, owner->unkC5, 1);
+            owner->data->cursorBX = cursor;
+            cursor = menu_cursor_pos(owner->data->cursorAX, owner->data->cursorAY, entry_value_at(0x2DC));
+            popup_digit_spawn(cursor - owner->data->cursorAX, owner->baseX / 0x100 + 0xC, owner->baseY / 0x100 + 4, owner->unkC5, 1);
+            owner->data->cursorAX = cursor;
+            break;
+        }
+        case 12:
+            effect_spawn_at(0xCB, owner->posX / 0x100, owner->posY / 0x100 + 2, owner->posH / 0x100 - 2, owner);
+            anim_set_motion_a(owner->data, (u16)(entry_value_at(0x2DC) + 0x100), 0xC8);
+            anim_bit400_step(owner->data, 0xC8);
+            break;
+        case 13:
+            effect_spawn_at(0xCB, owner->posX / 0x100, owner->posY / 0x100 + 2, owner->posH / 0x100 - 2, owner);
+            anim_set_motion_b(owner->data, (u16)(entry_value_at(0x2DC) + 0x100), 0xC8);
+            anim_chance_start(owner->data, 0xC8);
+            break;
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        default:
+            obj_release(obj);
+            break;
+        }
+        obj_release(obj);
+    }
+}
+END_NONMATCH
