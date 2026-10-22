@@ -500,12 +500,11 @@ void state_check_slots(struct StateOwner *owner)
 }
 
 
-NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots(u32 *owner))
+void state_wait_free_slots(u32 *owner)
 {
     struct World *world;
     u16 *bits1;
     u16 *bits2;
-    u32 bits;
 
     if (world_list_idle() == 0)
     {
@@ -520,9 +519,7 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
     {
         bits1 = &world->fig1->bits11E;
         bits2 = &world->fig2->bits11E;
-        bits = *bits1;
-        bits |= *bits2;
-        if (!(bits & 0x300))
+        if (!((*bits1 | *bits2) & 0x300))
         {
             *(u32 *)(gWorkBuf + 0x8E58) = (u32)state_wait_free_slots;
             owner[1] = (u32)figure_pair_begin;
@@ -538,7 +535,6 @@ NONMATCH("asm/code_08100FFC/state_wait_free_slots.s", void state_wait_free_slots
     world_objects_tick(owner);
     owner[1] = (u32)state_hero_fx_dispatch;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08100FFC/state_hero_fx_dispatch.s", void state_hero_fx_dispatch(struct StateOwner *owner))
 {
