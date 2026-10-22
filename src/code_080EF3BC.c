@@ -244,7 +244,48 @@ extern const u8 gAreaEntryTable[];
 extern u8 *gRecordPtrTable[];
 void set_flag(u32 a, u32 b, u32 value, u32 flag);
 
-ASM_FUNC("asm/code_080EF3BC/apply_record_setting.s", void apply_record_setting(void))
+NONMATCH("asm/code_080EF3BC/apply_record_setting.s", u32 apply_record_setting(u32 unused0, u32 unused1, u32 *cmds))
+{
+    if (cmds[0] != 0x3FF)
+    {
+        u32 index = cmds[0];
+        const u8 *table = gAreaEntryTable + index * 24;
+        u8 *record;
+        u8 *base;
+        u8 *entry;
+
+        cmds++;
+        record = gRecordPtrTable[*(u16 *)(table + 0x10)];
+        base = record - ((record[7] << 8) | record[6]);
+        entry = base + *cmds++ * 20;
+
+        if (((entry[0x12] >> 3) & 7) == 3)
+        {
+            u32 value = (((u32)entry[0xF] << 24) | (entry[0xE] << 16) | (entry[0xD] << 8) | entry[0xC]) >> 10;
+
+            set_flag(0, 0, (u16)(value + 0x960), *(u8 *)cmds);
+        }
+    }
+    else
+    {
+        u8 *gfx = gUnk_03000FC0;
+        u32 *flagWord = (u32 *)(gfx + 0x14C);
+        u32 value = 0;
+        u8 *dst;
+
+        if (cmds[2] != 0)
+        {
+            value = value - 1;
+        }
+        cmds[0] = value;
+        *flagWord = value;
+        dst = gfx + 0x150;
+        ((void (*)(u32, void *, u32))gMemRoutines)(cmds[0], dst, 0xFC);
+        *(u32 *)(gfx + 0x248) = cmds[0];
+    }
+    return 1;
+}
+END_NONMATCH
 
 struct FlagBits7 { u8 lo7 : 7; u8 b7 : 1; };
 struct FlagBits6 { u8 lo6 : 6; u8 b6 : 1; u8 top : 1; };
@@ -491,6 +532,7 @@ NONMATCH("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(u8 
     u8 *record;
     u8 *owner;
     u32 flags;
+    s32 one = 1;
     u32 buf[13];
     u32 kind;
 
@@ -508,7 +550,7 @@ NONMATCH("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(u8 
         return;
     }
     owner = *obj;
-    if ((((u16)flags ^ 1) & 1) != 0)
+    if ((((u16)flags ^ one) & one) != 0)
     {
         return;
     }
@@ -632,24 +674,32 @@ NONMATCH("asm/code_080EF3BC/update_object_effects.s", void update_object_effects
 }
 END_NONMATCH
 
+
 ASM_FUNC("asm/code_080EF3BC/show_text_window.s", void show_text_window(void))
 
 u32 slot_countdown(u8 *pool, u32 idx);
 
-NONMATCH("asm/code_080EF3BC/update_effect_slots.s", void update_effect_slots(u8 **task))
+struct EffectSlotPos
+{
+    u8 filler0[8];
+    s16 x;
+    s16 y;
+};
+
+void update_effect_slots(u8 **task)
 {
     u8 *slot;
     s16 i;
     s32 x;
     s32 y;
     u8 idx;
+    struct EffectSlotPos *pp;
 
     i = 0;
     slot = *(u8 **)gUnk_03000FC8;
     for (; i <= 3; i++, slot += 0x10)
     {
-        idx = i;
-        if ((u8)slot_countdown(gUnk_03000FC8, idx) != 0)
+        if ((u8)slot_countdown(gUnk_03000FC8, (idx = i)) != 0)
         {
             if (slot[0xE] != 0)
             {
@@ -659,14 +709,14 @@ NONMATCH("asm/code_080EF3BC/update_effect_slots.s", void update_effect_slots(u8 
                 u8 *z = *(u8 **)(base + off);
                 entity_camera_offset(list, slot[0xC], &x, &y);
                 y = y - z[0x283];
-                *(s16 *)(slot + 8) = x;
-                *(s16 *)(slot + 0xA) = y;
+                pp = (struct EffectSlotPos *)slot;
+                pp->x = x;
+                pp->y = y;
             }
             update_slot_bounds(gUnk_03000FC8, idx);
         }
     }
 }
-END_NONMATCH
 
 void apply_key_filter(u8 *list);
 void start_effect(u8 **owner, u32 arg)
@@ -727,6 +777,7 @@ void update_setup_bg_layer(u32 unused, u16 scrOff, u16 chrOff)
     ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, block, 0x800);
     flags_vars_setup_bg_layer(gUnk_03000FCC, 0, 0xF, *(u8 **)(gEffectState + 0x4AC), 2, 0x180, b + 0x540, b + 0x538, b + 0x528);
 }
+
 
 ASM_FUNC("asm/code_080EF3BC/reset_effect_state.s", void reset_effect_state(void))
 
