@@ -12,6 +12,12 @@ struct Block24
     u8 bytes[24];
 };
 
+struct SysWords
+{
+    u16 unk0;
+    u16 unk2;
+};
+
 struct MapStateDD0
 {
     u8 bytes[12];
@@ -51,6 +57,14 @@ void cpu_fast_set(const void *src, void *dst, u32 control);
 u32 dma_cancel_request(u32 dst);
 void draw_metatile_2x2(u8 *obj, u32 layer, s32 col, s32 row, u16 tile);
 extern const u8 gSelTable[];
+extern const u8 gObjectPalettesA[];
+extern const u8 gObjectPalettesB[];
+extern const u8 gPalIndexTable[];
+extern u16 gUnk_02000010[];
+void map_load_chunks(u8 *obj);
+void map_load_metatiles(u8 *obj);
+void map_blit_chunks(u8 *obj);
+void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
 void map_obj_draw(u8 *obj);
 
 ASM_FUNC("asm/code_0805970C/redraw_metatile_row.s", void redraw_metatile_row(void))
@@ -182,17 +196,14 @@ extern const u8 gMapPalettesA[];
 extern const u8 gMapPalettesB[];
 extern const u8 gRomBlockTable[];
 extern u8 gUnk_03000DE8[];
-static inline const u8 *map_palette_set(void)
-{
-    if ((gSys[0x888] & 6) == 2)
-        return gMapPalettesB;
-    return gMapPalettesA;
-}
-
 NONMATCH("asm/code_0805970C/obj_copy_rom_block.s", void obj_copy_rom_block(u8 *obj))
 {
-    const u8 *src = map_palette_set();
+    const u8 *src;
 
+    if ((gSys[0x888] & 6) == 2)
+        src = gMapPalettesB;
+    else
+        src = gMapPalettesA;
     cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DE8[5]]], *(void **)(obj + 0x78), 0x78);
 }
 END_NONMATCH
@@ -285,17 +296,35 @@ NONMATCH("asm/code_0805970C/write_scroll_shadows.s", void write_scroll_shadows(u
     p += 2;
     *p = 0x1FF & *(u16 *)(obj + 0x5C);
     *(vu16 *)gUnk_0200001C = 0x1FF & *(u16 *)(obj + 0x5E);
-    p = gUnk_02000016;
-    *p = obj[0x60];
-    p += 2;
-    *p = obj[0x62];
-    p += 2;
-    *p = obj[0x64];
+    {
+        u16 *q = gUnk_02000016;
+        *q = obj[0x60];
+        q += 2;
+        *q = obj[0x62];
+        q += 2;
+        *q = obj[0x64];
+    }
 }
 END_NONMATCH
 
 extern u8 gUnk_02000080[];
-ASM_FUNC("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
+static inline struct SysWords *sys_words(void)
+{
+    return (struct SysWords *)gSys;
+}
+
+NONMATCH("asm/code_0805970C/copy_rom_block_fixed_dst.s", void copy_rom_block_fixed_dst(void))
+{
+    const u8 *src;
+
+    if ((gSys[0x888] & 6) == 2)
+        src = gMapPalettesB;
+    else
+        src = gMapPalettesA;
+    cpu_fast_set(src + ((const u32 *)src)[gRomBlockTable[gUnk_03000DD0[5]]], gUnk_02000080, 0x78);
+    sys_words()->unk2 = 0x7FFF;
+}
+END_NONMATCH
 
 void obj_reload_map(u8 *obj)
 {
@@ -413,4 +442,27 @@ ASM_FUNC("asm/code_0805970C/obj_setup_map_object.s", void obj_setup_map_object(v
 ASM_FUNC("asm/code_0805970C/map_obj_update.s", void map_obj_update(void))
 
 extern const u8 gSelTable[];
-ASM_FUNC("asm/code_0805970C/map_obj_draw.s", void map_obj_draw(u8 *obj))
+NONMATCH("asm/code_0805970C/map_obj_draw.s", void map_obj_draw(u8 *obj))
+{
+    const u8 *pal;
+    u16 *p;
+    u32 idx;
+
+    p = gUnk_02000010;
+    *p = 0x1FF & *(u16 *)(obj + 0x30);
+    gUnk_02000014[0] = 0x1FF & *(u16 *)(obj + 0x32);
+    p += 1;
+    *p = 0xFF & *(u16 *)(obj + 0x34);
+    gUnk_02000016[0] = 0xFF & *(u16 *)(obj + 0x36);
+    map_load_chunks(obj);
+    map_load_metatiles(obj);
+    map_blit_chunks(obj);
+    dma_copy_or_queue(*(void **)(obj + 0x38), (void *)0x0600D000, 0x2000, 0x20, 0);
+    idx = *(u16 *)(obj + 0x1E);
+    pal = gObjectPalettesB;
+    if ((gSys[0x888] & 6) == 2)
+        pal = gObjectPalettesA;
+    cpu_fast_set(pal + ((const u32 *)pal)[gPalIndexTable[gSelTable[idx * 12 + 2]]], gUnk_02000080, 0x40);
+    sys_words()->unk2 = 0x7FFF;
+}
+END_NONMATCH
