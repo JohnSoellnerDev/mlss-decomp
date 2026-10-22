@@ -176,7 +176,6 @@ ASM_FUNC("asm/code_08154490/obj_behavior_e1e0.s", void obj_behavior_e1e0(void))
 
 NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E160Obj *obj, u32 ctx, u16 speed, u32 unused3, u8 mode))
 {
-    s32 t;
     struct Char *ch;
 
     switch (mode) {
@@ -203,7 +202,9 @@ NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E
     switch (obj->unk24) {
     case 0:
         return 0;
-    case 1:
+    case 1: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -215,7 +216,8 @@ NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E
             return 1;
         }
         return 0;
-    case 2:
+    }
+    case 2: {
         if (obj->unk26 == 0) {
             if (hitboxes_overlap(obj, gGamePtr->charA) != 0) {
                 set_slot_value(0x3B, -1);
@@ -248,7 +250,10 @@ NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E
         if ((s32)ch->unk04 - obj->unk04 > 0x3000 && (gGamePtr->unk1CC4 & 0x20) != 0)
             return 2;
         return 0;
-    case 4:
+    }
+    case 4: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -258,7 +263,10 @@ NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E
         if (obj->unk08 > 0x10000)
             return 1;
         return 0;
-    case 3:
+    }
+    case 3: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -270,6 +278,7 @@ NONMATCH("asm/code_08154490/obj_behavior_e1a0.s", u32 obj_behavior_e1a0(struct E
             obj->unk24 = 2;
         }
         return 0;
+    }
     }
     return 0;
 }
@@ -298,10 +307,8 @@ struct CharPos {
 };
 
 
-NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E160Obj *obj, u32 ctx, u16 speed, u32 unused3, u8 mode))
+u32 obj_behavior_e160(struct E160Obj *obj, u32 ctx, u16 speed, u32 unused3, u8 mode)
 {
-    s32 t;
-
     switch (mode) {
     case 3:
         obj_create_sprite(obj, 0);
@@ -328,7 +335,9 @@ NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E
     switch (obj->unk24) {
     case 0:
         return 0;
-    case 1:
+    case 1: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -340,6 +349,7 @@ NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E
             return 1;
         }
         return 0;
+    }
     case 2:
         if (obj->unk26 == 0) {
             if (hitboxes_overlap(obj, gGamePtr->charA) == 0)
@@ -365,7 +375,9 @@ NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E
             obj->unk24 = 1;
         }
         return 0;
-    case 4:
+    case 4: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -375,7 +387,10 @@ NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E
         if (obj->unk08 > 0x10000)
             return 1;
         return 0;
-    case 3:
+    }
+    case 3: {
+        s32 t;
+
         obj->unk14 = (u16)obj->unk14 + obj->unk1C;
         t = (s16)speed;
         t += obj->unk20;
@@ -388,9 +403,9 @@ NONMATCH("asm/code_08154490/obj_behavior_e160.s", u32 obj_behavior_e160(struct E
         }
         return 0;
     }
+    }
     return 0;
 }
-END_NONMATCH
 
 
 struct E380Obj *obj_init_e380(struct E380Obj *obj, u32 initArg, u16 kind)
@@ -451,25 +466,18 @@ struct E360Obj {
 extern s16 gSineTable[];
 u32 obj_point_in_iris(void *iris, void *a, void *b);
 
-NONMATCH("asm/code_08154490/obj_behavior_e360.s", u32 obj_behavior_e360(struct E360Obj *obj, u32 ctx, u16 speed, u32 arg3, u8 mode))
+u32 obj_behavior_e360(struct E360Obj *obj, u32 ctx, u16 speed, u32 arg3, u8 mode)
 {
-    struct E0E0Table *table;
-    struct SubObj *sp;
-    s32 t;
-    s32 dx;
-    s32 dy;
-    s32 dist;
-
     switch (mode) {
-    case 1:
-    case 2:
-        return 0;
     case 3:
         obj->unk30->unk34((u8 *)obj + obj->unk30->unk30);
         obj->unk24 = 2;
         return 0;
     case 4:
         obj_release_sprite(obj);
+        return 0;
+    case 1:
+    case 2:
         return 0;
     }
 
@@ -484,14 +492,17 @@ NONMATCH("asm/code_08154490/obj_behavior_e360.s", u32 obj_behavior_e360(struct E
         ((struct FlagBit5 *)&obj->unk38->unk12)->bit5 = 1;
         obj->unk24 = 0;
         return 1;
-    case 4:
+    case 4: {
+        s32 t;
+
         obj->unk08 += (s16)obj->unk18;
         t = (s16)speed + obj->unk20;
         obj->unk18 = obj->unk18 + t;
         obj->unk20 = 0;
-        return 0;
+        break;
+    }
     case 6:
-        if (obj_point_in_iris(gGamePtr->unk1CB4, &obj->unk04, &gGamePtr->charA->unk04) == 0) {
+        if (obj_point_in_iris(gGamePtr->unk1CB4, &obj->unk04, &((struct E0E0Char *)gGamePtr->charA)->unk04) == 0) {
             obj_set_sprite_kind(obj, 2);
             obj->unk24 = 2;
             return 0;
@@ -511,8 +522,17 @@ NONMATCH("asm/code_08154490/obj_behavior_e360.s", u32 obj_behavior_e360(struct E
         obj->unk41 = 4 - obj->unk41;
         obj->unk04 += ((s8)obj->unk41 - 2) << 8;
         return 0;
-    case 2:
-        if (obj_point_in_iris(gGamePtr->unk1CB4, &obj->unk04, &gGamePtr->charA->unk04) != 0) {
+    case 2: {
+        struct E0E0Table *table;
+        s32 dx;
+        s32 dy;
+        s32 dist;
+        s32 t;
+        s32 sn;
+        s32 zOffset;
+
+        zOffset = 0x2000;
+        if (obj_point_in_iris(gGamePtr->unk1CB4, &obj->unk04, &((struct E0E0Char *)gGamePtr->charA)->unk04) != 0) {
             obj->unk40 = 0;
             obj_set_sprite_kind(obj, 7);
             obj->unk24 = 6;
@@ -522,12 +542,11 @@ NONMATCH("asm/code_08154490/obj_behavior_e360.s", u32 obj_behavior_e360(struct E
             table = ((struct E0E0Char *)gGamePtr->charA)->unk30;
             table->unk14((u8 *)gGamePtr->charA + table->unk10, ctx, (s16)speed, arg3, 5);
         }
-        sp = obj->unk00;
-        if ((s16)sp->unk04 > 0xFF) {
-            sp->unk04 = 0x100;
-            sp->unk06 = 0x100;
-            dx = gGamePtr->charA->unk04 - obj->unk04;
-            dy = gGamePtr->charA->unk08 - (obj->unk08 + 0x2000);
+        if ((s16)obj->unk00->unk04 > 0xFF) {
+            obj->unk00->unk04 = 0x100;
+            obj->unk00->unk06 = 0x100;
+            dx = ((struct E0E0Char *)gGamePtr->charA)->unk04 - obj->unk04;
+            dy = ((struct E0E0Char *)gGamePtr->charA)->unk08 - (obj->unk08 + zOffset);
             dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy);
             dy = (dy << 7) / dist;
             dx = (dx << 7) / dist;
@@ -536,25 +555,25 @@ NONMATCH("asm/code_08154490/obj_behavior_e360.s", u32 obj_behavior_e360(struct E
             obj->unk04 += obj->unk14;
             t = obj->unk08 + (s16)obj->unk18;
             obj->unk08 = t;
-            t = gSineTable[(u8)obj->unk3E];
-            if (t < 0)
-                t += 0x3F;
-            obj->unk08 = obj->unk08 + ((t >> 6) << 1);
+            sn = gSineTable[obj->unk3E & 0xFF];
+            if (sn < 0)
+                sn += 0x3F;
+            obj->unk08 = t + ((sn >> 6) << 1);
             obj->unk3E = obj->unk3E + 2;
         } else {
-            sp->unk04 += 4;
-            sp->unk06 += 4;
+            obj->unk00->unk04 += 4;
+            obj->unk00->unk06 += 4;
         }
         if ((s16)obj->unk14 > 0) {
-            ((struct Bits8 *)&sp->unk11)->b6 = 1;
+            ((struct Bits8 *)&obj->unk00->unk11)->b6 = 1;
         } else {
-            ((struct Bits8 *)&sp->unk11)->b6 = 0;
+            ((struct Bits8 *)&obj->unk00->unk11)->b6 = 0;
         }
         return 0;
     }
+    }
     return 0;
 }
-END_NONMATCH
 struct ModeBits {
     s8 mode : 5;
 };
@@ -624,11 +643,10 @@ struct SpriteMode12 {
     u8 high : 5;
 };
 
-NONMATCH("asm/code_08154490/obj_behavior_e0e0.s", u32 obj_behavior_e0e0(struct E0E0Char *obj, u32 ctx, u32 unused2, u32 unused3, u8 mode))
+u32 obj_behavior_e0e0(struct E0E0Char *obj, u32 ctx, u32 unused2, u32 unused3, u8 mode)
 {
     struct E0E0Char *ch;
     struct SubObj *sp;
-    s32 state;
 
     switch (mode) {
     case 3:
@@ -647,47 +665,39 @@ NONMATCH("asm/code_08154490/obj_behavior_e0e0.s", u32 obj_behavior_e0e0(struct E
         return 0;
     }
 
-    state = obj->unk24;
-    if (state != 1) {
-        if (state > 1) {
-            if (state == 2) {
-                ch = (struct E0E0Char *)gGamePtr->charA;
-                if (ch->unk24 != 8)
-                    return 0;
-                ch = (struct E0E0Char *)gGamePtr->charB;
-                if (ch->unk24 != 8)
-                    return 0;
-                return 1;
-            }
-            if (state == 3) {
-                if (obj->unk34 != 0)
-                    obj_set_sprite_kind(obj, 0x2F);
-                else
-                    obj_set_sprite_kind(obj, 0x3C);
-                sp = obj_get_sprite(obj);
-                ((struct SpriteMode12 *)&sp->unk12)->mode = 1;
-            }
+    switch (obj->unk24) {
+    case 0:
+        return 0;
+    case 1:
+        obj->unk38 = 0;
+        ch = (struct E0E0Char *)gGamePtr->charA;
+        if (ch->unk04 > obj->unk04) {
+            ch->unk30->unk14((u8 *)ch + ch->unk30->unk10, 0, 0, 0, 0xD);
+            obj->unk38++;
         }
+        ch = (struct E0E0Char *)gGamePtr->charB;
+        if (ch->unk04 > obj->unk04) {
+            ch->unk30->unk14((u8 *)ch + ch->unk30->unk10, 0, 0, 0, 0xD);
+            obj->unk38++;
+        }
+        if (obj->unk38 > 1)
+            obj->unk24 = 2;
+        obj->unk08 = (s32)(view_coord(ctx, obj->unk04) << 16) >> 8;
+        return 0;
+    case 2:
+        if (((struct E0E0Char *)gGamePtr->charA)->unk24 != 8 || ((struct E0E0Char *)gGamePtr->charB)->unk24 != 8)
+            return 0;
+        return 1;
+    case 3:
+        if (obj->unk34 != 0)
+            obj_set_sprite_kind(obj, 0x2F);
+        else
+            obj_set_sprite_kind(obj, 0x3C);
+        ((struct SpriteMode12 *)&obj_get_sprite(obj)->unk12)->mode = 1;
         return 0;
     }
-
-    obj->unk38 = 0;
-    ch = (struct E0E0Char *)gGamePtr->charA;
-    if (ch->unk04 > obj->unk04) {
-        ch->unk30->unk14((u8 *)ch + ch->unk30->unk10, 0, 0, 0, 0xD);
-        obj->unk38++;
-    }
-    ch = (struct E0E0Char *)gGamePtr->charB;
-    if (ch->unk04 > obj->unk04) {
-        ch->unk30->unk14((u8 *)ch + ch->unk30->unk10, 0, 0, 0, 0xD);
-        obj->unk38++;
-    }
-    if (obj->unk38 > 1)
-        obj->unk24 = 2;
-    obj->unk08 = (s32)(view_coord(ctx, obj->unk04) << 16) >> 8;
     return 0;
 }
-END_NONMATCH
 
 struct E080Obj *obj_init_e080(struct E080Obj *obj, u32 initArg, u16 kind)
 {
@@ -739,7 +749,85 @@ struct E060Obj {
 
 extern u8 *gUnk_03001014;
 
-ASM_FUNC("asm/code_08154490/obj_behavior_e060.s", void obj_behavior_e060(void))
+extern s16 gCosineTable[];
+
+
+NONMATCH("asm/code_08154490/obj_behavior_e060.s", u32 obj_behavior_e060(struct E060Obj *obj, u32 ctx, u16 speed, u32 unused3, u8 mode))
+{
+    switch (mode) {
+    case 3:
+        obj->unk30->unk34((u8 *)obj + obj->unk30->unk30);
+        obj->unk24 = 1;
+        return 0;
+    case 4:
+        obj->unk30->unk3C((u8 *)obj + obj->unk30->unk38);
+        ((struct FlagBit5 *)&obj->unk34->unk12)->bit5 = 1;
+        return 0;
+    }
+
+    switch (obj->unk24) {
+    case 0:
+        return 0;
+    case 1: {
+        u16 heading;
+        s32 cosv;
+        s32 t;
+
+        obj->unk04 += (s16)obj->unk14;
+        heading = obj->unk1C;
+        cosv = gCosineTable[(u8)obj->unk1C];
+        if (cosv < 0)
+            cosv += 0x3F;
+        t = ((cosv >> 6) << 1) / 3;
+        obj->unk14 = t;
+        obj->unk1C = (heading + 1) & 0xFF;
+        if ((s16)t > 0)
+            ((struct Bits8 *)&obj_get_sprite(obj)->unk11)->b6 = 1;
+        else
+            ((struct Bits8 *)&obj_get_sprite(obj)->unk11)->b6 = 0;
+        if (((struct E0E0Char *)gGamePtr->charA)->unk04 - obj->unk04 > -0x2800) {
+            obj_set_sprite_kind(obj, 0x35);
+            obj->unk1C = 0;
+            obj->unk20 = 0;
+            obj->unk18 = 0xFCE0;
+            obj->unk14 = 0;
+            obj->unk24 = 2;
+        }
+        return 0;
+    }
+    case 2: {
+        s32 t;
+
+        obj->unk14 = (u16)obj->unk14 + obj->unk1C;
+        t = (s16)speed;
+        t += obj->unk20;
+        obj->unk18 = obj->unk18 + t;
+        obj->unk04 += (s16)obj->unk14;
+        obj->unk08 += (s16)obj->unk18;
+        if ((s16)obj->unk18 > 0) {
+            ((struct SubFlagBits *)&obj_get_sprite(obj)->unk1F)->f0 = 2;
+            ((struct SubFlagBits *)&obj_get_sprite(obj)->unk1F)->f2 = 2;
+            ((struct SubFlagBits *)&obj_get_sprite(obj)->unk1F)->f4 = 2;
+            ((struct SubFlagBits *)&obj_get_sprite(obj)->unk1F)->f6 = 2;
+        } else if ((s32)(obj->unk08 >> 8) < *(s16 *)gUnk_03001014) {
+            if (((obj->unk38 ^ 1) & 1)) {
+                ((struct FlagBit5 *)&obj->unk34->unk12)->bit5 = 0;
+                ((struct SubFlagBits *)&obj->unk00->unk11)->f2 = 0;
+                obj->unk38 |= 1;
+            } else if (obj->unk34->unk12 & 8) {
+                obj->unk34->unk12 |= 0x20;
+            }
+        }
+        if (((struct E0E0Char *)gGamePtr->charA)->unk04 - obj->unk04 > 0)
+            ((struct Bits8 *)&obj_get_sprite(obj)->unk11)->b6 = 1;
+        else
+            ((struct Bits8 *)&obj_get_sprite(obj)->unk11)->b6 = 0;
+        return 0;
+    }
+    }
+    return 0;
+}
+END_NONMATCH
 struct DfeObj {
     u8 filler0[4];
     s32 unk04;
