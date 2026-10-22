@@ -1,6 +1,13 @@
 #include "global.h"
 #include "ram_routines.h"
 
+struct PoseBits11
+{
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct Pose
 {
     u8 filler0[0xE];
@@ -387,7 +394,7 @@ END_NONMATCH
 void obj_arrive_check(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(struct Actor *obj))
 
-NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Actor *obj))
+void obj_arrive_check(struct Actor *obj)
 {
     struct Rec *rec;
     s32 newX;
@@ -404,9 +411,6 @@ NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Ac
     s32 bhq;
     s32 d2;
     s32 b2;
-    u8 flags;
-    struct Pose *pose;
-    s32 mask = -0x41;
 
     newX = obj->baseX + obj->offX;
     obj->posX = newX;
@@ -432,15 +436,12 @@ NONMATCH("asm/code_080865F8/obj_arrive_check.s", void obj_arrive_check(struct Ac
         obj->posY = rec->targetY;
         obj->posZ = rec->targetH;
         sprite_set_action(obj, -1, -1, 0);
-        pose = obj->pose;
-        flags = pose->flags11 & mask;
-        pose->flags11 = flags;
+        ((struct PoseBits11 *)&obj->pose->flags11)->bit6 = 0;
         obj->field58 = 0;
         obj->state = obj->savedState;
         obj->savedState = NULL;
     }
 }
-END_NONMATCH
 
 s32 obj_stop(struct Actor *obj)
 {
