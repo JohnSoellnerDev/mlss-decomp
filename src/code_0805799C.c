@@ -361,11 +361,12 @@ NONMATCH("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(struct Tr
             if (jump != 0)
             {
                 s32 prodB;
-                u8 sum;
+                s32 sum;
 
-                sum = obj->rate[i] + obj->phase[i];
+                /* the rate bytes follow the phase bytes in the object */
+                sum = obj->phase[i] + (obj->phase + 3)[i];
                 obj->phase[i] = sum;
-                *(s16 *)(sa + off) = gWaveX[obj->flags[i] & 0xF] * (sum >> 2);
+                *(s16 *)(sa + off) = gWaveX[obj->flags[i] & 0xF] * ((u8)sum >> 2);
                 *(s16 *)(sb + off) = prodB = gWaveY[obj->flags[i] & 0xF] * (obj->phase[i] >> 2);
                 if (*(s16 *)(sa + off) != 0 || (prodB << 16) != 0)
                 {
@@ -373,9 +374,9 @@ NONMATCH("asm/code_0805799C/obj_slots_motion.s", void obj_slots_motion(struct Tr
                     obj->phase[i] = 0;
                 }
             }
-            *(s16 *)(sa + off) = 0;
-            dst = (u16 *)(sb + off);
             val = 0;
+            *(s16 *)(sa + off) = val;
+            dst = (u16 *)(sb + off);
         }
         else
         {
