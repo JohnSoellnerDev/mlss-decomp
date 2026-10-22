@@ -248,6 +248,9 @@ void obj_fall_spawn_fx_offscreen(struct ActorObj *obj);
 u32 lookup_slot(struct ActorObj *obj, u32 slot);
 void obj_active_spawn_then_e1fc(struct ActorObj *obj);
 void obj_active_spawn_then_e278(struct ActorObj *obj);
+void obj_slot_spawn_child_anim9(struct ActorObj *obj);
+void ensure_code_entry(u32 code);
+extern u8 gItemTable[];
 
 static inline void pose_set_mode_one(struct ActorObj *obj)
 {
@@ -339,7 +342,82 @@ void obj_timer_move_to_owner_then_f358(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pair_move_then_e640(void))
+NONMATCH("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pair_move_then_e640(struct ActorObj *obj))
+{
+    s32 kc = 0x41;
+    struct ActorPart *data;
+    struct ActorPart *a;
+    struct ActorPart *b;
+    struct ActorPose *pose;
+    u8 *code;
+    u8 *entry;
+    s32 t = obj->timer - 1;
+    s32 flags;
+    s32 bit;
+
+    obj->timer = t;
+    if ((s16)t < 0)
+    {
+        sound_stop_song(0x126);
+        obj->owner->state = 0;
+        data = obj->owner->data;
+        if (data->partner == -1)
+        {
+            a = data;
+            b = data + 1;
+        }
+        else
+        {
+            a = data - 1;
+            b = data;
+        }
+        if (a->partner != 0)
+        {
+            if (b->partner != 0)
+            {
+                obj->targetX = (a->targetX + b->targetX) / 2;
+                obj->targetY = (a->targetY + b->targetY) / 2;
+            }
+            else
+            {
+                obj->targetX = a->targetX;
+                obj->targetY = a->targetY;
+            }
+        }
+        else
+        {
+            obj->targetX = b->targetX;
+            obj->targetY = b->targetY;
+        }
+        obj->targetH = obj->owner->data->targetH;
+        obj->targetX += 0x4000;
+        ((struct ObjFlags79 *)obj)->bit5 = 1;
+        obj->motionSpeed = 0x200;
+        obj->motionStart = 0;
+        start_motion(obj);
+        sprite_set_action(obj, 2, 0, 0);
+        pose = obj->pose;
+        flags = pose->byte11;
+        bit = ((u32)flags << 25) >> 31;
+        bit = bit ^ 1;
+        bit = bit << 6;
+        flags = -kc & flags;
+        flags = flags | bit;
+        pose->byte11 = flags;
+        obj->state = obj_slot_spawn_child_anim9;
+        code = &obj->data->unk113;
+        if (*code & 0x80)
+        {
+            if (*code != 0xFF)
+            {
+                entry = gItemTable + ((*code & 0x7F) << 4);
+                obj->spawnLeft = (entry[2] & 7) + 0x4188;
+                ensure_code_entry(obj->spawnLeft);
+            }
+        }
+    }
+}
+END_NONMATCH
 
 void obj_slot_spawn_child_anim9(struct ActorObj *obj)
 {
