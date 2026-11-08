@@ -224,7 +224,199 @@ NONMATCH("asm/code_08084DB4/alloc_tile_slot.s", void alloc_tile_slot(u8 *obj, u8
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08084DB4/draw_slot_frame.s", void draw_slot_frame(void))
+// Writes count tiles in a row, starting at dst; count is at least 1.
+static inline void fill_run(u16 *dst, s32 count, u32 value)
+{
+    do
+    {
+        *dst++ = value;
+    } while (--count != 0);
+}
+
+// Frame with a left column and a filled middle: top row, middle rows, bottom row.
+static inline void frame_box(u16 *cell, s32 w, s32 h, u32 tl, u32 tf, u32 ml, u32 mf, u32 bl, u32 bf)
+{
+    u16 *next;
+    s32 i;
+
+    cell[0] = 0x8000 | tl;
+    next = cell + 0x20;
+    if (w > 1)
+    {
+        fill_run(cell + 1, w - 1, 0x8000 | tf);
+    }
+    i = h - 3;
+    while (i >= 0)
+    {
+        cell = next;
+        cell[0] = 0x8000 | ml;
+        i--;
+        if (w > 1)
+        {
+            fill_run(cell + 1, w - 1, 0x8000 | mf);
+        }
+        next = cell + 0x20;
+    }
+    cell = next;
+    cell[0] = 0x8000 | bl;
+    if (w > 1)
+    {
+        fill_run(cell + 1, w - 1, 0x8000 | bf);
+    }
+}
+
+NONMATCH("asm/code_08084DB4/draw_slot_frame.s", void draw_slot_frame(u8 *obj, u8 slot, u8 rect, u32 kind))
+{
+    u8 *rec;
+    s32 x;
+    s32 y;
+    s32 w;
+    s32 h;
+    u16 start;
+    u16 *cell;
+    u16 *next;
+    s32 i;
+    s32 idx;
+    s32 last;
+
+    rec = obj + rect * 0x14;
+    switch (kind)
+    {
+    case 0:
+        x = rec[0];
+        y = rec[1];
+        w = rec[2];
+        h = rec[3];
+        break;
+    case 1:
+        x = rec[0];
+        y = rec[1];
+        w = rec[2] - 1;
+        h = rec[3];
+        break;
+    case 2:
+    case 3:
+        x = rec[0] - 1;
+        y = rec[1] - 1;
+        w = rec[2] + 2;
+        h = rec[3];
+        break;
+    case 4:
+        x = rec[0];
+        y = rec[1];
+        w = rec[2];
+        h = rec[3] + 1;
+        break;
+    default:
+        break;
+    }
+
+    set_tile_slot(obj, slot, 1, x, y, w, h);
+    start = (y << 5) + 0x280 + x;
+    cell = *(u16 **)(obj + 0x288) + start;
+    insert_span(obj, start, ((h - 1) << 5) + w);
+
+    switch (kind)
+    {
+    case 0:
+        frame_box(cell, w, h, 1, 2, 3, 4, 5, 6);
+        break;
+    case 1:
+        last = 0;
+        if (w - 1 > 0)
+        {
+            fill_run(cell, w - 1, 0x8000 | 2);
+            last = w - 1;
+        }
+        cell[last] = 0x8000 | 0x401;
+        next = cell + 0x20;
+        i = h - 3;
+        while (i >= 0)
+        {
+            cell = next;
+            i--;
+            last = 0;
+            if (w - 1 > 0)
+            {
+                fill_run(cell, w - 1, 0x8000 | 4);
+                last = w - 1;
+            }
+            cell[last] = 0x8000 | 0x403;
+            next = cell + 0x20;
+        }
+        cell = next;
+        last = 0;
+        if (w - 1 > 0)
+        {
+            fill_run(cell, w - 1, 0x8000 | 6);
+            last = w - 1;
+        }
+        cell[last] = 0x8000 | 0x405;
+        break;
+    case 2:
+    case 3:
+        cell[0] = 0x8000 | 0x12;
+        cell[1] = 0x8000 | 0xD;
+        idx = 2;
+        if (2 < w - 2)
+        {
+            fill_run(cell + 2, w - 4, 0x8000 | 0xE);
+            idx = w - 2;
+        }
+        cell[idx] = 0x8000 | 0x40D;
+        cell[idx + 1] = 0x8000 | 0x412;
+        cell += 0x20;
+        cell[0] = 0x8000 | 0x13;
+        idx = 1;
+        if (1 < w - 1)
+        {
+            fill_run(cell + 1, w - 2, 0x8000 | 4);
+            idx = w - 1;
+        }
+        cell[idx] = 0x8000 | 0x413;
+        i = h - 5;
+        while (i >= 0)
+        {
+            cell += 0x20;
+            cell[0] = 0x8000 | 0xF;
+            i--;
+            idx = 1;
+            if (1 < w - 1)
+            {
+                fill_run(cell + 1, w - 2, 0x8000 | 4);
+                idx = w - 1;
+            }
+            cell[idx] = 0x8000 | 0x40F;
+        }
+        cell += 0x20;
+        cell[0] = 0x8000 | 0x14;
+        idx = 1;
+        if (1 < w - 1)
+        {
+            fill_run(cell + 1, w - 2, 0x8000 | 4);
+            idx = w - 1;
+        }
+        cell[idx] = 0x8000 | 0x414;
+        cell += 0x20;
+        cell[0] = 0x8000 | 0x15;
+        cell[1] = 0x8000 | 0x10;
+        idx = 2;
+        if (2 < w - 2)
+        {
+            fill_run(cell + 2, w - 4, 0x8000 | 0x11);
+            idx = w - 2;
+        }
+        cell[idx] = 0x8000 | 0x410;
+        cell[idx + 1] = 0x8000 | 0x415;
+        break;
+    case 4:
+        frame_box(cell, w, h, 7, 8, 9, 0xA, 0xB, 0xC);
+        break;
+    default:
+        break;
+    }
+}
+END_NONMATCH
 
 u8 *slot_block_ptr(u8 *obj, u8 idx)
 {
