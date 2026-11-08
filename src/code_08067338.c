@@ -17,8 +17,11 @@ struct ActorData
     u8 filler3C[0xD8 - 0x3C];
     s32 targetX;
     s32 targetY;
-    u8 fillerE0[0xEC - 0xE0];
+    s32 targetH;
+    u8 fillerE4[0xEC - 0xE4];
     s16 slot;
+    u8 fillerEE[0x11E - 0xEE];
+    u16 modeBits;
 };
 
 struct Actor
@@ -88,6 +91,7 @@ void actor_slide_left_to_target(struct Actor *obj);
 void obj_wait_child_then_place(struct Actor *obj);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct Actor *owner);
 u32 query_contact(struct Actor *obj, u32 a, u32 b);
+void obj_detach_active(struct Pose *pose);
 
 struct ObjFlags79Bit0
 {
@@ -466,4 +470,147 @@ NONMATCH("asm/code_08067338/obj_follow_owner_step.s", void obj_follow_owner_step
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08067338/part_arc_land_spawn.s", void part_arc_land_spawn(struct Actor *obj))
+static inline struct Actor *spawn_land_child(struct Actor *obj, struct ActorData *ownerData, u32 kind, s32 sp8)
+{
+    struct ActorData *part = obj->data;
+    return obj_spawn(part, kind, base_to_px(ownerData->targetX), base_to_px(ownerData->targetY),
+                     base_to_px(ownerData->targetH), ((u32)obj->pose->unk11 << 25) >> 31, sp8);
+}
+
+static inline void land_effect(struct Actor *obj, struct Actor *child, u32 id)
+{
+    s32 x = base_to_px(child->baseX);
+    s32 y = base_to_px(child->baseY);
+    s32 h = base_to_px(child->baseH);
+    effect_spawn_at(id, x, y, h, obj);
+}
+
+void part_arc_land_spawn(struct Actor *obj)
+{
+    struct Actor *child;
+    struct Actor *owner;
+    struct ActorData *ownerData;
+    s32 offset;
+    s32 k3000;
+    s32 bounce;
+    s32 ownerMode;
+
+    obj->x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dx << 8);
+    obj->y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dy << 8);
+    offset = (s16)obj->timer - obj->paramA0 / 2;
+    k3000 = 0x3000;
+    obj->h = (offset * offset) * obj->param9C + (((s32)obj->dh << 8) + k3000);
+    obj->timer++;
+    if ((s16)obj->timer >= obj->paramA0 / 2)
+    {
+        if (obj->h <= 0x1000)
+        {
+            if (obj->owner->callback68 != 0)
+            {
+                obj->owner->callback68(obj->owner);
+            }
+            owner = obj->owner;
+            owner->state = actor_landing_idle;
+            ownerData = owner->data;
+            ownerMode = (ownerData->modeBits & 3) != 0;
+            bounce = obj->targetX;
+            switch (bounce)
+            {
+                case 0:
+                    if (obj->targetH == 0)
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x4096, 1);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x4098, 1);
+                        }
+                        land_effect(obj, child, 0x114F);
+                    }
+                    else
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x4097, 1);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x4099, 1);
+                        }
+                        land_effect(obj, child, 0x115C);
+                    }
+                    break;
+                case 1:
+                    if (obj->targetH == 0)
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409A, bounce);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409C, bounce);
+                        }
+                        land_effect(obj, child, 0x1172);
+                    }
+                    else
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409B, bounce);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409D, bounce);
+                        }
+                        land_effect(obj, child, 0x117F);
+                    }
+                    break;
+                case 2:
+                    if (obj->targetH == 0)
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409E, 1);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x40A0, 1);
+                        }
+                        land_effect(obj, child, 0x1195);
+                    }
+                    else
+                    {
+                        if (ownerMode == 0)
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x409F, 1);
+                        }
+                        else
+                        {
+                            child = spawn_land_child(obj, ownerData, 0x40A1, 1);
+                        }
+                        land_effect(obj, child, 0x11A2);
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            obj->child = child;
+            ((struct Flags78Bits *)&child->flags78)->kind = 1;
+            inherit_flags_77(obj, child);
+            child->callback68 = on_arrive;
+            child->link = obj->link;
+            child->owner = obj->owner;
+            child->tag = obj->tag;
+            child->timer = 0x1E;
+            child->state = obj_timer_remove;
+            obj_detach_active(obj->pose);
+            obj_detach_active(obj->owner->pose);
+            obj->state = obj_child_lost_recover;
+            set_slot_value(0x83, -1);
+        }
+    }
+}
