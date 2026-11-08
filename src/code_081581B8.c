@@ -340,8 +340,12 @@ static inline void trans_sync_cam(struct TransChar *o, struct TransGame *game)
     k->fn1C((u8 *)o + k->thisOffset18, &game->camX);
 }
 
-NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(struct TransRec *rec, struct TransGame *game))
+/* Transition steps 0-3 fall through: reset the characters, wait, wait until both are down, run the
+ * effect; 4 switches the display to the iris window, 5 fades out and ends the scene. */
+u32 transition_state_step(struct TransRec *rec, struct TransGame *game)
 {
+    vu16 *p;
+
     switch (rec->state)
     {
     case 0:
@@ -378,12 +382,10 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
         rec->objB->klass->fn14((u8 *)rec->objB + rec->objB->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0);
         if (--rec->timer > 0)
             goto move;
-        {
-            vu16 *p = &gUnk_02000050;
-
-            p[0] = 0xDF;
-            p[2] = 0x1F;
-        }
+        p = &gUnk_02000050;
+        *p = 0xDF;
+        p += 2;
+        *p = 0x1F;
         rec->fade = 0;
         ((struct LineScroll *)gUnk_03001014)->x = 0;
         REG_IME = 0;
@@ -407,7 +409,8 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
         gUnk_02000050 = 0xDF;
         REG_BLDCNT = gUnk_02000050;
         gUnk_02000054 = 0x1F;
-        REG_BLDY = gUnk_02000054;
+        p = &REG_BLDY;
+        *p = gUnk_02000054;
         gUnk_02000080 = 0;
         scene_release_objects(game);
         slot_reset(0);
@@ -449,7 +452,6 @@ move:
     trans_sync_cam(game->charB, game);
     return 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081581B8/transition_step_c.s", void transition_step_c(void))
 
