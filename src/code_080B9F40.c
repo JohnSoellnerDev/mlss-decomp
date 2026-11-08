@@ -322,53 +322,50 @@ void hero_a_rate_anim(struct HeroBody *body)
 
 NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct HeroBody *body))
 {
-    struct Hero *heroA;
     struct HeroBody *a;
     struct HeroBody *b;
     struct HeroBody *partner;
-    u16 *timer;
-    u16 *progress;
     s32 lower;
     s32 upper;
     s32 near;
     s32 inWindow;
     s32 reached;
     s32 limit;
+    s32 stepOne;
+    s32 stepMax;
     u32 timerMode;
     void (*fn)(struct HeroBody *);
 
-    heroA = gWorld->heroA;
-    a = &heroA->body;
+    stepOne = 0x4000;
+    stepMax = 0x7FFF;
+    a = &gWorld->heroA->body;
     b = &gWorld->heroB->body;
     partner = body->partner;
     state_stack_advance_progress(a);
-    if ((s16)heroA->body.progress < 0x4000)
+    if ((s16)a->progress < 0x4000)
     {
-        ((struct HeroFlagBits *)&heroA->body.flags)->active = 0;
+        ((struct HeroFlagBits *)&a->flags)->active = 0;
     }
-    if ((heroA->body.timer >> 12) != 0)
+    if ((a->timer >> 12) != 0)
     {
         goto tail;
     }
-
     near = 0;
-    if ((s16)heroA->body.step <= 0)
+    if ((s16)a->step <= 0)
     {
-        if ((s16)heroA->body.progress >= 0)
+        if ((s16)a->progress >= 0)
         {
             near = 1;
         }
     }
-    timer = &a->timer;
-    progress = &a->progress;
     if (near != 0)
     {
         if (gWorld->flags & 8)
         {
-            set_chain_frame(a, 0x33);
-            set_chain_frame(b, 0x33);
-            set_chain_frame(partner, 0x33);
-            set_node_sprites(3);
+            set_chain_frame(a, 0x100);
+            set_chain_frame(b, 0x100);
+            set_chain_frame(partner, 0x100);
+            set_node_sprites(0x10);
         }
         else
         {
@@ -379,23 +376,22 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
         }
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
-
     lower = 0;
-    upper = 0x4000;
+    upper = stepOne;
     if (lower > upper)
     {
         lower = upper;
     }
-    if (upper > 0x7FFF)
+    if (upper > stepMax)
     {
-        upper = 0x7FFF;
+        upper = stepMax;
     }
     if (upper < lower)
     {
         lower = upper;
     }
     inWindow = 0;
-    if (!((s16)*progress < lower))
+    if (!((s16)a->progress < lower))
     {
         if ((s16)a->step <= upper)
         {
@@ -412,39 +408,38 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
             world_mode_or(1);
             if (!(gWorld->mode & 8))
             {
-                if (gWorld->flags & 8)
-                {
-                    set_chain_frame(a, 0x100);
-                    set_chain_frame(b, 0x100);
-                    set_chain_frame(partner, 0x100);
-                    set_node_sprites(0x10);
-                }
-                else
-                {
-                    set_chain_frame(a, 0x100);
-                    set_chain_frame(b, 0x100);
-                    set_chain_frame(partner, 0x100);
-                    set_node_sprites(0x10);
-                }
+            if (gWorld->flags & 8)
+            {
+                set_chain_frame(a, 0x100);
+                set_chain_frame(b, 0x100);
+                set_chain_frame(partner, 0x100);
+                set_node_sprites(0x10);
+            }
+            else
+            {
+                set_chain_frame(a, 0x100);
+                set_chain_frame(b, 0x100);
+                set_chain_frame(partner, 0x100);
+                set_node_sprites(0x10);
+            }
                 display_flush();
             }
-            set_timer_mode(timer, 2);
+            set_timer_mode(&a->timer, 2);
         }
     }
-
-    if ((*timer >> 12) != 0)
+    if ((a->timer >> 12) != 0)
     {
         goto tail;
     }
-    limit = 0x4000;
-    if (limit > 0x7FFF)
+    limit = stepOne;
+    if (limit > stepMax)
     {
-        limit = 0x7FFF;
+        limit = stepMax;
     }
     reached = 0;
     if ((s16)a->step <= limit)
     {
-        if ((s16)*progress >= limit)
+        if ((s16)a->progress >= limit)
         {
             reached = 1;
         }
@@ -452,7 +447,7 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
     if (reached != 0)
     {
         world_mode_or(1);
-        set_timer_mode(timer, 1);
+        set_timer_mode(&a->timer, 1);
         if (gWorld->flags & 8)
         {
             set_chain_frame(a, 0x100);
@@ -471,7 +466,7 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
         obj_free_parts(a);
         goto tail;
     }
-    if ((s16)*progress > 0x4000)
+    if ((s16)a->progress > stepOne)
     {
         goto tail;
     }
@@ -484,7 +479,7 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
     {
         goto tail;
     }
-    set_timer_mode(timer, 1);
+    set_timer_mode(&a->timer, 1);
     if (gWorld->flags & 8)
     {
         set_chain_frame(a, 0x100);
@@ -504,25 +499,25 @@ NONMATCH("asm/code_080B9F40/hero_a_move_ba294.s", void hero_a_move_ba294(struct 
     body_set_pose(6, a, 0x16, 0);
 
 tail:
-    timerMode = *timer >> 12;
+    timerMode = a->timer >> 12;
     if (timerMode != 0)
     {
         lower = 0;
-        upper = 0x4000;
+        upper = stepOne;
         if (lower > upper)
         {
             lower = upper;
         }
-        if (upper > 0x7FFF)
+        if (upper > stepMax)
         {
-            upper = 0x7FFF;
+            upper = stepMax;
         }
         if (upper < lower)
         {
             lower = upper;
         }
         reached = 0;
-        if (!((s16)*progress < lower))
+        if (!((s16)a->progress < lower))
         {
             if ((s16)a->step <= upper)
             {
@@ -533,7 +528,7 @@ tail:
         {
             if (timerMode > 1)
             {
-                *timer &= 0xFFF;
+                a->timer &= 0xFFF;
                 fn = hero_pair_fx_anim_a_b;
                 body->state = fn;
                 fn(body);
@@ -541,7 +536,6 @@ tail:
             }
         }
     }
-
     if (((struct HeroFlagBits *)&a->flags)->active == 0)
     {
         return;
