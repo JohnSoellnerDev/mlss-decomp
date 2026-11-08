@@ -213,6 +213,114 @@ struct AnimStepP
     u16 rest : 7;
 };
 
+/* shadow copy of the pending sprite's attributes */
+struct ObjShadow298
+{
+    u8 filler0[0x298];
+    u8 active : 1;
+    u8 mirror : 1;
+    u8 b23 : 2;
+    u8 b45 : 2;
+    u8 b67 : 2;
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 rest299 : 6;
+    u8 filler29A;
+    u8 unk29B;
+    u8 unk29C;
+    u8 filler29D;
+    u16 unk29E;
+    u16 unk2A0;
+    u16 unk2A2;
+    u16 unk2A4;
+};
+
+/* animation level in bits 10-16 of the word at 0x33C */
+struct ObjAnimWord33C
+{
+    u8 filler0[0x33C];
+    u32 lo10 : 10;
+    u32 level : 7;
+    u32 rest : 15;
+};
+
+/* animation frame in bits 6-9 of the halfword at 0x33C */
+struct ObjAnimHalf33C
+{
+    u8 filler0[0x33C];
+    u16 lo6 : 6;
+    u16 frame : 4;
+    u16 rest : 6;
+};
+
+u32 drop_roll(u16 index, u8 kind, u8 flag);
+
+/* animation counters */
+struct ObjTimers340
+{
+    u8 filler0[0x340];
+    s16 timer340;
+    s16 timer342;
+    u16 unk344;
+};
+
+/* width field of a sprite, raised to the measured size of its graphics */
+struct SpriteW28
+{
+    u8 filler0[0x28];
+    u16 width : 9;
+    u16 rest : 7;
+};
+
+void *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
+u32 read_varlen_plus1(const void *src);
+void obj_load_part_shape(u8 *obj);
+
+/* window task header: state, linked block and class pointer */
+struct WinHead
+{
+    u8 state;
+    u8 filler1[0x13];
+    u8 *block14;
+    u32 class18;
+};
+
+/* held and newly pressed keys */
+struct SysKeys28
+{
+    u8 filler0[0x28];
+    u16 held;
+    u16 pressed;
+};
+
+extern u8 gUnk_03000C80[];
+extern struct FramePos gWindowSpritePoints[];
+extern s8 gWindowScrollTable[];
+void set_flags_2_3(void *p);
+void copy_track_limits(u8 *obj, u16 track, u16 *outA, u16 *outB);
+void scroll_clamp(struct WinObj *w);
+void sub_08115F54(void *sub, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
+u8 sub_obj_running(void *menu);
+void set_slot_value(u32 id, s32 value);
+void run_pending_obj_callbacks(void);
+void obj_release_parts(void *parts, u32 mode);
+void task_remove(void *node, u32 kind);
+void menu_obj_free(void *obj, u32 kind);
+void update_obj_list(void);
+
+/* flag byte at 0x20C */
+struct Flags20C
+{
+    u8 b0 : 1;
+    u8 mid : 3;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 b6 : 1;
+    u8 b7 : 1;
+};
+
+void obj_set_or_add_pos(u8 *obj, s32 x, s32 y, s32 z, u32 copy, u32 add);
+
 /* state bits of an object and the link flags that update them */
 struct ObjLink33C
 {
@@ -643,13 +751,233 @@ u32 obj_init_state(u8 *obj, u32 a, u32 b)
     return (u32)obj;
 }
 
-ASM_FUNC("asm/code_080502DC/obj_init_from_entry.s", void obj_init_from_entry(void))
+u32 obj_init_from_entry(u8 *obj, u8 *entry, u16 id, u32 a, u32 b)
+{
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 ofs;
+    u32 kind;
+    u16 m;
 
-ASM_FUNC("asm/code_080502DC/obj_replace_sprite.s", void obj_replace_sprite(void))
+    obj_init(obj, a, b);
+    ((struct ObjInitS *)obj)->vtable = (struct ObjVtable *)gObjStateClass;
 
-ASM_FUNC("asm/code_080502DC/obj_apply_pending_sprite.s", void obj_apply_pending_sprite(void))
+    /* tile position * 16 (z: * 8) plus a signed 5-bit offset packed into bytes 3-5 */
+    ofs = (entry[3] >> 7) | ((entry[4] << 1) & 0x1E);
+    x = ((entry[1] << 4) + ((entry[4] & 8) ? ofs | -0x20 : ofs)) << 8;
+    ofs = (entry[4] >> 4) | ((entry[5] << 4) & 0x10);
+    y = ((entry[2] << 4) + ((entry[5] & 1) ? ofs | -0x20 : ofs)) << 8;
+    ofs = entry[5] >> 1;
+    z = (((entry[3] & 0x7F) << 3) + ((entry[5] & 0x20) ? ofs | -0x20 : ofs)) << 8;
+    obj_set_or_add_pos(obj, x, y, z, 0, 0);
 
-ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(void))
+    ((struct Bits8 *)(obj + 0x20F))->b1 = 1;
+    ((struct Bits8 *)(obj + 0x20F))->b2 = 1;
+    ((struct Flags20C *)(obj + 0x20C))->mid = 0;
+    ((struct Flags20C *)(obj + 0x20C))->b4 = 0;
+    ((struct Flags20C *)(obj + 0x20C))->b5 = 1;
+    ((struct Flags20C *)(obj + 0x20C))->b6 = 1;
+    ((struct Flags20C *)(obj + 0x20C))->b7 = 1;
+    ((struct Bits8 *)(obj + 0x20D))->b0 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b1 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b3 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b4 = 1;
+    ((struct Bits8 *)(obj + 0x20D))->b5 = 0;
+    ((struct Bits8 *)(obj + 0x20D))->b6 = 0;
+    ((struct Word20C *)(obj + 0x20C))->mv = 3;
+    ((struct Bits8 *)(obj + 0x20E))->b2 = 1;
+    ((struct Bits33C *)(obj + 0x20E))->mid3 = 7;
+    ((struct Bits8 *)(obj + 0x20E))->b7 = 0;
+    obj[0x222] = 0;
+    obj[0x223] = 0;
+    ((struct Bits8 *)(obj + 0x216))->b1 = 0;
+    obj[0x55] = 0;
+    *(u32 *)(obj + 0x228) = 0;
+    *(u32 *)(obj + 0x22C) = 0;
+    ((struct Bits8 *)(obj + 0x20C))->b0 = 1;
+    ((struct Bits8 *)(obj + 0x20F))->b0 = 0;
+    ((struct Mode3 *)(obj + 0x214))->mode = 1;
+
+    if (test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(id + 0x1360)) == 0)
+    {
+        kind = entry[0] == 0x20 ? 2 : entry[0] == 0x40;
+        ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->mid3 = kind;
+        ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b0 = 1;
+    }
+    else
+    {
+        ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b0 = 0;
+    }
+    ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b1 = 0;
+    ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b2 = 1;
+    ((struct Mid4At6 *)&((struct ObjInitS *)obj)->flags)->mid4 = 0;
+    ((struct ObjInitS *)obj)->unk23B = 0;
+    m = ((struct ObjInitS *)obj)->mask;
+    ((struct ObjInitS *)obj)->mask = m | 0x1FE;
+    ((struct ObjInitS *)obj)->timer340 = 1;
+    ((struct ObjInitS *)obj)->timerB342 = 0xFFFF;
+    ((struct ObjInitS *)obj)->unk344 = id;
+    ((struct ObjInitS *)obj)->unk348 = (u32)entry;
+    ((struct ObjInitS *)obj)->unk34C = 0;
+    return (u32)obj;
+}
+
+void obj_replace_sprite(u8 *obj, u32 a, u32 b, u32 d)
+{
+    u8 *flags;
+    u8 f;
+    u8 bit2;
+    struct SpriteObj *tmp;
+    struct SpriteObj *spr;
+    u32 sel;
+    u32 anim;
+    u32 units;
+    u8 *link;
+
+    flags = obj + 0x33C;
+    bit2 = (f = *flags) & 4;
+    if (bit2 == 0)
+    {
+        /* create a pending sprite that takes over the current one's attributes */
+        obj_create_sub(obj, a, b, d);
+        if (*(u16 *)(obj + 0x218) == 0x8000)
+        {
+            return;
+        }
+        (*(struct SpriteObj **)(obj + 0x34C)) = create_obj_de4(0, 0x8000, 0, -1, -1, -1, -1);
+        obj_load_record((*(struct SpriteObj **)(obj + 0x34C)), 3, -1, 0, bit2);
+        if (*flags & 1)
+        {
+            return;
+        }
+        (*(struct SpriteObj **)(obj + 0x34C))->unkE = ((struct MainObj *)obj)->sprite->unkE;
+        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->lo2 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->lo2;
+        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b23 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b23;
+        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b45 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b45;
+        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b67 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b67;
+        tmp = (*(struct SpriteObj **)(obj + 0x34C));
+        (*(struct SpriteObj **)(obj + 0x34C)) = ((struct MainObj *)obj)->sprite;
+        ((struct MainObj *)obj)->sprite = tmp;
+        return;
+    }
+    /* replace the sprite at once, with the shadow attributes if there are any */
+    if (f & 1)
+    {
+        sel = gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2];
+        anim = gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2 + 1];
+    }
+    else
+    {
+        sel = 0x8000;
+        anim = 3;
+    }
+    spr = create_obj_de4(2, sel, 0, -1, -1, -1, -1);
+    ((struct Lo4Bits *)(obj + 0x216))->b23 = 0;
+    ((struct Bits8 *)(obj + 0x216))->b4 = 0;
+    obj_load_record(spr, anim, -1, 0, 0);
+    link = *(u8 **)((u8 *)spr + 0x48);
+    if (link != NULL)
+    {
+        units = read_varlen_plus1(*(void **)(link + 4)) >> 5;
+        if ((s32)units > (s32)((struct SpriteW28 *)spr)->width)
+        {
+            ((struct SpriteW28 *)spr)->width = units;
+        }
+    }
+    if (((struct ObjShadow298 *)obj)->active)
+    {
+        ((struct SpriteFlags *)spr)->lo2 = ((struct ObjShadow298 *)obj)->b23;
+        ((struct SpriteFlags *)spr)->b23 = ((struct ObjShadow298 *)obj)->b45;
+    }
+    else
+    {
+        ((struct SpriteFlags *)spr)->b23 = 1;
+        ((struct SpriteFlags *)spr)->lo2 = 1;
+    }
+    ((struct MainObj *)obj)->sprite = spr;
+    ((struct ObjShadow298 *)obj)->active = 0;
+    obj_load_part_shape(obj);
+}
+
+void obj_apply_pending_sprite(u8 *obj)
+{
+    struct ObjShadow298 *sh;
+    u8 **pslot;
+
+    sh = (struct ObjShadow298 *)obj;
+    /* copy the pending sprite's attributes into the shadow values */
+    if ((obj[0x33C] & 5) == 0)
+    {
+        pslot = (u8 **)(obj + 0x34C);
+        if (*pslot != NULL)
+        {
+            sh->mirror = ((u32)(*pslot)[0x11] << 25) >> 31;
+            sh->b23 = ((u32)(*pslot)[0x1F] << 30) >> 30;
+            sh->b45 = ((u32)(*pslot)[0x1F] << 28) >> 30;
+            sh->b67 = ((u32)(*pslot)[0x12] << 29) >> 30;
+            sh->b0 = ((u32)(*pslot)[0x12] << 28) >> 31;
+            sh->b1 = ((u32)(*pslot)[0x12] << 27) >> 31;
+            sh->unk29B = (*pslot)[0x21];
+            sh->unk29C = (*pslot)[0x23];
+            sh->unk29E = *(u16 *)(*pslot + 0x2A);
+            sh->unk2A0 = *(u16 *)(*pslot + 0x2C);
+            sh->unk2A2 = *(u16 *)(*pslot + 4);
+            sh->unk2A4 = *(u16 *)(*pslot + 6);
+            sh->active = 1;
+            return;
+        }
+    }
+    obj_copy_sub_fields(obj);
+}
+
+u32 obj_apply_anim_code(u8 *obj, u32 arg)
+{
+    u8 *entry;
+    u16 code;
+    u32 level;
+    u32 frame;
+
+    entry = *(u8 **)(obj + 0x348);
+    /* the rolled code: frame in bits 0-3, bit 4 = counted animation, level in bits 5-11 */
+    code = drop_roll((entry[7] << 8) | entry[6], entry[0], arg);
+    level = (code >> 5) & 0x7F;
+    frame = code & 0xF;
+    ((struct ObjAnimHalf33C *)obj)->frame = frame;
+    if (code & 0x10)
+    {
+        if (((struct ObjAnimHalf33C *)obj)->frame != 0 && ((struct ObjAnimHalf33C *)obj)->frame <= 2)
+        {
+            if (level > 1)
+            {
+                if (((struct ObjTimers340 *)obj)->timer342 == -1)
+                {
+                    ((struct ObjTimers340 *)obj)->timer342 = level * 17;
+                    ((struct ObjTimers340 *)obj)->timer340 = level - 1;
+                }
+                else if (--((struct ObjTimers340 *)obj)->timer340 == 0)
+                {
+                    ((struct ObjTimers340 *)obj)->timer342 = 0;
+                }
+            }
+            else
+            {
+                ((struct ObjTimers340 *)obj)->timer340 = 0;
+                ((struct ObjTimers340 *)obj)->timer342 = 0;
+            }
+            ((struct ObjAnimWord33C *)obj)->level = 0;
+        }
+        else
+        {
+            ((struct ObjAnimWord33C *)obj)->level = level;
+            ((struct ObjTimers340 *)obj)->timer340 = 0;
+            ((struct ObjTimers340 *)obj)->timer342 = 0;
+        }
+        set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 1);
+        return 1;
+    }
+    return 0;
+}
 
 void obj_activate_sprite(u8 *obj)
 {
@@ -742,9 +1070,9 @@ extern const u16 gSpriteSelectAnimTable[];
 u8 test_flag(u8 *table, u8 *tableB, u16 id);
 void obj_commit_sprite(u8 *obj);
 extern const u8 gObjAnimOffsetTable[];
-extern const u8 gObjAnimWaveTable[];
+extern u8 gObjAnimWaveTable[]; /* not const: its frames are tested as plain bytes */
 
-NONMATCH("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(u8 *obj, u32 index))
+void obj_step_anim(u8 *obj, u32 index)
 {
     struct ObjInitS *o;
     u8 *flags;
@@ -793,7 +1121,6 @@ NONMATCH("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(u8 *obj, u32 in
         }
     }
 }
-END_NONMATCH
 
 void obj_clear_mask_if_timer(u8 *obj)
 {
@@ -1026,7 +1353,123 @@ struct WinObj *window_create(struct WinObj *w, u8 kind, u32 a, u16 id)
 }
 
 void scene_update_sprites(u8 *obj);
-ASM_FUNC("asm/code_080502DC/window_state_step.s", void window_state_step(void))
+void window_state_step(struct WinObj *w)
+{
+    u32 *slot;
+    u16 *px;
+    u16 *py;
+    s32 i;
+    u32 idx;
+    u8 *base;
+    struct FramePos *pts;
+
+    switch (((struct WinHead *)w)->state)
+    {
+    case 0:
+        /* create the edge sprites and the frame once the map is ready */
+        if (*(s16 *)(w->unk44 + 0x1C) != 0)
+        {
+            break;
+        }
+        i = 0;
+        px = &w->unk20;
+        py = &w->unk22;
+        slot = &w->sub2C;
+        pts = gWindowSpritePoints;
+        for (; i < 4; i++)
+        {
+            slot[i] = (u32)create_obj_de4(0, 0x80FE, 1, -1, -1, -1, -1);
+            obj_load_record((void *)slot[i], i, -1, 0, 0);
+            ((struct FramePos *)slot[i])->x = pts[i].x;
+            ((struct FramePos *)slot[i])->y = pts[i].y;
+        }
+        w->frame3C = create_obj_de4(0, 0x80FD, 1, -1, -1, -1, -1);
+        obj_load_record(w->frame3C, 0, -1, 0, 0);
+        ((struct SpriteFlags *)w->frame3C)->lo2 = 2;
+        set_flags_2_3(w->unk40);
+        copy_track_limits(w->unk44, 2, px, py);
+        ((struct WinHead *)w)->state = 1;
+        break;
+    case 1:
+        if (gUnk_03000C80[0] != 0)
+        {
+            break;
+        }
+        set_flags_2_3(w->unk48);
+        sprite_update_cd0((u32)w->frame3C);
+        w->unk1C = w->unk26 - 0x78;
+        w->unk1E = w->unk28 - 0x58;
+        scroll_clamp(w);
+        scene_update_sprites((u8 *)w);
+        ((struct WinHead *)w)->state = 2;
+        break;
+    case 2:
+        if (w->frame3C[0x13] & 3)
+        {
+            break;
+        }
+        base = gSys;
+        *(u32 *)(base + 0x884) = -1;
+        sub_08115F54(w->unk48, 0, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
+        *(u16 *)0x02000000 = 0x1E40;
+        ((struct WinHead *)w)->state = 3;
+        break;
+    case 3:
+        if (sub_obj_running(w->unk48) == 0)
+        {
+            ((struct WinHead *)w)->state = 4;
+        }
+        break;
+    case 4:
+        /* scroll with the direction keys until B closes the window */
+        if (((struct SysKeys28 *)gSys)->pressed & 2)
+        {
+            sub_08115F54(w->unk48, 4, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
+            set_slot_value(0x61, -1);
+            ((struct WinHead *)w)->state = 5;
+        }
+        else
+        {
+            idx = (((struct SysKeys28 *)gSys)->held & 0xF0) >> 4;
+            w->unk1C += gWindowScrollTable[idx * 2];
+            w->unk1E += gWindowScrollTable[idx * 2 + 1];
+        }
+        scroll_clamp(w);
+        scene_update_sprites((u8 *)w);
+        break;
+    case 5:
+        /* wait for the closing animation, then free the window */
+        if (sub_obj_running(w->unk48) != 0)
+        {
+            break;
+        }
+        set_flags_2_3(((struct WinHead *)w)->block14);
+        if (w != NULL)
+        {
+            ((struct WinHead *)w)->class18 = (u32)gWindowStateClass;
+            run_pending_obj_callbacks();
+            if (w->unk44 != NULL)
+            {
+                obj_release_parts(w->unk44, 3);
+            }
+            if (w->unk40 != NULL)
+            {
+                *(u32 *)(w->unk40 + 0x18) = (u32)gWindowSubBlockClass;
+                task_remove(w->unk40, 3);
+            }
+            if (w->unk48 != NULL)
+            {
+                menu_obj_free(w->unk48, 3);
+            }
+            task_remove(w, 3);
+        }
+        break;
+    }
+    if ((u8)(((struct WinHead *)w)->state - 3) <= 2)
+    {
+        update_obj_list();
+    }
+}
 
 void scene_update_sprites(u8 *obj)
 {
