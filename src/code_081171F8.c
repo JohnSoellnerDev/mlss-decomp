@@ -576,7 +576,290 @@ u32 text_block_state(void);
 u32 text_block_busy(void);
 ASM_FUNC("asm/code_081171F8/text_slot_status.s", void text_slot_status(void))
 
-ASM_FUNC("asm/code_081171F8/text_slot_set.s", void text_slot_set(void))
+struct TextRec
+{
+    u8 filler0[0xE];
+    u16 count;
+    u16 unk10;
+    u16 limit;
+    u16 unk14;
+    u16 unk16;
+    u16 unk18;
+    u16 unk1A;
+    u16 unk1C;
+    u16 unk1E;
+    u16 unk20;
+    u16 unk22;
+    u16 unk24;
+    u16 unk26;
+    u16 unk28;
+};
+
+struct ItemSlotRec
+{
+    u8 kind;
+    u8 filler1[7];
+    u16 step;
+};
+
+static inline u32 text_step(u32 cur, u32 range, u32 step)
+{
+    u32 mask;
+
+    if (step == 0xFFFE)
+    {
+        cur = range >> 1;
+        mask = 1;
+    }
+    else if (step > 0xFFFE)
+    {
+        if (step == 0xFFFF)
+        {
+            return range;
+        }
+        cur += step;
+        if ((s32)range < (s32)cur)
+        {
+            cur = range;
+        }
+        return cur;
+    }
+    else if (step == 0xFFFD)
+    {
+        cur = range >> 2;
+        mask = 3;
+    }
+    else
+    {
+        cur += step;
+        if ((s32)range < (s32)cur)
+        {
+            cur = range;
+        }
+        return cur;
+    }
+    if ((range & mask) != 0)
+    {
+        cur += 1;
+    }
+    return cur;
+}
+
+static inline void text_cap_add(u16 *p, u32 step)
+{
+    u16 v = *p + step;
+
+    *p = v;
+    if (v > 0x3E6)
+    {
+        *p = 0x3E7;
+    }
+}
+
+static inline u32 text_done(u8 id)
+{
+    u8 *state = gParty + 0x8A + id;
+
+    *state = *state - 1;
+    return 1;
+}
+
+NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, u8 value))
+{
+    struct ItemSlotRec *rec = (struct ItemSlotRec *)(gItemTable + (id << 4));
+    struct TextRec *block;
+    struct TextRec *slot;
+    u32 index;
+    u32 off;
+    u32 c;
+    u8 state;
+
+    state = *(gParty + 0x8A + id);
+    if (state == 0xFF)
+    {
+        return 0;
+    }
+    if (state == 0)
+    {
+        return 0;
+    }
+
+    if (rec->kind != 0xA)
+    {
+        index = rec->kind;
+    }
+    else
+    {
+        if (value == 0xFF)
+        {
+            return 0;
+        }
+        index = (u8)(value + 4);
+    }
+    index = index - 1;
+    if (index > 0xB)
+    {
+        return text_done(id);
+    }
+
+    switch (index)
+    {
+    case 0:
+        if (mode == 0xFD)
+        {
+            block = (struct TextRec *)gParty;
+            c = block->count;
+            if (c != 0)
+            {
+                if (block->limit > c)
+                {
+                    block->count = text_step(c, block->limit, rec->step);
+                }
+            }
+            block = (struct TextRec *)(gParty + 0x3C);
+            c = block->count;
+            if (c == 0)
+            {
+                return text_done(id);
+            }
+            if (!(block->limit > c))
+            {
+                return text_done(id);
+            }
+            block->count = text_step(c, block->limit, rec->step);
+            return text_done(id);
+        }
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        c = slot->count;
+        if (c == 0)
+        {
+            return 0;
+        }
+        if (!(slot->limit > c))
+        {
+            return 0;
+        }
+        slot->count = text_step(c, slot->limit, rec->step);
+        return text_done(id);
+    case 2:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->count != 0)
+        {
+            return 0;
+        }
+        slot->count = text_step(slot->count, slot->limit, rec->step);
+        return text_done(id);
+    case 3:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk10 > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk10, rec->step);
+        text_cap_add(&slot->limit, rec->step);
+        return text_done(id);
+    case 4:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk1E > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk1E, rec->step);
+        text_cap_add(&slot->unk20, rec->step);
+        return text_done(id);
+    case 5:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk26 > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk26, rec->step);
+        text_cap_add(&slot->unk28, rec->step);
+        return text_done(id);
+    case 6:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk16 > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk16, rec->step);
+        slot->unk18 = slot->unk18 + rec->step;
+        if (slot->unk16 > 0x3E6)
+        {
+            slot->unk16 = 0x3E7;
+        }
+        return text_done(id);
+    case 7:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk1A > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk1A, rec->step);
+        text_cap_add(&slot->unk1C, rec->step);
+        return text_done(id);
+    case 8:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->unk22 > 0x3E6)
+        {
+            return 0;
+        }
+        text_cap_add(&slot->unk22, rec->step);
+        text_cap_add(&slot->unk24, rec->step);
+        return text_done(id);
+    case 10:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (!(slot->unk18 > slot->unk14))
+        {
+            return 0;
+        }
+        slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
+        return text_done(id);
+    case 11:
+        off = ((u32)mode << 4) - mode;
+        off <<= 2;
+        slot = (struct TextRec *)(gParty + off);
+        if (slot->count == 0)
+        {
+            return 0;
+        }
+        if (slot->limit > slot->count)
+        {
+            slot->count = text_step(slot->count, slot->limit, rec->step);
+        }
+        else if (!(slot->unk18 > slot->unk14))
+        {
+            return 0;
+        }
+        if (!(slot->unk18 > slot->unk14))
+        {
+            return text_done(id);
+        }
+        slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
+        return text_done(id);
+    default:
+        return text_done(id);
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/char_menu_cell.s", void char_menu_cell(void))
 
