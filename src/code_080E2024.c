@@ -384,7 +384,193 @@ void sub_080E2BB8(struct OwnerObj *obj, u32 flags)
 
 ASM_FUNC("asm/code_080E2024/sub_080E2BE0.s", void sub_080E2BE0(void))
 
-ASM_FUNC("asm/code_080E2024/sub_080E2DE8.s", void sub_080E2DE8(void))
+struct ModelEntryA
+{
+    s32 e0;
+    s32 e1;
+    s32 e2;
+    s32 *src;
+};
+
+struct ModelEntryB
+{
+    s32 *p0;
+    s32 *p1;
+    s32 *p2;
+    u16 tile;
+    u16 pad;
+};
+
+struct SpinModel
+{
+    u16 countA;
+    u16 countB;
+    struct ModelEntryA *tableA;
+    u8 b8;
+    u8 b9;
+    u8 filler0A[2];
+    struct ModelEntryB *tableB;
+    s32 k16;
+    s32 k14;
+    s32 k18;
+    s32 scale1c;
+    s32 scale20;
+    s32 off24;
+    s32 off28;
+    s32 off2c;
+};
+
+struct OamOut
+{
+    u16 a0;
+    u16 a1;
+    u16 a2;
+    u16 a6;
+    u32 a8;
+    u8 filler0C[4];
+    struct OamOut *next;
+};
+
+extern u8 *gModelCtx;
+extern u8 gUnk_030003CC[];
+void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
+
+NONMATCH("asm/code_080E2024/sub_080E2DE8.s", void sub_080E2DE8(struct SpinModel *arg, u32 *arg1))
+{
+    struct ModelEntryA *ea;
+    struct ModelEntryB *eb;
+    struct OamOut *out;
+    vu16 *cell16;
+    u8 *cell;
+    s32 pos[3];
+    s32 i;
+    s32 k;
+    s32 e0;
+    s32 e1;
+    s32 e2;
+    s32 x0;
+    s32 y0;
+    s32 x1;
+    s32 y1;
+    s32 x2;
+    s32 y2;
+    s32 a1;
+    s32 b1;
+    s32 a2;
+    s32 b2;
+    s32 det;
+    s32 sp20;
+    s32 sp24;
+    s32 r7;
+    s32 r6;
+    s32 r4;
+    s32 r2;
+    u32 base;
+
+    out = *(struct OamOut **)(gModelCtx + 0x38);
+    for (i = 0; i < arg->countA; i++)
+    {
+        ea = &arg->tableA[i];
+        ea->e0 = ea->src[0];
+        ea->e1 = ea->src[1];
+        ea->e2 = ea->src[2];
+        k = (u8)(arg->k14 / 0x100);
+        if (k != 0)
+        {
+            e0 = ea->e0;
+            e2 = ea->e2;
+            ea->e2 = (e2 * (gCosineTable[k] / 0x40) - (gSineTable[k] / 0x40) * e0) / 0x100;
+            ea->e0 = (e0 * (gCosineTable[k] / 0x40) + e2 * (gSineTable[k] / 0x40)) / 0x100;
+        }
+        k = (u8)(arg->k16 / 0x100);
+        if (k != 0)
+        {
+            e1 = ea->e1;
+            e2 = ea->e2;
+            ea->e1 = (e1 * (gCosineTable[k] / 0x40) - e2 * (gSineTable[k] / 0x40)) / 0x100;
+            ea->e2 = (e2 * (gCosineTable[k] / 0x40) + e1 * (gSineTable[k] / 0x40)) / 0x100;
+        }
+        k = (u8)(arg->k18 / 0x100);
+        if (k != 0)
+        {
+            e0 = ea->e0;
+            e1 = ea->e1;
+            ea->e0 = (e0 * (gCosineTable[k] / 0x40) - e1 * (gSineTable[k] / 0x40)) / 0x100;
+            ea->e1 = (e1 * (gCosineTable[k] / 0x40) + e0 * (gSineTable[k] / 0x40)) / 0x100;
+        }
+        ea->e0 = ea->e0 * arg->scale1c / 0x100;
+        ea->e1 = ea->e1 * arg->scale1c / 0x100;
+        ea->e2 = ea->e2 * arg->scale20 / 0x100;
+    }
+
+    base = *arg1;
+    sp20 = base + arg->b9;
+    sp24 = (arg->b8 << 12) + 0x800;
+    for (i = 0; i < arg->countB; i++)
+    {
+        eb = &arg->tableB[i];
+        x0 = eb->p0[0];
+        y0 = -eb->p0[1];
+        x1 = eb->p1[0];
+        y1 = -eb->p1[1];
+        x2 = eb->p2[0];
+        y2 = -eb->p2[1];
+        a1 = (((x1 - x0) * 31) << 3) / 0x100;
+        b1 = (((y1 - y0) * 31) << 3) / 0x100;
+        a2 = (((x2 - x0) * 31) << 3) / 0x100;
+        b2 = (((y2 - y0) * 31) << 3) / 0x100;
+        det = (b2 * a1 - b1 * a2) / 0x100;
+        if (det > 0)
+        {
+            pos[0] = ((x1 + x2 + 0x100) / 0x200) - 0x10;
+            pos[1] = ((y1 + y2 + 0x100) / 0x200) - 0x10;
+            pos[0] += (arg->off24 + 0x80) / 0x100;
+            pos[1] += (arg->off28 + 0x80) / 0x100;
+            pos[2] = (arg->off2c + 0x80) / 0x100;
+            offset_three_words_camera(&pos[0], &pos[1], &pos[2], 0);
+            if (pos[0] >= -0x10 && pos[1] >= -0x10 && pos[0] <= 0x100 && pos[1] <= 0xB0)
+            {
+                r7 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(b2 << 12, det);
+                if (r7 <= 0x7FFF && r7 >= -0x7FFF)
+                {
+                    r6 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((-a2) << 12, det);
+                    if (r6 <= 0x7FFF && r6 >= -0x7FFF)
+                    {
+                        r4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((-b1) << 12, det);
+                        if (r4 <= 0x7FFF && r4 >= -0x7FFF)
+                        {
+                            r2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a1 << 12, det);
+                            if (r2 <= 0x7FFF && r2 >= -0x7FFF)
+                            {
+                                cell = gUnk_030003CC + (sp20 << 5) + ((((u32)gSys[0x888] << 0x1C) >> 0x1F) << 10);
+                                cell16 = (vu16 *)cell;
+                                cell16[3];
+                                cell16[3] = r7;
+                                cell16[7];
+                                cell16[7] = r6;
+                                cell16[11];
+                                cell16[11] = r4;
+                                cell16[15];
+                                cell16[15] = r2;
+                                out->a0 = (pos[1] & 0xFF) | 0x300;
+                                out->a1 = (pos[0] & 0x1FF) | 0x4000 | (sp20 << 9);
+                                sp20++;
+                                out->a2 = sp24 | eb->tile;
+                                out->a8 = (pos[2] << 14) | 0x80000000;
+                                out->a6 = 0;
+                                out = out->next;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    *arg1 = base;
+    *(u16 *)gSys |= 1 << arg->b8;
+    *(struct OamOut **)(gModelCtx + 0x38) = out;
+}
+END_NONMATCH
 
 void sub_080E3294(struct OwnerObj *obj, u32 flags)
 {
@@ -396,7 +582,149 @@ void sub_080E3294(struct OwnerObj *obj, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_080E2024/spin_cell_grid.s", void spin_cell_grid(void))
+NONMATCH("asm/code_080E2024/spin_cell_grid.s", void spin_cell_grid(struct CellObj *obj))
+{
+    u8 *cell;
+    vu16 *cell16;
+    u16 *dst;
+    u32 attr2;
+    s32 frame;
+    s32 base;
+    s32 palette;
+    s32 cols;
+    s32 rows;
+    s32 speed;
+    s32 step;
+    u8 grid;
+    s32 cellW;
+    s32 cellH;
+    s32 mask;
+    s32 k;
+    s32 t;
+    s32 c;
+    s32 p;
+    s32 q;
+    s32 a;
+    s32 b;
+    s32 cc;
+    s32 d;
+    s32 det;
+    s32 bit3;
+    s32 yacc;
+    s32 yattr;
+    s32 x;
+    s32 xStart;
+    s32 idx;
+    s32 i;
+    s32 j;
+
+    frame = obj->unk20;
+    base = obj->unk22;
+    grid = obj->unk24;
+    palette = ((u32)grid << 28) >> 28;
+    cols = grid >> 4;
+    rows = ((u32)obj->unk25 << 28) >> 28;
+    speed = (s16)obj->unk26;
+    step = (s16)obj->unk28;
+    cellW = (cols + 0xEF) / cols;
+    cellH = (rows + 0x9F) / rows;
+    mask = 0;
+    if (speed != 0)
+    {
+        obj->unk20 = frame + 1;
+    }
+    for (k = 0x21 - (cols + rows); k <= 0x1F; k++)
+    {
+        t = frame * speed + k * step - (step << 5);
+        if (t <= 0)
+        {
+            bit3 = ((u32)gSys[0x888] << 0x1C) >> 0x1F;
+            cell = gSys + 0x80 + (k << 5) + (bit3 << 10);
+            cell16 = (vu16 *)cell;
+            a = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x2000, cellW);
+            cell16[3];
+            cell16[3] = a;
+            cell16[7];
+            cell16[7] = 0;
+            cell16[11];
+            cell16[11] = 0;
+            a = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x2000, cellH);
+            cell16[15];
+            cell16[15] = a;
+            mask |= 1 << k;
+        }
+        else if (t <= 0x3F)
+        {
+            c = gCosineTable[t & 0xFF] / 0x40;
+            p = c + 0x100;
+            a = (cellW * p) / 2;
+            q = c - 0x100;
+            cc = (cellH * q) / 2;
+            d = (cellW * q) / 2;
+            b = (cellH * p) / 2;
+            det = (a * b - cc * d) / 0x100;
+            a = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((b * 31) << 8, det);
+            b = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((d - (d << 5)) << 8, det);
+            cc = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((cc - (cc << 5)) << 8, det);
+            d = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((a << 5) - a) << 8, det);
+            bit3 = ((u32)gSys[0x888] << 0x1C) >> 0x1F;
+            cell = gSys + 0x80 + (k << 5) + (bit3 << 10);
+            cell16 = (vu16 *)cell;
+            cell16[3];
+            cell16[3] = a;
+            cell16[7];
+            cell16[7] = b;
+            cell16[11];
+            cell16[11] = cc;
+            cell16[15];
+            cell16[15] = d;
+            mask |= 1 << k;
+        }
+    }
+    if (mask != 0)
+    {
+        dst = *(u16 **)(gSys + 0x880);
+        attr2 = palette << 12;
+        attr2 |= base;
+        yacc = (cellH - 0x20) / 2;
+        xStart = (cellW - 0x20) / 2;
+        for (i = 0; i < rows; i++)
+        {
+            yacc &= 0xFF;
+            x = xStart;
+            if (cols != 0)
+            {
+                yattr = yacc | 0x100;
+                idx = 31 - i;
+                for (j = 0; j < cols; j++)
+                {
+                    if (mask & (1 << idx))
+                    {
+                        x &= 0x1FF;
+                        dst[0] = yattr;
+                        dst[1] = x | 0xFFFF8000 | (idx << 9);
+                        dst[2] = *(u16 *)&attr2;
+                        dst += 4;
+                    }
+                    x += cellW;
+                    idx--;
+                }
+            }
+            yacc += cellH;
+        }
+        *(u16 **)(gSys + 0x880) = dst;
+    }
+    else if (obj != 0)
+    {
+        obj->vtable = gCellVtable;
+        if (obj->unk1C != 0)
+        {
+            *obj->unk1C = mask;
+        }
+        task_remove(obj, 3);
+    }
+}
+END_NONMATCH
 
 void reset_obj_hook(struct CellObj *obj, u32 kind)
 {
