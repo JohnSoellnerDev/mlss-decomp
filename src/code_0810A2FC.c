@@ -39,7 +39,9 @@ struct Pic
     s16 posY;
     s16 a4;
     s16 a6;
-    u8 filler8[0x21 - 0x8];
+    u8 filler8[0x11 - 0x8];
+    u8 flags11;
+    u8 filler12[0x21 - 0x12];
     u8 kind;
     u8 filler22[0x34 - 0x22];
     struct OamEntry *anchor;
@@ -60,7 +62,8 @@ struct Obj
     struct Owner *owner;
     u8 filler50[0x7C - 0x50];
     u16 speed;
-    u8 filler7E[0x84 - 0x7E];
+    u8 ctrl;
+    u8 filler7F[0x84 - 0x7F];
     s32 x0;
     s32 y0;
     s32 h;
@@ -71,6 +74,9 @@ struct Obj
     u32 state;
     s32 unkA4;
     s32 unkA8;
+    u16 phase;
+    u8 fillerAE[0x11E - 0xAE];
+    u16 bits;
 };
 
 struct SpriteBox
@@ -136,11 +142,15 @@ struct World
     u8 lock;
     u8 filler08[0x0B - 0x08];
     u8 flags0B;
-    u8 filler0C[0x74 - 0x0C];
+    u8 filler0C[0x1C - 0x0C];
+    u8 *flagPtr1C;
+    u8 filler20[0x74 - 0x20];
     s32 unk74;
     u8 filler78[0x7C - 0x78];
     struct ActiveObj *active;
-    u8 filler80[0x24C - 0x80];
+    struct Obj *fig1;
+    struct Obj *fig2;
+    u8 filler88[0x24C - 0x88];
     void *unk24C;
     void *slot250;
     u8 filler254[0x278 - 0x254];
@@ -157,6 +167,9 @@ struct World
     struct StatusObj *statusObj;
     u16 counter314;
     u16 scroll316;
+    u8 filler318[0x340 - 0x318];
+    u8 flag340;
+    u8 list341;
 };
 
 struct SlotMarkers
@@ -305,7 +318,288 @@ NONMATCH("asm/code_0810A2FC/state_status_release.s", void state_status_release(s
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(struct Owner *owner))
+void sprite_set_action(struct Obj *obj, u32 action, u32 arg, u32 extra);
+
+NONMATCH("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(struct Owner *owner))
+{
+    struct World *world;
+    struct ActiveObj *active;
+    struct Obj *slot;
+    struct Obj *fig;
+    s32 activeX;
+    s32 activeY;
+    s32 value;
+    s32 progress;
+    s32 statusSlot;
+    s32 pos;
+    s32 target;
+    s32 delta;
+    s32 half;
+    s32 i;
+    s32 state;
+    s32 anim;
+    s32 radius;
+    s32 idx;
+    s32 part;
+    s32 dx;
+    s32 dy;
+    s32 dyRaw;
+    s32 offset;
+    s32 step;
+    s32 ry;
+    s32 rx;
+    s32 height;
+    s32 timer;
+    s32 limit;
+    s32 sv;
+
+    world = gWorld;
+    active = world->active;
+    activeX = ((struct Obj *)active)->z;
+    activeY = *(s32 *)((u8 *)active + 0x1C);
+    value = (s16)owner->timer;
+    progress = (s16)world->counter314;
+    statusSlot = (s16)world->statusObj->index;
+    pos = (s16)world->scroll316;
+
+    target = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(statusSlot << 8, value);
+    delta = (target - pos) & 0xFF;
+    half = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((value / 2) + 0x20, value);
+    if (delta > 0x7F)
+    {
+        if (delta - 0x100 + half <= 0)
+        {
+            pos -= half;
+        }
+        else
+        {
+            pos = target;
+        }
+    }
+    else if (delta < half)
+    {
+        pos = target;
+    }
+    else
+    {
+        pos += half;
+    }
+    pos &= 0xFF;
+    gWorld->scroll316 = pos;
+    if (value > 1)
+    {
+        ((struct KeyRepeat *)gSys)->rate = 8;
+    }
+    else
+    {
+        ((struct KeyRepeat *)gSys)->rate = 4;
+    }
+
+    for (i = 0; i < 4; i++)
+    {
+        slot = gWorld->slots[i];
+        if (slot == 0)
+        {
+            continue;
+        }
+        state = 0;
+        switch (slot->kind)
+        {
+        case 0:
+        case 4:
+            break;
+        case 1:
+            state = 1;
+            fig = gWorld->fig1;
+            if ((fig->ctrl & 6) == 2)
+            {
+                if ((gWorld->fig2->ctrl & 6) == 2 && gWorld->flag340 != 0 && (fig->bits & 0x300) == 0 && (gWorld->fig2->bits & 0x300) == 0)
+                {
+                    state = 0;
+                }
+            }
+            break;
+        case 2:
+            if (gWorld->list341 == 0 || (((struct Obj *)active)->bits & 0x8000) != 0)
+            {
+                state = 1;
+            }
+            break;
+        case 3:
+            if ((*gWorld->flagPtr1C & 0x80) != 0)
+            {
+                state = 1;
+            }
+            else
+            {
+                fig = gWorld->fig1;
+                if ((fig->ctrl & 6) == 2 && (fig->bits & 0x300) != 0)
+                {
+                    state = 1;
+                }
+                else
+                {
+                    fig = gWorld->fig2;
+                    if ((fig->ctrl & 6) == 2 && (fig->bits & 0x300) != 0)
+                    {
+                        state = 1;
+                    }
+                }
+            }
+            break;
+        case 5:
+            gWorld->statusObj->index = 0;
+            statusSlot = 0;
+            if (*(s32 *)((u8 *)active + 0x34) != 0)
+            {
+                state = 2;
+            }
+            break;
+        }
+        slot->state = state;
+        if (i == (gWorld->lock >> 5) - 1)
+        {
+            continue;
+        }
+        anim = slot->kind;
+        if (anim == 5)
+        {
+            anim = 4;
+        }
+        if (state == 1)
+        {
+            anim += 5;
+        }
+        if (slot->pic->kind != anim)
+        {
+            sprite_set_action(slot, anim, 0, 0);
+        }
+
+        if (value > 1)
+        {
+            sv = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(i << 8, value);
+            idx = (sv - pos) & 0xFF;
+            part = gSineTable[idx];
+            if (part < 0)
+            {
+                part += 0x3F;
+            }
+            part = part >> 6;
+            part = progress * part;
+            if (part < 0)
+            {
+                part += 0xFF;
+            }
+            dx = part >> 8;
+            part = gCosineTable[idx];
+            if (part < 0)
+            {
+                part += 0x3F;
+            }
+            part = part >> 6;
+            part = progress * part;
+            if (part < 0)
+            {
+                part += 0xFF;
+            }
+            dyRaw = part >> 8;
+            dy = dyRaw - 0x2000;
+            offset = dy;
+            if (dy < 0)
+            {
+                offset = dyRaw - 0x1FF1;
+            }
+            step = 0xC80 - (offset >> 4);
+            radius = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xC80000, step);
+            rx = radius * dx;
+            if (rx < 0)
+            {
+                rx += 0xFFF;
+            }
+            slot->x = activeX + (rx >> 12);
+            ry = (radius * 25) << 10;
+            if (ry < 0)
+            {
+                ry += 0xFFF;
+            }
+            slot->y = activeY + (ry >> 12) - 0x6400;
+            slot->x0 = activeX + dx;
+            slot->y0 = activeX + dy;
+        }
+        else
+        {
+            offset = progress - 0x2000;
+            if (offset < 0)
+            {
+                offset = progress - 0x1FF1;
+            }
+            step = 0xC80 - (offset >> 4);
+            radius = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xC80000, step);
+            slot->x = activeX;
+            ry = (radius * 25) << 10;
+            if (ry < 0)
+            {
+                ry += 0xFFF;
+            }
+            slot->y = activeY + (ry >> 12) - 0x6400;
+        }
+
+        if (i == statusSlot && state == 0)
+        {
+            timer = (s16)owner->flag18;
+            if (timer != 0)
+            {
+                slot->z += timer;
+                owner->flag18 -= 0x80;
+                part = gSineTable[1];
+                if (part < 0)
+                {
+                    part += 0x3F;
+                }
+                limit = ((part >> 6) << 1) + 0x3000;
+                if (limit >= slot->z)
+                {
+                    slot->phase = state;
+                    owner->flag18 = state;
+                }
+            }
+            else
+            {
+                idx = (((s32)slot->phase << 2) + 1) & 0xFF;
+                slot->phase++;
+                part = gSineTable[idx];
+                if (part < 0)
+                {
+                    part += 0x3F;
+                }
+                height = ((part >> 6) << 1) + 0x3000;
+                slot->z = height;
+            }
+        }
+        else
+        {
+            slot->z = 0x3000;
+        }
+
+        if (state == 2)
+        {
+            slot->pic->flags11 = (slot->pic->flags11 & -13) | 4;
+            slot->pic->a4 = 0x80;
+            slot->pic->a6 = 0x80;
+        }
+        else
+        {
+            slot->pic->flags11 &= -13;
+            slot->pic->a4 = radius / 0x10;
+            slot->pic->a6 = radius / 0x10;
+        }
+        if (i != statusSlot)
+        {
+            slot->pic->flags11 = (slot->pic->flags11 & -13) | 4;
+        }
+    }
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0810A2FC/oam_link_slot_entries.s", void oam_link_slot_entries(void))
 {
