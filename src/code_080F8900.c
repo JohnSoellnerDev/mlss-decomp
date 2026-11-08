@@ -1,5 +1,119 @@
 #include "global.h"
 
+u32 apply_obj_mode(void *, void *, void *);
+u32 binary_op_and_set_var(void *, void *, void *, void *, void *, void *);
+u32 branch_if_list_entry(void *, void *, void *, void *);
+u32 branch_if_state_bit(void *, void *, void *, void *);
+u32 bump_or_branch_record(void *, void *, void *, void *);
+u32 call_b0c0(void *, void *, void *);
+u32 clear_list_entry(void *, void *, void *, void *);
+u32 cmd_aux_entry(void *, void *, void *);
+u32 cmd_find_record(void *, void *, void *, u32);
+u32 cmd_latch_when_free(void *, void *);
+u32 cmd_latch_when_ready(void *, void *);
+u32 cmd_list_mode(void *, void *, void *);
+u32 cmd_list_toggle(void *, void *, void *);
+u32 cmd_obj_op_ae49(void *, void *, void *);
+u32 cmd_obj_setup_global(void *, void *, void *);
+u32 cmd_object_op_cur(void *, void *, void *);
+u32 cmd_place_obj_flags3(void *, void *, void *);
+u32 cmd_place_obj_sync(void *, void *, void *);
+u32 cmd_place_object(void *, void *, void *);
+u32 cmd_place_slot_flags(void *, void *, void *);
+u32 cmd_place_sprite(void *, void *, void *, void *);
+u32 cmd_push_handle(void *, void *, void *);
+u32 cmd_read_store(void *, void *, void *, void *);
+u32 cmd_reset_next_record(void *, void *, void *);
+u32 cmd_set_mode_1(void *, void *, void *);
+u32 cmd_set_next_flag4(void *, void *, void *);
+u32 cmd_set_obj_flags_list2(void *, void *, void *);
+u32 cmd_set_object_flags_list(void *, void *, void *);
+u32 cmd_set_pos_for_current(void *, void *, void *);
+u32 cmd_set_position(void *, void *, void *);
+u32 cmd_set_slot_flag(void *, void *, void *);
+u32 cmd_set_value(void *, void *, void *, u32);
+u32 cmd_set_var_lang(void *, void *, void *, void *);
+u32 cmd_slot_field(void *, void *, void *);
+u32 cmd_slot_op(void *, void *, void *);
+u32 cmd_slot_value_by_kind(void *, void *, void *);
+u32 cmd_start_move(void *, void *, void *);
+u32 cmd_start_move_list(void *, void *, void *);
+u32 cmd_store_obj_field(void *, void *, void *, void *);
+u32 copy_if_cmp_match(void *, void *, void *);
+u32 copy_if_slot_bit(void *, void *, void *, void *);
+u32 copy_on_key_match_a(void *, void *, void *);
+u32 copy_on_key_match_b(void *, void *, void *);
+u32 counter_step_and_branch(void *, void *, void *);
+u32 cur_obj_bbf8(void *, void *, void *);
+u32 dispatch_obj_mode_call(void *, void *, void *);
+u32 draw_text_item(void *, void *, void *, void *);
+u32 draw_text_item_raw(void *, void *, void *, void *);
+u32 map_rects_cmd(void *, void *, void *, void *);
+u32 pick_random_entry(void *, void *, void *);
+u32 pop_obj_entry(void *, void *);
+u32 push_obj_entry(void *, void *, void *);
+u32 random_obj_placement(void *, void *, void *, void *);
+u32 request_if_idle(void *, void *, void *);
+u32 reset_cursor(void *, void *);
+u32 restore_obj_word0(void *, void *);
+u32 set_cur_obj_26_27(void *, void *, void *);
+u32 set_cur_obj_29(void *, void *, void *);
+u32 set_key_ignore_mask(void *, void *, void *);
+u32 set_key_mode_bits(void *, void *, void *);
+u32 set_obj_flag(void *, void *, void *);
+u32 set_obj_if_cmp(void *, void *, void *);
+u32 set_obj_word0_saved(void *, void *, void *);
+u32 set_obj_word9c_flag(void *, void *, void *);
+u32 set_obj_word_98(void *, void *, void *);
+u32 set_ramp0_if_zero(void *, void *, void *);
+u32 set_shadow_bits(void *, void *, void *);
+u32 set_slot_param(void *, void *, void *);
+u32 set_text_window_32(void *, void *, void *);
+u32 set_var_from_key_group(void *, void *, void *, void *);
+u32 set_var_from_keys(void *, void *, void *, void *);
+u32 set_var_from_text_byte(void *, void *, void *, void *);
+u32 slot_target_cmd(void *, void *, void *);
+u32 slot_value_cmd(void *, void *, void *);
+u32 store_if_text_byte(void *, void *, void *);
+u32 store_obj_byte_to_var(void *, void *, void *, void *);
+u32 update_obj_counters(void *, void *, void *);
+
+static inline u8 *rd_ctx(u8 *owner)
+{
+    return owner + 0x1C;
+}
+
+static inline u8 *rd_state(u8 *owner)
+{
+    return *(u8 **)(owner + 0x24);
+}
+
+static inline u8 *rd_entry(u8 *owner)
+{
+    return *(u8 **)(owner + 0x28);
+}
+
+static inline u8 *rd_aux(u8 *owner)
+{
+    return *(u8 **)(owner + 0x20);
+}
+
+static inline u8 *rd_vars(u8 *owner)
+{
+    return rd_state(owner) + 0x908;
+}
+
+static inline u8 *rd_params(u8 *owner)
+{
+    return rd_state(owner) + 0x99C;
+}
+
+static inline u8 rd_cur(u8 *owner)
+{
+    return rd_state(owner)[0x9A0];
+}
+
+
 struct OwnerObj
 {
     u8 filler0[0x2C];
@@ -1406,4 +1520,250 @@ NONMATCH("asm/code_080F8900/record_advance.s", u32 record_advance(u8 *owner, u8 
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F8900/record_dispatch.s", void record_dispatch(void))
+u32 record_dispatch(u8 *owner, u8 *rec, u32 *scratch)
+{
+    u32 result;
+
+    switch (rec[0xA7])
+    {
+    case 0x00:
+        result = reset_cursor(rd_ctx(owner), rec);
+        break;
+    case 0x01:
+        result = restore_obj_word0(rd_ctx(owner), rec);
+        break;
+    case 0x02:
+        result = set_obj_word0_saved(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x03:
+        result = set_obj_word9c_flag(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x04:
+        result = cmd_set_value(owner, rec, scratch, rd_cur(owner));
+        break;
+    case 0x05:
+        result = cmd_set_next_flag4(owner, rec, scratch);
+        break;
+    case 0x06:
+        result = cmd_find_record(owner, rec, scratch, rd_cur(owner));
+        break;
+    case 0x07:
+        result = cmd_reset_next_record(owner, rec, scratch);
+        break;
+    case 0x09:
+        result = cmd_obj_setup_global(owner, rec, scratch);
+        break;
+    case 0x0D:
+        result = cmd_start_move(owner, rec, scratch);
+        break;
+    case 0x10:
+        result = cmd_object_op_cur(owner, rec, scratch);
+        break;
+    case 0x11:
+        result = cmd_set_pos_for_current(owner, rec, scratch);
+        break;
+    case 0x12:
+        result = cmd_obj_op_ae49(owner, rec, scratch);
+        break;
+    case 0x13:
+        result = cmd_set_obj_flags_list2(owner, rec, scratch);
+        break;
+    case 0x14:
+        result = cmd_set_object_flags_list(owner, rec, scratch);
+        break;
+    case 0x15:
+        result = draw_text_item_raw(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x17:
+        result = cmd_place_sprite(owner, rd_entry(owner), rec, scratch);
+        break;
+    case 0x16:
+        result = draw_text_item(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x18:
+        result = branch_if_state_bit(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x19:
+        result = map_rects_cmd(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x1A:
+        result = bump_or_branch_record(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x1F:
+        result = set_text_window_32(rd_ctx(owner), rd_entry(owner), scratch);
+        break;
+    case 0x23:
+        result = slot_target_cmd(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x24:
+        result = set_slot_param(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x25:
+        result = slot_value_cmd(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x26:
+        result = set_ramp0_if_zero(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x1C:
+        result = copy_if_slot_bit(rd_ctx(owner), rd_entry(owner), rec, scratch);
+        break;
+    case 0x1D:
+        result = store_if_text_byte(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x1E:
+        result = set_var_from_text_byte(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x20:
+        result = clear_list_entry(rd_ctx(owner), rd_aux(owner), rec, scratch);
+        break;
+    case 0x21:
+        result = cmd_aux_entry(owner, rec, scratch);
+        break;
+    case 0x22:
+        result = branch_if_list_entry(rd_ctx(owner), rd_aux(owner), rec, scratch);
+        break;
+    case 0x27:
+        result = cur_obj_bbf8(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x28:
+        result = set_cur_obj_29(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x29:
+        result = set_cur_obj_26_27(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x2A:
+        result = apply_obj_mode(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x2B:
+        result = store_obj_byte_to_var(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x2C:
+        result = cmd_list_toggle(owner, rec, scratch);
+        break;
+    case 0x2F:
+        result = cmd_latch_when_ready(owner, rec);
+        break;
+    case 0x31:
+        result = update_obj_counters(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x32:
+        result = set_obj_flag(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x33:
+        result = cmd_store_obj_field(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x34:
+        result = cmd_update_and_store(rd_ctx(owner), (u32)rec, scratch, (u32)rd_vars(owner));
+        break;
+    case 0x35:
+        result = cmd_read_store(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x36:
+        result = binary_op_and_set_var(rd_ctx(owner), rec, scratch, rd_vars(owner), rd_params(owner), 0);
+        break;
+    case 0x37:
+        result = set_shadow_bits(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x39:
+        result = set_var_from_key_group(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x3A:
+        result = set_var_from_keys(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x3B:
+        result = copy_on_key_match_b(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x3C:
+        result = copy_on_key_match_a(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x38:
+        result = set_key_mode_bits(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x3D:
+        result = call_b0c0(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x3F:
+        result = copy_if_cmp_match(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x41:
+        result = random_obj_placement(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x42:
+        result = pick_random_entry(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x43:
+        result = push_obj_entry(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x46:
+        result = set_obj_word_98(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x44:
+        result = pop_obj_entry(rd_ctx(owner), rec);
+        break;
+    case 0x45:
+        result = counter_step_and_branch(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x47:
+        result = set_obj_if_cmp(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x48:
+        result = dispatch_obj_mode_call(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x49:
+        result = request_if_idle(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x4A:
+        result = cmd_set_var_lang(rd_ctx(owner), rec, scratch, rd_vars(owner));
+        break;
+    case 0x4D:
+        result = cmd_slot_value_by_kind(owner, rec, scratch);
+        break;
+    case 0x4E:
+        result = cmd_slot_op(owner, rec, scratch);
+        break;
+    case 0x4F:
+        result = cmd_set_slot_flag(owner, rec, scratch);
+        break;
+    case 0x50:
+        result = cmd_slot_field(owner, rec, scratch);
+        break;
+    case 0x51:
+        result = cmd_start_move_list(owner, rec, scratch);
+        break;
+    case 0x52:
+        result = cmd_set_position(owner, rec, scratch);
+        break;
+    case 0x53:
+        result = cmd_place_obj_flags3(owner, rec, scratch);
+        break;
+    case 0x54:
+        result = cmd_place_obj_sync(owner, rec, scratch);
+        break;
+    case 0x55:
+        result = cmd_place_object(owner, rec, scratch);
+        break;
+    case 0x56:
+        result = cmd_place_slot_flags(owner, rec, scratch);
+        break;
+    case 0x57:
+        result = set_key_ignore_mask(rd_ctx(owner), rec, scratch);
+        break;
+    case 0x58:
+        result = cmd_push_handle(owner, rec, scratch);
+        break;
+    case 0x59:
+        result = cmd_latch_when_free(owner, rec);
+        break;
+    case 0x5A:
+        result = cmd_set_mode_1(owner, rec, scratch);
+        break;
+    case 0x5B:
+        result = cmd_list_mode(owner, rec, scratch);
+        break;
+    default:
+        goto invalid;
+    }
+    return (s8)result;
+invalid:
+    return 1;
+}
