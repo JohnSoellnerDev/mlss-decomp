@@ -183,6 +183,30 @@ struct ListItem
     u8 flags110;
 };
 
+/* the object pointers at world +0x58 (scene, ..., link a, link b) as a table */
+struct WorldSlots
+{
+    u8 filler0[0x58];
+    struct ListItem *slots[4];
+};
+
+/* bit 6 of a sprite's byte +0x11 (mirrored) and its copy in a list item */
+struct SpriteFlags11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 mirror : 1;
+    u8 bit7 : 1;
+};
+
+struct ItemFlags110
+{
+    u8 filler0[0x110];
+    u8 lo6 : 6;
+    u8 mirror : 1;
+    u8 bit7 : 1;
+};
+
 extern struct World *gWorld;
 extern const u32 gSlotMotion[];
 extern const u16 gModeStartX[];
@@ -358,19 +382,15 @@ void obj_motion_step_b(struct Obj *obj)
     }
 }
 
-NONMATCH("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part(struct Obj *obj))
+void obj_place_sprite_part(struct Obj *obj)
 {
     struct ListItem *item;
     struct Obj *part;
     s32 minusOne;
-    u8 *base;
-    s32 idx;
 
-    base = (u8 *)gWorld;
-    idx = obj->unk9C;
-    item = ((struct ListItem **)(base + 0x58))[idx];
+    item = ((struct WorldSlots *)gWorld)->slots[obj->unk9C];
     part = (struct Obj *)&item->filler8;
-    item->sprite->flags11 = (item->flags110 & 0x40) | (item->sprite->flags11 & -0x41);
+    ((struct SpriteFlags11 *)item->sprite)->mirror = ((struct ItemFlags110 *)item)->mirror;
     part->dispX = item->targetX;
     part->dispY = item->targetY;
     part->dispZ = item->targetZ;
@@ -382,7 +402,6 @@ NONMATCH("asm/code_08113AE8/obj_place_sprite_part.s", void obj_place_sprite_part
     obj->callback = NULL;
     set_slot_value(0xAD, minusOne);
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08113AE8/obj_query_contact_step.s", u32 obj_query_contact_step(struct Obj *obj))
 {
@@ -639,9 +658,8 @@ void obj_timer_release_hold(struct Obj *obj)
     }
 }
 
-NONMATCH("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_to_hold(struct Obj *obj))
+void obj_spread_chain_to_hold(struct Obj *obj)
 {
-    struct SpreadPos *pos;
     struct SpreadPos *holdPos;
     struct Obj *hold;
     struct ChainNode *node;
@@ -649,51 +667,43 @@ NONMATCH("asm/code_08113AE8/obj_spread_chain_to_hold.s", void obj_spread_chain_t
     s32 dx, dy, dz;
     s32 k;
 
+    /* the position block of the object heads its node chain */
+    node = (struct ChainNode *)&obj->filler0C;
     hold = obj->chain;
     holdPos = (struct SpreadPos *)&hold->filler0C;
-    pos = (struct SpreadPos *)&obj->filler0C;
-
     hold->level = obj->level - 12;
-    ox = pos->x;
-    oy = pos->y;
-    oz = pos->z;
-    dx = holdPos->x + (s32)pos->px * 0x100 - ox;
-    dy = holdPos->y + (s32)pos->py * 0x100 - oy;
-    dz = holdPos->z + (s32)pos->pz * 0x100 - oz;
-    node = pos->head;
+    ox = node->x;
+    oy = node->y;
+    oz = node->z;
+    dx = holdPos->x + (s32)((struct SpreadPos *)node)->px * 0x100 - ox;
+    dy = holdPos->y + (s32)((struct SpreadPos *)node)->py * 0x100 - oy;
+    dz = holdPos->z + (s32)((struct SpreadPos *)node)->pz * 0x100 - oz;
+    node = node->next;
     k = 1;
-    if (node != NULL)
+    while (node != NULL)
     {
-        do
-        {
-            node->x = (dx * k) / 4 + ox;
-            node->y = (dy * k) / 4 + oy;
-            node->z = (dz * k) / 4 + oz;
-            node = node->next;
-            k++;
-        } while (node != NULL);
+        node->x = (dx * k) / 4 + ox;
+        node->y = (dy * k) / 4 + oy;
+        node->z = (dz * k) / 4 + oz;
+        node = node->next;
+        k++;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struct Obj *obj, u16 flag))
+void world_link_a_setup(struct Obj *obj, u16 flag)
 {
     struct Obj *link;
     struct Obj *part;
     struct SpriteNode *take;
     struct ChainNode *tail;
-    struct SpreadPos *pos;
     struct ChainNode *n;
     s32 anim;
-    s32 tmp;
-    u32 zero;
+    s32 i;
 
     link = obj_spawn_linked(obj, 0x4031, 0);
     anim = (obj->unk9C != 0) ? 2 : 3;
     sprite_set_action(link, anim, 0, 0);
-    tmp = obj->posX / 0x100 - 0x1C;
-    zero = 0;
-    link->pixX = tmp;
+    link->pixX = obj->posX / 0x100 - 0x1C;
     link->pixY = obj->posY / 0x100 - 8;
     link->pixZ = obj->posZ / 0x100 + 0x20;
     link->posX = obj->posX - 0x1400;
@@ -711,26 +721,22 @@ NONMATCH("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struc
     part->callback = obj_spread_chain_to_hold;
     part->chain = obj->chain;
     obj->chain = part;
-    pos = (struct SpreadPos *)&part->filler0C;
-    pos->px = 8;
-    pos->py = -2;
-    pos->pz = zero;
+    /* the position block of the part heads a list of four sprite nodes */
+    tail = (struct ChainNode *)&part->filler0C;
+    ((struct SpreadPos *)tail)->px = 8;
+    ((struct SpreadPos *)tail)->py = -2;
+    ((struct SpreadPos *)tail)->pz = 0;
     take = sprite_node_take();
     part->nodeTake4 = take;
     take->sprite = part->sprite;
-    take->pos = pos;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    pos->head = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    n->next = (struct ChainNode *)zero;
+    take->pos = (struct SpreadPos *)tail;
+    for (i = 0; i < 4; i++)
+    {
+        n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+        tail->next = n;
+        tail = n;
+    }
+    tail->next = NULL;
     obj->scene->mode = 1;
     if (flag != 0)
     {
@@ -741,31 +747,26 @@ NONMATCH("asm/code_08113AE8/world_link_a_setup.s", void world_link_a_setup(struc
         obj->callback = link_state_clear_idle;
     }
 }
-END_NONMATCH
 
 struct Obj *obj_spawn(struct Scene *scene, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void *sprite_node_take(void);
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void link_state_clear_idle(struct Obj *obj);
 void obj_spread_chain_to_hold(struct Obj *obj);
-NONMATCH("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struct Obj *obj, u16 flag))
+void world_link_b_setup(struct Obj *obj, u16 flag)
 {
     struct Obj *link;
     struct Obj *part;
     struct SpriteNode *take;
     struct ChainNode *tail;
-    struct SpreadPos *pos;
     struct ChainNode *n;
     s32 anim;
-    s32 tmp;
-    u32 zero;
+    s32 i;
 
     link = obj_spawn_linked(obj, 0x4032, 0);
     anim = (obj->unk9C != 0) ? 2 : 3;
     sprite_set_action(link, anim, 0, 0);
-    tmp = obj->posX / 0x100 + 0x20;
-    zero = 0;
-    link->pixX = tmp;
+    link->pixX = obj->posX / 0x100 + 0x20;
     link->pixY = obj->posY / 0x100 + 8;
     link->pixZ = obj->posZ / 0x100 + 0x20;
     link->posX = obj->posX + 0x1800;
@@ -783,26 +784,22 @@ NONMATCH("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struc
     part->callback = obj_spread_chain_to_hold;
     part->chain = obj->chain;
     obj->chain = part;
-    pos = (struct SpreadPos *)&part->filler0C;
-    pos->px = 8;
-    pos->py = -2;
-    pos->pz = zero;
+    /* the position block of the part heads a list of four sprite nodes */
+    tail = (struct ChainNode *)&part->filler0C;
+    ((struct SpreadPos *)tail)->px = 8;
+    ((struct SpreadPos *)tail)->py = -2;
+    ((struct SpreadPos *)tail)->pz = 0;
     take = sprite_node_take();
     part->nodeTake4 = take;
     take->sprite = part->sprite;
-    take->pos = pos;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    pos->head = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    tail = n;
-    n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-    tail->next = n;
-    n->next = (struct ChainNode *)zero;
+    take->pos = (struct SpreadPos *)tail;
+    for (i = 0; i < 4; i++)
+    {
+        n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
+        tail->next = n;
+        tail = n;
+    }
+    tail->next = NULL;
     obj->scene->mode = 1;
     if (flag != 0)
     {
@@ -813,7 +810,6 @@ NONMATCH("asm/code_08113AE8/world_link_b_setup.s", void world_link_b_setup(struc
         obj->callback = link_state_clear_idle;
     }
 }
-END_NONMATCH
 
 void obj_begin_effect(struct Obj *obj)
 {
@@ -867,7 +863,7 @@ NONMATCH("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part
 END_NONMATCH
 
 void obj_release_when_motion_done(struct Obj *obj);
-NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj *obj))
+void obj_circle_step(struct Obj *obj)
 {
     s32 *ang;
     s32 *dst;
@@ -877,6 +873,7 @@ NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj 
     s32 sn;
     s32 base;
     s32 next;
+    s32 mask;
 
     if ((obj->sprite->mode & 6) == 2)
     {
@@ -893,10 +890,11 @@ NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj 
     {
         angle = obj->unk98 + 0x80FF;
     }
-    idx = (angle >> 8) & 0xFF;
-    cs = gCosineTable[idx];
+    idx = angle >> 8;
+    mask = 0xFF;
+    cs = gCosineTable[idx & mask];
     obj->dispX = (cs / 0x40) * 0x18 + 0x5000;
-    sn = gSineTable[idx];
+    sn = gSineTable[idx & mask];
     obj->dispY = (sn / 0x40) * 0x10 + 0x6C00;
     dst = &obj->unk98;
     base = *ang;
@@ -916,7 +914,6 @@ NONMATCH("asm/code_08113AE8/obj_circle_step.s", void obj_circle_step(struct Obj 
         obj->callback = obj_release_when_motion_done;
     }
 }
-END_NONMATCH
 
 void obj_finish_motion(struct Obj *obj);
 
@@ -1026,24 +1023,22 @@ u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner)
     return 0;
 }
 
-NONMATCH("asm/code_08113AE8/obj_claim_partner.s", u32 obj_claim_partner(struct Obj *obj, struct Obj *partner))
+u32 obj_claim_partner(struct Obj *obj, struct Obj *partner)
 {
     struct WorldEntry *entry;
 
-    if (obj->phase == 0)
+    if (obj->phase != 0)
+        return -1;
+    partner->owner = (struct Owner *)obj;
+    partner->callback = obj_place_target_b;
+    obj->scene->mode = 1;
+    if ((gWorld->flags & 0x80) != 0)
     {
-        partner->owner = (struct Owner *)obj;
-        partner->callback = obj_place_target_b;
-        obj->scene->mode = 1;
-        if ((gWorld->flags & 0x80) != 0)
-        {
-            entry = (struct WorldEntry *)gWorld->entries[(s16)partner->scene->slot + 2];
-            entry->level7D = partner->level + 1;
-            entry->cb54 = obj_place_target_a;
-            gWorld->flags = gWorld->flags & 0x7F;
-        }
-        set_slot_value(0x85, -1);
+        entry = (struct WorldEntry *)gWorld->entries[(s16)partner->scene->slot + 2];
+        entry->level7D = partner->level + 1;
+        entry->cb54 = obj_place_target_a;
+        gWorld->flags = gWorld->flags & 0x7F;
     }
+    set_slot_value(0x85, -1);
     return -1;
 }
-END_NONMATCH
