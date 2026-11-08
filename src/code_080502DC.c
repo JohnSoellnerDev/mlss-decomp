@@ -205,6 +205,22 @@ struct Mid4At6
     u16 rest : 6;
 };
 
+/* state bits of an object and the link flags that update them */
+struct ObjLink33C
+{
+    u8 filler0[0x214];
+    u8 state : 3;
+    u8 rest214 : 5;
+    u8 filler215[0x33C - 0x215];
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 childState : 3;
+    u8 rest : 2;
+    u8 restore : 1;
+    u8 saved : 3;
+    u8 rest33D : 5;
+};
+
 struct ObjInitS
 {
     u8 filler0[0x23B];
@@ -248,7 +264,7 @@ void init_object_from_def(u32 d, u8 *child, u8 *obj);
 void heap_free_b(void *p);
 u32 mt19937_next(void);
 s32 rand_below(s32 range, u32 seed);
-void wander_to_edge(u8 *obj, u32 a, s32 b);
+void wander_to_edge(u8 *obj, u16 a, s32 b);
 u32 angle_of_vector16(s32 x, s32 y);
 void obj_random_enter(u32 owner, u8 *obj, u32 *state);
 void obj_release_slots(u32 sprite);
@@ -307,11 +323,10 @@ NONMATCH("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(u8 *obj))
 }
 END_NONMATCH
 
-NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flags_from_child(u8 *obj))
+void obj_update_flags_from_child(u8 *obj)
 {
     u8 **childSlot;
     u32 link;
-    u32 tc;
 
     link = obj[0x33C] & 6;
     if (link != 0)
@@ -326,24 +341,19 @@ NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flag
                 {
                     if ((*childSlot)[0x20F] & 2)
                     {
-                        u8 bc;
-
                         ((struct Bit0 *)((*childSlot) + 0x20C))->bit0 = 1;
-                        bc = (*childSlot)[0x33C];
-                        if (2 & bc)
+                        /* a linked child takes over its pending state */
+                        if (((struct ObjLink33C *)*childSlot)->b1)
                         {
-                            tc = bc << 27;
-                            ((struct Mode3 *)((*childSlot) + 0x214))->mode = tc >> 29;
-                            ((struct Bit1 *)((*childSlot) + 0x33C))->bit1 = 0;
+                            ((struct ObjLink33C *)*childSlot)->state = ((struct ObjLink33C *)*childSlot)->childState;
+                            ((struct ObjLink33C *)*childSlot)->b1 = 0;
                         }
                     }
                 }
-                if (obj[0x33C] & 0x80)
+                if (((struct ObjLink33C *)obj)->restore)
                 {
-                    u32 t2 = obj[0x33D];
-                    t2 = t2 << 29;
-                    ((struct Mode3 *)(obj + 0x214))->mode = t2 >> 29;
-                    ((struct Bits8 *)(obj + 0x33C))->b7 = 0;
+                    ((struct ObjLink33C *)obj)->state = ((struct ObjLink33C *)obj)->saved;
+                    ((struct ObjLink33C *)obj)->restore = 0;
                 }
                 ((struct Bit0 *)(obj + 0x33C))->bit0 = 1;
             }
@@ -351,7 +361,6 @@ NONMATCH("asm/code_080502DC/obj_update_flags_from_child.s", void obj_update_flag
         }
     }
 }
-END_NONMATCH
 
 u32 obj_attach_child(u8 *obj, u32 a, u32 b, u32 d, u8 *child)
 {
@@ -633,29 +642,27 @@ ASM_FUNC("asm/code_080502DC/obj_apply_pending_sprite.s", void obj_apply_pending_
 
 ASM_FUNC("asm/code_080502DC/obj_apply_anim_code.s", void obj_apply_anim_code(void))
 
-NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 *obj))
+void obj_activate_sprite(u8 *obj)
 {
-    s32 noCode = 0xFFFF;
     u8 *flags;
     u8 f;
-    u32 one;
     u16 m;
+    struct ObjInitS *o;
     struct SpriteObj **pslot;
     struct SpriteObj **cslot;
     struct SpriteObj *tmp;
 
     flags = obj + 0x33C;
-    f = *flags;
-    one = 1;
-    if (f & one)
+    if (*flags & 1)
     {
         return;
     }
-    f |= 1;
+    f = *flags | 1;
     *flags = f;
     pslot = (struct SpriteObj **)(obj + 0x34C);
     if (*pslot != NULL)
     {
+        /* a pending sprite replaces the current one, keeping its attributes */
         ((struct Bits33C *)flags)->mid3 = 0;
         cslot = (struct SpriteObj **)(obj + 0x294);
         unlink_d54(*cslot);
@@ -676,17 +683,18 @@ NONMATCH("asm/code_080502DC/obj_activate_sprite.s", void obj_activate_sprite(u8 
     }
     else
     {
+        /* no pending sprite: select the animation and reset the state */
         obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2 + 1], 1, 0, 0);
         set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 0);
-        ((struct Mid4At6 *)flags)->mid4 = 0;
-        obj[0x23B] = 0;
-        m = *(u16 *)(obj + 0x33E);
-        *(u16 *)(obj + 0x33E) = m | 0x1FE;
-        *(u16 *)(obj + 0x340) = one;
-        *(u16 *)(obj + 0x342) = noCode;
+        o = (struct ObjInitS *)obj;
+        ((struct Mid4At6 *)&o->flags)->mid4 = 0;
+        o->unk23B = 0;
+        m = o->mask;
+        o->mask = m | 0x1FE;
+        o->timer340 = 1;
+        o->timerB342 = 0xFFFF;
     }
 }
-END_NONMATCH
 
 void obj_commit_sprite(u8 *obj)
 {
