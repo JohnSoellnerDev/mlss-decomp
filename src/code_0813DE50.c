@@ -884,7 +884,7 @@ END_NONMATCH
 
 
 
-NONMATCH("asm/code_0813DE50/face_partner.s", void face_partner(void *ctx, struct Enemy *obj, EnemyFn *out))
+void face_partner(void *ctx, struct Enemy *obj, EnemyFn *out)
 {
     struct Sprite *sprite = obj->sprite;
     EnemyFn run;
@@ -912,11 +912,12 @@ NONMATCH("asm/code_0813DE50/face_partner.s", void face_partner(void *ctx, struct
         dir &= 7;
         {
             s32 cell = *p;
+            s32 mask = -8;
 
-            cell = -8 & cell;
-            cell |= dir;
-            *p = cell;
-            obj_set_cell_coord(obj, ((u32)cell << 29) >> 30, 0);
+            mask &= cell;
+            mask |= dir;
+            *p = mask;
+            obj_set_cell_coord(obj, ((u32)mask << 29) >> 30, 0);
         }
         p = &obj->unk20C;
         {
@@ -937,7 +938,6 @@ NONMATCH("asm/code_0813DE50/face_partner.s", void face_partner(void *ctx, struct
         run(ctx, obj, out);
     }
 }
-END_NONMATCH
 
 
 
@@ -1479,7 +1479,7 @@ void enemy_hop_wait_partner(u8 *owner, struct Enemy *ent, EnemyFn *out)
 
 s32 rand_below(s32 range, u32 seed);
 
-NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+void enemy_hop_jump_to_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
     u8 one = 1;
     u16 pick;
@@ -1513,7 +1513,7 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
 
     *(u16 *)(ai + 0x178) = rand_below(4, mt19937_next());
     pick = *(u16 *)(ai + 0x178);
-    stepH = *(u8 *)(*(u8 **)(ai + 0x158) + pick + 0x34);
+    stepH = *(u8 *)(*(u8 **)(ai + 0x158) + (pick + 0x34));
 
     partnerTop = partner->posZ + partner->unk18;
     entTop = ent->posZ + ent->unk18;
@@ -1568,7 +1568,7 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
     obj_set_cell_coord(ent, cell, 0);
 
     sprite = ent->sprite;
-    sprite->unk20 = *(u8 *)((u8 *)rec + *(u16 *)(ai + 0x178) + 0x28);
+    sprite->unk20 = *(u8 *)((u8 *)rec + 0x28 + *(u16 *)(ai + 0x178));
 
     *(s32 *)(ai + 0x184) = ent->posX;
     *(s32 *)(ai + 0x188) = ent->posY;
@@ -1576,4 +1576,3 @@ NONMATCH("asm/code_0813DE50/enemy_hop_jump_to_partner.s", void enemy_hop_jump_to
     *(s32 *)(ai + 0x190) = ent->unk18;
     *out = enemy_xyz_step_done;
 }
-END_NONMATCH
