@@ -194,24 +194,10 @@ NONMATCH("asm/code_0801931C/set_slot_fields.s", void set_slot_fields(u32 idx, u8
         SYS_AREA->period8A8[idx] = period;
         SYS_AREA->unk8AA[idx] = 0;
         SYS_AREA->speed8B0[idx] = (target - SYS_AREA->slot89C[idx]) / period;
-        {
-            u8 fb;
-            u8 *fp;
-            u32 bit;
-            if (idx == 0)
-            {
-                fp = &SYS_AREA->rampFlags;
-                fb = *fp;
-                bit = 0x08;
-            }
-            else
-            {
-                fp = &SYS_AREA->rampFlags;
-                fb = *fp;
-                bit = 0x10;
-            }
-            *fp = fb | bit;
-        }
+        if (idx == 0)
+            SYS_AREA->rampFlags |= 0x08;
+        else
+            SYS_AREA->rampFlags |= 0x10;
     }
 }
 END_NONMATCH
@@ -231,22 +217,10 @@ NONMATCH("asm/code_0801931C/set_slot_fields_45.s", void set_slot_fields_45(u32 i
         SYS_AREA->unk8B6[idx] = 0;
         SYS_AREA->speed8BC[idx] = (target - (SYS_AREA->slot8A4[idx] << 8)) / period;
         {
-            u8 fb;
-            u8 *fp;
-            u32 bit;
             if (idx == 0)
-            {
-                fp = &SYS_AREA->rampFlags;
-                fb = *fp;
-                bit = 0x20;
-            }
+                SYS_AREA->rampFlags |= 0x20;
             else
-            {
-                fp = &SYS_AREA->rampFlags;
-                fb = *fp;
-                bit = 0x40;
-            }
-            *fp = fb | bit;
+                SYS_AREA->rampFlags |= 0x40;
         }
     }
 }
@@ -673,21 +647,26 @@ struct GfxObj
     void *data2C;
 };
 
+struct SysBits88A
+{
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 rest : 4;
+};
+
 NONMATCH("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struct ListNode *obj, u8 kind, u8 *taskData, void *data))
 {
     u8 *base;
     struct GfxObj *g;
     u16 *shadow;
-    u32 flags;
+    s32 k10 = 0x10;
 
     task_insert(obj, kind, taskData);
     g = (struct GfxObj *)obj;
     g->handler = (void *)gObjHandler;
     base = gSys;
-    flags = base[0x88A];
-    flags &= -9;
-    base[0x88A] = flags;
-    g->unk1C = 0x10;
+    ((struct SysBits88A *)&base[0x88A])->bit3 = 0;
+    g->unk1C = k10;
     g->data2C = data;
     g->unk1E = 0;
     g->unk20 = 0;
@@ -705,7 +684,7 @@ NONMATCH("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struc
     frame_update();
     shadow = gUnk_02000050;
     shadow[0] = 0xBF;
-    gUnk_02000054 = 0x10;
+    gUnk_02000054 = k10;
     shadow = (u16 *)((u8 *)shadow - 0x48);
     *shadow = 0x88;
     shadow = (u16 *)((u8 *)shadow - 8);
