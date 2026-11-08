@@ -313,6 +313,7 @@ NONMATCH("asm/code_0808F758/orbit_step_e.s", void orbit_step_e(struct HoldActor 
 {
     s32 busy;
     u8 act;
+    s16 *st;
 
     obj->state = orbit_step_e;
     act = obj->action;
@@ -324,23 +325,24 @@ NONMATCH("asm/code_0808F758/orbit_step_e.s", void orbit_step_e(struct HoldActor 
     }
     else
     {
-        if ((s16)obj->step == 0)
+        st = (s16 *)&obj->step;
+        if (*st == 0)
         {
             sprite_set_action(obj, 0, 0x2025, 0);
         }
-        if ((s16)obj->step == 1)
+        if (*st == 1)
         {
             sprite_set_action(obj, 0, 0x2025, 1);
         }
-        if ((s16)obj->step == 2)
+        if (*st == 2)
         {
             sprite_set_action(obj, 0, 0x2025, 2);
         }
-        if ((s16)obj->step == 3)
+        if (*st == 3)
         {
             sprite_set_action(obj, 0, 0x2025, 3);
         }
-        if ((s16)obj->step != 4)
+        if ((u16)*st != 4)
         {
             if ((gSys.held & obj->buttons) == 0)
             {
