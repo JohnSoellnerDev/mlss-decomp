@@ -32,11 +32,36 @@ struct Block24
     u8 bytes[24];
 };
 
+struct ChainNode
+{
+    struct ChainNode *next;
+    struct MapPose *pose;
+    struct ChainNode **slot;
+};
+
+struct Bits77
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+} __attribute__((packed));
+
+struct ObjFlags77
+{
+    u8 filler0[0x77];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 struct MapObj
 {
-    u8 filler0[0x08];
+    u8 filler0[0x04];
+    struct ChainNode *node4;
     struct MapPose *pose;
-    u8 filler0C[0x10 - 0x0C];
+    struct ChainNode *chain0C;
     s32 posX;
     s32 posY;
     s32 posH;
@@ -129,7 +154,19 @@ extern const u32 gObjectTilesets[];
 extern const u8 gMapObjLoaderClass[];
 extern const s16 gCosineTable[];
 extern const s16 gSineTable[];
+extern u8 gUnk_03000E14;
 extern u8 gUnk_03000E15;
+
+struct MapObj *obj_spawn(struct MapPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
+struct ChainNode *sprite_node_take(void);
+struct ChainNode *sprite_node_alloc(s32 x, s32 y, s32 h);
+void obj_list_push_default(struct MapObj *obj);
+void on_arrive(struct MapObj *obj);
+void map_obj_slide_left(struct MapObj *obj);
+void map_obj_slide_fast_left(struct MapObj *obj);
+void map_obj_orbit_out(struct MapObj *obj);
+void map_obj_place_from_offsets(struct MapObj *obj);
+void map_obj_settle(struct MapObj *obj);
 
 static inline void map_obj_release_chain(struct MapObj *obj)
 {
@@ -142,7 +179,175 @@ static inline void map_obj_release_chain(struct MapObj *obj)
     obj_release(obj);
 }
 
-ASM_FUNC("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn(struct MapObj *obj))
+NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn(struct MapObj *obj))
+{
+    struct MapObj *child;
+    struct MapObj *mid;
+    struct MapObj *tip;
+    struct MapObj *tip2;
+    struct ChainNode *first;
+    struct ChainNode *tail;
+    struct ChainNode *next;
+    struct Bits77 *srcBits;
+    u8 *tagAddr;
+    s32 count;
+    s32 param;
+    s32 t;
+    s32 dx;
+    s32 dy;
+    u32 angle;
+
+    if (obj->pose->flags & 8)
+    {
+        sprite_set_action(obj, 5, 0, 0);
+        effect_spawn_at(0x12E2, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        child = obj_spawn(obj->part, 0x412E, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                          obj->baseH / 0x100 + 0x30, ((u32)obj->pose->flip << 25) >> 31, 1);
+        sprite_set_action(child, 1, 0, 0);
+        gUnk_03000E14 = 1;
+        gUnk_03000E15 = 0;
+        obj->sprite = child;
+        child->flags79 |= 1;
+        srcBits = (struct Bits77 *)&obj->bits77;
+        ((struct Bits77 *)&child->bits77)->bit6 = srcBits->bit6;
+        ((struct Bits77 *)&child->bits77)->bit5 = srcBits->bit5;
+        child->handler68 = on_arrive;
+        child->link = obj->link;
+        child->owner = obj->owner;
+        tagAddr = &obj->tag;
+        child->tag = *tagAddr;
+        param = obj->param9C;
+
+        switch (param)
+        {
+        case 0:
+            child->targetX = obj->baseX - 0x1000;
+            child->targetY = obj->baseY + 0x200;
+            child->targetH = obj->baseH + 0x3000;
+            child->timer = 0;
+            child->param9C = 0;
+            t = 0x4000 - child->targetX;
+            if (t < 0)
+            {
+                t += 0xFF;
+            }
+            dx = (t << 8) >> 16;
+            t = 0x4000 - child->targetY;
+            if (t < 0)
+            {
+                t += 0xFF;
+            }
+            dy = (t << 8) >> 16;
+            angle = arc_tan2(dx, dy);
+            child->angle = (angle << 16) >> 24;
+            child->radius = 0x200;
+            child->state = map_obj_orbit_out;
+            break;
+        case 1:
+            child->dx = obj->baseX / 0x100 - 0x10;
+            child->dy = obj->baseY / 0x100 + 2;
+            child->dh = obj->baseH / 0x100 + 0x30;
+            child->targetX = (s32)child->dx << 8;
+            child->targetY = (s32)child->dy << 8;
+            child->targetH = (s32)child->dh << 8;
+            child->radius = obj->owner->part->targetX + 0x3000;
+            child->wait = obj->owner->part->targetY;
+            child->param9C = 0xC;
+            child->angle = 0x180;
+            child->timer = 0;
+            child->state = map_obj_slide_left;
+            break;
+        case 2:
+            child->dx = obj->baseX / 0x100 - 0x10;
+            child->dy = obj->baseY / 0x100 + 2;
+            child->dh = obj->baseH / 0x100 + 0x30;
+            child->targetX = (s32)child->dx << 8;
+            child->targetY = (s32)child->dy << 8;
+            child->targetH = (s32)child->dh << 8;
+            child->radius = obj->owner->part->targetX + 0x2800;
+            child->wait = obj->owner->part->targetY;
+            child->param9C = 0x1000;
+            child->angle = 0x160;
+            child->timer = 0;
+            child->state = map_obj_slide_fast_left;
+            break;
+        }
+
+        child->node4 = sprite_node_take();
+        child->node4->pose = child->pose;
+        child->node4->slot = &child->chain0C;
+
+        first = sprite_node_alloc(child->posX, child->posY, child->posH);
+        child->chain0C = first;
+        tail = first;
+        tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+        tail = next;
+        tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+        tail = next;
+        count = 7;
+        do
+        {
+            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+            tail = next;
+            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+            tail = next;
+            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+            tail = next;
+            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
+            tail = next;
+            count -= 4;
+        } while (count >= 0);
+        tail->next = 0;
+
+        mid = obj_spawn(child->part, 0x700C, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2, 0,
+                        ((u32)obj->pose->flip << 25) >> 31, 1);
+        child->sprite = mid;
+        mid->flags79 |= 1;
+        mid->tag = *tagAddr;
+        mid->filler75[0] = 0x7F;
+        mid->state = 0;
+
+        tip = obj_spawn(mid->part, 0x412F, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                        obj->baseH / 0x100 + 0x30, ((u32)obj->pose->flip << 25) >> 31, 1);
+        mid->sprite = tip;
+        tip->flags79 |= 1;
+        ((struct Bits77 *)&tip->bits77)->bit6 = srcBits->bit6;
+        ((struct Bits77 *)&tip->bits77)->bit5 = srcBits->bit5;
+        tip->handler68 = on_arrive;
+        tip->link = obj->link;
+        tip->owner = obj->owner;
+        obj_list_push_default(tip);
+        tip->tag = *tagAddr;
+        tip->param9C = 0;
+        tip->dx = obj->baseX / 0x100 - 0x10;
+        tip->dy = obj->baseY / 0x100 + 2;
+        tip->dh = obj->baseH / 0x100 + 0x30;
+        tip->timer = 0;
+        tip->state = map_obj_place_from_offsets;
+
+        tip2 = obj_spawn(tip->part, 0x412F, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                         obj->baseH / 0x100 + 0x30, ((u32)obj->pose->flip << 25) >> 31, 1);
+        tip->sprite = tip2;
+        tip2->flags79 |= 1;
+        ((struct Bits77 *)&tip2->bits77)->bit6 = srcBits->bit6;
+        ((struct Bits77 *)&tip2->bits77)->bit5 = srcBits->bit5;
+        tip2->handler68 = on_arrive;
+        tip2->link = obj->link;
+        tip2->owner = obj->owner;
+        obj_list_push_default(tip2);
+        tip2->tag = *tagAddr;
+        tip2->param9C = 0;
+        tip2->dx = obj->baseX / 0x100 - 0x10;
+        tip2->dy = obj->baseY / 0x100 + 2;
+        tip2->dh = obj->baseH / 0x100 + 0x30;
+        tip2->timer = 1;
+        tip2->state = map_obj_place_from_offsets;
+
+        obj->state = map_obj_settle;
+        set_slot_value(0x110, -1);
+    }
+}
+END_NONMATCH
 
 void map_obj_orbit_out(struct MapObj *obj)
 {
