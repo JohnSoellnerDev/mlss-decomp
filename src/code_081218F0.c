@@ -260,26 +260,47 @@ static inline void tween_refresh(struct ScreenView *screen, s32 idx)
     }
 }
 
+/* screen_view_update helpers */
+struct SysView
+{
+    u8 filler0[0x880];
+    u32 oam880;
+    u8 filler884[0x888 - 0x884];
+    u8 flags888;
+    u8 filler889[0x8C0 - 0x889];
+    u8 lang8C0;
+};
+
+struct SprFlags12
+{
+    u8 b0 : 1;
+    u8 b12 : 2;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 b67 : 2;
+};
+
+static inline u32 bro_levels(u32 oam)
+{
+    oam = draw_decimal_sprites(8, gParty[0x30], oam, 0xA8, 0x38, 2, -1, -1);
+    oam = draw_decimal_sprites(8, gParty[0x6C], oam, 0x48, 0x38, 2, -1, -1);
+    return oam;
+}
+
 NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struct ViewOwner *owner))
 {
     struct ScreenView *screen;
-    struct SlideObj **slideSlot;
-    void **p;
     u16 langTiles[5];
-    s32 group;
     u32 oam;
-    u32 x;
+    s32 i;
     u32 flagA;
     u32 flagB;
     u32 flagC;
-    u32 colC;
-    struct SpriteObj *cur;
-    u8 *sys;
 
     mem_copy_fast(langTiles, gScreenLangTileTable, 0xA);
-    sys = gSys;
     screen = owner->screen;
-    oam = *(u32 *)(sys + 0x880);
+    oam = ((struct SysView *)gSys)->oam880;
     if (screen->state <= 4)
     {
         return;
@@ -292,10 +313,9 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
     {
         screen_pending_redraw(screen);
     }
-    if (!(sys[0x888] & 0x10))
+    if (!(((struct SysView *)gSys)->flags888 & 0x10))
     {
-        slideSlot = &screen->slide;
-        if ((*slideSlot)->state == 1)
+        if (screen->slide->state == 1)
         {
             if (!(screen->cursor->flags12 & 0x20))
             {
@@ -304,18 +324,18 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
             obj_release_slots(screen->sideL);
             obj_release_slots(screen->sideR);
             screen->slider->oam1 -= screen->slideStep;
-            if ((s32)screen->slideMin > (s16)screen->slider->oam1)
+            if (screen->slideMin > (s16)screen->slider->oam1)
             {
                 screen->slider->oam1 = screen->slideMin;
             }
         }
-        else if ((*slideSlot)->state == 3)
+        else if (screen->slide->state == 3)
         {
             obj_release_slots(screen->cursor);
             obj_release_slots(screen->sideL);
             obj_release_slots(screen->sideR);
             screen->slider->oam1 += screen->slideStep;
-            if ((s32)screen->slideMax < (s16)screen->slider->oam1)
+            if (screen->slideMax < (s16)screen->slider->oam1)
             {
                 screen->slider->oam1 = screen->slideMax;
             }
@@ -343,14 +363,10 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 obj_load_record(screen->item, screen->page + 1, 0, 0, 0);
                 sprite_update_cd0(screen->item);
                 screen->cursor->oam0 = 0x68;
-                flagA = test_flag((u8 *)gUnk_03000FC0 + 0x38C, 0, 0x222);
-                flagB = test_flag((u8 *)gUnk_03000FC0 + 0x38C, 0, 0x220);
-                flagC = test_flag((u8 *)gUnk_03000FC0 + 0x38C, 0, 0x222);
-                x = 0x2C - ((flagA << 24) >> 21);
-                x = x - ((flagB << 24) >> 20);
-                colC = 0x20 - ((flagC << 24) >> 21);
-                cur = screen->cursor;
-                cur->oam1 = x + colC * screen->category;
+                flagA = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
+                flagB = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x220);
+                flagC = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
+                screen->cursor->oam1 = 0x2C - (u8)flagA * 8 - (u8)flagB * 16 + screen->category * (0x20 - (u8)flagC * 8);
                 sprite_update_cd0(screen->cursor);
                 break;
             case 3:
@@ -358,24 +374,16 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 sprite_update_cd0(screen->item);
                 break;
             case 4:
-                p = &screen->spr4C[7];
-                update_if_set(screen->spr4C[0]);
-                update_if_set(screen->spr4C[1]);
-                update_if_set(screen->spr4C[2]);
-                update_if_set(screen->spr4C[3]);
-                update_if_set(screen->spr4C[4]);
-                update_if_set(screen->spr4C[5]);
-                update_if_set(screen->spr4C[6]);
-                update_if_set(screen->spr4C[7]);
-                update_if_set(screen->spr4C[8]);
-                update_if_set(screen->spr4C[9]);
-                update_if_set(p[3]);
-                update_if_set(p[4]);
-                update_if_set(p[5]);
-                update_if_set(p[6]);
+                for (i = 0; i < 14; i++)
+                {
+                    if (screen->spr4C[i] != 0)
+                    {
+                        sprite_update_cd0(screen->spr4C[i]);
+                    }
+                }
                 if (screen->pick != 0xFF)
                 {
-                    setup_obj_10bc(screen->cursor, 7, langTiles[sys[0x8C0]], 1, -1, -1, -1, -1);
+                    setup_obj_10bc(screen->cursor, 7, langTiles[((struct SysView *)gSys)->lang8C0], 1, -1, -1, -1, -1);
                     obj_load_record(screen->cursor, screen->pick, -1, 0, 0);
                     sprite_update_cd0(screen->cursor);
                     screen->cursor->oam0 = 0xDA;
@@ -383,62 +391,63 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 }
                 break;
             case 0:
-                if (screen->cursor->tile16 == (langTiles[sys[0x8C0]] & 0xFFF))
+                if (screen->cursor->tile16 == (langTiles[((struct SysView *)gSys)->lang8C0] & 0xFFF)
+                    && screen->pick != 0xFF)
                 {
-                    if (screen->pick != 0xFF)
-                    {
-                        setup_obj_10bc(screen->cursor, 5, 0x6000, 1, -1, -1, -1, -1);
-                    }
+                    setup_obj_10bc(screen->cursor, 5, 0x6000, 1, -1, -1, -1, -1);
                 }
                 obj_load_record(screen->cursor, 0, -1, 0, 0);
                 screen->cursor->oam0 = 0x18;
-                screen->cursor->oam1 = ((((screen->cursorIdx << 1) + screen->cursorIdx) << 3) + 0x46) - (screen->count << 3);
+                screen->cursor->oam1 = screen->cursorIdx * 0x18 + 0x46 - screen->count * 8;
                 sprite_update_cd0(screen->cursor);
-                screen->cursor->flags12 &= 0xEF;
-                screen->cursor->flags12 &= 0xF9;
+                ((struct SprFlags12 *)&screen->cursor->flags12)->b4 = 0;
+                ((struct SprFlags12 *)&screen->cursor->flags12)->b12 = 0;
                 screen->sideL->oam0 = 0xCC;
                 screen->sideR->oam0 = 0x6C;
                 screen->sideL->oam1 = 0x50;
                 screen->sideR->oam1 = 0x50;
                 sprite_update_cd0(screen->sideL);
                 sprite_update_cd0(screen->sideR);
-                screen->slider->flags12 &= 0xEF;
-                break;
-            default:
+                ((struct SprFlags12 *)&screen->slider->flags12)->b4 = 0;
                 break;
             }
         }
 
-        if (screen->mode == 0 && !((*slideSlot)->state & 1) && screen->waveFlag == 0)
+        if (screen->mode == 0 && !(screen->slide->state & 1) && screen->waveFlag == 0)
         {
-            oam = draw_decimal_sprites(8, gParty[0x30], oam, 0xA8, 0x38, 2, -1, -1);
-            oam = draw_decimal_sprites(8, gParty[0x6C], oam, 0x48, 0x38, 2, -1, -1);
+            oam = bro_levels(oam);
         }
-        if (screen->mode == 1 && !((*slideSlot)->state & 1))
+        if (screen->mode == 1 && !(screen->slide->state & 1))
         {
             oam = obj_draw_list(screen, oam);
         }
-        if (screen->mode == 4 && !((*slideSlot)->state & 1))
+        if (screen->mode == 4 && !(screen->slide->state & 1))
         {
             oam = screen_helpers_obj_draw_grid(screen, oam);
         }
         if (screen->entryMark != 0xFF)
         {
-            group = 0;
-            do
+            for (i = 0; i < 12; i++)
             {
-                tween_refresh(screen, group);
-                tween_refresh(screen, group + 1);
-                tween_refresh(screen, group + 2);
-                group += 3;
-            } while (group <= 11);
+                if (screen->tweens[i].sprite != 0)
+                {
+                    if (screen->tweens[i].flags3C & 1)
+                    {
+                        sprite_update_cd0(screen->tweens[i].sprite);
+                    }
+                    else
+                    {
+                        obj_release_slots(screen->tweens[i].sprite);
+                    }
+                }
+            }
         }
 
         update_obj_list();
         obj_list_pass_0a8c();
         gUnk_03000D48(gUnk_0203FFB8.root, gUnk_0203FFB8.root + 0xA14);
         oam = gUnk_03000D4C(gUnk_0203FFB8.root, oam);
-        if (!((*slideSlot)->state & 1))
+        if (!(screen->slide->state & 1))
         {
             switch (screen->mode)
             {
@@ -456,7 +465,7 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 break;
             }
         }
-        *(u32 *)(sys + 0x880) = oam;
+        ((struct SysView *)gSys)->oam880 = oam;
     }
     if (screen->waveFlag != 0)
     {
