@@ -172,7 +172,28 @@ u32 cmd_find_record(struct Owner *owner, u32 *cmd, u32 *key_ptr, u8 key)
     return 1;
 }
 
-ASM_FUNC("asm/code_080FB4E0/cmd_set_next_flag4.s", void cmd_set_next_flag4(void))
+u32 cmd_set_next_flag4(struct Owner *owner, u32 unused, u32 *p)
+{
+    u16 flagBit = 4;
+    u8 *rec = (u8 *)owner->state + (p[1] * 0xA8);
+
+    u16 *flags;
+
+    switch (p[0])
+    {
+    case 0:
+        flags = (u16 *)(rec + 0x148);
+        *flags |= flagBit;
+        break;
+    case 1:
+        flags = (u16 *)(rec + 0x148);
+        *flags &= 0xFFFB;
+        break;
+    default:
+        return 1;
+    }
+    return 1;
+}
 
 // Runs the record while bit 0 of its flags (+0xA0) is set.
 u32 run_record(struct Owner *owner, u8 *rec)
