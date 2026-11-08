@@ -182,6 +182,10 @@ s32 number_right_edge(s32 a, s32 b);
 void draw_digits_c0_p11(s32 a, s32 b, s32 c, s32 d);
 struct Sprite *spawn_obj_by_id(s32 id, u32 a, u32 b, u32 c);
 void sprite_entry_update(void *obj);
+extern const u8 gStatTable[];
+void mem_copy_fast(void *dst, const void *src, u32 n);
+u32 mt19937_next(void);
+s32 rand_below(s32 range, u32 seed);
 
 void state_tally_hero_stats(struct Owner *owner);
 struct SpriteFlags12
@@ -419,7 +423,210 @@ void state_select_pose(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_081041E4/hero_panel_digits.s", void hero_panel_digits(u8 *digits, u32 heroCtx, u8 *tblA, u8 *tblB, u32 pose, s32 hero))
+struct HeroPanelStack
+{
+    s32 table[0x50];
+    s32 stats[3];
+    s32 ctx;
+    s32 valueA;
+    s32 scale;
+    double fRow;
+    double fScale;
+    s32 rowOfs;
+    s32 countSave;
+};
+
+static inline u32 panel_digit_store(u8 *cell, s32 word, s32 scale, s32 ctx)
+{
+    s32 value = scale * word;
+    s32 limit;
+    u32 changed = 0;
+
+    if (value < 0)
+        value += 0x3FF;
+    *cell = (value >> 10) + 1;
+    limit = ctx / 10 + 3;
+    if ((s32)*cell > limit || *cell > 5)
+    {
+        changed = 1;
+        if ((s32)*cell > limit)
+            *cell = limit;
+        if (*cell > 5)
+            *cell = 5;
+    }
+    return changed;
+}
+
+NONMATCH("asm/code_081041E4/hero_panel_digits.s", void hero_panel_digits(u8 *digits, u32 heroCtx, u8 *tblA, u8 *tblB, u32 pose, s32 hero))
+{
+    struct HeroPanelStack ps;
+    s32 classScale;
+    s32 row;
+    s32 adjusted;
+    s32 tier;
+    s32 pick1;
+    s32 pick2;
+    s32 i;
+    s32 acc;
+    s32 valueScaled;
+    s32 ctxScaled;
+    s32 quotient;
+    s32 product;
+    s32 *cur;
+    s32 *w;
+    s32 half;
+    s32 limit;
+    s32 count;
+    u8 *cell;
+
+    ps.ctx = heroCtx;
+    ps.valueA = ((u16 *)tblA)[pose];
+    row = ((u16 *)tblB)[pose];
+    adjusted = 0;
+    mem_copy_fast(ps.table, gStatTable, 0x140);
+
+    if (hero == 0)
+    {
+        if (pose <= 5)
+        {
+            switch (pose)
+            {
+            case 0:
+                classScale = 0x14C;
+                ps.scale = 0x133;
+                break;
+            case 1:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 2:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 3:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 4:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 5:
+                classScale = 0x14C;
+                ps.scale = 0x14C;
+                break;
+            }
+        }
+    }
+    else
+    {
+        if (pose <= 5)
+        {
+            switch (pose)
+            {
+            case 0:
+                classScale = 0x119;
+                ps.scale = 0x133;
+                break;
+            case 1:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 2:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 3:
+                classScale = 0x119;
+                ps.scale = 0x119;
+                break;
+            case 4:
+                classScale = 0x133;
+                ps.scale = 0x133;
+                break;
+            case 5:
+                classScale = 0x14C;
+                ps.scale = 0x14C;
+                break;
+            }
+        }
+    }
+
+    ps.fRow = (double)row;
+    acc = (s32)(ps.fRow * 0.75 * 256.0);
+    ps.fScale = (double)(classScale * (ps.ctx + row));
+    ps.stats[0] = acc + (s32)(ps.fScale * 0.25);
+    ps.stats[1] = (s32)(ps.fRow * 0.5 * 256.0) + (s32)(ps.fScale * 0.5);
+    ps.stats[2] = (s32)(ps.fRow * 0.25 * 256.0) + (s32)(ps.fScale * 0.75);
+
+    tier = 0;
+    valueScaled = ps.valueA << 8;
+    ctxScaled = ps.ctx << 8;
+    if (valueScaled >= ps.stats[0])
+    {
+        cur = &ps.stats[0];
+        for (;;)
+        {
+            cur++;
+            tier++;
+            if (tier > 2)
+                break;
+            if (valueScaled < *cur)
+                break;
+        }
+    }
+
+    quotient = ctxScaled / 5;
+    if (quotient <= 0xFF)
+        quotient = 0x100;
+    product = ps.scale * quotient;
+    if (product < 0)
+        product += 0xFF;
+    ps.scale = product >> 8;
+    if (tier == 1)
+        ps.scale = (((ps.scale - 0x100) * 2) / 3) + 0x100;
+    if (tier == 2)
+        ps.scale = ((ps.scale - 0x100) / 3) + 0x100;
+    if (tier == 3)
+        ps.scale = 0x100;
+
+    pick1 = rand_below(4, mt19937_next()) * 5;
+    w = ps.table + tier * 20 + pick1;
+    for (i = 0; i < 5; i++)
+        adjusted += panel_digit_store(digits + i, w[i], ps.scale, ps.ctx);
+
+    pick2 = rand_below(4, mt19937_next()) * 5;
+    if (pick2 == pick1)
+        pick2 = rand_below(4, mt19937_next()) * 5;
+    w = ps.table + tier * 20 + pick2;
+    for (i = 0; i < 5; i++)
+        adjusted += panel_digit_store(digits + 5 + i, w[i], ps.scale, ps.ctx);
+
+    if (adjusted > 3)
+    {
+        half = adjusted / 2;
+        if (half > 0)
+        {
+            limit = ps.ctx / 10 + 3;
+            do
+            {
+                count = 0;
+                do
+                {
+                    count++;
+                    cell = digits + rand_below(10, mt19937_next());
+                    if (*cell == 5 || *cell == limit)
+                    {
+                        *cell >>= 1;
+                        count = 100;
+                    }
+                } while (count <= 31);
+                half--;
+            } while (half > 0);
+        }
+    }
+}
+END_NONMATCH
 
 void state_show_hero_panel(struct Owner *owner)
 {
