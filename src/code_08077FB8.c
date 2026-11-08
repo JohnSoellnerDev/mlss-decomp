@@ -13,6 +13,21 @@ struct ByteBit7
     u8 bit7 : 1;
 };
 
+struct SpriteNode
+{
+    struct SpriteNode *next;
+    void *unk4;
+    void *unk8;
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
+struct Low5Byte
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
 struct ActorPose
 {
     u8 filler0[0x0C];
@@ -39,9 +54,10 @@ struct ActorPart
 
 struct ActorObj
 {
-    u8 filler0[0x08];
+    u8 filler0[4];
+    struct SpriteNode *sprite4;
     struct ActorPose *pose;
-    u8 filler0C[0x10 - 0x0C];
+    struct SpriteNode *nodes;
     s32 posX;
     s32 posY;
     s32 posH;
@@ -62,7 +78,10 @@ struct ActorObj
     u8 filler64[0x68 - 0x64];
     void (*callback68)(struct ActorObj *);
     s32 link6C;
-    u8 filler70[0x77 - 0x70];
+    u8 filler70[4];
+    u8 unk74;
+    u8 filler75;
+    u8 unk76;
     u8 unk77;
     u8 dir;
     u8 flags;
@@ -138,6 +157,17 @@ extern u32 gUnk_03000EDC[];
 extern u32 gUnk_03000F1C[];
 extern u8 gUnk_03000F5C;
 extern u8 gUnk_03000F5D;
+extern s32 gUnk_03000EB0[];
+extern s32 gUnk_03000EB8[];
+extern s32 gUnk_03000EC0[];
+extern u16 gUnk_03000EC8[];
+extern u16 gUnk_03000ECC[];
+
+void remove_if_no_child(struct ActorObj *obj);
+void spawn_child_4025_adopt(struct ActorObj *obj);
+void timer2_anim_d(struct ActorObj *obj);
+struct SpriteNode *sprite_node_take(void);
+struct SpriteNode *sprite_node_alloc(s32 x, s32 y, s32 h);
 
 void set_slot_fields(u32 a, u32 b, u32 c);
 void actor_link_anim_steps(struct ActorObj *obj);
@@ -163,6 +193,42 @@ u32 arc_tan2(s32 x, s32 y);
 static inline void place_effect_at_base(struct ActorObj *obj, u32 id)
 {
     effect_spawn_at(id, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+}
+
+static inline u32 pose_bit6(struct ActorObj *obj)
+{
+    return ((u32)obj->pose->unk11 << 25) >> 31;
+}
+
+static inline void link_sprite(struct ActorObj *child, struct SpriteNode *sprite)
+{
+    child->sprite4 = sprite;
+    sprite->unk4 = child->pose;
+    sprite->unk8 = &child->nodes;
+}
+
+static inline struct SpriteNode *alloc_node_at(struct ActorObj *obj)
+{
+    return sprite_node_alloc(obj->posX, obj->posY, obj->posH);
+}
+
+static inline struct ActorObj *spawn_pair_child(struct ActorObj *obj, u32 type, s32 dx, s32 dy, s32 dh)
+{
+    s32 x = obj->posX / 0x100 + dx;
+    s32 y = obj->posY / 0x100 + dy;
+    s32 h = obj->posH / 0x100 + dh;
+    u32 bit = pose_bit6(obj);
+    return obj_spawn(obj->part, type, x, y, h, bit, 1);
+}
+
+static inline void set_own_tables(struct ActorPart *a, struct ActorPart *b)
+{
+    gUnk_03000EB0[0] = a->targetX;
+    gUnk_03000EB8[0] = a->targetY;
+    gUnk_03000EC0[0] = a->targetH;
+    gUnk_03000EB0[1] = b->targetX;
+    gUnk_03000EB8[1] = b->targetY;
+    gUnk_03000EC0[1] = b->targetH;
 }
 
 void spawn_child_4046(struct ActorObj *obj);
@@ -286,4 +352,194 @@ void countdown_phase_then_wait(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_pair_link(struct ActorObj *obj))
+NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_pair_link(struct ActorObj *obj))
+{
+    struct ActorObj *childA;
+    struct ActorObj *childB;
+    struct ActorObj *childC;
+    struct ActorObj *childD;
+    struct ActorObj *actorA;
+    struct ActorObj *actorB;
+    struct ActorPart *partA;
+    struct ActorPart *partB;
+    struct SpriteNode *sprite;
+    struct SpriteNode *node;
+    struct SpriteNode *prev;
+    struct Low5Byte *counter;
+    s32 x0;
+    s32 y0;
+    s32 edgeDx;
+    s32 edgeA;
+    s32 edgeB;
+    s32 mode;
+    s32 count;
+    u32 old;
+
+    obj->phase--;
+    if (obj->phase <= 0)
+    {
+        set_slot_value(0x54, -1);
+        obj->phase = 0xA;
+    }
+    obj->wait--;
+    if (obj->wait <= 0)
+    {
+        sprite_set_action(obj, 0xD, 0, 0);
+        set_slot_value(0x10B, -1);
+        place_effect_at_base(obj, 0x29CA);
+
+        childA = spawn_pair_child(obj, 0x4026, -0x1A, 4, 0x57);
+        childB = spawn_pair_child(obj, 0x4026, -0xE, 5, 0x5A);
+        obj->child = childA;
+        childA->child = childB;
+        childA->flags |= 1;
+        childA->unk74 = 0;
+        childB->flags |= 1;
+        childB->unk74 = 0;
+        childA->state = remove_if_no_child;
+        childB->state = remove_if_no_child;
+
+        actorA = &gWorld->heroA->body;
+        actorB = &gWorld->heroB->body;
+        x0 = obj->posX - 0x1A00;
+        y0 = obj->posY + 0x500;
+        partA = actorA->part;
+        edgeDx = -0x1000 - x0;
+        edgeA = (edgeDx * (partA->targetY - y0)) / (partA->targetX - x0) + y0;
+        partB = actorB->part;
+        edgeB = (edgeDx * (partB->targetY - y0)) / (partB->targetX - x0) + y0;
+
+        mode = obj->param9C;
+        switch (mode)
+        {
+        case 0:
+            gUnk_03000EB0[0] = -0x1000;
+            gUnk_03000EB8[0] = edgeA;
+            gUnk_03000EC0[0] = 0x800;
+            gUnk_03000EB0[1] = partB->targetX;
+            gUnk_03000EB8[1] = partB->targetY;
+            gUnk_03000EC0[1] = partB->targetH;
+            break;
+        case 1:
+            gUnk_03000EB0[0] = partA->targetX;
+            gUnk_03000EB8[0] = partA->targetY;
+            gUnk_03000EC0[0] = partA->targetH;
+            gUnk_03000EB0[1] = -0x1000;
+            gUnk_03000EB8[1] = edgeB;
+            gUnk_03000EC0[1] = 0x1000;
+            break;
+        case 2:
+            gUnk_03000EB0[0] = -0x1000;
+            gUnk_03000EB8[0] = edgeA;
+            gUnk_03000EC0[0] = 0x800;
+            gUnk_03000EB0[1] = -0x1000;
+            gUnk_03000EB8[1] = edgeB;
+            gUnk_03000EC0[1] = 0x1000;
+            break;
+        default:
+            set_own_tables(partA, partB);
+            break;
+        }
+
+        childC = spawn_pair_child(obj, 0x4025, -0x1A, 5, 0x57);
+        childB->child = childC;
+        childC->phase = 0;
+        childC->flags |= 1;
+        childC->targetX = childC->baseX;
+        childC->targetY = childC->baseY;
+        childC->targetH = childC->baseH;
+        childC->unk74 = 0;
+        childC->unk76 |= 6;
+        childC->owner = obj->owner;
+        sprite = sprite_node_take();
+        link_sprite(childC, sprite);
+        counter = (struct Low5Byte *)((u8 *)gWorld + 7);
+        old = counter->lo5;
+        counter->lo5 = old - 1;
+        sprite->lo5 = old;
+
+        childC->nodes = alloc_node_at(childC);
+        prev = childC->nodes;
+        node = alloc_node_at(childC);
+        prev->next = node;
+        prev = node;
+        node = alloc_node_at(childC);
+        prev->next = node;
+        prev = node;
+        count = 7;
+        do
+        {
+            node = alloc_node_at(childC);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childC);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childC);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childC);
+            prev->next = node;
+            prev = node;
+            count -= 4;
+        } while (count >= 0);
+        prev->next = NULL;
+        childC->param9C = 0;
+        childC->paramA0 = obj->param9C;
+        childC->state = spawn_child_4025_adopt;
+
+        childD = spawn_pair_child(obj, 0x4025, -0xE, 6, 0x5A);
+        childC->child = childD;
+        childD->phase = 0;
+        childD->flags |= 1;
+        childD->targetX = childD->baseX;
+        childD->targetY = childD->baseY;
+        childD->targetH = childD->baseH;
+        childD->unk74 = 0;
+        childD->unk76 |= 6;
+        childD->owner = obj->owner;
+        sprite = sprite_node_take();
+        link_sprite(childD, sprite);
+        counter = (struct Low5Byte *)((u8 *)gWorld + 7);
+        old = counter->lo5;
+        counter->lo5 = old - 1;
+        sprite->lo5 = old;
+
+        childD->nodes = alloc_node_at(childD);
+        prev = childD->nodes;
+        node = alloc_node_at(childD);
+        prev->next = node;
+        prev = node;
+        node = alloc_node_at(childD);
+        prev->next = node;
+        prev = node;
+        count = 7;
+        do
+        {
+            node = alloc_node_at(childD);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childD);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childD);
+            prev->next = node;
+            prev = node;
+            node = alloc_node_at(childD);
+            prev->next = node;
+            prev = node;
+            count -= 4;
+        } while (count >= 0);
+        prev->next = NULL;
+        childD->param9C = 1;
+        childD->paramA0 = obj->param9C;
+        childD->state = spawn_child_4025_adopt;
+
+        gUnk_03000EC8[1] = 0;
+        gUnk_03000EC8[0] = 0;
+        gUnk_03000ECC[1] = 0;
+        gUnk_03000ECC[0] = 0;
+        obj->state = timer2_anim_d;
+    }
+}
+END_NONMATCH
