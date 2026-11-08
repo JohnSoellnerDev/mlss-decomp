@@ -405,7 +405,7 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046AA4.s", u32 obj_set_motion_a_0
     {
         step = speed;
         if (now >= goal)
-            step = -speed;
+            step = -spd;
         obj->axisAStep = step;
     }
     else
@@ -502,7 +502,7 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_0
     {
         step = speed;
         if (now >= goal)
-            step = -speed;
+            step = -spd;
         obj->unk30E = step;
     }
     else
@@ -546,7 +546,7 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_compare.s", u32 obj_set_motion_a_co
     {
         step = speed;
         if (now >= goal)
-            step = -speed;
+            step = -spd;
         obj->unk310 = step;
     }
     else
