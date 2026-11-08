@@ -13,6 +13,21 @@ struct SubObj
     u8 filler04[0xE];
     u8 unk12;
 };
+struct TileRing
+{
+    u16 ring[0x400];
+    u32 cursor;
+    u8 filler804[4];
+    u16 *srcMap;
+    u8 filler80C[8];
+    s32 lastX;
+    s32 lastY;
+    u16 tileCol;
+    u16 tileRow;
+    u16 mapW;
+    u16 mapH;
+};
+
 struct SceneObj
 {
     struct ObjCore *core;
@@ -1278,4 +1293,198 @@ ASM_FUNC("asm/code_0815FA94/obj_setup_tiles.s", void obj_setup_tiles(void))
 
 ASM_FUNC("asm/code_0815FA94/obj_fill_tilemap32.s", void obj_fill_tilemap32(void))
 
-ASM_FUNC("asm/code_0815FA94/obj_scroll_tile_ring.s", void obj_scroll_tile_ring(void))
+static inline u32 ring_index(u32 c)
+{
+    return (((c >> 5) & 0x1F) << 5) + (c & 0x1F);
+}
+
+static inline u32 ring_row_next(u32 c)
+{
+    return (c & 0xFFFFFC1F) | ((((c >> 5) + 1) & 0x1F) << 5);
+}
+
+static inline u32 ring_col_next(u32 c)
+{
+    return (c & 0xFFFFFFE0) | (((c & 0x1F) + 1) & 0x1F);
+}
+
+NONMATCH("asm/code_0815FA94/obj_scroll_tile_ring.s", void obj_scroll_tile_ring(struct TileRing *obj, s32 x, s32 y))
+{
+    s32 steps;
+    u32 *cursorPtr;
+    u32 cursor;
+    u32 newCol;
+    u32 newRow;
+    u32 oldX;
+    u32 oldY;
+    u32 srcRow;
+    u32 srcCol;
+    u32 nextCol;
+    u32 nextRow;
+    s16 rowA;
+    s16 rowB;
+    s16 colA;
+    s16 colB;
+    s16 srcRowV;
+    u8 *cb;
+    u16 v;
+    s32 t;
+
+    oldX = obj->lastX;
+    if ((u32)x > oldX)
+    {
+        newCol = (u32)x >> 3;
+        if (newCol != obj->tileCol)
+        {
+            cursorPtr = &obj->cursor;
+            for (;;)
+            {
+                srcCol = (u16)((s32)(obj->tileCol + 0x20) % (s32)obj->mapW);
+                srcRow = (u16)((u32)obj->tileRow % (u32)obj->mapH);
+                cursor = *cursorPtr;
+                steps = 0x1F;
+                colA = srcCol;
+                do
+                {
+                    rowA = srcRow;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[rowA * obj->mapW + colA];
+                    cursor = ring_row_next(cursor);
+                    rowB = (s32)(rowA + 1) % (s32)obj->mapH;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[rowB * obj->mapW + colA];
+                    cursor = ring_row_next(cursor);
+                    srcRow = (u16)((s32)(rowB + 1) % (s32)obj->mapH);
+                    steps -= 2;
+                } while (steps >= 0);
+                cb = (u8 *)cursorPtr;
+                *cb = (*cb & 0xE0) | (((*cb & 0x1F) + 1) & 0x1F);
+                nextCol = obj->tileCol + 1;
+                obj->tileCol = nextCol;
+                if (newCol == nextCol)
+                {
+                    break;
+                }
+            }
+        }
+    }
+    else if ((u32)x < oldX)
+    {
+        newCol = (u32)x >> 3;
+        if (newCol != obj->tileCol)
+        {
+            cursorPtr = &obj->cursor;
+            for (;;)
+            {
+                srcCol = (u16)((s32)(obj->tileCol - 1) % (s32)obj->mapW);
+                srcRow = (u16)((u32)obj->tileRow % (u32)obj->mapH);
+                cursor = *cursorPtr;
+                cursor = (cursor & 0xFFFFFFE0) | (((cursor & 0x1F) - 1) & 0x1F);
+                steps = 0x1F;
+                colA = srcCol;
+                do
+                {
+                    rowA = srcRow;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[rowA * obj->mapW + colA];
+                    cursor = ring_row_next(cursor);
+                    rowB = (s32)(rowA + 1) % (s32)obj->mapH;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[rowB * obj->mapW + colA];
+                    cursor = ring_row_next(cursor);
+                    srcRow = (u16)((s32)(rowB + 1) % (s32)obj->mapH);
+                    steps -= 2;
+                } while (steps >= 0);
+                cb = (u8 *)cursorPtr;
+                *cb = (*cb & 0xE0) | (((*cb & 0x1F) - 1) & 0x1F);
+                nextCol = obj->tileCol - 1;
+                obj->tileCol = nextCol;
+                if (newCol == nextCol)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    oldY = obj->lastY;
+    if ((u32)y > oldY)
+    {
+        newRow = (u32)y >> 3;
+        if (newRow != obj->tileRow)
+        {
+            cursorPtr = &obj->cursor;
+            for (;;)
+            {
+                srcCol = (u16)((u32)obj->tileCol % (u32)obj->mapW);
+                srcRowV = (s16)((s32)(obj->tileRow + 0x20) % (s32)obj->mapH);
+                cursor = *cursorPtr;
+                steps = 0x1F;
+                do
+                {
+                    obj->ring[ring_index(cursor)] = obj->srcMap[obj->mapW * srcRowV + (s16)srcCol];
+                    cursor = ring_col_next(cursor);
+                    colB = (s32)((s16)srcCol + 1) % (s32)obj->mapW;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[srcRowV * obj->mapW + colB];
+                    cursor = ring_col_next(cursor);
+                    srcCol = (u16)((s32)(colB + 1) % (s32)obj->mapW);
+                    steps -= 2;
+                } while (steps >= 0);
+                v = *(u16 *)cursorPtr;
+                *(u16 *)cursorPtr = (v & 0xFC1F) | (((((u32)v << 22) >> 27) + 1) & 0x1F) << 5;
+                nextRow = obj->tileRow + 1;
+                obj->tileRow = nextRow;
+                if (newRow == nextRow)
+                {
+                    break;
+                }
+            }
+        }
+    }
+    else if ((u32)y < oldY)
+    {
+        newRow = (u32)y >> 3;
+        if (newRow != obj->tileRow)
+        {
+            cursorPtr = &obj->cursor;
+            for (;;)
+            {
+                srcCol = (u16)((u32)obj->tileCol % (u32)obj->mapW);
+                srcRowV = (s16)((s32)(obj->tileRow - 1) % (s32)obj->mapH);
+                cursor = *cursorPtr;
+                cursor = (cursor & 0xFFFFFC1F) | (((((cursor >> 5) - 1)) & 0x1F) << 5);
+                steps = 0x1F;
+                do
+                {
+                    obj->ring[ring_index(cursor)] = obj->srcMap[obj->mapW * srcRowV + (s16)srcCol];
+                    cursor = ring_col_next(cursor);
+                    colB = (s32)((s16)srcCol + 1) % (s32)obj->mapW;
+                    obj->ring[ring_index(cursor)] = obj->srcMap[srcRowV * obj->mapW + colB];
+                    cursor = ring_col_next(cursor);
+                    srcCol = (u16)((s32)(colB + 1) % (s32)obj->mapW);
+                    steps -= 2;
+                } while (steps >= 0);
+                v = *(u16 *)cursorPtr;
+                *(u16 *)cursorPtr = (v & 0xFC1F) | (((((u32)v << 22) >> 27) - 1) & 0x1F) << 5;
+                nextRow = obj->tileRow - 1;
+                obj->tileRow = nextRow;
+                if (newRow == obj->tileRow)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    obj->lastX = x;
+    obj->lastY = y;
+    t = obj->lastX;
+    if (t < 0)
+    {
+        t += 7;
+    }
+    obj->tileCol = t >> 3;
+    t = obj->lastY;
+    if (t < 0)
+    {
+        t += 7;
+    }
+    obj->tileRow = t >> 3;
+}
+END_NONMATCH
