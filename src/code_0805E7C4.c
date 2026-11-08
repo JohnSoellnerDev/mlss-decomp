@@ -39,12 +39,10 @@ struct ChainNode
     struct ChainNode **slot;
 };
 
-struct Bits77
+struct Flags79Bit0
 {
-    u8 lo5 : 5;
-    u8 bit5 : 1;
-    u8 bit6 : 1;
-    u8 bit7 : 1;
+    u8 bit0 : 1;
+    u8 unk1 : 7;
 } __attribute__((packed));
 
 struct ObjFlags77
@@ -179,23 +177,16 @@ static inline void map_obj_release_chain(struct MapObj *obj)
     obj_release(obj);
 }
 
-NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn(struct MapObj *obj))
+void map_obj_action5_spawn(struct MapObj *obj)
 {
     struct MapObj *child;
     struct MapObj *mid;
     struct MapObj *tip;
     struct MapObj *tip2;
-    struct ChainNode *first;
+    struct ChainNode *node;
     struct ChainNode *tail;
-    struct ChainNode *next;
-    struct Bits77 *srcBits;
-    u8 *tagAddr;
-    s32 count;
     s32 param;
-    s32 t;
-    s32 dx;
-    s32 dy;
-    u32 angle;
+    s32 i;
 
     if (obj->pose->flags & 8)
     {
@@ -207,15 +198,13 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
         gUnk_03000E14 = 1;
         gUnk_03000E15 = 0;
         obj->sprite = child;
-        child->flags79 |= 1;
-        srcBits = (struct Bits77 *)&obj->bits77;
-        ((struct Bits77 *)&child->bits77)->bit6 = srcBits->bit6;
-        ((struct Bits77 *)&child->bits77)->bit5 = srcBits->bit5;
+        ((struct Flags79Bit0 *)&child->flags79)->bit0 = 1;
+        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
         child->handler68 = on_arrive;
         child->link = obj->link;
         child->owner = obj->owner;
-        tagAddr = &obj->tag;
-        child->tag = *tagAddr;
+        child->tag = obj->tag;
         param = obj->param9C;
 
         switch (param)
@@ -226,20 +215,8 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
             child->targetH = obj->baseH + 0x3000;
             child->timer = 0;
             child->param9C = 0;
-            t = 0x4000 - child->targetX;
-            if (t < 0)
-            {
-                t += 0xFF;
-            }
-            dx = (t << 8) >> 16;
-            t = 0x4000 - child->targetY;
-            if (t < 0)
-            {
-                t += 0xFF;
-            }
-            dy = (t << 8) >> 16;
-            angle = arc_tan2(dx, dy);
-            child->angle = (angle << 16) >> 24;
+            child->angle = (arc_tan2((s16)((0x4000 - child->targetX) / 0x100),
+                                     (s16)((0x4000 - child->targetY) / 0x100)) << 16) >> 24;
             child->radius = 0x200;
             child->state = map_obj_orbit_out;
             break;
@@ -247,9 +224,9 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
             child->dx = obj->baseX / 0x100 - 0x10;
             child->dy = obj->baseY / 0x100 + 2;
             child->dh = obj->baseH / 0x100 + 0x30;
-            child->targetX = (s32)child->dx << 8;
-            child->targetY = (s32)child->dy << 8;
-            child->targetH = (s32)child->dh << 8;
+            child->targetX = child->dx << 8;
+            child->targetY = child->dy << 8;
+            child->targetH = child->dh << 8;
             child->radius = obj->owner->part->targetX + 0x3000;
             child->wait = obj->owner->part->targetY;
             child->param9C = 0xC;
@@ -261,9 +238,9 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
             child->dx = obj->baseX / 0x100 - 0x10;
             child->dy = obj->baseY / 0x100 + 2;
             child->dh = obj->baseH / 0x100 + 0x30;
-            child->targetX = (s32)child->dx << 8;
-            child->targetY = (s32)child->dy << 8;
-            child->targetH = (s32)child->dh << 8;
+            child->targetX = child->dx << 8;
+            child->targetY = child->dy << 8;
+            child->targetH = child->dh << 8;
             child->radius = obj->owner->part->targetX + 0x2800;
             child->wait = obj->owner->part->targetY;
             child->param9C = 0x1000;
@@ -273,51 +250,37 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
             break;
         }
 
-        child->node4 = sprite_node_take();
-        child->node4->pose = child->pose;
-        child->node4->slot = &child->chain0C;
-
-        first = sprite_node_alloc(child->posX, child->posY, child->posH);
-        child->chain0C = first;
-        tail = first;
-        tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-        tail = next;
-        tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-        tail = next;
-        count = 7;
-        do
+        tail = (struct ChainNode *)&child->chain0C;
+        node = sprite_node_take();
+        child->node4 = node;
+        node->pose = child->pose;
+        node->slot = &child->chain0C;
+        for (i = 0; i < 11; i++)
         {
-            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-            tail = next;
-            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-            tail = next;
-            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-            tail = next;
-            tail->next = next = sprite_node_alloc(child->posX, child->posY, child->posH);
-            tail = next;
-            count -= 4;
-        } while (count >= 0);
+            tail->next = sprite_node_alloc(child->posX, child->posY, child->posH);
+            tail = tail->next;
+        }
         tail->next = 0;
 
         mid = obj_spawn(child->part, 0x700C, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2, 0,
                         ((u32)obj->pose->flip << 25) >> 31, 1);
         child->sprite = mid;
-        mid->flags79 |= 1;
-        mid->tag = *tagAddr;
+        ((struct Flags79Bit0 *)&mid->flags79)->bit0 = 1;
+        mid->tag = obj->tag;
         mid->filler75[0] = 0x7F;
         mid->state = 0;
 
         tip = obj_spawn(mid->part, 0x412F, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
                         obj->baseH / 0x100 + 0x30, ((u32)obj->pose->flip << 25) >> 31, 1);
         mid->sprite = tip;
-        tip->flags79 |= 1;
-        ((struct Bits77 *)&tip->bits77)->bit6 = srcBits->bit6;
-        ((struct Bits77 *)&tip->bits77)->bit5 = srcBits->bit5;
+        ((struct Flags79Bit0 *)&tip->flags79)->bit0 = 1;
+        ((struct ObjFlags77 *)tip)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)tip)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
         tip->handler68 = on_arrive;
         tip->link = obj->link;
         tip->owner = obj->owner;
         obj_list_push_default(tip);
-        tip->tag = *tagAddr;
+        tip->tag = obj->tag;
         tip->param9C = 0;
         tip->dx = obj->baseX / 0x100 - 0x10;
         tip->dy = obj->baseY / 0x100 + 2;
@@ -328,14 +291,14 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
         tip2 = obj_spawn(tip->part, 0x412F, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
                          obj->baseH / 0x100 + 0x30, ((u32)obj->pose->flip << 25) >> 31, 1);
         tip->sprite = tip2;
-        tip2->flags79 |= 1;
-        ((struct Bits77 *)&tip2->bits77)->bit6 = srcBits->bit6;
-        ((struct Bits77 *)&tip2->bits77)->bit5 = srcBits->bit5;
+        ((struct Flags79Bit0 *)&tip2->flags79)->bit0 = 1;
+        ((struct ObjFlags77 *)tip2)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)tip2)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
         tip2->handler68 = on_arrive;
         tip2->link = obj->link;
         tip2->owner = obj->owner;
         obj_list_push_default(tip2);
-        tip2->tag = *tagAddr;
+        tip2->tag = obj->tag;
         tip2->param9C = 0;
         tip2->dx = obj->baseX / 0x100 - 0x10;
         tip2->dy = obj->baseY / 0x100 + 2;
@@ -347,7 +310,6 @@ NONMATCH("asm/code_0805E7C4/map_obj_action5_spawn.s", void map_obj_action5_spawn
         set_slot_value(0x110, -1);
     }
 }
-END_NONMATCH
 
 void map_obj_orbit_out(struct MapObj *obj)
 {
@@ -424,7 +386,7 @@ void map_obj_orbit_wait(struct MapObj *obj)
     }
 }
 
-NONMATCH("asm/code_0805E7C4/map_obj_fall.s", void map_obj_fall(struct MapObj *obj))
+void map_obj_fall(struct MapObj *obj)
 {
     s32 *rp;
     s32 *ang;
@@ -432,6 +394,7 @@ NONMATCH("asm/code_0805E7C4/map_obj_fall.s", void map_obj_fall(struct MapObj *ob
     s32 step;
     s32 mask;
     s32 step2;
+    s32 delta;
 
     obj_orbit_place(obj, obj->targetX, obj->targetY, obj->targetH, 0x22, (s16)obj->timer, obj->param9C);
     obj_set_sprite_offsets(obj, obj->targetX, obj->targetY, obj->targetH, 0x22);
@@ -440,16 +403,17 @@ NONMATCH("asm/code_0805E7C4/map_obj_fall.s", void map_obj_fall(struct MapObj *ob
     ct = gCosineTable;
     ang = &obj->angle;
     mask = 0xFF;
-    obj->targetX += step * (ct[(u8)*ang] / 0x40);
+    delta = step * (ct[(u8)*ang] / 0x40);
+    obj->targetX += delta;
     step2 = *rp / 0x100;
-    obj->targetY += step2 * (gSineTable[*ang & mask] / 0x40);
+    delta = step2 * (gSineTable[*ang & mask] / 0x40);
+    obj->targetY += delta;
     obj->timer = (obj->timer + 4) & mask;
     if (obj->targetY > 0xF000)
     {
         map_obj_release_chain(obj);
     }
 }
-END_NONMATCH
 
 void map_obj_slide_left(struct MapObj *obj)
 {
