@@ -938,7 +938,514 @@ void bg_slide_offset_callback(struct Obj *obj)
     obj->unk4 = 0;
 }
 
-ASM_FUNC("asm/code_0810D6C0/resolve_contact_action.s", void resolve_contact_action(void))
+void candidates_countdown_then_state(void);
+u32 state_bits(void *part, u32 kind);
+void apply_slot_reward(u32 value, u32 count);
+s32 action_factor(struct PartnerObj *a, struct PartnerObj *b, u32 flags);
+void body_set_pose(u32 art, struct PartnerObj *body, s32 x, s32 y);
+void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
+struct ContactBits
+{
+    u8 b0 : 1;
+    u8 stage : 1;
+    u8 running : 1;
+    u8 rest : 5;
+};
+
+NONMATCH("asm/code_0810D6C0/resolve_contact_action.s", s32 resolve_contact_action(struct PartnerObj *actor, struct PartnerObj *target, s32 a2, s32 a3, u32 flags))
+{
+    struct PartnerState *aPart;
+    struct PartnerState *tPart;
+    s32 scale;
+    s32 effect;
+    s32 mode;
+    s32 roll;
+    struct PartnerObj *own;
+    u8 *actionData;
+    s32 code;
+    s32 power;
+    s32 kind;
+    s32 hit;
+    s32 rnd;
+    s32 cap;
+    s32 act;
+    s32 px;
+    s32 pz;
+    s32 x;
+    s32 z;
+    s32 factor;
+
+    aPart = actor->unk28;
+    tPart = target->unk28;
+    ((struct ContactBits *)((u8 *)gWorld + 0x2C1))->running = 0;
+    if ((tPart->unk7E & 6) != 2 && (tPart->unk7E & 6) != 4)
+    {
+        return -1;
+    }
+    if (*(u32 *)((u8 *)target + 8) == 0)
+    {
+        target = (struct PartnerObj *)((u8 *)target->unk28 + 8);
+    }
+    ((struct ContactBits *)((u8 *)gWorld + 0x2C1))->stage = (flags >> 19) & 1;
+    power = -1;
+    scale = 0x100;
+    effect = 0;
+    if ((((u8 *)target)[0x76] & 6) == 4)
+    {
+        struct ObjAux *link = target->unk6C;
+
+        if (link != 0 && (flags & 6) == 0 && (((u8 *)link)[9] & 0x80) == 0)
+        {
+            return 2;
+        }
+    }
+    own = (struct PartnerObj *)((u8 *)tPart + 8);
+    if (own != target || (tPart->unk7E & 6) != 4)
+    {
+        goto strength;
+    }
+
+    if ((flags & 0x1000) != 0)
+    {
+        kind = 0;
+    }
+    else if ((flags & 0x2000) != 0)
+    {
+        kind = 1;
+    }
+    else
+    {
+        kind = 2;
+    }
+    code = state_bits(tPart, kind);
+    if (code != 1)
+    {
+        goto l_e68a;
+    }
+    if ((flags & 6) == 0)
+    {
+        if (((u8 *)aPart)[0x12B] == 2 || (flags & 0x10000) != 0)
+        {
+            goto l_e5fc;
+        }
+        rnd = mt19937_next();
+        roll = rand_below(3, rnd);
+        hit = roll + 1;
+        px = actor->unk10;
+        if (px < 0)
+        {
+            px += 0xFF;
+        }
+        px >>= 8;
+        pz = actor->unk18;
+        if (pz < 0)
+        {
+            pz += 0xFF;
+        }
+        pz >>= 8;
+        apply_partner_effect(target, actor, hit, 2, px, pz, flags & 0x10000);
+    }
+    goto l_e604;
+
+l_e5fc:
+    scale = 0x200;
+    code = 0;
+l_e604:
+    if (code != 1)
+    {
+        goto l_e68a;
+    }
+    if ((flags & 6) != 2 && (flags & 6) != 4)
+    {
+        goto l_e68a;
+    }
+    if ((flags & 0x18) != 0x10 && (flags & 0x20000) == 0)
+    {
+        goto l_e62a;
+    }
+    code = 0;
+    goto l_e68a;
+
+l_e62a:
+    if ((flags & 0x40000) != 0)
+    {
+        target->unk4C = (void *)candidates_countdown_then_state;
+    }
+    body_set_pose(6, actor, -0x20, -0x18);
+    if ((((s32)flags >> 8) & 0xF) == 1)
+    {
+        *(u16 *)((u8 *)target + 0xAC) = 5;
+        *(u16 *)((u8 *)target + 0xAE) = 0x166;
+        *(u16 *)((u8 *)target + 0xB2) = 0xFE9A;
+    }
+    else
+    {
+        *(u16 *)((u8 *)target + 0xAC) = 2;
+        *(u16 *)((u8 *)target + 0xAE) = 0x100;
+        *(u16 *)((u8 *)target + 0xB2) = 0xFF00;
+    }
+    code |= 4;
+
+l_e68a:
+    if (code == 2)
+    {
+        ((struct ContactBits *)((u8 *)gWorld + 0x2C1))->running = 1;
+        power = 1;
+        code = 0;
+    }
+    if (code <= 0)
+    {
+        goto strength;
+    }
+    ((struct ContactBits *)((u8 *)gWorld + 0x2C1))->running = 0;
+    if (code == 1)
+    {
+        return 1;
+    }
+    return 2;
+
+strength:
+    actionData = *(u8 **)((u8 *)tPart + 0xF0);
+    mode = 0;
+    if (power > 0)
+    {
+        goto l_e9ea;
+    }
+    if ((flags & 0x18) == 0x10)
+    {
+        effect = 0;
+    }
+    else if ((flags & 0x18) == 8)
+    {
+        effect = ((s32)flags >> 8) & 0xF;
+    }
+    else
+    {
+        s32 n = ((s32)flags >> 8) & 0xF;
+
+        if (n == 1)
+        {
+            effect = 0;
+        }
+        else if (n == 0)
+        {
+            effect = 1;
+        }
+    }
+
+    kind = flags & 0x3F00000;
+    if (kind == 0x400000)
+    {
+        act = 8;
+        goto l_e800;
+    }
+    if (kind > 0x400000)
+    {
+        if (kind == 0x1000000)
+        {
+            act = 0x100;
+            goto l_e800;
+        }
+        if (kind > 0x1000000)
+        {
+            if (kind != 0x2000000)
+            {
+                goto l_e802;
+            }
+            if ((*(u16 *)((u8 *)target->unk28 + 0x122) & 0x180) != 0)
+            {
+                goto l_e802;
+            }
+            {
+                u8 *base = actionData + 0x28;
+                s32 lo = base[0] & 0x1F;
+                s32 hi = lo + (base[2] & 0x1F);
+                u16 w;
+
+                rnd = mt19937_next();
+                roll = rand_below(hi, rnd);
+                if (lo > roll)
+                {
+                    w = (*(u16 *)((u8 *)target->unk28 + 0x122) & 0xFE7F) | 0x80;
+                    *(u16 *)((u8 *)target->unk28 + 0x122) = w;
+                    act = *(u16 *)(actionData + 0x2A);
+                }
+                else
+                {
+                    w = (*(u16 *)((u8 *)target->unk28 + 0x122) & 0xFE7F) | 0x100;
+                    *(u16 *)((u8 *)target->unk28 + 0x122) = w;
+                    act = *(u16 *)(actionData + 0x28);
+                }
+                apply_slot_reward(act >> 5, 1);
+            }
+            goto l_e802;
+        }
+        if (kind == 0x800000)
+        {
+            act = 0x20;
+            goto l_e800;
+        }
+        goto l_e802;
+    }
+    if (kind == 0x100000)
+    {
+        act = 1;
+        goto l_e800;
+    }
+    if (kind == 0x200000)
+    {
+        act = 2;
+        goto l_e800;
+    }
+    goto l_e802;
+
+l_e800:
+    *(u16 *)((u8 *)actor + 0xC8) = act;
+
+l_e802:
+    if ((flags & 0x4000) != 0 && (actionData[0x1E] & 0xC0) == 0x40)
+    {
+        goto l_e82e;
+    }
+    if ((flags & 0x8000) != 0 && (actionData[0x1E] & 0x30) == 0x10)
+    {
+        goto l_e82e;
+    }
+    if ((flags & 0x4000) != 0 && (actionData[0x1E] & 0xC0) == 0x80)
+    {
+        goto l_e860;
+    }
+    if ((flags & 0x8000) != 0 && (actionData[0x1E] & 0x30) == 0x20)
+    {
+        goto l_e860;
+    }
+    goto l_e864;
+
+l_e82e:
+    mode = 2;
+    goto l_e9b4;
+
+l_e860:
+    mode = 3;
+    goto l_e9b4;
+
+l_e864:
+    if ((flags & 0x18) != 0)
+    {
+        goto l_e9b4;
+    }
+    if (effect != 0)
+    {
+        goto l_e9b4;
+    }
+    rnd = mt19937_next();
+    roll = rand_below(0x64, rnd);
+    {
+        s32 partStr = *(s16 *)((u8 *)aPart + 0x108);
+
+        if (((u8 *)aPart)[0x12B] == 7)
+        {
+            power = partStr * 0x133;
+        }
+        else
+        {
+            power = partStr << 8;
+        }
+    }
+    {
+        s32 actF5 = (s32)(s8)((u8 *)aPart)[0xF5] << 8;
+        s32 tgtF5 = (s8)((u8 *)tPart)[0xF5];
+        s32 tgtF58 = tgtF5 << 8;
+        s32 tgt108 = *(s16 *)((u8 *)tPart + 0x108) << 8;
+        s32 act108 = *(s16 *)((u8 *)aPart + 0x108);
+        s32 kval = act108 << 8;
+        s32 band;
+        s32 bandFix;
+        s32 bandPx;
+        s32 q;
+
+        if (tgtF58 == 0x6300)
+        {
+            cap = 0;
+            goto l_e99e;
+        }
+        band = (((tgtF5 << 9) + tgtF58) << 3) + tgtF58;
+        bandFix = band;
+        if (band < 0)
+        {
+            bandFix += 0xFF;
+        }
+        bandPx = bandFix >> 8;
+        if (actF5 > bandPx + tgtF58 + 1 || actF5 < tgtF58 - bandPx - 1)
+        {
+            s32 bandB;
+            s32 bandBPx;
+
+            bandB = tgtF58;
+            if (tgtF58 < 0)
+            {
+                bandB = tgtF58 + 3;
+            }
+            bandBPx = bandB >> 2;
+            if (actF5 > bandBPx + tgtF58 + 2 || actF5 < tgtF58 - bandBPx - 2)
+            {
+                q = (((kval << 1) + kval) << 9) / tgt108;
+                if (q < 0)
+                {
+                    q += 0xFF;
+                }
+                q >>= 8;
+                if (q <= 3)
+                {
+                    q = 4;
+                }
+                cap = (q <= 10) ? q : 10;
+            }
+            else
+            {
+                q = (((kval << 1) + kval) << 10) / tgt108;
+                if (q < 0)
+                {
+                    q += 0xFF;
+                }
+                q >>= 8;
+                if (q <= 9)
+                {
+                    q = 10;
+                }
+                cap = (q <= 20) ? q : 0x14;
+            }
+        }
+        else
+        {
+            q = ((act108 << 10) + kval) << 9;
+            q = q / tgt108;
+            if (q < 0)
+            {
+                q += 0xFF;
+            }
+            q >>= 8;
+            if (q <= 5)
+            {
+                q = 6;
+            }
+            cap = (q <= 16) ? q : 0xF;
+        }
+        if (power != kval)
+        {
+            cap += 0xF;
+            if (cap > 0x19)
+            {
+                cap = 0x19;
+            }
+        }
+    }
+
+l_e99e:
+    if ((u32)roll < (u32)cap)
+    {
+        effect = 2;
+        flags = (flags & 0xFFFFFCFF) | 0x200;
+        mode = 1;
+    }
+
+l_e9b4:
+    factor = action_factor(actor, target, flags);
+    {
+        s32 t = scale * factor;
+
+        if (t < 0)
+        {
+            t += 0xFF;
+        }
+        power = t >> 8;
+    }
+    if (mode == 2)
+    {
+        power <<= 1;
+    }
+    else if (mode == 3)
+    {
+        power = -power;
+    }
+
+l_e9ea:
+    if ((flags & 0x4000000) != 0)
+    {
+        s32 t1 = target->unk10;
+        s32 t2 = target->unk18;
+
+        if (t1 < 0)
+        {
+            t1 += 0xFF;
+        }
+        t1 >>= 8;
+        x = t1 + (s8)((u8 *)target)[0xC3];
+        if (t2 < 0)
+        {
+            t2 += 0xFF;
+        }
+        t2 >>= 8;
+        z = t2 + (s8)((u8 *)target)[0xC5];
+    }
+    else
+    {
+        s32 t1 = target->unk10;
+
+        if (t1 < 0)
+        {
+            t1 += 0xFF;
+        }
+        t1 >>= 8;
+        x = t1 + (s8)((u8 *)target)[0xC3];
+        z = 0;
+    }
+    apply_partner_effect(actor, target, power, effect, x, z, mode);
+
+    if ((flags & 0x18) == 0 && effect != 1)
+    {
+        kind = ((u8 *)aPart)[0x12B];
+        if (kind == 4)
+        {
+            if ((flags & 6) == 0)
+            {
+                goto l_ea86;
+            }
+        }
+        else if (kind == 5)
+        {
+            if ((flags & 6) == 2)
+            {
+                goto l_ea86;
+            }
+        }
+        else if (kind == 6)
+        {
+            flags &= 6;
+            if (flags == 4)
+            {
+                goto l_ea86;
+            }
+        }
+        goto l_ea96;
+l_ea86:
+        *(u16 *)((u8 *)gWorld + 0x2D6) = target->unkBA;
+    }
+
+l_ea96:
+    if ((tPart->unk111 & 2) != 0)
+    {
+        return 0;
+    }
+    if (tPart->unkF6 != 0)
+    {
+        return 0;
+    }
+    obj_stop(own);
+    tPart->unk11E = 0;
+    return -1;
+}
+END_NONMATCH
 
 void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
 NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode))
