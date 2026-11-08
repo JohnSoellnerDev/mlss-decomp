@@ -520,7 +520,158 @@ struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u
     return obj;
 }
 
-ASM_FUNC("asm/code_081152FC/sprite_alloc.s", void sprite_alloc(void))
+struct RecordTables
+{
+    void *table[11];
+};
+
+extern const u8 gRecordTableRom[];
+extern const u8 gSpriteBufTagFirst[];
+extern const u8 gSpriteBufTagSecond[];
+extern const u8 gSpriteBufTagThird[];
+
+static inline struct TableEntry *sprite_entry_at(struct MenuTable *obj, u32 offset)
+{
+    return (struct TableEntry *)((u8 *)obj->entries2C + offset);
+}
+
+static inline void *sprite_record(void *table, u32 keyX4)
+{
+    return *(void **)((u8 *)table + keyX4);
+}
+
+static inline u16 record_h(void *rec, u32 off)
+{
+    return *(u16 *)((u8 *)rec + off);
+}
+
+static inline u8 record_b(void *rec, u32 off)
+{
+    return *((u8 *)rec + off);
+}
+
+NONMATCH("asm/code_081152FC/sprite_alloc.s", u8 sprite_alloc(struct MenuTable *obj, u8 mode, u16 key, u8 attr))
+{
+    struct RecordTables tables;
+    u32 slot;
+    void *recTable;
+    u32 slotX8;
+    u32 keyX4;
+    u32 off;
+    u32 palette;
+    u32 index;
+    u32 keyTable;
+    struct TableEntry *walk;
+    struct TableEntry *e;
+    void *buf;
+    u32 paletteBits;
+
+    tables = *(const struct RecordTables *)gRecordTableRom;
+    if (mode == 0xFF) {
+        index = 0;
+        walk = (struct TableEntry *)obj->entries2C;
+        while (index < obj->count24 && (walk->byte0 & 3) != 0) {
+            index++;
+            walk++;
+        }
+        if (index == obj->count24) {
+            return 0xFF;
+        }
+        slot = index;
+    } else {
+        slot = mode;
+    }
+
+    keyTable = key >> 12;
+    if (keyTable >= 11) {
+        return 0xFF;
+    }
+    recTable = tables.table[keyTable];
+    slotX8 = slot << 3;
+    off = (slotX8 - slot) << 2;
+    e = sprite_entry_at(obj, off);
+    ((struct TableBits0 *)&e->byte0)->lo2 = 1;
+    keyX4 = (key & 0xFFF) << 2;
+    ((struct TableBits0 *)&e->byte0)->mid3 = (record_h(sprite_record(recTable, keyX4), 0) & 0x70) >> 4;
+
+    if (attr != 0xFF) {
+        ((struct TableBits0 *)&e->byte0)->bit2 = (attr >> 4) & 1;
+        palette = attr & 0xF;
+    } else {
+        ((struct TableBits0 *)&e->byte0)->bit2 = (record_h(sprite_record(recTable, keyX4), 0) >> 7) & 1;
+        palette = record_b(sprite_record(recTable, keyX4), 0) & 0xF;
+    }
+    ((struct TableNib *)&e->byte1)->lo4 = palette;
+
+    ((struct TableNib *)&e->byte1)->hi4 = (record_h(sprite_record(recTable, keyX4), 2) & 0xF0) >> 4;
+    ((struct TableNib *)&e->byte2)->lo4 = record_b(sprite_record(recTable, keyX4), 2) & 0xF;
+    e->used3 = record_h(sprite_record(recTable, keyX4), 4);
+    ((struct TableNib *)&e->byte4)->lo4 = ((record_h(sprite_record(recTable, keyX4), 6) & 0xF0) >> 4) & 0xF;
+    ((struct TableNib *)&e->byte4)->hi4 = record_b(sprite_record(recTable, keyX4), 6) & 0xF;
+    if (record_h(sprite_record(recTable, keyX4), 6) != 0) {
+        e->byte5 = record_h(sprite_record(recTable, keyX4), 8);
+    }
+    e->unk6 = 0;
+    e->unk8 = 0;
+    e->byte18 = 1;
+    ((struct TableNib *)&e->byte19)->lo4 = 0;
+    ((struct TableNib *)&e->byte19)->hi4 = 0;
+
+    buf = heap_alloc(0x20, 0, gSpriteBufTagFirst, 0);
+    e->tiles0C = buf;
+
+    obj->u4C = (((struct TableBits0 *)&e->byte0)->bit2 << 8) + (((struct TableNib *)&e->byte1)->lo4 << 4);
+    cpu_set(gUnk_02000080 + (obj->u4C << 1), obj->buf1C + (obj->u4C << 1), 0x04000008);
+    cpu_set(gUnk_02000080 + (obj->u4C << 1), e->tiles0C, 0x04000008);
+
+    if ((((struct TableBits0 *)&e->byte0)->mid3 & 6) != 0) {
+        buf = heap_alloc(0x20, 0, gSpriteBufTagSecond, 0);
+        e->buf10 = buf;
+        if (((struct TableNib *)&e->byte2)->lo4 == ((struct TableNib *)&e->byte1)->lo4
+            || (e->byte0 & 4) != 0) {
+            if ((*((u8 *)gSys + 0x888) & 6) == 0) {
+                cpu_set((u8 *)sprite_record(recTable, keyX4) + 0xC, e->buf10, 0x04000008);
+            } else {
+                cpu_set((u8 *)sprite_record(recTable, keyX4) + 0x2C, e->buf10, 0x04000008);
+            }
+            if (((struct TableNib *)&e->byte1)->hi4 == ((struct TableNib *)&e->byte2)->lo4) {
+                buf = heap_alloc(0x20, 0, gSpriteBufTagThird, 0);
+                e->buf14 = buf;
+                if ((*((u8 *)gSys + 0x888) & 6) == 0) {
+                    cpu_set((u8 *)sprite_record(recTable, keyX4) + 0x4C, e->buf14, 0x04000008);
+                } else {
+                    cpu_set((u8 *)sprite_record(recTable, keyX4) + 0x6C, e->buf14, 0x04000008);
+                }
+            } else {
+                e->buf14 = 0;
+            }
+        } else {
+            obj->u4C = ((e->byte0 >> 2) & 1) << 8;
+            obj->u4C = obj->u4C + (((struct TableNib *)&e->byte2)->lo4 << 4);
+            cpu_set(gUnk_02000080 + (obj->u4C << 1), e->buf10, 0x04000008);
+            if ((e->byte1 & 0xF0) == 0xF0 || ((struct TableNib *)&e->byte1)->hi4 == ((struct TableNib *)&e->byte1)->lo4) {
+                e->buf14 = 0;
+            } else {
+                buf = heap_alloc(0x20, 0, gSpriteBufTagThird, 0);
+                e->buf14 = buf;
+                obj->u4C = (((e->byte0 >> 2) & 1) << 8) + (((struct TableNib *)&e->byte1)->hi4 << 4);
+                cpu_set(gUnk_02000080 + (obj->u4C << 1), e->buf14, 0x04000008);
+            }
+        }
+    }
+
+    e = sprite_entry_at(obj, off);
+    paletteBits = 1 << ((struct TableNib *)&e->byte1)->lo4;
+    paletteBits <<= ((e->byte0 >> 2) & 1) << 4;
+    obj->flags28 |= paletteBits;
+    if ((e->byte0 & 0x38) == 0) {
+        if (e->byte5 != 0) {
+            e->unk8 = 0xFFFF;
+        }
+    }
+    return (u8)slot;
+}
+END_NONMATCH
 
 static inline struct TableEntry *menu_entry_at(struct MenuTable *obj, u32 offset)
 {
