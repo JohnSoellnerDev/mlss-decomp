@@ -319,34 +319,50 @@ void obj_list_update_pos(void *list, u32 a, u32 b);
 void obj_set_frame_table(void *obj, const void *table);
 void obj_update_frame_flags(void *obj);
 
+struct HudModeBits
+{
+    u8 lo : 1;
+    u8 mode : 2;
+    u8 hi : 5;
+};
+
+struct SysPalDirty
+{
+    u8 filler0[2];
+    u16 palDirty;
+};
+
+struct HudCounterObj
+{
+    u8 filler0[0xDC];
+    s32 value;
+};
+
+/* Sprite of a HUD figure: sprite id, frame table and frame mode 2. */
+static inline void hud_sprite_setup(struct HudSprite *sprite, u32 id)
+{
+    obj_create_sprite_10(sprite, 0, id, 1, 0, 3);
+    obj_set_frame_table(sprite, gSpriteFrameBaseByMode);
+    sprite->unk52 = 2;
+    obj_update_frame_flags(sprite);
+}
+
 NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud(struct HudScene *scene, u8 prio, u32 taskArg))
 {
     u32 found;
-    u32 cpuZero;
+    u32 fill;
+    s32 slot;
     s32 noParent;
-    s32 limit;
-    u32 slot;
-    u32 spriteType;
-    s32 value;
-    void *list;
-    void *block;
-    void *window;
-    void *sprite;
-    void *pair;
-    void *counters;
-    struct HudTask *task;
-    void *hud;
-    u32 *counter;
-    u16 *shadow;
+    u8 *sys;
+    u16 winPrio;
 
     task_insert(scene, prio, taskArg);
     scene->classPtr = gClassScene;
     timer_init_default(&scene->timer40);
     clear_gate_flags();
     timer_set(&scene->timer40, 0x20);
-    block = heap_alloc2(0x24, 0, gAnim9fc0, 0);
-    anim_task_start(block, 8, gAnim9fc0, 0, 0x20);
-        scene->flags50 = 0;
+    anim_task_start(heap_alloc2(0x24, 0, gAnim9fc0, 0), 8, gAnim9fc0, 0, 0x20);
+    scene->flags50 = 0;
     if (get_flag_bit(0x1F2) == 0)
     {
         tween_groups_set_flag_bit(0x1F2, 1);
@@ -355,8 +371,8 @@ NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud
     if (get_flag_bit(0x1F3) != 0)
         scene->flags50 |= 8;
 
-    noParent = -1;
     slot = 0x1001;
+    noParent = -1;
     lookup_or_alloc_13b4(0, slot, noParent, 1);
     lookup_or_alloc_14b8(0, slot, noParent, 1);
     find_or_alloc_obj_slots(0, slot, 0, 0, 0, &found, noParent);
@@ -382,14 +398,18 @@ NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud
     find_or_alloc_obj_slots(4, slot, 0, 0, 0, &found, noParent);
 
     scene->list = obj_init_empty(heap_alloc2(0x10, 0, gHeapTagSceneList, 0));
-    window = window_obj_setup(heap_alloc2(0xA4, 0, gHeapTagHudWindow, 0), 1, 2, 0x17, 0xE);
-    scene->window = window;
-    *(u16 *)((u8 *)window + 0xA2) = 0x93;
+    {
+        void *window = window_obj_setup(heap_alloc2(0xA4, 0, gHeapTagHudWindow, 0), 1, 2, 0x17, 0xE);
+        scene->window = window;
+        winPrio = 0x93;
+        *(u16 *)((u8 *)window + 0xA2) = winPrio;
+    }
     vram_load_packed(gMinigameResultLabels, (void *)0x06000000);
     vram_load_packed(gHudScreenMap7000, (void *)0x06007000);
     vram_load_packed(gHudScreenMap6800, (void *)0x06006800);
     vram_load_packed(gSparkleStars, (void *)0x06004000);
-    if ((((u8 *)&gSys)[0x888] & 6) == 2)
+    sys = (u8 *)&gSys;
+    if (((struct HudModeBits *)&sys[0x888])->mode == 1)
     {
         vram_load_packed(gUnidentifiedDitherStrip0821b851, gUnk_02000080);
         vram_load_packed(gUnk_0821BA44 + 1, gUnk_02000260);
@@ -399,89 +419,81 @@ NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud
         vram_load_packed(gUnidentifiedDitherStrip0821b735, gUnk_02000080);
         vram_load_packed(gUnk_0821BA20, gUnk_02000260);
     }
-    cpuZero = 0;
-    cpu_set(&cpuZero, (void *)0x06007800, 0x05000200);
-    shadow = (u16 *)gUnk_02000008;
-    *shadow = 0xF04;
-    shadow += 2;
-    *shadow = 0xE02;
-    shadow += 1;
-    *shadow = 0xD03;
-    shadow -= 7;
-    *shadow = 0x1F40;
+    fill = 0;
+    cpu_set(&fill, (void *)0x06007800, 0x05000200);
+    /* BG0/BG2/BG3 control and display control shadows, written by address */
+    *(u16 *)0x02000008 = 0xF04;
+    *(u16 *)0x0200000C = 0xE02;
+    *(u16 *)0x0200000E = 0xD03;
+    *(u16 *)0x02000000 = 0x1F40;
 
-    task = (struct HudTask *)heap_alloc2(0x24, 0, gHeapTagHudTask, 0);
-    task_insert(task, 8, (u32)gHeapTagHudTask);
-    task->classPtr = gClassTask;
-    task->unk20 = 0;
-    task->unk1C = 0;
-    scene->task = task;
-    task->scene = scene;
+    {
+        struct HudTask *task = (struct HudTask *)heap_alloc2(0x24, 0, gHeapTagHudTask, 0);
+        task_insert(task, 8, (u32)gHeapTagHudTask);
+        task->classPtr = gClassTask;
+        task->unk20 = 0;
+        task->unk1C = 0;
+        scene->task = task;
+        task->scene = scene;
+    }
     scene->unk44 = 0;
     scene->unk48 = 0;
 
-    list = scene->list;
-    sprite = heap_alloc2(0x78, 0, gHeapTagHudSpriteA, 0);
-    obj_init_big(sprite, 0);
-    ((struct HudSprite *)sprite)->classPtr = gClassSpriteA;
-    spriteType = 3;
-    obj_create_sprite_10(sprite, 0, 0x1001, 1, 0, spriteType);
-    obj_set_frame_table(sprite, gSpriteFrameBaseByMode);
-    ((struct HudSprite *)sprite)->unk52 = 2;
-    obj_update_frame_flags(sprite);
-    ((struct HudSprite *)sprite)->unk18 = 0x4800;
-    ((struct HudSprite *)sprite)->unk20 = 0x2400;
-    ((struct HudSprite *)sprite)->unk6C = 0;
-    ((struct HudSprite *)sprite)->unk70 = 0;
-    ((struct HudSprite *)sprite)->unk74 = 0;
-    scene->spriteA = sprite;
-    list_insert(list, sprite);
-
-    list = scene->list;
-    sprite = heap_alloc2(0x78, 0, gHeapTagHudSpriteB, 0);
-    obj_init_big(sprite, 1);
-    ((struct HudSprite *)sprite)->classPtr = gClassSpriteB;
-    obj_create_sprite_10(sprite, 0, 0x1002, 1, 0, spriteType);
-    obj_set_frame_table(sprite, gSpriteFrameBaseByMode);
-    ((struct HudSprite *)sprite)->unk52 = 2;
-    obj_update_frame_flags(sprite);
-    ((struct HudSprite *)sprite)->unk18 = 0x3000;
-    ((struct HudSprite *)sprite)->unk20 = 0x3C00;
-    ((struct HudSprite *)sprite)->unk6C = 0;
-    ((struct HudSprite *)sprite)->unk70 = 0;
-    ((struct HudSprite *)sprite)->unk74 = 0;
-    scene->spriteB = sprite;
-    list_insert(list, sprite);
-
-    list = scene->list;
-    pair = obj_init_sprite_pair(heap_alloc2(0x74, 0, gHeapTagHudPair, 0), scene->list);
-    scene->pair = pair;
-    list_insert(list, pair);
-
-    list = scene->list;
-    counters = heap_alloc2(0x78, 0, gHeapTagHudCounters, 0);
-    obj_init_big(counters, 0xD);
-    *(const void **)((u8 *)counters + 0xC) = gClassCounter;
-    obj_init_counters(counters);
-    obj_restore_counter_tiles(counters);
-    scene->counters = counters;
-    list_insert(list, counters);
-
+    {
+        void *list = scene->list;
+        struct HudSprite *sprite = heap_alloc2(0x78, 0, gHeapTagHudSpriteA, 0);
+        obj_init_big(sprite, 0);
+        sprite->classPtr = gClassSpriteA;
+        hud_sprite_setup(sprite, 0x1001);
+        sprite->unk18 = 0x4800;
+        sprite->unk20 = 0x2400;
+        sprite->unk6C = 0;
+        sprite->unk70 = 0;
+        sprite->unk74 = 0;
+        scene->spriteA = sprite;
+        list_insert(list, sprite);
+    }
+    {
+        void *list = scene->list;
+        struct HudSprite *sprite = heap_alloc2(0x78, 0, gHeapTagHudSpriteB, 0);
+        obj_init_big(sprite, 1);
+        sprite->classPtr = gClassSpriteB;
+        hud_sprite_setup(sprite, 0x1002);
+        sprite->unk18 = 0x3000;
+        sprite->unk20 = 0x3C00;
+        sprite->unk6C = 0;
+        sprite->unk70 = 0;
+        sprite->unk74 = 0;
+        scene->spriteB = sprite;
+        list_insert(list, sprite);
+    }
+    {
+        void *list = scene->list;
+        void *pair = obj_init_sprite_pair(heap_alloc2(0x74, 0, gHeapTagHudPair, 0), scene->list);
+        scene->pair = pair;
+        list_insert(list, pair);
+    }
+    {
+        void *list = scene->list;
+        struct HudSprite *counters = heap_alloc2(0x78, 0, gHeapTagHudCounters, 0);
+        obj_init_big(counters, 0xD);
+        counters->classPtr = gClassCounter;
+        obj_init_counters(counters);
+        obj_restore_counter_tiles(counters);
+        scene->counters = counters;
+        list_insert(list, counters);
+    }
     scene->clearBlock = obj_clear(heap_alloc2(0x30, 0, gHeapTagHudCounterB, 0), 0xD);
-    hud = obj_create_hud_counter(heap_alloc2(0x110, 0, gHeapTagHudCounterObj, 0), scene->list);
-    scene->hud = hud;
-    limit = 9;
-    scene->limit = limit;
+    scene->hud = obj_create_hud_counter(heap_alloc2(0x110, 0, gHeapTagHudCounterObj, 0), scene->list);
+    scene->limit = 9;
     tween_groups_set_flag_bit(0x1EC, 0);
     write_var(0x1CDC, 0);
-    value = (u16)read_var(0x1CE2);
-    counter = (u32 *)((u8 *)hud + 0xDC);
-    *counter = value;
-    if (value <= 8)
-        *counter = limit;
+    ((struct HudCounterObj *)scene->hud)->value = (u16)read_var(0x1CE2);
+    if (((struct HudCounterObj *)scene->hud)->value <= 8)
+        ((struct HudCounterObj *)scene->hud)->value = 9;
     obj_list_update_pos(scene->list, 0, 0);
     *(u16 *)gUnk_02000080 = 0;
-    *(u16 *)((u8 *)&gSys + 2) = 0xFFFF;
+    ((struct SysPalDirty *)&gSys)->palDirty = 0xFFFF;
     return scene;
 }
 END_NONMATCH
