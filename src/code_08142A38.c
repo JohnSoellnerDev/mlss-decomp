@@ -250,6 +250,25 @@ void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out
 
 void enemy_enter_contact_state(void *owner, struct Actor *ent);
 
+struct __attribute__((packed)) Facing3
+{
+    u8 dir : 3;
+    u8 rest : 5;
+};
+
+/* Eight-way facing from one actor towards another, -1 when they stand on the same spot. */
+static inline s32 facing_towards(struct Actor *ent, struct Actor *target)
+{
+    s32 dx = target->posX - ent->posX;
+    s32 dy = target->posY - ent->posY;
+
+    if ((dx | dy) != 0)
+    {
+        return (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
+    }
+    return -1;
+}
+
 void enemy_start_return_home(void *owner, struct Actor *ent, void **out)
 {
     u8 *ai = (u8 *)ent + 0x58;
@@ -349,18 +368,15 @@ ASM_FUNC("asm/code_08142A38/enemy_idle_handler.s", void enemy_idle_handler(void)
 
 void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
-NONMATCH("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out))
+void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out)
 {
     u8 *ai = (u8 *)ent + 0x58;
     u8 *rec = (u8 *)ent->rec;
     u8 idx;
     u32 index;
     struct Actor *partner;
-    s32 dx;
-    s32 dy;
     s32 facing;
-    u8 *dp;
-    u32 dir;
+    struct Facing3 *face;
     u32 cell;
 
     if (find_active_entry(owner, &idx))
@@ -374,21 +390,10 @@ NONMATCH("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(struc
     partner = ((struct Actor **)owner)[index + 10];
     ((struct Bits3 *)&ent->mode)->field0 = 1;
     ent->byte239 = rec[*(u16 *)(ai + 0x178) + 0x40];
-    dx = partner->posX - ent->posX;
-    dy = partner->posY - ent->posY;
-    if ((dx | dy) != 0)
-    {
-        facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
-    }
-    else
-    {
-        facing = -1;
-    }
-    dp = &ent->filler1C[0x24 - 0x1C];
-    facing &= 7;
-    dir = (*dp & -8) | facing;
-    *dp = dir;
-    cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(dir << 29) >> 29, 2);
+    facing = facing_towards(ent, partner);
+    face = (struct Facing3 *)&ent->filler1C[0x24 - 0x1C];
+    face->dir = facing;
+    cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(face->dir, 2);
     obj_set_cell_coord(ent, cell, 0);
     {
         u8 tv = rec[*(u16 *)(ai + 0x178) + 0x3C];
@@ -399,23 +404,19 @@ NONMATCH("asm/code_08142A38/enemy_engage_setup.s", void enemy_engage_setup(struc
     *(s32 *)(ai + 0x188) = ent->posY;
     *out = enemy_charge_handler;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out))
+void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *dp;
     u8 zero = 0;
     u8 *ai = (u8 *)ent + 0x58;
     u8 *rec = (u8 *)ent->rec;
     s16 box[8];
     u8 idx;
     struct Actor *partner;
-    s32 dx;
-    s32 dy;
     s32 facing;
+    struct Facing3 *face;
     u32 cell;
     u16 speed;
-    u32 dir;
 
     if (ent->timerB != 0)
     {
@@ -433,21 +434,10 @@ NONMATCH("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(s
         }
         partner = ((struct Actor **)owner)[idx + 10];
         ((struct Bits3 *)&ent->mode)->field0 = 1;
-        dx = partner->posX - ent->posX;
-        dy = partner->posY - ent->posY;
-        if ((dx | dy) != 0)
-        {
-            facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
-        }
-        else
-        {
-            facing = -1;
-        }
-        dp = &ent->filler1C[0x24 - 0x1C];
-        facing &= 7;
-        dir = (*dp & -8) | facing;
-        *dp = dir;
-        cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(dir << 29) >> 29, 2);
+        facing = facing_towards(ent, partner);
+        face = (struct Facing3 *)&ent->filler1C[0x24 - 0x1C];
+        face->dir = facing;
+        cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(face->dir, 2);
         obj_set_cell_coord(ent, cell, 0);
         speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x44);
         start_move_to(ent, partner->posX + partner->vx * 20, partner->posY + partner->vy * 20, speed, zero);
@@ -469,7 +459,6 @@ NONMATCH("asm/code_08142A38/enemy_charge_handler.s", void enemy_charge_handler(s
         }
     }
 }
-END_NONMATCH
 
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
 {
