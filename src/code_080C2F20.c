@@ -88,7 +88,9 @@ struct HeroBody
     s32 targetX;
     s32 targetY;
     s32 targetZ;
-    u8 filler44[0x4C - 0x44];
+    u8 filler44[0x47 - 0x44];
+    s8 unk47;
+    u8 filler48[0x4C - 0x48];
     void (*state)(struct HeroBody *);
     u32 unk50;
     u8 filler54[0x6C - 0x54];
@@ -135,7 +137,14 @@ struct World
     struct HeroLayer *layers;
 };
 
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
 extern struct World *gWorld;
+extern u8 gSys[];
 
 void step_motion(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -154,6 +163,45 @@ void enter_finish_rebuild(struct HeroBody *body);
 void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct HeroBody *body, u32 value);
 void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, const u8 *cb);
+void state_stack_advance_progress(struct HeroBody *body);
+void set_body_part(struct HeroBody *body, u32 kind, s32 x, s32 y, s32 arg5);
+void body_set_pose(u32 kind, struct HeroBody *body, s32 x, s32 y);
+void obj_free_parts(struct HeroBody *body);
+void display_flush(void);
+void sprite_objects_draw_obj_tiles(u32 a, u32 b);
+void find_frame_entry(struct HeroBody *body, u32 index);
+void hero_a_place_on_partner_offset(struct HeroBody *body);
+void hero_a_step_sprite_anim5_to_3754(struct HeroBody *body);
+
+struct WorldModeBits
+{
+    u8 lo4 : 4;
+    u8 f45 : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+struct WorldMode2Bits
+{
+    u8 lo2 : 2;
+    u8 g23 : 2;
+    u8 hi4 : 4;
+} __attribute__((packed));
+
+static inline void world_mode_set_bit5(void)
+{
+    struct WorldModeBits *bits = (struct WorldModeBits *)&gWorld->modeByte;
+    bits->f45 = bits->f45 | 2;
+}
+
+static inline u32 world_mode_bit2(void)
+{
+    return (((struct WorldMode2Bits *)&gWorld->modeByte)->g23 & ~2) != 0;
+}
+
+static inline void set_timer_mode(struct HeroBody *body, u32 mode)
+{
+    body->timer = (body->timer & 0xFFF) | (mode << 12);
+}
 
 void hero_b_visible_anim_b_rate_a(struct HeroBody *body)
 {
@@ -179,4 +227,619 @@ void hero_b_visible_anim_b_rate_a(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_2fec(struct HeroBody *body))
+NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_2fec(struct HeroBody *body))
+{
+    struct HeroBody *body_a;
+    struct HeroBody *body_b;
+    struct HeroBody *partner;
+    struct HeroBody *p;
+    struct HeroLayer *node;
+    void (*fn)(struct HeroBody *);
+    u32 (*divide)(u32, u32);
+    s32 end;
+    s32 rate;
+    s32 start;
+    s32 mid;
+    s32 lo;
+    s32 in_start;
+    s32 mid_c;
+    s32 end_c;
+    s32 limit;
+    s32 reached;
+    s32 end_w;
+    s32 in_end;
+    s32 mode_now;
+    s32 end_t;
+    s32 limit_t;
+    s32 reached_t;
+    s32 none;
+    s32 target_x;
+    s32 target_y;
+    s32 target_z;
+    s32 height;
+    s32 sq;
+    s32 quotient;
+    s32 m;
+
+    body_a = &gWorld->heroA->body;
+    body_b = &gWorld->heroB->body;
+    partner = body->partner;
+    end = 0x4000;
+    state_stack_advance_progress(body_a);
+
+    rate = body_a->rate;
+    start = end - rate * 10;
+    mid = end - (rate << 3);
+    end = end + (rate << 1);
+    if (body_a->progress < end)
+    {
+        ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+    }
+
+    if ((body_a->timer >> 12) != 0)
+    {
+        goto tail;
+    }
+    lo = start;
+    if (lo < 0)
+    {
+        lo = 0;
+    }
+    if (lo > 0x7FFF)
+    {
+        lo = 0x7FFF;
+    }
+    if (body_a->step > lo)
+    {
+        in_start = 0;
+    }
+    else
+    {
+        in_start = 1;
+        if (body_a->progress < lo)
+        {
+            in_start = 0;
+        }
+    }
+    if (in_start)
+    {
+        if ((gWorld->view & 8) != 0)
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x33;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x33;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x33;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 3;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        else
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 16;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    mid_c = mid;
+    end_c = end;
+    if (mid_c < 0)
+    {
+        mid_c = 0;
+    }
+    if (end_c < 0)
+    {
+        end_c = 0;
+    }
+    if (mid_c > 0x4000)
+    {
+        mid_c = 0x4000;
+    }
+    if (end_c > 0x7FFF)
+    {
+        end_c = 0x7FFF;
+    }
+    limit = mid_c;
+    if (end_c < mid_c)
+    {
+        limit = end_c;
+    }
+    if (body_a->progress < limit)
+    {
+        reached = 0;
+    }
+    else
+    {
+        reached = 1;
+        if (body_a->step > end_c)
+        {
+            reached = 0;
+        }
+    }
+    if (reached == 0)
+    {
+        goto after_set;
+    }
+
+    set_body_part(body_b, 2, 0x14, 0, 0);
+    if ((((struct SysKeys3E *)gSys)->keys & 2) == 0)
+    {
+        goto after_set;
+    }
+    body_set_pose(1, body_b, 0, -40);
+    obj_free_parts(body_b);
+    world_mode_set_bit5();
+    if (!world_mode_bit2())
+    {
+        if ((gWorld->view & 8) != 0)
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 16;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        else
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 16;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        display_flush();
+    }
+    set_timer_mode(body_a, 2);
+
+after_set:
+    if ((body_a->timer >> 12) != 0)
+    {
+        goto tail;
+    }
+    end_w = end;
+    if (end_w < 0)
+    {
+        end_w = 0;
+    }
+    if (end_w > 0x7FFF)
+    {
+        end_w = 0x7FFF;
+    }
+    if (body_a->step > end_w)
+    {
+        in_end = 0;
+    }
+    else
+    {
+        in_end = 1;
+        if (body_a->progress < end_w)
+        {
+            in_end = 0;
+        }
+    }
+    if (in_end)
+    {
+        world_mode_set_bit5();
+        set_timer_mode(body_a, 1);
+        if ((gWorld->view & 8) != 0)
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 16;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        else
+        {
+                    p = body_a;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = body_b;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    p = partner;
+                    if (p != 0)
+                    {
+                        do
+                        {
+                            p->frame = 0x100;
+                            p = p->child;
+                        } while (p != 0);
+                    }
+                    node = gWorld->layers;
+                    if (node != 0)
+                    {
+                        do
+                        {
+                            if (node->sprite != 0)
+                            {
+                                node->sprite->layer = 16;
+                            }
+                            node = node->next;
+                        } while (node != 0);
+                    }
+        }
+        display_flush();
+        obj_free_parts(body_b);
+        goto tail;
+    }
+    if (body_a->progress > end)
+    {
+        goto tail;
+    }
+    if ((((struct SysKeys3E *)gSys)->keys & 3) == 0)
+    {
+        goto tail;
+    }
+    world_mode_set_bit5();
+    if (world_mode_bit2())
+    {
+        goto tail;
+    }
+    set_timer_mode(body_a, 1);
+    if ((gWorld->view & 8) != 0)
+    {
+                p = body_a;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                p = body_b;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                p = partner;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                node = gWorld->layers;
+                if (node != 0)
+                {
+                    do
+                    {
+                        if (node->sprite != 0)
+                        {
+                            node->sprite->layer = 16;
+                        }
+                        node = node->next;
+                    } while (node != 0);
+                }
+    }
+    else
+    {
+                p = body_a;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                p = body_b;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                p = partner;
+                if (p != 0)
+                {
+                    do
+                    {
+                        p->frame = 0x100;
+                        p = p->child;
+                    } while (p != 0);
+                }
+                node = gWorld->layers;
+                if (node != 0)
+                {
+                    do
+                    {
+                        if (node->sprite != 0)
+                        {
+                            node->sprite->layer = 16;
+                        }
+                        node = node->next;
+                    } while (node != 0);
+                }
+    }
+    display_flush();
+    obj_free_parts(body_b);
+    body_set_pose(6, body_b, 0, -40);
+
+tail:
+    mode_now = body_a->timer >> 12;
+    if (mode_now == 0)
+    {
+        goto no_trans;
+    }
+    limit_t = 0x4000;
+    end_t = end;
+    if (end_t < 0)
+    {
+        end_t = 0;
+    }
+    if (limit_t > 0x4000)
+    {
+        limit_t = 0x4000;
+    }
+    if (end_t > 0x7FFF)
+    {
+        end_t = 0x7FFF;
+    }
+    if (end_t < limit_t)
+    {
+        limit_t = end_t;
+    }
+    if (body_a->progress < limit_t)
+    {
+        reached_t = 0;
+    }
+    else
+    {
+        reached_t = 1;
+        if (body_a->step > end_t)
+        {
+            reached_t = 0;
+        }
+    }
+    if (reached_t == 0)
+    {
+        goto no_trans;
+    }
+    if (mode_now <= 1)
+    {
+        goto no_trans;
+    }
+    set_timer_mode(body_a, 0);
+    fn = hero_a_place_on_partner_offset;
+    body->state = fn;
+    fn(body);
+    goto end_fn;
+
+no_trans:
+    if ((body_a->flags & 0x20) == 0)
+    {
+        goto end_fn;
+    }
+    none = -1;
+    set_slot_value(0x7D, none);
+    m = body_a->mode & 6;
+    if (m == 2 || m == 4)
+    {
+        target_x = partner->targetX / 0x100 + partner->ofsX - 0xA;
+        target_y = partner->targetY / 0x100 + partner->ofsY + 3;
+        target_z = partner->targetZ / 0x100 + partner->ofsZ - 0x15;
+        place_targets(body_a, target_x, target_y, target_z, none);
+        if ((u8 *)partner == (u8 *)partner->data + 8)
+        {
+            height = partner->ofsZ;
+        }
+        else
+        {
+            find_frame_entry(partner, 0);
+            height = partner->unk47;
+        }
+        height += partner->targetZ / 0x100;
+        divide = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+        sq = height * height;
+        quotient = sq / 0x40 - 5;
+        height += divide(0x19, quotient);
+        body_a->height = height;
+        set_motion_offsets(body_a, 0x600);
+    }
+
+    m = body_a->mode & 6;
+    if (m == 2 || m == 4)
+    {
+        sprite_set_action(body_a, 4, 0x2034, 0);
+        ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+    }
+    set_timer_mode(body_a, 0);
+    body->state = hero_a_step_sprite_anim5_to_3754;
+
+end_fn:
+    ;
+}
+END_NONMATCH
