@@ -9,221 +9,280 @@ ASM_FUNC("asm/code_0802A4FC/pair_frame_update.s", void pair_frame_update(void))
 ASM_FUNC("asm/code_0802A4FC/update_sub_frame.s", void update_sub_frame(void))
 
 extern const u8 gDirMask[];
-u32 obj_push_out(void *obj, u32 entry);
+u8 obj_push_out(void *obj, void *entry);
 void obj_set_slot_value(void *obj, s32 value);
 void obj_shift_state_slots(void *sub);
 void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
 
-NONMATCH("asm/code_0802A4FC/obj_update_contacts.s", void obj_update_contacts(u8 *ctx, u8 *obj, u8 flag))
+struct CtLink
 {
-    u32 slot, entry, pushed, partner, left, start, other;
-    u32 obj_x, obj_y, other_x, other_y, half_sum, hit, use_p, sb;
-    u32 link_index, type_bits, mode, anim, state, d_start, d_left, action;
-    s32 z, zs;
-    s32 *box_x, *box_y, *box_z;
+    s8 idx : 7;
+    u8 contact : 1;
+} __attribute__((packed));
+
+struct CtKind
+{
+    u8 b0 : 1;
+    u8 kind : 3;
+    u8 hi : 4;
+} __attribute__((packed));
+
+struct CtLo4
+{
+    u8 lo4 : 4;
+    u8 hi4 : 4;
+} __attribute__((packed));
+
+struct CtDir
+{
+    u8 lo5 : 5;
+    u8 dir : 3;
+} __attribute__((packed));
+
+struct CtMid
+{
+    u8 lo2 : 2;
+    u8 mid : 3;
+    u8 hi : 3;
+} __attribute__((packed));
+
+struct CtBit4
+{
+    u8 lo4 : 4;
+    u8 bit4 : 1;
+    u8 hi : 3;
+} __attribute__((packed));
+
+struct CtObj
+{
+    u8 filler0[2];
+    u8 unk2;
+    u8 filler3[0xC - 3];
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 zStep;
+    u8 filler1C[0x40 - 0x1C];
+    s32 zVel;
+    u8 filler44[0x54 - 0x44];
+    u8 group;
+    u8 filler55[0x20C - 0x55];
+    u8 flags20C;
+    u8 flags20D;
+    u8 type20E;
+    u8 flags20F;
+    u8 filler210[0x216 - 0x210];
+    u8 flags216;
+    u8 filler217[0x270 - 0x217];
+    s16 offsetY;
+    u16 width;
+    u8 filler274[2];
+    u16 height;
+    u8 filler278[0x284 - 0x278];
+    s32 boxX;
+    s32 boxY;
+    s32 boxZ;
+    u8 filler290[0x33C - 0x290];
+    u8 link;
+    u8 filler33D[3];
+    u8 state;
+    u8 prevState;
+    u8 filler342[2];
+    struct CtObj *partner;
+    u8 filler348[0x350 - 0x348];
+    u8 mask350;
+    u8 filler351;
+    u8 mode352;
+    u8 filler353[0x358 - 0x353];
+    u8 flags358;
+    u8 filler359[0x35B - 0x359];
+    u8 flags35B;
+};
+
+struct CtPair
+{
+    u8 filler0[0x28];
+    struct CtObj *entries[0x39];
+    u8 filler10C[2];
+    u8 pStart;
+    u8 pCount;
+    u8 aStart;
+    u8 aCount;
+    u8 cStart;
+    u8 cCount;
+    u8 filler114[0x11A - 0x114];
+    u8 dStart;
+    u8 dCount;
+    u8 filler11C[0x12A - 0x11C];
+    u8 action;
+    u8 filler12B[0x208 - 0x12B];
+    u8 flags208;
+    u8 flags209;
+    u8 filler20A[0x246 - 0x20A];
+    u8 state246;
+};
+
+void obj_update_contacts(struct CtPair *ctx, struct CtObj *obj, u8 flag)
+{
+    struct CtObj **slot;
+    struct CtObj *entry;
+    struct CtObj *partner;
+    struct CtObj *other;
+    u32 left;
+    s32 start;
+    s32 objX, objY, otherX, otherY, half;
+    u32 type, mode, state;
+    s32 hit;
 
     if (obj == NULL)
         goto part2;
-    if ((obj[0x33C] & 0x7F) != 0x7F)
+    if (((struct CtLink *)&obj->link)->idx != -1)
         goto part2;
-    if ((obj[0x20C] & 1) == 0)
+    if (!(obj->flags20C & 1))
         goto part2;
-    if ((obj[0x216] & 0x20) != 0)
+    if (obj->flags216 & 0x20)
         goto part2;
-    if ((obj[0x20F] & 1) == 0)
-        goto part2;
-
-    // box of the object
-    box_x = (s32 *)(obj + 0x284);
-    box_y = (s32 *)(obj + 0x288);
-    box_z = (s32 *)(obj + 0x28C);
-    *box_x = *(s32 *)(obj + 0x0C) - (*(u16 *)(obj + 0x272) >> 1);
-    *box_y = *(s32 *)(obj + 0x10) + *(s16 *)(obj + 0x270);
-    z = *(s32 *)(obj + 0x14);
-    zs = *(s32 *)(obj + 0x18);
-    if (zs > 0 || (zs < 0 && *(s32 *)(obj + 0x40) < 0))
-        z += zs;
-    *box_z = z;
-
-    if ((ctx[0x208] & 0x10) == 0) {
-        if ((obj[0x20C] & 0x40) != 0) {
-            entry = *(u32 *)(ctx + 0x28 + ((obj[0x54] ^ 1) << 2));
-            obj_push_out(obj, entry);
-        }
-    }
-
-    if ((obj[0x20D] & 1) == 0)
-        goto part2;
-    if ((obj[0x35B] & 0x10) != 0)
+    if (!(obj->flags20F & 1))
         goto part2;
 
-    // list C: contact flag in bit 7 of the link byte
-    if ((obj[0x33C] & 0x7F) == 0x7F && ctx[0x112] != 0) {
-        slot = (u32)ctx + 0x28 + (ctx[0x112] << 2);
-        left = ctx[0x113];
-        while (left != 0) {
-            entry = *(u32 *)slot;
-            pushed = obj_push_out(obj, entry);
-            if ((pushed << 24) != 0) {
-                obj[0x33C] &= 0x7F;
+    obj->boxX = obj->x - (obj->width >> 1);
+    obj->boxY = obj->y + obj->offsetY;
+    obj->boxZ = (obj->zStep > 0 || (obj->zStep < 0 && obj->zVel < 0)) ? obj->z + obj->zStep : obj->z;
+
+    if (!(ctx->flags208 & 0x10) && (obj->flags20C & 0x40))
+        obj_push_out(obj, ctx->entries[obj->group ^ 1]);
+
+    if (!(obj->flags20D & 1))
+        goto part2;
+    if (obj->flags35B & 0x10)
+        goto part2;
+
+    // list C: an entry or the partner of an entry pushes the object
+    if (((struct CtLink *)&obj->link)->idx == -1 && ctx->cStart != 0)
+    {
+        slot = &ctx->entries[ctx->cStart];
+        for (left = ctx->cCount; left != 0; left--, slot++)
+        {
+            entry = *slot;
+            if (obj_push_out(obj, entry))
+            {
+                ((struct CtLink *)&obj->link)->contact = 0;
                 break;
             }
-            partner = *(u32 *)(entry + 0x344);
-            if (partner != 0 && (*(u8 *)(partner + 0x20C) & 1) != 0) {
-                pushed = obj_push_out(obj, partner);
-                if ((pushed << 24) != 0) {
-                    obj[0x33C] |= 0x80;
-                    break;
-                }
+            partner = entry->partner;
+            if (partner != NULL && (partner->flags20C & 1) && obj_push_out(obj, partner))
+            {
+                ((struct CtLink *)&obj->link)->contact = 1;
+                break;
             }
-            left--;
-            slot += 4;
         }
     }
 
     if (flag != 0)
         goto part2;
-    if ((obj[0x33C] & 0x7F) != 0x7F)
+    if (((struct CtLink *)&obj->link)->idx != -1)
         goto part2;
 
-    // the entity list the scan starts with: P or A
-    if ((ctx[0x208] & 0x10) == 0)
-        use_p = 1;
-    else if ((obj[0x352] & 0x80) != 0)
-        use_p = 1;
-    else {
-        sb = ctx[0x246] & 0x1C;
-        use_p = (sb == 0xC) || (sb == 0x18);
-    }
-    if (use_p && ctx[0x10E] != 0)
-        start = ctx[0x10E];
+    // the entity list the scan starts with
+    if ((!(ctx->flags208 & 0x10) || (obj->mode352 & 0x80)
+         || ((struct CtMid *)&ctx->state246)->mid == 3 || ((struct CtMid *)&ctx->state246)->mid == 6)
+        && ctx->pStart != 0)
+        start = ctx->pStart;
+    else if (ctx->aStart != 0)
+        start = ctx->aStart;
     else
-        start = ctx[0x110];
+        start = 0;
 
-    // overlap test of the entities from `start` on
-    if ((s32)start > 0) {
-        slot = (u32)ctx + 0x28 + (start << 2);
-        left = ctx[0x10F] + ctx[0x111] - start + 2;
-        if (left != 0) {
-            other = 0;
-            while (1) {
-                entry = *(u32 *)slot;
-                pushed = obj_push_out(obj, entry);
-                if ((pushed << 24) != 0 && (obj[0x358] & 8) == 0) {
-                    link_index = ((s32)((u32)obj[0x33C] << 25)) >> 23;
-                    other = *(u32 *)(ctx + 0x28 + link_index);
-                    type_bits = *(u8 *)(other + 0x20E) & 0x38;
-                    if (type_bits == 8 && (obj[0x352] & 1) != 0)
-                        goto probe_found;
-                    if (type_bits == 0x10 && (obj[0x352] & 2) != 0)
-                        goto probe_found;
-                }
-                left--;
-                slot += 4;
-                if (left == 0)
-                    goto scan_end;
-            }
-probe_found:
-            if ((*(u8 *)(other + 0x20E) & 0x38) != 8)
-                goto scan_end;
-            if ((((u32)*(u8 *)(other + 0x20C) << 28) >> 29) <= 1)
-                goto scan_end;
-            if (*(s32 *)(obj + 0x18) != 0)
-                goto scan_end;
-
-            obj_x = *(u32 *)(obj + 0x0C);
-            obj_y = *(u32 *)(obj + 0x10) + *(s16 *)(obj + 0x270);
-            other_x = *(u32 *)(other + 0x0C);
-            other_y = *(u32 *)(other + 0x10) + *(s16 *)(other + 0x270);
-            half_sum = (*(u16 *)(other + 0x272) + *(u16 *)(obj + 0x272)) >> 1;
-            hit = 0;
-            if ((s32)(obj_x - half_sum) >= (s32)other_x)
-                goto axis;
-            if ((s32)(obj_x + half_sum) <= (s32)other_x)
-                goto axis;
-            if ((s32)(obj_y - *(u16 *)(obj + 0x276)) >= (s32)other_y)
-                goto axis;
-            if ((s32)(obj_y + *(u16 *)(other + 0x276)) > (s32)other_y)
-                goto contact;
-axis:
-            mode = obj[0x350] & 0xF;
-            if ((gDirMask[obj[2] >> 5] & mode) == 0)
-                goto axis_end;
-            if (mode == 2)
-                goto y_test;
-            if (mode > 2) {
-                if (mode == 4)
-                    goto x_test;
-                if (mode == 8)
-                    goto y_test;
-                goto axis_end;
-            }
-            if (mode == 1)
-                goto x_test;
-            goto axis_end;
-x_test:
+    if (start > 0)
+    {
+        slot = &ctx->entries[start];
+        for (left = ctx->pCount + ctx->aCount - start + 2; left != 0; left--, slot++)
+        {
+            if (obj_push_out(obj, *slot) && !(obj->flags358 & 8))
             {
-                u32 half_obj = *(u16 *)(obj + 0x272) >> 1;
-                u32 half_other = *(u16 *)(other + 0x272) >> 1;
-                if ((s32)(obj_x + half_obj) <= (s32)(other_x - half_other))
-                    goto axis_end;
-                if ((s32)(obj_x - half_obj) >= (s32)(other_x + half_other))
-                    goto axis_end;
-                goto contact;
+                other = ctx->entries[((struct CtLink *)&obj->link)->idx];
+                type = other->type20E & 0x38;
+                if ((type == 8 && (obj->mode352 & 1)) || (type == 0x10 && (obj->mode352 & 2)))
+                {
+                    if ((other->type20E & 0x38) == 8 && ((struct CtKind *)&other->flags20C)->kind > 1
+                        && obj->zStep == 0)
+                    {
+                        objX = obj->x;
+                        objY = obj->y + obj->offsetY;
+                        otherX = other->x;
+                        otherY = other->y + other->offsetY;
+                        half = (obj->width + other->width) >> 1;
+                        hit = 0;
+                        if (objX - half < otherX && objX + half > otherX
+                            && objY - obj->height < otherY && objY + other->height > otherY)
+                        {
+                            hit = 1;
+                        }
+                        else
+                        {
+                            if (gDirMask[((struct CtDir *)&obj->unk2)->dir] & (mode = ((struct CtLo4 *)&obj->mask350)->lo4))
+                            {
+                                switch (mode)
+                                {
+                                case 1:
+                                case 4:
+                                    if (objX + (obj->width >> 1) > otherX - (other->width >> 1)
+                                        && objX - (obj->width >> 1) < otherX + (other->width >> 1))
+                                        hit = 1;
+                                    break;
+                                case 2:
+                                case 8:
+                                    if (objY > otherY - other->height && objY - obj->height < otherY)
+                                        hit = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hit)
+                            obj->state = ((struct CtKind *)&other->flags20C)->kind;
+                    }
+                    break;
+                }
             }
-y_test:
-            if ((s32)obj_y <= (s32)(other_y - *(u16 *)(other + 0x276)))
-                goto axis_end;
-            if ((s32)(obj_y - *(u16 *)(obj + 0x276)) >= (s32)other_y)
-                goto axis_end;
-            hit = 1;
-axis_end:
-            if (hit == 0)
-                goto scan_end;
-contact:
-            obj[0x340] = ((u32)*(u8 *)(other + 0x20C) << 28) >> 29;
         }
     }
-scan_end:
-    if ((obj[0x33C] & 0x7F) != 0x7F)
-        goto part2;
-    d_start = ctx[0x11A];
-    if (d_start == 0)
-        goto part2;
-    slot = (u32)ctx + 0x28 + (d_start << 2);
-    d_left = ctx[0x11B];
-    while (d_left != 0) {
-        entry = *(u32 *)slot;
-        pushed = obj_push_out(obj, entry);
-        if ((pushed << 24) != 0)
-            break;
-        d_left--;
-        slot += 4;
+
+    // list D: pushed out of the entries until one reports a push
+    if (((struct CtLink *)&obj->link)->idx == -1 && ctx->dStart != 0)
+    {
+        struct CtObj **dSlot = &ctx->entries[ctx->dStart];
+        u32 dLeft;
+
+        for (dLeft = ctx->dCount; dLeft != 0; dLeft--, dSlot++)
+        {
+            if (obj_push_out(obj, *dSlot))
+                break;
+        }
     }
 
 part2:
-    if ((ctx[0x209] & 1) != 0)
-        goto shift_only;
-    action = ctx[0x12A];
-    if (action == 0 || action > 2)
-        goto shift_only;
-    if ((ctx[0x208] & 0x10) == 0 && (obj[0x352] & 0x80) == 0)
-        goto shift_only;
-
-    state = obj[0x340];
-    if (state == 2) {
-        obj_set_slot_value(obj, 1);
-    } else if (state == 3 && (obj[0x352] & 0x80) != 0) {
-        obj_set_slot_value(obj, 2);
-    } else {
-        if (obj[0x341] == obj[0x340])
-            return;
-        obj_shift_state_slots(obj);
+    if (!(ctx->flags209 & 1) && ctx->action != 0 && ctx->action <= 2
+        && ((ctx->flags208 & 0x10) || (obj->mode352 & 0x80)))
+    {
+        state = obj->state;
+        if (state == 2)
+        {
+            obj_set_slot_value(obj, 1);
+            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+        }
+        else if ((obj->mode352 & 0x80) && state == 3)
+        {
+            obj_set_slot_value(obj, 2);
+            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+        }
+        else
+        {
+            if (obj->prevState == obj->state)
+                return;
+            obj_shift_state_slots(obj);
+            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+        }
+        return;
     }
-    anim = ((obj[0x352] & 0x80) != 0) ? 0 : ((ctx[0x208] >> 4) & 1);
-    advance_anim_frame(ctx, obj, anim, 0);
-    return;
-shift_only:
     obj_shift_state_slots(obj);
 }
-END_NONMATCH
