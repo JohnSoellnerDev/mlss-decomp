@@ -112,7 +112,10 @@ struct ScreenView
     u8 filler40[0x44 - 0x40];
     struct SpriteObj *sideL;
     struct SpriteObj *sideR;
-    void *spr4C[14];
+    void *texts[2];
+    void *objE;
+    void *four[4];
+    void *seven[7];
     u8 filler84[0x88 - 0x84];
     struct SlideObj *slide;
     u8 filler8C[0x14A - 0x8C];
@@ -235,32 +238,6 @@ NONMATCH("asm/code_081218F0/unknown_thumb_08121e42.s", void unknown_thumb_08121e
 }
 END_NONMATCH
 
-static inline void update_if_set(void *p)
-{
-    if (p != 0)
-    {
-        sprite_update_cd0(p);
-    }
-}
-
-static inline void tween_refresh(struct ScreenView *screen, s32 idx)
-{
-    struct TweenEntry *entry = &screen->tweens[idx];
-
-    if (entry->sprite != 0)
-    {
-        if (entry->flags3C & 1)
-        {
-            sprite_update_cd0(entry->sprite);
-        }
-        else
-        {
-            obj_release_slots(entry->sprite);
-        }
-    }
-}
-
-/* screen_view_update helpers */
 struct SysView
 {
     u8 filler0[0x880];
@@ -281,19 +258,26 @@ struct SprFlags12
     u8 b67 : 2;
 };
 
-static inline u32 bro_levels(u32 oam)
+/* Draws the level of both brothers (party entries 0x3C bytes apart). */
+static inline u32 bro_levels_draw(u32 oam)
 {
-    oam = draw_decimal_sprites(8, gParty[0x30], oam, 0xA8, 0x38, 2, -1, -1);
-    oam = draw_decimal_sprites(8, gParty[0x6C], oam, 0x48, 0x38, 2, -1, -1);
+    s32 i;
+
+    for (i = 0; i < 2; i++)
+    {
+        oam = draw_decimal_sprites(8, gParty[0x30 + i * 0x3C], oam, 0xA8 - i * 0x60, 0x38, 2, -1, -1);
+    }
     return oam;
 }
 
-NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struct ViewOwner *owner))
+void screen_view_update(struct ViewOwner *owner)
 {
     struct ScreenView *screen;
     u16 langTiles[5];
     u32 oam;
     s32 i;
+    s32 j;
+    s32 k;
     u32 flagA;
     u32 flagB;
     u32 flagC;
@@ -366,7 +350,11 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 flagA = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
                 flagB = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x220);
                 flagC = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
-                screen->cursor->oam1 = 0x2C - (u8)flagA * 8 - (u8)flagB * 16 + screen->category * (0x20 - (u8)flagC * 8);
+                {
+                    s32 left = 0x2C;
+
+                    screen->cursor->oam1 = left - (u8)flagA * 8 - (u8)flagB * 16 + screen->category * (0x20 - (u8)flagC * 8);
+                }
                 sprite_update_cd0(screen->cursor);
                 break;
             case 3:
@@ -374,11 +362,29 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
                 sprite_update_cd0(screen->item);
                 break;
             case 4:
-                for (i = 0; i < 14; i++)
+                for (i = 0; i < 2; i++)
                 {
-                    if (screen->spr4C[i] != 0)
+                    if (screen->texts[i] != 0)
                     {
-                        sprite_update_cd0(screen->spr4C[i]);
+                        sprite_update_cd0(screen->texts[i]);
+                    }
+                }
+                if (screen->objE != 0)
+                {
+                    sprite_update_cd0(screen->objE);
+                }
+                for (j = 0; j < 4; j++)
+                {
+                    if (screen->four[j] != 0)
+                    {
+                        sprite_update_cd0(screen->four[j]);
+                    }
+                }
+                for (k = 0; k < 7; k++)
+                {
+                    if (screen->seven[k] != 0)
+                    {
+                        sprite_update_cd0(screen->seven[k]);
                     }
                 }
                 if (screen->pick != 0xFF)
@@ -413,31 +419,31 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
             }
         }
 
-        if (screen->mode == 0 && !(screen->slide->state & 1) && screen->waveFlag == 0)
+        if (screen->mode == 0 && !(screen->slide->state % 2) && screen->waveFlag == 0)
         {
-            oam = bro_levels(oam);
+            oam = bro_levels_draw(oam);
         }
-        if (screen->mode == 1 && !(screen->slide->state & 1))
+        if (screen->mode == 1 && !(screen->slide->state % 2))
         {
             oam = obj_draw_list(screen, oam);
         }
-        if (screen->mode == 4 && !(screen->slide->state & 1))
+        if (screen->mode == 4 && !(screen->slide->state % 2))
         {
             oam = screen_helpers_obj_draw_grid(screen, oam);
         }
         if (screen->entryMark != 0xFF)
         {
-            for (i = 0; i < 12; i++)
+            for (j = 0; j < 12; j++)
             {
-                if (screen->tweens[i].sprite != 0)
+                if (screen->tweens[j].sprite != 0)
                 {
-                    if (screen->tweens[i].flags3C & 1)
+                    if (screen->tweens[j].flags3C & 1)
                     {
-                        sprite_update_cd0(screen->tweens[i].sprite);
+                        sprite_update_cd0(screen->tweens[j].sprite);
                     }
                     else
                     {
-                        obj_release_slots(screen->tweens[i].sprite);
+                        obj_release_slots(screen->tweens[j].sprite);
                     }
                 }
             }
@@ -447,7 +453,7 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
         obj_list_pass_0a8c();
         gUnk_03000D48(gUnk_0203FFB8.root, gUnk_0203FFB8.root + 0xA14);
         oam = gUnk_03000D4C(gUnk_0203FFB8.root, oam);
-        if (!(screen->slide->state & 1))
+        if (!(screen->slide->state % 2))
         {
             switch (screen->mode)
             {
@@ -472,7 +478,6 @@ NONMATCH("asm/code_081218F0/screen_view_update.s", void screen_view_update(struc
         screen_wave_frame(screen);
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_081218F0/unknown_thumb_081225d0.s", void unknown_thumb_081225d0(void *unused, u16 *map, s32 x, s32 y, s32 w, s32 h, u16 start, u8 mode))
 {
@@ -612,12 +617,10 @@ NONMATCH("asm/code_081218F0/unknown_thumb_08122818.s", void unknown_thumb_081228
 }
 END_NONMATCH
 
-NONMATCH("asm/code_081218F0/draw_bro_levels.s", u32 draw_bro_levels(void *unused, u32 oam))
+u32 draw_bro_levels(void *unused, u32 oam)
 {
-    oam = draw_decimal_sprites(8, gParty[0x30], oam, 0xA8, 0x38, 2, -1, -1);
-    return draw_decimal_sprites(8, gParty[0x6C], oam, 0x48, 0x38, 2, -1, -1);
+    return bro_levels_draw(oam);
 }
-END_NONMATCH
 
 void window_irq_callback(void)
 {
