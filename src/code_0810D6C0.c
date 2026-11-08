@@ -954,7 +954,8 @@ NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(stru
     u16 animScale;
     u16 scaleB;
 
-    link = partner->unk28->unk7E & 6;
+    link = 6;
+    link &= partner->unk28->unk7E;
     if (link != 2 && link != 4)
     {
         return 1;
@@ -963,13 +964,28 @@ NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(stru
     animScale = obj->unk28->unk10A;
     vel = partner->unk28->unk104;
     scaleB = partner->unk28->unk10C;
-    scaled = animScale * (speedA * speedMul);
-    delta = scaled / 0x100;
+    delta = speedA;
+    scaled = delta * speedMul;
+    scaled = animScale * scaled;
+    if (scaled < 0)
+    {
+        scaled += 0xFF;
+    }
+    delta = scaled >> 8;
     scaled = (vel << 1) + vel;
     scaled = scaled + (scaled << 4);
     scaled = scaleB * scaled;
-    delta = delta - scaled / 0x100;
-    delta = delta / 0x100;
+    if (scaled < 0)
+    {
+        scaled += 0xFF;
+    }
+    delta = delta - (scaled >> 8);
+    scaled = delta;
+    if (delta < 0)
+    {
+        scaled += 0xFF;
+    }
+    delta = scaled >> 8;
     if (delta <= 0)
     {
         delta = 1;
