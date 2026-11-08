@@ -27,6 +27,32 @@ void dma_queue_drain(void);
 void copy_shadow_to_io(void);
 void flush_palette_blocks(void);
 void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+extern u8 gUnk_0203FFF8[];
+extern u8 gUnk_0300004C[];
+extern u8 irq_handler[];
+void register_ram_reset(u32 flags);
+void sub_081DE840(void);
+void sub_081DE848(void);
+void mt19937_seed(u32 state, u32 seed);
+void mem_routines_init(u8 *buf);
+void math_routines_init(u8 *buf);
+u32 save_data_verify(void);
+u32 check_warm_reset_counter(void);
+void reset_state_0c28(void);
+void load_rom_table(void);
+void run_tasks(void);
+void frame_update(void);
+void init_sys_defaults(void);
+void init_heaps(void);
+void vblank_irq_callback(void);
+void irq_nop(void);
+void start_scene_or_textbox(void);
+void *heap_alloc(u32 size, u32 pool, const u8 *tag, u8 clear);
+void *heap_alloc2(u32 size, u32 pool, const u8 *tag, u8 clear);
+void textbox_create(void *p, u32 kind, const u8 *tag);
+void scene_start_task(void *node, u32 kind, const void *tag, u32 arg);
+void obj_init_gfx(void *p, u32 kind, const u8 *tag, void (*cb)(void));
+void update_key_state(u32 keys, u32 slot);
 
 struct DmaQueueEntry
 {
@@ -114,7 +140,182 @@ struct SysBusyLine
     u16 unk10 : 6;
 } __attribute__((packed));
 
-ASM_FUNC("asm/code_08017A00/agb_main.s", void agb_main(void))
+static inline void flags_and(u8 *p, u32 m)
+{
+    u32 t = *p;
+    t &= m;
+    *p = t;
+}
+
+NONMATCH("asm/code_08017A00/agb_main.s", void agb_main(void))
+{
+    u32 slot;
+    u32 zero;
+    void *handler;
+    u8 *rf;
+    u8 *sys;
+    u32 *q;
+    u32 i;
+    u32 k;
+    void *p;
+    u32 keys;
+    u32 b6;
+    u32 f2;
+    u32 flags;
+    u32 n;
+    u32 v200;
+    u8 *base;
+
+    REG_WAITCNT = 0x4014;
+    rf = gUnk_0203FFF8;
+    if ((rf[7] & 3) == 1)
+        sub_081DE840();
+    REG_SOUNDCNT_L = 0;
+    REG_SOUNDCNT_H &= 0xCCFF;
+    register_ram_reset(0xFC);
+    REG_WAITCNT = 0x4014;
+
+    zero = 0;
+    slot = zero;
+    cpu_set(&slot, (void *)0x03000000, ((*(const u32 *)((u32)gRomBootWords + 4) + 0xFCFFFE00) << 9 >> 11) | 0x05000000);
+    slot = zero;
+    cpu_set(&slot, (void *)0x02000000, 0x0500FFFE);
+
+    sys = gSys;
+    b6 = ((rf[7] >> 7) & 3) << 1;
+    flags_and(sys + 0x888, -7);
+    sys[0x888] |= b6;
+    flags_and(sys + 0x88A, -0x21);
+    REG_IME = 0;
+    REG_IE = 0x2000;
+    REG_IME = 1;
+    REG_DISPCNT = 0x80;
+    *(vu16 *)0x02000000 = 0x80;
+
+    handler = irq_nop;
+    slot = (u32)handler;
+    cpu_set(&slot, gUnk_03000014, 0x0500000E);
+    cpu_set(irq_handler, gUnk_0300004C, 0x180);
+    ((u32 *)gUnk_03000014)[2] = (u32)vblank_irq_callback;
+    *(u32 *)(sys + 0x8C4) = (u32)handler;
+    *(u32 *)0x03007FFC = (u32)gUnk_0300004C;
+    init_heaps();
+
+    p = heap_alloc(0x800, 1, gHeapTags + 8, 0);
+    *(u32 *)(sys + 4) = (u32)p;
+    slot = zero;
+    cpu_set(&slot, p, 0x05000200);
+
+    v200 = 0x200;
+    base = sys + 0x80;
+    for (n = 0x100; n != 0; n -= 0x10)
+    {
+        for (k = 0; k < 0x80; k += 8)
+        {
+            *(u32 *)(base + k) = v200;
+            *(u32 *)(base + k + 4) = zero;
+        }
+        base += 0x80;
+    }
+
+    flags_and(sys + 0x888, -9);
+    *(u32 *)(sys + 0x880) = (u32)(sys + 0x80);
+    *(u16 *)(sys + 0x78) |= 0x3FF;
+    for (i = 0; i < 4; i++)
+    {
+        u8 *e = sys + 0x30 + 0x14 * i;
+        e[0] = 0xA;
+        e[1] = 2;
+    }
+    flags = (*(u32 *)(sys + 0x888) & 0xFFFE1FFF) | 0x2000;
+    *(u32 *)(sys + 0x888) = flags;
+    flags_and(sys + 0x889, -0x1F);
+
+    if (*(u32 *)(sys + 0x8C8) == 0)
+    {
+        p = heap_alloc((u32)gSineTable - (u32)iwram_sqrt, 0, gHeapTags + 0x10, 0);
+        *(u32 *)(sys + 0x8C8) = (u32)p;
+    }
+    math_routines_init(*(u8 **)(sys + 0x8C8));
+
+    if (*(u32 *)(sys + 0x8CC) == 0)
+    {
+        p = heap_alloc((u32)iwram_sqrt - (u32)iwram_fill, 0, gHeapTags + 0x18, 0);
+        *(u32 *)(sys + 0x8CC) = (u32)p;
+    }
+    mem_routines_init(*(u8 **)(sys + 0x8CC));
+
+    if (*(u32 *)(sys + 0x8D0) == 0)
+    {
+        p = heap_alloc(0x9C8, 1, gHeapTags + 0x20, 0);
+        *(u32 *)(sys + 0x8D0) = (u32)p;
+    }
+    mt19937_seed(*(u32 *)(sys + 0x8D0), 0x49895963);
+
+    f2 = (sys[0x88A] & -5) | ((save_data_verify() & 1) << 2);
+    sys[0x88A] = f2;
+    rf[6] &= 0x7F;
+    if (f2 & 4)
+    {
+        if ((rf[7] & 3) == 2)
+        {
+            b6 = check_warm_reset_counter() << 7;
+            rf[6] = (rf[6] & 0x7F) | b6;
+        }
+    }
+
+    init_sys_defaults();
+    reset_state_0c28();
+    load_rom_table();
+
+    REG_IME = 0;
+    gUnk_02000004 |= 8;
+    REG_IE |= 1;
+    REG_IF |= 1;
+    REG_IME = 1;
+    *(vu16 *)gUnk_02000080 = 0x7FFF;
+    *(u32 *)(sys + 0x884) = 0xFFFFFFFF;
+    ((struct SysArea *)sys)->unk0 = 0xFFFF;
+    ((struct SysArea *)sys)->unk2 = 0xFFFF;
+    flush_palette_blocks();
+    copy_shadow_to_io();
+    frame_update();
+    sys[0x88A] |= 8;
+
+    if ((rf[7] & 3) == 2)
+    {
+        keys = (~REG_KEYINPUT) & 0xFFFF;
+        update_key_state(keys, 0);
+        if (sys[0x8C0] == 7)
+            sys[0x8C0] = (rf[7] >> 4) & 7;
+        rf[7] &= -4;
+        b6 = rf[6];
+        if ((b6 & 0x80) == 0)
+        {
+            rf[6] = b6 & 0x7F;
+            p = heap_alloc2(0x40, 0, gHeapTags + 0x28, 0);
+            textbox_create(p, 8, gHeapTags + 0x30);
+        }
+        else
+        {
+            p = heap_alloc2(0xE4, 0, gHeapTags + 0x30, 0);
+            scene_start_task(p, 8, gHeapTags + 0x30, 2);
+        }
+    }
+    else
+    {
+        p = heap_alloc2(0x30, 0, gHeapTags + 0x38, 0);
+        obj_init_gfx(p, 1, gHeapTags + 0x38, start_scene_or_textbox);
+    }
+
+    for (;;)
+    {
+        run_tasks();
+        sub_081DE848();
+        frame_update();
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08017A00/frame_update.s", void frame_update(void))
 
