@@ -76,6 +76,9 @@ u32 draw_list_rows(struct SaveScreen *obj, u32 oam);
 void cpu_set(const void *src, void *dst, u32 ctl);
 u32 table_085213b8(u32 index);
 void psg_wave_setup(u8 *base, u32 width, u32 x, u32 y, u32 glyph, s32 ch, u32 pal, u32 zero);
+u32 text_sprites_b(u32 oam, u32 a, u32 b, u32 c);
+u32 draw_member_status(u32 oam, u32 a, u32 b);
+u32 draw_sprite(u32 oam, u32 x, u32 size, u32 zero, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10);
 
 ASM_FUNC("asm/code_081272CC/obj_anim_step.s", void obj_anim_step(void))
 
