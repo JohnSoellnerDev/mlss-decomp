@@ -274,7 +274,7 @@ NONMATCH("asm/code_08033E44/sub_08034884.s", void sub_08034884(struct PairObj *o
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49(struct PairObj *obj))
+void set_sub_pair_state_49(struct PairObj *obj)
 {
     struct PairPart **slotA;
     struct PairPart **slotB;
@@ -284,7 +284,7 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
     struct PairPart *qb;
     struct PairPart *ra;
     struct PairPart *rb;
-    u32 bit = 8;
+    struct Bit3Byte { u8 lo3 : 3; u8 bit3 : 1; u8 rest : 4; };
     u32 flag = 0x40;
 
     update_pair_facing(obj, 1, 1);
@@ -300,8 +300,8 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
     qb->flags351 |= flag;
     rb = *slotB;
     ra = *slotA;
-    ra->flags358 |= bit;
-    rb->flags358 |= bit;
+    ((struct Bit3Byte *)&ra->flags358)->bit3 = 1;
+    ((struct Bit3Byte *)&rb->flags358)->bit3 = 1;
     ((struct BitsLo5 *)&(*slotB)->flags20D)->bit5 = 1;
     ((struct Lo3Bits *)&(*slotB)->state214)->lo3 = 4;
     obj_set_id(*slotB, 0x1025);
@@ -311,7 +311,6 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
     ((u8 *)obj)[0x20B] |= 0x80;
     set_slot_value(0x3C, -1);
 }
-END_NONMATCH
 
 void sub_08034A70(struct PairObj *obj)
 {
