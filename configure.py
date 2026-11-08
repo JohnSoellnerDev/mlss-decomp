@@ -28,6 +28,8 @@ from unitbuild import ASM_INPUTS, expected_source, generate_asm  # noqa: E402
 
 ROM_START, ROM_SIZE = 0x08000000, 0x01000000
 AGBCC_FLAGS = "-mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm"
+# .bss of units built from library sources (the static NaN of dp-bit.c / fp-bit.c): fixed address
+FIXED_BSS = {"lib_081DBE20": 0x03001A20, "lib_081DCBBC": 0x03001A38}
 CATEGORIES = [("game", "Game"), ("sound", "Sound engine"), ("lib", "Library")]
 
 
@@ -76,7 +78,12 @@ def main():
         out = ["OUTPUT_ARCH(arm)", "SECTIONS", "{", f"\t. = 0x{ROM_START:08X};", "\t.rom :", "\t{"]
         for o in objs:
             out.append(f"\t\t{o}(.text .text.* .rodata .rodata.* .data)")
-        out += ["\t}", "\t/DISCARD/ : { *(.comment) *(.note.*) }", "}", ""]
+        out.append("\t}")
+        for o in objs:  # static variables of library sources, at their original addresses
+            unit = os.path.basename(o)[:-2]
+            if unit in FIXED_BSS:
+                out.append(f"\t.bss.{unit} 0x{FIXED_BSS[unit]:08X} (NOLOAD) : {{ {o}(.bss) }}")
+        out += ["\t/DISCARD/ : { *(.comment) *(.note.*) }", "}", ""]
         for a, s in sorted(syms.items()):
             if s.is_func and in_code(a):
                 continue
