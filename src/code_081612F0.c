@@ -504,7 +504,7 @@ NONMATCH("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
 {
     const u8 *packed = gUnk_08002D2C + 0x81F4;
     u8 *dst = heap_alloc(read_varlen_plus1(packed), 1, gBgDecompBufferTag, 0);
-    vu16 *bg;
+    u16 *bg;
 
     ((void (*)(const void *, void *))gUnk_03000C84)(packed, dst);
     cpu_fast_set(dst, (void *)0x06000000, 0x2000);
@@ -514,7 +514,7 @@ NONMATCH("asm/code_081612F0/init_bg_gfx.s", void init_bg_gfx())
     }
     cpu_fast_set(gScenePaletteA, gUnk_02000080, 0x80);
     *(u16 *)gUnk_02000080 = 0x190;
-    bg = (vu16 *)gUnk_0200000A;
+    bg = (u16 *)gUnk_0200000A;
     *bg = 0x1701;
     bg += 2;
     *bg = 0x1D02;
