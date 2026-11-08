@@ -222,8 +222,8 @@ NONMATCH("asm/code_080B9F40/hero_pair_place_mirror.s", void hero_pair_place_mirr
     u32 bits;
     u8 *party;
 
-    gWorld->unk0E = 2;
     world = gWorld;
+    world->unk0E = 2;
     party = gParty;
     bits = ((party[0xA] >> 2) & 1) + ((((u32)*(u16 *)(party + 0xC) << 22) >> 26) & 1) * 2;
     bits = bits << 6;
