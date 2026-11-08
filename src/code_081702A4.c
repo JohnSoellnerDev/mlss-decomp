@@ -347,7 +347,7 @@ static inline void hud_sprite_setup(struct HudSprite *sprite, u32 id)
     obj_update_frame_flags(sprite);
 }
 
-NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud(struct HudScene *scene, u8 prio, u32 taskArg))
+struct HudScene *scene_build_hud(struct HudScene *scene, u8 prio, u32 taskArg)
 {
     u32 found;
     u32 fill;
@@ -496,7 +496,6 @@ NONMATCH("asm/code_081702A4/scene_build_hud.s", struct HudScene *scene_build_hud
     ((struct SysPalDirty *)&gSys)->palDirty = 0xFFFF;
     return scene;
 }
-END_NONMATCH
 
 void slot_hud_obj_run_state(struct SlotObj *obj)
 {
