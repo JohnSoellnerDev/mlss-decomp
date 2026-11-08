@@ -228,6 +228,19 @@ void wait_motion_end(struct HeroBody *body);
 s32 query_contact(struct HeroBody *a, struct HeroBody *b);
 void visible_action_8(struct HeroBody *body);
 void move_progress_check(struct HeroBody *body);
+void release_partner_when_visible(struct HeroBody *body);
+void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
+void anim_stop_mode(struct HeroData *data);
+void anim_bit100_release(struct HeroData *data);
+void anim_end_mode(struct HeroData *data);
+void anim_bit8_scale10a(struct HeroData *data);
+void anim_bit20_scale10c(struct HeroData *data);
+void anim_bit80_scale11c(struct HeroData *data);
+void anim_clear_high_bits(struct HeroData *data);
+s32 anim_set_motion_a(struct HeroData *data, u16 value, s32 extra);
+s32 anim_set_motion_b(struct HeroData *data, u16 value, s32 extra);
+s32 anim_bit400_step(struct HeroData *data, s32 value);
+s32 anim_chance_start(struct HeroData *data, s32 value);
 void pair_choose_partner(struct HeroBody *body);
 void pair_place_targets(struct HeroBody *body);
 void hero_start_move(struct HeroBody *body);
@@ -880,7 +893,146 @@ void partner_step_wait(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_0809583C/state_partner_action8.s", void state_partner_action8(struct HeroBody *body))
+void state_partner_action8(struct HeroBody *body)
+{
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *partner = body->partner;
+    struct HeroBody *data_body;
+    s32 action;
+    s32 cursor;
+    u16 effect;
+    const u16 *effects;
+    u8 *table;
+    s32 index;
+
+    if (partner->sprite->flags & 8)
+    {
+        data_body = &((struct Hero *)body->data)->body;
+        if (((struct ActionModeBits *)&data_body->mode)->mode == 1 ||
+            ((struct ActionModeBits *)&data_body->mode)->mode == 2)
+        {
+            sprite_set_action(data_body, -1, -1, 0);
+            ((struct SpriteModeBits *)&data_body->sprite->flags)->mode = 0;
+        }
+
+        if ((partner->data->input & 0x300) == 0)
+        {
+            switch (gWorld->curEntry->type - 1)
+            {
+            case 0:
+            case 10:
+            case 11:
+                if (partner->data->slot == -1)
+                {
+                    set_slot_value(0xEB, -1);
+                }
+                if (partner->data->slot == -2)
+                {
+                    set_slot_value(0xFD, -1);
+                }
+                if (((struct ActionModeBits *)&partner->mode)->mode == 1)
+                {
+                    action = 0x2051;
+                    if (partner == hero_a)
+                    {
+                        action -= 0x2F;
+                    }
+                    sprite_set_action(partner, 0xB, action, 0);
+                    ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+                }
+                break;
+            case 1:
+                if (partner->data->slot == -1)
+                {
+                    set_slot_value(0xEB, -1);
+                }
+                if (partner->data->slot == -2)
+                {
+                    set_slot_value(0xFD, -1);
+                }
+                break;
+            case 12:
+            case 13:
+                set_slot_value(0x9C, -1);
+                if (((struct ActionModeBits *)&partner->mode)->mode == 1)
+                {
+                    action = 0x2051;
+                    if (partner == hero_a)
+                    {
+                        action -= 0x2F;
+                    }
+                    sprite_set_action(partner, 0xA, action, 0);
+                    ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+
+        effects = gEffectCodeTable;
+        index = ~gWorld->parts->slot;
+        table = (u8 *)gWorld + 0x34E;
+        effect = effects[table[index]];
+        effect_spawn_at(effect, partner->posX / 0x100, partner->posY / 0x100 + 2,
+                        partner->posZ / 0x100 - 2, partner);
+
+        switch (gWorld->curEntry->type - 1)
+        {
+        case 0:
+            cursor = menu_cursor_pos(partner->data->cursorX, partner->data->cursorY,
+                                     gWorld->curEntry->menuKind);
+            popup_digit_spawn(cursor - partner->data->cursorX, partner->targetX / 0x100,
+                              partner->targetY / 0x100, (s8)partner->ofsZ, 1);
+            partner->data->cursorX = cursor;
+            break;
+        case 1:
+            anim_stop_mode(partner->data);
+            anim_bit100_release(partner->data);
+            anim_end_mode(partner->data);
+            anim_bit8_scale10a(partner->data);
+            anim_bit20_scale10c(partner->data);
+            anim_bit80_scale11c(partner->data);
+            anim_clear_high_bits(partner->data);
+            break;
+        case 10:
+            cursor = menu_cursor_pos(partner->data->cursorX2, partner->data->cursorY2,
+                                     gWorld->curEntry->menuKind);
+            popup_digit_spawn(cursor - partner->data->cursorX2, partner->targetX / 0x100,
+                              partner->targetY / 0x100, (s8)partner->ofsZ, 1);
+            partner->data->cursorX2 = cursor;
+            break;
+        case 11:
+            cursor = menu_cursor_pos(partner->data->cursorX2, partner->data->cursorY2,
+                                     gWorld->curEntry->menuKind);
+            popup_digit_spawn(cursor - partner->data->cursorX2, partner->targetX / 0x100 - 0xC,
+                              partner->targetY / 0x100 - 4, (s8)partner->ofsZ, 1);
+            partner->data->cursorX2 = cursor;
+            cursor = menu_cursor_pos(partner->data->cursorX, partner->data->cursorY,
+                                     gWorld->curEntry->menuKind);
+            popup_digit_spawn(cursor - partner->data->cursorX, partner->targetX / 0x100 + 0xC,
+                              partner->targetY / 0x100 + 4, (s8)partner->ofsZ, 1);
+            partner->data->cursorX = cursor;
+            break;
+        case 12:
+            effect_spawn_at(0xCB, partner->posX / 0x100, partner->posY / 0x100 + 2,
+                            partner->posZ / 0x100 - 2, partner);
+            anim_set_motion_a(partner->data, (u16)(gWorld->curEntry->menuKind + 0x100), 0xC8);
+            anim_bit400_step(partner->data, 0xC8);
+            break;
+        case 13:
+            effect_spawn_at(0xCB, partner->posX / 0x100, partner->posY / 0x100 + 2,
+                            partner->posZ / 0x100 - 2, partner);
+            anim_set_motion_b(partner->data, (u16)(gWorld->curEntry->menuKind + 0x100), 0xC8);
+            anim_chance_start(partner->data, 0xC8);
+            break;
+        default:
+            obj_release(body);
+            break;
+        }
+        body->state = release_partner_when_visible;
+    }
+}
 
 void hero_start_move(struct HeroBody *body)
 {
