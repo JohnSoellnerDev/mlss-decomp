@@ -412,6 +412,8 @@ NONMATCH("asm/code_0814CB10/random_cell_walk.s", void random_cell_walk(struct En
     s16 frames;
     u8 coord;
     u32 ang;
+    u16 *vx;
+    u16 *vy;
 
     table = (u8 *)obj + 0x100;
     margin = ((u16 *)(table + 0x30))[rand_below(2, mt19937_next())];
@@ -421,7 +423,9 @@ NONMATCH("asm/code_0814CB10/random_cell_walk.s", void random_cell_walk(struct En
     coord = gFrameAttrTable[((((u32)obj->unk216 << 28) >> 30) << 4) + (((u32)*(u8 *)&obj->unk24 << 29) >> 29) + 8];
     obj_set_cell_coord(obj, coord, 0);
     ((struct BitsMode *)&obj->unk214)->low = 3;
-    if ((u16)obj->unk242 | (u16)obj->unk244)
+    vx = &obj->unk242;
+    vy = &obj->unk244;
+    if (*vy | *vx)
     {
         ang = (u16)angle_of_vector16(obj->unk242, obj->unk244);
         obj->unk2 = (ang + 0x10) >> 8;
@@ -434,7 +438,7 @@ NONMATCH("asm/code_0814CB10/random_cell_walk.s", void random_cell_walk(struct En
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0814CB10/entry_overlap_or_zone.s", void entry_overlap_or_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot))
+void entry_overlap_or_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot)
 {
     s16 box[8];
     u8 idx;
@@ -447,7 +451,10 @@ NONMATCH("asm/code_0814CB10/entry_overlap_or_zone.s", void entry_overlap_or_zone
     {
         partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
         box_tab = *tab;
-        box[0] = (s8)box_tab[0x28] << 4;
+        {
+            s32 v = box_tab[0x28];
+            box[0] = (s8)v << 4;
+        }
         box[2] = (s8)box_tab[0x29] << 4;
         box[4] = (s8)box_tab[0x2A] << 4;
         box[1] = (s8)box_tab[0x2B] << 4;
@@ -472,11 +479,10 @@ NONMATCH("asm/code_0814CB10/entry_overlap_or_zone.s", void entry_overlap_or_zone
         *slot = (u32)random_cell_walk;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0814CB10/aim_at_entry_move.s", void aim_at_entry_move(struct Enemy *owner, struct Enemy *obj, u32 *slot))
 
-NONMATCH("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flags_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot))
+void entry_overlap_flags_zone(struct Enemy *owner, struct Enemy *obj, u32 *slot)
 {
     s16 box[8];
     u8 idx;
@@ -489,7 +495,10 @@ NONMATCH("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flag
     {
         partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
         box_tab = obj->unk1B0;
-        box[0] = (s8)box_tab[0x28] << 4;
+        {
+            s32 v = box_tab[0x28];
+            box[0] = (s8)v << 4;
+        }
         box[2] = (s8)box_tab[0x29] << 4;
         box[4] = (s8)box_tab[0x2A] << 4;
         box[1] = (s8)box_tab[0x2B] << 4;
@@ -528,7 +537,6 @@ NONMATCH("asm/code_0814CB10/entry_overlap_flags_zone.s", void entry_overlap_flag
         *slot = (u32)random_cell_walk;
     }
 }
-END_NONMATCH
 
 void ai_face_target_tick(struct Enemy *parent, struct Enemy *obj, u32 *slot);
 NONMATCH("asm/code_0814CB10/face_entry.s", void face_entry(struct Enemy *parent, struct Enemy *obj, u32 *slot))
