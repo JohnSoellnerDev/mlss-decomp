@@ -775,32 +775,32 @@ NONMATCH("asm/code_08045F18/obj_step_index.s", void obj_step_index(struct FieldO
 }
 END_NONMATCH
 
-static inline void obj_set_state_bit6(struct FieldObj *o)
+/* state byte: current state in bits 0-2, previous state in bits 3-5 */
+struct StateBits214
 {
-    o->state214 |= 0x40;
-}
+    u8 cur : 3;
+    u8 prev : 3;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+} __attribute__((packed));
 
 NONMATCH("asm/code_08045F18/obj_set_state.s", void obj_set_state(struct FieldObj *obj, u8 state))
 {
-    u8 *p;
-    u32 old;
-    u32 v;
-    u32 m;
+    struct StateBits214 *st;
 
-    m = 7;
-    p = &obj->state214;
-    old = *p;
-    v = ((old & -0x39) | ((old << 29) >> 26)) & -8;
-    v = v | (state & m);
-    *p = v;
-    if ((((u32)v << 29) >> 29) > 2)
-        obj->unk02 = obj->unk24 << 5;
-    if ((*p & 7) == 3)
+    st = (struct StateBits214 *)&obj->state214;
+    st->prev = st->cur;
+    st->cur = state;
+    if (st->cur > 2)
     {
-        struct FieldSub *sub = obj->sub;
-        obj_load_record(sub, sub->anim21, 0, 0, 0);
+        obj->unk02 = obj->unk24 << 5;
+        if (st->cur == 3)
+        {
+            struct FieldSub *sub = obj->sub;
+            obj_load_record(sub, sub->anim21, 0, 0, 0);
+        }
     }
-    obj_set_state_bit6(obj);
+    ((struct StateBits214 *)&obj->state214)->bit6 = 1;
 }
 END_NONMATCH
 
