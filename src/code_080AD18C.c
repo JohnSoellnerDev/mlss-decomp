@@ -71,7 +71,8 @@ struct HeroData
 
 struct HeroBody
 {
-    u8 filler0[0x08];
+    struct HeroBody *next;
+    u8 filler04[0x08 - 0x04];
     struct HeroSprite *sprite;
     u8 filler0C[0x10 - 0x0C];
     s32 x;
@@ -82,7 +83,7 @@ struct HeroBody
     u8 filler26[0x28 - 0x26];
     struct HeroData *data;
     struct HeroBody *partner;
-    struct HeroBody *next;
+    struct HeroBody *child;
     u8 filler34[0x38 - 0x34];
     s32 targetX;
     s32 targetY;
@@ -97,7 +98,7 @@ struct HeroBody
     u8 mode;
     u8 filler77[0x79 - 0x77];
     u8 flags;
-    u16 rate;
+    s16 rate;
     u16 frame;
     s16 progress;
     u8 filler80[0x84 - 0x80];
@@ -138,16 +139,9 @@ struct World
     struct Hero *slots[6];
     struct Hero *heroA;
     struct Hero *heroB;
-    struct WorldLink *list;
+    struct HeroBody *layers;
     u8 filler7C[0x24C - 0x7C];
     void *trackedObj;
-};
-
-struct WorldLink
-{
-    struct WorldLink *next;
-    u32 unk4;
-    struct HeroSprite *obj;
 };
 
 struct ObjFlags
@@ -291,208 +285,250 @@ void hero_b_place_from_a(struct HeroBody *body)
     }
 }
 
-static inline void world_mode_or(u32 bit)
+struct HeroWorldModeBits
 {
-    u8 mode = gWorld->modeByte;
-    gWorld->modeByte = (mode & ~0x30) | (((((u32)mode << 26) >> 30) | bit) << 4);
+    u8 lo2 : 2;
+    u8 m2 : 2;
+    u8 mode : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+static inline void world_mode_or1(void)
+{
+    ((struct HeroWorldModeBits *)&gWorld->modeByte)->mode |= 1;
 }
 
-static inline void chain_set_frame(struct HeroBody *node, u16 value)
+/* Step length within x and progress at least x (x clamped to 0..0x7FFF). */
+static inline u32 step_reached(struct HeroBody *a, s32 x)
 {
-    while (node != NULL)
+    u32 r;
+    s32 t;
+
+    if (x < 0)
+        x = 0;
+    if (x > 0x7FFF)
+        x = 0x7FFF;
+    if (a->step <= x)
     {
-        node->frame = value;
-        node = node->next;
+        t = a->progress;
+        r = 1;
+        if (t >= x)
+            goto done;
+    }
+    r = 0;
+done:
+    return r;
+}
+
+/* Progress at least lo and step length within hi (both clamped, lo at most hi). */
+static inline u32 step_in_window(struct HeroBody *a, s32 lo, s32 hi)
+{
+    u32 r;
+    s32 t;
+
+    if (lo < 0)
+        lo = 0;
+    if (hi < 0)
+        hi = 0;
+    if (lo > 0x4000)
+        lo = 0x4000;
+    if (hi > 0x7FFF)
+        hi = 0x7FFF;
+    if (hi < lo)
+        lo = hi;
+    if (a->progress >= lo)
+    {
+        t = a->step;
+        r = 1;
+        if (t <= hi)
+            goto done;
+    }
+    r = 0;
+done:
+    return r;
+}
+
+/* Slow frame values for the three body chains, 6 for every listed sprite. */
+static inline void frames_slow(struct HeroBody *a, struct HeroBody *b, struct HeroBody *partner)
+{
+    struct HeroBody *p;
+
+    p = a;
+    while (p != 0)
+    {
+        p->frame = 0x66;
+        p = p->child;
+    }
+    p = b;
+    while (p != 0)
+    {
+        p->frame = 0x66;
+        p = p->child;
+    }
+    p = partner;
+    while (p != 0)
+    {
+        p->frame = 0x66;
+        p = p->child;
+    }
+    p = gWorld->layers;
+    while (p != 0)
+    {
+        if (p->sprite != 0)
+            p->sprite->frame = 6;
+        p = p->next;
     }
 }
 
-static inline void world_links_set_frame(u8 value)
+/* Full frame values for the three body chains, 0x10 for every listed sprite. */
+static inline void frames_full(struct HeroBody *a, struct HeroBody *b, struct HeroBody *partner)
 {
-    struct WorldLink *link = gWorld->list;
-    while (link != NULL)
+    struct HeroBody *p;
+
+    p = a;
+    while (p != 0)
     {
-        if (link->obj != NULL)
-            link->obj->frame = value;
-        link = link->next;
+        p->frame = 0x100;
+        p = p->child;
+    }
+    p = b;
+    while (p != 0)
+    {
+        p->frame = 0x100;
+        p = p->child;
+    }
+    p = partner;
+    while (p != 0)
+    {
+        p->frame = 0x100;
+        p = p->child;
+    }
+    p = gWorld->layers;
+    while (p != 0)
+    {
+        if (p->sprite != 0)
+            p->sprite->frame = 0x10;
+        p = p->next;
     }
 }
 
-NONMATCH("asm/code_080AD18C/hero_b_step_end_d354.s", void hero_b_step_end_d354(struct HeroBody *body))
+/* Hero B steps towards the end of the step: frame values at the marks before the end, a body part
+   and pose for hero A on the A key, the timer mode at the end, then regroup or the next state. */
+void hero_b_step_end_d354(struct HeroBody *body)
 {
-    struct HeroBody *partner = body->partner;
-    struct Hero *hero_b = gWorld->heroB;
-    struct HeroBody *body_b = &hero_b->body;
-    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *a;
+    struct HeroBody *b;
+    struct HeroBody *partner;
+    s32 end;
+    s32 full;
     s32 rate;
-    s32 stack_lim;
-    s32 far_lim;
-    s32 near;
-    s32 lim2;
-    s32 far;
-    s32 far_c;
-    s32 lim;
-    s32 lim_far;
+    s32 lead;
+    s32 leadPart;
+    void (*fn)(struct HeroBody *);
 
-    step_motion(body_b);
-    rate = (s16)hero_b->body.rate;
-    stack_lim = 0x4000 - ((rate + (rate << 1)) << 1);
-    far_lim = 0x4000 + (rate << 2);
-    if ((s16)body_b->progress < far_lim)
-        ((struct HeroFlagBits *)&body_b->flags)->active = 0;
+    a = &gWorld->heroA->body;
+    b = &gWorld->heroB->body;
+    partner = body->partner;
+    end = 0x4000;
+    full = 0x4000;
+    step_motion(b);
+    rate = b->rate;
+    lead = end + rate * -7;
+    leadPart = end - (((rate << 1) + rate) << 1);
+    end += rate << 2;
 
-    if ((body_b->timer >> 12) == 0)
+    if (b->progress < end)
     {
-        near = rate - (rate << 3) + 0x4000;
-        if (near < 0)
-            near = 0;
-        if (near > 0x7FFF)
-            near = 0x7FFF;
-        if ((s16)body_b->step <= near && (s16)body_b->progress >= near)
-        {
-            if ((gWorld->flags & 8) != 0)
-            {
-                chain_set_frame(body_a, 0x66);
-                chain_set_frame(body_b, 0x66);
-                chain_set_frame(partner, 0x66);
-                world_links_set_frame(6);
-            }
-            else
-            {
-                chain_set_frame(body_a, 0x100);
-                chain_set_frame(body_b, 0x100);
-                chain_set_frame(partner, 0x100);
-                world_links_set_frame(0x10);
-            }
-            sprite_objects_draw_obj_tiles(0x4C, 0xC);
-        }
+        ((struct HeroFlagBits *)&b->flags)->active = 0;
+    }
 
-        {
-            s32 stack_c = stack_lim;
-            far = far_lim;
-            if (stack_c < 0)
-                stack_c = 0;
-            if (far < 0)
-                far = 0;
-            if (stack_c > 0x4000)
-                stack_c = 0x4000;
-            if (far > 0x7FFF)
-                far = 0x7FFF;
-            lim2 = stack_c;
-            if (far < lim2)
-                lim2 = far;
-            if ((s16)body_b->progress >= lim2 && (s16)body_b->step <= far)
-            {
-                set_body_part(body_a, 1, 0, -0x28, 2);
-                if ((gSys.held & 1) != 0)
-                {
-                    body_set_pose(3, body_a, 0x18, -0x18);
-                    body_b->timer = (body_b->timer & 0xFFF) | 0x2000;
-                }
-            }
-        }
-        if ((body_b->timer >> 12) != 0)
-            goto part2;
+    /* the timer mode is the top four bits of the timer */
+    if (((b->timer >> 12) & 0xF) != 0)
+        goto after_zero;
 
-        far_c = far_lim;
-        if (far_c < 0)
-            far_c = 0;
-        if (far_c > 0x7FFF)
-            far_c = 0x7FFF;
-        if ((s16)body_b->step <= far_c && (s16)body_b->progress >= far_c)
-        {
-            world_mode_or(1);
-            body_b->timer = (body_b->timer & 0xFFF) | 0x1000;
-            if ((gWorld->flags & 8) != 0)
-            {
-                chain_set_frame(body_a, 0x100);
-                chain_set_frame(body_b, 0x100);
-                chain_set_frame(partner, 0x100);
-                world_links_set_frame(0x10);
-            }
-            else
-            {
-                chain_set_frame(body_a, 0x100);
-                chain_set_frame(body_b, 0x100);
-                chain_set_frame(partner, 0x100);
-                world_links_set_frame(0x10);
-            }
-            display_flush();
-            obj_free_parts(body_a);
-            goto part2;
-        }
-
-        if ((s16)body_b->progress > far_lim)
-            goto part2;
-        if ((gSys.held & 1) == 0)
-        {
-            if ((gSys.held & 3) == 0)
-                goto part2;
-        }
-
-        world_mode_or(1);
-        if ((gWorld->modeByte & 8) != 0)
-            goto part2;
-        body_b->timer = (body_b->timer & 0xFFF) | 0x1000;
+    if (step_reached(b, lead))
+    {
         if ((gWorld->flags & 8) != 0)
-        {
-            chain_set_frame(body_a, 0x100);
-            chain_set_frame(body_b, 0x100);
-            chain_set_frame(partner, 0x100);
-            world_links_set_frame(0x10);
-        }
+            frames_slow(a, b, partner);
         else
+            frames_full(a, b, partner);
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    if (step_in_window(b, leadPart, end))
+    {
+        set_body_part(a, 1, 0, -0x28, 2);
+        if ((gSys.held & 1) != 0)
         {
-            chain_set_frame(body_a, 0x100);
-            chain_set_frame(body_b, 0x100);
-            chain_set_frame(partner, 0x100);
-            world_links_set_frame(0x10);
+            body_set_pose(3, a, 0x18, -0x18);
+            b->timer = (b->timer & 0xFFF) | 0x2000;
         }
+    }
+
+    if (((b->timer >> 12) & 0xF) != 0)
+        goto after_zero;
+
+    if (step_reached(b, end))
+    {
+        world_mode_or1();
+        b->timer = (b->timer & 0xFFF) | 0x1000;
+        if ((gWorld->flags & 8) != 0)
+            frames_full(a, b, partner);
+        else
+            frames_full(a, b, partner);
         display_flush();
-        obj_free_parts(body_a);
-        body_set_pose(6, body_a, 0x18, -0x18);
+        obj_free_parts(a);
+        goto after_zero;
     }
 
-part2:
-    if ((body_b->timer >> 12) != 0)
+    if (b->progress > end)
+        goto after_zero;
+
+    if ((gSys.held & 1) == 0)
+        if ((gSys.held & 3) == 0)
+            goto after_zero;
+
+    world_mode_or1();
+    if ((((struct HeroWorldModeBits *)&gWorld->modeByte)->m2 & ~1) != 0)
+        goto after_zero;
+
+    b->timer = (b->timer & 0xFFF) | 0x1000;
+    if ((gWorld->flags & 8) != 0)
+        frames_full(a, b, partner);
+    else
+        frames_full(a, b, partner);
+    display_flush();
+    obj_free_parts(a);
+    body_set_pose(6, a, 0x18, -0x18);
+
+after_zero:
     {
-        lim_far = far_lim;
-        if (lim_far < 0)
-            lim_far = 0;
-        lim = 0x4000;
-        if (lim_far > 0x7FFF)
-            lim_far = 0x7FFF;
-        if (lim_far < lim)
-            lim = lim_far;
-        if ((s16)body_b->progress >= lim && (s16)body_b->step <= lim_far)
+        s32 tmode = (b->timer >> 12) & 0xF;
+        if (tmode != 0 && step_in_window(b, full, end) && tmode > 1)
         {
-            if ((body_b->timer >> 12) > 1)
-            {
-                body_b->timer = body_b->timer & 0xFFF;
-                body->state = pair_regroup;
-                body->state(body);
-                goto end;
-            }
+            b->timer &= 0xFFF;
+            fn = pair_regroup;
+            body->state = fn;
+            fn(body);
+            return;
         }
     }
 
-    if ((body_b->flags & 0x20) != 0)
+    if ((b->flags & 0x20) == 0)
+        return;
+
+    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
     {
-        if (((body_a->mode & 6) == 2) || ((body_a->mode & 6) == 4))
-        {
-            sprite_set_action(body_a, 6, 0x2032, 0);
-            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
-        }
-        if (((body_b->mode & 6) == 2) || ((body_b->mode & 6) == 4))
-        {
-            sprite_set_action(body_b, 7, 0x2061, 0);
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
-        }
-        body->state = hero_b_follow_tracked_object;
+        sprite_set_action(a, 6, 0x2032, 0);
+        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
     }
-end:
-    ;
+    if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+    {
+        sprite_set_action(b, 7, 0x2061, 0);
+        ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+    }
+    body->state = hero_b_follow_tracked_object;
 }
-END_NONMATCH
 
 void hero_b_follow_tracked_object(struct HeroBody *body)
 {
