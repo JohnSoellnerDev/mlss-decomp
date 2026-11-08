@@ -149,7 +149,8 @@ struct PoolObj
     u32 unk6C;
     u8 filler70[0x76 - 0x70];
     u8 flags76;
-    u8 filler77[2];
+    u8 filler77;
+    u8 frame78;
     u8 flags79;
     u8 filler7A[0x7C - 0x7A];
     u16 unk7C;
@@ -162,7 +163,9 @@ struct PoolObj
     u32 unkA8;
     u8 fillerAC[0xC5 - 0xAC];
     u8 unkC5;
-    u8 fillerC6[0xD0 - 0xC6];
+    u8 fillerC6;
+    s8 biasX;
+    u8 fillerC8[0xD0 - 0xC8];
 };
 
 extern u8 *gWorkBuf;
@@ -240,7 +243,9 @@ struct SpriteWorld
     u8 unk50[0x58 - 0x50];
     struct SlotHead *slots[8];
     struct PoolObj *list78;
-    u8 unk7C[0x220 - 0x7C];
+    u8 unk7C[0x1C0 - 0x7C];
+    u32 frames[8];
+    u8 unk1E0[0x220 - 0x1E0];
     struct SpriteEnt *slot220;
     struct SpriteEnt *slot224;
     u8 unk228[0x238 - 0x228];
@@ -383,7 +388,324 @@ void update_sprite_list(void)
     }
 }
 
-ASM_FUNC("asm/code_0807B7A0/place_part_in_slot.s", u32 place_part_in_slot(s32 slot, s32 mode, s32 a2, s32 a3, s32 s0, s32 s4, s32 s8))
+extern u8 *gParty;
+extern u8 gPartTemplates[];
+extern u16 gPartSetupA[];
+extern u16 gPartSetupB[];
+extern u8 gLevelExpTable[];
+
+void anim_copy_state(void *a, void *b);
+void release_object(struct SpriteEntry *obj);
+void task_list_remove(void *node);
+void obj_setup_load(void *obj, u32 h);
+u32 mt19937_next(void);
+u32 rand_below(u32 n, u32 rnd);
+void anim_chance_start(void *a, u32 b);
+void anim_bit400_step(void *a, u32 b);
+
+NONMATCH("asm/code_0807B7A0/place_part_in_slot.s", u32 place_part_in_slot(s32 slot, s32 mode, s32 a2, s32 a3, s32 s0, s32 s4, s32 s8))
+{
+    u8 *st;
+    u8 *head;
+    u8 *entry;
+    u8 *entrySp;
+    u16 *setup;
+    u8 *obj;
+    u8 *stateAddr;
+    u32 flag6;
+    s32 sum;
+    s32 i;
+    s32 row;
+    u32 kind;
+    u32 pick;
+    u32 bit6;
+    u16 setupH;
+    void *hook;
+    void *arg0;
+
+    flag6 = s4;
+    st = (u8 *)gWorld;
+    head = (u8 *)gWorld->slots[slot];
+    *(u32 *)(st + 0x8C) = *(u32 *)(head + 4);
+    *(u16 *)(st + 0x17E) = *(u16 *)(head + 0xF6);
+    *(u16 *)(st + 0x184) = *(u16 *)(head + 0xFC);
+    *(u16 *)(st + 0x1AA) = (*(u16 *)(st + 0x1AA) & 0xFE7F) | (*(u16 *)(head + 0x122) & 0x180);
+    anim_copy_state(head, st + 0x88);
+    release_object((struct SpriteEntry *)head);
+    task_list_remove(head);
+    ((void (*)(u32, u8 *, u32, u8 *))gMemRoutines)(0, head, 0x130, gMemRoutines);
+    *(u8 **)(head + 0x30) = head;
+    *(u32 *)(head + 4) = *(u32 *)(st + 0x8C);
+    head[0xF4] = (u8)slot;
+    head[0x110] = (head[0x110] & 0xBF) | ((flag6 & 1) << 6);
+    *(u16 *)(head + 0xEC) = (u16)mode;
+    *(u32 *)(head + 0x18) = a2 << 8;
+    *(u32 *)(head + 0x40) = a2 << 8;
+    *(u32 *)(head + 0xD8) = a2 << 8;
+    *(u32 *)(head + 0x1C) = a3 << 8;
+    *(u32 *)(head + 0x44) = a3 << 8;
+    *(u32 *)(head + 0xDC) = a3 << 8;
+    *(u32 *)(head + 0x20) = s0 << 8;
+    *(u32 *)(head + 0x48) = s0 << 8;
+    *(u32 *)(head + 0xE0) = s0 << 8;
+    *(u16 *)(head + 0x98) = 0x100;
+
+    *(u32 *)(head + 0x08) = *(u32 *)(st + 0x78);
+    stateAddr = head + 0x7E;
+
+    if (mode < 0)
+    {
+        if (mode == -2)
+        {
+            entry = gParty + 0x3C;
+            setup = gPartSetupA;
+        }
+        else if (mode == -1)
+        {
+            entry = gParty;
+            setup = gPartSetupB;
+        }
+        obj = *(u8 **)(st + 0x8C);
+        if (*(u16 *)(entry + 0xE) != 0)
+        {
+            *(u32 *)(head + 0x08) = *(u32 *)(st + 0x78);
+            *(u32 *)(st + 0x78) = (u32)(head + 8);
+            head[0x7E] = (head[0x7E] & 0xF9) | 2;
+            obj_setup_load(obj, *setup);
+            obj_load_record(obj, 0, -1, 0, 0);
+            kind = obj[0x25];
+            pick = rand_below(kind, mt19937_next());
+            obj_load_record(obj, 0, pick, 0, 0);
+            obj[0x1F] = (((((obj[0x1F] & 0xFC) | 2) & 0xF3) | 8) & 0xCF) | 0x20;
+        }
+        else
+        {
+            head[0x7E] = head[0x7E] | 6;
+            obj[0x1F] = obj[0x1F] & 0xFC & 0xF3 & 0xCF;
+            *(u16 *)(obj + 0xE) = 0;
+        }
+        /* shared part of the offset-entry branches */
+        bit6 = head[0x110] & 0x40;
+        obj[0x11] = (obj[0x11] & 0xBF) | bit6;
+        *(u16 *)(obj + 6) = 0x100;
+        *(u16 *)(obj + 4) = 0x100;
+        *(u32 *)(head + 0xE8) = 0;
+        head[0xF5] = entry[0x30];
+        *(u16 *)(head + 0xF6) = *(u16 *)(entry + 0xE);
+        *(u16 *)(head + 0xF8) = *(u16 *)(entry + 0x12);
+        *(u16 *)(head + 0x106) = *(u16 *)(entry + 0x20);
+        *(u16 *)(head + 0x102) = *(u16 *)(entry + 0x1C);
+        *(u16 *)(head + 0x104) = *(u16 *)(entry + 0x24);
+        *(u16 *)(head + 0x108) = *(u16 *)(entry + 0x28);
+        *(u16 *)(head + 0xFC) = *(u16 *)(entry + 0x14);
+        *(u16 *)(head + 0xFE) = *(u16 *)(entry + 0x18);
+        head[0x80] = (head[0x80] & 0x1F) | 0x20;
+        *(u16 **)(head + 0xE4) = setup;
+        *(u8 **)(head + 0x10) = obj;
+        head[0x12B] = entry[0x35] + 1;
+        head[0x12C] = entry[0x37] + 1;
+        head[0x12D] = entry[0x38] + 1;
+        if (head[0x12C] == 0x19)
+        {
+            u8 *party = gParty;
+            u32 acc;
+            u32 val;
+            s32 base;
+            u32 neg;
+
+            if (party[0x8A] == 0xFF)
+            {
+                acc = 0;
+            }
+            else
+            {
+                acc = party[0x8A] * 51;
+            }
+            if (party[0x8B] != 0xFF)
+            {
+                acc += party[0x8B] * 51;
+            }
+            if (party[0x8C] != 0xFF)
+            {
+                acc += party[0x8C] * 0x4C;
+            }
+            neg = ~(u32)(s32)*(s16 *)(head + 0xEC);
+            base = *(u16 *)(party + neg * 60 + 0x28);
+            if (party[0x8D] != 0xFF)
+            {
+                val = acc + party[0x8D] * 0x66;
+            }
+            else
+            {
+                val = acc;
+            }
+            if ((s32)val < 0)
+            {
+                val += 0xFF;
+            }
+            *(u16 *)(head + 0x108) = base + ((s32)val >> 8);
+            if ((s16)*(u16 *)(head + 0x108) > 999)
+            {
+                *(u16 *)(head + 0x108) = 999;
+            }
+        }
+        /* BB6C */
+        if (head[0x12D] == 0x1D)
+        {
+            st[0xD] = st[0xD] | 1;
+        }
+    }
+    else
+    {
+        /* template branch */
+        u8 *node = head + 8;
+        entry = gPartTemplates + mode * 0x2C;
+        *(u32 *)(st + 0x78) = (u32)node;
+        entrySp = *(u8 **)(entry + 8);
+        head[0x7E] = (head[0x7E] & 0xF9) | 4;
+        head[0x7D] = entrySp[0xA];
+        head[0xF5] = entry[4];
+        *(u16 *)(head + 0xF6) = *(u16 *)(entry + 6);
+        *(u16 *)(head + 0xF8) = *(u16 *)(entry + 6);
+        *(u16 *)(head + 0x106) = *(u16 *)(entry + 0x1A);
+        *(u16 *)(head + 0xF6) = *(u16 *)(entry + 6);
+        *(u16 *)(head + 0xF8) = *(u16 *)(entry + 6);
+        *(u16 *)(head + 0x106) = *(u16 *)(entry + 0x1A);
+        *(u16 *)(head + 0x104) = *(u16 *)(entry + 0x18);
+
+        sum = 0;
+        row = ((s32)head[0xF5] << 24) >> 24;
+        for (i = row - 1; i >= 0; i--)
+        {
+            sum = (u16)(sum + gLevelExpTable[12 * i + 4] + gLevelExpTable[0x4A8 + 12 * i]);
+        }
+        {
+            s32 t = (s16)sum;
+            t = (t + (((u16)sum) >> 15)) >> 1;
+            *(u16 *)(head + 0x108) = (u16)t;
+        }
+        if (entrySp[7] != 0)
+        {
+            head[0x80] = (head[0x80] & 0x1F) | ((entrySp[7] - 1) << 5);
+        }
+        else
+        {
+            head[0x81] = head[0x81] | 1;
+        }
+        *(u8 **)(head + 0xE4) = entrySp;
+        *(u32 *)(head + 0xE8) = *(u32 *)(entry + 0x20);
+        {
+            u8 *dst = gWorkBuf + slot * 0x2C + 0x33E0;
+            u32 *d = (u32 *)dst;
+            u32 *s = (u32 *)(gPartTemplates + mode * 0x2C);
+            *(u8 **)(head + 0xF0) = dst;
+            d[0] = s[0];
+            d[1] = s[1];
+            d[2] = s[2];
+            d[3] = s[3];
+            d[4] = s[4];
+            d[5] = s[5];
+            d[6] = s[6];
+            d[7] = s[7];
+            d[8] = s[8];
+            d[9] = s[9];
+            d[10] = s[10];
+        }
+        setupH = *(u16 *)(*(u8 **)(head + 0xE4));
+        if (setupH != 0)
+        {
+            obj = *(u8 **)(st + 0x8C);
+            obj_setup_load(obj, setupH);
+            obj_load_record(obj, 0, -1, 0, 0);
+            kind = obj[0x25];
+            pick = rand_below(kind, mt19937_next());
+            obj_load_record(obj, 0, pick, 0, 0);
+            obj[0x1F] = (((((obj[0x1F] & 0xFC) | 2) & 0xF3) | 8) & 0xCF) | 0x20;
+            bit6 = head[0x110] & 0x40;
+            obj[0x11] = (obj[0x11] & 0xBF) | bit6;
+            *(u16 *)(obj + 6) = 0x100;
+            *(u16 *)(obj + 4) = 0x100;
+            *(u8 **)(head + 0x10) = obj;
+        }
+        if ((st[0xA] & 3) != 0)
+        {
+            hook = *(void **)(entry + 0x10);
+            if (hook != NULL)
+            {
+                arg0 = head;
+                do
+                {
+                    ((void (*)(void *, void *, u32))hook)(arg0, 0, 0);
+                    hook = *(void **)(head + 0x54);
+                    arg0 = node;
+                } while (*(u32 *)(head + 0x54) != 0);
+            }
+        }
+    }
+
+    /* BE6E: common tail */
+    *(u16 *)(head + 0x10A) = 0x100;
+    *(u16 *)(head + 0x10C) = 0x100;
+    *(u16 *)(head + 0x11C) = 0x100;
+    entrySp = *(u8 **)(head + 0xE4);
+    head[0xCB] = entrySp[4];
+    head[0xCC] = entrySp[5];
+    head[0xCD] = entrySp[6];
+    if (s8 == 1)
+    {
+        *(u16 *)(head + 0xF6) = *(u16 *)(st + 0x17E);
+        head[0x110] = (head[0x110] & 0x7F) | (st[0x198] & 0x80);
+        *(u16 *)(head + 0xFC) = *(u16 *)(st + 0x184);
+        *(u16 *)(head + 0x122) = (*(u16 *)(head + 0x122) & 0xFE7F) | (*(u16 *)(st + 0x1AA) & 0x180);
+        anim_copy_state(st + 0x88, head);
+    }
+    /* BF0A */
+    if ((stateAddr[0] & 6) == 2)
+    {
+        st[4] = st[4] + 1;
+    }
+    else if ((stateAddr[0] & 6) == 4)
+    {
+        st[5] = st[5] + 1;
+    }
+    set_state_word_1780(*(void **)(st + 0x244), st[5]);
+    if (mode < 0)
+    {
+        u8 *a120;
+        kind = head[0x12C];
+        a120 = NULL;
+        if (kind == 0x14)
+        {
+            anim_bit400_step(head, 0xC8);
+            a120 = head + 0x120;
+        }
+        else if (kind == 0x13)
+        {
+            anim_chance_start(head, 0xC8);
+            a120 = head + 0x120;
+        }
+        else if (kind == 0x15)
+        {
+            pick = rand_below(3, mt19937_next());
+            if (pick == 0)
+            {
+                anim_chance_start(head, 0xC8);
+                a120 = head + 0x120;
+            }
+            else if (pick == 1)
+            {
+                anim_bit400_step(head, 0xC8);
+                a120 = head + 0x120;
+            }
+        }
+        if (a120 != NULL)
+        {
+            *(u32 *)a120 = *(u32 *)a120 & 0xFFFC7FFF;
+        }
+    }
+    return (u32)head;
+}
+END_NONMATCH
 
 void release_object(struct SpriteEntry *obj)
 {
@@ -971,4 +1293,308 @@ ASM_FUNC("asm/code_0807B7A0/draw_sprite_nodes.s", void draw_sprite_nodes(void))
 
 ASM_FUNC("asm/code_0807B7A0/oam_place_points.s", void oam_place_points(u32 *cursor, u32 count, s32 x, s32 y, u32 extra, u32 attr0Or, u32 mirror))
 
-ASM_FUNC("asm/code_0807B7A0/emit_active_parts_oam.s", void emit_active_parts_oam(void))
+struct PartChild
+{
+    struct PartChild *next;
+    s32 x;
+    s32 y;
+    s32 z;
+};
+
+struct PartKids
+{
+    u8 filler0[8];
+    struct PartChild *parts;
+    u8 flags;
+};
+
+extern u8 gSys[];
+extern u8 *gMathRoutines;
+extern u8 iwram_div[];
+extern u8 iwram_sqrt[];
+
+NONMATCH("asm/code_0807B7A0/emit_active_parts_oam.s", u32 emit_active_parts_oam(u32 oam))
+{
+    struct SpriteWorld **wp = &gWorld;
+    u32 out = oam;
+    u32 level;
+    struct PoolObj *obj;
+    struct PoolRecord *rec;
+    struct PartKids *kids;
+    struct PartChild *child;
+    u32 frame;
+    u16 *ent;
+    s32 cpos[3];
+    s32 pos[3];
+    s32 scale;
+    s32 routine;
+    s32 left;
+    s32 n;
+    s32 cx;
+    s32 cy;
+    u32 busy;
+    u32 arg3;
+    s32 depth;
+    s32 c4;
+    s32 c6;
+    s32 d4;
+    s32 d6;
+
+    if (((*wp)->unkA & 3) == 0)
+    {
+        return out;
+    }
+    level = ((u32)(*wp)->oamRow << 27) >> 27;
+    for (obj = (*wp)->list78; obj != NULL; obj = obj->next)
+    {
+        rec = obj->record;
+        if (rec == NULL)
+        {
+            continue;
+        }
+        if (rec->flags12 & 0x20)
+        {
+            continue;
+        }
+        busy = obj->flags79;
+        if (busy & 1)
+        {
+            continue;
+        }
+        kids = (struct PartKids *)obj->unk4;
+        if (kids != NULL)
+        {
+            if (kids->flags & 0x20)
+            {
+                continue;
+            }
+            child = kids->parts;
+            if (child == NULL)
+            {
+                continue;
+            }
+            for (; child != NULL; child = child->next)
+            {
+                if (child->z < 0)
+                {
+                    continue;
+                }
+                cpos[0] = child->x;
+                if (cpos[0] < 0)
+                {
+                    cpos[0] += 0xFF;
+                }
+                cpos[0] >>= 8;
+                cpos[1] = child->y;
+                if (cpos[1] < 0)
+                {
+                    cpos[1] += 0xFF;
+                }
+                cpos[1] >>= 8;
+                cpos[2] = 0;
+                offset_three_words((*wp)->camera, &cpos[0], &cpos[1], &cpos[2], 0);
+                cx = cpos[0];
+                cy = cpos[1];
+                if (cx < -64 || cy < -64 || cx > 304 || cy > 224)
+                {
+                    continue;
+                }
+                frame = (*wp)->frames[obj->frame78 >> 5];
+                ent = (u16 *)(frame + 2);
+                n = *(u16 *)frame - 1;
+                if (n == -1)
+                {
+                    continue;
+                }
+                if ((~n & 1) != 0)
+                {
+                    *(u16 *)(out + 0) = ((ent[0] + cy) & 0xFF) | ent[1];
+                    *(u16 *)(out + 2) = ((ent[2] + cx) & 0x1FF) | ent[3];
+                    *(u16 *)(out + 4) = ent[4];
+                    out += 8;
+                    ent += 5;
+                    n -= 1;
+                    if (n == -1)
+                    {
+                        continue;
+                    }
+                }
+                do
+                {
+                    *(u16 *)(out + 0) = ((ent[0] + cy) & 0xFF) | ent[1];
+                    *(u16 *)(out + 2) = ((ent[2] + cx) & 0x1FF) | ent[3];
+                    *(u16 *)(out + 4) = ent[4];
+                    *(u16 *)(out + 8) = ((ent[5] + cy) & 0xFF) | ent[6];
+                    *(u16 *)(out + 0xA) = ((ent[7] + cx) & 0x1FF) | ent[8];
+                    *(u16 *)(out + 0xC) = ent[9];
+                    out += 0x10;
+                    ent += 10;
+                    n -= 2;
+                } while (n != -1);
+            }
+            continue;
+        }
+
+        if (obj->posZ < 0)
+        {
+            continue;
+        }
+        pos[0] = obj->posX;
+        if (pos[0] < 0)
+        {
+            pos[0] += 0xFF;
+        }
+        pos[0] = (pos[0] >> 8) + obj->biasX;
+        pos[1] = obj->posY;
+        if (pos[1] < 0)
+        {
+            pos[1] += 0xFF;
+        }
+        pos[1] >>= 8;
+        pos[2] = 0;
+        offset_three_words((*wp)->camera, &pos[0], &pos[1], &pos[2], 0);
+        cx = pos[0];
+        cy = pos[1];
+        if (cx < -64 || cy < -64 || cx > 304 || cy > 224)
+        {
+            continue;
+        }
+        frame = (*wp)->frames[obj->frame78 >> 5];
+        n = *(u16 *)frame;
+        ent = (u16 *)(frame + 2);
+        arg3 = 0;
+        if (obj->posZ != 0)
+        {
+            arg3 = busy & 2;
+            if (arg3 == 0)
+            {
+                depth = obj->posZ;
+                if (depth < 0)
+                {
+                    depth += 0x7F;
+                }
+                scale = (depth >> 7) + 0x100;
+                if (scale > 0x200)
+                {
+                    scale = 0x200;
+                }
+                {
+                    u8 *dst = gSys + 0x80 + (level << 5) + ((gSys[0x888] & 1) << 10);
+
+                    *(u16 *)(dst + 6) = scale;
+                    *(u16 *)(dst + 0xE) = arg3;
+                    *(u16 *)(dst + 0x16) = arg3;
+                    *(u16 *)(dst + 0x1E) = scale;
+                }
+                if (n == 1)
+                {
+                    *(u16 *)(out + 0) = ((ent[0] + cy) & 0xFF) | ent[1] | 0x100;
+                    *(u16 *)(out + 2) = ((ent[2] + cx) & 0x1FF) | ent[3] | (level << 9);
+                    *(u16 *)(out + 4) = ent[4];
+                    out += 8;
+                    level -= 1;
+                    continue;
+                }
+                n -= 1;
+                left = level - 1;
+                if (n == -1)
+                {
+                    level = left;
+                    continue;
+                }
+                routine = (u32)iwram_div - (u32)iwram_sqrt;
+                if ((~n & 1) != 0)
+                {
+                    c4 = (s16)ent[0];
+                    c6 = (s16)ent[2];
+                    if (c4 != 0)
+                    {
+                        c4 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(c4 << 8, scale);
+                    }
+                    if (c6 != 0)
+                    {
+                        c6 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(c6 << 8, scale);
+                    }
+                    *(u16 *)(out + 0) = ((cy + c4) & 0xFF) | ent[1] | 0x100;
+                    *(u16 *)(out + 2) = ((cx + c6) & 0x1FF) | ent[3] | (level << 9);
+                    *(u16 *)(out + 4) = ent[4];
+                    out += 8;
+                    ent += 5;
+                    n -= 1;
+                    if (n == -1)
+                    {
+                        level = left;
+                        continue;
+                    }
+                }
+                do
+                {
+                    c4 = (s16)ent[0];
+                    c6 = (s16)ent[2];
+                    if (c4 != 0)
+                    {
+                        c4 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(c4 << 8, scale);
+                    }
+                    if (c6 != 0)
+                    {
+                        c6 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(c6 << 8, scale);
+                    }
+                    *(u16 *)(out + 0) = ((cy + c4) & 0xFF) | ent[1] | 0x100;
+                    *(u16 *)(out + 2) = ((cx + c6) & 0x1FF) | ent[3] | (level << 9);
+                    *(u16 *)(out + 4) = ent[4];
+                    d4 = (s16)ent[5];
+                    d6 = (s16)ent[7];
+                    if (d4 != 0)
+                    {
+                        d4 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(d4 << 8, scale);
+                    }
+                    if (d6 != 0)
+                    {
+                        d6 = ((s32 (*)(s32, s32))(gMathRoutines + routine))(d6 << 8, scale);
+                    }
+                    *(u16 *)(out + 8) = ((cy + d4) & 0xFF) | ent[6] | 0x100;
+                    *(u16 *)(out + 0xA) = ((cx + d6) & 0x1FF) | ent[8] | (level << 9);
+                    *(u16 *)(out + 0xC) = ent[9];
+                    out += 0x10;
+                    ent += 10;
+                    n -= 2;
+                } while (n != -1);
+                level = left;
+                continue;
+            }
+        }
+        n -= 1;
+        if (n == -1)
+        {
+            continue;
+        }
+        if ((~n & 1) != 0)
+        {
+            *(u16 *)(out + 0) = ((ent[0] + cy) & 0xFF) | ent[1];
+            *(u16 *)(out + 2) = ((ent[2] + cx) & 0x1FF) | ent[3];
+            *(u16 *)(out + 4) = ent[4];
+            out += 8;
+            ent += 5;
+            n -= 1;
+            if (n == -1)
+            {
+                continue;
+            }
+        }
+        do
+        {
+            *(u16 *)(out + 0) = ((ent[0] + cy) & 0xFF) | ent[1];
+            *(u16 *)(out + 2) = ((ent[2] + cx) & 0x1FF) | ent[3];
+            *(u16 *)(out + 4) = ent[4];
+            *(u16 *)(out + 8) = ((ent[5] + cy) & 0xFF) | ent[6];
+            *(u16 *)(out + 0xA) = ((ent[7] + cx) & 0x1FF) | ent[8];
+            *(u16 *)(out + 0xC) = ent[9];
+            out += 0x10;
+            ent += 10;
+            n -= 2;
+        } while (n != -1);
+    }
+    (*wp)->oamRow = ((*wp)->oamRow & 0xE0) | level;
+    return out;
+}
+END_NONMATCH
