@@ -66,6 +66,31 @@ struct Sprite
     u8 flags12;
     u8 filler13[0x20 - 0x13];
     u8 frame20;
+    u8 filler21[0x2C - 0x21];
+    s16 unk2C;
+};
+
+struct ByteLo2
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 rest : 5;
+};
+
+struct ModeBits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 rest : 4;
+};
+
+struct Byte56
+{
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
 };
 
 struct Owner
@@ -111,17 +136,20 @@ struct Actor
     s32 homeY;
     s32 homeZ;
     s32 homeDz;
-    u8 filler1EC[0x20D - 0x1EC];
+    u8 filler1EC[0x20C - 0x1EC];
+    u8 flags20C;
     u8 flags20D;
     u8 flags20E;
-    u8 filler20F[0x214 - 0x20F];
+    u8 filler20F[0x212 - 0x20F];
+    u16 mode212;
     u8 mode;
     u8 filler215[0x23E - 0x215];
     u16 speed2;
     u8 filler240[0x242 - 0x240];
     s16 vx;
     s16 vy;
-    u8 filler246[0x294 - 0x246];
+    u8 filler246[0x290 - 0x246];
+    u8 *layer290;
     struct Sprite *sprite;
     u8 filler298[0x2D8 - 0x298];
     s16 moveSpeed;
@@ -132,7 +160,9 @@ struct Actor
     u8 filler2F0[0x2F4 - 0x2F0];
     u32 phase;
     s16 hopStep;
-    u8 filler2FA[0x33E - 0x2FA];
+    u8 filler2FA[0x33C - 0x2FA];
+    u8 flags33C;
+    u8 filler33D;
     u8 flags33E;
 };
 
@@ -144,7 +174,14 @@ s32 rand_below(s32 range, u32 seed);
 void tick_store(void);
 void enemy_wander_random_edge(void);
 void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out);
-void enemy_switch_to_free_partner(void);
+void enemy_switch_to_free_partner(struct Owner *owner, struct Actor *ent, void **out);
+void enemy_activate(void *owner, struct Actor *ent, void **out);
+u8 probe_body_hit(struct Owner *owner, struct Actor *body, s32 x, s32 y, s32 z, u32 a, u32 b);
+u8 boxes_overlap(s16 *bounds, struct Actor *a, struct Actor *b, s32 zAbove, s32 zBelow);
+void obj_set_or_add_pos(struct Actor *ent, s32 x, s32 y, s32 z, u32 a, u32 b);
+void start_z_move(struct Actor *ent, s32 z, u16 speed, u8 rel, s32 zLimit);
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
+u8 *obj_probe_tile_heights(struct Actor *obj, s32 x, s32 y, s32 *h0, s32 *h1, s32 *h2);
 void obj_set_cell_coord(struct Actor *ent, u32 cell, u32 arg);
 void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out);
@@ -317,7 +354,253 @@ void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out)
     }
 }
 
-ASM_FUNC("asm/code_08141008/enemy_switch_to_free_partner.s", void enemy_switch_to_free_partner(void))
+NONMATCH("asm/code_08141008/enemy_switch_to_free_partner.s", void enemy_switch_to_free_partner(struct Owner *owner, struct Actor *ent, void **out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct EnemyRec *rec = ent->rec;
+    u8 *sensor = ent->sensor;
+    u8 idx;
+    u32 index;
+    struct Actor *target;
+    struct Actor *cand;
+    s16 box[8];
+    u8 k;
+    u8 limit;
+    s32 dx = 0;
+    s32 dy = 0;
+    u8 dirAfter;
+    s8 tdx;
+    s32 tdy;
+    s32 x;
+    s32 y;
+    s32 hA;
+    s32 hB;
+    s32 hC;
+    u8 *tile;
+    s32 tileX;
+    s32 tileY;
+    u32 found = 0;
+
+    if (ent->sprite->unk2C <= 0x5F)
+    {
+        return;
+    }
+    if (find_active_entry(owner, &idx) != 0)
+    {
+        index = idx;
+    }
+    else
+    {
+        index = ((u32)owner->flags208 << 30) >> 31;
+    }
+    target = ((struct Actor **)((u8 *)owner + 0x28))[index];
+    obj_box_to_stack(box, ent, 0x11, (u16)(*(u16 *)(ai + 0x178) + 0x22));
+    if (boxes_overlap(box, ent, target, 0x7FFF, 0x7FFF) == 0)
+    {
+        return;
+    }
+    for (k = 0; k < sensor[1]; k++)
+    {
+        obj_box_to_stack(box, ent, 0x22, k * 8 + 2);
+        if (point_in_box(box, target, 0x7FFF, 0))
+        {
+            return;
+        }
+        if (point_in_box(box, ent, 0x7FFF, 0))
+        {
+            return;
+        }
+    }
+    *(u16 *)(ai + 0x17C) = 0;
+    limit = sensor[0] + 1;
+    for (k = 1; k < limit; k++)
+    {
+        cand = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[k];
+        if (cand->flags20C & 0x02000001)
+        {
+            continue;
+        }
+        if ((cand->mode212 & 0x180) == 0x80)
+        {
+            continue;
+        }
+        if ((cand->mode212 & 0x180) == 0x100)
+        {
+            continue;
+        }
+        found = 1;
+        break;
+    }
+    if (found == 0)
+    {
+        return;
+    }
+
+    dirAfter = 0xFF;
+    switch (target->dir & 7)
+    {
+    case 0:
+        dx = 0;
+        dy = -0x2000;
+        dirAfter = 0;
+        break;
+    case 1:
+        dx = 0x2000;
+        dy = -0x2000;
+        dirAfter = 1;
+        break;
+    case 2:
+        dx = 0x2000;
+        dy = 0;
+        dirAfter = 2;
+        break;
+    case 3:
+        dx = 0x2000;
+        dy = 0x2000;
+        dirAfter = 3;
+        break;
+    case 4:
+        dx = 0;
+        dy = 0x2000;
+        dirAfter = 4;
+        break;
+    case 5:
+        dx = -0x2000;
+        dy = 0x2000;
+        dirAfter = 5;
+        break;
+    case 6:
+        dx = -0x2000;
+        dy = 0;
+        dirAfter = 6;
+        break;
+    case 7:
+        dx = -0x2000;
+        dy = -0x2000;
+        dirAfter = 7;
+        break;
+    }
+    switch (dirAfter)
+    {
+    case 0:
+        tdx = 0;
+        tdy = -1;
+        break;
+    case 1:
+        tdx = 1;
+        tdy = -1;
+        break;
+    case 2:
+        tdx = 1;
+        tdy = 0;
+        break;
+    case 3:
+        tdx = 1;
+        tdy = 1;
+        break;
+    case 4:
+        tdx = 0;
+        tdy = 1;
+        break;
+    case 5:
+        tdx = -1;
+        tdy = 1;
+        break;
+    case 6:
+        tdx = -1;
+        tdy = 0;
+        break;
+    case 7:
+        tdx = -1;
+        tdy = -1;
+        break;
+    default:
+        tdx = 0;
+        tdy = 0;
+        break;
+    }
+    if (target->vx != 0)
+    {
+        dx *= 4;
+    }
+    if (target->vy != 0)
+    {
+        dy *= 4;
+    }
+
+    tile = tile_query(ent->layer290, target->posX + dx, target->posY + dy, &hA, &hB, &hC, (u8)0, (u8)1);
+    if (probe_body_hit(owner, cand, target->posX + dx, target->posY + dy, 0, 1, 0) != 0)
+    {
+        return;
+    }
+    if (*tile & 0x80)
+    {
+        return;
+    }
+    tileX = target->posX;
+    if (tileX < 0)
+    {
+        tileX += 0xFFF;
+    }
+    tileX = (tileX >> 12) + tdx;
+    tileY = ent->posY;
+    if (tileY < 0)
+    {
+        tileY += 0xFFF;
+    }
+    tileY = (tileY >> 12) + tdy;
+    tile = obj_probe_tile_heights(ent, tileX, tileY, &hA, &hB, &hC);
+    if (*tile & 0x80)
+    {
+        return;
+    }
+
+    x = target->posX + dx;
+    y = target->posY + dy;
+    for (k = 0; k < sensor[1]; k++)
+    {
+        obj_box_to_stack(box, ent, 0x22, k * 8 + 2);
+        if (x >= box[0] * 0x100 && x <= box[1] * 0x100 && y >= box[3] * 0x100 && y <= box[2] * 0x100)
+        {
+            return;
+        }
+    }
+    x = target->posX + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx, 2);
+    y = target->posY + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy, 2);
+    for (k = 0; k < sensor[1]; k++)
+    {
+        obj_box_to_stack(box, ent, 0x22, k * 8 + 2);
+        if (x >= box[0] * 0x100 && x <= box[1] * 0x100 && y >= box[3] * 0x100 && y <= box[2] * 0x100)
+        {
+            return;
+        }
+    }
+
+    cand->state = enemy_activate;
+    obj_set_active(cand, 1);
+    obj_set_sprite_link(cand, 1);
+    cand->state = enemy_activate;
+    ((struct Byte56 *)&cand->flags20D)->bit6 = 0;
+    ((struct ByteLo2 *)&cand->flags20E)->bit2 = 1;
+    ((struct Byte56 *)&cand->flags20D)->bit5 = 0;
+    obj_set_or_add_pos(cand, ent->posX, ent->posY + 0x200, ent->posZ + ent->dz + 0x1000, 1, 0);
+    start_z_move(cand, cand->posZ + cand->dz + 0x180, 0xA0, 0, 0);
+    *(u16 *)(ai + 0x17C) = k;
+    start_move_to(cand, target->posX + dx, target->posY + dy, 0x180, (u8)0);
+    cand->flags20C |= 0xE0;
+    ((struct Bits3 *)&cand->flags33C)->field0 = 0;
+    ((struct Bits4 *)&cand->sprite->flags12)->bit4 = 0;
+    ((struct ModeBits *)&cand->mode)->bit3 = 0;
+    ((struct ModeBits *)&cand->mode)->lo2 = 3;
+    obj_load_record(cand->sprite, 3, 0, 0, 0);
+    sprite_step_e6a0(cand->sprite);
+
+    ((struct Bits3 *)&ent->sprite->flags12)->field0 = 0;
+    obj_set_cell_coord(ent, MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2), 0);
+    *(u16 *)(ai + 0x17A) = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x16];
+    *out = enemy_timer_then_cell;
+}
+END_NONMATCH
 
 void enemy_step_or_bump_update(struct Owner *owner, struct Actor *ent)
 {
