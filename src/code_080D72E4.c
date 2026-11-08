@@ -248,31 +248,6 @@ static inline s32 crossed_limit(struct HeroBody *b, s32 lim)
     return 0;
 }
 
-static inline s32 in_window(struct HeroBody *b, s32 thr)
-{
-    s32 lo;
-    s32 hi;
-
-    lo = thr;
-    if (lo < 0) {
-        lo = 0;
-    }
-    if (lo > 0x4000) {
-        lo = 0x4000;
-    }
-    hi = 0x4000;
-    if (hi > 0x7FFF) {
-        hi = 0x7FFF;
-    }
-    if (hi < lo) {
-        lo = hi;
-    }
-    if (b->progress >= lo && b->prevProgress <= hi) {
-        return 1;
-    }
-    return 0;
-}
-
 static inline s32 body_mode_ready(struct HeroBody *b)
 {
     s32 m;
@@ -289,31 +264,35 @@ static inline void sprite_mode_set(struct HeroBody *b, u32 mode)
 
 NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window_d72e4(struct HeroBody *body))
 {
+    s32 limA = 0x4000;
+    s32 progStep = 0x4000;
+    s32 rateMulA = 14;
     struct World *world;
-    struct Hero *heroA;
-    struct Hero *heroB;
     struct HeroBody *bodyA;
     struct HeroBody *bodyB;
     struct HeroBody *partner;
+    s32 step;
+    s32 far;
+    s32 cap;
     s32 thrA;
     s32 thrB;
     s32 lim;
+    s32 winLo;
+    s32 winHi;
     s32 rate;
 
-    s32 step;
-
-    world = gWorld;
-    heroA = world->heroA;
-    heroB = world->heroB;
-    bodyA = &heroA->body;
-    bodyB = &heroB->body;
-    partner = body->partner;
     step = 0x4000;
+    far = 0x4000;
+    cap = 0x4000;
+    world = gWorld;
+    bodyA = &world->heroA->body;
+    bodyB = &world->heroB->body;
+    partner = body->partner;
     state_stack_advance_progress(bodyB);
 
-    thrA = step - bodyB->rate * 14;
+    thrA = step - bodyB->rate * rateMulA;
     thrB = step - bodyB->rate * 12;
-    if (bodyB->progress < 0x4000) {
+    if (bodyB->progress < limA) {
         ((struct HeroFlagBits *)&bodyB->flags)->active = 0;
     }
 
@@ -321,7 +300,13 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
         if ((bodyB->timer >> 12) != 0) {
             break;
         }
-        lim = clamp_0_7fff(thrA);
+        lim = thrA;
+        if (lim < 0) {
+            lim = 0;
+        }
+        if (lim > 0x7FFF) {
+            lim = 0x7FFF;
+        }
         if (crossed_limit(bodyB, lim)) {
             if (gWorld->view & 8) {
                 chains_and_layers(bodyA, bodyB, partner, 0x4C, 4);
@@ -331,7 +316,21 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
             sprite_objects_draw_obj_tiles(0x4C, 0xC);
         }
 
-        if (in_window(bodyB, thrB)) {
+        winLo = thrB;
+        if (winLo < 0) {
+            winLo = 0;
+        }
+        if (winLo > 0x4000) {
+            winLo = 0x4000;
+        }
+        winHi = cap;
+        if (winHi > 0x7FFF) {
+            winHi = 0x7FFF;
+        }
+        if (winHi < winLo) {
+            winLo = winHi;
+        }
+        if (bodyB->progress >= winLo && bodyB->prevProgress <= winHi) {
             set_body_part(bodyA, 1, -8, -0x24, 0);
             if (gSys.pressed & 1) {
                 body_set_pose(1, bodyA, 0x2E, -8);
@@ -353,7 +352,7 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
             break;
         }
 
-        lim = 0x4000;
+        lim = far;
         if (lim > 0x7FFF) {
             lim = 0x7FFF;
         }
@@ -370,7 +369,7 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
             break;
         }
 
-        if (bodyB->progress > 0x4000) {
+        if (bodyB->progress > progStep) {
             break;
         }
         if (!(gSys.pressed & 1)) {
@@ -394,7 +393,21 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
     } while (0);
 
     if ((bodyB->timer >> 12) != 0) {
-        if (in_window(bodyB, thrB) && (bodyB->timer >> 12) > 1) {
+        winLo = thrB;
+        if (winLo < 0) {
+            winLo = 0;
+        }
+        if (winLo > step) {
+            winLo = step;
+        }
+        winHi = step;
+        if (winHi > 0x7FFF) {
+            winHi = 0x7FFF;
+        }
+        if (winHi < winLo) {
+            winLo = winHi;
+        }
+        if (bodyB->progress >= winLo && bodyB->prevProgress <= winHi && (bodyB->timer >> 12) > 1) {
             timer_clear_mode(bodyB);
             body->state = hero_pair_spawn_fx_anim_next;
             body->state(body);
@@ -402,7 +415,13 @@ NONMATCH("asm/code_080D72E4/hero_b_step_window_d72e4.s", void hero_b_step_window
         }
     }
 
-    lim = clamp_0_7fff(thrB);
+    lim = thrB;
+    if (lim < 0) {
+        lim = 0;
+    }
+    if (lim > 0x7FFF) {
+        lim = 0x7FFF;
+    }
     if (crossed_limit(bodyB, lim)) {
         if (body_mode_ready(bodyA)) {
             sprite_set_action(bodyA, 1, 0x2024, 0);
