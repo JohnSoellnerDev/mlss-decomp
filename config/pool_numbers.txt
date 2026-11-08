@@ -1,0 +1,3 @@
+# Pool words (ROM address) that the disassembler writes as numbers although a symbol has that value:
+# the original source used a plain address there (tools/disasm.py, load_numeric_pool).
+08171798  scene_build_hud: display control shadow 0x02000008 written as a number

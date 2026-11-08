@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 from symbols import binutil, load_symbols, load_units  # noqa: E402
 
 # asm/ is written from these and baserom.gba; asm/.stamp holds their hash
-ASM_INPUTS = ["config/symbols.txt", "config/units.txt", "config/rom.sha1", "tools/disasm.py", "tools/symbols.py"]
+ASM_INPUTS = ["config/symbols.txt", "config/units.txt", "config/pool_numbers.txt", "config/rom.sha1", "tools/disasm.py", "tools/symbols.py"]
 ASM_STAMP = os.path.join(ROOT, "asm/.stamp")
 
 

@@ -305,12 +305,24 @@ def lab(a):
     return f".L{a:08X}"
 
 
+def load_numeric_pool():
+    """ROM addresses of pool words that stay numbers although a symbol has that value
+    (config/pool_numbers.txt): the original source used a plain address there, e.g. a display
+    register shadow written as *(u16 *)0x02000008, and only a number lets GCC build the next
+    addresses from it."""
+    path = os.path.join(ROOT, "config/pool_numbers.txt")
+    if not os.path.exists(path):
+        return set()
+    return {int(l.split()[0], 16) for l in open(path) if l.strip() and not l.startswith("#")}
+
+
 class Writer:
     def __init__(self, dis, code_ranges):
         self.dis, self.syms = dis, dis.syms
         self.code_ranges = code_ranges
         self.data_starts = sorted(a for a, s in self.syms.items() if s.kind in ("data", "ram") and s.size)
         self.raw_texts = set()  # (thumb, text, encoding) that GNU as encodes differently
+        self.numeric_pool = load_numeric_pool()
 
     def in_code(self, a):
         return any(s <= a < e for s, e in self.code_ranges)
@@ -339,6 +351,8 @@ class Writer:
         the same value in one pool are different expressions for it: gSineTable[64] for a second
         gCosineTable (the sine table runs straight into the cosine table), and the `dup=` name of
         config/symbols.txt for the first of two words of a RAM routine that starts its block."""
+        if a in self.numeric_pool:
+            return f"0x{self.dis.u32(a):08X}"  # the original wrote this address as a number
         text = self.symbolize(self.dis.u32(a), f)
         s = self.syms.get(self.dis.u32(a) & ~1)
         dup = [x[4:] for x in s.flags if x.startswith("dup=")] if s is not None and s.name == text else []
