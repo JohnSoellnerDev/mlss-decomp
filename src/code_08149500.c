@@ -725,8 +725,8 @@ void fall_landing_pick_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut
 NONMATCH("asm/code_08149500/enemy_seek_partner_axis.s", void enemy_seek_partner_axis(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 {
     s32 wanderDist = 0x200;
+    u8 one = 1;
     u8 idx;
-    u32 next;
 
     if (find_active_entry(owner, &idx) == 0)
     {
@@ -735,7 +735,7 @@ NONMATCH("asm/code_08149500/enemy_seek_partner_axis.s", void enemy_seek_partner_
         ((struct Mode3 *)&ent->unk214)->mode = 4;
         ((struct Flags8 *)&ent->unk1D6)->bit0 = 0;
         ((struct Flags8 *)&ent->unk1D6)->bit1 = 1;
-        next = (u32)walk_step_z_plain;
+        *stateOut = (u32)walk_step_z_plain;
     }
     else
     {
@@ -752,15 +752,14 @@ NONMATCH("asm/code_08149500/enemy_seek_partner_axis.s", void enemy_seek_partner_
         dx = ((dx / scale) * 5) << 5;
         dy = ((dy / scale) * 5) << 5;
         zTarget = partner->posZ + partner->unk18 + 0x2000;
-        start_move_2d(ent, dx, dy, 0x28, (u8)1);
+        start_move_2d(ent, dx, dy, 0x28, one);
         start_axis_move(ent, zTarget, 0x28, 1);
         ((struct Mode3 *)&ent->unk214)->mode = 4;
         ((struct Flags8 *)&ent->unk1D6)->bit0 = 0;
         ((struct Flags8 *)&ent->unk1D6)->bit1 = 1;
         ((struct Flags8 *)&ent->unk1D8)->bit2 = 1;
-        next = (u32)advance_and_step_z_alt;
+        *stateOut = (u32)advance_and_step_z_alt;
     }
-    *stateOut = next;
 }
 END_NONMATCH
 NONMATCH("asm/code_08149500/enemy_check_owner_box.s", void enemy_check_owner_box(struct Owner *owner, struct Enemy *ent))
@@ -843,8 +842,8 @@ END_NONMATCH
 NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_partner_axis_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 {
     s32 wanderDist = 0x200;
+    u8 one = 1;
     u8 idx;
-    u32 next;
 
     if (find_active_entry(owner, &idx) == 0)
     {
@@ -853,7 +852,7 @@ NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_part
         ((struct Mode3 *)&ent->unk214)->mode = 4;
         ((struct Flags8 *)&ent->unk1D6)->bit0 = 0;
         ((struct Flags8 *)&ent->unk1D6)->bit1 = 1;
-        next = (u32)walk_step_z;
+        *stateOut = (u32)walk_step_z;
     }
     else
     {
@@ -870,15 +869,14 @@ NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_part
         dx = ((dx / scale) * 5) << 5;
         dy = ((dy / scale) * 5) << 5;
         zTarget = partner->posZ + partner->unk18 + 0x2000;
-        start_move_2d(ent, dx, dy, 0x28, (u8)1);
+        start_move_2d(ent, dx, dy, 0x28, one);
         start_axis_move(ent, zTarget, 0x28, 1);
         ((struct Mode3 *)&ent->unk214)->mode = 4;
         ((struct Flags8 *)&ent->unk1D6)->bit0 = 0;
         ((struct Flags8 *)&ent->unk1D6)->bit1 = 1;
         ((struct Flags8 *)&ent->unk1D8)->bit2 = 1;
-        next = (u32)advance_and_step_z;
+        *stateOut = (u32)advance_and_step_z;
     }
-    *stateOut = next;
 }
 END_NONMATCH
 u8 entry_box_check(struct Owner *owner, struct Enemy *ent)
