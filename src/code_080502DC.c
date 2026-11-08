@@ -205,6 +205,14 @@ struct Mid4At6
     u16 rest : 6;
 };
 
+/* animation step counter in bits 1-8 of the halfword at 0x33E */
+struct AnimStepP
+{
+    u16 b0 : 1;
+    s16 step : 8;
+    u16 rest : 7;
+};
+
 /* state bits of an object and the link flags that update them */
 struct ObjLink33C
 {
@@ -287,7 +295,7 @@ extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
 
-NONMATCH("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(u8 *obj))
+void obj_set_mode_4(u8 *obj)
 {
     struct ChildObj *child;
     struct VtSlot *entry;
@@ -308,20 +316,21 @@ NONMATCH("asm/code_080502DC/obj_set_mode_4.s", void obj_set_mode_4(u8 *obj))
         ((struct Mode3 *)(obj + 0x33D))->mode = mid;
         ((struct Bits8 *)(obj + 0x33C))->b3 = 0;
     }
-    entry = (struct VtSlot *)((struct ChildObj *)obj)->vtable;
-    entry = (struct VtSlot *)((u8 *)entry + 0x80);
+    /* call method 0x80 of the object and of a linked child */
+    entry = (struct VtSlot *)((u8 *)((struct ChildObj *)obj)->vtable + 0x80);
     entry->fn(obj + entry->offset, 1);
     child = ((struct ChildObj *)obj)->child;
     if (child != NULL && (((u8 *)child)[0x20F] & 2))
     {
+        struct ChildObj *c;
+        struct VtSlot *e;
+
         ((struct Bit0 *)((u8 *)child + 0x20C))->bit0 = 0;
-        child = ((struct ChildObj *)obj)->child;
-        entry = (struct VtSlot *)child->vtable;
-        entry = (struct VtSlot *)((u8 *)entry + 0x80);
-        entry->fn((u8 *)child + entry->offset, 1);
+        c = ((struct ChildObj *)obj)->child;
+        e = (struct VtSlot *)((u8 *)c->vtable + 0x80);
+        e->fn((u8 *)c + e->offset, 1);
     }
 }
-END_NONMATCH
 
 void obj_update_flags_from_child(u8 *obj)
 {
@@ -737,61 +746,50 @@ extern const u8 gObjAnimWaveTable[];
 
 NONMATCH("asm/code_080502DC/obj_step_anim.s", void obj_step_anim(u8 *obj, u32 index))
 {
+    struct ObjInitS *o;
     u8 *flags;
     u16 *mask;
-    u16 *counter;
-    u32 m;
-    u32 nv;
-    u32 k;
-    s32 step;
-    u8 v;
-    u8 r;
+    struct AnimStepP *bits;
+    s16 *counter;
 
+    o = (struct ObjInitS *)obj;
     flags = obj + 0x33C;
     if (*flags & 1)
     {
         mask = (u16 *)(obj + 0x33E);
-        m = *mask;
-        k = 0x1FE;
-        if ((k & m) == k)
+        bits = (struct AnimStepP *)mask;
+        /* step a running animation wave, or show the offset frame when idle */
+        if ((*mask & 0x1FE) == 0x1FE)
         {
-            v = gObjAnimOffsetTable[(index >> 3) & 3];
-            obj[0x23B] = v;
+            o->unk23B = gObjAnimOffsetTable[(index >> 3) & 3];
         }
-        else
+        else if (bits->step >= 0)
         {
-            step = ((s32)m << 23) >> 24;
-            if (step >= 0)
+            bits->step++;
+            o->unk23B = gObjAnimWaveTable[bits->step];
+            if (o->unk23B == 0)
             {
-                nv = (m & 0xFE01) | (((step + 1) & 0xFF) << 1);
-                *mask = nv;
-                v = gObjAnimWaveTable[((s32)nv << 23) >> 24];
-                obj[0x23B] = v;
-                if (v == 0)
+                *mask |= 0x1FE;
+                if (*flags & 4)
                 {
-                    *mask = *mask | k;
-                    if (*flags & 4)
+                    if (*(s16 *)(obj + 0x342) == 0)
                     {
-                        if (*(s16 *)(obj + 0x342) == 0)
-                        {
-                            obj_commit_sprite(obj);
-                        }
+                        obj_commit_sprite(obj);
                     }
                 }
             }
         }
-        counter = (u16 *)(obj + 0x342);
-        if ((s16)*counter > 0)
+        counter = (s16 *)(obj + 0x342);
+        if (*counter > 0)
         {
-            *counter = *counter - 1;
+            (*counter)--;
         }
     }
     else if (*flags & 4)
     {
-        r = test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360));
-        if (r == 0)
+        if (test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360)) == 0)
         {
-            obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[((*flags >> 3) & 7) * 2 + 1], 0, 0, 0);
+            obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)*flags << 26) >> 29) * 2 + 1], 0, 0, 0);
         }
     }
 }
