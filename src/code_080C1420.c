@@ -457,30 +457,24 @@ struct WorldModeBits
 
 static inline void chain_set_7c(struct HeroBody *p, u32 v)
 {
-    if (p)
+    struct HeroBody *q;
+
+    for (q = p; q != 0; q = q->next)
     {
-        do
-        {
-            p->unk7C = v;
-            p = p->next;
-        } while (p);
+        q->unk7C = v;
     }
 }
 
 static inline void nodes_set_20(u32 v)
 {
-    struct WorldNode *n = gWorld->nodes78;
+    struct WorldNode *n;
 
-    if (n)
+    for (n = gWorld->nodes78; n != 0; n = n->next)
     {
-        do
+        if (n->obj != 0)
         {
-            if (n->obj != 0)
-            {
-                ((u8 *)n->obj)[0x20] = v;
-            }
-            n = n->next;
-        } while (n);
+            ((u8 *)n->obj)[0x20] = v;
+        }
     }
 }
 
@@ -507,16 +501,20 @@ NONMATCH("asm/code_080C1420/hero_b_pair_step_1948.s", void hero_b_pair_step_1948
     struct HeroBody *body_a;
     struct HeroBody *body_b;
     struct HeroBody *partner;
-    s32 stepDone;
     s32 lo;
     s32 hi;
-    s32 window;
+    s32 cap;
+    s32 limit;
+
+    lo = 0;
+    hi = 0x4000;
+    cap = 0x4000;
 
     body_a = &gWorld->heroA->body;
     body_b = &gWorld->heroB->body;
     partner = body->partner;
     state_stack_advance_progress(body_b);
-    if (body_b->progress < 0x4000)
+    if (body_b->progress < cap)
     {
         ((struct HeroFlagBits *)&body_b->flags)->active = 0;
     }
@@ -525,15 +523,7 @@ NONMATCH("asm/code_080C1420/hero_b_pair_step_1948.s", void hero_b_pair_step_1948
         goto end;
     }
 
-    stepDone = 0;
-    if (body_b->step <= 0)
-    {
-        if (body_b->progress >= 0)
-        {
-            stepDone = 1;
-        }
-    }
-    if (stepDone != 0)
+    if (body_b->step <= 0 && body_b->progress >= 0)
     {
         if ((gWorld->flags0C & 8) != 0)
         {
@@ -546,11 +536,9 @@ NONMATCH("asm/code_080C1420/hero_b_pair_step_1948.s", void hero_b_pair_step_1948
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
 
-    lo = 0;
-    hi = 0x4000;
-    if (lo > hi)
+    if (lo > cap)
     {
-        lo = hi;
+        lo = cap;
     }
     if (hi > 0x7FFF)
     {
@@ -560,62 +548,43 @@ NONMATCH("asm/code_080C1420/hero_b_pair_step_1948.s", void hero_b_pair_step_1948
     {
         lo = hi;
     }
-    window = 0;
-    if (body_b->progress >= lo)
+    if (body_b->progress < lo || body_b->step > hi)
     {
-        if (body_b->step <= hi)
-        {
-            window = 1;
-        }
+        goto after_window;
     }
-    if (window != 0)
+    set_body_part(body_b, 2, 0, 0x14, 0);
+    if ((gSys.pressed & 2) != 0)
     {
-        set_body_part(body_b, 2, 0, 0x14, 0);
-        if ((gSys.pressed & 2) != 0)
+        body_set_pose(3, body_b, 0, -0x28);
+        obj_free_parts(body_b);
+        world_mode_set_bit5();
+        if (((struct WorldModeBits *)&gWorld->modeByte)->lock == 0)
         {
-            body_set_pose(3, body_b, 0, -0x28);
-            obj_free_parts(body_b);
-            world_mode_set_bit5();
-            if (((struct WorldModeBits *)&gWorld->modeByte)->lock == 0)
-            {
-                frame_fill(body_a, body_b, partner, 0x100, 0x10);
-                display_flush();
-            }
-            set_timer_mode(body_b, 2);
+            frame_fill(body_a, body_b, partner, 0x100, 0x10);
+            display_flush();
         }
+        set_timer_mode(body_b, 2);
     }
 
+after_window:
     if ((body_b->timer >> 12) != 0)
     {
         goto end;
     }
 
+    limit = 0x4000;
+    if (limit > 0x7FFF)
     {
-        s32 limit;
-        s32 full;
-
-        limit = 0x4000;
-        if (limit > 0x7FFF)
-        {
-            limit = 0x7FFF;
-        }
-        full = 0;
-        if (body_b->step <= limit)
-        {
-            if (body_b->progress >= limit)
-            {
-                full = 1;
-            }
-        }
-        if (full != 0)
-        {
-            world_mode_set_bit5();
-            set_timer_mode(body_b, 1);
-            frame_fill(body_a, body_b, partner, 0x100, 0x10);
-            display_flush();
-            obj_free_parts(body_b);
-            goto end;
-        }
+        limit = 0x7FFF;
+    }
+    if (body_b->step <= limit && body_b->progress >= limit)
+    {
+        world_mode_set_bit5();
+        set_timer_mode(body_b, 1);
+        frame_fill(body_a, body_b, partner, 0x100, 0x10);
+        display_flush();
+        obj_free_parts(body_b);
+        goto end;
     }
 
     if (body_b->progress > 0x4000)
@@ -641,11 +610,9 @@ NONMATCH("asm/code_080C1420/hero_b_pair_step_1948.s", void hero_b_pair_step_1948
 end:
     if ((body_b->timer >> 12) != 0)
     {
-        lo = 0;
-        hi = 0x4000;
-        if (lo > hi)
+        if (lo > cap)
         {
-            lo = hi;
+            lo = cap;
         }
         if (hi > 0x7FFF)
         {
@@ -655,15 +622,7 @@ end:
         {
             lo = hi;
         }
-        window = 0;
-        if (body_b->progress >= lo)
-        {
-            if (body_b->step <= hi)
-            {
-                window = 1;
-            }
-        }
-        if (window != 0 && (body_b->timer >> 12) > 1)
+        if (body_b->progress >= lo && body_b->step <= hi && (body_b->timer >> 12) > 1)
         {
             body_b->timer &= 0xFFF;
             {
