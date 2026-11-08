@@ -811,7 +811,7 @@ NONMATCH("asm/code_08147904/enemy_collide_settle.s", void enemy_collide_settle(s
     }
     partner = ((struct Partner **)((u8 *)owner + 0x28))[index];
     entry = table + pick;
-    collide_react(owner, ent, partner, entry[0x18], entry[0], *(s8 *)((u8 *)table + 0x40), *(s8 *)((u8 *)table + 0x41), 0x22, 0);
+    collide_react(owner, ent, partner, entry[0x18], entry[0], *(s8 *)((u8 *)ent->wanderDist + 0x40), *(s8 *)((u8 *)ent->wanderDist + 0x41), 0x22, 0);
     obj_set_cell_coord(ent, gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8], 0);
     ((struct Mode3 *)&ent->unk214)->mode = 3;
     ent->sprite->unk20 = entry[4];
