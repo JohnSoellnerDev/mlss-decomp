@@ -193,10 +193,13 @@ NONMATCH("asm/code_08071CC8/spawn_slot_sprite.s", void spawn_slot_sprite(struct 
     s32 speed;
     s32 half;
     s32 ratio;
+    s32 mask;
 
-    poseFlags = obj->pose->flags;
     timerStart = 8;
-    if ((timerStart & poseFlags) != 0)
+    poseFlags = obj->pose->flags;
+    mask = timerStart;
+    mask &= poseFlags;
+    if (mask != 0)
     {
         sprite_set_action(obj, 6, 0x40B4, 0);
         sprite_set_action(obj->link, 6, 0, 0);
