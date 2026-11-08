@@ -195,9 +195,254 @@ extern u8 *gGamePtr;
 extern s16 *gUnk_03001014;
 void win_draw_text(void *target, u32 arg, s32 dx, u32 y, u32 flag);
 
+struct TransChar
+{
+    struct SpriteObj *sprite;
+    s32 x;
+    s32 y;
+    s32 prevX;
+    s32 prevY;
+    u16 vx;
+    u8 filler16[0x18 - 0x16];
+    u16 vspd;
+    u8 filler1A[0x30 - 0x1A];
+    const struct TransClass *klass;
+    u8 filler34[0x36 - 0x34];
+    u16 flags36;
+    u8 filler38[0x44 - 0x38];
+    s32 limitY;
+};
+
+struct TransClass
+{
+    u8 filler0[0x10];
+    s16 thisOffset10;
+    u16 filler12;
+    void (*fn14)(void *self, void *view, s32 speed, void *cam, u32 seq);
+    s16 thisOffset18;
+    u16 filler1A;
+    void (*fn1C)(void *self, void *cam);
+};
+
+struct TransRec
+{
+    u32 state;
+    const struct ClassVt *table;
+    struct TransChar *objA;
+    struct TransChar *objB;
+    s32 timer;
+    u8 filler14[4];
+    s32 fade;
+};
+
+struct TransGame
+{
+    u8 filler0[0x1C];
+    u8 viewA[0x840 - 0x1C];
+    u8 viewB[0x1C98 - 0x840];
+    struct TransChar *charA;
+    struct TransChar *charB;
+    u8 filler1CA0[0x1CA4 - 0x1CA0];
+    void *effect;
+    u8 filler1CA8[0x1CAC - 0x1CA8];
+    void *newObj;
+    u8 filler1CB0[0x1CB8 - 0x1CB0];
+    s32 camX;
+    u8 filler1CBC[0x1CC4 - 0x1CBC];
+    u16 flags;
+    u8 filler1CC6[0x1F12 - 0x1CC6];
+    s16 speed;
+    u8 filler1F14[0x1F20 - 0x1F14];
+    u8 state;
+};
+
+struct SpriteBit12
+{
+    u8 filler0[0x12];
+    u8 lo5 : 5;
+    u8 bit5 : 1;
+    u8 hi2 : 2;
+};
+
+struct Half36Bit
+{
+    u16 b0 : 1;
+    u16 rest : 15;
+};
+
+extern u16 gUnk_02000050[];
+extern u16 gUnk_02000054[];
+extern u16 gUnk_02000004[];
+extern u16 gUnk_02000080[];
+extern const u8 gHeapTagTransitionObjDf60[];
+extern const u8 gTransitionClassDf60[];
+void slot_reset(u32 id);
+void scene_release_objects(void *state);
+void set_irq_callback(u32 kind, void *cb);
+void hblank_iris_window(void);
+s32 effect_step_b(void *p);
+void obj_move_by_speed(struct TransChar *o, s32 speed);
+void obj_update_speed(struct TransChar *o);
+void obj_reset_e400(struct TransObj *obj);
+
+static inline void trans_reset_char(struct TransChar *o)
+{
+    o->sprite->unk0C = 0;
+    ((struct SpriteBit12 *)o->sprite)->bit5 = 0;
+    o->flags36 &= 0xFFFE;
+    o->vx = 0;
+}
+
+static inline void trans_track_view(struct TransChar *o, void *view)
+{
+    s32 vy = (s32)(view_coord((u32)view, o->x) << 16) >> 8;
+    o->limitY = vy;
+    if (o->y > vy)
+    {
+        o->y = vy;
+        o->vx = o->x - o->prevX;
+        o->vspd = vy - o->prevY;
+        o->prevX = o->x;
+        o->prevY = vy;
+    }
+    else
+    {
+        obj_update_speed(o);
+    }
+}
+
+static inline void trans_sync_cam(struct TransChar *o, void *cam)
+{
+    const struct TransClass *k = o->klass;
+    k->fn1C((u8 *)o + k->thisOffset18, cam);
+}
+
+static inline void trans_call_method(struct TransChar *o, void *view, s16 *speed, void *cam, u32 seq)
+{
+    const struct TransClass *k = o->klass;
+    k->fn14((u8 *)o + k->thisOffset10, view, *speed, cam, seq);
+}
+
+static inline void trans_table_call(struct TransRec *rec)
+{
+    const struct ClassVt *t = rec->table;
+    t->fn0C((u8 *)rec + t->thisOffset, 3);
+}
+
 ASM_FUNC("asm/code_081581B8/transition_states_obj_init_scan_pool.s", void transition_states_obj_init_scan_pool(void))
 
-ASM_FUNC("asm/code_081581B8/transition_state_step.s", void transition_state_step(void))
+NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(struct TransRec *rec, struct TransGame *game))
+{
+    u16 *bld;
+
+    switch (rec->state)
+    {
+    case 0:
+        game->flags &= 0xFFF6;
+        trans_reset_char(game->charA);
+        trans_reset_char(game->charB);
+        rec->timer = 0x2D;
+        rec->state++;
+        /* fall through */
+    case 1:
+        if (--rec->timer > 0)
+            goto move;
+        rec->state++;
+        /* fall through */
+    case 2:
+        {
+            s32 ya = game->charA->y;
+            s32 la = game->charA->limitY;
+            u32 pending = 0;
+            if (ya < la)
+                pending = 1;
+            if (pending != 0)
+                goto move;
+            ya = game->charB->y;
+            la = game->charB->limitY;
+            pending = 0;
+            if (ya < la)
+                pending = 1;
+            if (pending != 0)
+                goto move;
+        }
+        rec->state++;
+        /* fall through */
+    case 3:
+        if (effect_step_b(game->effect) == 0)
+            goto move;
+        trans_call_method(game->charA, game->viewA, &game->speed, &game->camX, 0xC);
+        trans_call_method(game->charB, game->viewB, &game->speed, &game->camX, 0xC);
+        trans_call_method(rec->objA, game->viewA, &game->speed, &game->camX, 0xC);
+        trans_call_method(rec->objB, game->viewA, &game->speed, &game->camX, 0xC);
+        rec->timer = 0x41;
+        rec->state++;
+        goto move;
+    case 4:
+        trans_call_method(rec->objA, game->viewA, &game->speed, &game->camX, 0);
+        trans_call_method(rec->objB, game->viewA, &game->speed, &game->camX, 0);
+        if (--rec->timer > 0)
+            goto move;
+        bld = gUnk_02000050;
+        bld[0] = 0xDF;
+        bld += 2;
+        *bld = 0x1F;
+        rec->fade = 0;
+        gUnk_03001014[1] = 0;
+        *(vu16 *)0x04000208 = 0;
+        gUnk_02000004[0] &= 0xFFEF;
+        *(vu16 *)0x04000200 &= 0xFFFD;
+        *(vu16 *)0x04000202 |= 2;
+        *(vu16 *)0x04000208 = 1;
+        set_irq_callback(4, (void *)hblank_iris_window);
+        *(vu16 *)0x04000208 = 0;
+        gUnk_02000004[0] |= 0x10;
+        *(vu16 *)0x04000200 |= 2;
+        *(vu16 *)0x04000202 |= 2;
+        *(vu16 *)0x04000208 = 1;
+        rec->state++;
+        goto move;
+    case 5:
+        gUnk_03001014[1] = rec->fade >> 8;
+        rec->fade += 0x200;
+        if (rec->fade <= 0x5000)
+            goto move;
+        gUnk_02000050[0] = 0xDF;
+        *(vu16 *)0x04000050 = gUnk_02000050[0];
+        gUnk_02000054[0] = 0x1F;
+        *(vu16 *)0x04000054 = gUnk_02000054[0];
+        gUnk_02000080[0] = 0;
+        scene_release_objects(game);
+        slot_reset(0);
+        game->state++;
+        if (game->state > 5)
+        {
+            game->state = 6;
+            gUnk_02000054[0] = 0;
+            trans_table_call(rec);
+            return 0;
+        }
+        trans_table_call(rec);
+        {
+            void *obj = heap_alloc2(8, 1, gHeapTagTransitionObjDf60, 0);
+            obj_reset_e400((struct TransObj *)obj);
+            ((void **)obj)[1] = (void *)gTransitionClassDf60;
+            game->newObj = obj;
+        }
+        return 1;
+    default:
+        break;
+    }
+
+move:
+    obj_move_by_speed(game->charA, game->speed);
+    obj_move_by_speed(game->charB, game->speed);
+    trans_track_view(game->charA, game->viewA);
+    trans_track_view(game->charB, game->viewB);
+    trans_sync_cam(game->charA, &game->camX);
+    trans_sync_cam(game->charB, &game->camX);
+    return 1;
+} END_NONMATCH
 
 ASM_FUNC("asm/code_081581B8/transition_step_c.s", void transition_step_c(void))
 
