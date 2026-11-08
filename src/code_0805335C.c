@@ -46,7 +46,7 @@ struct TextboxObj
     u8 unk48[0x10];
 };
 
-void task_insert(void *node, u8 kind);
+void task_insert(void *node, u8 kind, ...);
 void task_remove(void *node, u32 kind);
 void heap_free_a(void *p);
 void heap_free_b(void *p);
@@ -86,6 +86,7 @@ u32 read_varlen_plus1(const void *src);
 void cpu_fast_set(const void *src, void *dst, u32 ctl);
 void driver_tables_init(void *block, const void *params);
 void textbox_place_style(struct TextboxObj *obj);
+void textbox_place_rect(struct TextboxObj *obj, s32 w, s32 h);
 extern u8 iwram_overlay[];
 extern const u8 gDriverParams[];
 extern const u8 gTagWinMap[];
@@ -98,6 +99,18 @@ extern const u8 gSharedBg083a26d4[];
 extern const u8 gPaletteRomA[];
 extern const u8 gPaletteRomB[];
 extern u32 (*gUnk_03000C84)();
+extern const u8 gTagBoxTask[];
+extern const u8 gTagMapTmp[];
+extern const u8 gTagTrack[];
+extern u16 gLangSpriteAttr[];
+extern u16 gLangVoiceId[];
+extern u16 gLangBoxSize[];
+extern u32 gLangTrackPtrs[];
+void cpu_set(const void *src, void *dst, u32 ctl);
+void init_obj_09a8(u32 a, u32 b, u32 c, u32 d);
+void *create_obj_de4(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
+void obj_load_record(void *obj, u32 a, u32 b, u32 c, u32 d);
+void sprite_update_cd0(void *obj);
 
 struct VoiceTrack
 {
@@ -126,7 +139,185 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0805335C/textbox_emit_oam.s", void textbox_emit_oam(void))
 
-ASM_FUNC("asm/code_0805335C/textbox_open_scene.s", void textbox_open_scene(void))
+NONMATCH("asm/code_0805335C/textbox_open_scene.s", struct TextboxObj *textbox_open_scene(struct TextboxObj *obj, u8 prio, u32 data))
+{
+    u32 zero;
+    u8 *track;
+    u8 *map;
+    s32 next;
+    s32 rowAdd;
+    s32 channel;
+    s32 width;
+    s32 margin;
+    s32 row;
+    s32 x;
+    s32 left;
+    u16 tile;
+    u16 boxW;
+    u16 boxH;
+    u16 voiceId;
+    u32 lang;
+    u32 trackSrc;
+    u8 *base;
+    struct TextboxObj *child;
+    void *gfx;
+    void *sprite;
+    u16 *p;
+    u16 *q;
+
+    task_insert(obj, prio, data);
+    obj->unk18 = gTaskDescrTextbox;
+    p = &gUnk_02000050;
+    *p = 0xBF;
+    p += 2;
+    *p = 0x10;
+    p -= 0x2A;
+    *p = 0;
+    frame_update();
+    base = gSys;
+    base[0x31] = 2;
+    ((struct SysFlags888 *)(base + 0x888))->bit5 = 1;
+    ((struct SysFlags888 *)(base + 0x888))->bit6 = 1;
+    if (base[0x8C0] == 7)
+        base[0x8C0] = 1;
+    child = heap_alloc2(0x1C, 0, gTagBoxTask, 0);
+    task_insert(child, 8, gTagBoxTask);
+    child->unk18 = gTaskDescrBox;
+    obj->unk34 = child;
+    child->unk14 = obj;
+    obj->unk1C |= 1;
+    *(u16 *)&obj->unk3C = 0;
+    obj->filler1D[0] = 0x10;
+    obj->unk38 = heap_alloc(0x800, 1, gTagWinMap, 0);
+    gfx = heap_alloc(0x8000, 1, gTagDecomp, 0);
+    gUnk_03000C84(gSharedBg083a26d4, gfx);
+    cpu_fast_set(gfx, (void *)0x06000000, (read_varlen_plus1(gSharedBg083a26d4) << 9) >> 11);
+    if (gfx != NULL)
+        heap_free_a(gfx);
+    map = heap_alloc(0x800, 1, gTagMapTmp, 1);
+    left = 0xF;
+    tile = 0x107B;
+    p = (u16 *)(map + 0x2EC);
+    do
+    {
+        p[0] = tile;
+        p[-1] = tile - 1;
+        p[-2] = tile - 2;
+        p[-3] = tile - 3;
+        p[-4] = tile - 4;
+        p[-5] = tile - 5;
+        p[-6] = tile - 6;
+        p[-7] = tile - 7;
+        tile -= 8;
+        p -= 8;
+        left -= 8;
+    } while (left >= 0);
+    cpu_fast_set(map, (void *)0x0600E800, 0x200);
+    if (map != NULL)
+        heap_free_a(map);
+    init_obj_09a8(0x2000, 8, 0, 0);
+    sprite = create_obj_de4(5, 0x6005, 1, -1, -1, -1, -1);
+    *(void **)obj->unk48 = sprite;
+    obj_load_record(sprite, 0, -1, 0, 0);
+    sprite_update_cd0(*(void **)obj->unk48);
+    lang = base[0x8C0];
+    ((u16 *)*(void **)obj->unk48)[0] = ((u16 *)gLangSpriteAttr)[lang * 2 + 1];
+    ((u16 *)*(void **)obj->unk48)[1] = 0x5A;
+    if ((base[0x888] & 6) == 0)
+    {
+        cpu_fast_set(gPaletteRomA, &gUnk_02000080, 0x78);
+    }
+    else
+    {
+        cpu_fast_set(gPaletteRomB, &gUnk_02000080, 0x78);
+    }
+    gUnk_02000080 = 0x7FFF;
+    *(u16 *)(base + 2) = 0xFFFF;
+    obj->unk2C = heap_alloc(0x0819A4F0 - (u32)iwram_overlay, 0, gTagDriver081e37c4, 1);
+    driver_tables_init(obj->unk2C, gDriverParams);
+    obj->unk30 = heap_alloc2(0x14, 0, gTagVoice, 1);
+    obj->unk20 = heap_alloc(0x12C1F, 1, gTagTextBuf, 1);
+    obj->unk24 = (void *)(((u32)obj->unk20 + 0x1F) & 0xFFFFFFE0);
+    obj->unk28 = heap_alloc(0x2800, 1, gTagBwsw, 1);
+    zero = 0;
+    cpu_fast_set(&zero, (void *)0x06004000, 0x01000008);
+    track = heap_alloc(0x100, 0, gTagTrack, 0);
+    channel = 0;
+    for (;;)
+    {
+        lang = base[0x8C0];
+        voiceId = ((u16 *)gLangVoiceId)[lang * 5 + channel];
+        boxW = ((u16 *)gLangBoxSize)[(lang * 5 + channel) * 2];
+        trackSrc = ((u32 *)gLangTrackPtrs[channel])[lang];
+        track[0] = 0xFF;
+        track[1] = 0x35;
+        cpu_set((u8 *)trackSrc + 2, track + 2, 0x7F);
+        voice_setup_params(obj->unk30, (u8 *)obj->unk24 + channel * 0x3C00, (s16)boxW, 0, 0, 0, 1, 2, 5, 3);
+        voice_set_data_ptr(obj->unk30, 0, (u8)voiceId, track);
+        next = channel + 1;
+        do
+        {
+            struct VoiceTrack *tr = obj->unk30;
+            u8 *data = tr->data;
+
+            if (data[0] == 0xFF && data[1] == 0x0B && data[2] == 1)
+                tr->data = data + 3;
+        } while ((track_run(obj->unk30) << 16) != 0);
+        map = (u8 *)obj->unk28 + channel * 0x800;
+        tile = 0xE001;
+        width = (s16)boxW;
+        margin = ((0x1E - width) / 2) * 2;
+        rowAdd = margin + 4;
+        for (row = 0; row < 16; row++)
+        {
+            map += margin;
+            if (width > 0)
+            {
+                for (x = 0; x < width; x++)
+                {
+                    *(u16 *)map = tile;
+                    tile++;
+                    map += 2;
+                }
+            }
+            map += rowAdd;
+        }
+        channel = next;
+        if (channel > 4)
+            break;
+    }
+    heap_free_a(track);
+    cpu_fast_set(obj->unk24, (void *)0x06004020, 0xF00);
+    cpu_fast_set(obj->unk28, (void *)0x06002000, 0x200);
+    p = &gUnk_02000008;
+    *p = 0x406;
+    p++;
+    *p = 0x1C02;
+    p++;
+    *p = 0x1D01;
+    p = &gUnk_02000010;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    p++;
+    *p = 0;
+    lang = base[0x8C0];
+    boxW = ((u16 *)gLangBoxSize)[lang * 10];
+    boxH = ((u16 *)gLangBoxSize)[lang * 10 + 1];
+    textbox_place_rect(obj, boxW, boxH);
+    p = &gUnk_02000050;
+    *p = 0xBF;
+    gUnk_02000054 = 0;
+    p -= 0x28;
+    *p = 0x3340;
+    return obj;}
+END_NONMATCH
 
 NONMATCH("asm/code_0805335C/textbox_free.s", void textbox_free(struct TextboxObj *obj, u32 kind))
 {
@@ -160,7 +351,265 @@ NONMATCH("asm/code_0805335C/textbox_free.s", void textbox_free(struct TextboxObj
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0805335C/textbox_step.s", void textbox_step(void))
+#define CHANNEL_SLICE 0x3C00
+#define MAP_BYTES 0x800
+#define KEY_A 1
+#define KEY_LEFT_RIGHT 0x30
+#define NO_SAVE_BLOCK 0xFFFF
+#define SAVE_INDEX_END 0x400
+#define LANG_RESET 7
+
+void set_slot_value(u32 slot, u32 value);
+void obj_release_slots(void *obj);
+u32 save_blocks_write(u32 first, u32 count);
+void init_save_buffer(void);
+void dma_copy_or_queue(const void *src, void *dst, u32 count, u32 mode, u32 extra);
+void update_obj_list(void);
+void scene_create(void *scene, u32 kind, const void *tag);
+
+static inline void bg_req_or(u32 off, u32 bits)
+{
+    gBgRequestPtr[off] |= bits;
+}
+
+static inline void bg_req_and(u32 off, u32 mask)
+{
+    gBgRequestPtr[off] &= mask;
+}
+
+static inline void bg_req_set(u32 off, u32 value)
+{
+    gBgRequestPtr[off] = value;
+}
+
+static inline void tb_start_window_close(struct TextboxObj *obj)
+{
+    bg_req_or(1, 0x20);
+    ((u8 *)&obj->unk40)[0] |= 1;
+    ((s8 *)&obj->unk40)[1] = 7;
+}
+
+static inline void tb_toggle_flag(struct TextboxObj *obj)
+{
+    u32 flags = obj->unk1C;
+
+    obj->unk1C = (flags & 0xFFFFFFFE) | ((flags & 1) ^ 1);
+    set_slot_value(0x5F, 0xFFFFFFFF);
+}
+
+static inline void tb_tail_4082(void *sprite)
+{
+    u32 lang = gSys[0x8C0];
+
+    ((u16 *)sprite)[0] = ((u16 *)gLangSpriteAttr)[lang * 2];
+}
+
+static inline void tb_tail_40a0(void *sprite)
+{
+    u32 lang = gSys[0x8C0];
+
+    ((u16 *)sprite)[0] = ((u16 *)gLangSpriteAttr)[lang * 2 + 1];
+}
+
+static inline void tb_open_box(struct TextboxObj *obj)
+{
+    u32 lang;
+    u16 boxW;
+    u16 boxH;
+
+    dma_copy_or_queue((u8 *)obj->unk24 + CHANNEL_SLICE, (void *)0x06004020, CHANNEL_SLICE, 0, 0x20);
+    dma_copy_or_queue((u8 *)obj->unk28 + MAP_BYTES, (void *)0x06002000, MAP_BYTES, 0, 0x20);
+    obj->unk1C |= 1;
+    lang = gSys[0x8C0];
+    boxW = ((u16 *)gLangBoxSize)[(lang * 5 + 1) * 2];
+    boxH = ((u16 *)gLangBoxSize)[(lang * 5 + 1) * 2 + 1];
+    textbox_place_rect(obj, boxW, boxH);
+    ((u16 *)*(void **)obj->unk48)[1] = 0x62;
+    obj->state = 1;
+}
+
+static inline void tb_close_body(struct TextboxObj *obj)
+{
+    s32 now;
+    u32 lang;
+    u16 boxW;
+    u16 boxH;
+
+    if (((s8 *)&obj->unk40)[1] > 0)
+    {
+        window_anim_step(&obj->unk40);
+        now = ((s8 *)&obj->unk40)[1];
+        if (now == 1 && (now & ((u8 *)&obj->unk40)[0]) != 0)
+        {
+            dma_copy_or_queue((u8 *)obj->unk24 + 0x7800, (void *)0x06004020, CHANNEL_SLICE, 0, 0x20);
+            dma_copy_or_queue((u8 *)obj->unk28 + 0x1000, (void *)0x06002000, MAP_BYTES, 0, 0x20);
+        }
+        if (((s8 *)&obj->unk40)[1] != 0)
+            return;
+        if ((((u8 *)&obj->unk40)[0] & 1) == 0)
+            return;
+        lang = gSys[0x8C0];
+        boxW = ((u16 *)gLangBoxSize)[(lang * 5 + 2) * 2];
+        boxH = ((u16 *)gLangBoxSize)[(lang * 5 + 2) * 2 + 1];
+        textbox_place_rect(obj, boxW, boxH);
+        bg_req_or(0x4A, 0x10);
+        obj_release_slots(*(void **)obj->unk48);
+        obj->state = 2;
+        return;
+    }
+    if ((((struct SysKeys2A *)gSys)->keys & KEY_A) != 0)
+    {
+        tb_start_window_close(obj);
+        set_slot_value(0x60, 0xFFFFFFFF);
+        if ((obj->unk1C & 1) != 0)
+            obj->state = 5;
+        return;
+    }
+    if ((((struct SysKeys2A *)gSys)->keys & KEY_LEFT_RIGHT) != 0)
+        tb_toggle_flag(obj);
+}
+
+NONMATCH("asm/code_0805335C/textbox_step.s", void textbox_step(struct TextboxObj *obj))
+{
+    u32 keys;
+    u32 value;
+    u32 first;
+    u32 saved;
+    u32 next;
+    u8 timer;
+    void *sprite;
+    void *scene;
+    u8 *bg;
+
+    switch (obj->state)
+    {
+    case 0:
+        if (((s8 *)&obj->unk40)[1] > 0)
+        {
+            window_anim_step(&obj->unk40);
+            if (((s8 *)&obj->unk40)[1] == 0 && (((u8 *)&obj->unk40)[0] & 1) != 0)
+                tb_open_box(obj);
+        }
+        else
+        {
+            keys = ((struct SysKeys2A *)gSys)->keys;
+            if ((keys & KEY_A) != 0)
+            {
+                tb_start_window_close(obj);
+                set_slot_value(0x60, 0xFFFFFFFF);
+                if ((obj->unk1C & 1) != 0)
+                    obj->state = 5;
+            }
+            else if ((keys & KEY_LEFT_RIGHT) != 0)
+            {
+                tb_toggle_flag(obj);
+            }
+        }
+        sprite = *(void **)obj->unk48;
+        if ((obj->unk1C & 1) == 0)
+            tb_tail_4082(sprite);
+        else
+            tb_tail_40a0(sprite);
+        break;
+    case 1:
+        tb_close_body(obj);
+        sprite = *(void **)obj->unk48;
+        if ((obj->unk1C & 1) != 0)
+            tb_tail_40a0(sprite);
+        else
+            tb_tail_4082(sprite);
+        break;
+    case 2:
+        if (((s8 *)&obj->unk40)[1] > 0)
+        {
+            window_anim_step(&obj->unk40);
+            value = (u32)(s32)((s8 *)&obj->unk40)[1];
+            if (value == 0)
+            {
+                init_save_buffer();
+                bg_req_or(1, 0x40);
+                bg_req_set(0x42, 0x38);
+                bg_req_set(0x43, 0x38);
+                bg_req_set(0x46, 0xA0);
+                bg_req_set(0x47, value);
+                bg_req_or(0x49, 1);
+                bg_req_or(0x49, 2);
+                bg_req_or(0x49, 4);
+                bg_req_or(0x49, 8);
+                bg_req_or(0x49, 0x10);
+                bg_req_and(0x49, 0xFFFFFFDF);
+                bg_req_or(0x4A, 1);
+                bg_req_or(0x4A, 2);
+                bg_req_and(0x4A, 0xFFFFFFFB);
+                bg_req_or(0x4A, 8);
+                bg_req_or(0x4A, 0x10);
+                bg_req_and(0x4A, 0xFFFFFFDF);
+                *(u16 *)0x02000000 |= 0x400;
+                gSys[0x88A] &= 0xF7;
+                gSys[0x88C] &= 0xFE;
+            }
+            break;
+        }
+        first = *(u16 *)&obj->unk3C;
+        saved = save_blocks_write(first, 8);
+        next = saved & 0xFFFF;
+        if (next == NO_SAVE_BLOCK)
+        {
+            gSys[0x88C] |= 1;
+            gSys[0x8C0] = LANG_RESET;
+            gSys[0x88A] = (gSys[0x88A] & 0xEF) | 8;
+            gSys[0x88B] &= 0xFE;
+            dma_copy_or_queue((u8 *)obj->unk24 + 0xF000, (void *)0x06004020, CHANNEL_SLICE, 0, 0x20);
+            dma_copy_or_queue((u8 *)obj->unk28 + 0x2000, (void *)0x06002000, MAP_BYTES, 0, 0x20);
+            obj->filler1D[0] = 0xF0;
+            *(u16 *)0x02000000 &= 0xFBFF;
+            obj->state = 4;
+            break;
+        }
+        *(u16 *)&obj->unk3C = next;
+        bg = gBgRequestPtr;
+        bg[0x42] = (*(u16 *)&obj->unk3C >> 3) + 0x38;
+        if (*(u16 *)&obj->unk3C != SAVE_INDEX_END)
+            break;
+        gSys[0x88C] |= 1;
+        gSys[0x8C0] = LANG_RESET;
+        gSys[0x88A] = (gSys[0x88A] & 0xEF) | 8;
+        gSys[0x88B] &= 0xFE;
+        bg_req_and(1, 0xFFFFFFBF);
+        dma_copy_or_queue((u8 *)obj->unk24 + 0xB400, (void *)0x06004020, CHANNEL_SLICE, 0, 0x20);
+        dma_copy_or_queue((u8 *)obj->unk28 + 0x1800, (void *)0x06002000, MAP_BYTES, 0, 0x20);
+        obj->filler1D[0] = 0xF0;
+        obj->state = 3;
+        break;
+    case 3:
+    case 4:
+        timer = obj->filler1D[0] - 1;
+        obj->filler1D[0] = timer;
+        if (timer == 0 || (((struct SysKeys2A *)gSys)->keys & 0xB) != 0)
+        {
+            bg_req_or(1, 0x20);
+            bg_req_and(0x4A, 0xFFFFFFFE);
+            bg_req_and(0x4A, 0xFFFFFFFD);
+            bg_req_and(0x4A, 0xFFFFFFFB);
+            ((u8 *)&obj->unk40)[0] |= 1;
+            ((s8 *)&obj->unk40)[1] = 7;
+            obj->state = 5;
+        }
+        break;
+    case 5:
+        window_anim_step(&obj->unk40);
+        if (((s8 *)&obj->unk40)[1] != 0)
+            break;
+        if (obj != NULL)
+            textbox_free(obj, 3);
+        scene = heap_alloc2(0x4C, 0, gTagSceneObj, 0);
+        scene_create(scene, 8, (const void *)0x081E3804);
+        return;
+    default:
+        break;
+    }
+    update_obj_list();}
+END_NONMATCH
 
 NONMATCH("asm/code_0805335C/textbox_create.s", struct TextboxObj *textbox_create(struct TextboxObj *obj, u32 kind))
 {
