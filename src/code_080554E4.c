@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct OverlayObj
 {
@@ -85,9 +86,31 @@ void obj_release_slots(void *slots);
 void obj_load_record(struct SpriteObj *rec, u32 a, s32 b, u32 c, u32 d);
 void sprite_update_cd0(struct SpriteObj *sprite);
 
+struct TextBoxObj
+{
+    u8 filler0[0x14];
+    u8 *owner14;
+};
+
+struct ObjHead
+{
+    u8 filler0[0x3C];
+    u8 *unk3C;
+};
+
+extern u8 gSys[];
+extern u8 *gParty;
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u8 gUnk_0203FFB8[];
+void *draw_two_values(void *oam, u8 a, u8 b, u32 flag);
+void *text_sprites_b(void *oam, u32 a, u32 b, u32 c);
+void *draw_member_status(void *oam, u32 a, u32 b);
+void obj_list_pass_0a8c(void);
+
 ASM_FUNC("asm/code_080554E4/overlay_update.s", void overlay_update(void))
 
-ASM_FUNC("asm/code_080554E4/textbox_draw_oam.s", void textbox_draw_oam(void))
+ASM_FUNC("asm/code_080554E4/textbox_draw_oam.s", void textbox_draw_oam(struct TextBoxObj *obj))
 
 void overlay_free(struct OverlayObj *obj, u32 flags)
 {
