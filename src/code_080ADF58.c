@@ -286,8 +286,9 @@ void pair_action_a_start(struct HeroBody *body)
 
 NONMATCH("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struct HeroBody *body))
 {
-    struct HeroBody *body_a = &gWorld->heroA->body;
-    struct Hero *hero_b = gWorld->heroB;
+    struct World **gp = &gWorld;
+    struct HeroBody *body_a = &(*gp)->heroA->body;
+    struct Hero *hero_b = (*gp)->heroB;
     struct HeroBody *body_b = &hero_b->body;
     s32 timer;
     s32 newt;
@@ -315,7 +316,7 @@ NONMATCH("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struc
 
     tp = &hero_b->body.unkA8;
     timer = *tp;
-    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
+    newt = ((*gp)->flags & 8) ? timer - 0xCC : timer - 0x100;
     *tp = newt;
     if (body_b->unkA8 > 0)
         return;
@@ -323,19 +324,19 @@ NONMATCH("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struc
     {
         body_b->unkA4 = 0;
         body_b->unkA8 = 0x1400;
-        sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
+        sprite_set_action(body_a->next, ((*gp)->flags & 0x10) ? 1 : 3, 0x2093, 0);
         return;
     }
     body_b->unkA4 = 1;
     body_b->unkA8 = 0xF00;
-    sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
-    body_b->place = gWorld->slots[body_b->place]->body.place;
+    sprite_set_action(body_a->next, ((*gp)->flags & 0x10) ? 0 : 2, 0x2093, 0);
+    body_b->place = (*gp)->slots[body_b->place]->body.place;
     if (body_b->place == -1)
     {
         body_b->counter--;
         body_b->place = body_a->place;
     }
-    body_a->partner = &gWorld->slots[body_b->place]->body;
+    body_a->partner = &(*gp)->slots[body_b->place]->body;
     copy_pose_offsets(body_a->partner, body_a->next);
     body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
     if (body_b->counter > 0)
