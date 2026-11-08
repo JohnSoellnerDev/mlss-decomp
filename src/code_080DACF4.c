@@ -274,11 +274,13 @@ void anim_steps_obj_fall_step(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn_child(struct ActorObj *obj))
+void obj_damp_and_spawn_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
     struct ActorPart *part;
     s32 *ground;
+    s32 hOfs = 4;
+    s32 xOfs = 0xA;
 
     obj->dx = obj->dx * 0xFD / 0x100;
     obj->dy = obj->dy * 0xFD / 0x100;
@@ -310,9 +312,9 @@ NONMATCH("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn
         part = obj->owner->data;
         *ground = part->targetH;
         child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
-                                      part->targetX - (child->baseX - 0xA),
+                                      part->targetX - (child->baseX - xOfs),
                                       part->targetY - child->baseY,
-                                      child->ground - (child->baseH - 4),
+                                      child->ground - (child->baseH - hOfs),
                                       0x5C00, 0x466, 0x100, 0);
         obj->childValue = 0;
         sprite_set_action(obj, 5, 0, 0);
@@ -321,7 +323,6 @@ NONMATCH("asm/code_080DACF4/obj_damp_and_spawn_child.s", void obj_damp_and_spawn
         obj->state = obj_damp_step_limit;
     }
 }
-END_NONMATCH
 
 void obj_damp_step_limit(struct ActorObj *obj)
 {
