@@ -594,12 +594,13 @@ void enemy_state_step_xyz(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     }
 }
 
-NONMATCH("asm/code_08149500/enemy_update_draw_flags.s", void enemy_update_draw_flags(struct Owner *owner, struct Enemy *ent))
+void enemy_update_draw_flags(struct Owner *owner, struct Enemy *ent)
 {
     u8 *ai;
     struct Sprite *spr;
     u8 *flags;
     u8 idx;
+    u8 *slot;
 
     ai = (u8 *)ent + 0x58;
     spr = ent->sprite;
@@ -617,9 +618,9 @@ NONMATCH("asm/code_08149500/enemy_update_draw_flags.s", void enemy_update_draw_f
     {
         ((struct Flags8 *)(ai + 0x180))->bit1 = 0;
     }
-    ((void (*)(struct Owner *, struct Enemy *))(*(void **)(ai + 0x148)))(owner, ent);
+    slot = ai + 0x148;
+    ((void (*)(struct Owner *, struct Enemy *, u8 *))(*(void **)slot))(owner, ent, slot);
 }
-END_NONMATCH
 
 void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
