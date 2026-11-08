@@ -16837,8 +16837,7 @@
 08CDB6F8 gSample235Prog106Sfx data size=1904
 08CDCFFC gLazyStubSlot data size=4
 08CDD000 gIwram1a48GetterSlot data size=4
-08CDD004 __malloc_av_ data
-08CDD00C gPairLinkTable data size=400
+08CDD004 __malloc_av_ data size=408
 08CDD40C __malloc_trim_threshold data size=4
 08CDD410 __malloc_top_pad data
 08CDD414 __malloc_sbrk_base data size=4
