@@ -298,7 +298,7 @@ struct AnimObj
 
 void register_effect_entry(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
 
-NONMATCH("asm/code_080286C0/apply_anim_state.s", void apply_anim_state(struct AnimActor *actor, struct AnimObj *obj, struct AnimSrc *src))
+void apply_anim_state(struct AnimActor *actor, struct AnimObj *obj, struct AnimSrc *src)
 {
     u32 modeLo = 0;
     u32 modeHi = 0;
@@ -350,9 +350,8 @@ NONMATCH("asm/code_080286C0/apply_anim_state.s", void apply_anim_state(struct An
         }
     }
 
-    register_effect_entry(actor->anim, ((u32)(((s32)((u32)obj->animC << 25)) >> 1)) >> 24, src->word, modeLo, modeHi, ((s8)obj->animB ^ 0x10) != 0, (u16)(s8)obj->animB);
+    register_effect_entry(actor->anim, ((u32)(((s32)((u32)obj->animC << 25)) >> 1)) >> 24, src->word, modeLo, modeHi, (s8)obj->animB != 0x10, (u16)(s8)obj->animB);
 }
-END_NONMATCH
 
 void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx, s32 ty, u32 speed)
 {
@@ -405,7 +404,19 @@ void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx
 }
 
 void clear_obj_state_2f8(struct SceneObj *obj);
-ASM_FUNC("asm/code_080286C0/sprites_obj_step_move.s", void sprites_obj_step_move(void))
+static inline s32 move_reached(s32 end, s32 start, s32 cur)
+{
+    if (end >= start)
+    {
+        if (end <= cur)
+            return 1;
+        if (end > start)
+            return 0;
+    }
+    return !(end < cur);
+}
+
+ASM_FUNC("asm/code_080286C0/sprites_obj_step_move.s", void sprites_obj_step_move(struct SceneObj *obj))
 
 NONMATCH("asm/code_080286C0/apply_key_filter.s", void apply_key_filter(struct SceneObj *obj, u16 keep))
 {
