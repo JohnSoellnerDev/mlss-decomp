@@ -91,7 +91,7 @@ struct HeroBody
     u8 flags;
     s16 rate;
     s16 frame;
-    u16 progress;
+    s16 progress;
     u8 filler80[0x84 - 0x80];
     struct HeroSpan span;
     u8 filler88[0x92 - 0x88];
@@ -183,4 +183,522 @@ void hero_a_snap_to_b_target(struct HeroBody *body);
 void hero_a_active_follow_b(struct HeroBody *body);
 void hero_pair_follow_step(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080AB11C/hero_pair_follow_step.s", void hero_pair_follow_step(struct HeroBody *body))
+/* Mode bits 4-5 of the world: bit 5 set, bit 4 kept. */
+static inline void world_mode_set_bit5(void)
+{
+    u32 mode = gWorld->modeByte;
+    u32 field = ((mode << 26) >> 30) | 2;
+    gWorld->modeByte = (mode & ~0x30) | (field << 4);
+}
+
+/* Mode bits 1-2 of the sprite flags. */
+static inline void sprite_mode_set(struct HeroBody *body, u32 field)
+{
+    ((struct HeroSpriteBits *)&body->sprite->flags)->mode = field;
+}
+
+NONMATCH("asm/code_080AB11C/hero_pair_follow_step.s", void hero_pair_follow_step(struct HeroBody *body))
+{    struct HeroBody *a;
+    struct HeroBody *b;
+    struct HeroBody *partner;
+    struct HeroBody *s;
+    struct SpriteListItem *item;
+    s32 zLimit;
+    s32 zA;
+    s32 rate;
+    s32 rest8;
+    s32 rest6;
+    s32 ahead4;
+    s32 lim;
+    s32 lo;
+    s32 hi;
+    s32 hi3;
+    s32 reached;
+    s32 mode;
+    s32 t;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s32 ofsVal;
+    s32 tz2;
+    s32 sum;
+    s32 sq;
+    s32 half;
+    s32 stepDone;
+    u32 mode_a;
+    u32 mode_b;
+
+    a = &gWorld->heroA->body;
+    b = &gWorld->heroB->body;
+    partner = body->partner;
+    step_motion(a);
+
+    zLimit = b->ofsZ - 0xC;
+    zA = a->posZ;
+    if (zA < 0) {
+        zA += 0xFF;
+    }
+    zA >>= 8;
+    if (zA < zLimit) {
+        if (b->sprite->scale == 0x100) {
+            set_slot_value(0x7C, -1);
+        }
+        b->sprite->scale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a->posZ, zLimit);
+    }
+
+    rate = a->rate;
+    rest8 = -(rate << 3) + 0x4000;
+    rest6 = 0x4000 - (((rate << 1) + rate) << 1);
+    ahead4 = (rate << 2) + 0x4000;
+    if (a->progress < ahead4) {
+        ((struct HeroFlagBits *)&a->flags)->active = 0;
+    }
+
+    if ((a->timer >> 12) != 0) {
+        goto L706;
+    }
+    lim = rest8;
+    if (lim < 0) {
+        lim = 0;
+    }
+    if (lim > 0x7FFF) {
+        lim = 0x7FFF;
+    }
+    reached = 1;
+    if (a->step > lim) {
+        reached = 0;
+    } else if (a->progress < lim) {
+        reached = 0;
+    }
+    if (reached) {
+        if ((gWorld->layerFlags & 8) != 0) {
+            s = a;
+            if (s != 0) {
+                do {
+                    s->frame = 0x33;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = b;
+            if (s != 0) {
+                do {
+                    s->frame = 0x33;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = partner;
+            if (s != 0) {
+                do {
+                    s->frame = 0x33;
+                    s = s->child;
+                } while (s != 0);
+            }
+            item = gWorld->sprites;
+            if (item != 0) {
+                do {
+                    if (item->sprite != 0) {
+                        item->sprite->frame = 3;
+                    }
+                    item = item->next;
+                } while (item != 0);
+            }
+        } else {
+            s = a;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = b;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = partner;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            item = gWorld->sprites;
+            if (item != 0) {
+                do {
+                    if (item->sprite != 0) {
+                        item->sprite->frame = 0x10;
+                    }
+                    item = item->next;
+                } while (item != 0);
+            }
+        }
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    lo = rest6;
+    hi = ahead4;
+    if (lo < 0) {
+        lo = 0;
+    }
+    if (hi < 0) {
+        hi = 0;
+    }
+    if (lo > 0x4000) {
+        lo = 0x4000;
+    }
+    if (hi > 0x7FFF) {
+        hi = 0x7FFF;
+    }
+    if (hi < lo) {
+        lo = hi;
+    }
+    reached = 0;
+    if (a->progress >= lo) {
+        reached = 1;
+        if (a->step > hi) {
+            reached = 0;
+        }
+    }
+    if (reached) {
+        set_body_part(b, 2, 0x18, 0, 0);
+        if ((gSys.held & 2) != 0) {
+            body_set_pose(1, b, 0x2E, 0);
+            obj_free_parts(b);
+            world_mode_set_bit5();
+            if ((gWorld->modeByte & 4) == 0) {
+                if ((gWorld->layerFlags & 8) != 0) {
+                    s = a;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    s = b;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    s = partner;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    item = gWorld->sprites;
+                    if (item != 0) {
+                        do {
+                            if (item->sprite != 0) {
+                                item->sprite->frame = 0x10;
+                            }
+                            item = item->next;
+                        } while (item != 0);
+                    }
+                } else {
+                    s = a;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    s = b;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    s = partner;
+                    if (s != 0) {
+                        do {
+                            s->frame = 0x100;
+                            s = s->child;
+                        } while (s != 0);
+                    }
+                    item = gWorld->sprites;
+                    if (item != 0) {
+                        do {
+                            if (item->sprite != 0) {
+                                item->sprite->frame = 0x10;
+                            }
+                            item = item->next;
+                        } while (item != 0);
+                    }
+                }
+                display_flush();
+            }
+            a->timer = (a->timer & 0xFFF) | 0x2000;
+        }
+    }
+
+    if ((a->timer >> 12) != 0) {
+        goto L706;
+    }
+    hi3 = ahead4;
+    if (hi3 < 0) {
+        hi3 = 0;
+    }
+    if (hi3 > 0x7FFF) {
+        hi3 = 0x7FFF;
+    }
+    reached = 0;
+    if (a->step <= hi3) {
+        if (a->progress >= hi3) {
+            reached = 1;
+        }
+    }
+    if (reached) {
+        world_mode_set_bit5();
+        a->timer = (a->timer & 0xFFF) | 0x1000;
+        if ((gWorld->layerFlags & 8) != 0) {
+            s = a;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = b;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = partner;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            item = gWorld->sprites;
+            if (item != 0) {
+                do {
+                    if (item->sprite != 0) {
+                        item->sprite->frame = 0x10;
+                    }
+                    item = item->next;
+                } while (item != 0);
+            }
+        } else {
+            s = a;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = b;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            s = partner;
+            if (s != 0) {
+                do {
+                    s->frame = 0x100;
+                    s = s->child;
+                } while (s != 0);
+            }
+            item = gWorld->sprites;
+            if (item != 0) {
+                do {
+                    if (item->sprite != 0) {
+                        item->sprite->frame = 0x10;
+                    }
+                    item = item->next;
+                } while (item != 0);
+            }
+        }
+        display_flush();
+        obj_free_parts(b);
+        goto L706;
+    }
+    if (a->progress > ahead4) {
+        goto L706;
+    }
+    if ((gSys.held & 3) == 0) {
+        goto L706;
+    }
+    world_mode_set_bit5();
+    if ((gWorld->modeByte & 4) != 0) {
+        goto L706;
+    }
+    a->timer = (a->timer & 0xFFF) | 0x1000;
+    if ((gWorld->layerFlags & 8) != 0) {
+        s = a;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        s = b;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        s = partner;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        item = gWorld->sprites;
+        if (item != 0) {
+            do {
+                if (item->sprite != 0) {
+                    item->sprite->frame = 0x10;
+                }
+                item = item->next;
+            } while (item != 0);
+        }
+    } else {
+        s = a;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        s = b;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        s = partner;
+        if (s != 0) {
+            do {
+                s->frame = 0x100;
+                s = s->child;
+            } while (s != 0);
+        }
+        item = gWorld->sprites;
+        if (item != 0) {
+            do {
+                if (item->sprite != 0) {
+                    item->sprite->frame = 0x10;
+                }
+                item = item->next;
+            } while (item != 0);
+        }
+    }
+    display_flush();
+    obj_free_parts(b);
+    body_set_pose(6, b, 0x2E, 0);
+
+L706:
+    mode = a->timer >> 12;
+    if (mode == 0) {
+        goto L780;
+    }
+    lo = rest6;
+    hi = ahead4;
+    if (lo < 0) {
+        lo = 0;
+    }
+    if (hi < 0) {
+        hi = 0;
+    }
+    if (lo > 0x4000) {
+        lo = 0x4000;
+    }
+    if (hi > 0x7FFF) {
+        hi = 0x7FFF;
+    }
+    if (hi < lo) {
+        lo = hi;
+    }
+    stepDone = 0;
+    if (a->progress >= lo) {
+        if (a->step <= hi) {
+            stepDone = 1;
+        }
+    }
+    if (stepDone == 0) {
+        goto L780;
+    }
+    if (mode <= 1) {
+        goto L780;
+    }
+    a->timer = a->timer & 0xFFF;
+    {
+        void (*next)(struct HeroBody *) = hero_a_on_partner;
+
+        body->state = next;
+        next(body);
+    }
+    goto L8C2;
+
+L780:
+    if ((a->flags & 0x20) == 0) {
+        goto L8C2;
+    }
+    set_slot_value(0x30, -1);
+    mode_a = a->mode & 6;
+    if (mode_a == 2 || mode_a == 4) {
+        t = partner->targetX;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        px = (t >> 8) + partner->ofsX - 8;
+        t = partner->targetY;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        py = (t >> 8) + partner->ofsY;
+        t = partner->targetZ;
+        if (t < 0) {
+            t += 0xFF;
+        }
+        pz = (t >> 8) + partner->ofsZ - 8;
+        place_targets(a, px, py, pz, -1);
+        if ((u32)partner == (u32)partner->data + 8) {
+            ofsVal = partner->ofsZ;
+        } else {
+            find_frame_entry(partner, 0);
+            ofsVal = partner->unk47;
+        }
+        tz2 = partner->targetZ;
+        if (tz2 < 0) {
+            tz2 += 0xFF;
+        }
+        sum = ofsVal + (tz2 >> 8);
+        sq = sum * sum;
+        if (sq < 0) {
+            sq += 0x3F;
+        }
+        half = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x1000, (sq >> 6) + 0x40);
+        a->height = sum + half;
+        set_motion_offsets(a, 0x600);
+    }
+    mode_a = a->mode & 6;
+    if (mode_a == 2 || mode_a == 4) {
+        sprite_set_action(a, 0xC, 0x2000, 0);
+        sprite_mode_set(a, 0);
+    }
+    mode_b = b->mode & 6;
+    if (mode_b == 2 || mode_b == 4) {
+        sprite_set_action(b, 7, 0x205F, 0);
+        sprite_mode_set(b, 1);
+    }
+    body->state = hero_a_link_to_partner_fx;
+
+L8C2:
+    return;
+}
+END_NONMATCH
