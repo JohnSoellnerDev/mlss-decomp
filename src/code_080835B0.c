@@ -203,6 +203,14 @@ struct SpriteWorld
     struct SpriteNode *listSecond;
 };
 
+struct ModeBits76
+{
+    u8 b0 : 1;
+    u8 state : 2;
+    u8 hold : 3;
+    u8 hi : 2;
+};
+
 void obj_setup_load(struct SpriteRec *p, s32 image);
 void sprite_entry_update(struct SpriteRec *p);
 
@@ -220,47 +228,45 @@ static inline void sprite_update_part(struct SpriteRec *p, s32 mode, u32 flags, 
 
 NONMATCH("asm/code_080835B0/sprite_set_action.s", void sprite_set_action(struct SpriteObj *obj, s32 mode, s32 image, u32 flags))
 {
+    struct SpriteRec *part;
     struct SpriteNode *head;
     struct SpriteNode *node;
-    struct SpriteRec *pose;
-    struct SpriteRec *part;
+    struct SpriteNode *scan;
     struct SpriteObj *child;
-    s32 altA;
-    s32 altB;
-    s32 headImage;
+    s32 poseAnim;
     s32 defImage;
     s32 defMode;
-    s32 poseAnim;
     s32 bit4;
     s32 flip;
+    s32 headImage;
+    s32 altA;
+    s32 altB;
     s32 state;
-    s32 partDefault;
-    u32 index;
+    struct SpriteNode *ring;
 
     if (obj->mode & 0x38) {
         if (obj->ring->anim < 0) {
-            goto done;
+            return;
         }
     }
 
-    pose = obj->pose;
-    poseAnim = (s8)pose->anim20;
-    defImage = pose->recImage | ((((u32)pose->palette1E << 28) >> 16) + 0x1000);
+    part = obj->pose;
+    poseAnim = (s8)part->anim20;
+    defImage = part->recImage | ((((u32)part->palette1E << 28) >> 16) + 0x1000);
     defMode = obj->defMode;
     bit4 = 0;
-    flip = ((u32)pose->flags11 << 25) >> 31;
+    flip = ((u32)part->flags11 << 25) >> 31;
     head = obj->ring;
-    headImage = 0;
-    if (head != 0 && (u8 *)obj == (u8 *)head + 8) {
+    if (head == 0 || obj != (struct SpriteObj *)((u8 *)head + 8)) {
+        headImage = 0;
+    } else {
         headImage = head->imgEntry->image;
         if (headImage == 0) {
-            node = head->next;
-            if (!(node->block->flags & 0x80)) {
-                do {
-                    node = node->next;
-                } while (!(node->block->flags & 0x80));
+            scan = head->next;
+            while (!(scan->block->flags & 0x80)) {
+                scan = scan->next;
             }
-            headImage = node->imgEntry->image;
+            headImage = scan->imgEntry->image;
         }
     }
 
@@ -274,193 +280,167 @@ NONMATCH("asm/code_080835B0/sprite_set_action.s", void sprite_set_action(struct 
         mode = defMode;
     }
 
-    part = pose;
-    if ((u8 *)obj == (u8 *)head + 8) {
+    if (obj == (struct SpriteObj *)((u8 *)obj->ring + 8)) {
         state = obj->mode & 6;
         if (state == 2) {
-            if (head->anim == -1) {
+            if (obj->ring->anim == -1) {
                 altA = 0x2029;
                 altB = 0x2028;
-            } else if (head->anim == -2) {
+            } else if (obj->ring->anim == -2) {
                 altA = 0x2058;
                 altB = 0x2057;
             }
             if (image == headImage) {
                 if (mode == 0) {
-                    if (head->flags & 0x200) {
+                    if (obj->ring->flags & 0x200) {
                         image = altA;
-                    } else if (head->flags & 0x100) {
+                    } else if (obj->ring->flags & 0x100) {
                         image = altB;
                     }
                 }
                 if (image == headImage) {
-                    if (head->speed * 0x64 < (head->size << 4) - head->size && mode == 0) {
+                    if (obj->ring->speed * 100 < obj->ring->size * 15 && mode == 0) {
                         mode = 0xE;
                     }
                 }
             }
 
-            if (!(((struct SpriteWorld *)gWorld)->active & 0x80)) {
-                goto BE8;
-            }
-
-            if (image == 0x2025) {
-                image = 0x203C;
-            } else if (image > 0x2025) {
-                if (image == 0x204D) {
-                    image = 0x2069;
-                } else if (image == 0x2054) {
-                    image = 0x206B;
+            if (((struct SpriteWorld *)gWorld)->active & 0x80) {
+                switch (image) {
+                case 0x2000: image = 0x203A; break;
+                case 0x204D: image = 0x2069; break;
+                case 0x2025: image = 0x203C; break;
+                case 0x2054: image = 0x206B; break;
                 }
-            } else if (image == 0x2000) {
-                image = 0x203A;
-            }
-            if (image != 0 && image != defImage) {
-                obj_setup_load(pose, image);
-            }
+                if (image != 0 && image != defImage) {
+                    obj_setup_load(part, image);
+                }
 
-            sprite_update_part(pose, mode, flags, flip, bit4, poseAnim);
+                sprite_update_part(part, mode, flags, flip, bit4, poseAnim);
 
-            {
-                struct SpriteWorld *w = (struct SpriteWorld *)gWorld;
-                if ((u8 *)obj == (u8 *)w->listHead + 8) {
-                    part = w->listSecond->part;
+                if (obj != (struct SpriteObj *)((u8 *)((struct SpriteWorld *)gWorld)->listHead + 8)) {
+                    part = ((struct SpriteWorld *)gWorld)->listHead->part;
                 } else {
-                    part = w->listHead->part;
+                    part = ((struct SpriteWorld *)gWorld)->listSecond->part;
                 }
-            }
 
-            partDefault = part->recImage | ((((u32)part->palette1E << 28) >> 16) + 0x1000);
-            index = image - 0x2006;
-            switch (index) {
-            case 0: image = 0x2072; break;
-            case 1: image = 0x2043; break;
-            case 2: image = 0x2070; break;
-            case 3: image = 0x2041; break;
-            case 4: image = 0x2073; break;
-            case 5: image = 0x2044; break;
-            case 6: image = 0x2071; break;
-            case 7: image = 0x2042; break;
-            case 8: image = 0x2074; break;
-            case 9: image = 0x2045; break;
-            case 10: image = 0x206F; break;
-            case 11: image = 0x2040; break;
-            case 12: image = 0x2076; break;
-            case 13: image = 0x2047; break;
-            case 14: image = 0x2079; break;
-            case 15: image = 0x204A; break;
-            case 16: image = 0x2077; break;
-            case 17: image = 0x2048; break;
-            case 18: image = 0x207A; break;
-            case 19: image = 0x204B; break;
-            case 20: image = 0x2078; break;
-            case 21: image = 0x2049; break;
-            case 22: image = 0x207B; break;
-            case 23: image = 0x204C; break;
-            case 24: image = 0x2076; break;
-            case 25: image = 0x2047; break;
-            case 33: image = 0x2075; break;
-            case 34: image = 0x206D; break;
-            case 35: image = 0x206E; break;
-            case 52: image = 0x206A; break;
-            case 54:
-                if (mode == 6) {
-                    goto done;
+                defImage = part->recImage | ((((u32)part->palette1E << 28) >> 16) + 0x1000);
+                switch (image) {
+                case 0x203A: image = 0x206A; break;
+                case 0x2069: image = 0x203B; break;
+                case 0x203C:
+                    if (mode == 6) {
+                        return;
+                    }
+                    image = 0x206C;
+                    break;
+                case 0x206B:
+                    if (mode == 6) {
+                        return;
+                    }
+                    image = 0x203D;
+                    break;
+                case 0x2029: image = 0x206E; break;
+                case 0x2058: image = 0x203F; break;
+                case 0x2028: image = 0x206D; break;
+                case 0x2057: image = 0x203E; break;
+                case 0x2027: image = 0x2075; break;
+                case 0x2056: image = 0x2046; break;
+                case 0x2010: image = 0x206F; break;
+                case 0x2011: image = 0x2040; break;
+                case 0x2008: image = 0x2070; break;
+                case 0x2009: image = 0x2041; break;
+                case 0x200C: image = 0x2071; break;
+                case 0x200D: image = 0x2042; break;
+                case 0x2006: image = 0x2072; break;
+                case 0x2007: image = 0x2043; break;
+                case 0x200A: image = 0x2073; break;
+                case 0x200B: image = 0x2044; break;
+                case 0x200E: image = 0x2074; break;
+                case 0x200F: image = 0x2045; break;
+                case 0x2016: image = 0x2077; break;
+                case 0x201A: image = 0x2078; break;
+                case 0x2014: image = 0x2079; break;
+                case 0x2018: image = 0x207A; break;
+                case 0x201C: image = 0x207B; break;
+                case 0x2012:
+                case 0x201E: image = 0x2076; break;
+                case 0x2017: image = 0x2048; break;
+                case 0x201B: image = 0x2049; break;
+                case 0x2015: image = 0x204A; break;
+                case 0x2019: image = 0x204B; break;
+                case 0x201D: image = 0x204C; break;
+                case 0x2013:
+                case 0x201F: image = 0x2047; break;
+                default:
+                    return;
                 }
-                image = 0x206C;
-                break;
-            case 80: image = 0x2046; break;
-            case 81: image = 0x203E; break;
-            case 82: image = 0x203F; break;
-            case 99: image = 0x203B; break;
-            case 101:
-                if (mode == 6) {
-                    goto done;
+                if (image != defImage) {
+                    obj_setup_load(part, image);
                 }
-                image = 0x203D;
-                break;
-            default:
-                goto done;
+                goto update;
             }
-            if (image != partDefault) {
-                obj_setup_load(part, image);
-            }
-            goto DBE;
         } else if (state == 4) {
             if (image == headImage && mode == 0) {
-                if (head->flags & 0x100) {
-                    mode = head->imgEntry->mode8;
+                if (obj->ring->flags & 0x100) {
+                    mode = obj->ring->imgEntry->mode8;
                     if (mode == -1) {
                         mode = 1;
                     }
                     bit4 = 1;
                 }
-                obj->mode &= ~0x38;
+                ((struct ModeBits76 *)&obj->mode)->hold = 0;
             }
         }
     }
 
-BE8:
     if (image != defImage) {
-        obj_setup_load(pose, image);
+        obj_setup_load(part, image);
     }
-    head = obj->ring;
-    if (head == 0) {
-        goto DBE;
+    ring = obj->ring;
+    if (ring == 0) {
+        goto update;
     }
-    if ((u8 *)obj != (u8 *)head + 8 && !(obj->flags & 8)) {
-        goto DBE;
+    if ((struct SpriteObj *)((u8 *)ring + 8) != obj && !(obj->flags & 8)) {
+        goto update;
     }
 
-    sprite_update_part(head->part, mode, flags, flip, bit4, poseAnim);
-    child = head->children;
-    if (child != 0) {
-        do {
+    sprite_update_part(ring->part, mode, flags, flip, bit4, poseAnim);
+    for (child = ring->children; child != 0; child = child->nextChild) {
+        if (child->flags & 8) {
+            sprite_update_part(child->pose, mode, flags, flip, bit4, poseAnim);
+        }
+    }
+
+    node = ring->next;
+    if (node == 0) {
+        return;
+    }
+    while (node != ring) {
+        sprite_update_part(node->part, mode, flags, flip, bit4, poseAnim);
+        for (child = node->children; child != 0; child = child->nextChild) {
             if (child->flags & 8) {
                 sprite_update_part(child->pose, mode, flags, flip, bit4, poseAnim);
             }
-            child = child->nextChild;
-        } while (child != 0);
-    }
-
-    node = head->next;
-    if (node == 0) {
-        goto done;
-    }
-    if (node == head) {
-        goto done;
-    }
-    do {
-        sprite_update_part(node->part, mode, flags, flip, bit4, poseAnim);
-        child = node->children;
-        if (child != 0) {
-            do {
-                if (child->flags & 8) {
-                    sprite_update_part(child->pose, mode, flags, flip, bit4, poseAnim);
-                }
-                child = child->nextChild;
-            } while (child != 0);
         }
         node = node->next;
-    } while (node != head);
-    goto done;
+    }
+    return;
 
-DBE:
+update:
     sprite_update_part(part, mode, flags, flip, bit4, poseAnim);
-
-done:
-    ;
 }
 END_NONMATCH
 
 
 ASM_FUNC("asm/code_080835B0/apply_pose_to_parts.s", void apply_pose_to_parts(void))
 
-NONMATCH("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y))
+void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y)
 {
     s32 w;
     s32 h;
-    s32 mask;
+    s32 xMask;
+    s32 yMask;
 
     w = gUnk_083BA8A0[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
     h = gUnk_083BA8AC[(obj->unk2 >> 14) + ((obj->unk0 >> 14) << 2)];
@@ -469,11 +449,11 @@ NONMATCH("asm/code_080835B0/unknown_code_08084032.s", void unknown_code_08084032
         obj->unk6 = 1;
         return;
     }
-    mask = 0x1FF;
-    obj->unk2 = (x & mask) | (obj->unk2 & 0xFE00);
-    obj->unk0 = (obj->unk0 & 0xFF00) | (y & 0xFF);
+    xMask = 0x1FF;
+    obj->unk2 = (x & xMask) | (obj->unk2 & 0xFE00);
+    yMask = 0xFF;
+    obj->unk0 = (y & yMask) | (obj->unk0 & 0xFF00);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080835B0/draw_text.s", void draw_text(void))
 
@@ -820,11 +800,11 @@ void list_remove_active(struct PartObj *node)
     gModelCtx->count--;
 }
 
-NONMATCH("asm/code_080835B0/spawn_obj_by_id.s", struct PartObj *spawn_obj_by_id(u16 id, u32 variant, u32 attr, u32 mode))
+struct PartObj *spawn_obj_by_id(u16 id, u32 variant, u32 attr, u32 mode)
 {
     struct PartObj *obj;
     s32 flags;
-    u32 low;
+    u8 low;
     u32 top;
     u32 sh2;
     u32 sh4;
@@ -846,7 +826,6 @@ NONMATCH("asm/code_080835B0/spawn_obj_by_id.s", struct PartObj *spawn_obj_by_id(
     }
     return obj;
 }
-END_NONMATCH
 
 
 
