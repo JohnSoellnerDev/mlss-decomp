@@ -8,7 +8,8 @@ struct FieldSub
     u16 h06;
     u16 h08;
     u16 h0A;
-    u8 filler0C[0x11 - 0x0C];
+    u16 h0C;
+    u8 filler0E[0x11 - 0x0E];
     u8 flags11;
     u8 flags12;
     u8 count13;
@@ -39,9 +40,17 @@ struct FieldObj
     s32 posZB;
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
-    u8 filler25[0x4C - 0x25];
+    u8 filler25[0x34 - 0x25];
+    s32 tgtX;
+    s32 tgtY;
+    s32 unk3C;
+    u8 filler40[0x4C - 0x40];
     u8 unk4C;
-    u8 filler4D[0x20C - 0x4D];
+    u8 filler4D[0x4E - 0x4D];
+    u8 flags4E;
+    u8 filler4F[0x1EC - 0x4F];
+    s32 vec1EC[3];
+    u8 filler1F8[0x20C - 0x1F8];
     u8 flags20C;
     u8 flags20D;
     u8 flags20E;
@@ -128,7 +137,7 @@ struct FieldObj
       u8 filler326[0x328 - 0x326];
     s32 unk328;
     s32 unk32C;
-          u8 filler330[2];
+          u16 unk330;
       u16 unk332;
       void *unk334;
     struct ObjClass *klass338;
@@ -144,12 +153,6 @@ extern const u8 gFrameAttrTable[];
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void obj_update_special_flag(struct FieldObj *obj);
 void obj_refresh_anim_state(struct FieldObj *obj, u32 a, s32 b, s32 c);
-
-ASM_FUNC("asm/code_08045F18/cell_motion_obj_move_toward_target.s", void cell_motion_obj_move_toward_target(void))
-
-ASM_FUNC("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(void))
-
-ASM_FUNC("asm/code_08045F18/obj_advance_motion.s", void obj_advance_motion(void))
 
 struct ModeBits45
 {
@@ -177,6 +180,149 @@ struct MoveBits
     u8 bit3 : 1;
     u8 hi4 : 4;
 };
+
+ASM_FUNC("asm/code_08045F18/cell_motion_obj_move_toward_target.s", void cell_motion_obj_move_toward_target(void))
+
+struct ShapeRef
+{
+    u8 filler0[0x0C];
+    s32 a0C;
+    s32 a10;
+    s32 a14;
+    s32 a18;
+};
+
+void motion_obj_step_motion(struct FieldObj *obj);
+void rotate_vec(void *vec, u32 angle, s32 *out0, s32 *out1, s32 *out2);
+u32 arc_tan2(s32 x, s32 y);
+
+NONMATCH("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(struct FieldObj *obj, struct ShapeRef **shapes))
+{
+    s32 one = 1;
+    u32 seven = 7;
+    s32 vx;
+    s32 vy;
+    s32 vz;
+    s32 mode;
+    s32 v;
+    s32 t;
+    s32 idx;
+    s32 ang;
+    s32 delta;
+
+    if (obj->flags20C & 1)
+    {
+        if (seven & obj->moveFlags2B5)
+        {
+            obj->unk2DE++;
+            mode = ((struct MoveBits *)&obj->moveFlags2B5)->lo3;
+            if (mode == 2)
+            {
+                v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2CC - obj->unk2BC) * obj->unk2DE, obj->v2E0);
+                obj->posX = obj->unk2BC + v;
+                v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D0 - obj->unk2C0) * obj->unk2DE, obj->v2E0);
+                obj->posY = obj->unk2C0 + v;
+                if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
+                {
+                    v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D4 - obj->unk2C4) * obj->unk2DE, obj->v2E0);
+                    obj->posZB = obj->unk2C4 + v - obj->unk3C;
+                }
+            }
+            else if (mode > 2)
+            {
+                if (mode <= 5)
+                {
+                    if (mode == 4)
+                    {
+                        obj->unk2F4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2F0 * obj->unk2DE, obj->v2E0);
+                    }
+                    else
+                    {
+                        obj->unk2F4 += obj->unk2F8;
+                    }
+                    if (obj->unk2F0 > 0)
+                    {
+                        if (obj->unk2F4 > obj->unk2F0)
+                            obj->unk2F4 = obj->unk2F0;
+                    }
+                    else if (obj->unk2F0 < 0)
+                    {
+                        if (obj->unk2F4 < obj->unk2F0)
+                            obj->unk2F4 = obj->unk2F0;
+                    }
+                    t = obj->unk2F4;
+                    if (t < 0)
+                        t += 0xFF;
+                    rotate_vec(obj->vec1EC, (u8)(t >> 8), &vx, &vy, &vz);
+                    idx = (s8)(((obj->flags2B8 & 7) << 5) | (obj->flags2B7 >> 3));
+                    if (idx >= 0)
+                    {
+                        obj->unk2E4 = shapes[idx]->a0C;
+                        obj->unk2E8 = shapes[idx]->a10;
+                        obj->unk2EC = shapes[idx]->a14 + shapes[idx]->a18;
+                    }
+                    obj->posX = obj->unk2E4 + vx;
+                    obj->posY = obj->unk2E8 + vy;
+                    if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
+                    {
+                        obj->posZ = 0;
+                        obj->posZB = obj->unk2EC + vz;
+                    }
+                    if (obj->tgtX != obj->posX || obj->tgtY != obj->posY)
+                    {
+                        obj->v242 = obj->tgtX - obj->posX;
+                        obj->v244 = obj->tgtY - obj->posY;
+                    }
+                    if (obj->posY == obj->tgtY && obj->posX == obj->tgtX)
+                        ang = -1;
+                    else
+                        ang = (u16)arc_tan2((s16)(obj->tgtY - obj->posY), (s16)(obj->posX - obj->tgtX));
+                    if (ang != -1)
+                    {
+                        if (ang < 0)
+                            ang += 0xFF;
+                        obj->unk02 = ang >> 8;
+                    }
+                }
+            }
+            else if (mode == 1)
+            {
+                if ((((((struct MoveBits *)&obj->flags2B7)->lo3) ^ one) & one) != 0 && obj->unk2CC != obj->unk2BC)
+                    obj->posX += obj->unk2D8;
+                if (!(((struct MoveBits *)&obj->flags2B7)->lo3 & 2) && obj->unk2D0 != obj->unk2C0)
+                    obj->posY += obj->unk2DA;
+                if (!(((struct MoveBits *)&obj->flags2B7)->lo3 & 4) && obj->unk2D4 != obj->unk2C4 && obj->counter25C == -1)
+                    obj->posZB += obj->unk2DC;
+            }
+            delta = 0;
+            switch (((struct ModeBits23 *)&obj->flags4E)->mode)
+            {
+            case 1:
+                delta = obj->posX - obj->tgtX;
+                break;
+            case 2:
+                delta = obj->tgtX - obj->posX;
+                break;
+            case 3:
+                delta = obj->tgtY - obj->posY;
+                break;
+            }
+            if (delta != 0)
+            {
+                obj->posZ += delta;
+                obj->posZB -= delta;
+                if (obj->posZB < 0)
+                    obj->posZB = 0;
+            }
+        }
+        if (obj->moveFlags2B5 & 8)
+            motion_obj_step_motion(obj);
+    }
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_08045F18/obj_advance_motion.s", void obj_advance_motion(void))
+
 
 void obj_finish_move_step(struct FieldObj *obj)
 {
@@ -413,7 +559,127 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_compare.s", u32 obj_set_motion_a_co
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(void))
+NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct FieldObj *obj))
+{
+    s32 v;
+    s32 lim;
+
+    if (obj->flags20F & 2)
+    {
+        if ((obj->moveFlags2B5 & 0x30) == 0x10)
+        {
+            obj->axisACount++;
+            obj->sub->h04 += obj->axisAStep;
+            if ((s16)obj->axisAStep > 0)
+            {
+                if ((s16)obj->sub->h04 > (s16)obj->axisATarget)
+                    obj->sub->h04 = obj->axisATarget;
+            }
+            else
+            {
+                if ((s16)obj->sub->h04 < (s16)obj->axisATarget)
+                    obj->sub->h04 = obj->axisATarget;
+            }
+        }
+        else if ((obj->moveFlags2B5 & 0x30) == 0x20)
+        {
+            u16 *cnt = &obj->axisACount;
+            s16 *tgt = (s16 *)&obj->axisATarget;
+            s16 *cur = (s16 *)&obj->axisACur;
+            (*cnt)++;
+            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((*tgt - *cur) * *cnt, obj->axisASpeed);
+            obj->sub->h04 = obj->axisACur + v;
+        }
+        if ((obj->moveFlags2B5 & 0xC0) == 0x40)
+        {
+            obj->axisBCount++;
+            obj->sub->h06 += obj->axisBStep;
+            if ((s16)obj->axisBStep > 0)
+            {
+                if ((s16)obj->sub->h06 > (s16)obj->axisBTarget)
+                    obj->sub->h06 = obj->axisBTarget;
+            }
+            else
+            {
+                if ((s16)obj->sub->h06 < (s16)obj->axisBTarget)
+                    obj->sub->h06 = obj->axisBTarget;
+            }
+        }
+        else if ((obj->moveFlags2B5 & 0xC0) == 0x80)
+        {
+            obj->axisBCount++;
+            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->axisBTarget - (s16)obj->axisBCur) * obj->axisBCount, obj->axisBSpeed);
+            obj->sub->h06 = obj->axisBCur + v;
+        }
+        if ((obj->flags2B6 & 3) == 1)
+        {
+            obj->unk316++;
+            obj->sub->h08 += obj->unk30E;
+            if ((s16)obj->unk30E > 0)
+            {
+                if ((s16)obj->sub->h08 > (s16)obj->unk306)
+                    obj->sub->h08 = obj->unk306;
+            }
+            else
+            {
+                if ((s16)obj->sub->h08 < (s16)obj->unk306)
+                    obj->sub->h08 = obj->unk306;
+            }
+        }
+        else if ((obj->flags2B6 & 3) == 2)
+        {
+            obj->unk316++;
+            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->unk306 - (s16)obj->unk2FE) * obj->unk316, obj->unk31E);
+            obj->sub->h08 = obj->unk2FE + v;
+        }
+        if ((obj->flags2B6 & 0xC) == 4)
+        {
+            obj->unk318++;
+            obj->sub->h0A += obj->unk310;
+            if ((s16)obj->unk310 > 0)
+            {
+                if ((s16)obj->sub->h0A > (s16)obj->unk308)
+                    obj->sub->h0A = obj->unk308;
+            }
+            else
+            {
+                if ((s16)obj->sub->h0A < (s16)obj->unk308)
+                    obj->sub->h0A = obj->unk308;
+            }
+        }
+        else if ((obj->flags2B6 & 0xC) == 8)
+        {
+            obj->unk318++;
+            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->unk308 - (s16)obj->unk300) * obj->unk318, obj->unk320);
+            obj->sub->h0A = obj->unk300 + v;
+        }
+        if ((obj->flags2B6 & 0x30) == 0x10)
+        {
+            obj->unk330++;
+            obj->unk32C += obj->unk324;
+            lim = obj->unk328;
+            if (lim > 0)
+            {
+                if (obj->unk32C > lim)
+                    obj->unk32C = lim;
+            }
+            else if (lim < 0)
+            {
+                if (obj->unk32C < lim)
+                    obj->unk32C = lim;
+            }
+            obj->sub->h0C = (u16)obj->unk322 + obj->unk32C;
+        }
+        else if ((obj->flags2B6 & 0x30) == 0x20)
+        {
+            obj->unk330++;
+            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk328 - (s16)obj->unk322) * obj->unk330, obj->unk332);
+            obj->unk32C = v;
+            obj->sub->h0C = (u16)obj->unk322 + v;
+        }
+    }
+}
+END_NONMATCH
 
 struct Flags11
 {
