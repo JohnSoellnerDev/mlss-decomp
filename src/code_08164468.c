@@ -1186,6 +1186,16 @@ struct DlgInput
     u16 keys;
 };
 
+/* text voice state embedded in the dialog object at +8 */
+struct Voice
+{
+    u32 unk0;
+    u32 unk4;
+    u32 unk8;
+    u32 unkC;
+    u32 unk10;
+};
+
 extern u8 gUnk_03000374[];
 extern const u8 *gDialogJumpTargetFlagNonzero;
 extern const u8 *gDialogJumpTargetFlagZero;
@@ -1194,7 +1204,7 @@ u32 track_run(void *track);
 void set_slot_value(u32 id, s32 value);
 void sound_stop_song(u32 song);
 void mem_copy_fast(void *dst, void *src, u32 len);
-u32 layout_text_run(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f);
+u32 layout_text_run();
 
 NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct DialogObj *obj))
 {
