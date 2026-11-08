@@ -57,21 +57,29 @@ void anim_dma_upload(struct DmaObj *obj)
 
 void cpu_fast_set(const void *src, void *dst, u32 ctl);
 
-NONMATCH("asm/code_0801D358/fill_block_word.s", void fill_block_word(void **slot, u32 value))
+void fill_block_word(void **slot, u32 value)
 {
-    u32 word;
-    u32 v = value;
+    register u32 v asm("r3") = value;
+    register u32 word asm("r1");
+    u32 t;
+    u32 buf;
 
     word = (v << 4) | v;
-    word |= v << 8;
-    word |= v << 12;
-    word |= v << 16;
-    word |= v << 20;
-    word |= v << 24;
-    word |= v << 28;
-    cpu_fast_set(&word, *slot, 0x01001400);
+    t = v << 8;
+    word |= t;
+    t = v << 12;
+    word |= t;
+    t = v << 16;
+    word |= t;
+    t = v << 20;
+    word |= t;
+    t = v << 24;
+    word |= t;
+    t = v << 28;
+    word |= t;
+    buf = word;
+    cpu_fast_set(&buf, *slot, 0x01001400);
 }
-END_NONMATCH
 
 void obj_call_hook_14(struct HookObj14 *obj)
 {
