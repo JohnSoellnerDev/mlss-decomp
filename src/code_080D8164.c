@@ -75,6 +75,14 @@ struct HeroData
     u16 flags11E;
 };
 
+struct WorldModeBits
+{
+    u8 low2 : 2;
+    u8 f23 : 2;
+    u8 f45 : 2;
+    u8 top : 2;
+};
+
 struct HeroBody
 {
     u8 filler0[0x08];
@@ -270,8 +278,6 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
     struct HeroBody *partner;
     struct HeroBody *next;
     u16 *timer;
-    s16 *prog;
-    u8 *flags;
     s32 rate;
     s32 t;
     s32 nearLimit;
@@ -287,6 +293,7 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
     bodyB = &gWorld->heroB->body;
     partner = body->partner;
     farLimit = 0x4000;
+    cap = 0x4000;
     step_motion(bodyB);
 
     next = bodyB->child;
@@ -300,8 +307,7 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
     t = (t + rate) * 2;
     farLimit += t;
 
-    prog = &bodyB->progress;
-    if (*prog < farLimit) {
+    if (bodyB->progress < farLimit) {
         ((struct HeroFlagBits *)&bodyB->flags)->active = 0;
     }
 
@@ -326,8 +332,16 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
 
-    farC = clamp_limit(farLimit);
-    cap = 0x4000;
+    farC = farLimit;
+    if (farC < 0) {
+        farC = 0;
+    }
+    if (cap > 0x4000) {
+        cap = 0x4000;
+    }
+    if (farC > 0x7FFF) {
+        farC = 0x7FFF;
+    }
     if (farC < cap) {
         cap = farC;
     }
@@ -337,8 +351,8 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
         if ((gSys.pressed & 2) != 0) {
             body_set_pose(2, bodyB, 0x2E, 0);
             obj_free_parts(bodyB);
-            gWorld->modeByte |= 0x20;
-            if ((gWorld->modeByte & 4) == 0) {
+            ((struct WorldModeBits *)&gWorld->modeByte)->f45 |= 2;
+            if ((((struct WorldModeBits *)&gWorld->modeByte)->f23 & -3) == 0) {
                 if ((gWorld->view & 8) != 0) {
                     chain_fast(bodyA);
                     chain_fast(bodyB);
@@ -352,7 +366,7 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
                 }
                 display_flush();
             }
-            timer_set_nibble(timer, 2);
+            *timer = (*timer & 0xFFF) | 0x2000;
         }
     }
 
@@ -362,8 +376,8 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
 
     far2 = clamp_limit(farLimit);
     if (window_hit(bodyB, far2)) {
-        gWorld->modeByte |= 0x20;
-        timer_set_nibble(timer, 1);
+        ((struct WorldModeBits *)&gWorld->modeByte)->f45 |= 2;
+        *timer = (*timer & 0xFFF) | 0x1000;
         if ((gWorld->view & 8) != 0) {
             chain_fast(bodyA);
             chain_fast(bodyB);
@@ -379,17 +393,17 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
         obj_free_parts(bodyB);
         goto part2;
     }
-    if (*prog > farLimit) {
+    if (bodyB->progress > farLimit) {
         goto part2;
     }
     if ((gSys.pressed & 3) == 0) {
         goto part2;
     }
-    gWorld->modeByte |= 0x20;
-    if ((gWorld->modeByte & 4) != 0) {
+    ((struct WorldModeBits *)&gWorld->modeByte)->f45 |= 2;
+    if ((((struct WorldModeBits *)&gWorld->modeByte)->f23 & -3) != 0) {
         goto part2;
     }
-    timer_set_nibble(timer, 1);
+    *timer = (*timer & 0xFFF) | 0x1000;
     if ((gWorld->view & 8) != 0) {
         chain_fast(bodyA);
         chain_fast(bodyB);
@@ -408,14 +422,23 @@ NONMATCH("asm/code_080D8164/hero_b_step_d8164.s", void hero_b_step_d8164(struct 
 part2:
     nibble = *timer >> 12;
     if (nibble != 0) {
-        far2 = clamp_limit(farLimit);
         cap2 = 0x4000;
+        far2 = farLimit;
+        if (far2 < 0) {
+            far2 = 0;
+        }
+        if (cap2 > 0x4000) {
+            cap2 = 0x4000;
+        }
+        if (far2 > 0x7FFF) {
+            far2 = 0x7FFF;
+        }
         if (far2 < cap2) {
             cap2 = far2;
         }
         if (limit_hit(bodyB, cap2, far2)) {
             if (nibble > 1) {
-                timer_set_nibble(timer, 0);
+                *timer = *timer & 0xFFF;
                 unlink = hero_b_unlink_a;
                 body->state = unlink;
                 unlink(body);
@@ -424,8 +447,7 @@ part2:
         }
     }
 
-    flags = &bodyB->flags;
-    if ((*flags & 0x20) == 0) {
+    if ((bodyB->flags & 0x20) == 0) {
         return;
     }
     set_slot_value(0x9B, -1);
