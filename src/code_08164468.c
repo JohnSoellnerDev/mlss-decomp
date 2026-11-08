@@ -57,6 +57,13 @@ struct Sprite
     u8 unk1F;
 };
 
+/* two groups of three child objects after the first word */
+struct Triples
+{
+    u32 unk0;
+    struct Obj *kids[2][3];
+};
+
 struct Lo2Bits
 {
     u8 lo2 : 2;
@@ -78,9 +85,15 @@ struct Triple
     s32 z;
 };
 
+/* sprite position; written through the union, so the stores may alias any field */
+union SprPos
+{
+    s16 xy[2];
+};
+
 struct DialogObj
 {
-    s16 *sprite;
+    union SprPos *sprite;
     u8 filler4[0x4];
     s32 unk8;
     s32 unkC;
@@ -258,78 +271,47 @@ void obj_run_children_free(struct Obj *obj, u32 flags)
     }
 }
 
+/* only three branch targets differ: the original keeps the jumps to the shared "done" flag */
 NONMATCH("asm/code_08164468/obj_triples_done.s", u32 obj_triples_done(struct Obj *obj))
 {
-    s32 group = 0;
-    u32 off = 0;
-    u32 base = (u32)&obj->unk4;
-    while (1)
+    s32 g;
+    s32 j;
+
+    for (g = 0; g < 2; g++)
     {
-        struct Obj *child;
-        u32 o;
-        child = *(struct Obj **)(base + off);
-        if (!child_is_done(child))
+        for (j = 0; j < 3; j++)
         {
-            return 0;
-        }
-        o = off;
-        child = *(struct Obj **)(base + (o + 4));
-        if (!child_is_done(child))
-        {
-            return 0;
-        }
-        child = *(struct Obj **)(base + (o + 8));
-        if (!child_is_done(child))
-        {
-            return 0;
-        }
-        off += 0xC;
-        group++;
-        if (group > 1)
-        {
-            break;
+            if (!child_is_done(((struct Triples *)obj)->kids[g][j]))
+            {
+                return 0;
+            }
         }
     }
     return 1;
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08164468/obj_init_triples_class.s", void obj_init_triples_class(struct Obj *obj))
+/* point a child at a script and restart it */
+static inline void child_set_script(struct Obj *child, const u8 *script)
 {
-    s32 group = 0;
-    u32 base = (u32)&obj->unk4;
-    s32 next;
+    child->unk44 = script;
+    child->unk48 = 0;
+    child->unk40 = 0;
+}
 
-    while (1)
+void obj_init_triples_class(struct Obj *obj)
+{
+    s32 g;
+    s32 j;
+
+    for (g = 0; g < 2; g++)
     {
-        struct Obj *child;
-        struct Obj **first;
-        struct Obj **entry;
-        s32 twice = group << 1;
-
-        next = group + 1;
-        entry = (struct Obj **)(((twice + group) << 2) + base);
-        first = entry;
-        child = *entry++;
-        child->unk44 = gObjScript08213a04;
-        child->unk48 = 0;
-        child->unk40 = 0;
-        child = *entry;
-        child->unk44 = gObjScript08213a04;
-        child->unk48 = 0;
-        child->unk40 = 0;
-        child = first[2];
-        child->unk44 = gObjScript08213a04;
-        child->unk48 = 0;
-        child->unk40 = 0;
-        group = next;
-        if (group > 1)
+        for (j = 0; j < 3; j++)
         {
-            break;
+            child_set_script(((struct Triples *)obj)->kids[g][j], gObjScript08213a04);
         }
     }
 }
-END_NONMATCH
 
 void obj_set_child_class_3a04(struct Obj *obj, u32 group, u32 slot)
 {
@@ -1206,13 +1188,10 @@ void sound_stop_song(u32 song);
 void mem_copy_fast(void *dst, void *src, u32 len);
 u32 layout_text_run();
 
-NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct DialogObj *obj))
+u32 obj_dialog_step(struct DialogObj *obj)
 {
     struct DlgInput *input = (struct DlgInput *)gUnk_03000374;
-    u32 r6;
-    u8 *track;
-    u8 *r3;
-    u8 *r4;
+    s32 cmd; /* text command code, then its byte argument */
 
     while (1)
     {
@@ -1233,15 +1212,14 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
             {
                 u32 k;
 
-                track = (u8 *)obj + 8;
-                r6 = (u16)track_run(track);
-                if (r6 == 0)
+                cmd = (u16)track_run((u8 *)obj + 8);
+                if (cmd == 0)
                 {
                     obj_release_slots(obj->sprite);
                     obj->state = 1;
                     continue;
                 }
-                k = ((r6 & 0xFFE0) == 0xFF00) ? (r6 & 0x1F) : 0;
+                k = ((cmd & 0xFFE0) == 0xFF00) ? (cmd & 0x1F) : 0;
                 switch (k)
                 {
                 case 0:
@@ -1276,10 +1254,8 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                     obj->state = 4;
                     continue;
                 case 4:
-                    r4 = (u8 *)obj + 0x70;
-                    *(s32 *)(r4 + obj->count * 8) = obj->unk28 + obj->unk14 + 0xB;
-                    r3 = (u8 *)obj + 0x74;
-                    *(s32 *)(r3 + obj->count * 8) = obj->unk2C + obj->unk15 - 7;
+                    obj->pos[obj->count][0] = obj->unk28 + obj->unk14 + 0xB;
+                    obj->pos[obj->count][1] = obj->unk2C + obj->unk15 - 7;
                     if (obj->count == 0)
                     {
                         if (obj->soundOn != 0)
@@ -1292,8 +1268,8 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                     {
                         obj_load_record(obj->sprite, 0, -1, 0, 0);
                         sprite_update_cd0(obj->sprite);
-                        obj->sprite[0] = *(s32 *)(r4 + obj->count * 8);
-                        obj->sprite[1] = *(s32 *)(r3 + obj->count * 8);
+                        obj->sprite->xy[0] = obj->pos[obj->count][0];
+                        obj->sprite->xy[1] = obj->pos[obj->count][1];
                     }
                     obj->count++;
                     continue;
@@ -1314,15 +1290,16 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                     continue;
                 case 11:
                 {
-                    u32 buf[5];
+                    struct Voice voice;
                     s32 x;
                     s32 w;
 
-                    r6 = *obj->text;
+                    cmd = *obj->text;
                     obj->text++;
-                    mem_copy_fast(buf, track, 0x14);
-                    w = layout_text_run(buf[0], buf[1], buf[2], buf[3], buf[4], 0) & 0xFFFF;
-                    switch (r6)
+                    mem_copy_fast(&voice, (u8 *)obj + 8, 0x14);
+                    w = layout_text_run(voice, 0) & 0xFFFF;
+                    x = 0;
+                    switch (cmd)
                     {
                     case 0:
                         x = 9;
@@ -1333,11 +1310,8 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                     case 2:
                         x = (((obj->unk34 - 1) << 16) >> 13) - w - 4;
                         break;
-                    default:
-                        x = 0;
-                        break;
                     }
-                    voice_set_data_ptr(track, 0, (u8)x, (void *)obj->text);
+                    voice_set_data_ptr((u8 *)obj + 8, 0, (u8)x, (void *)obj->text);
                     continue;
                 }
                 case 12:
@@ -1351,11 +1325,11 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                     continue;
                 case 13:
                 {
-                    r6 = *obj->text;
+                    cmd = *obj->text;
 
                     obj->text++;
                     obj->unk58 = obj->text;
-                    if (r6 != 0)
+                    if (cmd != 0)
                     {
                         obj->text = gDialogJumpTargetFlagNonzero;
                     }
@@ -1386,8 +1360,8 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                         obj_load_record(obj->sprite, 1, -1, 0, 0);
                     }
                     sprite_update_cd0(obj->sprite);
-                    obj->sprite[0] = obj->unk28 + (obj->unk30 << 3) - 8;
-                    obj->sprite[1] = obj->unk2C + (obj->unk34 << 3) - 8;
+                    obj->sprite->xy[0] = obj->unk28 + (obj->unk30 << 3) - 8;
+                    obj->sprite->xy[1] = obj->unk2C + (obj->unk34 << 3) - 8;
                     obj->state = 2;
                     obj->text++;
                     return -1;
@@ -1425,8 +1399,8 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
                 }
                 set_slot_value(0x4E, -1);
             }
-            obj->sprite[0] = obj->pos[obj->idx][0];
-            obj->sprite[1] = obj->pos[obj->idx][1];
+            obj->sprite->xy[0] = obj->pos[obj->idx][0];
+            obj->sprite->xy[1] = obj->pos[obj->idx][1];
             if (input->keys & 1)
             {
                 set_slot_value(0x60, -1);
@@ -1448,4 +1422,3 @@ NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct Dialo
         }
     }
 }
-END_NONMATCH
