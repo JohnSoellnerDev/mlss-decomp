@@ -1011,7 +1011,209 @@ u32 hitboxes_overlap(struct Obj *a, struct Obj *b)
 
 
 
-ASM_FUNC("asm/code_08151144/scene_init_display.s", void *scene_init_display(void *obj, u32 kind, const void *table))
+extern u8 gSceneStateTable_083CCAC0[];
+static inline u8 *state_rec_for(u8 *game)
+{
+    return gSceneStateTable_083CCAC0 + (game[0x1F20] << 5);
+}
+
+extern u16 gUnk_02000050;
+extern u16 gUnk_02000054;
+extern u16 gUnk_0200000A;
+extern u16 gUnk_02000080;
+extern u32 gUnk_03000C84;
+extern const u8 gSceneDisplayClass[];
+extern const u8 gTransitionClassDf60[];
+extern const u8 gSceneTilemap[];
+extern const u8 gScenePaletteA[];
+extern const u8 gScenePaletteB[];
+extern const u8 gHeapTagSceneTask[];
+extern const u8 gHeapTagSceneUnpack[];
+extern const u8 gHeapTagScrollBuf[];
+extern const u8 gHeapTagSceneTable[];
+extern const u8 gHeapTagSceneObjB[];
+void task_insert(void *node, u8 kind, u32 data);
+void obj_clear_tile_ptrs(void *p);
+void obj_reset_e400(void *p);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+u32 read_varlen_plus1(const void *src);
+void cpu_fast_set(const void *src, void *dst, u32 ctl);
+
+NONMATCH("asm/code_08151144/scene_init_display.s", void *scene_init_display(void *obj, u32 kind, const void *table))
+{
+    u8 *s;
+    s32 mode;
+    s32 set;
+    s32 i;
+    s32 k;
+    s32 r;
+    s32 g;
+    s32 b;
+    u16 px;
+    u16 *p;
+    u8 *buf;
+    u32 packed;
+    void *objA;
+    u8 *ent;
+
+    s = obj;
+    task_insert(s, (u8)kind, (u32)table);
+    *(void **)(s + 0x18) = (void *)gSceneTable08cdde80;
+    obj_clear_tile_ptrs(s + 0x1C);
+    obj_clear_tile_ptrs(s + 0x840);
+    obj_clear_tile_ptrs(s + 0x1064);
+    *(u16 *)0x02000000 = 0;
+    *(u16 *)(s + 0x1CC4) = 0;
+
+    mode = ((s32)((u32)gGameMode << 27)) >> 27;
+    if (mode > 5)
+    {
+        s[0x1F20] = 1;
+        *(u16 *)(s + 0x1CC4) = *(u16 *)(s + 0x1CC4) | 0x20;
+    }
+    else
+    {
+        s[0x1F20] = mode;
+    }
+
+    ent = state_rec_for(s);
+    *(u16 *)(s + 0x1F16) = *(u16 *)(ent + 0x1C);
+    ent = state_rec_for(s);
+    *(u16 *)(s + 0x1F18) = *(u16 *)(ent + 0x1C) - 0x64;
+    *(u16 *)(s + 0x1F1A) = 0xE;
+    *(u16 *)(s + 0x1F1C) = 0x1F4;
+    s[0x1F21] = 0;
+    s[0x1F22] = 0;
+    *(s32 *)(s + 0x1CB4) = 0;
+    *(u16 *)(s + 0x1CC6) = 0;
+    *(s32 *)(s + 0x1C98) = 0;
+    *(s32 *)(s + 0x1C9C) = 0;
+    *(s32 *)(s + 0x1CA0) = 0;
+    *(s32 *)(s + 0x1CA4) = 0;
+    *(u16 *)(s + 0x1F24) = read_var(0x1CDF);
+    *(u16 *)(s + 0x1F26) = read_var(0x1CE0);
+    *(u16 *)(s + 0x1F28) = 0;
+    *(u16 *)(s + 0x1F2A) = 0;
+    *(u16 *)(s + 0x1F2C) = 0;
+
+    objA = heap_alloc2(0x1C, 1, gHeapTagSceneTask, 0);
+    task_insert(objA, 8, (u32)gHeapTagSceneTask);
+    *(u32 *)((u8 *)objA + 0x18) = (u32)gSceneDisplayClass;
+    *(void **)(s + 0x1F30) = objA;
+    *(void **)((u8 *)objA + 0x14) = s;
+    gGamePtr = s;
+    gUnk_02000050 = 0xDF;
+    *(u16 *)0x04000050 = gUnk_02000050;
+    gUnk_02000054 = 0x1F;
+    *(u16 *)0x04000054 = gUnk_02000054;
+    *(u16 *)0x04000000 = *(u16 *)0x02000000 & 0xFBFF;
+    (&gUnk_0200000A)[0] = 0x1701;
+    (&gUnk_0200000A)[1] = 0x5801;
+    (&gUnk_0200000A)[2] = 0x1D02;
+
+    packed = 0x0800AF20;
+    k = read_varlen_plus1((const void *)packed);
+    buf = heap_alloc(k, 1, gHeapTagSceneUnpack, 0);
+    ((void (*)(const void *, void *))gUnk_03000C84)((const void *)packed, buf);
+    cpu_fast_set(buf, (void *)0x06000000, 0x2000);
+    if (buf != 0)
+    {
+        heap_free_a(buf);
+    }
+
+    if ((gSys[0x888] & 6) == 2)
+    {
+        cpu_fast_set(gScenePaletteB, &gUnk_02000080, 0x80);
+    }
+    else
+    {
+        cpu_fast_set(gScenePaletteA, &gUnk_02000080, 0x80);
+    }
+    gUnk_02000080 = 0x190;
+
+    for (set = 0; set <= 15; set++)
+    {
+        if (set == 0 || set == 2)
+        {
+            for (i = 0; i <= 15; i++)
+            {
+                p = (u16 *)((u8 *)&gUnk_02000080 + (set << 5) + (i << 1));
+                px = *p;
+                r = (((s32)(px & 0x1F)) * 3) >> 1;
+                if (r > 0x1F)
+                {
+                    r = 0x1F;
+                }
+                g = (((s32)((px >> 5) & 0x1F)) * 3) >> 1;
+                if (g > 0x1F)
+                {
+                    g = 0x1F;
+                }
+                b = (((s32)((px >> 10) & 0x1F)) * 3) >> 1;
+                if (b > 0x1F)
+                {
+                    b = 0x1F;
+                }
+                *p = r | (g << 5) | (b << 10);
+            }
+        }
+        else
+        {
+            for (i = 0; i <= 15; i++)
+            {
+                p = (u16 *)((u8 *)&gUnk_02000080 + (set << 5) + (i << 1));
+                px = *p;
+                r = (((s32)(px & 0x1F)) * 5) >> 1;
+                if (r > 0x1F)
+                {
+                    r = 0x1F;
+                }
+                g = (((s32)((px >> 5) & 0x1F)) * 5) >> 1;
+                if (g > 0x1F)
+                {
+                    g = 0x1F;
+                }
+                b = (((s32)((px >> 10) & 0x1F)) * 5) >> 1;
+                if (b > 0x1F)
+                {
+                    b = 0x1F;
+                }
+                *p = r | (g << 5) | (b << 10);
+            }
+        }
+    }
+
+    cpu_fast_set(gSceneTilemap, (void *)0x0600C000, 0x400);
+    *(u16 *)(gSys + 2) = *(u16 *)(gSys + 2) | 0x7FFF;
+
+    for (k = 0; k < 0x40; k++)
+    {
+        px = ((u16 *)&gUnk_02000080)[k];
+        b = (((s32)((px >> 10) & 0x1F)) * 2);
+        if (b > 0x1F)
+        {
+            b = 0x1F;
+        }
+        g = (px >> 5) & 0x1F;
+        r = (px & 0x1F) >> 1;
+        if (r > 0x1F)
+        {
+            r = 0x1F;
+        }
+        ((u16 *)(s + 0x1CCA))[k] = r | (g << 5) | (b << 10);
+    }
+
+    gUnk_03001014 = heap_alloc_raw(0, 0x560, gHeapTagScrollBuf);
+    *(void **)(s + 0x1CB4) = obj_init_table(heap_alloc2(0x44, 0, gHeapTagSceneTable, 0));
+    gSys[0x888] |= 0x20;
+    *(s32 *)(s + 0x1CB0) = 0;
+    objA = heap_alloc2(8, 1, gHeapTagSceneObjB, 0);
+    obj_reset_e400(objA);
+    ((void **)objA)[1] = (void *)gTransitionClassDf60;
+    *(void **)(s + 0x1CAC) = objA;
+    return s;
+}
+END_NONMATCH
 
 struct SysHalf2
 {
@@ -1058,4 +1260,132 @@ void scene_teardown(struct SceneState *state, u32 task)
     task_remove(state, task);
 }
 
-ASM_FUNC("asm/code_08151144/scene_build_state.s", void scene_build_state(void))
+extern u16 gUnk_02000008;
+extern u8 gSceneStateTable_083CCAC0[];
+extern const u8 gHeapTagTimer[];
+extern const u8 gHeapTagBounds[];
+extern const u8 gHeapTagDigits[];
+extern const u8 gHeapTagWindowObj[];
+void obj_setup_tiles(void *obj, const void *src, u32 w, u32 h, u32 x, u32 y, void *vram, u32 extra);
+void *obj_init_timer(void *obj);
+void *obj_clear_bounds(void *obj);
+void *obj_create_digits(void *obj);
+void obj_set_value(void *obj, s16 value);
+void *window_obj_setup(void *obj, u32 a, u32 b, u32 c, u32 d);
+void *obj_create(void *unused, void *record);
+
+NONMATCH("asm/code_08151144/scene_build_state.s", void scene_build_state(u8 *game))
+{
+    s32 i;
+    s32 red;
+    s32 green;
+    s32 redStep;
+    s32 greenStep;
+    u16 flags;
+    u16 *flagsP;
+    s32 slot;
+    void *def;
+    void *obj;
+    u8 *rec;
+
+    flagsP = (u16 *)(game + 0x1CC4);
+    if (game[0x1F20] == 0)
+    {
+        flags = *flagsP & 4;
+    }
+    else
+    {
+        flags = *flagsP | 4;
+    }
+    *flagsP = flags;
+
+    redStep = 0x22;
+    greenStep = 0x1A;
+    red = 0x1F00;
+    green = 0x1800;
+    for (i = 0; i < 228; i++)
+    {
+        *(u16 *)(gUnk_03001014 + 0x1CC + (i << 1)) = ((red >> 8) | ((green >> 8) << 5));
+        red -= redStep;
+        green -= greenStep;
+    }
+
+    for (i = 0; i < 228; i++)
+    {
+        *(u16 *)(gUnk_03001014 + 4 + (i << 1)) = 0;
+    }
+
+    *(s32 *)(game + 0x1888) = 0;
+    *(s32 *)(game + 0x188C) = 0;
+    *(s32 *)(game + 0x1890) = 0;
+    *(s32 *)(game + 0x1894) = 0;
+    *(u16 *)(game + 0x1F12) = *(u16 *)(game + 0x1F1A);
+    *(s32 *)(game + 0x1CB8) = 0;
+    *(s32 *)(game + 0x1CBC) = 0;
+    *(u16 *)(game + 0x1F14) = 0;
+
+    rec = state_rec_for(game);
+    *(u16 *)(game + 0x1CC8) = rec[0x1B];
+    rec = state_rec_for(game);
+    obj_setup_tiles(game + 0x1C, *(void **)rec, ((s32)((u32)*(u16 *)(rec + 0x18) << 21)) >> 16, 0x20, 0, 0, (void *)0x0600B800, *(u32 *)(rec + 4));
+
+    rec = state_rec_for(game);
+    obj_setup_tiles(game + 0x840, *(void **)(rec + 8), ((s32)((u32)*(u16 *)(rec + 0x18) << 21)) >> 16, 0x20, 0, 0, (void *)0x0600E800, *(u32 *)(rec + 0xC));
+
+    *(void **)(game + 0x1CA0) = obj_init_timer(heap_alloc2(0x20, 1, gHeapTagTimer, 0));
+    *(void **)(game + 0x1CA4) = obj_clear_bounds(heap_alloc2(0x18, 1, gHeapTagBounds, 0));
+    *(void **)(game + 0x1CB0) = obj_create_digits(heap_alloc2(0x38, 1, gHeapTagDigits, 0));
+    if (((s32)((u32)gGameMode << 27) >> 27) > 5)
+    {
+        obj_set_value(*(void **)(game + 0x1CB0), *(s16 *)(game + 0x1F2C));
+    }
+
+    *(void **)(game + 0x1CA8) = 0;
+    if ((*(u16 *)(game + 0x1CC4) & 4) == 0)
+    {
+        obj = heap_alloc2(0xA4, 0, gHeapTagWindowObj, 0);
+        obj = window_obj_setup(obj, 0, 2, 0x1C, 0xD);
+        *(void **)(game + 0x1CA8) = obj;
+        *(u16 *)((u8 *)obj + 0xA2) = 0x6F;
+    }
+    else
+    {
+        gUnk_02000008 = 0x1C03;
+        rec = state_rec_for(game);
+        obj_setup_tiles(game + 0x1064, *(void **)(rec + 0x14), 0x60, 0x20, 0, 0, (void *)0x0600E000, 0);
+    }
+
+    if ((gGameMode & 0x20) != 0)
+    {
+        *(u16 *)(game + 0x1CC4) = *(u16 *)(game + 0x1CC4) | 2;
+    }
+
+    def = *(void **)(state_rec_for(game) + 0x10);
+    slot = 0;
+    for (;;)
+    {
+        if (*(u32 *)def == 0)
+        {
+            break;
+        }
+        obj = obj_create(game, def);
+        *(void **)(game + 0x1898 + (slot << 2)) = obj;
+        def = (u8 *)def + 0x10;
+        slot++;
+        if (slot > 255)
+        {
+            break;
+        }
+    }
+    if (slot <= 255)
+    {
+        for (i = slot; i <= 255; i++)
+        {
+            *(u32 *)(game + 0x1898 + (i << 2)) = 0;
+        }
+    }
+
+    *(void **)(game + 0x1C98) = *(void **)(game + 0x1898);
+    *(void **)(game + 0x1C9C) = *(void **)(game + 0x189C);
+}
+END_NONMATCH
