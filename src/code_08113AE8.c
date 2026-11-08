@@ -207,6 +207,16 @@ struct ItemFlags110
     u8 bit7 : 1;
 };
 
+/* one entry of the motion table: three signed 10-bit values and a flag */
+struct MotionEntry
+{
+    s32 x : 10;
+    s32 y : 10;
+    s32 z : 10;
+    u32 flag : 1;
+    u32 bit31 : 1;
+};
+
 extern struct World *gWorld;
 extern const u32 gSlotMotion[];
 extern const u16 gModeStartX[];
@@ -403,23 +413,18 @@ void obj_place_sprite_part(struct Obj *obj)
     set_slot_value(0xAD, minusOne);
 }
 
-NONMATCH("asm/code_08113AE8/obj_query_contact_step.s", u32 obj_query_contact_step(struct Obj *obj))
+u32 obj_query_contact_step(struct Obj *obj)
 {
     struct Obj *part;
     u8 *table;
-    u8 *row;
+    struct MotionEntry *row;
     s32 index;
     s32 dx;
     s32 dy;
     s32 speed;
     s32 q;
     s32 *phase;
-    s32 pa;
-    s32 pb;
-    s32 pc;
-    u32 pd;
     u32 contact;
-    u16 mid;
     s32 len;
 
     contact = query_contact(obj);
@@ -433,13 +438,9 @@ NONMATCH("asm/code_08113AE8/obj_query_contact_step.s", u32 obj_query_contact_ste
     if (index > 2)
     {
         table = gWorld->unk1C;
-        row = (u8 *)gRomMotionTable + ((((table[1] << 1) + table[1]) << 3) + (index << 2));
-        mid = *(u16 *)(table + (index << 2) + 8);
-        pa = (s32)((u32)*(u16 *)row << 22) >> 22;
-        pb = (s32)(*(u32 *)row << 12) >> 22;
-        pc = (s32)((u32)*(u16 *)(row + 2) << 18) >> 22;
-        pd = (*(u32 *)row << 1) >> 31;
-        part = (struct Obj *)place_part_in_slot(index, mid, pa, pb, pc, pd, contact);
+        row = &((struct MotionEntry (*)[6])gRomMotionTable)[table[1]][index];
+        part = (struct Obj *)place_part_in_slot(index, *(u16 *)(table + (index << 2) + 8),
+            row->x, row->y, row->z, row->flag, contact);
         ((u8 *)part)[0x7E] |= 6;
         gWorld->unk5 -= 1;
         obj->keyX = ((struct ListItem *)part)->targetX;
@@ -473,7 +474,6 @@ NONMATCH("asm/code_08113AE8/obj_query_contact_step.s", u32 obj_query_contact_ste
     }
     return 0;
 }
-END_NONMATCH
 
 void obj_stop_anim_clear_cb(struct Obj *obj)
 {
