@@ -125,12 +125,38 @@ struct Hero
 
 struct World
 {
-    u8 filler0[0x70];
+    u8 filler0[0x0A];
+    u8 mode;
+    u8 filler0B;
+    u8 flags;
+    u8 filler0D[0x70 - 0x0D];
     struct Hero *heroA;
     struct Hero *heroB;
+    struct SpriteNode *sprites;
+};
+
+struct SpriteNode
+{
+    struct SpriteNode *next;
+    u8 filler4[0x08 - 0x04];
+    struct HeroSprite *sprite;
+};
+
+struct WorldModeBits
+{
+    u8 lo4 : 4;
+    u8 mid : 2;
+    u8 hi : 2;
+};
+
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
 };
 
 extern struct World *gWorld;
+extern u8 gSys[];
 
 void state_stack_advance_progress(struct HeroBody *body);
 void set_slot_value(u32 id, s32 value);
@@ -153,5 +179,195 @@ void hero_a_sprite_active_target_or_next(struct HeroBody *body);
 void hero_pair_pose_a_anim(struct HeroBody *body);
 void hero_b_step_window_a568(struct HeroBody *body);
 void enter_finish_rebuild(struct HeroBody *body);
+void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
+void body_set_pose(u32 art, struct HeroBody *body, s32 x, s32 y);
+void obj_free_parts(struct HeroBody *body);
+void display_flush(void);
+void sprite_objects_draw_obj_tiles(u32 a, u32 b);
+void hero_b_anim_start_step2(struct HeroBody *body);
+void hero_b_active_fx_a_anim(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct HeroBody *body))
+static inline void world_mode_or2(void)
+{
+    ((struct WorldModeBits *)&gWorld->mode)->mid |= 2;
+}
+
+static inline void timer_set_mode(u16 *timer, u32 mode)
+{
+    *timer = (*timer & 0xFFF) | (mode << 12);
+}
+
+static inline void chain_frame_set(struct HeroBody *p, u16 frame)
+{
+    for (; p != 0; p = p->next)
+        p->frame = frame;
+}
+
+static inline void sprite_layer_set(u8 layer)
+{
+    struct SpriteNode *node;
+    for (node = gWorld->sprites; node != 0; node = node->next)
+        if (node->sprite != 0)
+            node->sprite->frame = layer;
+}
+
+static inline void frames_set(struct HeroBody *a, struct HeroBody *b, struct HeroBody *c, u16 chain, u8 layer)
+{
+    chain_frame_set(a, chain);
+    chain_frame_set(b, chain);
+    chain_frame_set(c, chain);
+    sprite_layer_set(layer);
+}
+
+NONMATCH("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct HeroBody *body))
+{
+    struct HeroBody *bodyA;
+    struct HeroBody *bodyB;
+    struct HeroBody *partner;
+    u8 *heroB;
+    u16 *timer;
+    s32 lo;
+    s32 hi;
+    s32 limit;
+    s32 inWin;
+    s32 near;
+    s32 reached;
+    s32 tmode;
+    s32 mode;
+    s32 (*div)(s32, s32);
+    void (*next)(struct HeroBody *);
+    s32 stepOne;
+    s32 stepMax;
+
+    stepOne = 0x4000;
+    stepMax = 0x7FFF;
+    bodyA = &gWorld->heroA->body;
+    heroB = (u8 *)gWorld->heroB;
+    bodyB = (struct HeroBody *)(heroB + 8);
+    partner = body->partner;
+    state_stack_advance_progress(bodyB);
+
+    if (*(s16 *)(heroB + 0x86) < stepOne)
+        ((struct HeroFlagBits *)(heroB + 0x81))->active = 0;
+
+    timer = (u16 *)(heroB + 0xB6);
+    if ((*timer >> 12) != 0)
+        goto tail;
+
+    near = 0;
+    if (*(s16 *)(heroB + 0xB4) <= 0 && *(s16 *)(heroB + 0x86) >= 0)
+        near = 1;
+
+    timer = (u16 *)((u8 *)bodyB + 0xAE);
+    if (near) {
+        if (gWorld->flags & 8)
+            frames_set(bodyA, bodyB, partner, 0x66, 6);
+        else
+            frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    lo = 0;
+    hi = stepOne;
+    if (!(lo <= hi))
+        lo = hi;
+    if (hi > stepMax)
+        hi = stepMax;
+    if (!(hi >= lo))
+        lo = hi;
+
+    inWin = 0;
+    if (bodyB->progress >= lo && bodyB->step <= hi)
+        inWin = 1;
+
+    if (inWin) {
+        set_body_part(bodyB, 2, 0, 0x14, 0);
+        if ((((struct SysKeys3E *)gSys)->keys & 2) != 0) {
+            body_set_pose(3, bodyB, 0, -0x28);
+            obj_free_parts(bodyB);
+            world_mode_or2();
+            if ((gWorld->mode & 4) == 0) {
+                frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+                display_flush();
+            }
+            timer_set_mode(timer, 2);
+        }
+    }
+
+    if ((*timer >> 12) != 0)
+        goto tail;
+
+    limit = stepOne;
+    if (limit > stepMax)
+        limit = stepMax;
+    reached = 0;
+    if (bodyB->step <= limit && bodyB->progress >= limit)
+        reached = 1;
+
+    if (reached) {
+        world_mode_or2();
+        timer_set_mode(timer, 1);
+        frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+        display_flush();
+        obj_free_parts(bodyB);
+        goto tail;
+    }
+
+    if (bodyB->progress > stepOne)
+        goto tail;
+    if ((((struct SysKeys3E *)gSys)->keys & 3) == 0)
+        goto tail;
+
+    world_mode_or2();
+    if (gWorld->mode & 4)
+        goto tail;
+    timer_set_mode(timer, 1);
+    frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+    display_flush();
+    obj_free_parts(bodyB);
+    body_set_pose(6, bodyB, 0, -0x28);
+
+tail:
+    tmode = *timer >> 12;
+    if (tmode != 0) {
+        lo = 0;
+        hi = stepOne;
+        if (!(lo <= hi))
+            lo = hi;
+        if (hi > stepMax)
+            hi = stepMax;
+        if (!(hi >= lo))
+            lo = hi;
+
+        inWin = 0;
+        if (bodyB->progress >= lo && bodyB->step <= hi)
+            inWin = 1;
+
+        if (inWin && tmode > 1) {
+            timer_set_mode(timer, 0);
+            next = hero_b_anim_start_step2;
+            body->state = next;
+            next(body);
+            return;
+        }
+    }
+
+    if ((bodyB->flags & 0x20) == 0)
+        return;
+
+    mode = bodyB->mode & 6;
+    if (mode == 2 || mode == 4) {
+        sprite_set_action(bodyB, 6, 0x2063, 0);
+        ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 1;
+    }
+
+    mode = bodyB->mode & 6;
+    if (mode == 2 || mode == 4) {
+        div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+        bodyB->rate = div(stepOne, 7);
+        bodyB->progress = 0;
+        ((struct HeroFlagBits *)&bodyB->flags)->active = 0;
+    }
+    body->state = hero_b_active_fx_a_anim;
+}
+END_NONMATCH
