@@ -293,6 +293,7 @@ NONMATCH("asm/code_080CEB9C/hero_a_child_window_eb9c.s", void hero_a_child_windo
     struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
+    struct HeroBody *owner = body;
     struct HeroBody *child;
     s32 rate;
     s32 threshold;
@@ -555,7 +556,7 @@ NONMATCH("asm/code_080CEB9C/hero_a_child_window_eb9c.s", void hero_a_child_windo
             clear_active(body_b);
         }
     }
-    body->state = hero_b_follow_tracked_place;
+    owner->state = hero_b_follow_tracked_place;
 }
 END_NONMATCH
 
