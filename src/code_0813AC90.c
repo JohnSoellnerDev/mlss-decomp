@@ -263,18 +263,21 @@ ASM_FUNC("asm/code_0813AC90/box_overlap_xy.s", void box_overlap_xy(void))
 NONMATCH("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero))
 {
     s32 frames;
+    s32 yy;
 
+    yy = y;
     if (zero.value != 0)
     {
         x += obj->x;
-        y += obj->y;
+        yy += obj->y;
     }
     obj->startX = obj->x;
     obj->startY = obj->y;
     obj->targetX = x;
-    obj->targetY = y;
+    obj->targetY = yy;
     x -= obj->x;
-    y -= obj->y;
+    yy -= obj->y;
+    y = yy;
     x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x, 0x10);
     y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(y, 0x10);
     obj->zSpan = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(x * x + y * y) << 4;
@@ -360,7 +363,7 @@ ASM_FUNC("asm/code_0813AC90/wander_diag.s", s8 wander_diag(struct Obj *obj, s32 
 
 ASM_FUNC("asm/code_0813AC90/collide_react.s", void collide_react(void))
 
-NONMATCH("asm/code_0813AC90/collide_wander_diag.s", s8 collide_wander_diag(u32 unused, struct Obj *obj, struct Obj *other, u16 size, u16 speed, s8 dirA, s8 dirB, u16 extA, u16 extB))
+s8 collide_wander_diag(u32 unused, struct Obj *obj, struct Obj *other, u16 size, u16 speed, s8 dirA, s8 dirB, u16 extA, u16 extB)
 {
     u8 code;
     s32 keep;
@@ -417,15 +420,23 @@ NONMATCH("asm/code_0813AC90/collide_wander_diag.s", s8 collide_wander_diag(u32 u
 wander:
     code = wander_diag(obj, size, speed);
 done:
-    vel1 = (u16)obj->vx;
-    vel1 |= (u16)obj->vy;
+    {
+        u16 *px = (u16 *)&obj->vx;
+        u16 *py = (u16 *)&obj->vy;
+        vel1 = *px;
+        vel1 |= *py;
+    }
     if (vel1 != 0)
         facing = ((u32)(u16)angle_of_vector16(obj->vx, obj->vy) + 0x10) >> 8;
     else
         facing = 0xFF;
     obj->facing = facing;
-    vel2 = (u16)obj->vx;
-    vel2 |= (u16)obj->vy;
+    {
+        u16 *px = (u16 *)&obj->vx;
+        u16 *py = (u16 *)&obj->vy;
+        vel2 = *px;
+        vel2 |= *py;
+    }
     if (vel2 != 0)
         sector = (((u16)angle_of_vector16(obj->vx, obj->vy) + 0x1000) >> 13) & 7;
     else
@@ -433,7 +444,6 @@ done:
     ((struct Lo3 *)&obj->sector)->lo3 = sector;
     return (s8)code;
 }
-END_NONMATCH
 
 u32 z_approach(struct Obj *obj)
 {
