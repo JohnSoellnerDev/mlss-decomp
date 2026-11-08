@@ -167,6 +167,14 @@ struct Hi3Bits
     u8 hi3 : 3;
 };
 
+/* bits 0-2 of the sub object byte +0x24 */
+struct Cell24Bits
+{
+    u8 filler0[0x24];
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
 /* bits 1-2 */
 struct ModeBits
 {
@@ -191,6 +199,14 @@ struct SprLayerBits
     u8 rest : 4;
 };
 
+/* the same fields, read as a byte */
+struct SprLayerP
+{
+    u8 lo2 : 2;
+    u8 b23 : 2;
+    u8 rest : 4;
+} __attribute__((packed));
+
 struct Half20A
 {
     u16 lo7 : 7;
@@ -209,7 +225,7 @@ void obj_set_id(void *sub, u32 id);
 void sound_stop_song(u32 song);
 void set_slot_value(u32 id, s32 value);
 u32 obj_find_hit_entry(void *obj, void *sub);
-u32 drop_roll(u32 item, u32 kind, u32 group);
+u16 drop_roll(u32 item, u32 kind, u32 group);
 void obj_draw_desc_entries(void *obj, s32 x, s32 y, s32 z, s32 w, u32 amount, ByteArg flag, ByteArg one);
 void obj_build_message(void *obj, u32 a, u32 amount, u32 item, u32 wide);
 void set_flag(u8 *flags, u32 a, u32 id, u32 value);
@@ -219,13 +235,19 @@ void obj_reset_movement(void *ent);
 void attach_sprite_setup(void *sub);
 extern u8 *gUnk_03000FC0;
 
-/* Common start of the pair state starts: facing, slots, animation. */
-static inline void pair_start_begin(struct PairObj *obj)
+/* Steps the state slots and the animation of A (bit 0) and/or B (bit 1). */
+static inline void pair_shift_advance(struct PairObj *obj, u32 which)
 {
-    update_pair_facing(obj, 1, 1);
-    obj_shift_state_slots(obj->subA);
-    advance_anim_frame(obj, obj->subA, 0, 0);
-    ((struct Bit1Bits *)&obj->state246)->bit1 = 0;
+    if ((which & 1) != 0)
+    {
+        obj_shift_state_slots(obj->subA);
+        advance_anim_frame(obj, obj->subA, 0, 0);
+    }
+    if ((which & 2) != 0)
+    {
+        obj_shift_state_slots(obj->subB);
+        advance_anim_frame(obj, obj->subB, (((u32)obj->flags208 << 27) >> 31), 0);
+    }
 }
 
 /* The entry that the slot byte of a sub object selects. */
@@ -234,19 +256,15 @@ static inline struct PairSub *pair_slot_entry(struct PairObj *obj, struct PairSu
     return obj->entries[((s32)(sub->slot33C << 25)) >> 25];
 }
 
-/* Both layer fields of a sprite get the same value. */
-static inline void pair_spr_set_layer(struct PairSpr *spr, u32 v)
-{
-    ((struct SprLayerBits *)&spr->flags1F)->b23 = v;
-    ((struct SprLayerBits *)&spr->flags1F)->lo2 = v;
-}
-
-NONMATCH("asm/code_08032528/pair_start_state_1d.s", void pair_start_state_1d(struct PairObj *obj))
+/* A and B start state 0x1D: B moves to A, its jump height follows the height difference. */
+void pair_start_state_1d(struct PairObj *obj)
 {
     s32 maxDist;
     s32 dist;
 
-    pair_start_begin(obj);
+    update_pair_facing(obj, 1, 1);
+    pair_shift_advance(obj, 1);
+    ((struct Bit1Bits *)&obj->state246)->bit1 = 0;
     obj->pixX = obj->subB->posX / 0x100;
     obj->pixY = obj->subB->posY / 0x100;
     {
@@ -270,7 +288,7 @@ NONMATCH("asm/code_08032528/pair_start_state_1d.s", void pair_start_state_1d(str
         ((struct Bit3Bits *)&b->flags358)->bit3 = 1;
     }
     obj->field258 = 0;
-    ((struct Hi3Bits *)&obj->state246)->hi3 = obj->subA->cell24;
+    ((struct Hi3Bits *)&obj->state246)->hi3 = ((struct Cell24Bits *)obj->subA)->lo3;
     maxDist = 0x24;
     if (obj->subA->posZ + obj->subA->posZB > obj->subB->posZ + obj->subB->posZB)
     {
@@ -288,9 +306,9 @@ NONMATCH("asm/code_08032528/pair_start_state_1d.s", void pair_start_state_1d(str
     ((struct Bit7Bits *)&obj->select20B)->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08032528/pair_start_state_27.s", void pair_start_state_27(struct PairObj *obj))
+/* A in state 0x23 or 0x29 near the height of its slot entry: A and B start state 0x27. */
+void pair_start_state_27(struct PairObj *obj)
 {
     struct PairSub *e;
     s32 aPix;
@@ -301,7 +319,10 @@ NONMATCH("asm/code_08032528/pair_start_state_27.s", void pair_start_state_27(str
         return;
     aPix = (obj->subA->posZ + obj->subA->posZB) / 0x100;
     e = pair_slot_entry(obj, obj->subA);
-    ePix = (e->posZ + e->posZB) / 0x100;
+    ePix = e->posZ + e->posZB;
+    if (ePix < 0)
+        ePix += 0xFF;
+    ePix >>= 8;
     top = aPix + 8;
     if (top < ePix)
         return;
@@ -323,17 +344,23 @@ NONMATCH("asm/code_08032528/pair_start_state_27.s", void pair_start_state_27(str
     ((struct Half20A *)&obj->flags20A)->b78 = 1;
     ((struct Bit0Bits *)&obj->subA->flags20D)->bit0 = 1;
     ((struct Bit4Bits *)&obj->subA->flags20D)->bit4 = 0;
-    pair_spr_set_layer(obj->subA->sprite,
-        ((struct SprLayerBits *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->b23);
+    {
+        struct PairSpr *spr = obj->subA->sprite;
+        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+            = ((struct SprLayerP *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->b23;
+    }
     ((struct Bit4Bits *)&obj->subB->flags20D)->bit4 = 0;
-    pair_spr_set_layer(obj->subB->sprite,
-        ((struct SprLayerBits *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->lo2);
+    {
+        struct PairSpr *spr = obj->subB->sprite;
+        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+            = ((struct SprLayerP *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->lo2;
+    }
     sound_stop_song(0x5D);
     set_slot_value(0x8E, -1);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08032528/pair_start_state_2a.s", void pair_start_state_2a(struct PairObj *obj))
+/* A in state 0x21-0x24 or 0x2C: A and B start state 0x2A, A moves onto its slot entry. */
+void pair_start_state_2a(struct PairObj *obj)
 {
     struct PairSub *e;
     s32 slot;
@@ -362,10 +389,18 @@ NONMATCH("asm/code_08032528/pair_start_state_2a.s", void pair_start_state_2a(str
     obj->field252 = 2;
     ((struct Bit0Bits *)&obj->subA->flags20D)->bit0 = 1;
     ((struct Bit4Bits *)&obj->subA->flags20D)->bit4 = 0;
-    pair_spr_set_layer(obj->subA->sprite, ((struct SprLayerBits *)&e->sprite->flags1F)->b23);
+    {
+        struct PairSpr *spr = obj->subA->sprite;
+        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+            = ((struct SprLayerP *)&e->sprite->flags1F)->b23;
+    }
     ((struct Bit4Bits *)&obj->subB->flags20D)->bit4 = 0;
-    pair_spr_set_layer(obj->subB->sprite, ((struct SprLayerBits *)&e->sprite->flags1F)->b23);
-    ((struct SprLayerBits *)&e->sprite->flags1F)->lo2 = ((struct SprLayerBits *)&e->sprite->flags1F)->b23 - 1;
+    {
+        struct PairSpr *spr = obj->subB->sprite;
+        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+            = ((struct SprLayerP *)&e->sprite->flags1F)->b23;
+    }
+    ((struct SprLayerBits *)&e->sprite->flags1F)->lo2 = ((struct SprLayerP *)&e->sprite->flags1F)->b23 - 1;
     ((struct Bit4Bits *)&e->flags20D)->bit4 = 0;
     ((struct Bit6Bits *)&obj->subA->flags20D)->bit6 = 0;
     {
@@ -374,15 +409,14 @@ NONMATCH("asm/code_08032528/pair_start_state_2a.s", void pair_start_state_2a(str
         ((struct StateLo3 *)&b->stateBits214)->lo3 = 2;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08032528/pair_frame4_step.s", void pair_frame4_step(void))
 
-NONMATCH("asm/code_08032528/pair_start_state_3b.s", void pair_start_state_3b(struct PairObj *obj))
+/* A and B start state 0x3B. */
+void pair_start_state_3b(struct PairObj *obj)
 {
     update_pair_facing(obj, 1, 1);
-    obj_shift_state_slots(obj->subA);
-    advance_anim_frame(obj, obj->subA, 0, 0);
+    pair_shift_advance(obj, 1);
     {
         u8 *bf = obj->subB->frames;
         *obj->subA->frames = 6;
@@ -420,19 +454,19 @@ NONMATCH("asm/code_08032528/pair_start_state_3b.s", void pair_start_state_3b(str
     obj->subA->frames[0x10] = 0;
     ((struct Mid3Bits *)&obj->state246)->mid3 = 3;
     set_slot_value(0x3C, -1);
-    obj->field272 = (obj->flagFB & 4) ? 0x14 : 0xA;
+    obj->field272 = (obj->flagFB & 4) == 0 ? 0xA : 0x14;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08032528/sub_08033BAC.s", void sub_08033BAC(struct PairObj *obj, struct PairSub *sub))
+/* The sub object hits: state 0x3E; a hit entry is marked, its drop rolled and shown. */
+void sub_08033BAC(struct PairObj *obj, struct PairSub *sub)
 {
     u32 hit;
     struct HitEntry *entry;
-    u16 roll;
-    u32 amount;
+    u32 roll;
+    u16 amount;
     u8 flag;
     u32 itemId;
-    s32 idx;
+    u32 hi;
 
     update_pair_facing(obj, 1, 1);
     ((struct Bit4Bits *)&sub->flags35B)->bit4 = 0;
@@ -443,10 +477,7 @@ NONMATCH("asm/code_08032528/sub_08033BAC.s", void sub_08033BAC(struct PairObj *o
     if (obj->flags208 & 0x10)
     {
         if (sub->mode352 & 0x80)
-        {
-            obj_shift_state_slots(obj->subB);
-            advance_anim_frame(obj, obj->subB, ((u32)obj->flags208 << 27) >> 31, 0);
-        }
+            pair_shift_advance(obj, 2);
         ((struct Bit6Bits *)&sub->partner->flags351)->bit6 = 1;
     }
     ((struct Bit6Bits *)&sub->mode352)->bit6 = 0;
@@ -463,7 +494,8 @@ NONMATCH("asm/code_08032528/sub_08033BAC.s", void sub_08033BAC(struct PairObj *o
     {
         entry = &obj->hits[hit];
         ((struct Bit1Bits *)&entry->flags)->bit1 = 1;
-        roll = drop_roll(entry->data[6] | (entry->data[7] << 8), entry->data[0], sub->group54);
+        hi = entry->data[7] << 8;
+        roll = drop_roll(entry->data[6] | hi, entry->data[0], sub->group54);
         amount = roll & 0xF;
         flag = (roll >> 4) & 1;
         itemId = (roll >> 5) & 0x7F;
@@ -474,23 +506,21 @@ NONMATCH("asm/code_08032528/sub_08033BAC.s", void sub_08033BAC(struct PairObj *o
         {
             set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(entry->half4 + 0x1360), 1);
             if (!(entry->flags & 1))
-                layer3_entries_by_group(obj->map304,
-                    (*tile_ptr_at(obj->map304, entry->tileX, entry->tileY) << 1) >> 30);
+            {
+                u32 *tile = tile_ptr_at(obj->map304, entry->tileX, entry->tileY);
+                layer3_entries_by_group(obj->map304, (*tile << 1) >> 30);
+            }
         }
     }
-    idx = sub->entryIndex33E;
-    if (idx != -1)
+    if (sub->entryIndex33E != -1)
     {
-        struct PairSub *ent = obj->entries[idx];
+        struct PairSub *ent = obj->entries[sub->entryIndex33E];
         if ((ent->state20E & 0x38) == 0x18)
         {
             obj_reset_movement(ent);
             attach_sprite_setup(sub);
         }
         else
-        {
             motion_obj_set_move_target(ent, 0x30, -1, obj->move100);
-        }
     }
 }
-END_NONMATCH
