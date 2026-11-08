@@ -20,11 +20,16 @@ struct SpriteState
     u8 flags0A;
     u8 flags0B;
     u8 flags0C;
-    u8 filler0D[0x1C - 0x0D];
+    u8 filler0D[0x0E - 0x0D];
+    u8 poseSlot;
+    u8 filler0F[0x1C - 0x0F];
     u8 *slotFlags;
     u8 filler20[0x54 - 0x20];
     struct SpriteObj *objs;
-    u8 filler58[0x228 - 0x58];
+    u8 filler58[0x7C - 0x58];
+    void *hero7C;
+    u8 filler80[0x200 - 0x80];
+    struct SpriteObj *partsByUnit[10];
     struct SpriteObj *partsB[2];
     struct SpriteObj *partsA[2];
     struct SpriteNode *nodeFree;
@@ -33,6 +38,9 @@ struct SpriteState
     u8 filler244[0x248 - 0x244];
     void *display;
     void *camera;
+    u8 filler250[0x34C - 0x250];
+    u8 modeA;
+    u8 modeB;
 };
 
 struct SpriteNode
@@ -496,9 +504,192 @@ void obj_free_parts(struct SpriteObj *obj)
 
 ASM_FUNC("asm/code_0807ED70/body_set_pose.s", void body_set_pose(void))
 
-extern u8 *gParty;
-void mem_copy_fast(void *dst, const void *src, u32 n);
-ASM_FUNC("asm/code_0807ED70/hero_select_index.s", void hero_select_index(void))
+/* Per-hero flag groups in the party record: three 6-bit "open" sets and three
+   "done" sets, packed without gaps (the fourth set crosses a word boundary). */
+struct PartyHero
+{
+    u8 filler0[8];
+    u32 lo : 12;
+    u32 open0 : 6;
+    u32 open1 : 6;
+    u32 open2 : 6;
+    u32 done0 : 6;
+    u32 done1 : 6;
+    u32 done2 : 6;
+    u32 hi : 16;
+    u8 filler10[0x3C - 0x10];
+} __attribute__((packed, aligned(4)));
+
+extern const u8 gHeroCounterTable[];
+extern const u8 gHeroThresholdTable[];
+extern const u8 gHeroIndexTable[];
+extern u8 *gUnk_03000FC0;
+u8 test_flag(u8 *table, u8 *tableB, u16 id);
+u32 inc_counter(u16 id);
+
+NONMATCH("asm/code_0807ED70/hero_select_index.s", u32 hero_select_index(void))
+{
+    u8 counterIds[8];
+    u8 thresholds[8];
+    u8 indices[8];
+    s32 count;
+    struct PartyHero *party;
+
+    if (!(gWorld->flags0B & 1))
+        return 0;
+    mem_copy_fast(counterIds, gHeroCounterTable, 8);
+    mem_copy_fast(thresholds, gHeroThresholdTable, 8);
+    mem_copy_fast(indices, gHeroIndexTable, 8);
+    count = 0;
+    if (*(s16 *)((u8 *)gWorld->hero7C + 0xEC) == -1)
+    {
+        switch (gWorld->modeA)
+        {
+        case 0:
+            count = (u16)inc_counter(counterIds[0] + 0x1CD8);
+            break;
+        case 1:
+            count = (u16)inc_counter(counterIds[1] + 0x1CD8);
+            break;
+        case 3:
+            count = (u16)inc_counter(counterIds[2] + 0x1CD8);
+            break;
+        case 6:
+            count = (u16)inc_counter(counterIds[3] + 0x1CD8);
+            break;
+        }
+    }
+    else
+    {
+        switch (gWorld->modeB)
+        {
+        case 0:
+            count = (u16)inc_counter(counterIds[4] + 0x1CD8);
+            break;
+        case 3:
+            count = (u16)inc_counter(counterIds[5] + 0x1CD8);
+            break;
+        case 4:
+            count = (u16)inc_counter(counterIds[6] + 0x1CD8);
+            break;
+        case 6:
+            count = (u16)inc_counter(counterIds[7] + 0x1CD8);
+            break;
+        }
+    }
+    if (!test_flag(gUnk_03000FC0 + 0x38C, 0, 0x22F))
+        return 0;
+    if (*(s16 *)((u8 *)gWorld->hero7C + 0xEC) == -1)
+    {
+        switch (gWorld->modeA)
+        {
+        case 0:
+            if (indices[0] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party->open0 & 1)
+                break;
+            if (party->done0 & 1)
+                break;
+            if (thresholds[0] > count)
+                break;
+            party->open0 |= 1;
+            return indices[0];
+        case 1:
+            if (indices[1] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party->open0 & 2)
+                break;
+            if (party->done0 & 2)
+                break;
+            if (thresholds[1] > count)
+                break;
+            party->open0 |= 2;
+            return indices[1];
+        case 3:
+            if (indices[2] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party->open1 & 1)
+                break;
+            if (party->done1 & 1)
+                break;
+            if (thresholds[2] > count)
+                break;
+            party->open1 |= 1;
+            return indices[2];
+        case 6:
+            if (indices[3] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party->open2 & 1)
+                break;
+            if (party->done2 & 1)
+                break;
+            if (thresholds[3] > count)
+                break;
+            party->open2 |= 1;
+            return indices[3];
+        }
+    }
+    else
+    {
+        switch (gWorld->modeB)
+        {
+        case 0:
+            if (indices[4] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party[1].open0 & 1)
+                break;
+            if (party[1].done0 & 1)
+                break;
+            if (thresholds[4] > count)
+                break;
+            party[1].open0 |= 1;
+            return indices[4];
+        case 3:
+            if (indices[5] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party[1].open1 & 1)
+                break;
+            if (party[1].done1 & 1)
+                break;
+            if (thresholds[5] > count)
+                break;
+            party[1].open1 |= 1;
+            return indices[5];
+        case 4:
+            if (indices[6] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party[1].open1 & 2)
+                break;
+            if (party[1].done1 & 2)
+                break;
+            if (thresholds[6] > count)
+                break;
+            party[1].open1 |= 2;
+            return indices[6];
+        case 6:
+            if (indices[7] == 0)
+                break;
+            party = (struct PartyHero *)gParty;
+            if (party[1].open2 & 1)
+                break;
+            if (party[1].done2 & 1)
+                break;
+            if (thresholds[7] > count)
+                break;
+            party[1].open2 |= 1;
+            return indices[7];
+        }
+    }
+    return 0;
+}
+END_NONMATCH
 
 struct ShowRec
 {
