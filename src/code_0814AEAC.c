@@ -100,6 +100,13 @@ struct ModeBits
     u8 rest : 5;
 };
 
+struct CellBits12
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
 struct Bit2Byte
 {
     u8 low2 : 2;
@@ -126,6 +133,7 @@ void set_state(struct Obj *parent, struct Obj *obj, u8 state);
 void set_state_timers(struct Obj *parent, struct Obj *obj, u8 state);
 void behavior_set_obj_state(struct Obj *parent, struct Obj *obj, u8 state);
 void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state);
+void obj_set_cell_coord(struct Obj *obj, u32 cell, u32 arg);
 u32 position_blocked(struct Obj *parent, struct Obj *obj, u32 x, u32 y, u32 z);
 void reset_record_fields(struct Obj *obj);
 u32 mt19937_next(void);
@@ -822,7 +830,169 @@ NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_sta
 END_NONMATCH
 
 void sprite_step_e6a0(void *obj);
-ASM_FUNC("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state))
+NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state))
+{
+    u8 *ai = (u8 *)obj + 0x58;
+    s32 cellDir;
+    s32 angle;
+    s32 dx;
+    s32 dy;
+    u32 dir;
+
+    if (state == 0)
+    {
+        u16 *tab = (u16 *)((u8 *)obj + 0x100);
+        s32 pick = rand_below(4, mt19937_next());
+
+        obj->cell->unk20 = tab[pick + 4];
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
+        ((struct ModeBits *)&obj->mode)->low3 = 4;
+    }
+    else if (state == 1)
+    {
+        struct Obj *target = (struct Obj *)parent->tgtA;
+
+        obj->cell->unk20 = 0x30;
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
+        ((struct ModeBits *)&obj->mode)->low3 = 4;
+        dx = target->x - obj->x;
+        dy = target->y - obj->y;
+        if ((dx | dy) != 0)
+        {
+            angle = (u16)angle_of_vector16(dx, dy) + 0x1000;
+            cellDir = ((angle >> 13) & 7) >> 1;
+        }
+        else
+        {
+            cellDir = 0;
+        }
+        obj_set_cell_coord(obj, cellDir, 0);
+    }
+    else if (state == 2)
+    {
+        obj->cell->unk20 = 0x31;
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        obj_load_record(obj->cell, 3, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 3)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        if (obj->unk2CC < obj->x)
+        {
+            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
+        }
+        else
+        {
+            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 1;
+        }
+        obj_load_record(obj->cell, 4, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 4)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 0;
+        obj_load_record(obj->cell, 5, 0, 0, 0);
+        if (obj->unk2CC < obj->x)
+        {
+            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
+        }
+        else
+        {
+            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 1;
+        }
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 5)
+    {
+    }
+    else if (state == 6)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 0;
+        obj_load_record(obj->cell, 7, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 7)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        obj_load_record(obj->cell, 8, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 8)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        obj_load_record(obj->cell, 9, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 9)
+    {
+        s32 dhx = obj->homeX - obj->x;
+        s32 dhy = obj->homeY - obj->y;
+        u32 dirByte;
+
+        if ((dhx | dhy) != 0)
+        {
+            dirByte = ((u32)(u16)angle_of_vector16(dhx, dhy) + 0x10) >> 8;
+        }
+        else
+        {
+            dirByte = 0xFF;
+        }
+        *((u8 *)obj + 2) = dirByte;
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
+        ((struct ModeBits *)&obj->mode)->low3 = 4;
+        dx = *(s32 *)(ai + 0x184) - obj->x;
+        dy = *(s32 *)(ai + 0x188) - obj->y;
+        if ((dx | dy) != 0)
+        {
+            angle = (u16)angle_of_vector16(dx, dy) + 0x1000;
+            cellDir = ((angle >> 13) & 7) >> 1;
+        }
+        else
+        {
+            cellDir = 0;
+        }
+        obj_set_cell_coord(obj, cellDir, 0);
+    }
+    else if (state == 0xA)
+    {
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        if ((obj->vx | obj->vy) != 0)
+        {
+            angle = (u16)angle_of_vector16((s16)obj->vx, (s16)obj->vy) + 0x1000;
+            dir = (angle >> 13) & 7;
+        }
+        else
+        {
+            dir = -1;
+        }
+        obj_load_record(obj->cell, dir, -1, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+    else if (state == 0xB)
+    {
+    }
+    else if (state == 0xC)
+    {
+    }
+    else if (state == 0xD)
+    {
+        obj->cell->unk20 = 0x11;
+        ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
+        ((struct ModeBits *)&obj->mode)->low3 = 1;
+        obj_load_record(obj->cell, 5, 0, 0, 0);
+        sprite_step_e6a0(obj->cell);
+    }
+}
+END_NONMATCH
+
 void set_state_timers(struct Obj *parent, struct Obj *obj, u8 state)
 {
     if (state == 0)
