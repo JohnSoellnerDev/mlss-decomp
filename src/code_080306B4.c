@@ -100,6 +100,13 @@ struct ModeBits12
     u8 rest : 5;
 };
 
+struct Bit3Set
+{
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 rest : 4;
+};
+
 void update_pair_facing(void *obj, u32 a, u32 b);
 void obj_set_id(void *sub, u32 id);
 void obj_init_from_table(void *table, u32 a, void *sub, u32 b);
@@ -109,35 +116,28 @@ void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
 void contacts_obj_start_move(void *obj, s32 a, s32 b, s32 x, s32 y, s32 zero, s32 mode);
 void motion_obj_set_move_target(void *obj, u32 a, s32 b, s32 c);
 
-static inline void sync_pair_sprite_values(struct PairObj *obj)
+/* Facing, slot shift and animation step for A at the start of a pair state. */
+static inline void pair_start_anim(struct PairObj *obj)
 {
-    struct PairSub *a;
-    struct PairSpr *aSprite;
-    struct PairSub *b;
-    struct PairSpr *bSprite;
-    u8 value;
-
-    a = obj->subA;
-    aSprite = a->sprite;
-    b = obj->subB;
-    bSprite = b->sprite;
-    value = obj->flagsFB >> 3;
-    bSprite->value20 = value;
-    b->field239 = value;
-    aSprite->value20 = value;
-    a->field239 = value;
+    update_pair_facing(obj, 1, 1);
+    obj_shift_state_slots(obj->subA);
+    advance_anim_frame(obj, obj->subA, 0, 0);
 }
 
-ASM_FUNC("asm/code_080306B4/pair_b_state_10_1c.s", void pair_b_state_10_1c(void))
-
-NONMATCH("asm/code_080306B4/pair_start_state_2e.s", void pair_start_state_2e(struct PairObj *obj))
+/* Same start, then clears bit 1 of +0x246. */
+static inline void pair_start_begin(struct PairObj *obj)
 {
-    s32 dist;
-
     update_pair_facing(obj, 1, 1);
     obj_shift_state_slots(obj->subA);
     advance_anim_frame(obj, obj->subA, 0, 0);
     ((struct Bit1Clear *)&obj->state246)->b1 = 0;
+}
+
+ASM_FUNC("asm/code_080306B4/pair_b_state_10_1c.s", void pair_b_state_10_1c(void))
+
+void pair_start_state_2e(struct PairObj *obj)
+{
+    pair_start_begin(obj);
     obj->pixX = obj->subB->posX / 0x100;
     obj->pixY = obj->subB->posY / 0x100;
     {
@@ -152,22 +152,124 @@ NONMATCH("asm/code_080306B4/pair_start_state_2e.s", void pair_start_state_2e(str
     }
     {
         struct PairSub *b = obj->subB;
-        obj->subA->flags358 |= 8;
-        b->flags358 |= 8;
+        ((struct Bit3Set *)&obj->subA->flags358)->bit3 = 1;
+        ((struct Bit3Set *)&b->flags358)->bit3 = 1;
     }
-    dist = (obj->subA->posZ - obj->subB->posZ) / 0x100 + 0x20;
-    motion_obj_set_move_target(obj->subB, dist, 0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
+    motion_obj_set_move_target(obj->subB, (obj->subA->posZ - obj->subB->posZ) / 0x100 + 0x20,
+        0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
     contacts_obj_start_move(obj->subB, 2, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
         (obj->flagsFB & 4) ? 0x10 : 0xA);
-    sync_pair_sprite_values(obj);
+    {
+        struct PairSub *a;
+        struct PairSpr *aSprite;
+        struct PairSub *b;
+        struct PairSpr *bSprite;
+        u8 value;
+
+        a = obj->subA;
+        aSprite = a->sprite;
+        b = obj->subB;
+        bSprite = b->sprite;
+        value = obj->flagsFB >> 3;
+        bSprite->value20 = value;
+        b->field239 = value;
+        aSprite->value20 = value;
+        a->field239 = value;
+    }
     ((struct Bit7 *)&obj->select20B)->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080306B4/pair_start_state_37.s", void pair_start_state_37(void))
+void pair_start_state_37(struct PairObj *obj)
+{
+    pair_start_anim(obj);
+    ((struct Bits352 *)&obj->subB->flags212)->bit6 = 1;
+    {
+        struct PairSub *b = obj->subB;
+        obj->subA->state4 = 0x37;
+        b->state4 = 0x37;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bits352 *)&obj->subA->flags351)->bit6 = 1;
+        ((struct Bits352 *)&b->flags351)->bit6 = 1;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bit3Set *)&obj->subA->flags358)->bit3 = 1;
+        ((struct Bit3Set *)&b->flags358)->bit3 = 1;
+    }
+    ((struct Bit5 *)&obj->subB->flags20D)->bit5 = 1;
+    ((struct Bit1Clear *)&obj->subB->flags35A)->b1 = 0;
+    ((struct StateLo3 *)&obj->subB->stateBits214)->lo3 = 4;
+    obj_set_id(obj->subB, 0x103F);
+    motion_obj_set_move_target(obj->subB, 0x10, 0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
+    {
+        struct PairSub *a;
+        struct PairSpr *aSprite;
+        struct PairSub *b;
+        struct PairSpr *bSprite;
+        u8 value;
 
-ASM_FUNC("asm/code_080306B4/pair_start_state_3a.s", void pair_start_state_3a(void))
+        a = obj->subA;
+        aSprite = a->sprite;
+        b = obj->subB;
+        bSprite = b->sprite;
+        value = obj->flagsFB >> 3;
+        bSprite->value20 = value;
+        b->field239 = value;
+        aSprite->value20 = value;
+        a->field239 = value;
+    }
+    ((struct ModeBits12 *)&obj->subB->sprite->flags12)->mode = 1;
+    ((struct Bit7 *)&obj->select20B)->bit7 = 1;
+    set_slot_value(0x3C, -1);
+}
+
+void pair_start_state_3a(struct PairObj *obj)
+{
+    pair_start_anim(obj);
+    {
+        struct PairSub *b = obj->subB;
+        obj->subA->state4 = 0x3A;
+        b->state4 = 0x3A;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bits352 *)&obj->subA->flags351)->bit6 = 1;
+        ((struct Bits352 *)&b->flags351)->bit6 = 1;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bit3Set *)&obj->subA->flags358)->bit3 = 1;
+        ((struct Bit3Set *)&b->flags358)->bit3 = 1;
+    }
+    ((struct StateLo3 *)&obj->subB->stateBits214)->lo3 = 4;
+    obj_set_id(obj->subB, 0x1041);
+    ((struct StateLo3 *)&obj->subA->stateBits214)->lo3 = 4;
+    obj_set_id(obj->subA, 0x1030);
+    {
+        struct PairSub *a;
+        struct PairSpr *aSprite;
+        struct PairSub *b;
+        struct PairSpr *bSprite;
+        u8 value;
+
+        a = obj->subA;
+        aSprite = a->sprite;
+        b = obj->subB;
+        bSprite = b->sprite;
+        value = obj->flagsFB >> 3;
+        bSprite->value20 = value;
+        b->field239 = value;
+        aSprite->value20 = value;
+        a->field239 = value;
+    }
+    obj_init_from_table(obj->slots[0], 4, obj->subA, 0);
+    obj->field26E = 0x46;
+    ((struct Bit7 *)&obj->select20B)->bit7 = 1;
+    set_slot_value(0x56, -1);
+}
 
 void pair_sub_state_3a(struct PairObj *obj, struct PairSub *sub)
 {
@@ -190,36 +292,19 @@ void pair_sub_state_3a(struct PairObj *obj, struct PairSub *sub)
     set_slot_value(0x56, -1);
 }
 
-NONMATCH("asm/code_080306B4/pair_slot_kind.s", u32 pair_slot_kind(struct PairObj *obj))
+u32 pair_slot_kind(struct PairObj *obj)
 {
-    s16 i;
-    u8 f;
-    s32 state;
+    s32 i;
+    u8 *p;
 
-    i = 0;
-    do
+    for (i = 0; i < 8; i++)
     {
-        f = *(u8 *)obj->slots[i];
-        if ((f & 0x40) == 0)
-        {
-            f = *(u8 *)obj->slots[i + 1];
-            if ((f & 0x40) == 0)
-            {
-                i += 2;
-                continue;
-            }
-        }
-        if ((f & 0x38) == 0x10)
-            return 2;
-        if ((f & 0x38) == 0x18)
-            return 3;
-        return 4;
-    } while (i <= 7);
-    state = 0;
-    if ((obj->state246 & 0x1C) == 4)
-        state = 1;
-    return state;
+        p = obj->slots[i];
+        /* first active slot: its kind bits give 2, 3 or 4 */
+        if (*p & 0x40)
+            return (*p & 0x38) == 0x10 ? 2 : (*p & 0x38) == 0x18 ? 3 : 4;
+    }
+    return (obj->state246 & 0x1C) == 4;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080306B4/pair_state_2e_3a.s", void pair_state_2e_3a(void))
