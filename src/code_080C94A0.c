@@ -224,8 +224,12 @@ NONMATCH("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct 
     struct HeroBody *bodyA;
     struct HeroBody *bodyB;
     struct HeroBody *partner;
+    struct HeroBody *p;
+    struct SpriteNode *node;
     u8 *heroB;
     u16 *timer;
+    s32 zero;
+    s32 stepMax;
     s32 lo;
     s32 hi;
     s32 limit;
@@ -236,10 +240,7 @@ NONMATCH("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct 
     s32 mode;
     s32 (*div)(s32, s32);
     void (*next)(struct HeroBody *);
-    s32 stepOne;
-    s32 stepMax;
 
-    stepOne = 0x4000;
     stepMax = 0x7FFF;
     bodyA = &gWorld->heroA->body;
     heroB = (u8 *)gWorld->heroB;
@@ -247,82 +248,127 @@ NONMATCH("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct 
     partner = body->partner;
     state_stack_advance_progress(bodyB);
 
-    if (*(s16 *)(heroB + 0x86) < stepOne)
+    if (*(s16 *)(heroB + 0x86) < 0x4000)
         ((struct HeroFlagBits *)(heroB + 0x81))->active = 0;
 
     timer = (u16 *)(heroB + 0xB6);
     if ((*timer >> 12) != 0)
         goto tail;
 
-    near = 0;
-    if (*(s16 *)(heroB + 0xB4) <= 0 && *(s16 *)(heroB + 0x86) >= 0)
+    zero = 0;
+    near = zero;
+    if (*(s16 *)(heroB + 0xB4) > zero)
+        near = zero;
+    else if (*(s16 *)(heroB + 0x86) >= zero)
         near = 1;
-
+    else
+        near = zero;
     timer = (u16 *)((u8 *)bodyB + 0xAE);
-    if (near) {
-        if (gWorld->flags & 8)
-            frames_set(bodyA, bodyB, partner, 0x66, 6);
-        else
-            frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+    if (near != 0) {
+        if (gWorld->flags & 8) {
+            for (p = bodyA; p != 0; p = p->next)
+                p->frame = 0x66;
+            for (p = bodyB; p != 0; p = p->next)
+                p->frame = 0x66;
+            for (p = partner; p != 0; p = p->next)
+                p->frame = 0x66;
+            for (node = gWorld->sprites; node != 0; node = node->next)
+                if (node->sprite != 0)
+                    node->sprite->frame = 6;
+        } else {
+            for (p = bodyA; p != 0; p = p->next)
+                p->frame = 0x100;
+            for (p = bodyB; p != 0; p = p->next)
+                p->frame = 0x100;
+            for (p = partner; p != 0; p = p->next)
+                p->frame = 0x100;
+            for (node = gWorld->sprites; node != 0; node = node->next)
+                if (node->sprite != 0)
+                    node->sprite->frame = 0x10;
+        }
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
 
-    lo = 0;
-    hi = stepOne;
-    if (!(lo <= hi))
-        lo = hi;
+    lo = zero;
+    hi = 0x4000;
+    if (lo > 0x4000)
+        lo = 0x4000;
     if (hi > stepMax)
         hi = stepMax;
-    if (!(hi >= lo))
+    if (hi < lo)
         lo = hi;
 
-    inWin = 0;
+    inWin = zero;
     if (bodyB->progress >= lo && bodyB->step <= hi)
         inWin = 1;
 
-    if (inWin) {
+    if (inWin != 0) {
         set_body_part(bodyB, 2, 0, 0x14, 0);
         if ((((struct SysKeys3E *)gSys)->keys & 2) != 0) {
             body_set_pose(3, bodyB, 0, -0x28);
             obj_free_parts(bodyB);
-            world_mode_or2();
+            ((struct WorldModeBits *)&gWorld->mode)->mid |= 2;
             if ((gWorld->mode & 4) == 0) {
-                frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+                for (p = bodyA; p != 0; p = p->next)
+                    p->frame = 0x100;
+                for (p = bodyB; p != 0; p = p->next)
+                    p->frame = 0x100;
+                for (p = partner; p != 0; p = p->next)
+                    p->frame = 0x100;
+                for (node = gWorld->sprites; node != 0; node = node->next)
+                    if (node->sprite != 0)
+                        node->sprite->frame = 0x10;
                 display_flush();
             }
-            timer_set_mode(timer, 2);
+            *timer = (*timer & 0xFFF) | 0x2000;
         }
     }
 
     if ((*timer >> 12) != 0)
         goto tail;
 
-    limit = stepOne;
+    limit = 0x4000;
     if (limit > stepMax)
         limit = stepMax;
-    reached = 0;
+    reached = zero;
     if (bodyB->step <= limit && bodyB->progress >= limit)
         reached = 1;
 
-    if (reached) {
-        world_mode_or2();
-        timer_set_mode(timer, 1);
-        frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+    if (reached != 0) {
+        ((struct WorldModeBits *)&gWorld->mode)->mid |= 2;
+        *timer = (*timer & 0xFFF) | 0x1000;
+        for (p = bodyA; p != 0; p = p->next)
+            p->frame = 0x100;
+        for (p = bodyB; p != 0; p = p->next)
+            p->frame = 0x100;
+        for (p = partner; p != 0; p = p->next)
+            p->frame = 0x100;
+        for (node = gWorld->sprites; node != 0; node = node->next)
+            if (node->sprite != 0)
+                node->sprite->frame = 0x10;
         display_flush();
         obj_free_parts(bodyB);
         goto tail;
     }
 
-    if (bodyB->progress > stepOne)
+    if (bodyB->progress > 0x4000)
         goto tail;
     if ((((struct SysKeys3E *)gSys)->keys & 3) == 0)
         goto tail;
 
-    world_mode_or2();
+    ((struct WorldModeBits *)&gWorld->mode)->mid |= 2;
     if (gWorld->mode & 4)
         goto tail;
-    timer_set_mode(timer, 1);
-    frames_set(bodyA, bodyB, partner, 0x100, 0x10);
+    *timer = (*timer & 0xFFF) | 0x1000;
+    for (p = bodyA; p != 0; p = p->next)
+        p->frame = 0x100;
+    for (p = bodyB; p != 0; p = p->next)
+        p->frame = 0x100;
+    for (p = partner; p != 0; p = p->next)
+        p->frame = 0x100;
+    for (node = gWorld->sprites; node != 0; node = node->next)
+        if (node->sprite != 0)
+            node->sprite->frame = 0x10;
     display_flush();
     obj_free_parts(bodyB);
     body_set_pose(6, bodyB, 0, -0x28);
@@ -330,21 +376,21 @@ NONMATCH("asm/code_080C94A0/hero_b_step_c94a0.s", void hero_b_step_c94a0(struct 
 tail:
     tmode = *timer >> 12;
     if (tmode != 0) {
-        lo = 0;
-        hi = stepOne;
-        if (!(lo <= hi))
-            lo = hi;
+        lo = zero;
+        hi = 0x4000;
+        if (lo > 0x4000)
+            lo = 0x4000;
         if (hi > stepMax)
             hi = stepMax;
-        if (!(hi >= lo))
+        if (hi < lo)
             lo = hi;
 
-        inWin = 0;
+        inWin = zero;
         if (bodyB->progress >= lo && bodyB->step <= hi)
             inWin = 1;
 
-        if (inWin && tmode > 1) {
-            timer_set_mode(timer, 0);
+        if (inWin != 0 && tmode > 1) {
+            *timer = *timer & 0xFFF;
             next = hero_b_anim_start_step2;
             body->state = next;
             next(body);
@@ -364,7 +410,7 @@ tail:
     mode = bodyB->mode & 6;
     if (mode == 2 || mode == 4) {
         div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
-        bodyB->rate = div(stepOne, 7);
+        bodyB->rate = div(0x4000, 7);
         bodyB->progress = 0;
         ((struct HeroFlagBits *)&bodyB->flags)->active = 0;
     }
