@@ -226,7 +226,7 @@ void spawn_child_anim(struct ActorBody *body)
     }
 }
 
-NONMATCH("asm/code_0809BC4C/follow_hero_anim.s", void follow_hero_anim(struct ActorBody *body))
+void follow_hero_anim(struct ActorBody *body)
 {
     struct ActorBody *hero_a = &gWorld->heroA->body;
     struct ActorBody *partner = body->partner;
@@ -237,13 +237,14 @@ NONMATCH("asm/code_0809BC4C/follow_hero_anim.s", void follow_hero_anim(struct Ac
         if (partner == hero_a)
         {
             sprite_set_action(body, 3, 0x40BF, 0);
+            ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 1;
+            body->state = start_anim_by_partner;
         }
         else
         {
             sprite_set_action(body, 6, 0x40BF, 0);
+            ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 1;
+            body->state = start_anim_by_partner;
         }
-        ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 1;
-        body->state = start_anim_by_partner;
     }
 }
-END_NONMATCH
