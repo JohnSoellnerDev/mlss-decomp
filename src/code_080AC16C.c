@@ -83,7 +83,8 @@ struct HeroBody
     u8 filler26[0x28 - 0x26];
     struct HeroData *data;
     struct HeroBody *partner;
-    u8 filler30[0x38 - 0x30];
+    struct HeroBody *chain;
+    u8 filler34[0x38 - 0x34];
     s32 targetX;
     s32 targetY;
     s32 targetZ;
@@ -127,12 +128,15 @@ struct World
 {
     u8 filler0[0x0A];
     u8 modeByte;
-    u8 filler0B[0x0E - 0x0B];
+    u8 filler0B;
+    u8 flags0C;
+    u8 filler0D;
     u8 enableByte;
     u8 filler0F[0x70 - 0x0F];
     struct Hero *heroA;
     struct Hero *heroB;
-    u8 filler78[0x24C - 0x78];
+    struct WorldNode *nodes;
+    u8 filler7C[0x24C - 0x7C];
     void *trackedObj;
 };
 
@@ -174,7 +178,535 @@ void hero_b_pose_anim(struct HeroBody *body);
 void noop_state_080acec0(struct HeroBody *body);
 void hero_b_on_object(struct HeroBody *body);
 
-ASM_FUNC("asm/code_080AC16C/hero_a_step_threshold_c16c.s", void hero_a_step_threshold_c16c(struct HeroBody *body))
+struct WorldNode
+{
+    struct WorldNode *next;
+    u8 filler4[0x08 - 0x04];
+    struct WorldElem *elem;
+};
+
+struct WorldElem
+{
+    u8 filler0[0x20];
+    u8 value;
+};
+
+struct SysKeys3E
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
+extern u8 gSys[];
+
+struct StepWorldMode
+{
+    u8 low2 : 2;
+    u8 mid2 : 2;
+    u8 mode : 2;
+    u8 high2 : 2;
+} __attribute__((packed));
+
+struct StepFlagBits
+{
+    u8 unk0 : 5;
+    u8 active : 1;
+    u8 unk6 : 2;
+} __attribute__((packed));
+
+struct StepSpriteBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 unk3 : 5;
+} __attribute__((packed));
+
+struct StepCcBits
+{
+    u8 low : 7;
+    u8 high : 1;
+} __attribute__((packed));
+
+void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
+void body_set_pose(u32 art, struct HeroBody *body, s32 x, s32 y);
+void obj_free_parts(struct HeroBody *body);
+void display_flush(void);
+void sprite_objects_draw_obj_tiles(u32 a, u32 b);
+u32 step_motion_scaled(struct HeroBody *body);
+
+static inline void world_mode_or(u32 v)
+{
+    struct StepWorldMode *m = (struct StepWorldMode *)&gWorld->modeByte;
+    m->mode = m->mode | v;
+}
+
+static inline void set_timer_mode(struct HeroBody *b, u32 m)
+{
+    b->timer = (b->timer & 0xFFF) | (m << 12);
+}
+
+NONMATCH("asm/code_080AC16C/hero_a_step_threshold_c16c.s", void hero_a_step_threshold_c16c(struct HeroBody *body))
+{
+    s32 thrHi;
+    struct Hero *heroA;
+    struct HeroBody *bodyA;
+    struct HeroBody *bodyB;
+    struct HeroBody *partner;
+    s32 rate;
+    s32 thrNear;
+    s32 thrLo;
+    s32 nearLim;
+    s32 nearFlag;
+    s32 stepLo;
+    s32 stepHi;
+    s32 farLim;
+    s32 fullLim;
+    s32 hi;
+    s32 mode;
+    s32 linkArg;
+    s32 link;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    heroA = gWorld->heroA;
+    bodyA = &heroA->body;
+    bodyB = &gWorld->heroB->body;
+    partner = body->partner;
+    thrHi = 0x4000;
+    step_motion_scaled(bodyA);
+    rate = (s16)bodyA->rate;
+    thrNear = thrHi - (((rate << 1) + rate) << 1);
+    thrLo = thrHi - (rate << 2);
+    thrHi += rate << 1;
+
+    if (bodyA->progress < thrHi)
+        ((struct StepFlagBits *)&bodyA->flags)->active = 0;
+
+    if ((bodyA->timer >> 12) != 0)
+        goto tail;
+
+    nearLim = thrNear;
+    if (nearLim < 0)
+        nearLim = 0;
+    if (nearLim > 0x7FFF)
+        nearLim = 0x7FFF;
+    nearFlag = 0;
+    if (bodyA->step <= nearLim)
+    {
+        if (bodyA->progress >= nearLim)
+            nearFlag = 1;
+    }
+    if (nearFlag)
+    {
+        if (gWorld->flags0C & 8)
+        {
+        {
+            struct HeroBody *p = bodyA;
+            while (p != 0)
+            {
+                p->frame = 0x33;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = bodyB;
+            while (p != 0)
+            {
+                p->frame = 0x33;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = partner;
+            while (p != 0)
+            {
+                p->frame = 0x33;
+                p = p->chain;
+            }
+        }
+        {
+            struct WorldNode *n = gWorld->nodes;
+            while (n != 0)
+            {
+                if (n->elem != 0)
+                    n->elem->value = 3;
+                n = n->next;
+            }
+        }
+        }
+        else
+        {
+        {
+            struct HeroBody *p = bodyA;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = bodyB;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = partner;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct WorldNode *n = gWorld->nodes;
+            while (n != 0)
+            {
+                if (n->elem != 0)
+                    n->elem->value = 0x10;
+                n = n->next;
+            }
+        }
+        }
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    stepLo = thrLo;
+    stepHi = thrHi;
+    if (stepLo < 0)
+        stepLo = 0;
+    if (thrHi < 0)
+        stepHi = 0;
+    if (stepLo > 0x4000)
+        stepLo = 0x4000;
+    if (stepHi > 0x7FFF)
+        stepHi = 0x7FFF;
+    if (stepHi < stepLo)
+        stepLo = stepHi;
+
+    if (bodyA->progress >= stepLo && bodyA->step <= stepHi)
+    {
+        set_body_part(bodyA, 1, 0x18, 0, 0);
+        if (((struct SysKeys3E *)gSys)->keys & 1)
+        {
+            body_set_pose(2, bodyA, 0x2E, 0);
+            obj_free_parts(bodyA);
+            world_mode_or(1);
+            if ((((struct StepWorldMode *)&gWorld->modeByte)->mid2 & 2) == 0)
+            {
+                if (gWorld->flags0C & 8)
+                {
+                    {
+                        struct HeroBody *p = bodyA;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct HeroBody *p = bodyB;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct HeroBody *p = partner;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct WorldNode *n = gWorld->nodes;
+                        while (n != 0)
+                        {
+                            if (n->elem != 0)
+                                n->elem->value = 0x10;
+                            n = n->next;
+                        }
+                    }
+                }
+                else
+                {
+                    {
+                        struct HeroBody *p = bodyA;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct HeroBody *p = bodyB;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct HeroBody *p = partner;
+                        while (p != 0)
+                        {
+                            p->frame = 0x100;
+                            p = p->chain;
+                        }
+                    }
+                    {
+                        struct WorldNode *n = gWorld->nodes;
+                        while (n != 0)
+                        {
+                            if (n->elem != 0)
+                                n->elem->value = 0x10;
+                            n = n->next;
+                        }
+                    }
+                }
+                display_flush();
+            }
+            set_timer_mode(bodyA, 2);
+        }
+    }
+
+    if ((bodyA->timer >> 12) != 0)
+        goto tail;
+
+    farLim = thrHi;
+    if (farLim < 0)
+        farLim = 0;
+    if (farLim > 0x7FFF)
+        farLim = 0x7FFF;
+    if (bodyA->step <= farLim && bodyA->progress >= farLim)
+    {
+        world_mode_or(1);
+        set_timer_mode(bodyA, 1);
+        if (gWorld->flags0C & 8)
+        {
+            {
+                struct HeroBody *p = bodyA;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct HeroBody *p = bodyB;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct HeroBody *p = partner;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct WorldNode *n = gWorld->nodes;
+                while (n != 0)
+                {
+                    if (n->elem != 0)
+                        n->elem->value = 0x10;
+                    n = n->next;
+                }
+            }
+        }
+        else
+        {
+            {
+                struct HeroBody *p = bodyA;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct HeroBody *p = bodyB;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct HeroBody *p = partner;
+                while (p != 0)
+                {
+                    p->frame = 0x100;
+                    p = p->chain;
+                }
+            }
+            {
+                struct WorldNode *n = gWorld->nodes;
+                while (n != 0)
+                {
+                    if (n->elem != 0)
+                        n->elem->value = 0x10;
+                    n = n->next;
+                }
+            }
+        }
+        display_flush();
+        obj_free_parts(bodyA);
+        goto tail;
+    }
+
+    if (bodyA->progress > thrHi)
+        goto tail;
+    if ((((struct SysKeys3E *)gSys)->keys & 3) == 0)
+        goto tail;
+    world_mode_or(1);
+    if (((struct StepWorldMode *)&gWorld->modeByte)->mid2 & 2)
+        goto tail;
+    set_timer_mode(bodyA, 1);
+    if (gWorld->flags0C & 8)
+    {
+        {
+            struct HeroBody *p = bodyA;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = bodyB;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = partner;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct WorldNode *n = gWorld->nodes;
+            while (n != 0)
+            {
+                if (n->elem != 0)
+                    n->elem->value = 0x10;
+                n = n->next;
+            }
+        }
+    }
+    else
+    {
+        {
+            struct HeroBody *p = bodyA;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = bodyB;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct HeroBody *p = partner;
+            while (p != 0)
+            {
+                p->frame = 0x100;
+                p = p->chain;
+            }
+        }
+        {
+            struct WorldNode *n = gWorld->nodes;
+            while (n != 0)
+            {
+                if (n->elem != 0)
+                    n->elem->value = 0x10;
+                n = n->next;
+            }
+        }
+    }
+    display_flush();
+    obj_free_parts(bodyA);
+    body_set_pose(6, bodyA, 0x2E, 0);
+
+tail:
+    mode = bodyA->timer >> 12;
+    if (mode != 0)
+    {
+        hi = thrHi;
+        if (hi < 0)
+            hi = 0;
+        fullLim = 0x4000;
+        if (fullLim > 0x4000)
+            fullLim = 0x4000;
+        if (hi > 0x7FFF)
+            hi = 0x7FFF;
+        if (hi < fullLim)
+            fullLim = hi;
+        if (bodyA->progress >= fullLim && bodyA->step <= hi)
+        {
+            linkArg = (mode > 1) ? 0x040B1888 : 0x040B1788;
+            ((struct StepCcBits *)&bodyA->cc)->high = 0;
+            bodyA->scale = 0x100;
+            link = resolve_contact_action(bodyA, partner, 0, 0, linkArg);
+            bodyA->count++;
+            if (!(linkArg & 0x10000) && link == 1)
+            {
+                obj_slot_update(bodyA);
+                return;
+            }
+            x = bodyA->posX / 0x100;
+            y = bodyA->posY / 0x100;
+            z = bodyA->posZ / 0x100;
+            if (mode > 1)
+                effect_spawn_at(0x2E47, x, y, z, partner);
+            else
+                effect_spawn_at(0x70B, x, y, z, partner);
+            set_timer_mode(bodyA, 0);
+            ((struct StepFlagBits *)&bodyA->flags)->active = 1;
+        }
+    }
+
+    if (((struct StepFlagBits *)&bodyA->flags)->active == 0)
+        return;
+    x = bodyA->posX / 0x100;
+    y = bodyA->posY / 0x100;
+    z = bodyA->posZ / 0x100;
+    effect_spawn_at(0x2FF9, x, y, z, bodyA);
+    mode = bodyA->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(bodyA, 0xB, 0x2030, 0);
+        ((struct StepSpriteBits *)&bodyA->sprite->flags)->mode = 0;
+    }
+    mode = bodyB->mode & 6;
+    if (mode == 2 || mode == 4)
+    {
+        sprite_set_action(bodyB, 0, 0x204D, 0);
+        ((struct StepSpriteBits *)&bodyB->sprite->flags)->mode = 0;
+    }
+    body->state = hero_a_sprite_set_targets;
+}
+END_NONMATCH
 
 void hero_a_sprite_set_targets(struct HeroBody *body)
 {
