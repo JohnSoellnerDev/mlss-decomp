@@ -97,7 +97,372 @@ extern const u16 gInputSequenceKeys[];
 u8 *bank_data_5bit(u16 bank, u8 *out);
 void find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, u32 *out, s32 slot);
 
-ASM_FUNC("asm/code_08025650/obj_update_entities.s", void obj_update_entities(void))
+typedef void (*EntCb)(void *view, void *sel, u32 a, u32 b);
+
+struct EntDesc
+{
+    s16 viewOff;
+    u16 filler2;
+    EntCb cb;
+};
+
+struct EntClass
+{
+    u8 filler0[0x60];
+    struct EntDesc desc;
+};
+
+struct EntRecord
+{
+    u8 filler0[0x12];
+    u8 flags12;
+    u8 filler13[0x21 - 0x13];
+    u8 kind21;
+};
+
+struct EntEntity
+{
+    u8 filler0[0x214];
+    u8 flags214;
+    u8 filler215[0x294 - 0x215];
+    struct EntRecord *record;
+    u8 filler298[0x338 - 0x298];
+    struct EntClass *info;
+};
+
+struct EntObj
+{
+    u8 filler0[0x28];
+    struct EntEntity *entries[0x2B];
+    u8 filler0D4[0x10B - 0xD4];
+    u8 entryCount;
+    u8 filler10C[0x10E - 0x10C];
+    u8 listPStart;
+    u8 listPCount;
+    u8 listAStart;
+    u8 listACount;
+    u8 listCStart;
+    u8 listCCount;
+    u8 listB1Start;
+    u8 listB1Count;
+    u8 listB2Start;
+    u8 listB2Count;
+    u8 filler118[0x208 - 0x118];
+    u8 flags208;
+    u8 flags209;
+    u8 filler20A[0x246 - 0x20A];
+    u8 state246;
+};
+
+void obj_set_sprite_link(void *ent, u32 zero);
+void obj_load_record(void *rec, u32 a, s32 b, u32 c, u32 d);
+void obj_update_flags_from_child(void *ent);
+
+struct SceneItem
+{
+    u8 filler0[0x54];
+    u8 index54;
+    u8 filler55[0x20C - 0x55];
+    u8 flags20C;
+    u8 filler20D[0x20F - 0x20D];
+    u8 flags20F;
+    u8 flags210;
+    u8 filler211[0x22C - 0x211];
+    u32 w22C;
+    u8 filler230[0x239 - 0x230];
+    u8 mode239;
+    u8 filler23A[0x344 - 0x23A];
+    struct SceneItem *child;
+    u8 filler348[0x352 - 0x348];
+    u8 flags352;
+    u8 filler353[0x368 - 0x353];
+    u32 ptr368;
+};
+
+struct KindPair
+{
+    u8 first;
+    u8 count;
+};
+
+struct SceneObj
+{
+    u8 filler0[0x28];
+    struct SceneItem *entries[0x20];
+    u32 slotsA8[8];
+    u8 filler0C8[0xFB - 0xC8];
+    u8 flagsFB;
+    u8 filler0FC[0x10B - 0xFC];
+    u8 entryCount;
+    u8 filler10C[0x10E - 0x10C];
+    struct KindPair kinds[7];
+    u8 hint11C;
+    u8 sumB;
+    u8 filler11E[0x208 - 0x11E];
+    u8 flags208;
+};
+
+extern u8 *gUnk_03000FC0;
+extern const u8 gHeapTagItemKind0[];
+extern const u8 gHeapTagItemKind1[];
+extern const u8 gHeapTagItemKind2[];
+extern const u8 gSceneObjKind3Tag[];
+extern const u8 gSceneObjKind4Tag[];
+extern const u8 gSceneObjKind5Tag[];
+extern const u8 gSceneObjKind6Tag[];
+extern const u8 gSceneObjKind7Tag[];
+extern const u8 gSceneObjItemTag[];
+
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+u32 object_def_mode(u16 bank, u8 index);
+u8 bank_byte1_high(u16 bank, u8 *out);
+void *obj_init_defaults(void *rec, u32 def, u32 i);
+void *obj_init(void *rec, u32 def, u32 i);
+void *obj_init_with_child(void *rec, u32 def, u32 i);
+void *obj_init_flags(void *rec, u32 def, u32 i);
+void *obj_init_state(void *rec, u32 def, u32 i);
+void obj_set_motion_params(void *item, u32 a, u32 b, u32 c, u32 d);
+u8 test_flag(u8 *table, u8 *tableB, u16 id);
+u32 set_low3_bits(void *h, u32 idx);
+
+NONMATCH("asm/code_08025650/obj_update_entities.s", void obj_update_entities(struct EntObj *obj))
+{
+    struct EntEntity **slot;
+    u32 remaining;
+    u8 *stateAddr;
+    u32 stateMask;
+    u32 bit;
+    u32 f208;
+    struct EntEntity **aSlot;
+    struct EntEntity **cSlot;
+    struct EntEntity **bSlot;
+    s32 first;
+
+    if (obj->listPStart != 0)
+    {
+        slot = &obj->entries[obj->listPStart];
+        remaining = obj->listPCount;
+        if (remaining != 0)
+        {
+            stateAddr = &obj->state246;
+            stateMask = 0x1C;
+            bit = 1;
+            do
+            {
+                if ((obj->flags209 & bit) == 0)
+                {
+                    if ((*stateAddr & stateMask) != 0xC)
+                    {
+                        struct EntEntity *e = *slot;
+                        struct EntDesc *d = &e->info->desc;
+                        f208 = obj->flags208;
+                        d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + (f208 & 4), 1, 0);
+                    }
+                    f208 = obj->flags208;
+                    if ((f208 & 0x10) == 0 || (*stateAddr & stateMask) == 0xC)
+                    {
+                        struct EntEntity *e = *slot;
+                        struct EntDesc *d = &e->info->desc;
+                        d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + ((((f208 >> 2) & 1) ^ bit) << 2), 1, 0);
+                    }
+                }
+                {
+                    struct EntEntity *e = *slot++;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj + 0x30, obj->entryCount - 2, 0);
+                }
+                remaining--;
+            } while (remaining != 0);
+        }
+    }
+
+    if (obj->listAStart != 0)
+    {
+        aSlot = &obj->entries[obj->listAStart];
+        remaining = obj->listACount;
+        if (remaining != 0)
+        {
+            s32 more = 1;
+            if ((remaining & 1) != 0)
+            {
+                u32 sel;
+                u32 rest;
+                if ((obj->state246 & 0x1C) != 0xC)
+                {
+                    sel = 0;
+                    rest = obj->entryCount;
+                }
+                else
+                {
+                    struct EntEntity *e = *aSlot;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)(obj->entries), 1, 0);
+                    sel = 2;
+                    rest = obj->entryCount - 2;
+                }
+                {
+                    struct EntEntity *e = *aSlot++;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel * 4, rest, 0);
+                }
+                remaining--;
+                more = remaining != 0;
+            }
+            while (more)
+            {
+                u32 sel;
+                u32 rest;
+                u32 sel2;
+                u32 rest2;
+                struct EntEntity **second;
+                if ((obj->state246 & 0x1C) != 0xC)
+                {
+                    sel = 0;
+                    rest = obj->entryCount;
+                }
+                else
+                {
+                    struct EntEntity *e = *aSlot;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)(obj->entries), 1, 0);
+                    sel = 2;
+                    rest = obj->entryCount - 2;
+                }
+                second = aSlot + 1;
+                {
+                    struct EntEntity *e = *aSlot;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel * 4, rest, 0);
+                }
+                if ((obj->state246 & 0x1C) != 0xC)
+                {
+                    sel2 = 0;
+                    rest2 = obj->entryCount;
+                }
+                else
+                {
+                    struct EntEntity *e = *second;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)(obj->entries), 1, 0);
+                    sel2 = 2;
+                    rest2 = obj->entryCount - 2;
+                }
+                {
+                    struct EntEntity *e = *second;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel2 * 4, rest2, 0);
+                }
+                remaining -= 2;
+                aSlot += 2;
+                more = remaining != 0;
+            }
+        }
+    }
+
+    if (obj->listCStart != 0)
+    {
+        cSlot = &obj->entries[obj->listCStart];
+        remaining = obj->listCCount;
+        if (remaining != 0)
+        {
+            s32 more = 1;
+            if ((remaining & 1) != 0)
+            {
+                u32 sel;
+                u32 rest;
+                if ((obj->state246 & 0x1C) != 0x10)
+                {
+                    sel = 2;
+                    rest = obj->entryCount - 2;
+                }
+                else
+                {
+                    sel = 1;
+                    rest = obj->entryCount - 1;
+                }
+                {
+                    struct EntEntity *e = *cSlot;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel * 4, rest, 0);
+                }
+                obj_update_flags_from_child(*cSlot++);
+                remaining--;
+                more = remaining != 0;
+            }
+            while (more)
+            {
+                u32 sel;
+                u32 rest;
+                u32 sel2;
+                u32 rest2;
+                struct EntEntity **second;
+                if ((obj->state246 & 0x1C) != 0x10)
+                {
+                    sel = 2;
+                    rest = obj->entryCount - 2;
+                }
+                else
+                {
+                    sel = 1;
+                    rest = obj->entryCount - 1;
+                }
+                {
+                    struct EntEntity *e = *cSlot;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel * 4, rest, 0);
+                }
+                obj_update_flags_from_child(*cSlot);
+                second = cSlot + 1;
+                if ((obj->state246 & 0x1C) != 0x10)
+                {
+                    sel2 = 2;
+                    rest2 = obj->entryCount - 2;
+                }
+                else
+                {
+                    sel2 = 1;
+                    rest2 = obj->entryCount - 1;
+                }
+                {
+                    struct EntEntity *e = *second;
+                    struct EntDesc *d = &e->info->desc;
+                    d->cb((u8 *)e + d->viewOff, (u8 *)obj->entries + sel2 * 4, rest2, 0);
+                }
+                obj_update_flags_from_child(*second);
+                remaining -= 2;
+                cSlot += 2;
+                more = remaining != 0;
+            }
+        }
+    }
+
+    first = obj->listB1Start;
+    if (first == 0)
+        first = obj->listB2Start;
+    if (first > 0)
+    {
+        bSlot = &obj->entries[first];
+        remaining = obj->listB1Count + obj->listB2Count;
+        if (remaining != 0)
+        {
+            do
+            {
+                struct EntEntity *e = *bSlot;
+                if (e->record->kind21 == 1 && (e->record->flags12 & 8) != 0)
+                {
+                    obj_set_sprite_link(e, 0);
+                    (*bSlot)->flags214 &= -8;
+                    obj_load_record((*bSlot)->record, 0, 0, 0, 0);
+                    (*bSlot)->record->flags12 &= -7;
+                    (*bSlot)->record->flags12 &= -9;
+                }
+                bSlot++;
+                remaining--;
+            } while (remaining != 0);
+        }
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_08025650/process_obj_entries.s", void process_obj_entries(void))
 
@@ -456,6 +821,161 @@ void obj_load_resources(struct Obj *obj, u16 id)
 
 ASM_FUNC("asm/code_08025650/sprites_obj_setup_sprites.s", void sprites_obj_setup_sprites(void))
 
-ASM_FUNC("asm/code_08025650/build_scene_children.s", void build_scene_children(void))
+NONMATCH("asm/code_08025650/build_scene_children.s", void build_scene_children(struct SceneObj *obj, u32 def))
+{
+    u32 i;
+    u8 kind;
+    u32 hint;
+    u32 baseIndex;
+    u32 *base;
+    struct SceneItem *item;
+    void *rec;
+
+    bank_byte1_high((u16)def, &obj->entryCount);
+    obj->kinds[0].first = 0;
+    obj->kinds[0].count = 0;
+    obj->kinds[2].first = 0;
+    obj->kinds[2].count = 0;
+    obj->kinds[6].first = 0;
+    obj->kinds[6].count = 0;
+    obj->kinds[4].first = 0;
+    obj->kinds[4].count = 0;
+    obj->kinds[3].first = 0;
+    obj->kinds[3].count = 0;
+    obj->kinds[5].first = 0;
+    obj->kinds[5].count = 0;
+    obj->kinds[1].first = 0;
+    obj->kinds[1].count = 0;
+
+    i = 0;
+    if ((s32)i < obj->entryCount)
+    {
+        do
+        {
+            kind = object_def_mode((u16)def, (u8)i);
+            if (kind <= 7)
+            {
+                switch (kind)
+                {
+                case 0:
+                    rec = heap_alloc2(0x38C, 1, gHeapTagItemKind0, 1);
+                    item = obj_init_defaults(rec, def, i);
+                    if ((obj->flagsFB & 4) != 0)
+                    {
+                        obj_set_motion_params(item, 0x100, 0x100, 0xD2, 0xD);
+                    }
+                    else
+                    {
+                        obj_set_motion_params(item, 0x200, 0x200, 0x52C, 0x75);
+                    }
+                    item->ptr368 = (u32)obj + (((i * 3) << 3) + 0x20C);
+                    obj->entries[i] = item;
+                    break;
+                case 1:
+                    rec = heap_alloc2(0x33C, 1, gHeapTagItemKind1, 1);
+                    item = obj_init(rec, def, i);
+                    obj->entries[i] = item;
+                    if (obj->kinds[0].first == 0)
+                        obj->kinds[0].first = i;
+                    obj->kinds[0].count++;
+                    break;
+                case 2:
+                    rec = heap_alloc2(0x33C, 1, gHeapTagItemKind2, 1);
+                    item = obj_init(rec, def, i);
+                    obj->entries[i] = item;
+                    if (obj->kinds[1].first == 0)
+                        obj->kinds[1].first = i;
+                    obj->kinds[1].count++;
+                    break;
+                case 3:
+                    rec = heap_alloc2(0x348, 1, gSceneObjKind3Tag, 1);
+                    item = obj_init_with_child(rec, def, i);
+                    obj->entries[i] = item;
+                    if (item->child != 0)
+                        item->child->index54 = i;
+                    if (obj->kinds[2].first == 0)
+                        obj->kinds[2].first = i;
+                    obj->kinds[2].count++;
+                    break;
+                case 4:
+                    rec = heap_alloc2(0x33C, 1, gSceneObjKind4Tag, 1);
+                    item = obj_init(rec, def, i);
+                    obj->entries[i] = item;
+                    if (obj->kinds[3].first == 0)
+                        obj->kinds[3].first = i;
+                    obj->kinds[3].count++;
+                    break;
+                case 5:
+                    rec = heap_alloc2(0x33C, 1, gSceneObjKind5Tag, 1);
+                    item = obj_init(rec, def, i);
+                    if (test_flag(gUnk_03000FC0 + 0x38C, 0, (((u32)item->w22C << 10) >> 20) + 0x1160) == 1)
+                    {
+                        item->flags20C &= -2;
+                        item->flags20F &= -3;
+                    }
+                    item->flags210 |= 0x20;
+                    obj->entries[i] = item;
+                    if (obj->kinds[4].first == 0)
+                        obj->kinds[4].first = i;
+                    obj->kinds[4].count++;
+                    break;
+                case 6:
+                    rec = heap_alloc2(0x33C, 1, gSceneObjKind6Tag, 1);
+                    item = obj_init_flags(rec, def, i);
+                    obj->entries[i] = item;
+                    if (obj->kinds[5].first == 0)
+                        obj->kinds[5].first = i;
+                    obj->kinds[5].count++;
+                    break;
+                case 7:
+                    rec = heap_alloc2(0x350, 1, gSceneObjKind7Tag, 1);
+                    item = obj_init_state(rec, def, i);
+                    obj->entries[i] = item;
+                    if (obj->kinds[6].first == 0)
+                        obj->kinds[6].first = i;
+                    obj->kinds[6].count++;
+                    break;
+                }
+            }
+            else
+            {
+                obj->entries[i] = 0;
+            }
+            item = obj->entries[i];
+            item->flags210 = (item->flags210 & -17) | ((((u32)item->flags20C << 26) >> 31) << 4);
+            item = obj->entries[i];
+            item->mode239 = 0x10 >> ((((u32)obj->flagsFB << 29) >> 31));
+            item = obj->entries[i];
+            item->index54 = i;
+            i++;
+        } while ((s32)i < obj->entryCount);
+    }
+
+    item = obj->entries[(obj->flags208 & 4) >> 2];
+    item->flags352 |= 0x80;
+    hint = obj->kinds[0].first;
+    if (hint == 0)
+    {
+        hint = obj->kinds[1].first;
+        if (hint == 0)
+            hint = obj->kinds[2].first;
+    }
+    obj->hint11C = hint;
+    obj->sumB = obj->kinds[2].count + (obj->kinds[1].count + obj->kinds[0].count);
+
+    baseIndex = 0;
+    base = obj->slotsA8;
+    do
+    {
+        base[0] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex);
+        base[1] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 1);
+        base[2] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 2);
+        base[3] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 3);
+        base += 4;
+        baseIndex += 4;
+    } while ((s32)baseIndex <= 7);
+}
+END_NONMATCH
+
 
 ASM_FUNC("asm/code_08025650/build_object_table.s", void build_object_table(void))
