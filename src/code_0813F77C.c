@@ -323,7 +323,6 @@ NONMATCH("asm/code_0813F77C/enemy_hop_face_partner.s", void enemy_hop_face_partn
     s32 dir;
     u8 cell;
 
-    rec = ent->rec;
     if (find_active_entry(owner, &found) != 0)
     {
         idx = found;
@@ -333,6 +332,7 @@ NONMATCH("asm/code_0813F77C/enemy_hop_face_partner.s", void enemy_hop_face_partn
         idx = ((u32)owner->flags208 << 30) >> 31;
     }
     partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
+    rec = ent->rec;
     div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
     dx = partner->x - ent->x;
     dy = partner->y - ent->y;
@@ -380,10 +380,10 @@ void enemy_group_sibling_setup(struct Owner *owner, struct Enemy *ent)
     }
 }
 
-NONMATCH("asm/code_0813F77C/enemy_run_move.s", void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
-    u8 zero = 0;
-    u8 one = 1;
+    ByteArg zero = { 0 };
+    ByteArg one = { 1 };
     s16 box[8];
     u8 k;
     u16 *sensor;
@@ -465,7 +465,6 @@ NONMATCH("asm/code_0813F77C/enemy_run_move.s", void enemy_run_move(struct Owner 
         enemy_kick_after_probe(owner, ent, out);
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0813F77C/enemy_kick_after_probe.s", void enemy_kick_after_probe(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
 {
