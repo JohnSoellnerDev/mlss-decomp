@@ -96,6 +96,10 @@ extern const u8 gColumnTable[];
 extern s16 gWaveX[];
 extern s16 gWaveY[];
 void scroll_map_slot(struct TrackObj *obj, u32 slot, s16 a, s16 b);
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void cpu_fast_set(const void *src, void *dst, u32 control);
+extern const u8 gHeapTagObjBgLayers[];
+extern u8 gUnk_0200000A[];
 
 ASM_FUNC("asm/code_0805799C/oam_draw_unit_markers.s", void oam_draw_unit_markers(void))
 
