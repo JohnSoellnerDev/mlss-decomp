@@ -292,4 +292,251 @@ void hero_a_join_b(struct HeroBody *body)
     }
 }
 
-ASM_FUNC("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_7954(struct HeroBody *body))
+static inline void frame_chain_set(struct HeroBody *p, u16 value)
+{
+    if (p != NULL)
+    {
+        do
+        {
+            p->frame = value;
+            p = p->chain;
+        } while (p != NULL);
+    }
+}
+
+static inline void frame_nodes_set(u8 value)
+{
+    struct SpriteListItem *node = gWorld->sprites;
+
+    if (node != NULL)
+    {
+        do
+        {
+            if (node->sprite != NULL)
+            {
+                node->sprite->layer = value;
+            }
+            node = node->next;
+        } while (node != NULL);
+    }
+}
+
+static inline void frames_default(struct HeroBody *a, struct HeroBody *b, struct HeroBody *partner)
+{
+    frame_chain_set(a, 0x100);
+    frame_chain_set(b, 0x100);
+    frame_chain_set(partner, 0x100);
+    frame_nodes_set(0x10);
+}
+
+static inline void frames_default_by_view(struct HeroBody *a, struct HeroBody *b, struct HeroBody *partner)
+{
+    if (gWorld->flags & 8)
+    {
+        frame_chain_set(a, 0x100);
+        frame_chain_set(b, 0x100);
+        frame_chain_set(partner, 0x100);
+        frame_nodes_set(0x10);
+    }
+    else
+    {
+        frame_chain_set(a, 0x100);
+        frame_chain_set(b, 0x100);
+        frame_chain_set(partner, 0x100);
+        frame_nodes_set(0x10);
+    }
+}
+
+static inline void world_mode_step(void)
+{
+    u32 mode = gWorld->modeByte;
+
+    gWorld->modeByte = (mode & -0x31) | ((((mode << 26) >> 30) | 2) << 4);
+}
+
+NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_7954(struct HeroBody *body))
+{
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
+    struct HeroBody *partner = body->partner;
+    void (*next)(struct HeroBody *);
+    s32 rate;
+    s32 start;
+    s32 mid;
+    s32 end;
+    s32 limit;
+    s32 winEnd;
+    s32 endC;
+    s32 m;
+
+    step_motion(b);
+    a->posX = b->posX;
+    a->posY = b->posY;
+    a->posZ = b->posZ;
+
+    end = 0x4000;
+    rate = (s16)b->rate;
+    start = end - rate * 10;
+    mid = end - rate * 6;
+    end += rate * 8;
+    if ((s16)b->progress < end)
+    {
+        ((struct HeroFlagBits *)&b->flags)->active = 0;
+    }
+
+    if ((b->timer >> 12) == 0)
+    {
+        if (start < 0)
+        {
+            start = 0;
+        }
+        if (start > 0x7FFF)
+        {
+            start = 0x7FFF;
+        }
+        if ((s16)b->step <= start && (s16)b->progress >= start)
+        {
+            if (gWorld->flags & 8)
+            {
+                frame_chain_set(a, 0x33);
+                frame_chain_set(b, 0x33);
+                frame_chain_set(partner, 0x33);
+                frame_nodes_set(3);
+            }
+            else
+            {
+                frames_default(a, b, partner);
+            }
+            sprite_objects_draw_obj_tiles(0x4C, 0xC);
+        }
+
+        if (mid < 0)
+        {
+            mid = 0;
+        }
+        if (mid > 0x4000)
+        {
+            mid = 0x4000;
+        }
+        winEnd = end;
+        if (winEnd < 0)
+        {
+            winEnd = 0;
+        }
+        if (winEnd > 0x7FFF)
+        {
+            winEnd = 0x7FFF;
+        }
+        limit = mid;
+        if (winEnd < limit)
+        {
+            limit = winEnd;
+        }
+
+        if ((s16)b->progress >= limit && (s16)b->step <= winEnd)
+        {
+            set_body_part(b, 2, 0x18, 0, 0);
+            if (gSys.pressed & 2)
+            {
+                body_set_pose(1, b, 0x2E, 0);
+                obj_free_parts(b);
+                world_mode_step();
+                if (!(gWorld->modeByte & 4))
+                {
+                    frames_default_by_view(a, b, partner);
+                    display_flush();
+                }
+                b->timer = (b->timer & 0xFFF) | 0x2000;
+            }
+        }
+
+        if ((b->timer >> 12) == 0)
+        {
+            endC = end;
+            if (endC < 0)
+            {
+                endC = 0;
+            }
+            if (endC > 0x7FFF)
+            {
+                endC = 0x7FFF;
+            }
+            if ((s16)b->step <= endC && (s16)b->progress >= endC)
+            {
+                world_mode_step();
+                b->timer = (b->timer & 0xFFF) | 0x1000;
+                frames_default_by_view(a, b, partner);
+                display_flush();
+                obj_free_parts(b);
+            }
+            else
+            {
+                if ((s16)b->progress > end)
+                {
+                    goto settle;
+                }
+                if (!(gSys.pressed & 3))
+                {
+                    goto settle;
+                }
+                world_mode_step();
+                if (gWorld->modeByte & 4)
+                {
+                    goto settle;
+                }
+                b->timer = (b->timer & 0xFFF) | 0x1000;
+                frames_default_by_view(a, b, partner);
+                display_flush();
+                obj_free_parts(b);
+                body_set_pose(6, b, 0x2E, 0);
+            }
+        }
+    }
+
+settle:
+    if ((b->timer >> 12) != 0)
+    {
+        endC = end;
+        if (endC < 0)
+        {
+            endC = 0;
+        }
+        if (endC > 0x7FFF)
+        {
+            endC = 0x7FFF;
+        }
+        m = endC;
+        if (m > 0x4000)
+        {
+            m = 0x4000;
+        }
+        if ((s16)b->progress >= m && (s16)b->step <= endC && (b->timer >> 12) > 1)
+        {
+            b->timer &= 0xFFF;
+            next = hero_pair_settle_b;
+            body->state = next;
+            next(body);
+            return;
+        }
+    }
+
+    if ((s16)b->step <= 0x4000 && (s16)b->progress >= 0x4000)
+    {
+        set_slot_value(0x2E, -1);
+        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        {
+            sprite_set_action(a, 3, 0x2031, 0);
+            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
+        }
+        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        {
+            sprite_set_action(b, 3, 0x2060, 0);
+            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 1;
+        }
+    }
+    if (((struct HeroFlagBits *)&b->flags)->active)
+    {
+        body->state = hero_b_settle_on_partner;
+    }
+}
+END_NONMATCH
