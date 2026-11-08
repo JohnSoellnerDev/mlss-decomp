@@ -1133,8 +1133,6 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
     u32 sel;
     u32 mode;
     s16 n;
-    u16 counter;
-    s32 t;
 
     if ((*p & 2) == 0)
     {
@@ -1144,7 +1142,9 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
         switch (sel)
         {
         case 0:
-            counter = e->unkE;
+        {
+            s32 t;
+            u16 counter = e->unkE;
             mode = *p++;
             switch (mode)
             {
@@ -1163,8 +1163,11 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             }
             e->unkE = counter;
             break;
+        }
         case 1:
-            counter = e->unk14;
+        {
+            s32 t;
+            u16 counter = e->unk14;
             mode = *p++;
             switch (mode)
             {
@@ -1184,6 +1187,7 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             e->unk14 = counter;
             break;
         }
+        }
     }
     else
     {
@@ -1199,7 +1203,9 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             case 0:
                 for (n = 2; n > 0; n--, e++)
                 {
-                        t = e->unkE + *p;
+                    s32 t;
+                    u16 counter;
+                    t = e->unkE + *p;
                     counter = (u16)t;
                     if ((s32)(s16)t > (s32)e->unk12)
                         counter = e->unk12;
@@ -1209,7 +1215,9 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             case 1:
                 for (n = 2; n > 0; n--, e++)
                 {
-                        t = e->unkE - *p;
+                    s32 t;
+                    u16 counter;
+                    t = e->unkE - *p;
                     counter = (u16)t;
                     if ((s16)t <= 0)
                         counter = 1;
@@ -1225,7 +1233,9 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             case 0:
                 for (n = 2; n > 0; n--, e++)
                 {
-                        t = e->unk14 + *p;
+                    s32 t;
+                    u16 counter;
+                    t = e->unk14 + *p;
                     counter = (u16)t;
                     if ((s32)(s16)t > (s32)e->unk18)
                         counter = e->unk18;
@@ -1235,7 +1245,9 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
             case 1:
                 for (n = 2; n > 0; n--, e++)
                 {
-                        t = e->unk14 - *p;
+                    s32 t;
+                    u16 counter;
+                    t = e->unk14 - *p;
                     counter = (u16)t;
                     if ((s16)t < 0)
                         counter = 0;
