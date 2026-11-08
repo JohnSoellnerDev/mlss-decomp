@@ -304,9 +304,9 @@ END_NONMATCH
 
 NONMATCH("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce_or_finish(struct ActorObj *obj))
 {
-    s16 *dxp = &obj->dx;
-    s16 *dyp = &obj->dy;
     u16 *dhp = (u16 *)&obj->dh;
+    s16 *dyp = &obj->dy;
+    s16 *dxp = &obj->dx;
 
     *dhp = *dhp + obj->dhStep;
     obj->posX = obj->baseX + *dxp;
