@@ -57,6 +57,20 @@ struct FlagBit5
     u8 high : 2;
 };
 
+struct FlagBit1
+{
+    u8 lo : 1;
+    u8 bit1 : 1;
+    u8 hi : 6;
+};
+
+struct SpriteNode
+{
+    void *next;
+    struct Sprite *sprite;
+    void **link;
+};
+
 struct Body
 {
     u8 filler0[0x4];
@@ -155,7 +169,12 @@ extern void setup_group_motion(struct Body *body);
 extern struct Body *obj_spawn_linked(struct Body *parent, s32 kind, s32 zero);
 extern void end_anim_when_active_b(void);
 extern void anim4_with_effect_rate(struct Body *body);
-extern void arrange_group_on_ellipse(void);
+extern void arrange_group_on_ellipse(struct Body *body);
+extern s32 candidates_advance_progress(struct Body *body);
+extern void settle_members_then_orbit(struct Body *body);
+extern void orbit_parts_sway(void);
+extern void set_motion_start(struct Body *body, u32 speed);
+extern s8 gScriptA[];
 extern void companion_jump_land_step_toward_partner(void);
 extern void place_chain_nodes(void);
 extern void *sprite_node_take(void);
@@ -346,11 +365,169 @@ void group_targets_then_step(struct Body *body)
     body->state = (void *)step_and_detach_child;
 }
 
-ASM_FUNC("asm/code_0809F588/build_part_chain.s", void build_part_chain(void))
+NONMATCH("asm/code_0809F588/build_part_chain.s", void build_part_chain(struct Body *body))
+{
+    struct Body *part;
+    void *node;
+    void **link;
+    s32 i;
 
-ASM_FUNC("asm/code_0809F588/arrange_group_on_ellipse.s", void arrange_group_on_ellipse(void))
+    if ((body->sprite->flags & 8) != 0)
+    {
+        sprite_set_action(body, 0x19, 0, 0);
+        ((struct SpriteModeBits *)&body->sprite->flags)->mode = 0;
+        part = obj_spawn_linked(body, 0x4032, 0);
+        part->flags78 = (part->flags78 & 0x1F) | 0x40;
+        ((struct FlagBit1 *)&part->flags)->bit1 = 1;
+        part->state = (void *)arrange_group_on_ellipse;
+        part = obj_spawn_linked(part, 0x4031, 0);
+        part->flags78 = (part->flags78 & 0x1F) | 0x40;
+        ((struct FlagBit1 *)&part->flags)->bit1 = 1;
+        part = obj_spawn_linked(part, 0x4033, 0);
+        part->flags78 = (part->flags78 & 0x1F) | 0x40;
+        ((struct FlagBit1 *)&part->flags)->bit1 = 1;
+        obj_list_push_default(part);
+        link = &part->unkC;
+        node = sprite_node_take();
+        part->unk4 = node;
+        ((struct SpriteNode *)node)->sprite = part->sprite;
+        ((struct SpriteNode *)node)->link = link;
+        for (i = 0; i < 8; i++)
+        {
+            link = *link = sprite_node_alloc(part->posX, part->posY, part->posZ);
+        }
+        ((struct SpriteNode *)link)->next = 0;
+        link = 0;
+        part->state = (void *)place_chain_nodes;
+        part = obj_spawn_linked(part, 0x4033, 0);
+        part->flags78 = (part->flags78 & 0x1F) | 0x40;
+        ((struct FlagBit1 *)&part->flags)->bit1 = 1;
+        obj_list_push_default(part);
+        set_slot_value(0xD5, -1);
+        body->state = link;
+    }
+}
+END_NONMATCH
 
-ASM_FUNC("asm/code_0809F588/orbit_parts_step.s", void orbit_parts_step(void))
+NONMATCH("asm/code_0809F588/arrange_group_on_ellipse.s", void arrange_group_on_ellipse(struct Body *body))
+{
+    s32 x;
+    s32 y;
+
+    x = (body->data->posX / 0x100) - ((gCosineTable[216] / 0x40) * 0xA0) / 0x100;
+    y = (body->data->posY / 0x100) - ((((gSineTable[216] / 0x40) * 0xA0) / 0x100) * 0x8C) / 0x100;
+    place_targets(body, x, y, 0x3C, 0x100);
+    x = (body->data->posX / 0x100) - ((gCosineTable[40] / 0x40) * 0xA0) / 0x100;
+    y = (body->data->posY / 0x100) - ((((gSineTable[40] / 0x40) * 0xA0) / 0x100) * 0x8C) / 0x100;
+    place_targets(body->child, x, y, 0x3C, 0x100);
+    set_motion_start(body, 0x200);
+    set_motion_start(body->child, 0x200);
+    body->state = (void *)settle_members_then_orbit;
+}
+END_NONMATCH
+
+NONMATCH("asm/code_0809F588/orbit_parts_step.s", void orbit_parts_step(struct Body *body))
+{
+    struct Body *group;
+    struct Body *child;
+    s16 *cb;
+    s16 *sb;
+    s32 t;
+    s32 modeA;
+    s32 modeB;
+    s32 pos;
+    s32 count;
+    s32 entry;
+    s32 byte;
+    s32 cmd;
+    s32 dx;
+
+    group = (struct Body *)((u8 *)body->data + 8);
+    t = body->landX * 0xCC + 0x270000;
+    if (t < 0)
+        t += 0xFF;
+    body->landX = t >> 8;
+    cb = gCosineTable;
+    body->posX = group->targetX - (cb[(body->landX / 0x100) & 0xFF] / 0x40) * 0xA0;
+    sb = gSineTable;
+    body->posY = group->targetY - ((sb[(body->landX / 0x100) & 0xFF] / 0x40) * 0x5780) / 0x100;
+    child = body->child;
+    t = child->landX * 0xCC + 0xD0000;
+    if (t < 0)
+        t += 0xFF;
+    child->landX = t >> 8;
+    child->posX = group->targetX - (cb[(child->landX / 0x100) & 0xFF] / 0x40) * 0xA0;
+    child->posY = group->targetY - ((sb[(child->landX / 0x100) & 0xFF] / 0x40) * 0x5780) / 0x100;
+    if ((candidates_advance_progress(body) << 24) != 0)
+        return;
+    pos = 0;
+    for (count = body->unk9C; count > 0; count--)
+    {
+        entry = gScriptA[pos];
+        pos++;
+        if (entry != 0)
+        {
+            do
+            {
+                byte = gScriptA[pos];
+                pos++;
+            } while (byte != 0);
+        }
+    }
+    body->unkA8 = pos;
+    body->landY = 0;
+    cmd = gScriptA[body->unkA8 + 1];
+    switch (cmd)
+    {
+    case 1:
+        modeA = 0;
+        break;
+    case 2:
+        modeA = 0;
+        break;
+    case 3:
+        modeA = 0x50;
+        break;
+    case 4:
+        modeA = 0x50;
+        break;
+    }
+    body->unkB2 = modeA;
+    cmd = gScriptA[body->unkA8 + 1];
+    switch (cmd)
+    {
+    case 1:
+        modeB = 0;
+        break;
+    case 2:
+        modeB = 0x50;
+        break;
+    case 3:
+        modeB = 0;
+        break;
+    case 4:
+        modeB = 0x50;
+        break;
+    }
+    body->child->unkB2 = modeB;
+    body->jumpDY = gScriptA[body->unkA8] << 4;
+    body->unkA8 += 2;
+    if (body->jumpDY < 0)
+    {
+        dx = 0xC0;
+        if ((u8)(body->landX / 0x100) <= 0xC0)
+            dx = -0x40;
+    }
+    else
+    {
+        dx = 0xC0;
+        if ((u8)(body->landX / 0x100) > 0xBF)
+            dx = 0x1C0;
+    }
+    body->jumpDX = dx;
+    body->state = (void *)orbit_parts_sway;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_0809F588/orbit_parts_sway.s", void orbit_parts_sway(void))
 
