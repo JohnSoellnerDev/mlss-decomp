@@ -799,7 +799,7 @@ struct MotionSlot
 
 void offset_obj_pos_by_mode(u8 *obj, u32 kind, s32 dx, s32 dy);
 
-NONMATCH("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u8 **task))
+void advance_motion_slots(u8 **task)
 {
     struct MotionSlot *e;
     s32 i;
@@ -868,8 +868,10 @@ NONMATCH("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u
                     flags = (s16)(flags | 2);
                 }
             }
-                        if (i <= 2)
-            if (i >= 1)
+            switch (i)
+            {
+            case 1:
+            case 2:
             {
                 u8 *list = *(u8 **)(*task + 0x14);
                 u32 handle = *(u32 *)(list + 0x304);
@@ -891,6 +893,7 @@ NONMATCH("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u
                 dy2 = ((s32)((u32)dy << 8)) >> 16;
                 offset_obj_pos_by_mode((u8 *)handle, idx, dx2, dy2);
             }
+            }
             if (flags == 3)
             {
                 s32 bv = gEffectState[0x55B];
@@ -902,7 +905,6 @@ NONMATCH("asm/code_080EF3BC/advance_motion_slots.s", void advance_motion_slots(u
         }
     }
 }
-END_NONMATCH
 
 void free_effect_state(void)
 {
