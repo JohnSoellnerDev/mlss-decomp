@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
 
@@ -165,4 +166,164 @@ NONMATCH("asm/code_08044644/obj_step_sequence.s", void obj_step_sequence(struct 
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08044644/contacts_obj_start_move.s", void contacts_obj_start_move(void))
+struct MoveObj
+{
+    u8 filler0[0x02];
+    u8 angle;
+    u8 angleZ;
+    u8 filler4[0x0C - 0x04];
+    s32 posX;
+    s32 posY;
+    s32 posZ;
+    s32 posZB;
+    u8 filler1C[0x20D - 0x1C];
+    u8 flags20D;
+    u8 filler20E[0x23E - 0x20E];
+    u16 speed23E;
+    u8 filler240[0x242 - 0x240];
+    s16 moveX;
+    s16 moveY;
+    u8 filler246[0x2B5 - 0x246];
+    u8 moveFlags;
+    u8 filler2B6;
+    u8 stepFlags;
+    u8 filler2B8[0x2BC - 0x2B8];
+    s32 savedX;
+    s32 savedY;
+    s32 savedZ;
+    u8 filler2C8[0x2CC - 0x2C8];
+    s32 snapX;
+    s32 snapY;
+    s32 snapZ;
+    s16 dirX;
+    s16 dirY;
+    s16 dirZ;
+    u16 modeCount;
+    u16 modeLimit;
+};
+
+u32 arc_tan2(s32 x, s32 y);
+
+static inline s32 round14(s32 p)
+{
+    return p / 0x4000 + ((p / 0x2000) & 1);
+}
+
+NONMATCH("asm/code_08044644/contacts_obj_start_move.s", u32 contacts_obj_start_move(struct MoveObj *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, u16 speed))
+{
+    s32 tx;
+    s32 ty;
+    s32 tz;
+    s32 dx;
+    s32 dy;
+    s32 dz;
+    s32 dxp;
+    s32 dyp;
+    s32 dzp;
+    s32 t;
+    s32 r;
+    s32 s;
+    s32 p;
+    s32 q;
+    s32 len;
+    s32 scale;
+
+    tx = x << 8;
+    ty = y << 8;
+    tz = z << 8;
+    if (relative == 1)
+    {
+        tx += obj->posX;
+        ty += obj->posY;
+        tz += obj->posZ + obj->posZB;
+    }
+    obj->savedX = obj->posX;
+    obj->savedY = obj->posY;
+    obj->savedZ = obj->posZ + obj->posZB;
+    obj->snapX = tx;
+    obj->snapY = ty;
+    obj->snapZ = tz;
+    if (obj->savedX >> 8 == obj->snapX >> 8 && obj->savedY >> 8 == obj->snapY >> 8)
+    {
+        if ((obj->flags20D & 0x40) != 0 || (obj->savedZ >> 8) == (tz >> 8))
+            return 0;
+    }
+
+    dx = obj->snapX - obj->savedX;
+    dy = obj->savedY - obj->snapY;
+    if ((obj->flags20D & 0x40) != 0)
+        dz = 0;
+    else
+        dz = obj->snapZ - obj->savedZ;
+
+    t = dx;
+    if (t < 0)
+        t += 0xFF;
+    dxp = t >> 8;
+    t = dy;
+    if (t < 0)
+        t += 0xFF;
+    dyp = t >> 8;
+    t = dz;
+    if (t < 0)
+        t += 0xFF;
+    dzp = t >> 8;
+
+    if ((u32)(dx + 0x1000) > 0x2000 || dy < -0x1000 || dy > 0x1000 || dz < -0x1000 || dz > 0x1000)
+    {
+        dx = dxp;
+        dy = dyp;
+        dz = dzp;
+    }
+
+    r = (u16)arc_tan2((s16)dy, (s16)dx);
+    obj->angle = (r >> 8) + ((r >> 7) & 1);
+
+    if ((obj->flags20D & 0x40) == 0)
+    {
+        len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+        r = (u16)arc_tan2((s16)len, (s16)dz);
+        obj->angleZ = (r >> 8) + ((r >> 7) & 1);
+    }
+
+    if (kind == 1)
+    {
+        s = speed;
+        if (speed == 0)
+            s = obj->speed23E;
+        s = (s16)s;
+
+        if ((obj->flags20D & 0x40) != 0)
+        {
+            obj->dirX = round14(s * gSineTable[obj->angle]);
+            obj->dirY = -round14(s * gCosineTable[obj->angle]);
+            obj->dirZ = 0;
+            obj->stepFlags = (obj->stepFlags & -8) | 4;
+        }
+        else
+        {
+            p = round14(s * gSineTable[obj->angle]);
+            obj->dirX = round14(gCosineTable[obj->angleZ] * p);
+            q = round14(s * gCosineTable[obj->angle]);
+            obj->dirY = -round14(gCosineTable[obj->angleZ] * q);
+            obj->dirZ = round14(s * gSineTable[obj->angleZ]);
+            obj->stepFlags = obj->stepFlags & -8;
+        }
+        obj->moveX = obj->dirX;
+        obj->moveY = obj->dirY;
+    }
+    else
+    {
+        obj->modeLimit = speed;
+        len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dxp * dxp + dyp * dyp + dzp * dzp);
+        len = (len << 8) / obj->modeLimit;
+        scale = (s16)len;
+        obj->moveX = (scale * gSineTable[obj->angle]) / 0x4000;
+        obj->moveY = -((scale * gCosineTable[obj->angle]) / 0x4000);
+    }
+
+    obj->modeCount = 0;
+    obj->moveFlags = (obj->moveFlags & -8) | (kind & 7);
+    return 1;
+}
+END_NONMATCH
