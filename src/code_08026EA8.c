@@ -215,11 +215,14 @@ struct Bits1C246
     u8 rest : 3;
 };
 
-struct SysLow10
+struct SysFlags78
 {
     u8 filler0[0x78];
     u16 low10 : 10;
-    u16 rest : 6;
+    u16 b10 : 2;
+    u16 b12 : 1;
+    u16 b13 : 1;
+    u16 rest : 2;
 };
 
 struct BgReqBits
@@ -230,7 +233,17 @@ struct BgReqBits
     u8 rest : 2;
 };
 
-NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(struct SceneObj *obj))
+/* animation flags of the current object at +0x28 */
+struct ObjFlags28
+{
+    u8 filler0[0x28];
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 pal : 4;
+    u8 rest : 2;
+};
+
+void apply_display_state(struct SceneObj *obj)
 {
     *(u16 *)0x02000000 = 0x1F40;
     if (obj->flags291 & 2)
@@ -245,7 +258,7 @@ NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(str
     {
         if (obj->flags2B8 & 0x10)
         {
-            if ((((struct SysLow10 *)gSys)->low10 & 0xF0) == 0xF0)
+            if ((((struct SysFlags78 *)gSys)->low10 & 0xF0) == 0xF0)
             {
                 pair_ring_pair_step(obj);
             }
@@ -260,7 +273,7 @@ NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(str
     {
         u32 t = obj->half20A & 0x180;
 
-        if (t == 0x100 || (t == 0 && (((struct SysLow10 *)gSys)->low10 & 0x33) == 0))
+        if (t == 0x100 || (t == 0 && (((struct SysFlags78 *)gSys)->low10 & 0x33) == 0))
         {
             obj->half244 = 0xFFC8;
         }
@@ -276,17 +289,12 @@ NONMATCH("asm/code_08026EA8/apply_display_state.s", void apply_display_state(str
         set_slot_fields(0, obj->timer1FA >> 8, 8);
         ((struct Bits3Of8 *)&obj->flagsFC)->b0 = 0;
     }
+    if (((struct ObjFlags28 *)gCurObj)->bit0)
     {
-        u32 b28 = ((u8 *)gCurObj)[0x28];
-
-        if (b28 & 1)
-        {
-            anim_set_gfx(gCurObj, *(u16 *)((u8 *)gCurObj + 0x20), (((u32)b28 << 26) >> 28));
-        }
+        anim_set_gfx(gCurObj, *(u16 *)((u8 *)gCurObj + 0x20), ((struct ObjFlags28 *)gCurObj)->pal);
     }
     set_flags_2_3(gCurObj);
 }
-END_NONMATCH
 
 void apply_display_state(struct SceneObj *obj);
 struct FcModeBits
@@ -390,10 +398,15 @@ void run_pending_obj_callbacks(void);
 void menu_obj_free(void *obj, u32 kind);
 extern const u8 gEntryUpdateTaskClass[];
 
-struct HalfLow10
+/* flags at +0x120, copied from the system flags at +0x78 */
+struct ObjFlags120
 {
+    u8 filler0[0x120];
     u16 low10 : 10;
-    u16 rest : 6;
+    u16 b10 : 2;
+    u16 b12 : 1;
+    u16 b13 : 1;
+    u16 rest : 2;
 };
 
 struct TaskCls
@@ -416,27 +429,17 @@ struct EntryWithInfo
     struct EntryInfo *info;
 };
 
-NONMATCH("asm/code_08026EA8/object_teardown.s", void object_teardown(struct SceneObj *obj))
+void object_teardown(struct SceneObj *obj)
 {
     s32 i;
-    u32 s79;
-    u32 t;
 
     reset_pair_slots(obj);
     obj_update_entities(obj);
     process_obj_entries(obj);
-    t = ((struct SysLow10 *)gSys)->low10;
-    ((struct HalfLow10 *)&obj->half120)->low10 = t;
-    s79 = gSys[0x79];
-    {
-        u8 *b = &((u8 *)obj)[0x121];
-        u32 t = s79 & 0xC;
-        u32 f = t | (*b & -0xD);
-
-        f = (s79 & 0x10) | (f & -0x11);
-        f = (f & -0x21) | (s79 & 0x20);
-        *b = f;
-    }
+    ((struct ObjFlags120 *)obj)->low10 = ((struct SysFlags78 *)gSys)->low10;
+    ((struct ObjFlags120 *)obj)->b10 = ((struct SysFlags78 *)gSys)->b10;
+    ((struct ObjFlags120 *)obj)->b12 = ((struct SysFlags78 *)gSys)->b12;
+    ((struct ObjFlags120 *)obj)->b13 = ((struct SysFlags78 *)gSys)->b13;
     if (obj->sub1FC != 0)
     {
         free_block_if_bit0(obj->sub1FC, 3);
@@ -488,7 +491,6 @@ NONMATCH("asm/code_08026EA8/object_teardown.s", void object_teardown(struct Scen
         obj->flagsF9 = f9;
     }
 }
-END_NONMATCH
 
 void object_start_kind(struct SceneObj *obj)
 {
