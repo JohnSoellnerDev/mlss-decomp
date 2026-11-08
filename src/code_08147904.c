@@ -34,6 +34,13 @@ struct SpriteBits11
     u8 rest : 1;
 };
 
+struct MotionBits
+{
+    u8 lo4 : 4;
+    u8 xMode : 2;
+    u8 yMode : 2;
+};
+
 struct Mode3
 {
     u8 mode : 3;
@@ -56,7 +63,9 @@ struct OwnerFlags
 
 struct Partner
 {
-    u8 filler0[0xC];
+    u8 filler0[0x4];
+    s16 unk4;
+    u8 filler6[0xC - 0x6];
     s32 posX;
     s32 posY;
     s32 posZ;
@@ -101,7 +110,10 @@ struct Enemy
     s32 unk18;
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
-    u8 filler25[0x100 - 0x25];
+    u8 filler25[0x34 - 0x25];
+    s32 prevX;
+    s32 prevY;
+    u8 filler3C[0x100 - 0x3C];
     u16 wanderDist[4];
     u8 filler108[0x130 - 0x108];
     u16 wanderSteps[2];
@@ -138,16 +150,21 @@ struct Enemy
     u8 filler240[0x242 - 0x240];
     s16 vx;
     s16 vy;
-          u8 filler246[0x276 - 0x246];
+          u8 filler246[0x248 - 0x246];
+    s32 stepLen;
+          u8 filler24C[0x276 - 0x24C];
       u16 unk276;
       u8 filler278[0x27A - 0x278];
       u16 unk27A;
           u8 filler27C[0x290 - 0x27C];
       void *layer290;
       struct Sprite *sprite;
-    u8 filler298[0x2B6 - 0x298];
+    u8 filler298[0x2B5 - 0x298];
+    u8 unk2B5;
     u8 unk2B6;
-    u8 filler2B7[0x2DC - 0x2B7];
+    u8 filler2B7[0x2D8 - 0x2B7];
+    u16 copyVX;
+    u16 copyVY;
     u16 speed;
     u16 runLeft;
           u8 filler2E0[0x2E4 - 0x2E0];
@@ -208,6 +225,9 @@ void enemy_face_owner(struct Owner *owner, struct Enemy *ent, u32 *out);
 void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out);
 void enemy_place_body_quadrant(struct Enemy *body);
 void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out);
+u8 widths_overlap_x(struct Enemy *a, struct Partner *b);
+u8 heights_overlap_y(struct Enemy *a, struct Partner *b);
+void bump_attack_enemy_move_3d_step(void);
 void enemy_wait_scan(void);
 void enemy_fall_end_state(void);
 void enemy_fall_decay(void);
@@ -994,4 +1014,199 @@ void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out)
     *out = (u32)enemy_after_step_906c;
 }
 
-ASM_FUNC("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out))
+NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out))
+{
+    u8 *ai = (u8 *)ent + 0x58;
+    struct Record *rec = ent->rec;
+    u16 *table = ent->wanderDist;
+    struct Enemy *body = ent->body;
+    struct Partner *active;
+    u8 idx;
+    u8 zero;
+    u32 speed;
+    s32 goalZ;
+    s32 *stepLenPtr;
+    s32 *accYPtr;
+    s32 *accXPtr;
+    s32 cosX;
+    s32 sinY;
+    s32 *angXPtr;
+    s32 *angYPtr;
+    s32 *phaseXPtr;
+    s32 *phaseYPtr;
+
+    if (find_active_entry(owner, &idx) == 0)
+    {
+        ent->unk1D2 = table[ent->index + 0x14];
+        out[0] = (u32)tick_store;
+        out[3] = (u32)enemy_collide_settle;
+        return;
+    }
+    active = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+    if (widths_overlap_x(body, active) != 0 && heights_overlap_y(body, active) != 0 && active->unk4 == 5)
+    {
+        body->unk30E = 0x500;
+        body->unk310 = 0x500;
+    }
+    else
+    {
+        struct Partner *tgt = owner->unk200;
+        s32 t;
+        s32 dx;
+        s32 dy;
+        s32 q;
+        u16 left;
+
+        if (tgt->unk4 != 4 && ((struct Partner *)owner->unk204)->unk4 != 4)
+        {
+            goalZ = tgt->posZ + tgt->unk18 + 0x2900;
+            speed = *(u16 *)((u8 *)((u16 *)rec + *(u16 *)(ai + 0x178)) + 0x3A);
+        }
+        else
+        {
+            goalZ = tgt->posZ + tgt->unk18;
+            speed = *(u16 *)((u8 *)((u16 *)rec + *(u16 *)(ai + 0x178)) + 0x32);
+        }
+        t = speed;
+        if ((s16)body->unk30A < 0)
+        {
+            t = -t;
+        }
+        body->unk30A = t;
+        t = speed + 0x80;
+        if ((s16)body->unk30C < 0)
+        {
+            t = -t;
+        }
+        body->unk30C = t;
+
+        dx = active->posX - body->posX;
+        if (dx < 0)
+        {
+            dx = -dx;
+        }
+        dy = active->posY - body->posY;
+        if (dy < 0)
+        {
+            dy = -dy;
+        }
+        if (dx >= dy)
+        {
+            body->unk30E = 0x140;
+            body->unk310 = 0xC0;
+        }
+        else
+        {
+            body->unk30E = 0xC0;
+            body->unk310 = 0x140;
+        }
+        start_move_to_3d(body, active->posX, active->posY, goalZ, speed, zero = 0);
+
+        body->copyVX = body->vx;
+        body->copyVY = body->vy;
+        stepLenPtr = &body->stepLen;
+        *stepLenPtr = (s16)body->speed << 1;
+        accXPtr = &body->unk2E4;
+        *accXPtr += (s16)body->copyVX;
+        accYPtr = &body->unk2E8;
+        *accYPtr += (s16)body->copyVY;
+        body->unk2EC += *stepLenPtr;
+
+        angXPtr = &body->unk32C;
+        t = *angXPtr;
+        if (t < 0)
+        {
+            t += 0xFF;
+        }
+        cosX = gCosineTable[(t >> 8) & 0xFF];
+        if (cosX < 0)
+        {
+            cosX += 0x3F;
+        }
+        cosX >>= 6;
+
+        angYPtr = &body->unk328;
+        t = *angYPtr;
+        if (t < 0)
+        {
+            t += 0xFF;
+        }
+        sinY = gSineTable[(t >> 8) & 0xFF];
+        if (sinY < 0)
+        {
+            sinY += 0x3F;
+        }
+        sinY >>= 6;
+
+        phaseXPtr = &body->unk2F4;
+        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*phaseXPtr, 0x100);
+        body->posX = *accXPtr + q * cosX;
+        phaseYPtr = &body->unk2F0;
+        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*phaseYPtr, 0x100);
+        body->posY = *accYPtr + q * sinY;
+        body->unk18 += *stepLenPtr;
+
+        t = *angXPtr + (s16)body->unk30E;
+        if (t < 0)
+        {
+            t += 0xFF;
+        }
+        *angXPtr = ((t >> 8) & 0xFF) << 8;
+
+        t = *angYPtr + (s16)body->unk310;
+        if (t < 0)
+        {
+            t += 0xFF;
+        }
+        *angYPtr = ((t >> 8) & 0xFF) << 8;
+
+        *phaseXPtr += (s16)body->unk30A;
+        if (*phaseXPtr < 0 || *phaseXPtr > (s32)(speed * 0x16))
+        {
+            ((struct MotionBits *)&body->unk2B5)->xMode = 1;
+        }
+        *phaseYPtr += (s16)body->unk30C;
+        if (*phaseYPtr < 0 || *phaseYPtr > (s32)(speed * 0x16))
+        {
+            ((struct MotionBits *)&body->unk2B5)->yMode = 1;
+        }
+        if (((struct MotionBits *)&body->unk2B5)->xMode != 0)
+        {
+            body->unk30A = -body->unk30A;
+            ((struct MotionBits *)&body->unk2B5)->xMode = 0;
+        }
+        if (((struct MotionBits *)&body->unk2B5)->yMode != 0)
+        {
+            body->unk30C = -body->unk30C;
+            ((struct MotionBits *)&body->unk2B5)->yMode = 0;
+        }
+        if ((body->unk20C & 1) == 0)
+        {
+            obj_set_sprite_link(body, 0);
+            ((struct Flags8 *)&ent->unk20D)->bit2 = 1;
+            out[0] = (u32)enemy_collide_settle;
+        }
+
+        body->vx = body->posX - body->prevX;
+        body->vy = body->posY - body->prevY;
+        left = *(u16 *)(ai + 0x17A) - 1;
+        *(u16 *)(ai + 0x17A) = left;
+        if (left != 0)
+        {
+            return;
+        }
+        body->unk2E4 = body->posX;
+        body->unk2E8 = body->posY;
+        body->unk2F4 = 0;
+        body->unk2F0 = 0;
+        body->unk30A = 0x100;
+        body->unk30C = 0x100;
+        body->unk32C = 0;
+        body->unk328 = 0;
+        body->unk30E = 0x500;
+        body->unk310 = 0x500;
+    }
+    ((struct Flags8 *)&body->unk20D)->bit3 = 0;
+    out[0] = (u32)bump_attack_enemy_move_3d_step;
+}
+END_NONMATCH
