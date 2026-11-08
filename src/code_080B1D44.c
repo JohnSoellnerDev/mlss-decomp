@@ -160,7 +160,7 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 void hero_pair_finish(struct HeroBody *body);
 
-NONMATCH("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner_pos(struct HeroBody *body))
+void hero_a_copy_partner_pos(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
@@ -189,11 +189,11 @@ NONMATCH("asm/code_080B1D44/hero_a_copy_partner_pos.s", void hero_a_copy_partner
         body_a->spanZ = partner->posZ + (partner->ofsZ << 8) + 0x3000;
         timer2 = body_a->timer2;
         mask = 0xFFFFF000;
-        body_a->timer2 = (timer2 & mask) | 1;
+        mask &= timer2;
+        body_a->timer2 = mask | 1;
         body->state = hero_a_walk_toward_partner;
     }
 }
-END_NONMATCH
 
 void hero_a_walk_toward_partner(struct HeroBody *body)
 {
