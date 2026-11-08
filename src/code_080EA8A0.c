@@ -885,17 +885,25 @@ u32 set_var_from_key_group(void *ctx, struct ScriptObj *obj, struct KeyGroupReco
     return 1;
 }
 
-NONMATCH("asm/code_080EA8A0/set_key_ignore_mask.s", u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src))
+u32 set_key_ignore_mask(void *ctx, void *unused, u32 *src)
 {
-    struct KeyRam *sys = &gSys;
-    u32 bits = ~*src;
+    struct KeyWord
+    {
+        u16 low : 10;
+        u16 high : 6;
+    };
+    struct SysKeysRam
+    {
+        u8 filler0[0x78];
+        struct KeyWord keys;
+    };
+    struct SysKeysRam *sys = (struct SysKeysRam *)&gSys;
+    u16 low = ~*src & 0x3FF;
 
-    bits &= 0x3FF;
-    sys->enable78 = (sys->enable78 & ~0x3FF) | bits;
+    sys->keys.low = low;
     poll_keys();
     return 1;
 }
-END_NONMATCH
 
 u32 set_key_mode_bits(void *ctx, void *unused, u8 *src)
 {
@@ -1378,11 +1386,10 @@ u32 set_obj_word0_saved(void *ctx, struct ScriptObj *obj, u32 *rec)
     return 1;
 }
 
-NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ctx, struct ScriptObj *obj))
+u32 restore_obj_word0(void *ctx, struct ScriptObj *obj)
 {
-    u32 saved;
+    register u32 saved asm("r2") = obj->word10;
 
-    saved = obj->word10;
     if (saved == 0)
     {
         obj->word4 = obj->word0;
@@ -1394,7 +1401,6 @@ NONMATCH("asm/code_080EA8A0/restore_obj_word0.s", u32 restore_obj_word0(void *ct
     }
     return 1;
 }
-END_NONMATCH
 
 u32 reset_cursor(void *ctx, struct ScriptObj *obj)
 {
