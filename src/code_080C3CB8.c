@@ -127,7 +127,7 @@ struct World
     u8 filler0[0x0A];
     u8 modeByte;
     u8 filler0B[0x0C - 0x0B];
-    u8 view;
+    u8 flags;
     u8 filler0D[0x58 - 0x0D];
     struct Hero *list[6];
     struct Hero *heroA;
@@ -155,7 +155,321 @@ void place_targets(struct HeroBody *body, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct HeroBody *body, u32 value);
 void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, const u8 *cb);
 
-ASM_FUNC("asm/code_080C3CB8/hero_a_walk_to_partner_3cb8.s", void hero_a_walk_to_partner_3cb8(struct HeroBody *body))
+void state_stack_advance_progress(struct HeroBody *body);
+void display_flush(void);
+extern u8 gSys[];
+void obj_free_parts(struct HeroBody *body);
+void body_set_pose(u32 art, struct HeroBody *body, s32 x, s32 y);
+void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
+void sprite_objects_draw_obj_tiles(u32 x, u32 y);
+void hero_a_jitter_place_near_partner(struct HeroBody *body);
+
+struct HeroTimerBits
+{
+    u16 count : 12;
+    u16 mode : 4;
+};
+
+struct HeroWorldModeBits
+{
+    u8 lo2 : 2;
+    u8 m2 : 2;
+    u8 mode : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+struct HeroModeBits
+{
+    u8 unk0 : 1;
+    u8 mode : 2;
+    u8 unk3 : 5;
+};
+
+struct HeroActiveBits
+{
+    u8 unk0 : 1;
+    u8 unk1 : 4;
+    u8 active : 1;
+    u8 unk6 : 2;
+} __attribute__((packed));
+
+struct HeroSysKeys
+{
+    u8 filler0[0x3E];
+    u16 keys;
+};
+
+static inline void set_timer_mode(struct HeroBody *b, u32 mode)
+{
+    b->timer = (b->timer & 0xFFF) | (mode << 12);
+}
+
+static inline void world_mode_or2(void)
+{
+    ((struct HeroWorldModeBits *)&gWorld->modeByte)->mode |= 2;
+}
+
+static inline void chain_win(struct HeroBody *b)
+{
+    while (b != 0)
+    {
+        b->frame = 0x33;
+        b = b->child;
+    }
+}
+
+static inline void chain_full(struct HeroBody *b)
+{
+    while (b != 0)
+    {
+        b->frame = 0x100;
+        b = b->child;
+    }
+}
+
+static inline void nodes_win(void)
+{
+    struct HeroLayer *l = gWorld->layers;
+    while (l != 0)
+    {
+        if (l->sprite != 0)
+            l->sprite->layer = 3;
+        l = l->next;
+    }
+}
+
+static inline void nodes_low(void)
+{
+    struct HeroLayer *l = gWorld->layers;
+    while (l != 0)
+    {
+        if (l->sprite != 0)
+            l->sprite->layer = 0x10;
+        l = l->next;
+    }
+}
+
+static inline void frames_full(struct HeroBody *a, struct HeroBody *b, struct HeroBody *p)
+{
+    chain_full(a);
+    chain_full(b);
+    chain_full(p);
+    nodes_low();
+}
+
+static inline void frames_win(struct HeroBody *a, struct HeroBody *b, struct HeroBody *p)
+{
+    chain_win(a);
+    chain_win(b);
+    chain_win(p);
+    nodes_win();
+}
+
+NONMATCH("asm/code_080C3CB8/hero_a_walk_to_partner_3cb8.s", void hero_a_walk_to_partner_3cb8(struct HeroBody *body))
+{
+    struct HeroBody *a;
+    struct HeroBody *b;
+    struct HeroBody *partner;
+    s32 end;
+    s32 rate;
+    s32 lead10;
+    s32 lead8;
+    s32 window;
+    s32 thresh;
+    s32 endc;
+    s32 limit;
+    s32 arrive;
+    s32 x;
+    s32 y;
+    s32 z;
+    u32 inWin;
+    u32 due;
+    u32 done;
+    u32 m;
+    void (*fn)(struct HeroBody *);
+
+    a = &gWorld->heroA->body;
+    b = &gWorld->heroB->body;
+    partner = body->partner;
+    end = 0x4000;
+    state_stack_advance_progress(a);
+    rate = a->rate;
+    lead10 = end - (((rate << 2) + rate) << 1);
+    lead8 = end - (rate << 3);
+    end += rate << 1;
+
+    if (a->progress < end)
+    {
+        ((struct HeroActiveBits *)&a->flags)->active = 0;
+    }
+
+    if ((a->timer >> 12) != 0)
+        goto after_zero;
+
+    window = lead10;
+    if (window < 0)
+        window = 0;
+    if (window > 0x7FFF)
+        window = 0x7FFF;
+    inWin = 0;
+    if (a->step <= window)
+    {
+        inWin = 1;
+        if (a->progress < window)
+            inWin = 0;
+    }
+
+    if (inWin)
+    {
+        if ((gWorld->flags & 8) != 0)
+            frames_win(a, b, partner);
+        else
+            frames_full(a, b, partner);
+        sprite_objects_draw_obj_tiles(0x4C, 0xC);
+    }
+
+    thresh = lead8;
+    endc = end;
+    if (thresh < 0)
+        thresh = 0;
+    if (endc < 0)
+        endc = 0;
+    if (thresh > 0x4000)
+        thresh = 0x4000;
+    if (endc > 0x7FFF)
+        endc = 0x7FFF;
+    if (endc < thresh)
+        thresh = endc;
+
+    due = 0;
+    if (a->progress >= thresh)
+    {
+        due = 1;
+        if (a->step > endc)
+            due = 0;
+    }
+
+    if (due)
+    {
+        set_body_part(b, 2, 0x18, 0, 0);
+        if ((((struct HeroSysKeys *)gSys)->keys & 2) != 0)
+        {
+            body_set_pose(1, b, 0, -0x28);
+            obj_free_parts(b);
+            world_mode_or2();
+            if (((struct HeroWorldModeBits *)&gWorld->modeByte)->m2 == 0)
+            {
+                if ((gWorld->flags & 8) != 0)
+                    frames_full(a, b, partner);
+                else
+                    frames_full(a, b, partner);
+                display_flush();
+            }
+            set_timer_mode(a, 2);
+        }
+    }
+
+    if ((a->timer >> 12) != 0)
+        goto after_zero;
+
+    limit = end;
+    if (limit < 0)
+        limit = 0;
+    if (limit > 0x7FFF)
+        limit = 0x7FFF;
+    done = 0;
+    if (a->step <= limit)
+    {
+        done = 1;
+        if (a->progress < limit)
+            done = 0;
+    }
+
+    if (done)
+    {
+        world_mode_or2();
+        set_timer_mode(a, 1);
+        if ((gWorld->flags & 8) != 0)
+            frames_full(a, b, partner);
+        else
+            frames_full(a, b, partner);
+        display_flush();
+        obj_free_parts(b);
+        goto after_zero;
+    }
+
+    if (a->progress > end)
+        goto after_zero;
+
+    if ((((struct HeroSysKeys *)gSys)->keys & 3) == 0)
+        goto after_zero;
+
+    world_mode_or2();
+    if ((((struct HeroWorldModeBits *)&gWorld->modeByte)->m2 & ~2) != 0)
+        goto after_zero;
+
+    set_timer_mode(a, 1);
+    if ((gWorld->flags & 8) != 0)
+        frames_full(a, b, partner);
+    else
+        frames_full(a, b, partner);
+    display_flush();
+    obj_free_parts(b);
+    body_set_pose(6, b, 0, -0x28);
+
+after_zero:
+    {
+        s32 tmode = a->timer >> 12;
+        if (tmode != 0)
+        {
+            arrive = end;
+            if (arrive < 0)
+                arrive = 0;
+            if (arrive > 0x7FFF)
+                arrive = 0x7FFF;
+            limit = 0x4000;
+            if (arrive < limit)
+                limit = arrive;
+            due = 0;
+            if (a->progress >= limit)
+            {
+                due = 1;
+                if (a->step > arrive)
+                    due = 0;
+            }
+            if (due && tmode > 1)
+            {
+                set_timer_mode(a, 0);
+                fn = hero_a_jitter_place_near_partner;
+                body->state = fn;
+                fn(body);
+                return;
+            }
+        }
+    }
+
+    if ((a->flags & 0x20) == 0)
+        return;
+
+    set_slot_value(0x7D, -1);
+    m = a->mode & 6;
+    if (m == 2 || m == 4)
+    {
+        x = partner->targetX / 0x100 + ((s8)partner->ofsX) - 10;
+        y = partner->targetY / 0x100 + ((s8)partner->ofsY) + 3;
+        z = partner->targetZ / 0x100 + ((s8)partner->ofsZ) - 0x15;
+        place_targets(a, x, y, z, -1);
+        set_motion_start(a, 0x600);
+    }
+    m = a->mode & 6;
+    if (m == 2 || m == 4)
+    {
+        sprite_set_action(a, 5, 0x2034, 0);
+        a->sprite->flags &= ~7;
+    }
+    body->state = hero_a_active_link_place_finish_alt;
+}
+END_NONMATCH
 
 void hero_a_active_link_place_finish_alt(struct HeroBody *body)
 {
