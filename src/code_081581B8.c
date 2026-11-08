@@ -270,10 +270,16 @@ struct Half36Bit
     u16 rest : 15;
 };
 
-extern u16 gUnk_02000050[];
-extern u16 gUnk_02000054[];
-extern u16 gUnk_02000004[];
-extern u16 gUnk_02000080[];
+extern vu16 gUnk_02000050;
+extern vu16 gUnk_02000054;
+extern vu16 gUnk_02000004;
+extern vu16 gUnk_02000080;
+
+struct LineScroll
+{
+    s16 y;
+    s16 x;
+};
 extern const u8 gHeapTagTransitionObjDf60[];
 extern const u8 gTransitionClassDf60[];
 void slot_reset(u32 id);
@@ -333,7 +339,9 @@ ASM_FUNC("asm/code_081581B8/transition_states_obj_init_scan_pool.s", void transi
 
 NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(struct TransRec *rec, struct TransGame *game))
 {
-    u16 *bld;
+    vu16 *bld;
+    struct TransChar *o;
+    const struct TransClass *k;
 
     switch (rec->state)
     {
@@ -351,19 +359,17 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
         /* fall through */
     case 2:
         {
-            s32 ya = game->charA->y;
-            s32 la = game->charA->limitY;
-            u32 pending = 0;
-            if (ya < la)
-                pending = 1;
-            if (pending != 0)
+            u32 pendingA = 0;
+            u32 pendingB;
+
+            if (game->charA->y < game->charA->limitY)
+                pendingA = 1;
+            if (pendingA != 0)
                 goto move;
-            ya = game->charB->y;
-            la = game->charB->limitY;
-            pending = 0;
-            if (ya < la)
-                pending = 1;
-            if (pending != 0)
+            pendingB = 0;
+            if (game->charB->y < game->charB->limitY)
+                pendingB = 1;
+            if (pendingB != 0)
                 goto move;
         }
         rec->state++;
@@ -371,54 +377,66 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
     case 3:
         if (effect_step_b(game->effect) == 0)
             goto move;
-        trans_call_method(game->charA, game->viewA, &game->speed, &game->camX, 0xC);
-        trans_call_method(game->charB, game->viewB, &game->speed, &game->camX, 0xC);
-        trans_call_method(rec->objA, game->viewA, &game->speed, &game->camX, 0xC);
-        trans_call_method(rec->objB, game->viewA, &game->speed, &game->camX, 0xC);
+        o = game->charA;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
+        o = game->charB;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewB, game->speed, &game->camX, 0xC);
+        o = rec->objA;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
+        o = rec->objB;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
         rec->timer = 0x41;
         rec->state++;
         goto move;
     case 4:
-        trans_call_method(rec->objA, game->viewA, &game->speed, &game->camX, 0);
-        trans_call_method(rec->objB, game->viewA, &game->speed, &game->camX, 0);
+        o = rec->objA;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0);
+        o = rec->objB;
+        k = o->klass;
+        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0);
         if (--rec->timer > 0)
             goto move;
-        bld = gUnk_02000050;
-        bld[0] = 0xDF;
+        bld = &gUnk_02000050;
+        *bld = 0xDF;
         bld += 2;
         *bld = 0x1F;
         rec->fade = 0;
-        gUnk_03001014[1] = 0;
-        *(vu16 *)0x04000208 = 0;
-        gUnk_02000004[0] &= 0xFFEF;
-        *(vu16 *)0x04000200 &= 0xFFFD;
-        *(vu16 *)0x04000202 |= 2;
-        *(vu16 *)0x04000208 = 1;
+        ((struct LineScroll *)gUnk_03001014)->x = 0;
+        REG_IME = 0;
+        gUnk_02000004 &= 0xFFEF;
+        REG_IE &= 0xFFFD;
+        REG_IF |= 2;
+        REG_IME = 1;
         set_irq_callback(4, (void *)hblank_iris_window);
-        *(vu16 *)0x04000208 = 0;
-        gUnk_02000004[0] |= 0x10;
-        *(vu16 *)0x04000200 |= 2;
-        *(vu16 *)0x04000202 |= 2;
-        *(vu16 *)0x04000208 = 1;
+        REG_IME = 0;
+        gUnk_02000004 |= 0x10;
+        REG_IE |= 2;
+        REG_IF |= 2;
+        REG_IME = 1;
         rec->state++;
         goto move;
     case 5:
-        gUnk_03001014[1] = rec->fade >> 8;
+        ((struct LineScroll *)gUnk_03001014)->x = rec->fade >> 8;
         rec->fade += 0x200;
         if (rec->fade <= 0x5000)
             goto move;
-        gUnk_02000050[0] = 0xDF;
-        *(vu16 *)0x04000050 = gUnk_02000050[0];
-        gUnk_02000054[0] = 0x1F;
-        *(vu16 *)0x04000054 = gUnk_02000054[0];
-        gUnk_02000080[0] = 0;
+        gUnk_02000050 = 0xDF;
+        REG_BLDCNT = gUnk_02000050;
+        gUnk_02000054 = 0x1F;
+        REG_BLDY = gUnk_02000054;
+        gUnk_02000080 = 0;
         scene_release_objects(game);
         slot_reset(0);
         game->state++;
         if (game->state > 5)
         {
             game->state = 6;
-            gUnk_02000054[0] = 0;
+            gUnk_02000054 = 0;
             trans_table_call(rec);
             return 0;
         }
@@ -442,7 +460,8 @@ move:
     trans_sync_cam(game->charA, &game->camX);
     trans_sync_cam(game->charB, &game->camX);
     return 1;
-} END_NONMATCH
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081581B8/transition_step_c.s", void transition_step_c(void))
 
