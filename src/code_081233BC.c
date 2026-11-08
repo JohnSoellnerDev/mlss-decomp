@@ -1,11 +1,15 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct SysRam
 {
-    u8 filler0[0x28];
+    u8 filler0[0x24];
+    u32 word24;
     u16 keys28;
     u16 keys2A;
-    u8 filler2C[0x8C0 - 0x2C];
+    u8 filler2C[0x898 - 0x2C];
+    u16 songSlot[2];
+    u8 filler89C[0x8C0 - 0x89C];
     u8 lang8C0;
 };
 
@@ -34,6 +38,13 @@ void *rom_table_entry(u32 idx, u32 flag);
 void unpack_to_block(void *src, void *dst, u32 mode);
 void window_obj_init(void *obj, u32 a, const void *tag, u32 ctx, s32 b, u32 flag);
 void menu_obj_open(void *obj, u32 a, const void *tag, s32 b);
+void save_slot_store(void);
+void sound_dma_reset(void);
+void slot_reset(u32 id);
+u32 slot_bit_test(u32 a);
+void slot_set_mode(u32 i, u32 v, u8 flag);
+u16 eeprom_write_block_wait(u16 idx, void *data);
+u32 eeprom_verify(u16 idx, void *data);
 
 ASM_FUNC("asm/code_081233BC/draw_party_stats_2.s", void draw_party_stats_2(void))
 
@@ -124,7 +135,158 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_081233BC/save_data_verify.s", void save_data_verify(void))
 
-ASM_FUNC("asm/code_081233BC/save_game_flush_irq_off.s", void save_game_flush_irq_off(void))
+NONMATCH("asm/code_081233BC/save_game_flush_irq_off.s", u32 save_game_flush_irq_off(u32 mode, u32 unused, u8 *out))
+{
+    u8 *buf;
+    u8 flags;
+    u32 flagWord;
+    u16 ie[2];
+    u32 idx;
+    u32 blk;
+    u8 *slot;
+    u8 *p;
+    u8 *ptr;
+    u32 sum;
+    u32 pos;
+    s32 i;
+    s32 attempt;
+    s32 wc;
+    s32 vc;
+    u16 res;
+
+    buf = (u8 *)gUnk_03000FFC;
+    ie[0] = *(vu16 *)0x04000200;
+    *(vu16 *)0x04000208 = 0;
+    *(vu16 *)0x04000200 = 0;
+    flags = 0;
+    if ((u8)slot_bit_test(0) == 1)
+        flags = 1;
+    out[0] = gSys.songSlot[0];
+    slot_reset(0);
+    if ((u8)slot_bit_test(1) == 1)
+        flags |= 2;
+    out[1] = gSys.songSlot[1];
+    slot_reset(1);
+    sound_dma_reset();
+    ((u8 *)&flagWord)[0] = flags;
+    buf[0] = 0x4D;
+    buf[1] = 0x41;
+    buf[2] = 0x4C;
+    buf[3] = 0x52;
+    buf[4] = 0x50;
+    buf[5] = 0x47;
+    buf[7] = 0;
+    if (mode != 1)
+    {
+        if (mode == 0)
+        {
+            save_slot_store();
+            idx = (gUnk_03000D40 << 0x1C) >> 0x1E;
+            *(u32 *)(buf + idx * 0x6F8 + 0x700) = gSys.word24;
+            MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gParty, buf + idx * 0x6F8 + 0x30, 0x1BC);
+        }
+        idx = (gUnk_03000D40 << 0x1C) >> 0x1E;
+        buf[6] |= 1 << idx;
+        slot = buf + idx * 0x6F8;
+        slot[0x10] = idx;
+        p = slot + 0x14;
+        sum = 0;
+        for (i = 0; i < 0x6F0; i += 0xC)
+        {
+            sum = sum + p[i] + p[i + 1] + p[i + 2] + p[i + 3] + p[i + 4] + p[i + 5]
+                + p[i + 6] + p[i + 7] + p[i + 8] + p[i + 9] + p[i + 10] + p[i + 11];
+        }
+        slot[0x11] = sum;
+        slot[0x12] = 0x41;
+        slot[0x13] = 0x44;
+        ptr = slot + 0x704;
+        ptr[0] = 0;
+        ptr[1] = 0;
+        ptr[2] = 0;
+        ptr[3] = 0;
+    }
+    blk = 0;
+    wc = 1;
+    vc = 1;
+    for (attempt = 0; attempt < 5; attempt++)
+    {
+        res = 0;
+        ptr = buf;
+        pos = 0;
+        for (i = 0; i < wc; i++)
+        {
+            res = eeprom_write_block_wait(pos >> 16, ptr);
+            if (res != 0)
+                break;
+            ptr += 8;
+            pos += 0x10000;
+        }
+        if (res == 0)
+        {
+            ptr = buf;
+            pos = 0;
+            for (i = 0; i < vc; i++)
+            {
+                res = eeprom_verify(pos >> 16, ptr);
+                if (res != 0)
+                    break;
+                ptr += 8;
+                pos += 0x10000;
+            }
+        }
+        if (res == 0)
+            break;
+    }
+    if (attempt != 5)
+    {
+        idx = (gUnk_03000D40 << 0x1C) >> 0x1E;
+        blk = idx * 223 + 2;
+        vc = 0xDF;
+        for (attempt = 0; attempt < 5; attempt++)
+        {
+            res = 0;
+            ptr = buf + idx * 0x6F8 + 0x10;
+            pos = blk << 16;
+            for (i = 0; i < 0xDF; i++)
+            {
+                res = eeprom_write_block_wait(pos >> 16, ptr);
+                if (res != 0)
+                    break;
+                ptr += 8;
+                pos += 0x10000;
+            }
+            if (res == 0)
+            {
+                ptr = buf + idx * 0x6F8 + 0x10;
+                pos = blk << 16;
+                for (i = 0; i < vc; i++)
+                {
+                    res = eeprom_verify(pos >> 16, ptr);
+                    if (res != 0)
+                        break;
+                    ptr += 8;
+                    pos += 0x10000;
+                }
+            }
+            if (res == 0)
+                break;
+        }
+        *(vu16 *)0x04000200 = ie[0];
+        if (attempt == 5)
+            return 0;
+        return 1;
+    }
+    if (flagWord != 0)
+    {
+        if (flagWord & 1)
+            slot_set_mode(0, 0xFF, 0x1E);
+        if (flagWord & 2)
+            slot_set_mode(1, 0xFF, 0x1E);
+    }
+    *(vu16 *)0x04000200 = ie[0];
+    return 0;
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_081233BC/save_slot.s", void save_slot(void))
 
