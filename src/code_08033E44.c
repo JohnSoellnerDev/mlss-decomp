@@ -302,7 +302,7 @@ NONMATCH("asm/code_08033E44/set_sub_pair_state_49.s", void set_sub_pair_state_49
     ra = *slotA;
     ra->flags358 |= bit;
     rb->flags358 |= bit;
-    (*slotB)->flags20D |= 0x20;
+    ((struct BitsLo5 *)&(*slotB)->flags20D)->bit5 = 1;
     ((struct Lo3Bits *)&(*slotB)->state214)->lo3 = 4;
     obj_set_id(*slotB, 0x1025);
     ((struct ModeBits *)&(*slotB)->sprite294->flags12)->mode = 1;
