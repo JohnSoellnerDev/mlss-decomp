@@ -178,7 +178,150 @@ NONMATCH("asm/code_0805C82C/map_obj_init_display_b.s", void map_obj_init_display
     }
 }
 END_NONMATCH
-ASM_FUNC("asm/code_0805C82C/update_scanline_offsets.s", void update_scanline_offsets(void))
+extern s16 gSineTable[];
+
+static inline s32 scan_wave(u32 t, u16 freq, u16 amp)
+{
+    s32 s = gSineTable[(t * freq) & 0xFF];
+
+    if (s < 0)
+        s += 0x3F;
+    s >>= 6;
+    s = s * amp;
+    if (s < 0)
+        s += 0xFF;
+    return s >> 8;
+}
+
+static inline u32 scan_idx2(u8 *obj)
+{
+    return obj[0x585] << 1;
+}
+
+static inline s32 scan_base_y(u8 *obj)
+{
+    return *(s16 *)(obj + 0x60 + scan_idx2(obj));
+}
+
+static inline u16 scan_base_x(u8 *obj)
+{
+    return *(u16 *)(obj + 0x5A + scan_idx2(obj));
+}
+
+NONMATCH("asm/code_0805C82C/update_scanline_offsets.s", void update_scanline_offsets(u8 *obj))
+{
+    u32 phaseB;
+    u32 i;
+
+    {
+        u32 base = (s32)*(s16 *)(obj + 0x5A + scan_idx2(obj)) + (scan_base_y(obj) << 16);
+        u32 *buf = gUnk_03000E08;
+        u8 k = 0;
+
+        do
+        {
+            buf[k] = base;
+            k = (u8)(k + 1);
+        } while (k <= 0x9F);
+    }
+
+    {
+        u32 phaseA = *(u16 *)(obj + 0x58E) >> 2;
+
+        phaseB = *(u16 *)(obj + 0x594) >> 2;
+        if (obj[0x597] == 0)
+        {
+            if (obj[0x586] <= obj[0x587])
+            {
+                i = obj[0x586];
+                do
+                {
+                    u16 *ent = (u16 *)((u8 *)gUnk_03000E08 + (i << 2));
+
+                    ent[0] = (u16)(scan_wave(i + phaseA + scan_base_y(obj), *(u16 *)(obj + 0x58A), *(u16 *)(obj + 0x58C)) + scan_base_x(obj));
+                    i = (u16)(i + 1);
+                } while (i <= obj[0x587]);
+            }
+        }
+        else if (obj[0x597] == 1)
+        {
+            if (obj[0x586] <= obj[0x587])
+            {
+                i = obj[0x586];
+                do
+                {
+                    u16 *ent = (u16 *)((u8 *)gUnk_03000E08 + (i << 2));
+
+                    ent[1] = (u16)(scan_wave(i + phaseA + scan_base_y(obj), *(u16 *)(obj + 0x58A), *(u16 *)(obj + 0x58C)) + *(u16 *)(obj + 0x60 + scan_idx2(obj)));
+                    i = (u16)(i + 1);
+                } while (i <= obj[0x587]);
+            }
+        }
+        else if (obj[0x597] == 2)
+        {
+            if (scan_base_y(obj) > 0x97)
+            {
+                obj[0x586] = 0xA0;
+                obj[0x587] = 0;
+            }
+            else
+            {
+                obj[0x586] = 0;
+                obj[0x587] = (u8)(-104 - obj[0x60 + scan_idx2(obj)]);
+            }
+            if (obj[0x586] <= obj[0x587])
+            {
+                i = obj[0x586];
+                do
+                {
+                    u16 *ent = (u16 *)((u8 *)gUnk_03000E08 + (i << 2));
+
+                    ent[0] = (u16)(scan_wave(i + phaseA + scan_base_y(obj), *(u16 *)(obj + 0x58A), *(u16 *)(obj + 0x58C)) + scan_base_x(obj));
+                    ent[1] = (u16)(scan_wave(i + phaseB + scan_base_y(obj), *(u16 *)(obj + 0x590), *(u16 *)(obj + 0x592)) + *(u16 *)(obj + 0x60 + scan_idx2(obj)));
+                    i = (u16)(i + 1);
+                } while (i <= obj[0x587]);
+            }
+        }
+        else
+        {
+            if (scan_base_y(obj) > 0x97)
+            {
+                obj[0x586] = 0xA0;
+                obj[0x587] = 0;
+            }
+            else
+            {
+                obj[0x586] = 0;
+                obj[0x587] = (u8)(-104 - obj[0x60 + scan_idx2(obj)]);
+            }
+            obj[0x598] = (u8)(obj[0x598] + 1);
+            if (obj[0x598] > 0x1D)
+            {
+                obj[0x598] = 0;
+                if (*(u16 *)(obj + 0x592) <= 3)
+                    *(u16 *)(obj + 0x592) = *(u16 *)(obj + 0x592) + 1;
+                else if (*(u16 *)(obj + 0x58C) <= 1)
+                    *(u16 *)(obj + 0x58C) = *(u16 *)(obj + 0x58C) + 1;
+            }
+            if (obj[0x586] <= obj[0x587])
+            {
+                i = obj[0x586];
+                do
+                {
+                    u16 *ent = (u16 *)((u8 *)gUnk_03000E08 + (i << 2));
+
+                    ent[0] = (u16)(scan_wave(i + phaseA + scan_base_y(obj), *(u16 *)(obj + 0x58A), *(u16 *)(obj + 0x58C)) + scan_base_x(obj));
+                    ent[1] = (u16)(scan_wave(i + phaseB + scan_base_y(obj), *(u16 *)(obj + 0x590), *(u16 *)(obj + 0x592)) + *(u16 *)(obj + 0x60 + scan_idx2(obj)));
+                    i = (u16)(i + 1);
+                } while (i <= obj[0x587]);
+            }
+        }
+    }
+
+    *(u16 *)(obj + 0x58E) = *(u16 *)(obj + 0x58E) + obj[0x588];
+    *(u16 *)(obj + 0x594) = *(u16 *)(obj + 0x594) + obj[0x596];
+}
+END_NONMATCH
 
 void bg3_line_scroll_frame(void)
 {
