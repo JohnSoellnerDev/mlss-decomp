@@ -112,7 +112,9 @@ struct World
     struct Slot *slots[8];
     u8 filler78[0x7C - 0x78];
     struct Cam *cam;
-    u8 filler80[0x244 - 0x80];
+    u8 *bro1;
+    u8 *bro2;
+    u8 filler88[0x244 - 0x88];
     struct Owner *cur;
     void *ptr248;
     u8 filler24C[0x2BF - 0x24C];
@@ -128,7 +130,9 @@ struct World
     void *ptr310;
     u8 filler314[0x318 - 0x314];
     u32 bits318;
-    u8 filler31C[0x342 - 0x31C];
+    u8 filler31C[0x32C - 0x31C];
+    u8 ownedList[0x341 - 0x32C];
+    u8 ownedCount341;
     u8 unk342;
     u8 unk343;
     u8 unk344;
@@ -176,6 +180,10 @@ struct SubStartCmd
 
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
+extern u8 *gParty;
+extern u8 gItemTable[];
+
+void give_reward(u32 item, u32 amount, u32 flag);
 
 u8 is_state_busy(void);
 void pool_slot_init(u32 a, u32 b);
@@ -282,7 +290,124 @@ u32 world_frame_index_b(void)
 
 ASM_FUNC("asm/code_080F7100/apply_slot_reward.s", void apply_slot_reward(void))
 
-ASM_FUNC("asm/code_080F7100/change_item_count.s", void change_item_count(void))
+static inline void bro_recalc(u8 *bro)
+{
+    u8 *party = gParty;
+    u32 sum = 0;
+    u32 total;
+    s32 value;
+    u32 stat;
+    if (party[0x8A] != 0xFF)
+        sum = party[0x8A] * 0x33;
+    if (party[0x8B] != 0xFF)
+        sum += party[0x8B] * 0x33;
+    if (party[0x8C] != 0xFF)
+        sum += party[0x8C] * 0x4C;
+    total = sum;
+    if (party[0x8D] != 0xFF)
+        total = sum + party[0x8D] * 0x66;
+    value = total;
+    if (value < 0)
+        value += 0xFF;
+    stat = *(u16 *)(party + 0x28 + ~*(s16 *)(bro + 0xEC) * 60) + (value >> 8);
+    *(u16 *)(bro + 0x108) = stat;
+    if ((s16)stat > 999)
+        *(u16 *)(bro + 0x108) = 999;
+}
+
+static inline void bro_recalc_both(void)
+{
+    if (gWorld->bro1 != 0 && gWorld->bro1[0x12C] == 0x19)
+        bro_recalc(gWorld->bro1);
+    if (gWorld->bro2 != 0 && gWorld->bro2[0x12C] == 0x19)
+        bro_recalc(gWorld->bro2);
+}
+
+NONMATCH("asm/code_080F7100/change_item_count.s", u32 change_item_count(u8 index, u16 amount))
+{
+    struct World *world = gWorld;
+    u8 *entry = world->ownedList;
+    u8 *counters = gParty + 0x8A;
+    u16 left = world->ownedCount341;
+    u8 *counter;
+    if (left != 0)
+    {
+        do
+        {
+            if (*entry == index)
+                break;
+            entry++;
+            left--;
+        } while (left != 0);
+    }
+    if ((s16)amount > 0)
+    {
+        counter = counters + index;
+        if (left == 0)
+        {
+            left = gWorld->ownedCount341;
+            entry = gWorld->ownedList + left;
+            if (left == 0)
+                *entry = index;
+            else
+            {
+                for (;;)
+                {
+                    u8 b = *entry;
+                    if (b < index)
+                    {
+                        entry[1] = index;
+                        break;
+                    }
+                    entry[1] = b;
+                    entry--;
+                    left--;
+                    if (left == 0)
+                    {
+                        *entry = index;
+                        break;
+                    }
+                }
+            }
+            *counter = 0;
+            gWorld->ownedCount341++;
+        }
+        {
+            u32 reward = amount;
+            if ((s32)(*counter + (s16)amount) > 99)
+                reward = (99 - *counter) & 0xFFFF;
+            give_reward(4, index, reward & 0xFF);
+        }
+        if (gItemTable[(index << 4) + 2] != 0)
+            return 1;
+        bro_recalc_both();
+        return 1;
+    }
+    else
+    {
+        counter = counters + index;
+        if (left == 0)
+            return 0;
+        if ((s32)(*counter + (s16)amount) > 0)
+            *counter = *counter + amount;
+        else
+        {
+            do
+            {
+                *entry = entry[1];
+                entry++;
+                left--;
+            } while (left != 0);
+            *counter = 0;
+            gWorld->ownedCount341--;
+        }
+        if (gItemTable[(index << 4) + 2] != 0)
+            return 1;
+        bro_recalc_both();
+        return 1;
+    }
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/record_slot_hit.s", void record_slot_hit(struct Slot *slot, struct World *world))
 
