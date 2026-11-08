@@ -40,7 +40,7 @@ struct Data
     u8 fillerEE[0xF5 - 0xEE];
     s8 unkF5;
     u8 fillerF6[0x106 - 0xF6];
-    u16 rate;
+    s16 rate;
     s16 unk108;
     u8 filler10A[0x114 - 0x10A];
     u32 slotValue;
@@ -59,7 +59,7 @@ struct Actor
     s32 z;
     s16 rate;
     u16 unk1E;
-    u16 timer;
+    s16 timer;
     u8 filler22[0x24 - 0x22];
     u16 pair;
     u8 filler26[0x28 - 0x26];
@@ -273,7 +273,14 @@ NONMATCH("asm/code_08097238/child_hold_settle.s", void child_hold_settle(struct 
     lo = obj->speedLo;
     hi = obj->speedHi;
     q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(hi << 14, lo);
-    inWindow = obj->step <= q && (s16)obj->phase >= q;
+    if (obj->step > q) {
+        inWindow = 0;
+    } else {
+        inWindow = 1;
+        if ((s16)obj->phase < q) {
+            inWindow = 0;
+        }
+    }
     if (inWindow) {
         if ((obj->flags76 & 6) == 2 || (obj->flags76 & 6) == 4) {
             sprite_set_action(obj, 2, 0, 0);
@@ -529,6 +536,16 @@ void spawn_child_on_visible(struct Actor *obj)
         }
         hero_random_walk_reset(obj);
     }
+}
+
+void set_body_part(struct Actor *obj, u32 art, s32 x, s32 y, u32 extra);
+s32 obj_last_x(void *obj);
+s32 obj_last_y(void *obj);
+void set_motion_start(struct Actor *obj, u32 speed);
+
+static inline void *walk_focus(void)
+{
+    return gWorld->unk24C;
 }
 
 ASM_FUNC("asm/code_08097238/hero_random_walk.s", void hero_random_walk(struct Actor *obj))
@@ -812,7 +829,56 @@ u32 pair_begin_setup_b(struct Actor *obj)
     return 1;
 }
 
-ASM_FUNC("asm/code_08097238/pair_sum_offsets.s", void pair_sum_offsets(struct Actor *obj))
+void set_follow_handle(struct Actor *obj);
+
+NONMATCH("asm/code_08097238/pair_sum_offsets.s", void pair_sum_offsets(struct Actor *obj))
+{
+    struct Actor *heroA = &gWorld->heroA->body;
+    struct Actor *heroB = &gWorld->heroB->body;
+    s32 count = 0;
+    s32 sumX = 0;
+    s32 sumW = 0;
+    s32 sumR = 0;
+    s32 i;
+    s32 rate;
+    s32 timer;
+    s32 timer2;
+    u8 *ctx;
+
+    for (i = 0; i < 6; i++) {
+        struct Partner *p = gWorld->partners[i];
+
+        if ((p->flags7E & 6) == 4) {
+            sumX += p->unkF5;
+            sumW += p->unk108;
+            sumR += p->unk106;
+            count++;
+        }
+    }
+    rate = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sumX, count);
+    heroB->rate = rate;
+    heroA->rate = rate;
+    timer = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sumW, count);
+    heroB->unk1E = timer;
+    heroA->unk1E = timer;
+    timer2 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sumR, count);
+    heroB->timer = timer2;
+    heroA->timer = timer2;
+    ctx = gWorkBuf;
+    *(s32 *)(ctx + 0x5470) = 0;
+    ctx = gWorkBuf;
+    *(s32 *)(ctx + 0x5474) = -0x14;
+    *(s32 *)(ctx + 0x5478) = 0xB3;
+    *(s32 *)(ctx + 0x547C) = obj->data->unkF5 - obj->rate;
+    if (obj == heroA && (heroB->flags76 & 6) == 2) {
+        heroB->state = set_follow_handle;
+    }
+    if (obj == heroB && (heroA->flags76 & 6) == 2) {
+        heroA->state = set_follow_handle;
+    }
+    obj->state = follow_focus_settle;
+}
+END_NONMATCH
 
 void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
