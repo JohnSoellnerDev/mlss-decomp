@@ -53,7 +53,7 @@ void fx_obj_spawn(u32 x, u32 y, u32 z, u32 type, void (*callback)(), u32 attr, u
 
 extern void obj_zoom_spin4_size180_6b24(void);
 extern void obj_zoom_spin5_6e14(void);
-extern void obj_zoom_spin5_size140_683c(void);
+void obj_zoom_spin5_size140_683c(struct Point1Obj *obj);
 void obj_zoom_spin5_7104(struct Point1Obj *obj);
 void obj_zoom_spin5_736c(struct Point1Obj *obj);
 void obj_zoom_spin6_75d4(struct Point1Obj *obj);
@@ -121,7 +121,7 @@ extern const u8 gUnk_08506220[];
 extern const u8 gUnk_08506224[];
 extern const u8 gUnk_08506228[];
 
-ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_size140_683c.s", void obj_zoom_spin5_size140_683c(void))
+ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_size140_683c.s", void obj_zoom_spin5_size140_683c(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_0817683C/obj_zoom_spin4_size180_6b24.s", void obj_zoom_spin4_size180_6b24(void))
 
