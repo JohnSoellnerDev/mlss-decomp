@@ -247,7 +247,7 @@
 080003E8 irq_handler_3 data
 08000530 gUnk_08000530 data
 08000534 decompress_routine data
-0800063C sub_0800063C arm
+0800063C sub_0800063C arm dup=decompress_routine_end
 08000688 sub_08000688 arm
 080006B4 registry_drain_advance arm
 08000708 irq_registry_hook arm
