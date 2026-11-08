@@ -413,39 +413,36 @@ NONMATCH("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj
     struct ActorPart *part;
     struct ActorPart *head;
 
-    if (owner->part->info->flags1D & 0x10)
+    if (obj->part->info->flags1D & 0x10)
     {
-        owner->state = 0;
+        obj->state = 0;
         return;
     }
-    ((struct Unk111Bit3 *)&owner->part->unk111)->b3 = 1;
-    ((struct PartBits *)&owner->part->unk111)->b1 = 1;
+    ((struct Unk111Bit3 *)&obj->part->unk111)->b3 = 1;
+    ((struct PartBits *)&obj->part->unk111)->b1 = 1;
     ((struct HighBitByte *)&hero->unkD4)->low7 = 0x46;
     hero->unkD2 = 0xCC;
-    resolve_contact_action(body, owner, 0, 0, (u32)(gRoom149Layer0 + 0x59));
+    resolve_contact_action(body, obj, 0, 0, (u32)(gRoom149Layer0 + 0x59));
     body->unk24++;
-    part = owner->part;
-    if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+    head = obj->part;
+    if (head->unkF6 > 0 || (head->unk111 & 2) != 0)
     {
-        s32 x = owner->baseX / 0x100 + owner->offsetC3;
-        s32 y = owner->baseY / 0x100 + owner->offsetC4;
-        effect_spawn_at(0x6C4, x, y, 0, owner);
+        s32 x = obj->baseX / 0x100 + obj->offsetC3;
+        s32 y = obj->baseY / 0x100 + obj->offsetC4;
+        effect_spawn_at(0x6C4, x, y, 0, obj);
     }
-    owner->partner = 0;
-    head = owner->part;
+    obj->partner = 0;
+    head = obj->part;
     if (head->link != 0)
     {
-        owner->state = 0;
-        part = head;
-        if ((part->info->flags1C & 0x80) == 0)
+        struct ActorPart *walk = head;
+        obj->state = 0;
+        while ((walk->info->flags1C & 0x80) == 0)
         {
-            do
-            {
-                part = part->link;
-            } while ((part->info->flags1C & 0x80) == 0);
+            walk = walk->link;
         }
-        obj = (struct ActorObj *)((u8 *)part + 8);
-        part->unk84 = owner->motionSpeed;
+        obj = (struct ActorObj *)((u8 *)walk + 8);
+        walk->unk84 = owner->motionSpeed;
     }
     obj->owner = owner;
     if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
@@ -642,7 +639,7 @@ void heroes_step(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj *obj))
+void hero_b_link_b(struct ActorObj *obj)
 {
     struct Hero *hero = gWorld->heroB;
     struct ActorObj *body = &hero->body;
@@ -650,48 +647,45 @@ NONMATCH("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj
     struct ActorPart *part;
     struct ActorPart *head;
 
-    if (owner->part->info->flags1D & 0x10)
+    if (obj->part->info->flags1D & 0x10)
     {
         ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
         hero->unkD2 = 0xF3;
-        resolve_contact_action(body, owner, 0, 0, (u32)(gText + 0x5F065));
+        resolve_contact_action(body, obj, 0, 0, (u32)(gText + 0x5F065));
         body->unk24++;
-        part = owner->part;
-        if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+        head = obj->part;
+        if (head->unkF6 > 0 || (head->unk111 & 2) != 0)
         {
-            s32 x = owner->baseX / 0x100 + owner->offsetC3;
-            s32 y = owner->baseY / 0x100 + owner->offsetC4;
-            effect_spawn_at(0x6C4, x, y, 0, owner);
+            s32 x = obj->baseX / 0x100 + obj->offsetC3;
+            s32 y = obj->baseY / 0x100 + obj->offsetC4;
+            effect_spawn_at(0x6C4, x, y, 0, obj);
         }
-        owner->state = 0;
+        obj->state = 0;
         return;
     }
-    ((struct PartBits *)&owner->part->unk111)->b1 = 1;
+    ((struct PartBits *)&obj->part->unk111)->b1 = 1;
     ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
     hero->unkD2 = 0xF3;
-    resolve_contact_action(body, owner, 0, 0, (u32)(gText + 0x5F065));
+    resolve_contact_action(body, obj, 0, 0, (u32)(gText + 0x5F065));
     body->unk24++;
-    part = owner->part;
-    if (part->unkF6 > 0 || (part->unk111 & 2) != 0)
+    head = obj->part;
+    if (head->unkF6 > 0 || (head->unk111 & 2) != 0)
     {
-        s32 x = owner->baseX / 0x100 + owner->offsetC3;
-        s32 y = owner->baseY / 0x100 + owner->offsetC4;
-        effect_spawn_at(0x6C4, x, y, 0, owner);
+        s32 x = obj->baseX / 0x100 + obj->offsetC3;
+        s32 y = obj->baseY / 0x100 + obj->offsetC4;
+        effect_spawn_at(0x6C4, x, y, 0, obj);
     }
-    head = owner->part;
-    if (head->link != 0)
+    if (obj->part->link != 0)
     {
-        owner->state = 0;
-        part = head;
-        if ((part->info->flags1C & 0x80) == 0)
+        struct ActorPart *walk;
+        obj->state = 0;
+        walk = obj->part;
+        while ((walk->info->flags1C & 0x80) == 0)
         {
-            do
-            {
-                part = part->link;
-            } while ((part->info->flags1C & 0x80) == 0);
+            walk = walk->link;
         }
-        obj = (struct ActorObj *)((u8 *)part + 8);
-        part->unk84 = owner->motionSpeed;
+        obj = (struct ActorObj *)((u8 *)walk + 8);
+        walk->unk84 = owner->motionSpeed;
     }
     obj->owner = owner;
     if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
@@ -703,7 +697,6 @@ NONMATCH("asm/code_080D8884/hero_b_link_b.s", void hero_b_link_b(struct ActorObj
     }
     obj->state = obj_stop_a;
 }
-END_NONMATCH
 
 void obj_stop_a(struct ActorObj *obj)
 {
