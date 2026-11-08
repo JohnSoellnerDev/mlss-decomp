@@ -196,106 +196,112 @@ void motion_obj_step_motion(struct FieldObj *obj);
 void rotate_vec(void *vec, u32 angle, s32 *out0, s32 *out1, s32 *out2);
 u32 arc_tan2(s32 x, s32 y);
 
+struct MoveBitsP
+{
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 hi4 : 4;
+} __attribute__((packed));
+
+struct ModeBits23P
+{
+    u8 lo2 : 2;
+    u8 mode : 2;
+    u8 hi4 : 4;
+} __attribute__((packed));
+
+/* axis lock bits and an 8-bit shape index spanning bytes +0x2B7/+0x2B8 */
+struct ObjShape2B7
+{
+    u8 filler0[0x2B7];
+    u8 lock : 3;
+    s8 shape : 8;
+    u8 hi5 : 5;
+} __attribute__((packed));
+
 NONMATCH("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(struct FieldObj *obj, struct ShapeRef **shapes))
 {
-    s32 one = 1;
-    u32 seven = 7;
     s32 vx;
     s32 vy;
     s32 vz;
-    s32 mode;
-    s32 v;
-    s32 t;
-    s32 idx;
     s32 ang;
     s32 delta;
 
     if (obj->flags20C & 1)
     {
-        if (seven & obj->moveFlags2B5)
+        if (obj->moveFlags2B5 & 7)
         {
             obj->unk2DE++;
-            mode = ((struct MoveBits *)&obj->moveFlags2B5)->lo3;
-            if (mode == 2)
+            switch ((u32)((struct MoveBitsP *)&obj->moveFlags2B5)->lo3)
             {
-                v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2CC - obj->unk2BC) * obj->unk2DE, obj->v2E0);
-                obj->posX = obj->unk2BC + v;
-                v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D0 - obj->unk2C0) * obj->unk2DE, obj->v2E0);
-                obj->posY = obj->unk2C0 + v;
+            case 1:
+                if (((((struct ObjShape2B7 *)obj)->lock ^ 1) & 1) != 0 && obj->unk2CC != obj->unk2BC)
+                    obj->posX += obj->unk2D8;
+                if (!(((struct ObjShape2B7 *)obj)->lock & 2) && obj->unk2D0 != obj->unk2C0)
+                    obj->posY += obj->unk2DA;
+                if (!(((struct ObjShape2B7 *)obj)->lock & 4) && obj->unk2D4 != obj->unk2C4 && obj->counter25C == -1)
+                    obj->posZB += obj->unk2DC;
+                break;
+            case 2:
+                obj->posX = obj->unk2BC + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2CC - obj->unk2BC) * obj->unk2DE, obj->v2E0);
+                obj->posY = obj->unk2C0 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D0 - obj->unk2C0) * obj->unk2DE, obj->v2E0);
                 if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
                 {
-                    v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D4 - obj->unk2C4) * obj->unk2DE, obj->v2E0);
-                    obj->posZB = obj->unk2C4 + v - obj->unk3C;
+                    obj->posZB = obj->unk2C4 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D4 - obj->unk2C4) * obj->unk2DE, obj->v2E0) - obj->unk3C;
                 }
-            }
-            else if (mode > 2)
-            {
-                if (mode <= 5)
+                break;
+            case 3:
+            case 4:
+            case 5:
+                if (((struct MoveBitsP *)&obj->moveFlags2B5)->lo3 == 4)
                 {
-                    if (mode == 4)
-                    {
-                        obj->unk2F4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2F0 * obj->unk2DE, obj->v2E0);
-                    }
-                    else
-                    {
-                        obj->unk2F4 += obj->unk2F8;
-                    }
-                    if (obj->unk2F0 > 0)
-                    {
-                        if (obj->unk2F4 > obj->unk2F0)
-                            obj->unk2F4 = obj->unk2F0;
-                    }
-                    else if (obj->unk2F0 < 0)
-                    {
-                        if (obj->unk2F4 < obj->unk2F0)
-                            obj->unk2F4 = obj->unk2F0;
-                    }
-                    t = obj->unk2F4;
-                    if (t < 0)
-                        t += 0xFF;
-                    rotate_vec(obj->vec1EC, (u8)(t >> 8), &vx, &vy, &vz);
-                    idx = (s8)(((obj->flags2B8 & 7) << 5) | (obj->flags2B7 >> 3));
-                    if (idx >= 0)
-                    {
-                        obj->unk2E4 = shapes[idx]->a0C;
-                        obj->unk2E8 = shapes[idx]->a10;
-                        obj->unk2EC = shapes[idx]->a14 + shapes[idx]->a18;
-                    }
-                    obj->posX = obj->unk2E4 + vx;
-                    obj->posY = obj->unk2E8 + vy;
-                    if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
-                    {
-                        obj->posZ = 0;
-                        obj->posZB = obj->unk2EC + vz;
-                    }
-                    if (obj->tgtX != obj->posX || obj->tgtY != obj->posY)
-                    {
-                        obj->v242 = obj->tgtX - obj->posX;
-                        obj->v244 = obj->tgtY - obj->posY;
-                    }
-                    if (obj->posY == obj->tgtY && obj->posX == obj->tgtX)
-                        ang = -1;
-                    else
-                        ang = (u16)arc_tan2((s16)(obj->tgtY - obj->posY), (s16)(obj->posX - obj->tgtX));
-                    if (ang != -1)
-                    {
-                        if (ang < 0)
-                            ang += 0xFF;
-                        obj->unk02 = ang >> 8;
-                    }
+                    obj->unk2F4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2F0 * obj->unk2DE, obj->v2E0);
                 }
-            }
-            else if (mode == 1)
-            {
-                if ((((((struct MoveBits *)&obj->flags2B7)->lo3) ^ one) & one) != 0 && obj->unk2CC != obj->unk2BC)
-                    obj->posX += obj->unk2D8;
-                if (!(((struct MoveBits *)&obj->flags2B7)->lo3 & 2) && obj->unk2D0 != obj->unk2C0)
-                    obj->posY += obj->unk2DA;
-                if (!(((struct MoveBits *)&obj->flags2B7)->lo3 & 4) && obj->unk2D4 != obj->unk2C4 && obj->counter25C == -1)
-                    obj->posZB += obj->unk2DC;
+                else
+                {
+                    obj->unk2F4 += obj->unk2F8;
+                }
+                if (obj->unk2F0 > 0)
+                {
+                    if (obj->unk2F4 > obj->unk2F0)
+                        obj->unk2F4 = obj->unk2F0;
+                }
+                else if (obj->unk2F0 < 0)
+                {
+                    if (obj->unk2F4 < obj->unk2F0)
+                        obj->unk2F4 = obj->unk2F0;
+                }
+                rotate_vec(obj->vec1EC, (u8)(obj->unk2F4 / 0x100), &vx, &vy, &vz);
+                if (((struct ObjShape2B7 *)obj)->shape >= 0)
+                {
+                    obj->unk2E4 = shapes[((struct ObjShape2B7 *)obj)->shape]->a0C;
+                    obj->unk2E8 = shapes[((struct ObjShape2B7 *)obj)->shape]->a10;
+                    obj->unk2EC = shapes[((struct ObjShape2B7 *)obj)->shape]->a14 + shapes[((struct ObjShape2B7 *)obj)->shape]->a18;
+                }
+                obj->posX = obj->unk2E4 + vx;
+                obj->posY = obj->unk2E8 + vy;
+                if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
+                {
+                    obj->posZ = 0;
+                    obj->posZB = obj->unk2EC + vz;
+                }
+                if (obj->tgtX != obj->posX || obj->tgtY != obj->posY)
+                {
+                    obj->v242 = obj->tgtX - obj->posX;
+                    obj->v244 = obj->tgtY - obj->posY;
+                }
+                if (obj->posY == obj->tgtY && obj->posX == obj->tgtX)
+                    ang = -1;
+                else
+                    ang = (u16)arc_tan2((s16)(obj->tgtY - obj->posY), (s16)(obj->posX - obj->tgtX));
+                if (ang != -1)
+                {
+                    obj->unk02 = ang / 0x100;
+                }
+                break;
             }
             delta = 0;
-            switch (((struct ModeBits23 *)&obj->flags4E)->mode)
+            switch ((u32)((struct ModeBits23P *)&obj->flags4E)->mode)
             {
             case 1:
                 delta = obj->posX - obj->tgtX;
@@ -520,7 +526,7 @@ u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 v
     return 1;
 }
 
-NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct FieldObj *obj))
+void obj_advance_axes(struct FieldObj *obj)
 {
     s32 v;
     s32 lim;
@@ -544,12 +550,8 @@ NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct Fi
         }
         else if ((obj->moveFlags2B5 & 0x30) == 0x20)
         {
-            u16 *cnt = &obj->axisACount;
-            s16 *tgt = (s16 *)&obj->axisATarget;
-            s16 *cur = (s16 *)&obj->axisACur;
-            (*cnt)++;
-            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((*tgt - *cur) * *cnt, obj->axisASpeed);
-            obj->sub->h04 = obj->axisACur + v;
+            obj->axisACount++;
+            obj->sub->h04 = obj->axisACur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisATarget - (s16)obj->axisACur) * obj->axisACount, obj->axisASpeed);
         }
         if ((obj->moveFlags2B5 & 0xC0) == 0x40)
         {
@@ -569,8 +571,7 @@ NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct Fi
         else if ((obj->moveFlags2B5 & 0xC0) == 0x80)
         {
             obj->axisBCount++;
-            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->axisBTarget - (s16)obj->axisBCur) * obj->axisBCount, obj->axisBSpeed);
-            obj->sub->h06 = obj->axisBCur + v;
+            obj->sub->h06 = obj->axisBCur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisBTarget - (s16)obj->axisBCur) * obj->axisBCount, obj->axisBSpeed);
         }
         if ((obj->flags2B6 & 3) == 1)
         {
@@ -590,8 +591,7 @@ NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct Fi
         else if ((obj->flags2B6 & 3) == 2)
         {
             obj->unk316++;
-            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->unk306 - (s16)obj->unk2FE) * obj->unk316, obj->unk31E);
-            obj->sub->h08 = obj->unk2FE + v;
+            obj->sub->h08 = obj->unk2FE + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->unk306 - (s16)obj->unk2FE) * obj->unk316, obj->unk31E);
         }
         if ((obj->flags2B6 & 0xC) == 4)
         {
@@ -611,8 +611,7 @@ NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct Fi
         else if ((obj->flags2B6 & 0xC) == 8)
         {
             obj->unk318++;
-            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((s16)(obj->unk308 - (s16)obj->unk300) * obj->unk318, obj->unk320);
-            obj->sub->h0A = obj->unk300 + v;
+            obj->sub->h0A = obj->unk300 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->unk308 - (s16)obj->unk300) * obj->unk318, obj->unk320);
         }
         if ((obj->flags2B6 & 0x30) == 0x10)
         {
@@ -629,18 +628,17 @@ NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct Fi
                 if (obj->unk32C < lim)
                     obj->unk32C = lim;
             }
-            obj->sub->h0C = (u16)obj->unk322 + obj->unk32C;
+            obj->sub->h0C = obj->unk322 + obj->unk32C;
         }
         else if ((obj->flags2B6 & 0x30) == 0x20)
         {
             obj->unk330++;
             v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk328 - (s16)obj->unk322) * obj->unk330, obj->unk332);
             obj->unk32C = v;
-            obj->sub->h0C = (u16)obj->unk322 + v;
+            obj->sub->h0C = obj->unk322 + v;
         }
     }
 }
-END_NONMATCH
 
 struct Flags11
 {
@@ -909,4 +907,67 @@ void obj_set_sprite_slot(struct FieldObj *obj, u32 slot)
     }
 }
 
-ASM_FUNC("asm/code_08045F18/obj_set_sprite_link.s", void obj_set_sprite_link(void))
+void obj_queue_update(void *sprite);
+void menu_entry_mark_1(void *table, u32 idx);
+void menu_entry_mark_2(void *table, u32 idx);
+void unlink_d54(void *ctl);
+u32 sprite_alloc(void *ctx, u32 a, u32 b, u32 c, u32 d, u32 e);
+
+struct LinkBits20F
+{
+    u8 bit0 : 1;
+    u8 linked : 1;
+    u8 hi6 : 6;
+} __attribute__((packed));
+
+struct SubBits12
+{
+    u8 bit0 : 1;
+    u8 mode : 2;
+    u8 hi5 : 5;
+} __attribute__((packed));
+
+static inline void obj_alloc_entry_inl(struct FieldObj *obj, u8 mode)
+{
+    if (obj->unk26C != 0xFFFF)
+    {
+        s32 shift = 0;
+        s16 mask = obj->sub->mask14;
+
+        while (((((u8)(mask >> shift)) ^ 1) & 1) != 0)
+            shift++;
+        obj->unk26E = sprite_alloc(obj->unk334, mode, obj->unk26C, (u8)(shift + 0x10), 0xFFFF, 0xFFFF);
+        obj->flags216 |= 0x40;
+    }
+}
+
+NONMATCH("asm/code_08045F18/obj_set_sprite_link.s", void obj_set_sprite_link(struct FieldObj *obj, u32 link))
+{
+    if (obj->unk222 == 0xFF)
+        return;
+    if (((struct LinkBits20F *)&obj->flags20F)->linked == link)
+        return;
+    ((struct LinkBits20F *)&obj->flags20F)->linked = link;
+    if (link != 0)
+    {
+        u32 mode = ((struct SubBits12 *)&obj->sub->flags12)->mode;
+
+        obj_queue_update(obj->sub);
+        ((struct SubBits12 *)&obj->sub->flags12)->mode = mode;
+        if (obj->flags20E & 0x40)
+        {
+            if (obj->unk26E != 0xFF)
+                menu_entry_mark_1(obj->unk334, obj->unk26E);
+            else
+                obj_alloc_entry_inl(obj, 0xFF);
+        }
+    }
+    else
+    {
+        if (obj->unk26E != 0xFF)
+            menu_entry_mark_2(obj->unk334, obj->unk26E);
+        obj->unk23D = link;
+        unlink_d54(obj->sub);
+    }
+}
+END_NONMATCH
