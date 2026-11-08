@@ -228,6 +228,76 @@ void update_obj_sprite_pos(void *obj, u32 camX, u32 camY);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 s32 lerp_step_08164EE0(s32 a, s32 b, s32 steps, s32 t);
 
+struct NodeSprite
+{
+    u8 filler0[4];
+    u16 unk4;
+    u16 unk6;
+    u8 filler8[4];
+    u16 unkC;
+    u8 fillerE[4];
+    u8 unk12;
+};
+
+struct NodeAttr
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 b3 : 1;
+    u8 bit4 : 1;
+    u8 hi3 : 3;
+};
+
+struct NodeOwner
+{
+    u8 filler0[0x14];
+    s32 unk14;
+    u8 filler18[4];
+    s32 unk1C;
+    u8 filler20[0x50 - 0x20];
+    u32 unk50;
+    s32 unk54;
+    s32 unk58;
+    s32 unk5C;
+};
+
+struct NodeObj
+{
+    u32 unk0;
+    u8 filler4[8];
+    struct VtA *unkC;
+    struct NodeSprite *unk10;
+    u8 filler14[4];
+    struct PosXY pos18;
+    u8 filler24[0x6C - 0x24];
+    s32 unk6C;
+    u8 filler70[4];
+    s32 unk74;
+    s32 unk78;
+    u32 unk7C;
+    s32 unk80;
+    s32 unk84;
+    u16 unk88;
+    u16 unk8A;
+    s16 unk8C;
+    u16 unk8E;
+    u8 filler90[2];
+    u16 unk92;
+    void *unk94;
+    u8 filler96[2];
+    u16 unk98;
+};
+
+extern const u8 gHeapTagRingShotSub[];
+u8 obj_is_done(void *obj);
+void set_slot_value(u32 id, s32 value);
+u32 smoothstep_lerp(s32 start, s32 end, s32 steps, s32 step);
+void obj_release_sprites(void *obj);
+void obj_update_sprites(void *obj);
+void child_states_obj_orbit_step(void *obj);
+void obj_list_unlink(void *list, void *obj);
+void *obj_init_sprite_offset(void *obj, void *src, s32 dx, s32 dz);
+
 
 NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_step_motion(struct GridLinesObj *obj, void *region, void *list))
 {
@@ -402,7 +472,294 @@ struct ProjObj *obj_init_bullet(struct ProjObj *obj, u32 base, u32 offset, u32 a
     return obj;
 }
 
-ASM_FUNC("asm/code_08169710/obj_node_update.s", void obj_node_update(void))
+NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeObj *obj, struct NodeOwner *owner, u32 turn, void *list))
+{
+    struct ProjObj *proj;
+    struct NodeSprite *sprite;
+    struct VtA *cls;
+    void *sub;
+    void *spawned;
+    void *projMem;
+    u32 mode;
+    u32 idx;
+    u32 angle;
+    s32 sinV;
+    s32 cosV;
+    s32 dx;
+    s32 dz;
+    s32 slotX;
+    s32 slotZ;
+    s32 scale;
+    u16 steps;
+    u16 count;
+    u8 zeroFlag = 0;
+    u8 oneFlag = 1;
+
+    angle = (turn + obj->unk78) & 0xFF;
+    obj->unk7C = angle;
+    obj_copy_mode_fields(obj);
+    obj_script_step(obj);
+    switch (obj->unk8C)
+    {
+    case 0:
+        if ((u8)obj_is_done(obj) != 0)
+        {
+            set_slot_value(0x120, -1);
+            obj->unk0 = 3;
+            obj->unk8C = 1;
+            sprite = obj->unk10;
+            sprite->unk6 = 0x100;
+            sprite->unk4 = 0x100;
+        }
+        else
+        {
+            scale = smoothstep_lerp(0x200, 0x100, 0x3C, (s16)obj->unk8E);
+            sprite = obj->unk10;
+            sprite->unk6 = scale;
+            sprite->unk4 = scale;
+            obj->unk8E++;
+        }
+        break;
+    case 1:
+        mode = owner->unk50;
+        if (mode == 2)
+        {
+            obj->unk8C = 6;
+            obj->unk0 = 4;
+        }
+        else if (mode != 3)
+        {
+            obj->unk88++;
+            child_states_obj_orbit_step(obj);
+        }
+        break;
+    case 4:
+        mode = owner->unk50;
+        if (mode == 2)
+        {
+            obj_list_unlink(list, obj);
+            if (obj != 0)
+            {
+                cls = obj->unkC;
+                cls->fn((u8 *)obj + cls->thisOff, 3);
+            }
+            return 0;
+        }
+        if (mode != 3)
+        {
+            child_states_obj_orbit_step(obj);
+        }
+        count = obj->unk8E + 1;
+        obj->unk8E = count;
+        if ((s16)count > 29)
+        {
+            projMem = heap_alloc2(0x84, 0, gHeapTagProjectile, 0);
+            proj = obj_init_projectile(projMem, &obj->pos18, obj->unk94, obj->unk92);
+            list_insert(list, proj);
+            if (obj->unk98 > 1)
+            {
+                obj_set_fields_18(proj, obj->pos18.x + (proj->unk70 << 3), 0, obj->pos18.y + (proj->unk78 << 3));
+                obj_load_record(obj->unk10, 0x11, 0, 0, 0);
+            }
+            else
+            {
+                obj_set_fields_18(proj, obj->pos18.x + (proj->unk70 << 4), 0, obj->pos18.y + (proj->unk78 << 4));
+                obj_load_record(obj->unk10, 5, 0, 0, 0);
+            }
+            ((struct NodeAttr *)&obj->unk10->unk12)->mode = 1;
+            obj->unk8C = 5;
+        }
+        break;
+    case 5:
+        mode = owner->unk50;
+        if (mode == 2)
+        {
+            obj_list_unlink(list, obj);
+            if (obj != 0)
+            {
+                cls = obj->unkC;
+                cls->fn((u8 *)obj + cls->thisOff, 3);
+            }
+            return 0;
+        }
+        if (mode != 3)
+        {
+            child_states_obj_orbit_step(obj);
+        }
+        if (((struct NodeAttr *)&obj->unk10->unk12)->bit4 != 0)
+        {
+            obj->unk88 = rand_scaled(0, 0x80);
+            if (obj->unk98 > 1)
+            {
+                obj_load_record(obj->unk10, 0x11, 0, 0, 0);
+            }
+            else
+            {
+                obj_load_record(obj->unk10, 5, 0, 0, 0);
+            }
+            ((struct NodeAttr *)&obj->unk10->unk12)->bit4 = 1;
+            obj->unk8C = 1;
+        }
+        break;
+    case 2:
+        set_slot_value(0x40, -1);
+        owner->unk5C = -owner->unk5C;
+        owner->unk54++;
+        owner->unk58++;
+        if (obj->unk98 > 1)
+        {
+            obj_load_record(obj->unk10, 0x12, 0, 0, 0);
+        }
+        else
+        {
+            obj_load_record(obj->unk10, 6, 0, 0, 0);
+        }
+        idx = obj->unk7C & 0xFF;
+        sinV = gSineTable[idx];
+        if (sinV < 0)
+        {
+            sinV += 0x3F;
+        }
+        slotX = obj->unk6C + ((((sinV >> 6)) * obj->unk80) << 1);
+        cosV = gCosineTable[idx];
+        if (cosV < 0)
+        {
+            cosV += 0x3F;
+        }
+        slotZ = obj->unk74 + ((((cosV >> 6)) * obj->unk84) << 1);
+        obj_setup_slot(obj, slotX, 0, slotZ, 0x3C, zeroFlag);
+        obj->unk8C = 3;
+        /* fall through */
+    case 3:
+        steps = obj->unk8A + 1;
+        obj->unk8A = steps;
+        if ((s16)steps > 59)
+        {
+            obj->unk8E = 0;
+            obj_release_sprites(obj);
+            obj->unk8C = 7;
+            break;
+        }
+        if ((steps & 7) == 1)
+        {
+            sub = heap_alloc2(0x6C, 1, gHeapTagRingShotSub, 0);
+            idx = obj->unk7C & 0xFF;
+            sinV = gSineTable[idx];
+            if (sinV < 0)
+            {
+                sinV += 0x3F;
+            }
+            dx = (sinV >> 6) << 3;
+            cosV = gCosineTable[idx];
+            if (cosV < 0)
+            {
+                cosV += 0x3F;
+            }
+            dz = (cosV >> 6) << 3;
+            spawned = obj_init_sprite_offset(sub, &obj->pos18, dx, dz);
+            list_insert(list, spawned);
+        }
+        break;
+    case 6:
+        steps = obj->unk8A + 1;
+        obj->unk8A = steps;
+        if ((s16)steps > 59)
+        {
+            obj_list_unlink(list, obj);
+            if (obj != 0)
+            {
+                cls = obj->unkC;
+                cls->fn((u8 *)obj + cls->thisOff, 3);
+            }
+            return 0;
+        }
+        scale = smoothstep_lerp(0x100, 0x10, 0x3C, (s16)obj->unk8A);
+        sprite = obj->unk10;
+        sprite->unk6 = scale;
+        sprite->unk4 = scale;
+        break;
+    case 7:
+        mode = owner->unk50;
+        if (mode == 2)
+        {
+            obj_list_unlink(list, obj);
+            if (obj != 0)
+            {
+                cls = obj->unkC;
+                cls->fn((u8 *)obj + cls->thisOff, 3);
+            }
+            return 0;
+        }
+        count = obj->unk8E + 1;
+        obj->unk8E = count;
+        if ((s16)count > 119)
+        {
+            obj->unk8A = 0;
+            obj->unk8E = 0;
+            obj->unk8C = 8;
+        }
+        break;
+    case 8:
+        mode = owner->unk50;
+        if (mode == 2)
+        {
+            obj_list_unlink(list, obj);
+            if (obj != 0)
+            {
+                cls = obj->unkC;
+                cls->fn((u8 *)obj + cls->thisOff, 3);
+            }
+            return 0;
+        }
+        obj->unk88 = rand_scaled(0, 0x80);
+        obj_update_sprites(obj);
+        if (obj->unk98 > 1)
+        {
+            obj_load_record(obj->unk10, 0x11, 0, 0, 0);
+        }
+        else
+        {
+            obj_load_record(obj->unk10, 5, 0, 0, 0);
+        }
+        ((struct NodeAttr *)&obj->unk10->unk12)->bit4 = 1;
+        idx = obj->unk7C & 0xFF;
+        sinV = gSineTable[idx];
+        if (sinV < 0)
+        {
+            sinV += 0x3F;
+        }
+        slotX = obj->unk6C + ((((sinV >> 6)) * obj->unk80) << 1);
+        cosV = gCosineTable[idx];
+        if (cosV < 0)
+        {
+            cosV += 0x3F;
+        }
+        slotZ = obj->unk74 + ((((cosV >> 6)) * obj->unk84) << 1);
+        obj_set_fields_18(obj, slotX, 0, slotZ);
+        idx = obj->unk7C & 0xFF;
+        sinV = gSineTable[idx];
+        if (sinV < 0)
+        {
+            sinV += 0x3F;
+        }
+        slotX = obj->unk6C + (sinV >> 6) * obj->unk80;
+        cosV = gCosineTable[idx];
+        if (cosV < 0)
+        {
+            cosV += 0x3F;
+        }
+        slotZ = obj->unk74 + (cosV >> 6) * obj->unk84;
+        obj_setup_slot(obj, slotX, 0, slotZ, 0x3C, oneFlag);
+        obj->unk8C = 0;
+        break;
+    default:
+        break;
+    }
+    obj->unk10->unkC = arc_tan2((s32)((u32)(owner->unk1C - obj->pos18.y) << 8) >> 16,
+                                (s32)((u32)(owner->unk14 - obj->pos18.x) << 8) >> 16);
+    return obj->unk8C == 1;
+}
+END_NONMATCH
 
 struct CounterGroup *obj_init_counter(struct CounterGroup *group)
 {
