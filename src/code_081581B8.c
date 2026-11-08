@@ -317,18 +317,6 @@ static inline void trans_track_view(struct TransChar *o, void *view)
     }
 }
 
-static inline void trans_sync_cam(struct TransChar *o, void *cam)
-{
-    const struct TransClass *k = o->klass;
-    k->fn1C((u8 *)o + k->thisOffset18, cam);
-}
-
-static inline void trans_call_method(struct TransChar *o, void *view, s16 *speed, void *cam, u32 seq)
-{
-    const struct TransClass *k = o->klass;
-    k->fn14((u8 *)o + k->thisOffset10, view, *speed, cam, seq);
-}
-
 static inline void trans_table_call(struct TransRec *rec)
 {
     const struct ClassVt *t = rec->table;
@@ -337,12 +325,23 @@ static inline void trans_table_call(struct TransRec *rec)
 
 ASM_FUNC("asm/code_081581B8/transition_states_obj_init_scan_pool.s", void transition_states_obj_init_scan_pool(void))
 
+static inline u32 trans_char_falling(struct TransChar *o)
+{
+    s32 y = o->y;
+    s32 limit = o->limitY;
+
+    return y < limit;
+}
+
+static inline void trans_sync_cam(struct TransChar *o, struct TransGame *game)
+{
+    const struct TransClass *k = o->klass;
+
+    k->fn1C((u8 *)o + k->thisOffset18, &game->camX);
+}
+
 NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(struct TransRec *rec, struct TransGame *game))
 {
-    vu16 *bld;
-    struct TransChar *o;
-    const struct TransClass *k;
-
     switch (rec->state)
     {
     case 0:
@@ -358,53 +357,33 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
         rec->state++;
         /* fall through */
     case 2:
-        {
-            u32 pendingA = 0;
-            u32 pendingB;
-
-            if (game->charA->y < game->charA->limitY)
-                pendingA = 1;
-            if (pendingA != 0)
-                goto move;
-            pendingB = 0;
-            if (game->charB->y < game->charB->limitY)
-                pendingB = 1;
-            if (pendingB != 0)
-                goto move;
-        }
+        if (trans_char_falling(game->charA))
+            goto move;
+        if (trans_char_falling(game->charB))
+            goto move;
         rec->state++;
         /* fall through */
     case 3:
         if (effect_step_b(game->effect) == 0)
             goto move;
-        o = game->charA;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
-        o = game->charB;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewB, game->speed, &game->camX, 0xC);
-        o = rec->objA;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
-        o = rec->objB;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
+        game->charA->klass->fn14((u8 *)game->charA + game->charA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
+        game->charB->klass->fn14((u8 *)game->charB + game->charB->klass->thisOffset10, game->viewB, game->speed, &game->camX, 0xC);
+        rec->objA->klass->fn14((u8 *)rec->objA + rec->objA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
+        rec->objB->klass->fn14((u8 *)rec->objB + rec->objB->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
         rec->timer = 0x41;
         rec->state++;
         goto move;
     case 4:
-        o = rec->objA;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0);
-        o = rec->objB;
-        k = o->klass;
-        k->fn14((u8 *)o + k->thisOffset10, game->viewA, game->speed, &game->camX, 0);
+        rec->objA->klass->fn14((u8 *)rec->objA + rec->objA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0);
+        rec->objB->klass->fn14((u8 *)rec->objB + rec->objB->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0);
         if (--rec->timer > 0)
             goto move;
-        bld = &gUnk_02000050;
-        *bld = 0xDF;
-        bld += 2;
-        *bld = 0x1F;
+        {
+            vu16 *p = &gUnk_02000050;
+
+            p[0] = 0xDF;
+            p[2] = 0x1F;
+        }
         rec->fade = 0;
         ((struct LineScroll *)gUnk_03001014)->x = 0;
         REG_IME = 0;
@@ -443,6 +422,7 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
         trans_table_call(rec);
         {
             void *obj = heap_alloc2(8, 1, gHeapTagTransitionObjDf60, 0);
+
             obj_reset_e400((struct TransObj *)obj);
             ((void **)obj)[1] = (void *)gTransitionClassDf60;
             game->newObj = obj;
@@ -453,12 +433,20 @@ NONMATCH("asm/code_081581B8/transition_state_step.s", u32 transition_state_step(
     }
 
 move:
-    obj_move_by_speed(game->charA, game->speed);
-    obj_move_by_speed(game->charB, game->speed);
+    {
+        s32 speed = game->speed;
+
+        obj_move_by_speed(game->charA, speed);
+    }
+    {
+        s32 speed = game->speed;
+
+        obj_move_by_speed(game->charB, speed);
+    }
     trans_track_view(game->charA, game->viewA);
     trans_track_view(game->charB, game->viewB);
-    trans_sync_cam(game->charA, &game->camX);
-    trans_sync_cam(game->charB, &game->camX);
+    trans_sync_cam(game->charA, game);
+    trans_sync_cam(game->charB, game);
     return 1;
 }
 END_NONMATCH
