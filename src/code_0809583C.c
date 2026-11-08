@@ -566,6 +566,7 @@ u32 pair_begin(struct HeroBody *body)
 
 NONMATCH("asm/code_0809583C/pair_place_targets.s", void pair_place_targets(struct HeroBody *body))
 {
+    s32 mask;
     struct Hero *hero_a;
     struct HeroBody *body_a;
     struct HeroBody *body_b;
@@ -573,6 +574,7 @@ NONMATCH("asm/code_0809583C/pair_place_targets.s", void pair_place_targets(struc
     u8 *mode_a;
     s32 mode;
 
+    mask = 6;
     hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     body_b = &gWorld->heroB->body;
@@ -595,7 +597,7 @@ NONMATCH("asm/code_0809583C/pair_place_targets.s", void pair_place_targets(struc
             ((struct SpriteMirrorBits *)&body_a->sprite->mirror)->flip = (span = &body_a->span.a)[0] >= span[1];
             ((struct SpriteModeBits *)&body_a->sprite->flags)->mode = 0;
         }
-        mode = *mode_a & 6;
+        mode = *mode_a & mask;
         if (mode == 2 || mode == 4)
         {
             body_a->state = NULL;
@@ -1170,7 +1172,7 @@ void child_launch(struct HeroBody *body)
 }
 
 s32 menu_cursor_pos(s32 x, s32 y, u32 n);
-NONMATCH("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struct HeroBody *body))
+void menu_cursor_follow(struct HeroBody *body)
 {
     s16 *cursor;
     struct HeroBody *hero_a;
@@ -1198,17 +1200,13 @@ NONMATCH("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struc
         cursor = &data->cursorX;
         *cursor = menu_cursor_pos(*cursor, data->cursorY, entry->menuKind);
         cursor = &data->cursorX2;
-        argX = *cursor;
-        argY = data->cursorY2;
-        entry = gWorld->curEntry;
+        *cursor = menu_cursor_pos(*cursor, data->cursorY2, gWorld->curEntry->menuKind);
     }
     else
     {
         cursor = &data->cursorX;
-        argX = *cursor;
-        argY = data->cursorY;
+        *cursor = menu_cursor_pos(*cursor, data->cursorY, entry->menuKind);
     }
-    *cursor = menu_cursor_pos(argX, argY, entry->menuKind);
 
     bit7 = data->partBits >> 7;
     limitX = data->targetX;
@@ -1229,7 +1227,6 @@ NONMATCH("asm/code_0809583C/menu_cursor_follow.s", void menu_cursor_follow(struc
     set_step_and_offsets(body, 0x300, 0x20);
     body->state = land_at_target_height;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0809583C/pair_partner_swap.s", void pair_partner_swap(struct HeroBody *body))
 {
