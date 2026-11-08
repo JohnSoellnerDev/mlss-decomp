@@ -197,28 +197,25 @@ void sub_0812B68C(struct MenuObj *obj)
     obj->flag69 = 1;
 }
 
-NONMATCH("asm/code_0812A8F8/draw_two_values_dispatch.s", void *draw_two_values_dispatch(struct StatusView *view, void *oam))
+void *draw_two_values_dispatch(struct StatusView *view, void *oam)
 {
-    s32 k2 = 2;
-    s32 a;
-    s32 b;
-    s32 flag;
+    u8 a;
+    u8 b;
+
     if (view->unkB1 != 0)
     {
         a = gParty[0x30];
         b = gParty[0x6C];
-        flag = view->flagsAF & k2;
+        oam = draw_two_values(oam, a, b, 2 & view->flagsAF);
     }
     else
     {
         a = view->unk84;
         b = view->unk85;
-        flag = view->flagsAF & 1;
+        oam = draw_two_values(oam, a, b, 1 & view->flagsAF);
     }
-    oam = draw_two_values(oam, a, b, flag);
     return oam;
 }
-END_NONMATCH
 
 void *sub_0812B730(void *obj, u8 kind)
 {
