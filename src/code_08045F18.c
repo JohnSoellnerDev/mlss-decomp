@@ -732,48 +732,42 @@ void obj_sync_sub_slot(struct FieldObj *obj, s32 slot)
     }
 }
 
-NONMATCH("asm/code_08045F18/obj_step_index.s", void obj_step_index(struct FieldObj *obj, struct FieldObj *src, u32 advance))
+/* 4-bit step index in bits 13-16 of the word at +0x214 */
+struct IdxWord214
 {
-    u32 *word;
-    u32 cur;
-    u32 idx;
-    u32 m15;
+    u8 filler0[0x214];
+    u32 lo13 : 13;
+    u32 idx : 4;
+    u32 hi15 : 15;
+};
+
+void obj_step_index(struct FieldObj *obj, struct FieldObj *src, u32 advance)
+{
+    struct IdxWord214 *o = (struct IdxWord214 *)obj;
 
     if (src != 0)
     {
-        m15 = 0xF;
-        cur = *(u32 *)&src->state214 & 0x1E000;
-        word = (u32 *)&obj->state214;
-        cur = (*word & 0xFFFE1FFF) | cur;
-        *word = cur;
+        o->idx = ((struct IdxWord214 *)src)->idx;
         if (advance)
         {
-            idx = (cur << 15) >> 28;
-            if (idx <= 14)
-            {
-                idx = (idx + 1) & m15;
-                *word = (cur & 0xFFFE1FFF) | (idx << 13);
-            }
+            if ((u32)o->idx < 15)
+                o->idx++;
         }
         else
         {
-            if ((cur & 0x1E000) != 0)
-            {
-                idx = (((cur << 15) >> 28) - 1) & m15;
-                *word = (cur & 0xFFFE1FFF) | (idx << 13);
-            }
+            /* index bits tested on the whole word */
+            if (*(u32 *)&obj->state214 & 0x1E000)
+                o->idx--;
         }
     }
     else
     {
-        word = (u32 *)&obj->state214;
         if (advance)
-            *word = *word | 0x1E000;
+            o->idx = 15;
         else
-            *word = *word & 0xFFFE1FFF;
+            o->idx = 0;
     }
 }
-END_NONMATCH
 
 /* state byte: current state in bits 0-2, previous state in bits 3-5 */
 struct StateBits214
