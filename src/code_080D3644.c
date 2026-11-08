@@ -299,7 +299,13 @@ struct PoseByte47
     u8 hi2 : 2;
 } __attribute__((packed));
 
-NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_place_both_tracked(struct HeroBody *body))
+struct PoseByte49
+{
+    u32 low2 : 2;
+    u32 high6 : 6;
+} __attribute__((packed));
+
+void hero_pair_place_both_tracked(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
@@ -308,8 +314,10 @@ NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_plac
     struct HeroSpan *span;
 
     world->unk0E = 7;
+    /* world mode bits 6-7 from the low bits of the party flags at 0x47 and 0x49 */
     ((struct WorldModeBits *)&gWorld->modeByte)->high =
-        (((struct PoseByte47 *)&gParty[0x47])->low6 & 1) + ((gParty[0x49] >> 2) & 1) * 2;
+        (((struct PoseByte47 *)&gParty[0x47])->low6 & 1)
+        + (((struct PoseByte49 *)&gParty[0x49])->high6 & 1) * 2;
     set_slot_value(0x53, -1);
 
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
@@ -366,7 +374,6 @@ NONMATCH("asm/code_080D3644/hero_pair_place_both_tracked.s", void hero_pair_plac
     }
     body->state = hero_b_end_a;
 }
-END_NONMATCH
 
 void hero_b_step16_when_a_free(struct HeroBody *body)
 {
