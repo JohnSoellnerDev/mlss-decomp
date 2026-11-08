@@ -351,13 +351,12 @@ void obj_destroy_eba8(u8 *obj, u32 flags)
     obj_destroy_sprites(obj, flags);
 }
 
-NONMATCH("asm/code_0816AFFC/obj_near_mark.s", u32 obj_near_mark(u8 *obj, u8 *other))
+u32 obj_near_mark(u8 *obj, u8 *other)
 {
+    u16 one;
     u16 *flags;
-    s32 one;
     s32 dx;
     s32 dy;
-    s32 dist;
 
     one = 1;
     flags = (u16 *)(other + 0x6C);
@@ -365,15 +364,13 @@ NONMATCH("asm/code_0816AFFC/obj_near_mark.s", u32 obj_near_mark(u8 *obj, u8 *oth
         return 0;
     dx = *(s32 *)(obj + 0x18) - *(s32 *)(other + 0x18);
     dy = *(s32 *)(obj + 0x20) - *(s32 *)(other + 0x20);
-    dist = (dx * dx + dy * dy) >> 8;
-    if (dist > 0x8FFF)
+    if (((dx * dx + dy * dy) >> 8) > 0x8FFF)
         return 0;
     set_slot_value(0x37, -1);
-    *flags = *flags | one;
+    *flags |= one;
     *(u32 *)(obj + 0x6C) = 6;
     return 1;
 }
-END_NONMATCH
 
 void obj_set_speed_from(u8 *obj, u8 *other)
 {
@@ -460,23 +457,20 @@ u8 *init_vt_08cdebc8(u8 *obj, u32 a, u32 b, u32 c)
     return obj;
 }
 
-NONMATCH("asm/code_0816AFFC/start_hblank_scroll_dma.s", void start_hblank_scroll_dma(void))
+void start_hblank_scroll_dma(void)
 {
-    vu16 *bg3hofs = (vu16 *)REG_ADDR_BG3HOFS;
-    vu16 *bg3vofs;
-    u16 *table = (u16 *)gUnk_03001030;
+    u16 *table;
     vu32 *dma;
 
-    *bg3hofs = table[0];
-    bg3vofs = (vu16 *)REG_ADDR_BG3VOFS;
-    *bg3vofs = table[1];
-    dma = (vu32 *)((u8 *)bg3vofs + 0x92);
+    *(vu16 *)REG_ADDR_BG3HOFS = ((u16 *)gUnk_03001030)[0];
+    *(vu16 *)REG_ADDR_BG3VOFS = ((u16 *)gUnk_03001030)[1];
+    table = (u16 *)gUnk_03001030;
+    dma = (vu32 *)(REG_ADDR_BG3VOFS + 0x92);
     REG_DMA0CNT_H = 0;
     dma[0] = (u32)(table + 2);
-    dma[1] = (u32)bg3hofs;
+    dma[1] = REG_ADDR_BG3HOFS;
     dma[2] = 0xA6600001;
 }
-END_NONMATCH
 
 void obj_remove_eb80(u8 *obj, u32 flags)
 {
