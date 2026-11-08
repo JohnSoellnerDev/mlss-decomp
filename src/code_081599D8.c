@@ -222,6 +222,33 @@ void obj_release_sprite(void *obj);
 void obj_move_by_speed(void *obj, s32 extra);
 void set_slot_value(u32 slot, s32 value);
 u32 view_coord(u32 a, s32 b);
+void *obj_clear_tile_ptrs(void *p);
+void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
+void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+u32 read_varlen_plus1(const void *p);
+void cpu_fast_set(const void *src, void *dst, u32 control);
+void heap_free_a(void *p);
+void obj_reset_e920(void *obj);
+void *sprite_group4_init(void *g);
+void *obj_init_ext_fields(void *obj);
+extern u8 gGameMode;
+extern u8 gUnk_02000008[];
+extern u16 gUnk_02000080[];
+extern u16 gUnk_02000082[];
+extern const u16 gScenePaletteA[];
+extern const u8 gSceneTilemap[];
+extern const u8 gUnk_08002D2C[];
+extern const u8 gClassE430[];
+extern const u8 gClassE4c0[];
+extern const u8 gHeapTagOtkd[];
+extern const u8 gHeapTagWork[];
+extern const u8 gHeapTagLigh[];
+extern const u8 gHeapTagScor[];
+extern const u8 gHeapTagHbwk[];
+extern const u8 gHeapTagPhaz[];
+extern const struct SceneStateEntry gSceneLayerSetupTable[];
+extern void (*gUnk_03000C84)(const u8 *src, void *dst);
 
 void obj_create_sprite_c0(struct SceneObj *obj)
 {
@@ -812,7 +839,7 @@ struct ClassObj *obj_init_class_df60(struct ClassObj *obj)
     return obj;
 }
 
-ASM_FUNC("asm/code_081599D8/obj_init_ext_fields.s", void obj_init_ext_fields(void))
+ASM_FUNC("asm/code_081599D8/obj_init_ext_fields.s", void *obj_init_ext_fields(void *obj))
 
 void cam_pan_by_keys(struct CamObj *cam)
 {
@@ -1018,71 +1045,155 @@ ASM_FUNC("asm/code_081599D8/irq_hblank_fx_bg.s", void irq_hblank_fx_bg(void))
 
 ASM_FUNC("asm/code_081599D8/irq_hblank_fx_blend.s", void irq_hblank_fx_blend(void))
 
-NONMATCH("asm/code_081599D8/obj_overlap_box.s", s32 obj_overlap_box(struct SceneObj *a, struct SceneObj *b))
+u32 obj_overlap_box(struct SceneObj *a, struct SceneObj *b)
 {
-    s32 aw;
-    s32 ah;
-    s32 bw;
-    s32 bh;
-    s32 d;
-    s32 ax;
-    s32 bx;
-    s32 ay;
-    s32 by;
-    u32 dxp;
-    u32 dyp;
+    s32 hwA;
+    s32 hhA;
+    s32 hwB;
+    s32 hhB;
+    s16 ta;
+    s16 tb;
+    s32 dx;
+    s32 dy;
 
-    aw = a->unk28 >> 1;
-    ah = a->unk29 >> 1;
-    bw = b->unk28 >> 1;
-    bh = b->unk29 >> 1;
-    ax = a->unk04;
-    bx = b->unk04;
-    if (ax > bx)
-    {
-        d = ax - bx;
-        dxp = ((u32)d << 8) >> 16;
-    }
-    else if (ax < bx)
-    {
-        d = bx - ax;
-        dxp = ((u32)d << 8) >> 16;
-    }
-    else
-    {
-        dxp = 0;
-    }
-    ay = (a->unk08 >> 8) - ah;
-    by = (b->unk08 >> 8) - bh;
-    ay = (s16)ay;
-    by = (s16)by;
-    if (ay > by)
-    {
-        d = ay - by;
-        dyp = ((u32)d << 16) >> 16;
-    }
-    else if (ay < by)
-    {
-        d = by - ay;
-        dyp = ((u32)d << 16) >> 16;
-    }
-    else
-    {
-        dyp = 0;
-    }
-    if ((s16)dxp > aw + bw)
+    hwA = a->unk28 >> 1;
+    hhA = a->unk29 >> 1;
+    hwB = b->unk28 >> 1;
+    hhB = b->unk29 >> 1;
+    dx = ((u32)((a->unk04 > b->unk04) ? a->unk04 - b->unk04
+              : (a->unk04 < b->unk04) ? b->unk04 - a->unk04 : 0) << 8) >> 16;
+    ta = (a->unk08 >> 8) - hhA;
+    tb = (b->unk08 >> 8) - hhB;
+    dy = (u16)((ta > tb) ? ta - tb : (ta < tb) ? tb - ta : 0);
+    if ((s16)dx > hwA + hwB)
     {
         return 0;
     }
-    if ((s16)dyp > ah + bh)
+    if ((s16)dy > hhA + hhB)
     {
         return 0;
     }
     return 1;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_081599D8/transition_scene_init.s", void transition_scene_init(void))
+static inline u16 palette_scale2(u32 v)
+{
+    u32 b = (v >> 10) & 0x1F;
+    u32 g;
+    u32 r;
+
+    b <<= 1;
+    if (b > 0x1F)
+        b = 0x1F;
+    g = (v >> 5) & 0x1F;
+    g <<= 1;
+    if (g > 0x1F)
+        g = 0x1F;
+    r = (v & 0x1F) << 1;
+    if (r > 0x1F)
+        r = 0x1F;
+    return r | (g << 5) | (b << 10);
+}
+
+static inline u16 palette_half(u32 v)
+{
+    u32 b = ((v & 0xFC00) << 1) & 0xFC00;
+    u32 g = ((v & 0x3E0) >> 1) & 0x3E0;
+    u32 r = (v & 0x1F) >> 1;
+    return (b | g) | r;
+}
+
+NONMATCH("asm/code_081599D8/transition_scene_init.s", struct GameVars *transition_scene_init(struct GameVars *game, u8 kind))
+{
+    struct ClassObj *node;
+    const u8 *src;
+    void *buf;
+    u16 *dst;
+    s32 i;
+    u8 k;
+    s32 zero;
+
+    task_insert(game, kind);
+    *(const void **)((u8 *)game + 0x18) = gClassE420;
+    obj_clear_tile_ptrs((u8 *)game + 0x1C);
+    obj_clear_tile_ptrs((u8 *)game + 0x840);
+    obj_clear_tile_ptrs((u8 *)game + 0x1064);
+    zero = 0;
+    *((u8 *)game + 0x1EA2) = ((s32)(gGameMode << 27)) >> 27;
+    *(u16 *)((u8 *)game + 0x1E98) = gSceneLayerSetupTable[*((u8 *)game + 0x1EA2)].unk1C;
+    *(u16 *)((u8 *)game + 0x1E9A) = gSceneLayerSetupTable[*((u8 *)game + 0x1EA2)].unk1C - 0x64;
+    *(u16 *)((u8 *)game + 0x1E9C) = 0x12;
+    *(u16 *)((u8 *)game + 0x1E9E) = 0x28A;
+    *((u8 *)game + 0x1CB2) = zero;
+    *((u8 *)game + 0x1CB3) = zero;
+    game->unk1CBC = zero;
+    *(u16 *)((u8 *)game + 0x1CC0) = zero;
+    game->unk1C98 = (struct SceneObj *)zero;
+    *(s32 *)((u8 *)game + 0x1C9C) = zero;
+    *(u32 *)((u8 *)game + 0x1E88) = zero;
+    *(u32 *)((u8 *)game + 0x1E8C) = zero;
+    *(u16 *)&game->unk1CB4 = zero;
+
+    node = heap_alloc2(0x1C, 1, gHeapTagOtkd, 0);
+    ((void (*)(void *, u8, const void *))task_insert)(node, 8, gHeapTagOtkd);
+    node->unk18 = gClassE430;
+    *(struct ClassObj **)((u8 *)game + 0x1EA4) = node;
+    node->unk14 = (s32)game;
+    gUnk_03001020 = (u8 *)game;
+    *(u16 *)gUnk_02000050 = 0xDF;
+    REG_BLDCNT = *(u16 *)gUnk_02000050;
+    *(u16 *)(gUnk_02000050 + 4) = 0x1F;
+    *(vu16 *)0x04000054 = *(u16 *)(gUnk_02000050 + 4);
+    *(vu16 *)0x04000000 = *(vu16 *)0x02000000 & 0xFBFF;
+    *(vu16 *)0x02000000 |= 0x1B40;
+    *(u16 *)gUnk_02000008 = 0x1E03;
+    *(u16 *)(gUnk_02000008 + 2) = 0x1400;
+    *(u16 *)(gUnk_02000008 + 4) = 0x5201;
+    *(u16 *)(gUnk_02000008 + 6) = 0x1102;
+
+    src = gUnk_08002D2C + 0x81F4;
+    buf = heap_alloc(read_varlen_plus1(src), 1, gHeapTagWork, 0);
+    (*gUnk_03000C84)(src, buf);
+    cpu_fast_set(buf, (void *)0x06000000, 0x2000);
+    if (buf != 0)
+    {
+        heap_free_a(buf);
+    }
+    cpu_fast_set(gScenePaletteA, gUnk_02000080, 0x80);
+    *(u16 *)gUnk_02000080 = zero;
+    for (i = 0; i <= 0x7F; i += 2)
+    {
+        gUnk_02000080[i] = palette_scale2(gUnk_02000080[i]);
+        gUnk_02000082[i] = palette_scale2(gUnk_02000082[i]);
+    }
+
+    cpu_fast_set(gSceneTilemap, (void *)0x06009000, 0x400);
+    gSys.unk02 |= 0xFF;
+    dst = (u16 *)((u8 *)game + 0x1CC4);
+    for (k = 0; k <= 0x3F; k += 2)
+    {
+        dst[0] = palette_half(gScenePaletteA[k]);
+        dst[1] = palette_half(gScenePaletteA[k + 1]);
+        dst += 2;
+    }
+    game->unk1CBC = (s32)obj_init_ext_fields(heap_alloc2(0x540, 0, gHeapTagLigh, 0));
+    ((struct ObjBit5 *)((u8 *)&gSys + 0x888))->bit5 = 1;
+    game->unk1CB8 = (s32)sprite_group4_init(heap_alloc2(0x20, 1, gHeapTagScor, 0));
+    gUnk_0300101C = heap_alloc_raw(1, 0x504, gHeapTagHbwk);
+    node = heap_alloc2(8, 1, gHeapTagPhaz, 0);
+    obj_reset_e920(node);
+    node->unk04 = gClassE4c0;
+    *(void **)((u8 *)game + 0x1E94) = node;
+    for (i = 0; i < 0xA0; i++)
+    {
+        u16 *e = (u16 *)((u8 *)gUnk_0300101C + i * 8);
+        e[2] = 0;
+        e[3] = 0x80;
+        e[4] = 0;
+    }
+    return game;
+}
+END_NONMATCH
 
 void transition_exit(struct SceneObj *obj, u32 task)
 {
