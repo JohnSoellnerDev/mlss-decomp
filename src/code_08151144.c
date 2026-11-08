@@ -978,49 +978,26 @@ void sync_script_vars(void)
 ASM_FUNC("asm/code_08151144/hblank_iris_window.s", void hblank_iris_window(void))
 
 
-NONMATCH("asm/code_08151144/hitboxes_overlap.s", u32 hitboxes_overlap(struct Obj *a, struct Obj *b))
+u32 hitboxes_overlap(struct Obj *a, struct Obj *b)
 {
     s32 hwA;
     s32 hhA;
     s32 hwB;
     s32 hhB;
-    s32 d;
-    u32 dx;
-    s32 ta;
-    s32 tb;
-    u32 dy;
+    s16 ta;
+    s16 tb;
+    s32 dx;
+    s32 dy;
 
     hwA = a->field28.half.halfW >> 1;
     hhA = a->field28.half.halfH >> 1;
     hwB = b->field28.half.halfW >> 1;
     hhB = b->field28.half.halfH >> 1;
-    if (a->posX > b->posX)
-    {
-        dx = ((u32)(a->posX - b->posX) << 8) >> 16;
-    }
-    else if (a->posX < b->posX)
-    {
-        dx = ((u32)(b->posX - a->posX) << 8) >> 16;
-    }
-    else
-    {
-        dx = 0;
-    }
-    ta = (s16)((a->posY >> 8) - hhA);
-    tb = (s16)((b->posY >> 8) - hhB);
-    if (ta > tb)
-    {
-        d = ta - tb;
-    }
-    else if (ta < tb)
-    {
-        d = tb - ta;
-    }
-    else
-    {
-        d = 0;
-    }
-    dy = (u16)d;
+    dx = ((u32)((a->posX > b->posX) ? a->posX - b->posX
+              : (a->posX < b->posX) ? b->posX - a->posX : 0) << 8) >> 16;
+    ta = (a->posY >> 8) - hhA;
+    tb = (b->posY >> 8) - hhB;
+    dy = (u16)((ta > tb) ? ta - tb : (ta < tb) ? tb - ta : 0);
     if ((s16)dx > hwA + hwB)
     {
         return 0;
@@ -1031,7 +1008,6 @@ NONMATCH("asm/code_08151144/hitboxes_overlap.s", u32 hitboxes_overlap(struct Obj
     }
     return 1;
 }
-END_NONMATCH
 
 
 
