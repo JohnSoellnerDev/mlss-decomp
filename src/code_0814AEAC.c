@@ -880,7 +880,7 @@ NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct 
     {
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
         ((struct ModeBits *)&obj->mode)->low3 = 1;
-        if (obj->unk2CC < obj->x)
+        if (obj->unk2CC >= obj->x)
         {
             ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
         }
@@ -896,7 +896,7 @@ NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct 
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
         ((struct ModeBits *)&obj->mode)->low3 = 0;
         obj_load_record(obj->cell, 5, 0, 0, 0);
-        if (obj->unk2CC < obj->x)
+        if (obj->unk2CC >= obj->x)
         {
             ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
         }
