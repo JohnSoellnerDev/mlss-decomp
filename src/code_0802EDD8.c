@@ -84,11 +84,39 @@ struct PairSub
     u32 ptr388;
 };
 
+struct Sub20DBits
+{
+    u8 filler0[0x20D];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 hi1 : 1;
+};
+
 struct Bit6Bits
 {
     u8 lo6 : 6;
     u8 bit6 : 1;
     u8 hi1 : 1;
+};
+
+struct Bit2Bits
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 rest : 5;
+};
+
+struct Half20A
+{
+    u16 lo7 : 7;
+    u16 b78 : 2;
+    u16 rest : 7;
+};
+
+struct Bit7Bits
+{
+    u8 lo7 : 7;
+    u8 bit7 : 1;
 };
 
 struct Bit1Bits
@@ -172,7 +200,7 @@ struct PairObj
 void update_sub_bounds(struct PairObj *obj);
 u8 overlaps_entry_lists(void *obj, void *sub);
 void sub_08035988(void *obj);
-void sub_08033BAC(void *obj);
+void sub_08033BAC(void *obj, void *entry);
 void sub_08034FFC(void *obj);
 void sub_08034884(void *obj, void *entry);
 void pair_sub_state_3a(void *obj, void *sub);
@@ -224,7 +252,7 @@ u32 try_engage_pair(struct PairObj *obj, struct PairSub *other, u8 engage, u8 fl
 
 ASM_FUNC("asm/code_0802EDD8/pair_ring_pair_step.s", void pair_ring_pair_step(void))
 
-NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct PairObj *obj))
+void update_sub_pair(struct PairObj *obj)
 {
     u8 fb;
 
@@ -242,7 +270,7 @@ NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct Pair
     }
     if (obj->flags208 & 0x10)
     {
-        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subB) & 1;
+        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subB) % 2;
         if (obj->flags2B8 & 0x20)
         {
             obj->half26E--;
@@ -252,7 +280,7 @@ NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct Pair
     }
     else
     {
-        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subA) & 1;
+        ((struct Bit4Bits *)&obj->flags2B8)->bit4 = obj_flags_2b5_07_set(obj->subA) % 2;
     }
 
     if ((obj->flags2B8 & 0x10) == 0)
@@ -265,13 +293,9 @@ NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct Pair
             obj->subA->unk3C += obj->subA->unk40;
             obj->subA->unk40 = fb;
         }
-        {
-            s32 t = obj->subA->flags353;
-            t &= -3;
-            obj->subA->flags353 = t;
-        }
-        obj->subA->flags20D |= 8;
-        obj->subA->flags20D |= 0x40;
+        ((struct Bit1Bits *)&obj->subA->flags353)->bit1 = 0;
+        ((struct Bit3Bits *)&obj->subA->flags20D)->bit3 = 1;
+        ((struct Bit6Bits *)&obj->subA->flags20D)->bit6 = 1;
         if (obj->flags208 & 0x10)
         {
             fb = obj->flagFB & 4;
@@ -282,31 +306,26 @@ NONMATCH("asm/code_0802EDD8/update_sub_pair.s", void update_sub_pair(struct Pair
                 obj->subB->unk3C += obj->subB->unk40;
                 obj->subB->unk40 = fb;
             }
-            {
-                s32 t = obj->subB->flags353;
-                t &= -3;
-                obj->subB->flags353 = t;
-            }
-            obj->subB->flags20D |= 8;
-            obj->subB->flags20D |= 0x40;
+            ((struct Bit1Bits *)&obj->subB->flags353)->bit1 = 0;
+            ((struct Bit3Bits *)&obj->subB->flags20D)->bit3 = 1;
+            ((struct Bit6Bits *)&obj->subB->flags20D)->bit6 = 1;
             pair_turn_and_sample(obj, 0);
         }
         {
             struct PairSub *pb = obj->subB;
             struct PairSub *pa = obj->subA;
-            pa->flags20F |= 4;
-            pb->flags20F |= 4;
+            ((struct Bit2Bits *)&pa->flags20F)->bit2 = 1;
+            ((struct Bit2Bits *)&pb->flags20F)->bit2 = 1;
         }
-        *(u16 *)((u8 *)obj + 0x20A) &= 0xFE7F;
+        ((struct Half20A *)&obj->flags20A)->b78 = 0;
     }
     else
     {
         update_sub_bounds(obj);
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct PairObj *obj))
+void update_sub_bounds(struct PairObj *obj)
 {
     struct PairSub *sub;
     s32 x;
@@ -329,7 +348,7 @@ NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct 
     }
     else
     {
-        ((struct Bit6Bits *)&sub->flags20D)->bit6 = (((u32)obj->flagFB << 29) >> 31) ^ 1;
+        ((struct Sub20DBits *)sub)->bit6 = (((u32)obj->flagFB << 29) >> 31) ^ 1;
         ((struct Bit1Bits *)&obj->subA->flags353)->bit1 = 0;
     }
     if ((obj->flags208 & 0x10) != 0)
@@ -349,12 +368,11 @@ NONMATCH("asm/code_0802EDD8/update_sub_bounds.s", void update_sub_bounds(struct 
         }
         else
         {
-            ((struct Bit6Bits *)&sub->flags20D)->bit6 = (((u32)obj->flagFB << 29) >> 31) ^ 1;
+            ((struct Sub20DBits *)sub)->bit6 = (((u32)obj->flagFB << 29) >> 31) ^ 1;
             ((struct Bit1Bits *)&obj->subB->flags353)->bit1 = 0;
         }
     }
 }
-END_NONMATCH
 
 static inline u32 test_flag_level(void)
 {
@@ -411,7 +429,7 @@ void apply_test_level(void)
     }
 }
 
-NONMATCH("asm/code_0802EDD8/obj_pair_tick.s", void obj_pair_tick(struct PairObj *obj))
+void obj_pair_tick(struct PairObj *obj)
 {
     s32 i;
 
@@ -421,8 +439,8 @@ NONMATCH("asm/code_0802EDD8/obj_pair_tick.s", void obj_pair_tick(struct PairObj 
             obj_try_ride_platform(obj->entries[i], obj->entries);
         obj_update_entities(obj);
         process_obj_entries(obj);
-        obj_try_ride_platform(obj->entries[0], obj->entries);
-        obj_try_ride_platform(obj->entries[1], obj->entries);
+        for (i = 0; i < 2; i++)
+            obj_try_ride_platform(obj->entries[i], obj->entries);
         if ((obj->flags209 & 0x20) != 0)
             dispatch_sub_state(obj);
         else
@@ -459,9 +477,8 @@ NONMATCH("asm/code_0802EDD8/obj_pair_tick.s", void obj_pair_tick(struct PairObj 
         }
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct PairObj *obj, u32 mode, u32 arg))
+void pair_kind8_step(struct PairObj *obj, u32 mode, u32 arg)
 {
     u8 *pa;
 
@@ -519,9 +536,10 @@ NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct Pair
             obj->subB->unk40 = obj->subA->unk40;
         }
         {
-            u16 st = ((struct PairSub *)obj->entries[1])->state04;
+            struct PairSub *e1 = (struct PairSub *)obj->entries[1];
+            u16 st = e1->state04;
             if (!((u16)(st - 0x40) <= 5 || (u16)(st - 0x3B) <= 2))
-                sub_08033BAC(obj);
+                sub_08033BAC(obj, e1);
         }
         if ((((struct PairSub *)obj->entries[0])->flags20C & 1) != 0)
         {
@@ -551,7 +569,6 @@ NONMATCH("asm/code_0802EDD8/pair_kind8_step.s", void pair_kind8_step(struct Pair
         break;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0802EDD8/update_sub_pair_layers.s", void update_sub_pair_layers(void))
 
@@ -604,4 +621,68 @@ void pair_call_entry_routine(struct PairObj *obj, struct PairSub *sub)
     }
 }
 
-ASM_FUNC("asm/code_0802EDD8/pair_start_state_10.s", void pair_start_state_10(void))
+/* Common start of the pair state starts: facing, slots, animation. */
+static inline void pair_start_begin(struct PairObj *obj)
+{
+    update_pair_facing(obj, 1, 1);
+    obj_shift_state_slots(obj->subA);
+    advance_anim_frame(obj, obj->subA, 0, 0);
+    ((struct Bit1Bits *)&obj->state246)->bit1 = 0;
+}
+
+void pair_start_state_10(struct PairObj *obj)
+{
+    s32 maxDist;
+    s32 dist;
+
+    pair_start_begin(obj);
+    obj->pixX = obj->subB->posX / 0x100;
+    obj->pixY = obj->subB->posY / 0x100;
+    obj->subB->posX &= ~0xFF;
+    obj->subB->posY &= ~0xFF;
+    obj->subB->unk34 = obj->subB->posX;
+    obj->subB->unk38 = obj->subB->posY;
+    /* B snaps onto A when it is within 4 pixels. */
+    if (obj->subB->posX >= obj->subA->posX - 0x400 && obj->subB->posX <= obj->subA->posX + 0x400
+        && obj->subB->posY >= obj->subA->posY - 0x400 && obj->subB->posY <= obj->subA->posY + 0x400)
+    {
+        obj->subB->posX = obj->subA->posX;
+        obj->subB->posY = obj->subA->posY;
+    }
+    {
+        u8 *bf = obj->subB->frames;
+        *obj->subA->frames = 3;
+        *bf = 3;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        obj->subA->state04 = 0x10;
+        b->state04 = 0x10;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bit6Bits *)&obj->subA->flags351)->bit6 = 1;
+        ((struct Bit6Bits *)&b->flags351)->bit6 = 1;
+    }
+    {
+        struct PairSub *b = obj->subB;
+        ((struct Bit3Bits *)&obj->subA->flags358)->bit3 = 1;
+        ((struct Bit3Bits *)&b->flags358)->bit3 = 1;
+    }
+    maxDist = 0x20;
+    if (obj->subA->unk14 > obj->subB->unk14)
+    {
+        u8 layerA = obj->subA->type26;
+        u8 layerB = obj->subB->type26;
+        if ((((u32)(layerA & layerB)) << 26) >> 30)
+            maxDist = obj->subA->unk14 - obj->subB->unk14 + 0x20;
+    }
+    dist = ((obj->subA->unk14 + obj->subA->unk18) - (obj->subB->unk14 + obj->subB->unk18)) / 0x100 + 0x20;
+    if (dist > maxDist)
+        dist = maxDist;
+    motion_obj_set_move_target(obj->subB, dist, 0xEE >> (((u32)obj->flagFB << 29) >> 31), obj->move100);
+    contacts_obj_start_move(obj->subB, 2, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
+        (obj->flagFB & 4) ? 0xE : 8);
+    ((struct Bit7Bits *)&obj->flags20B)->bit7 = 1;
+    set_slot_value(0x2B, -1);
+}
