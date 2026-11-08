@@ -389,7 +389,6 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
     struct World *world;
     void (*next)(struct Body *);
     u16 *timer;
-    s16 *progress;
     s16 *prev;
     s32 rate;
     s32 winStart;
@@ -399,7 +398,9 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
     s32 mode;
     s32 nib;
     s32 inWin;
+    s32 cap;
 
+    cap = 0x4000;
     hero_a = &gWorld->heroA->body;
     hero_b = &gWorld->heroB->body;
     partner = body->partner;
@@ -415,12 +416,11 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
     rate = (s16)hero_a->rate;
     winStart = -(rate << 2) + 0x4000;
     winEndRaw = 0x4000 + (rate << 3);
-    progress = &hero_a->progress;
+    timer = &hero_a->timer;
 
-    if (*progress < winEndRaw)
+    if (hero_a->progress < winEndRaw)
         ((struct ActiveBit *)&hero_a->flags)->active = 0;
 
-    timer = &hero_a->timer;
     if ((*timer >> 12) == 0)
     {
         if (winStart < 0)
@@ -428,8 +428,7 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
         if (winStart > 0x7FFF)
             winStart = 0x7FFF;
 
-        prev = &hero_a->stepLen;
-        if (*prev <= winStart && *progress >= winStart)
+        if (*prev <= winStart && hero_a->progress >= winStart)
         {
             world = gWorld;
             if (((struct WorldBit3 *)&world->view)->bit3 != 0)
@@ -449,17 +448,19 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
             sprite_objects_draw_obj_tiles(0x4C, 0xC);
         }
 
-        winMid = 0x4000;
+        winMid = cap;
         winEnd = winEndRaw;
         if (winEnd < 0)
             winEnd = 0;
+        if (winMid > 0x4000)
+            winMid = 0x4000;
         if (winEnd > 0x7FFF)
             winEnd = 0x7FFF;
         if (winEnd < winMid)
             winMid = winEnd;
 
         inWin = 0;
-        if (!(*progress < winMid))
+        if (!(hero_a->progress < winMid))
         {
             inWin = 1;
             if (*prev > winEnd)
@@ -504,7 +505,7 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
             if (winEnd > 0x7FFF)
                 winEnd = 0x7FFF;
 
-            if (*prev <= winEnd && *progress >= winEnd)
+            if (*prev <= winEnd && hero_a->progress >= winEnd)
             {
                 world = gWorld;
                 ((struct WorldModeBits *)&world->mode)->f45 |= 1;
@@ -526,7 +527,7 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
                 display_flush();
                 obj_free_parts(hero_a);
             }
-            else if (*progress <= winEndRaw
+            else if (hero_a->progress <= winEndRaw
                      && (((struct SysKeys3E *)gSys)->keys & 3) != 0)
             {
                 world = gWorld;
@@ -557,16 +558,18 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
     }
 
     nib = *timer >> 12;
+    winMid = cap;
     winEnd = winEndRaw;
     if (winEnd < 0)
         winEnd = 0;
+    if (winMid > 0x4000)
+        winMid = 0x4000;
     if (winEnd > 0x7FFF)
         winEnd = 0x7FFF;
-    winMid = 0x4000;
     if (winEnd < winMid)
         winMid = winEnd;
 
-    if (nib != 0 && *progress >= winMid && *prev <= winEnd && nib > 1)
+    if (nib != 0 && hero_a->progress >= winMid && *prev <= winEnd && nib > 1)
     {
         *timer = *timer & 0xFFF;
         next = hero_a_child_next_state_anim;
@@ -575,7 +578,7 @@ NONMATCH("asm/code_080D1E30/hero_a_step_window_20e8.s", void hero_a_step_window_
     }
     else
     {
-        if (*prev <= 0x4000 && *progress >= 0x4000)
+        if (*prev <= 0x4000 && hero_a->progress >= 0x4000)
         {
             mode = hero_a->mode & 6;
             if (mode == 2 || mode == 4)
