@@ -205,9 +205,274 @@ extern const u8 gSpriteFacingTable[];
 extern u8 gUnk_02000001[];
 void setup_obj_10bc(void *obj, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
 
-ASM_FUNC("asm/code_0803F510/obj_update_oam.s", void obj_update_oam(void))
+void update_effect_slots(u32 effect);
+void obj_list_pass_0a8c(void);
+u32 build_sprite_oam(u8 *ent, u32 oam, u32 idx, u32 flip);
+extern u8 gSys[];
+extern u8 gUnk_0203FFB8[];
+extern u32 gUnk_03000D48;
+extern u32 gUnk_03000D4C;
+extern u8 gUnk_02000110[];
+extern const u8 gCarrierTrackStepTable[];
 
-ASM_FUNC("asm/code_0803F510/build_sprite_oam.s", void build_sprite_oam(void))
+NONMATCH("asm/code_0803F510/obj_update_oam.s", void obj_update_oam(u8 *ent))
+{
+    u8 *obj;
+    u32 oam;
+
+    obj = *(u8 **)(ent + 0x14);
+    update_effect_slots(*(u32 *)(obj + 0x31C));
+    oam = *(u32 *)(gSys + 0x880);
+    if (*(s16 *)(obj + 0x244) > -56)
+    {
+        u32 idx;
+        s32 parts;
+        u32 emitted;
+        u32 flip;
+
+        idx = (*(u8 *)(obj + 0x208) >> 2) & 1;
+        parts = 1;
+        if ((((*(u8 *)(obj + 0x2D8) & 0x1F) == 0x1F) && (*(u16 *)(gSys + 0x78) & 8) != 0)
+            || (*(u16 *)(obj + 0x208) & 0x110) != 0)
+        {
+            parts = 2;
+        }
+        emitted = 0;
+        if (!(0 < parts))
+        {
+            goto parts_done;
+        }
+        if (parts <= 0)
+        {
+            goto last_part;
+        }
+        if (parts == 0)
+        {
+            goto loop_head;
+        }
+        if (parts <= 1)
+        {
+            goto last_part;
+        }
+        if (!(parts <= 2))
+        {
+            oam = build_sprite_oam(ent, oam, idx, 0);
+            idx ^= 1;
+            emitted++;
+        }
+        flip = 0;
+        if (emitted == 1 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+        {
+            flip = 1;
+        }
+        oam = build_sprite_oam(ent, oam, idx, flip);
+        idx ^= 1;
+        emitted++;
+    last_part:
+        flip = 0;
+        if (emitted == 1 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+        {
+            flip = 1;
+        }
+        oam = build_sprite_oam(ent, oam, idx, flip);
+        idx ^= 1;
+        emitted++;
+        if ((s32)emitted >= parts)
+        {
+            goto parts_done;
+        }
+    loop_head:
+        do
+        {
+            flip = 0;
+            if (emitted == 1 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+            {
+                flip = 1;
+            }
+            oam = build_sprite_oam(ent, oam, idx, flip);
+            idx ^= 1;
+            flip = 0;
+            if (emitted == 0 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+            {
+                flip = 1;
+            }
+            oam = build_sprite_oam(ent, oam, idx, flip);
+            idx ^= 1;
+            flip = 0;
+            if (emitted + 2 == 1 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+            {
+                flip = 1;
+            }
+            oam = build_sprite_oam(ent, oam, idx, flip);
+            idx ^= 1;
+            flip = 0;
+            if (emitted + 3 == 1 && (*(u32 *)(obj + 0x208) & (u32)gUnk_02000110) == 0x02000000)
+            {
+                flip = 1;
+            }
+            oam = build_sprite_oam(ent, oam, idx, flip);
+            idx ^= 1;
+            emitted += 4;
+        } while ((s32)emitted < parts);
+    }
+parts_done:
+    {
+        u32 anim;
+        u32 bits;
+        u32 next;
+
+        anim = *(u8 *)(obj + 0x209);
+    if ((anim & 0x1E) != 0)
+    {
+        next = (((anim << 27) >> 28) + 1) & 0xF;
+        bits = (anim & 0xFFFFFFE1) | (next << 1);
+        *(u8 *)(obj + 0x209) = bits;
+        if ((bits & 0x1E) == 0x12)
+        {
+            *(u8 *)(obj + 0x209) = bits & 0xFFFFFFE1;
+        }
+    }
+    }
+    obj_list_pass_0a8c();
+
+    {
+    u32 rideA;
+    u32 rideB;
+    u32 carrier;
+    u32 state;
+    u32 target;
+    u32 sub;
+    u32 node;
+    u32 n;
+    u32 rem;
+    u32 row;
+    u32 head;
+    u32 kind;
+    u32 children;
+
+    rideA = *(u32 *)(obj + 0x200);
+    rideB = *(u32 *)(obj + 0x204);
+    carrier = 0;
+    if (*(u16 *)(rideA + 0x218) == 0x1025 || *(u16 *)(rideA + 0x218) == 0x1029
+        || *(u16 *)(rideA + 0x218) == 0x103F)
+    {
+        carrier = rideA;
+    }
+    else if (*(u16 *)(rideB + 0x218) == 0x1025 || *(u16 *)(rideB + 0x218) == 0x103F)
+    {
+        carrier = rideB;
+    }
+    target = rideA;
+    if (carrier != 0)
+    {
+        state = *(u16 *)(carrier + 4);
+        if ((u16)(state - 8) <= 1 || (u16)(state - 0x59) <= 6 || (u16)(state - 0x3B) <= 1
+            || (u16)(state - 0x80) <= 3 || (u16)(state - 0x88) <= 3)
+        {
+            kind = *(u8 *)(carrier + 0x24) & 7;
+            if (!(kind <= 1) && !(kind > 6))
+            {
+                sub = *(u32 *)(carrier + 0x294);
+                if (*(u8 *)(sub + 0x21) > 4 || *(u8 *)(sub + 0x23) > 4)
+                {
+                    if ((u16)(state - 8) <= 1)
+                    {
+                        children = (u32)obj + 0x28;
+                        target = *(u32 *)(children + (((s32)((u32)*(u8 *)(carrier + 0x33C) << 25)) >> 23));
+                    }
+                    if (state == 8)
+                    {
+                        row = (*(u16 *)(carrier + 0x218) != 0x1029) ? 8 : 0x18;
+                    }
+                    else
+                    {
+                        row = (*(u16 *)(carrier + 0x218) != 0x1029) ? 0 : 0x10;
+                    }
+                    sub = *(u32 *)(carrier + 0x294);
+                    node = *(u32 *)(sub + 0x34);
+                    n = *(u8 *)(row + (*(u8 *)(carrier + 0x24) & 7) + gCarrierTrackStepTable);
+                    if (n != 0)
+                    {
+                        rem = (0 - n) & 3;
+                        if (rem != 0)
+                        {
+                            if (!((s32)rem >= 3))
+                            {
+                                if (!((s32)rem >= 2))
+                                {
+                                    node = *(u32 *)(node + 0x10);
+                                    n--;
+                                }
+                                node = *(u32 *)(node + 0x10);
+                                n--;
+                            }
+                            node = *(u32 *)(node + 0x10);
+                            n--;
+                            if (n == 0)
+                            {
+                                goto walked;
+                            }
+                        }
+                        do
+                        {
+                            node = *(u32 *)(node + 0x10);
+                            node = *(u32 *)(node + 0x10);
+                            node = *(u32 *)(node + 0x10);
+                            node = *(u32 *)(node + 0x10);
+                            n -= 4;
+                        } while (n != 0);
+                    }
+                walked:
+                    head = *(u32 *)(target + 0x294);
+                    head = *(u32 *)(head + 0x34);
+                    *(u32 *)(node + 8) = *(u32 *)(head + 8) - 1;
+                }
+            }
+        }
+    }
+
+    }
+
+    {
+    u32 ctx;
+    u32 list;
+    u32 children;
+    u32 slot;
+    u32 i;
+    u32 child;
+    u32 desc;
+    u32 arg;
+    u32 routine;
+    u32 head;
+
+    ctx = (u32)gUnk_0203FFB8;
+    list = *(u32 *)(ctx + 0x38);
+    children = (u32)obj + 0x28;
+    slot = children;
+    i = 0;
+    while ((s32)i < (s32)*(u8 *)(obj + 0x10B))
+    {
+        child = *(u32 *)slot;
+        if (child != 0)
+        {
+            desc = *(u32 *)(child + 0x338) + 0x50;
+            arg = child + *(s16 *)desc;
+            routine = *(u32 *)(desc + 4);
+            list = ((u32(*)(u32, u32, u32))routine)(arg, list, children);
+        }
+        i++;
+        slot += 4;
+    }
+    *(u32 *)(ctx + 0x38) = list;
+    head = *(u32 *)(ctx + 0x3C);
+    ((void (*)(u32, u32))gUnk_03000D48)(head, head + 0xA14);
+    oam = ((u32(*)(u32, u32))gUnk_03000D4C)(*(u32 *)(ctx + 0x3C), oam);
+    }
+    *(u32 *)(gSys + 0x880) = oam;
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_0803F510/build_sprite_oam.s", u32 build_sprite_oam(u8 *ent, u32 oam, u32 idx, u32 flip))
 
 ASM_FUNC("asm/code_0803F510/tile_query.s", void tile_query(void))
 
