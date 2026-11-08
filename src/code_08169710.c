@@ -93,12 +93,21 @@ struct DestroyObj
     u32 unk70;
 };
 
+struct PosXY
+{
+    s32 x;
+    u8 filler4[4];
+    s32 y;
+};
+
 struct ProjObj
 {
     u8 filler0[0xC];
     void *unkC;
     struct SubObj *unk10;
-    u8 filler14[0x6C - 0x14];
+    u8 filler14[4];
+    struct PosXY pos18;
+    u8 filler24[0x6C - 0x24];
     u32 unk6C;
     s32 unk70;
     s32 unk74;
@@ -115,13 +124,6 @@ struct ProjObj
     u16 unk98;
 };
 
-struct PosXY
-{
-    s32 x;
-    u8 filler4[4];
-    s32 y;
-};
-
 struct GridPart
 {
     u8 filler0[0x18];
@@ -132,7 +134,17 @@ struct GridPart
     u8 filler70[4];
     s32 unk74;
     s32 unk78;
+    s32 unk7C;
 };
+
+struct Flags6C
+{
+    u16 b0 : 1;
+    u16 b1 : 1;
+    u16 b2 : 1;
+    u16 b3 : 1;
+    u16 rest : 12;
+} __attribute__((packed));
 
 struct GridLinesObj
 {
@@ -191,7 +203,7 @@ struct StateObj
 extern u16 gUnk_02000050[];
 void palette_fill(u32 v);
 void slot_reset(u32 id);
-void set_slot_target(u32 a, u32 b);
+void set_slot_target(u32 a, u32 b, u32 c);
 void write_var(u16 id, u16 value);
 u8 timer_tick(void *timer);
 void obj_copy_pos_to_shadow(void *src);
@@ -278,13 +290,12 @@ struct NodeObj
     s32 unk80;
     s32 unk84;
     u16 unk88;
-    u16 unk8A;
+    s16 unk8A;
     s16 unk8C;
-    u16 unk8E;
+    s16 unk8E;
     u8 filler90[2];
     u16 unk92;
     void *unk94;
-    u8 filler96[2];
     u16 unk98;
 };
 
@@ -298,8 +309,13 @@ void child_states_obj_orbit_step(void *obj);
 void obj_list_unlink(void *list, void *obj);
 void *obj_init_sprite_offset(void *obj, void *src, s32 dx, s32 dz);
 
+/* Tests a flag bit of a part's flag halfword. */
+static inline u32 part_has_flag(struct GridPart *p, u32 mask)
+{
+    return p->flags6C & mask;
+}
 
-NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_step_motion(struct GridLinesObj *obj, void *region, void *list))
+void grid_lines_obj_step_motion(struct GridLinesObj *obj, void *region, void *list)
 {
     u16 *keys = gUnk_03000374;
     u32 flag;
@@ -307,8 +323,6 @@ NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_s
     u32 angleDelta;
     s32 stepX;
     u32 idx;
-    u32 low;
-    u16 pressed;
     struct ProjObj *proj;
     struct GridPart *childA;
     struct GridPart *childB;
@@ -324,8 +338,8 @@ NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_s
         if ((keys[0] & 0xF0) != 0)
         {
             idx = (keys[0] >> 4) & 0xF;
-            stepX = *(s16 *)((u8 *)gKeyStepTable + (idx << 2));
-            stepY = *(s16 *)((u8 *)(gKeyStepTable + 1) + (idx << 2));
+            stepX = gKeyStepTable[idx << 1];
+            stepY = (gKeyStepTable + 1)[idx << 1];
         }
         if (obj->unk0->ctr6E + obj->unk4->ctr6E > 0)
         {
@@ -353,10 +367,7 @@ NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_s
         {
             flag = 1;
         }
-        pressed = keys[1];
-        low = 0x100;
-        low &= pressed;
-        if (low != 0 && (obj->unk0->flags6C & 1))
+        if ((keys[1] & 0x100) && part_has_flag(obj->unk0, 1))
         {
             proj = obj_init_projectile(heap_alloc2(0x84, 0, gHeapTagProjectile, 0), &obj->unk0->pos18, &obj->pos14, 1);
             list_insert(list, proj);
@@ -364,9 +375,7 @@ NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_s
         }
         else
         {
-            low = 0x200;
-            low &= pressed;
-            if (low != 0 && (obj->unk4->flags6C & 1))
+            if ((keys[1] & 0x200) && part_has_flag(obj->unk4, 1))
             {
                 proj = obj_init_projectile(heap_alloc2(0x84, 0, gHeapTagProjectile, 0), &obj->unk4->pos18, &obj->pos14, 1);
                 list_insert(list, proj);
@@ -394,7 +403,6 @@ NONMATCH("asm/code_08169710/grid_lines_obj_step_motion.s", void grid_lines_obj_s
     obj_script_step(obj->unk4);
     obj_place_pair(obj, flag);
 }
-END_NONMATCH
 
 struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, struct PosXY *dst, u32 mode)
 {
@@ -434,7 +442,7 @@ struct ProjObj *obj_init_projectile(struct ProjObj *obj, struct PosXY *src, stru
 
 ASM_FUNC("asm/code_08169710/obj_line_bounce_step.s", void obj_line_bounce_step(void))
 
-ASM_FUNC("asm/code_08169710/obj_check_contact.s", void obj_check_contact(void))
+ASM_FUNC("asm/code_08169710/obj_check_contact.s", u32 obj_check_contact(struct ProjObj *obj, struct GridPart *target))
 struct ProjObj *obj_init_bullet(struct ProjObj *obj, u32 base, u32 offset, u32 angle, s32 speedA, s32 speedB, s32 extra)
 {
     u8 one = 1;
@@ -472,37 +480,23 @@ struct ProjObj *obj_init_bullet(struct ProjObj *obj, u32 base, u32 offset, u32 a
     return obj;
 }
 
-NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeObj *obj, struct NodeOwner *owner, u32 turn, void *list))
+u32 obj_node_update(struct NodeObj *obj, struct NodeOwner *owner, u32 turn, void *list)
 {
     struct ProjObj *proj;
     struct NodeSprite *sprite;
-    struct VtA *cls;
     void *sub;
-    void *spawned;
-    void *projMem;
     u32 mode;
-    u32 idx;
-    u32 angle;
-    s32 sinV;
-    s32 cosV;
-    s32 dx;
-    s32 dz;
-    s32 slotX;
-    s32 slotZ;
     s32 scale;
-    u16 steps;
-    u16 count;
     u8 zeroFlag = 0;
     u8 oneFlag = 1;
 
-    angle = (turn + obj->unk78) & 0xFF;
-    obj->unk7C = angle;
+    obj->unk7C = (turn + obj->unk78) & 0xFF;
     obj_copy_mode_fields(obj);
     obj_script_step(obj);
     switch (obj->unk8C)
     {
     case 0:
-        if ((u8)obj_is_done(obj) != 0)
+        if (obj_is_done(obj))
         {
             set_slot_value(0x120, -1);
             obj->unk0 = 3;
@@ -513,7 +507,7 @@ NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeO
         }
         else
         {
-            scale = smoothstep_lerp(0x200, 0x100, 0x3C, (s16)obj->unk8E);
+            scale = smoothstep_lerp(0x200, 0x100, 0x3C, obj->unk8E);
             sprite = obj->unk10;
             sprite->unk6 = scale;
             sprite->unk4 = scale;
@@ -539,22 +533,14 @@ NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeO
         {
             obj_list_unlink(list, obj);
             if (obj != 0)
-            {
-                cls = obj->unkC;
-                cls->fn((u8 *)obj + cls->thisOff, 3);
-            }
+                obj->unkC->fn((u8 *)obj + obj->unkC->thisOff, 3);
             return 0;
         }
         if (mode != 3)
-        {
             child_states_obj_orbit_step(obj);
-        }
-        count = obj->unk8E + 1;
-        obj->unk8E = count;
-        if ((s16)count > 29)
+        if (++obj->unk8E > 29)
         {
-            projMem = heap_alloc2(0x84, 0, gHeapTagProjectile, 0);
-            proj = obj_init_projectile(projMem, &obj->pos18, obj->unk94, obj->unk92);
+            proj = obj_init_projectile(heap_alloc2(0x84, 0, gHeapTagProjectile, 0), &obj->pos18, obj->unk94, obj->unk92);
             list_insert(list, proj);
             if (obj->unk98 > 1)
             {
@@ -576,27 +562,18 @@ NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeO
         {
             obj_list_unlink(list, obj);
             if (obj != 0)
-            {
-                cls = obj->unkC;
-                cls->fn((u8 *)obj + cls->thisOff, 3);
-            }
+                obj->unkC->fn((u8 *)obj + obj->unkC->thisOff, 3);
             return 0;
         }
         if (mode != 3)
-        {
             child_states_obj_orbit_step(obj);
-        }
-        if (((struct NodeAttr *)&obj->unk10->unk12)->bit4 != 0)
+        if (obj->unk10->unk12 & 0x10)
         {
             obj->unk88 = rand_scaled(0, 0x80);
             if (obj->unk98 > 1)
-            {
                 obj_load_record(obj->unk10, 0x11, 0, 0, 0);
-            }
             else
-            {
                 obj_load_record(obj->unk10, 5, 0, 0, 0);
-            }
             ((struct NodeAttr *)&obj->unk10->unk12)->bit4 = 1;
             obj->unk8C = 1;
         }
@@ -607,92 +584,50 @@ NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeO
         owner->unk54++;
         owner->unk58++;
         if (obj->unk98 > 1)
-        {
             obj_load_record(obj->unk10, 0x12, 0, 0, 0);
-        }
         else
-        {
             obj_load_record(obj->unk10, 6, 0, 0, 0);
-        }
-        idx = obj->unk7C & 0xFF;
-        sinV = gSineTable[idx];
-        if (sinV < 0)
-        {
-            sinV += 0x3F;
-        }
-        slotX = obj->unk6C + ((((sinV >> 6)) * obj->unk80) << 1);
-        cosV = gCosineTable[idx];
-        if (cosV < 0)
-        {
-            cosV += 0x3F;
-        }
-        slotZ = obj->unk74 + ((((cosV >> 6)) * obj->unk84) << 1);
-        obj_setup_slot(obj, slotX, 0, slotZ, 0x3C, zeroFlag);
+        obj_setup_slot(obj, obj->unk6C + (((gSineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk80) << 1), 0,
+                       obj->unk74 + (((gCosineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk84) << 1), 0x3C, zeroFlag);
         obj->unk8C = 3;
+        obj->unk98++;
         /* fall through */
     case 3:
-        steps = obj->unk8A + 1;
-        obj->unk8A = steps;
-        if ((s16)steps > 59)
+        if (++obj->unk8A > 59)
         {
             obj->unk8E = 0;
             obj_release_sprites(obj);
             obj->unk8C = 7;
-            break;
         }
-        if ((steps & 7) == 1)
+        else if ((obj->unk8A & 7) == 1)
         {
             sub = heap_alloc2(0x6C, 1, gHeapTagRingShotSub, 0);
-            idx = obj->unk7C & 0xFF;
-            sinV = gSineTable[idx];
-            if (sinV < 0)
-            {
-                sinV += 0x3F;
-            }
-            dx = (sinV >> 6) << 3;
-            cosV = gCosineTable[idx];
-            if (cosV < 0)
-            {
-                cosV += 0x3F;
-            }
-            dz = (cosV >> 6) << 3;
-            spawned = obj_init_sprite_offset(sub, &obj->pos18, dx, dz);
-            list_insert(list, spawned);
+            list_insert(list, obj_init_sprite_offset(sub, &obj->pos18, (gSineTable[obj->unk7C & 0xFF] / 0x40) << 3,
+                                                     (gCosineTable[obj->unk7C & 0xFF] / 0x40) << 3));
         }
         break;
     case 6:
-        steps = obj->unk8A + 1;
-        obj->unk8A = steps;
-        if ((s16)steps > 59)
+        if (++obj->unk8A > 59)
         {
             obj_list_unlink(list, obj);
             if (obj != 0)
-            {
-                cls = obj->unkC;
-                cls->fn((u8 *)obj + cls->thisOff, 3);
-            }
+                obj->unkC->fn((u8 *)obj + obj->unkC->thisOff, 3);
             return 0;
         }
-        scale = smoothstep_lerp(0x100, 0x10, 0x3C, (s16)obj->unk8A);
+        scale = smoothstep_lerp(0x100, 0x10, 0x3C, obj->unk8A);
         sprite = obj->unk10;
         sprite->unk6 = scale;
         sprite->unk4 = scale;
         break;
     case 7:
-        mode = owner->unk50;
-        if (mode == 2)
+        if (owner->unk50 == 2)
         {
             obj_list_unlink(list, obj);
             if (obj != 0)
-            {
-                cls = obj->unkC;
-                cls->fn((u8 *)obj + cls->thisOff, 3);
-            }
+                obj->unkC->fn((u8 *)obj + obj->unkC->thisOff, 3);
             return 0;
         }
-        count = obj->unk8E + 1;
-        obj->unk8E = count;
-        if ((s16)count > 119)
+        if (++obj->unk8E > 119)
         {
             obj->unk8A = 0;
             obj->unk8E = 0;
@@ -700,66 +635,33 @@ NONMATCH("asm/code_08169710/obj_node_update.s", u32 obj_node_update(struct NodeO
         }
         break;
     case 8:
-        mode = owner->unk50;
-        if (mode == 2)
+        if (owner->unk50 == 2)
         {
             obj_list_unlink(list, obj);
             if (obj != 0)
-            {
-                cls = obj->unkC;
-                cls->fn((u8 *)obj + cls->thisOff, 3);
-            }
+                obj->unkC->fn((u8 *)obj + obj->unkC->thisOff, 3);
             return 0;
         }
         obj->unk88 = rand_scaled(0, 0x80);
         obj_update_sprites(obj);
         if (obj->unk98 > 1)
-        {
             obj_load_record(obj->unk10, 0x11, 0, 0, 0);
-        }
         else
-        {
             obj_load_record(obj->unk10, 5, 0, 0, 0);
-        }
         ((struct NodeAttr *)&obj->unk10->unk12)->bit4 = 1;
-        idx = obj->unk7C & 0xFF;
-        sinV = gSineTable[idx];
-        if (sinV < 0)
-        {
-            sinV += 0x3F;
-        }
-        slotX = obj->unk6C + ((((sinV >> 6)) * obj->unk80) << 1);
-        cosV = gCosineTable[idx];
-        if (cosV < 0)
-        {
-            cosV += 0x3F;
-        }
-        slotZ = obj->unk74 + ((((cosV >> 6)) * obj->unk84) << 1);
-        obj_set_fields_18(obj, slotX, 0, slotZ);
-        idx = obj->unk7C & 0xFF;
-        sinV = gSineTable[idx];
-        if (sinV < 0)
-        {
-            sinV += 0x3F;
-        }
-        slotX = obj->unk6C + (sinV >> 6) * obj->unk80;
-        cosV = gCosineTable[idx];
-        if (cosV < 0)
-        {
-            cosV += 0x3F;
-        }
-        slotZ = obj->unk74 + (cosV >> 6) * obj->unk84;
-        obj_setup_slot(obj, slotX, 0, slotZ, 0x3C, oneFlag);
+        obj_set_fields_18(obj, obj->unk6C + (((gSineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk80) << 1), 0,
+                          obj->unk74 + (((gCosineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk84) << 1));
+        obj_setup_slot(obj, obj->unk6C + (gSineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk80, 0,
+                       obj->unk74 + (gCosineTable[obj->unk7C & 0xFF] / 0x40) * obj->unk84, 0x3C, oneFlag);
         obj->unk8C = 0;
         break;
-    default:
-        break;
     }
-    obj->unk10->unkC = arc_tan2((s32)((u32)(owner->unk1C - obj->pos18.y) << 8) >> 16,
-                                (s32)((u32)(owner->unk14 - obj->pos18.x) << 8) >> 16);
-    return obj->unk8C == 1;
+    obj->unk10->unkC = arc_tan2((s32)((owner->unk1C - obj->pos18.y) << 8) >> 16,
+                                (s32)((owner->unk14 - obj->pos18.x) << 8) >> 16);
+    if (obj->unk8C == 1)
+        return 1;
+    return 0;
 }
-END_NONMATCH
 
 struct CounterGroup *obj_init_counter(struct CounterGroup *group)
 {
@@ -893,7 +795,7 @@ void obj_destroy_all(struct DestroyObj *obj, u32 freeMem)
     task_remove(obj, freeMem);
 }
 
-NONMATCH("asm/code_08169710/child_states_obj_run_state.s", void child_states_obj_run_state(struct StateObj *obj))
+void child_states_obj_run_state(struct StateObj *obj)
 {
     rand_scaled(0, 2);
     switch (obj->unk474)
@@ -903,7 +805,7 @@ NONMATCH("asm/code_08169710/child_states_obj_run_state.s", void child_states_obj
             u8 *slot = gSys;
             *(s32 *)(slot + 0x884) = -1;
         }
-        set_slot_target(0, 3);
+        set_slot_target(0, 3, -1);
         obj->unk474 = 1;
     case 1:
         if (timer_tick(&obj->unk70))
@@ -952,4 +854,3 @@ NONMATCH("asm/code_08169710/child_states_obj_run_state.s", void child_states_obj
     obj_copy_pos_to_shadow(obj->unk30);
     obj_update_children(obj);
 }
-END_NONMATCH
