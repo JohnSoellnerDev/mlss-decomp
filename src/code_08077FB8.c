@@ -212,15 +212,6 @@ static inline struct SpriteNode *alloc_node_at(struct ActorObj *obj)
     return sprite_node_alloc(obj->posX, obj->posY, obj->posH);
 }
 
-static inline struct ActorObj *spawn_pair_child(struct ActorObj *obj, u32 type, s32 dx, s32 dy, s32 dh)
-{
-    s32 x = obj->posX / 0x100 + dx;
-    s32 y = obj->posY / 0x100 + dy;
-    s32 h = obj->posH / 0x100 + dh;
-    u32 bit = pose_bit6(obj);
-    return obj_spawn(obj->part, type, x, y, h, bit, 1);
-}
-
 static inline void set_own_tables(struct ActorPart *a, struct ActorPart *b)
 {
     gUnk_03000EB0[0] = a->targetX;
@@ -352,20 +343,39 @@ void countdown_phase_then_wait(struct ActorObj *obj)
     }
 }
 
+struct Bf8_1_2
+{
+    u8 lo : 1;
+    u8 f : 2;
+    u8 hi : 5;
+};
+
+struct Bf8_0_1
+{
+    u8 f : 1;
+    u8 hi : 7;
+};
+
 NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_pair_link(struct ActorObj *obj))
 {
+    s32 stepB = 0x4025;
+    s32 chunk = 4;
     struct ActorObj *childA;
     struct ActorObj *childB;
     struct ActorObj *childC;
     struct ActorObj *childD;
     struct ActorObj *actorA;
     struct ActorObj *actorB;
+    struct ActorPart *part;
     struct ActorPart *partA;
     struct ActorPart *partB;
     struct SpriteNode *sprite;
     struct SpriteNode *node;
     struct SpriteNode *prev;
     struct Low5Byte *counter;
+    s32 *modeAddr;
+    s32 *aYAddr;
+    s32 *bYAddr;
     s32 x0;
     s32 y0;
     s32 edgeDx;
@@ -374,6 +384,23 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
     s32 mode;
     s32 count;
     u32 old;
+    u32 type;
+    s32 xA;
+    s32 yA;
+    s32 hA;
+    u32 bitA;
+    s32 xB;
+    s32 yB;
+    s32 hB;
+    u32 bitB;
+    s32 xC;
+    s32 yC;
+    s32 hC;
+    u32 bitC;
+    s32 xD;
+    s32 yD;
+    s32 hD;
+    u32 bitD;
 
     obj->phase--;
     if (obj->phase <= 0)
@@ -388,13 +415,24 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
         set_slot_value(0x10B, -1);
         place_effect_at_base(obj, 0x29CA);
 
-        childA = spawn_pair_child(obj, 0x4026, -0x1A, 4, 0x57);
-        childB = spawn_pair_child(obj, 0x4026, -0xE, 5, 0x5A);
+        part = obj->part;
+        type = 0x4026;
+        xA = obj->posX / 0x100 - 0x1A;
+        yA = obj->posY / 0x100 + chunk;
+        hA = obj->posH / 0x100 + 0x57;
+        bitA = pose_bit6(obj);
+        childA = obj_spawn(part, type, xA, yA, hA, bitA, 1);
+        part = obj->part;
+        xB = obj->posX / 0x100 - 0xE;
+        yB = obj->posY / 0x100 + 5;
+        hB = obj->posH / 0x100 + 0x5A;
+        bitB = pose_bit6(obj);
+        childB = obj_spawn(part, type, xB, yB, hB, bitB, 1);
         obj->child = childA;
         childA->child = childB;
-        childA->flags |= 1;
+        ((struct Bf8_0_1 *)&childA->flags)->f = 1;
         childA->unk74 = 0;
-        childB->flags |= 1;
+        ((struct Bf8_0_1 *)&childB->flags)->f = 1;
         childB->unk74 = 0;
         childA->state = remove_if_no_child;
         childB->state = remove_if_no_child;
@@ -404,12 +442,15 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
         x0 = obj->posX - 0x1A00;
         y0 = obj->posY + 0x500;
         partA = actorA->part;
+        aYAddr = &partA->targetY;
         edgeDx = -0x1000 - x0;
-        edgeA = (edgeDx * (partA->targetY - y0)) / (partA->targetX - x0) + y0;
+        edgeA = (edgeDx * (*aYAddr - y0)) / (partA->targetX - x0) + y0;
         partB = actorB->part;
-        edgeB = (edgeDx * (partB->targetY - y0)) / (partB->targetX - x0) + y0;
+        bYAddr = &partB->targetY;
+        edgeB = (edgeDx * (*bYAddr - y0)) / (partB->targetX - x0) + y0;
 
-        mode = obj->param9C;
+        modeAddr = &obj->param9C;
+        mode = *modeAddr;
         switch (mode)
         {
         case 0:
@@ -417,12 +458,12 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
             gUnk_03000EB8[0] = edgeA;
             gUnk_03000EC0[0] = 0x800;
             gUnk_03000EB0[1] = partB->targetX;
-            gUnk_03000EB8[1] = partB->targetY;
+            gUnk_03000EB8[1] = *bYAddr;
             gUnk_03000EC0[1] = partB->targetH;
             break;
         case 1:
             gUnk_03000EB0[0] = partA->targetX;
-            gUnk_03000EB8[0] = partA->targetY;
+            gUnk_03000EB8[0] = *aYAddr;
             gUnk_03000EC0[0] = partA->targetH;
             gUnk_03000EB0[1] = -0x1000;
             gUnk_03000EB8[1] = edgeB;
@@ -441,15 +482,20 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
             break;
         }
 
-        childC = spawn_pair_child(obj, 0x4025, -0x1A, 5, 0x57);
+        part = obj->part;
+        xC = obj->posX / 0x100 - 0x1A;
+        yC = obj->posY / 0x100 + 5;
+        hC = obj->posH / 0x100 + 0x57;
+        bitC = pose_bit6(obj);
+        childC = obj_spawn(part, stepB, xC, yC, hC, bitC, 1);
         childB->child = childC;
         childC->phase = 0;
-        childC->flags |= 1;
+        ((struct Bf8_0_1 *)&childC->flags)->f = 1;
         childC->targetX = childC->baseX;
         childC->targetY = childC->baseY;
         childC->targetH = childC->baseH;
         childC->unk74 = 0;
-        childC->unk76 |= 6;
+        ((struct Bf8_1_2 *)&childC->unk76)->f = 3;
         childC->owner = obj->owner;
         sprite = sprite_node_take();
         link_sprite(childC, sprite);
@@ -481,22 +527,27 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
             node = alloc_node_at(childC);
             prev->next = node;
             prev = node;
-            count -= 4;
+            count -= chunk;
         } while (count >= 0);
         prev->next = NULL;
         childC->param9C = 0;
-        childC->paramA0 = obj->param9C;
+        childC->paramA0 = *modeAddr;
         childC->state = spawn_child_4025_adopt;
 
-        childD = spawn_pair_child(obj, 0x4025, -0xE, 6, 0x5A);
+        part = obj->part;
+        xD = obj->posX / 0x100 - 0xE;
+        yD = obj->posY / 0x100 + 6;
+        hD = obj->posH / 0x100 + 0x5A;
+        bitD = pose_bit6(obj);
+        childD = obj_spawn(part, stepB, xD, yD, hD, bitD, 1);
         childC->child = childD;
         childD->phase = 0;
-        childD->flags |= 1;
+        ((struct Bf8_0_1 *)&childD->flags)->f = 1;
         childD->targetX = childD->baseX;
         childD->targetY = childD->baseY;
         childD->targetH = childD->baseH;
         childD->unk74 = 0;
-        childD->unk76 |= 6;
+        ((struct Bf8_1_2 *)&childD->unk76)->f = 3;
         childD->owner = obj->owner;
         sprite = sprite_node_take();
         link_sprite(childD, sprite);
@@ -528,11 +579,11 @@ NONMATCH("asm/code_08077FB8/countdown_spawn_pair_link.s", void countdown_spawn_p
             node = alloc_node_at(childD);
             prev->next = node;
             prev = node;
-            count -= 4;
+            count -= chunk;
         } while (count >= 0);
         prev->next = NULL;
         childD->param9C = 1;
-        childD->paramA0 = obj->param9C;
+        childD->paramA0 = *modeAddr;
         childD->state = spawn_child_4025_adopt;
 
         gUnk_03000EC8[1] = 0;
