@@ -158,31 +158,49 @@ void obj_set_sprite_link(void *ent, u32 zero);
 void obj_load_record(void *rec, u32 a, s32 b, u32 c, u32 d);
 void obj_update_flags_from_child(void *ent);
 
+struct Bits8
+{
+    u8 b0 : 1;
+    u8 b1 : 1;
+    u8 b2 : 1;
+    u8 b3 : 1;
+    u8 b4 : 1;
+    u8 b5 : 1;
+    u8 b6 : 1;
+    u8 b7 : 1;
+} __attribute__((packed));
+
+struct Word22C
+{
+    u32 lo : 10;
+    u32 id : 12;
+    u32 hi : 10;
+};
+
 struct SceneItem
 {
     u8 filler0[0x54];
     u8 index54;
     u8 filler55[0x20C - 0x55];
-    u8 flags20C;
+    struct Bits8 bits20C;
     u8 filler20D[0x20F - 0x20D];
-    u8 flags20F;
-    u8 flags210;
+    struct Bits8 bits20F;
+    struct Bits8 bits210;
     u8 filler211[0x22C - 0x211];
-    u32 w22C;
+    struct Word22C bits22C;
     u8 filler230[0x239 - 0x230];
     u8 mode239;
     u8 filler23A[0x344 - 0x23A];
     struct SceneItem *child;
     u8 filler348[0x352 - 0x348];
-    u8 flags352;
+    struct Bits8 bits352;
     u8 filler353[0x368 - 0x353];
     u32 ptr368;
 };
 
-struct KindPair
+struct SceneSlot
 {
-    u8 first;
-    u8 count;
+    u8 data[0x18];
 };
 
 struct SceneObj
@@ -195,11 +213,26 @@ struct SceneObj
     u8 filler0FC[0x10B - 0xFC];
     u8 entryCount;
     u8 filler10C[0x10E - 0x10C];
-    struct KindPair kinds[7];
+    u8 first1;
+    u8 count1;
+    u8 first2;
+    u8 count2;
+    u8 first3;
+    u8 count3;
+    u8 first4;
+    u8 count4;
+    u8 first5;
+    u8 count5;
+    u8 first6;
+    u8 count6;
+    u8 first7;
+    u8 count7;
     u8 hint11C;
-    u8 sumB;
+    u8 sum11D;
     u8 filler11E[0x208 - 0x11E];
     u8 flags208;
+    u8 filler209[0x20C - 0x209];
+    struct SceneSlot slots20C[0x20];
 };
 
 extern u8 *gUnk_03000FC0;
@@ -821,161 +854,118 @@ void obj_load_resources(struct Obj *obj, u16 id)
 
 ASM_FUNC("asm/code_08025650/sprites_obj_setup_sprites.s", void sprites_obj_setup_sprites(void))
 
-NONMATCH("asm/code_08025650/build_scene_children.s", void build_scene_children(struct SceneObj *obj, u32 def))
+void build_scene_children(struct SceneObj *obj, u32 def)
 {
-    u32 i;
+    s32 i;
+    s32 j;
     u8 kind;
     u32 hint;
-    u32 baseIndex;
-    u32 *base;
     struct SceneItem *item;
-    void *rec;
 
-    bank_byte1_high((u16)def, &obj->entryCount);
-    obj->kinds[0].first = 0;
-    obj->kinds[0].count = 0;
-    obj->kinds[2].first = 0;
-    obj->kinds[2].count = 0;
-    obj->kinds[6].first = 0;
-    obj->kinds[6].count = 0;
-    obj->kinds[4].first = 0;
-    obj->kinds[4].count = 0;
-    obj->kinds[3].first = 0;
-    obj->kinds[3].count = 0;
-    obj->kinds[5].first = 0;
-    obj->kinds[5].count = 0;
-    obj->kinds[1].first = 0;
-    obj->kinds[1].count = 0;
+    bank_byte1_high(def, &obj->entryCount);
+    obj->first1 = 0;
+    obj->count1 = 0;
+    obj->first3 = 0;
+    obj->count3 = 0;
+    obj->first7 = 0;
+    obj->count7 = 0;
+    obj->first5 = 0;
+    obj->count5 = 0;
+    obj->first4 = 0;
+    obj->count4 = 0;
+    obj->first6 = 0;
+    obj->count6 = 0;
+    obj->first2 = 0;
+    obj->count2 = 0;
 
-    i = 0;
-    if ((s32)i < obj->entryCount)
+    for (i = 0; i < obj->entryCount; i++)
     {
-        do
+        kind = object_def_mode(def, i);
+        switch (kind)
         {
-            kind = object_def_mode((u16)def, (u8)i);
-            if (kind <= 7)
-            {
-                switch (kind)
-                {
-                case 0:
-                    rec = heap_alloc2(0x38C, 1, gHeapTagItemKind0, 1);
-                    item = obj_init_defaults(rec, def, i);
-                    if ((obj->flagsFB & 4) != 0)
-                    {
-                        obj_set_motion_params(item, 0x100, 0x100, 0xD2, 0xD);
-                    }
-                    else
-                    {
-                        obj_set_motion_params(item, 0x200, 0x200, 0x52C, 0x75);
-                    }
-                    item->ptr368 = (u32)obj + (((i * 3) << 3) + 0x20C);
-                    obj->entries[i] = item;
-                    break;
-                case 1:
-                    rec = heap_alloc2(0x33C, 1, gHeapTagItemKind1, 1);
-                    item = obj_init(rec, def, i);
-                    obj->entries[i] = item;
-                    if (obj->kinds[0].first == 0)
-                        obj->kinds[0].first = i;
-                    obj->kinds[0].count++;
-                    break;
-                case 2:
-                    rec = heap_alloc2(0x33C, 1, gHeapTagItemKind2, 1);
-                    item = obj_init(rec, def, i);
-                    obj->entries[i] = item;
-                    if (obj->kinds[1].first == 0)
-                        obj->kinds[1].first = i;
-                    obj->kinds[1].count++;
-                    break;
-                case 3:
-                    rec = heap_alloc2(0x348, 1, gSceneObjKind3Tag, 1);
-                    item = obj_init_with_child(rec, def, i);
-                    obj->entries[i] = item;
-                    if (item->child != 0)
-                        item->child->index54 = i;
-                    if (obj->kinds[2].first == 0)
-                        obj->kinds[2].first = i;
-                    obj->kinds[2].count++;
-                    break;
-                case 4:
-                    rec = heap_alloc2(0x33C, 1, gSceneObjKind4Tag, 1);
-                    item = obj_init(rec, def, i);
-                    obj->entries[i] = item;
-                    if (obj->kinds[3].first == 0)
-                        obj->kinds[3].first = i;
-                    obj->kinds[3].count++;
-                    break;
-                case 5:
-                    rec = heap_alloc2(0x33C, 1, gSceneObjKind5Tag, 1);
-                    item = obj_init(rec, def, i);
-                    if (test_flag(gUnk_03000FC0 + 0x38C, 0, (((u32)item->w22C << 10) >> 20) + 0x1160) == 1)
-                    {
-                        item->flags20C &= -2;
-                        item->flags20F &= -3;
-                    }
-                    item->flags210 |= 0x20;
-                    obj->entries[i] = item;
-                    if (obj->kinds[4].first == 0)
-                        obj->kinds[4].first = i;
-                    obj->kinds[4].count++;
-                    break;
-                case 6:
-                    rec = heap_alloc2(0x33C, 1, gSceneObjKind6Tag, 1);
-                    item = obj_init_flags(rec, def, i);
-                    obj->entries[i] = item;
-                    if (obj->kinds[5].first == 0)
-                        obj->kinds[5].first = i;
-                    obj->kinds[5].count++;
-                    break;
-                case 7:
-                    rec = heap_alloc2(0x350, 1, gSceneObjKind7Tag, 1);
-                    item = obj_init_state(rec, def, i);
-                    obj->entries[i] = item;
-                    if (obj->kinds[6].first == 0)
-                        obj->kinds[6].first = i;
-                    obj->kinds[6].count++;
-                    break;
-                }
-            }
+        case 0:
+            item = obj_init_defaults(heap_alloc2(0x38C, 1, gHeapTagItemKind0, 1), def, i);
+            if (obj->flagsFB & 4)
+                obj_set_motion_params(item, 0x100, 0x100, 0xD2, 0xD);
             else
+                obj_set_motion_params(item, 0x200, 0x200, 0x52C, 0x75);
+            item->ptr368 = (u32)&obj->slots20C[i];
+            obj->entries[i] = item;
+            break;
+        case 1:
+            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind1, 1), def, i);
+            if (obj->first1 == 0)
+                obj->first1 = i;
+            obj->count1++;
+            break;
+        case 2:
+            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind2, 1), def, i);
+            if (obj->first2 == 0)
+                obj->first2 = i;
+            obj->count2++;
+            break;
+        case 3:
+            obj->entries[i] = obj_init_with_child(heap_alloc2(0x348, 1, gSceneObjKind3Tag, 1), def, i);
+            if (obj->entries[i]->child != 0)
+                obj->entries[i]->child->index54 = i;
+            if (obj->first3 == 0)
+                obj->first3 = i;
+            obj->count3++;
+            break;
+        case 4:
+            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind4Tag, 1), def, i);
+            if (obj->first4 == 0)
+                obj->first4 = i;
+            obj->count4++;
+            break;
+        case 5:
+            item = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind5Tag, 1), def, i);
+            if (test_flag(gUnk_03000FC0 + 0x38C, 0, item->bits22C.id + 0x1160) == 1)
             {
-                obj->entries[i] = 0;
+                item->bits20C.b0 = 0;
+                item->bits20F.b1 = 0;
             }
-            item = obj->entries[i];
-            item->flags210 = (item->flags210 & -17) | ((((u32)item->flags20C << 26) >> 31) << 4);
-            item = obj->entries[i];
-            item->mode239 = 0x10 >> ((((u32)obj->flagsFB << 29) >> 31));
-            item = obj->entries[i];
-            item->index54 = i;
-            i++;
-        } while ((s32)i < obj->entryCount);
+            item->bits210.b5 = 1;
+            obj->entries[i] = item;
+            if (obj->first5 == 0)
+                obj->first5 = i;
+            obj->count5++;
+            break;
+        case 6:
+            obj->entries[i] = obj_init_flags(heap_alloc2(0x33C, 1, gSceneObjKind6Tag, 1), def, i);
+            if (obj->first6 == 0)
+                obj->first6 = i;
+            obj->count6++;
+            break;
+        case 7:
+            obj->entries[i] = obj_init_state(heap_alloc2(0x350, 1, gSceneObjKind7Tag, 1), def, i);
+            if (obj->first7 == 0)
+                obj->first7 = i;
+            obj->count7++;
+            break;
+        default:
+            obj->entries[i] = 0;
+            break;
+        }
+        obj->entries[i]->bits210.b4 = obj->entries[i]->bits20C.b5;
+        obj->entries[i]->mode239 = 0x10 >> ((struct Bits8 *)&obj->flagsFB)->b2;
+        obj->entries[i]->index54 = i;
     }
 
-    item = obj->entries[(obj->flags208 & 4) >> 2];
-    item->flags352 |= 0x80;
-    hint = obj->kinds[0].first;
+    obj->entries[((struct Bits8 *)&obj->flags208)->b2]->bits352.b7 = 1;
+    hint = obj->first1;
     if (hint == 0)
     {
-        hint = obj->kinds[1].first;
+        hint = obj->first2;
         if (hint == 0)
-            hint = obj->kinds[2].first;
+            hint = obj->first3;
     }
     obj->hint11C = hint;
-    obj->sumB = obj->kinds[2].count + (obj->kinds[1].count + obj->kinds[0].count);
+    obj->sum11D = obj->count1 + obj->count2 + obj->count3;
 
-    baseIndex = 0;
-    base = obj->slotsA8;
-    do
-    {
-        base[0] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex);
-        base[1] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 1);
-        base[2] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 2);
-        base[3] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), baseIndex + 3);
-        base += 4;
-        baseIndex += 4;
-    } while ((s32)baseIndex <= 7);
+    for (j = 0; j < 8; j++)
+        obj->slotsA8[j] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), j);
 }
-END_NONMATCH
 
 
 ASM_FUNC("asm/code_08025650/build_object_table.s", void build_object_table(void))
