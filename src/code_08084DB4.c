@@ -860,9 +860,9 @@ NONMATCH("asm/code_08084DB4/unknown_code_0808645c.s", u32 unknown_code_0808645c(
         o->posY = o->baseY - ((s16)o->velY * tm) / 0x1000;
         if (o->phase != 0)
         {
+            bh = o->baseH;
             inv = 0x4000 - tm;
             u = o->unk98;
-            bh = o->baseH;
             if (u < 0)
             {
                 a = (o->phase * (0x4000 - inv)) / 0x4000 - u;
