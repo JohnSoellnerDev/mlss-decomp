@@ -875,7 +875,7 @@ void obj_zoom_tilt5_42d8(struct Point1Obj *obj)
     *words = vel;
 }
 
-ASM_FUNC("asm/code_08173678/obj_zoom_spin5_44b8.s", void obj_zoom_spin5_44b8(void))
+ASM_FUNC("asm/code_08173678/obj_zoom_spin5_44b8.s", void obj_zoom_spin5_44b8(struct Point1Obj *obj))
 
 ASM_FUNC("asm/code_08173678/obj_zoom_spin5_4794.s", void obj_zoom_spin5_4794(void))
 
