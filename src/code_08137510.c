@@ -330,9 +330,9 @@ struct TaskObj *obj_callback_18_task_insert(struct TaskObj *obj, u8 kind, const 
     return obj;
 }
 
-NONMATCH("asm/code_08137510/fade_end.s", void fade_end(struct Fade *obj))
+void fade_end(struct Fade *obj)
 {
-    u16 *p;
+    register vu16 *p asm("r1");
 
     p = gUnk_02000050;
     *p = obj->unk2C;
@@ -349,7 +349,6 @@ NONMATCH("asm/code_08137510/fade_end.s", void fade_end(struct Fade *obj))
         task_remove(obj, 3);
     }
 }
-END_NONMATCH
 
 void obj_callback_18_remove_de60(struct TaskObj *obj, u32 task)
 {
@@ -357,10 +356,10 @@ void obj_callback_18_remove_de60(struct TaskObj *obj, u32 task)
     task_remove(obj, task);
 }
 
-NONMATCH("asm/code_08137510/fade_start.s", struct Fade *fade_start(struct Fade *obj, u8 kind))
+struct Fade *fade_start(struct Fade *obj, u8 kind)
 {
     struct TaskObj *t;
-    vu16 *p;
+    register vu16 *p asm("r1");
 
     task_insert(obj, kind);
     obj->cb18 = gFadeClass;
@@ -380,7 +379,6 @@ NONMATCH("asm/code_08137510/fade_start.s", struct Fade *fade_start(struct Fade *
     *p = 0x1140;
     return obj;
 }
-END_NONMATCH
 
 s8 get_s8_28(u8 *obj)
 {
