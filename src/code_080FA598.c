@@ -246,7 +246,7 @@ NONMATCH("asm/code_080FA598/cmd_slot_op.s", u32 cmd_slot_op(struct Owner *owner,
     {
         u8 *obj = owner->list->slots[index].obj;
         u8 *src = owner->list->slots[*data].obj;
-        u16 e = *(u16 *)(src + 0xE);
+        u32 e = *(u16 *)(src + 0xE);
 
         if (e != 0)
             *(u16 *)(obj + 0xE) = e - 1;
@@ -269,10 +269,9 @@ NONMATCH("asm/code_080FA598/cmd_slot_op.s", u32 cmd_slot_op(struct Owner *owner,
     {
         u8 *obj = owner->list->slots[index].obj;
         u32 value = *data & 3;
-        u32 shifted = value << 2;
         s32 bits = obj[0x1F];
 
-        bits = (bits & ~0xC) | shifted;
+        bits = (bits & ~0xC) | (value << 2);
         bits = (bits & ~3) | value;
         obj[0x1F] = bits;
         break;
