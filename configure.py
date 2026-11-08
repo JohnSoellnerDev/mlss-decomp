@@ -28,8 +28,15 @@ from unitbuild import ASM_INPUTS, expected_source, generate_asm  # noqa: E402
 
 ROM_START, ROM_SIZE = 0x08000000, 0x01000000
 AGBCC_FLAGS = "-mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm"
-# .bss of units built from library sources (the static NaN of dp-bit.c / fp-bit.c): fixed address
-FIXED_BSS = {"lib_081DBE20": 0x03001A20, "lib_081DCBBC": 0x03001A38}
+# Data sections of units built from library sources, at their original addresses (NOLOAD: the
+# bytes, where there are any, come with the ROM data around them)
+FIXED_SECTIONS = {
+    "lib_081DBE20": [(".bss", 0x03001A20)],     # dp-bit.c: static NaN
+    "lib_081DCBBC": [(".bss", 0x03001A38)],     # fp-bit.c: static NaN
+    "lib_081DD8F0": [(".data", 0x08CDD004)],    # mallocr.c: __malloc_av_ and the malloc state
+    "lib_081DDEC8": [("COMMON", 0x03001BD4)],   # sbrkr.c: errno
+    "lib_081DDF50": [(".bss", 0x03001A68), (".rodata", 0x0821ECC0)],  # syscalls.c
+}
 CATEGORIES = [("game", "Game"), ("sound", "Sound engine"), ("lib", "Library")]
 
 
@@ -77,12 +84,15 @@ def main():
     def link_script(objs):
         out = ["OUTPUT_ARCH(arm)", "SECTIONS", "{", f"\t. = 0x{ROM_START:08X};", "\t.rom :", "\t{"]
         for o in objs:
-            out.append(f"\t\t{o}(.text .text.* .rodata .rodata.* .data)")
+            unit = os.path.basename(o)[:-2]
+            fixed = {s for s, _ in FIXED_SECTIONS.get(unit, [])}
+            out.append(f"\t\t{o}(" + " ".join(s for s in (".text", ".text.*", ".rodata", ".rodata.*", ".data")
+                                            if s not in fixed) + ")")
         out.append("\t}")
         for o in objs:  # static variables of library sources, at their original addresses
             unit = os.path.basename(o)[:-2]
-            if unit in FIXED_BSS:
-                out.append(f"\t.bss.{unit} 0x{FIXED_BSS[unit]:08X} (NOLOAD) : {{ {o}(.bss) }}")
+            for sec, addr in FIXED_SECTIONS.get(unit, []):
+                out.append(f"\t{sec.lower()}.{unit} 0x{addr:08X} (NOLOAD) : {{ {o}({sec}) }}")
         out += ["\t/DISCARD/ : { *(.comment) *(.note.*) }", "}", ""]
         for a, s in sorted(syms.items()):
             if s.is_func and in_code(a):
@@ -118,7 +128,7 @@ def main():
           "  depfile = $out.d", "  deps = gcc", "  description = as $in", "",
           "rule cc", "  command = $PYTHON tools/agbcc.py $flags -o $out $in",
           "  depfile = $out.d", "  deps = gcc", "  description = cc $in $flags", "",
-          "rule link", "  command = $LD -T $script -Map $map -o $out", "  description = link $out", "",
+          "rule link", "  command = $LD --no-check-sections -T $script -Map $map -o $out", "  description = link $out", "",
           "rule objcopy", "  command = $OBJCOPY -O binary $in $out", "  description = objcopy $out", "",
           "rule check", "  command = $PYTHON tools/check_rom.py $in && touch $out",
           "  description = check $in", "",

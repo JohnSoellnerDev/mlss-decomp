@@ -7,7 +7,7 @@ extern u8 gUnk_02000480[];
 extern u8 gUnk_03000374[];
 extern u8 gUnk_02000C80[];
 extern u8 gUnk_02000C8C[];
-extern u8 gUnk_03001BD8[];
+extern u8 end[];
 extern const u16 gKeyRepeatMaskPairs[];
 extern const u8 gHeapTags[];
 extern const u32 gRomBootWords[];
@@ -614,7 +614,7 @@ NONMATCH("asm/code_08017A00/heap_alloc_raw.s", void *heap_alloc_raw(u32 pool, u3
     if (pool != 0)
         cur = (struct HeapBlock *)gUnk_02000C80;
     else
-        cur = (struct HeapBlock *)gUnk_03001BD8;
+        cur = (struct HeapBlock *)end;
     size = (size + 3) & ~3;
     needed = size + 0x10;
     do

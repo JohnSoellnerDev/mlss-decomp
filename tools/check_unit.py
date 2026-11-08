@@ -37,7 +37,7 @@ def main(name):
         with open(os.path.join(tmp, "ld.ld"), "w") as f:
             f.write(text.replace(key, obj + "("))
         elf, rom = os.path.join(tmp, "unit.elf"), os.path.join(tmp, "unit.gba")
-        run([binutil("ld"), "-T", os.path.join(tmp, "ld.ld"), "-o", elf])
+        run([binutil("ld"), "--no-check-sections", "-T", os.path.join(tmp, "ld.ld"), "-o", elf])  # library data sits at fixed addresses inside the ROM area
         run([binutil("objcopy"), "-O", "binary", elf, rom])
         data = open(rom, "rb").read()
         nm = subprocess.run([binutil("nm"), obj], capture_output=True, text=True).stdout

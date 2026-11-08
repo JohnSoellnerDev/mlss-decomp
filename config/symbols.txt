@@ -191,15 +191,15 @@
 03001A58 gUnk_03001A58 ram
 03001A60 gUnk_03001A60 ram
 03001A68 gUnk_03001A68 ram
-03001A6C gUnk_03001A6C ram
-03001A70 gUnk_03001A70 ram
-03001A74 gUnk_03001A74 ram
-03001A78 gUnk_03001A78 ram
+03001A6C monitor_stdin ram
+03001A70 monitor_stdout ram
+03001A74 monitor_stderr ram
+03001A78 openfiles ram
 03001B50 gUnk_03001B50 ram
 03001B5A gUnk_03001B5A ram
 03001BD0 gUnk_03001BD0 ram
-03001BD4 gUnk_03001BD4 ram
-03001BD8 gUnk_03001BD8 ram
+03001BD4 errno ram
+03001BD8 end ram
 03001BE8 sub_03001be8_6 ram
 03002034 sub_03002034_0 ram
 030023D8 sub_030023d8_3 ram
@@ -7600,47 +7600,47 @@
 081DD7E4 __lshrdi3 thumb
 081DD818 __muldi3 thumb
 081DD888 __negdi2 thumb
-081DD8A0 sub_081DD8A0 thumb
-081DD8C0 stub_return_1_081DD8C0 thumb
-081DD8C4 sub_081DD8C4 thumb
-081DD8C8 pool_alloc thumb
-081DD8DC pool_free thumb
-081DD8F0 pool_grow thumb
-081DDA4C pool_alloc_core thumb
+081DD8A0 abort thumb
+081DD8C0 isatty thumb
+081DD8C4 alarm thumb
+081DD8C8 malloc thumb
+081DD8DC free thumb
+081DD8F0 malloc_extend_top thumb
+081DDA4C _malloc_r thumb
 081DDE0C mem_copy_fast thumb
-081DDE6C mem_fill_bytes thumb
-081DDEC0 stub_nop_2_081DDEBE thumb
-081DDEC4 sub_081DDEC4 thumb
-081DDEC8 ram_bump_alloc_out thumb
-081DDEF4 strcmp_words thumb
-081DDF50 semihost_slot_find thumb
-081DDF70 semihost_handle thumb
-081DDFBC semihost_console_init thumb
-081DE02C semihost_errno thumb
-081DE040 semihost_errno_store thumb
-081DE054 semihost_check_result thumb
-081DE06C semihost_read thumb
-081DE090 semihost_read_tracked thumb
-081DE0D8 semihost_seek thumb
-081DE15C sub_081DE15C thumb
-081DE168 semihost_write thumb
-081DE18C fd_write thumb
-081DE1D8 semihost_open thumb
-081DE278 sub_081DE278 thumb
-081DE28C semihost_close thumb
-081DE2C0 sub_081DE2C0 thumb
-081DE2CC sub_081DE2CC thumb
-081DE2EC sub_081DE2EC thumb
-081DE30C sub_081DE30C thumb
-081DE310 sbrk thumb
-081DE34C sub_081DE34C thumb
-081DE358 sub_081DE358 thumb
-081DE360 sub_081DE360 thumb
-081DE364 gettimeofday_semihost thumb
-081DE390 times_semihost thumb
-081DE3B4 pool_head_get thumb
-081DE3C0 pool_free_core thumb
-081DE580 heap_trim_top thumb
+081DDE6C memset thumb
+081DDEC0 __malloc_lock thumb
+081DDEC4 __malloc_unlock thumb
+081DDEC8 _sbrk_r thumb
+081DDEF4 strcmp thumb
+081DDF50 findslot thumb
+081DDF70 remap_handle thumb
+081DDFBC initialise_monitor_handles thumb
+081DE02C get_errno thumb
+081DE040 error thumb
+081DE054 wrap thumb
+081DE06C _swiread thumb
+081DE090 _read thumb
+081DE0D8 _swilseek thumb
+081DE15C _lseek thumb
+081DE168 _swiwrite thumb
+081DE18C _write thumb
+081DE1D8 _swiopen thumb
+081DE278 _open thumb
+081DE28C _swiclose thumb
+081DE2C0 _close thumb
+081DE2CC _exit thumb
+081DE2EC _kill thumb
+081DE30C _getpid thumb
+081DE310 _sbrk thumb
+081DE34C _fstat thumb
+081DE358 _unlink thumb
+081DE360 _raise thumb
+081DE364 _gettimeofday thumb
+081DE390 _times thumb
+081DE3B4 __errno thumb
+081DE3C0 _free_r thumb
+081DE580 _malloc_trim_r thumb
 081DE640 strlen thumb
 081DE684 sub_081DE684 thumb
 081DE6A8 sub_081DE6A8 thumb
@@ -16837,15 +16837,15 @@
 08CDB6F8 gSample235Prog106Sfx data size=1904
 08CDCFFC gLazyStubSlot data size=4
 08CDD000 gIwram1a48GetterSlot data size=4
-08CDD004 gUnk_08CDD004 data
+08CDD004 __malloc_av_ data
 08CDD00C gPairLinkTable data size=400
-08CDD40C gUnk_08CDD40C data size=4
-08CDD410 gUnk_08CDD410 data
-08CDD414 gUnk_08CDD414 data size=4
-08CDD418 gUnk_08CDD418 data
-08CDD41C gUnk_08CDD41C data
-08CDD420 gUnk_08CDD420 data size=314
-08CDD734 gHeapDescPtr data size=4
+08CDD40C __malloc_trim_threshold data size=4
+08CDD410 __malloc_top_pad data
+08CDD414 __malloc_sbrk_base data size=4
+08CDD418 __malloc_max_sbrked_mem data
+08CDD41C __malloc_max_total_mem data
+08CDD420 __malloc_current_mallinfo data size=314
+08CDD734 _impure_ptr data size=4
 08CDD738 gDefaultTaskDesc data size=10
 08CDD748 gObjHandler data size=10
 08CDD758 gClassD758 data size=10
