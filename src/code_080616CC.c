@@ -724,7 +724,7 @@ void obj_spawn_child_sprite(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080616CC/obj_spawn_child_glide.s", void obj_spawn_child_glide(struct ActorObj *obj))
+void obj_spawn_child_glide(struct ActorObj *obj)
 {
     struct ActorObj *child;
     s32 dx8;
@@ -762,13 +762,8 @@ NONMATCH("asm/code_080616CC/obj_spawn_child_glide.s", void obj_spawn_child_glide
         dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx8 * dx8 + dy7 * dy7);
         if (dist <= 0x2FFF)
         {
-            biased = dist;
-            if (dist < 0)
-            {
-                biased += 0x7F;
-            }
-            pathLen = biased >> 7;
-            t = (((s32)(pathLen + ((u32)biased >> 31))) >> 1) - 5;
+            pathLen = dist / 0x80;
+            t = pathLen / 2 - 5;
             frames = 0x1E00 / (t * t);
             child->targetH = 0x1E;
         }
@@ -798,7 +793,6 @@ NONMATCH("asm/code_080616CC/obj_spawn_child_glide.s", void obj_spawn_child_glide
         set_slot_value(0x57, -1);
     }
 }
-END_NONMATCH
 
 void obj_spawn_child_when_none(struct ActorObj *obj)
 {
