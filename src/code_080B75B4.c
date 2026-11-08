@@ -360,31 +360,27 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
     struct HeroBody *b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
     void (*next)(struct HeroBody *);
-    s32 rate;
-    s32 start;
-    s32 mid;
-    s32 end;
-    s32 limit;
-    s32 winEnd;
-    s32 endC;
-    s32 m;
-
+    s32 rate, start, mid, end;
+    u16 *timerp = &*timerp;
+    s16 *progp = &b->progress;
+    s32 cap;
+    s32 far;
+    cap = 0x4000;
+    far = 0x7FFF;
+    cap = 0x4000;
+    end = 0x4000;
     step_motion(b);
     a->posX = b->posX;
     a->posY = b->posY;
     a->posZ = b->posZ;
-
-    end = 0x4000;
-    rate = (s16)b->rate;
-    start = end - rate * 10;
-    mid = end - rate * 6;
-    end += rate * 8;
-    if ((s16)b->progress < end)
+    start = end - (s16)b->rate * 10;
+    mid = end - (s16)b->rate * 6;
+    end += (s16)b->rate * 8;
+    if (*progp < end)
     {
         ((struct HeroFlagBits *)&b->flags)->active = 0;
     }
-
-    if ((b->timer >> 12) == 0)
+    if ((*timerp >> 12) == 0)
     {
         if (start < 0)
         {
@@ -394,7 +390,7 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
         {
             start = 0x7FFF;
         }
-        if ((s16)b->step <= start && (s16)b->progress >= start)
+        if ((s16)b->step <= start && *progp >= start)
         {
             if (gWorld->flags & 8)
             {
@@ -409,7 +405,6 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
             }
             sprite_objects_draw_obj_tiles(0x4C, 0xC);
         }
-
         if (mid < 0)
         {
             mid = 0;
@@ -418,22 +413,21 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
         {
             mid = 0x4000;
         }
-        winEnd = end;
-        if (winEnd < 0)
+        rate = end;
+        if (rate < 0)
         {
-            winEnd = 0;
+            rate = 0;
         }
-        if (winEnd > 0x7FFF)
+        if (rate > 0x7FFF)
         {
-            winEnd = 0x7FFF;
+            rate = 0x7FFF;
         }
-        limit = mid;
-        if (winEnd < limit)
+        start = mid;
+        if (rate < start)
         {
-            limit = winEnd;
+            start = rate;
         }
-
-        if ((s16)b->progress >= limit && (s16)b->step <= winEnd)
+        if (*progp >= start && (s16)b->step <= rate)
         {
             set_body_part(b, 2, 0x18, 0, 0);
             if (gSys.pressed & 2)
@@ -446,32 +440,31 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
                     frames_default_by_view(a, b, partner);
                     display_flush();
                 }
-                b->timer = (b->timer & 0xFFF) | 0x2000;
+                *timerp = (*timerp & 0xFFF) | 0x2000;
             }
         }
-
-        if ((b->timer >> 12) == 0)
+        if ((*timerp >> 12) == 0)
         {
-            endC = end;
-            if (endC < 0)
+            rate = end;
+            if (rate < 0)
             {
-                endC = 0;
+                rate = 0;
             }
-            if (endC > 0x7FFF)
+            if (rate > 0x7FFF)
             {
-                endC = 0x7FFF;
+                rate = 0x7FFF;
             }
-            if ((s16)b->step <= endC && (s16)b->progress >= endC)
+            if ((s16)b->step <= rate && *progp >= rate)
             {
                 world_mode_step();
-                b->timer = (b->timer & 0xFFF) | 0x1000;
+                *timerp = (*timerp & 0xFFF) | 0x1000;
                 frames_default_by_view(a, b, partner);
                 display_flush();
                 obj_free_parts(b);
             }
             else
             {
-                if ((s16)b->progress > end)
+                if (*progp > end)
                 {
                     goto settle;
                 }
@@ -484,7 +477,7 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
                 {
                     goto settle;
                 }
-                b->timer = (b->timer & 0xFFF) | 0x1000;
+                *timerp = (*timerp & 0xFFF) | 0x1000;
                 frames_default_by_view(a, b, partner);
                 display_flush();
                 obj_free_parts(b);
@@ -494,25 +487,25 @@ NONMATCH("asm/code_080B75B4/hero_b_step_frames_7954.s", void hero_b_step_frames_
     }
 
 settle:
-    if ((b->timer >> 12) != 0)
+    if ((*timerp >> 12) != 0)
     {
-        endC = end;
-        if (endC < 0)
+        rate = end;
+        if (rate < 0)
         {
-            endC = 0;
+            rate = 0;
         }
-        if (endC > 0x7FFF)
+        if (rate > 0x7FFF)
         {
-            endC = 0x7FFF;
+            rate = 0x7FFF;
         }
-        m = endC;
-        if (m > 0x4000)
+        mid = rate;
+        if (mid > 0x4000)
         {
-            m = 0x4000;
+            mid = 0x4000;
         }
-        if ((s16)b->progress >= m && (s16)b->step <= endC && (b->timer >> 12) > 1)
+        if (*progp >= mid && (s16)b->step <= rate && (*timerp >> 12) > 1)
         {
-            b->timer &= 0xFFF;
+            *timerp &= 0xFFF;
             next = hero_pair_settle_b;
             body->state = next;
             next(body);
@@ -520,7 +513,7 @@ settle:
         }
     }
 
-    if ((s16)b->step <= 0x4000 && (s16)b->progress >= 0x4000)
+    if ((s16)b->step <= 0x4000 && *progp >= 0x4000)
     {
         set_slot_value(0x2E, -1);
         if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
