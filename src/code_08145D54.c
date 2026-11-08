@@ -186,6 +186,9 @@ struct ByteArg
 
 void start_move_to_3d(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg4, struct ByteArg arg5);
 void start_move_to(struct Enemy *ent, s32 x, s32 y, u32 z, struct ByteArg arg4);
+void obj_set_or_add_pos(struct Enemy *ent, s32 x, s32 y, s32 z, u32 arg5, u32 arg6);
+void enemy_clear_body_flags(struct Enemy *ent);
+void enemy_body_step(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 
 void enemy_wait_sense(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
 void enemy_pick_random_index(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out);
@@ -963,5 +966,211 @@ void enemy_face_partner(struct Owner *owner, struct Enemy *ent, struct StateOut 
     state_out->unkC = enemy_align_body_to_partner;
 }
 
-ASM_FUNC("asm/code_08145D54/enemy_align_body_to_partner.s", void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+NONMATCH("asm/code_08145D54/enemy_align_body_to_partner.s", void enemy_align_body_to_partner(struct Owner *owner, struct Enemy *ent, struct StateOut *state_out))
+{
+    struct Ai *ai = (struct Ai *)((u8 *)ent + 0x58);
+    struct Enemy *body = ent->body;
+    u8 *rec = ent->unk1B0;
+    u8 found_idx;
+    struct Partner *target;
+    s32 cell;
+    u32 k;
+    u32 flip;
+    u8 is_rec_b;
+    s32 ax;
+    s32 ay;
 
+    is_rec_b = 0;
+    if (find_active_entry(owner, &found_idx) != 0)
+    {
+        k = found_idx;
+    }
+    else
+    {
+        k = ((u32)owner->unk208 << 30) >> 31;
+    }
+    target = owner->party[k];
+    cell = (u8)MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(((u32)ent->unk24 << 29) >> 29, 2);
+
+    enemy_clear_body_flags(body);
+    obj_set_active(body, 1);
+    obj_set_sprite_link(body, 1);
+
+    switch (cell)
+    {
+    case 0:
+        if (!(target->posY - ent->unk10 < -0x1000))
+        {
+            obj_set_active(body, 0);
+            obj_set_sprite_link(body, 0);
+            state_out->state = enemy_start_run;
+            return;
+        }
+        obj_set_or_add_pos(body, ent->unkC, ent->unk10, ent->unk14 + ent->unk18 + 0x1400, 1, cell);
+        break;
+    case 1:
+        if (!(target->posX - ent->unkC > 0x1000))
+        {
+            obj_set_active(body, 0);
+            obj_set_sprite_link(body, 0);
+            state_out->state = enemy_start_run;
+            return;
+        }
+        obj_set_or_add_pos(body, ent->unkC + 0xA00, ent->unk10, ent->unk14 + ent->unk18 + 0x1400, cell, 0);
+        break;
+    case 2:
+        if (!(target->posY - ent->unk10 > 0x1000))
+        {
+            obj_set_active(body, 0);
+            obj_set_sprite_link(body, 0);
+            state_out->state = enemy_start_run;
+            return;
+        }
+        obj_set_or_add_pos(body, ent->unkC, ent->unk10, ent->unk14 + ent->unk18 + 0x1400, 1, 0);
+        break;
+    case 3:
+        if (!(target->posX - ent->unkC < -0x1000))
+        {
+            obj_set_active(body, 0);
+            obj_set_sprite_link(body, 0);
+            state_out->state = enemy_start_run;
+            return;
+        }
+        obj_set_or_add_pos(body, ent->unkC - 0xA00, ent->unk10, ent->unk14 + ent->unk18 + 0x1400, 1, 0);
+        break;
+    default:
+        break;
+    }
+
+    obj_set_cell_coord(ent, cell + 8, 0);
+    ((struct Mode3 *)&body->unk214)->mode = 1;
+    {
+        u16 spd = *(u16 *)(rec + ai->unk178 * 2 + 0x1A);
+        struct ByteArg zero;
+        zero.val = 0;
+        start_move_to(body, target->posX, target->posY, spd, zero);
+    }
+
+    if (cell == 0)
+    {
+        ax = body->unk242;
+        if (ax < 0)
+        {
+            ax = -ax;
+        }
+        ay = body->unk244;
+        if (ay < 0)
+        {
+            ay = -ay;
+        }
+        if (ax < ay)
+        {
+            obj_load_record(body->sprite, 9, -1, 0, cell);
+            *(u16 *)((u8 *)body + 0x278) = 0x10;
+            *(u16 *)((u8 *)body + 0x272) = 0x10;
+            *(u16 *)((u8 *)body + 0x27A) = 6;
+        }
+        else
+        {
+            obj_load_record(body->sprite, 0xB, -1, 0, cell);
+            flip = (u32)body->unk242 >> 31;
+            is_rec_b = 1;
+        }
+    }
+    else if (cell == 1)
+    {
+        ax = body->unk242;
+        if (ax < 0)
+        {
+            ax = -ax;
+        }
+        ay = body->unk244;
+        if (ay < 0)
+        {
+            ay = -ay;
+        }
+        if (ax <= ay)
+        {
+            obj_load_record(body->sprite, 0xB, -1, 0, 0);
+            flip = (u32)(~body->unk244) >> 31;
+            is_rec_b = 1;
+        }
+        else
+        {
+            obj_load_record(body->sprite, 0xA, -1, 0, 0);
+            *(u16 *)((u8 *)body + 0x278) = 6;
+            *(u16 *)((u8 *)body + 0x272) = 6;
+            *(u16 *)((u8 *)body + 0x27A) = 6;
+        }
+    }
+    else if (cell == 2)
+    {
+        ax = body->unk242;
+        if (ax < 0)
+        {
+            ax = -ax;
+        }
+        ay = body->unk244;
+        if (ay < 0)
+        {
+            ay = -ay;
+        }
+        if (ax < ay)
+        {
+            obj_load_record(body->sprite, 9, -1, 0, 0);
+            *(u16 *)((u8 *)body + 0x278) = 0x10;
+            *(u16 *)((u8 *)body + 0x272) = 0x10;
+            *(u16 *)((u8 *)body + 0x27A) = 6;
+        }
+        else
+        {
+            obj_load_record(body->sprite, 0xB, -1, 0, 0);
+            flip = (u32)(~body->unk242) >> 31;
+            is_rec_b = 1;
+        }
+    }
+    else
+    {
+        ax = body->unk242;
+        if (ax < 0)
+        {
+            ax = -ax;
+        }
+        ay = body->unk244;
+        if (ay < 0)
+        {
+            ay = -ay;
+        }
+        if (ax > ay)
+        {
+            obj_load_record(body->sprite, 0xA, -1, 0, 0);
+            *(u16 *)((u8 *)body + 0x278) = 6;
+            *(u16 *)((u8 *)body + 0x272) = 6;
+            *(u16 *)((u8 *)body + 0x27A) = 6;
+        }
+        else
+        {
+            obj_load_record(body->sprite, 0xB, -1, 0, 0);
+            flip = (u32)body->unk244 >> 31;
+            is_rec_b = 1;
+        }
+    }
+
+    if (is_rec_b)
+    {
+        ((struct Flags8 *)&body->sprite->unk11)->bit6 = flip;
+    }
+    else
+    {
+        *(u16 *)((u8 *)body + 0x274) = 6;
+        *(u16 *)((u8 *)body + 0x27C) = 6;
+        *(u16 *)((u8 *)body + 0x276) = 6;
+    }
+
+    sprite_step_e6a0(body->sprite);
+    ai->unk17A = 0xF;
+    ((struct Flags8 *)&ai->unk17E)->bit4 = 0;
+    ((struct Flags8 *)&ent->unk20D)->bit2 = 0;
+    state_out->state = enemy_body_step;
+}
+END_NONMATCH
