@@ -72,7 +72,8 @@ struct HeroData
 
 struct HeroBody
 {
-    u8 filler0[0x08];
+    struct HeroBody *next;
+    u8 filler04[0x08 - 0x04];
     struct HeroSprite *sprite;
     u8 filler0C[0x10 - 0x0C];
     s32 posX;
@@ -134,7 +135,7 @@ struct World
     struct Hero *list[6];
     struct Hero *heroA;
     struct Hero *heroB;
-    struct HeroLayer *layers;
+    struct HeroBody *layers;
 };
 
 struct SysKeys3E
@@ -233,7 +234,6 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
     struct HeroBody *body_b;
     struct HeroBody *partner;
     struct HeroBody *p;
-    struct HeroLayer *node;
     void (*fn)(struct HeroBody *);
     u32 (*divide)(u32, u32);
     s32 end;
@@ -250,15 +250,13 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
     s32 in_end;
     s32 mode_now;
     s32 end_t;
-    s32 limit_t;
+    s32 cap;
     s32 reached_t;
     s32 none;
     s32 target_x;
     s32 target_y;
     s32 target_z;
     s32 height;
-    s32 sq;
-    s32 quotient;
     s32 m;
 
     body_a = &gWorld->heroA->body;
@@ -272,120 +270,105 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
     mid = end - (rate << 3);
     end = end + (rate << 1);
     if (body_a->progress < end)
-    {
         ((struct HeroFlagBits *)&body_a->flags)->active = 0;
-    }
 
     if ((body_a->timer >> 12) != 0)
-    {
         goto tail;
-    }
+
     lo = start;
     if (lo < 0)
-    {
         lo = 0;
-    }
     if (lo > 0x7FFF)
-    {
         lo = 0x7FFF;
-    }
     if (body_a->step > lo)
-    {
-        in_start = 0;
-    }
-    else
-    {
-        in_start = 1;
-        if (body_a->progress < lo)
-        {
-            in_start = 0;
-        }
-    }
+        goto no_in_start;
+    in_start = 1;
+    if (body_a->progress >= lo)
+        goto done_in_start;
+no_in_start:
+    in_start = 0;
+done_in_start:
     if (in_start)
     {
         if ((gWorld->view & 8) != 0)
         {
-                    p = body_a;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x33;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = body_b;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x33;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = partner;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x33;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    node = gWorld->layers;
-                    if (node != 0)
-                    {
-                        do
-                        {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 3;
-                            }
-                            node = node->next;
-                        } while (node != 0);
-                    }
+            p = body_a;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x33;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = body_b;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x33;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = partner;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x33;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = gWorld->layers;
+            if (p != 0)
+            {
+                do
+                {
+                    if (p->sprite != 0)
+                        p->sprite->layer = 3;
+                    p = p->next;
+                } while (p != 0);
+            }
         }
         else
         {
-                    p = body_a;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = body_b;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = partner;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    node = gWorld->layers;
-                    if (node != 0)
-                    {
-                        do
-                        {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 16;
-                            }
-                            node = node->next;
-                        } while (node != 0);
-                    }
+            p = body_a;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = body_b;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = partner;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = gWorld->layers;
+            if (p != 0)
+            {
+                do
+                {
+                    if (p->sprite != 0)
+                        p->sprite->layer = 16;
+                    p = p->next;
+                } while (p != 0);
+            }
         }
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
@@ -393,55 +376,35 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
     mid_c = mid;
     end_c = end;
     if (mid_c < 0)
-    {
         mid_c = 0;
-    }
     if (end_c < 0)
-    {
         end_c = 0;
-    }
     if (mid_c > 0x4000)
-    {
         mid_c = 0x4000;
-    }
     if (end_c > 0x7FFF)
-    {
         end_c = 0x7FFF;
-    }
-    limit = mid_c;
     if (end_c < mid_c)
+        mid_c = end_c;
+    if (body_a->progress < mid_c)
+        goto no_reached;
+    reached = 1;
+    if (body_a->step <= end_c)
+        goto done_reached;
+no_reached:
+    reached = 0;
+done_reached:
+    if (reached)
     {
-        limit = end_c;
-    }
-    if (body_a->progress < limit)
-    {
-        reached = 0;
-    }
-    else
-    {
-        reached = 1;
-        if (body_a->step > end_c)
+        set_body_part(body_b, 2, 0x14, 0, 0);
+        if ((((struct SysKeys3E *)gSys)->keys & 2) != 0)
         {
-            reached = 0;
-        }
-    }
-    if (reached == 0)
-    {
-        goto after_set;
-    }
-
-    set_body_part(body_b, 2, 0x14, 0, 0);
-    if ((((struct SysKeys3E *)gSys)->keys & 2) == 0)
-    {
-        goto after_set;
-    }
-    body_set_pose(1, body_b, 0, -40);
-    obj_free_parts(body_b);
-    world_mode_set_bit5();
-    if (!world_mode_bit2())
-    {
-        if ((gWorld->view & 8) != 0)
-        {
+            body_set_pose(1, body_b, 0, -40);
+            obj_free_parts(body_b);
+            world_mode_set_bit5();
+            if (!world_mode_bit2())
+            {
+                if ((gWorld->view & 8) != 0)
+                {
                     p = body_a;
                     if (p != 0)
                     {
@@ -469,21 +432,19 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
                             p = p->child;
                         } while (p != 0);
                     }
-                    node = gWorld->layers;
-                    if (node != 0)
+                    p = gWorld->layers;
+                    if (p != 0)
                     {
                         do
                         {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 16;
-                            }
-                            node = node->next;
-                        } while (node != 0);
+                            if (p->sprite != 0)
+                                p->sprite->layer = 16;
+                            p = p->next;
+                        } while (p != 0);
                     }
-        }
-        else
-        {
+                }
+                else
+                {
                     p = body_a;
                     if (p != 0)
                     {
@@ -511,238 +472,214 @@ NONMATCH("asm/code_080C2F20/hero_a_step_window_2fec.s", void hero_a_step_window_
                             p = p->child;
                         } while (p != 0);
                     }
-                    node = gWorld->layers;
-                    if (node != 0)
+                    p = gWorld->layers;
+                    if (p != 0)
                     {
                         do
                         {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 16;
-                            }
-                            node = node->next;
-                        } while (node != 0);
+                            if (p->sprite != 0)
+                                p->sprite->layer = 16;
+                            p = p->next;
+                        } while (p != 0);
                     }
+                }
+                display_flush();
+            }
+            body_a->timer = (body_a->timer & 0xFFF) | 0x2000;
         }
-        display_flush();
     }
-    set_timer_mode(body_a, 2);
 
-after_set:
     if ((body_a->timer >> 12) != 0)
-    {
         goto tail;
-    }
+
     end_w = end;
     if (end_w < 0)
-    {
         end_w = 0;
-    }
     if (end_w > 0x7FFF)
-    {
         end_w = 0x7FFF;
-    }
     if (body_a->step > end_w)
-    {
-        in_end = 0;
-    }
-    else
-    {
-        in_end = 1;
-        if (body_a->progress < end_w)
-        {
-            in_end = 0;
-        }
-    }
+        goto no_in_end;
+    in_end = 1;
+    if (body_a->progress >= end_w)
+        goto done_in_end;
+no_in_end:
+    in_end = 0;
+done_in_end:
     if (in_end)
     {
         world_mode_set_bit5();
-        set_timer_mode(body_a, 1);
+        body_a->timer = (body_a->timer & 0xFFF) | 0x1000;
         if ((gWorld->view & 8) != 0)
         {
-                    p = body_a;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = body_b;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = partner;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    node = gWorld->layers;
-                    if (node != 0)
-                    {
-                        do
-                        {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 16;
-                            }
-                            node = node->next;
-                        } while (node != 0);
-                    }
+            p = body_a;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = body_b;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = partner;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = gWorld->layers;
+            if (p != 0)
+            {
+                do
+                {
+                    if (p->sprite != 0)
+                        p->sprite->layer = 16;
+                    p = p->next;
+                } while (p != 0);
+            }
         }
         else
         {
-                    p = body_a;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = body_b;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    p = partner;
-                    if (p != 0)
-                    {
-                        do
-                        {
-                            p->frame = 0x100;
-                            p = p->child;
-                        } while (p != 0);
-                    }
-                    node = gWorld->layers;
-                    if (node != 0)
-                    {
-                        do
-                        {
-                            if (node->sprite != 0)
-                            {
-                                node->sprite->layer = 16;
-                            }
-                            node = node->next;
-                        } while (node != 0);
-                    }
+            p = body_a;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = body_b;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = partner;
+            if (p != 0)
+            {
+                do
+                {
+                    p->frame = 0x100;
+                    p = p->child;
+                } while (p != 0);
+            }
+            p = gWorld->layers;
+            if (p != 0)
+            {
+                do
+                {
+                    if (p->sprite != 0)
+                        p->sprite->layer = 16;
+                    p = p->next;
+                } while (p != 0);
+            }
         }
         display_flush();
         obj_free_parts(body_b);
         goto tail;
     }
     if (body_a->progress > end)
-    {
         goto tail;
-    }
     if ((((struct SysKeys3E *)gSys)->keys & 3) == 0)
-    {
         goto tail;
-    }
     world_mode_set_bit5();
     if (world_mode_bit2())
-    {
         goto tail;
-    }
-    set_timer_mode(body_a, 1);
+    body_a->timer = (body_a->timer & 0xFFF) | 0x1000;
     if ((gWorld->view & 8) != 0)
     {
-                p = body_a;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                p = body_b;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                p = partner;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                node = gWorld->layers;
-                if (node != 0)
-                {
-                    do
-                    {
-                        if (node->sprite != 0)
-                        {
-                            node->sprite->layer = 16;
-                        }
-                        node = node->next;
-                    } while (node != 0);
-                }
+        p = body_a;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = body_b;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = partner;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = gWorld->layers;
+        if (p != 0)
+        {
+            do
+            {
+                if (p->sprite != 0)
+                    p->sprite->layer = 16;
+                p = p->next;
+            } while (p != 0);
+        }
     }
     else
     {
-                p = body_a;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                p = body_b;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                p = partner;
-                if (p != 0)
-                {
-                    do
-                    {
-                        p->frame = 0x100;
-                        p = p->child;
-                    } while (p != 0);
-                }
-                node = gWorld->layers;
-                if (node != 0)
-                {
-                    do
-                    {
-                        if (node->sprite != 0)
-                        {
-                            node->sprite->layer = 16;
-                        }
-                        node = node->next;
-                    } while (node != 0);
-                }
+        p = body_a;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = body_b;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = partner;
+        if (p != 0)
+        {
+            do
+            {
+                p->frame = 0x100;
+                p = p->child;
+            } while (p != 0);
+        }
+        p = gWorld->layers;
+        if (p != 0)
+        {
+            do
+            {
+                if (p->sprite != 0)
+                    p->sprite->layer = 16;
+                p = p->next;
+            } while (p != 0);
+        }
     }
     display_flush();
     obj_free_parts(body_b);
@@ -750,59 +687,38 @@ after_set:
 
 tail:
     mode_now = body_a->timer >> 12;
-    if (mode_now == 0)
+    if (mode_now != 0)
     {
-        goto no_trans;
-    }
-    limit_t = 0x4000;
-    end_t = end;
-    if (end_t < 0)
-    {
-        end_t = 0;
-    }
-    if (limit_t > 0x4000)
-    {
-        limit_t = 0x4000;
-    }
-    if (end_t > 0x7FFF)
-    {
-        end_t = 0x7FFF;
-    }
-    if (end_t < limit_t)
-    {
-        limit_t = end_t;
-    }
-    if (body_a->progress < limit_t)
-    {
-        reached_t = 0;
-    }
-    else
-    {
+        cap = 0x4000;
+        end_t = end;
+        if (end_t < 0)
+            end_t = 0;
+        if (cap > 0x4000)
+            cap = 0x4000;
+        if (end_t > 0x7FFF)
+            end_t = 0x7FFF;
+        if (end_t < cap)
+            cap = end_t;
+        if (body_a->progress < cap)
+            goto no_reached_t;
         reached_t = 1;
-        if (body_a->step > end_t)
+        if (body_a->step <= end_t)
+            goto done_reached_t;
+no_reached_t:
+        reached_t = 0;
+done_reached_t:
+        if (reached_t && mode_now > 1)
         {
-            reached_t = 0;
+            body_a->timer = body_a->timer & 0xFFF;
+            fn = hero_a_place_on_partner_offset;
+            body->state = fn;
+            fn(body);
+            return;
         }
     }
-    if (reached_t == 0)
-    {
-        goto no_trans;
-    }
-    if (mode_now <= 1)
-    {
-        goto no_trans;
-    }
-    set_timer_mode(body_a, 0);
-    fn = hero_a_place_on_partner_offset;
-    body->state = fn;
-    fn(body);
-    goto end_fn;
 
-no_trans:
     if ((body_a->flags & 0x20) == 0)
-    {
-        goto end_fn;
-    }
+        return;
     none = -1;
     set_slot_value(0x7D, none);
     m = body_a->mode & 6;
@@ -823,9 +739,7 @@ no_trans:
         }
         height += partner->targetZ / 0x100;
         divide = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
-        sq = height * height;
-        quotient = sq / 0x40 - 5;
-        height += divide(0x19, quotient);
+        height += divide(0x19, height * height / 0x40 - 5);
         body_a->height = height;
         set_motion_offsets(body_a, 0x600);
     }
@@ -836,10 +750,7 @@ no_trans:
         sprite_set_action(body_a, 4, 0x2034, 0);
         ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
     }
-    set_timer_mode(body_a, 0);
+    body_a->timer = body_a->timer & 0xFFF;
     body->state = hero_a_step_sprite_anim5_to_3754;
-
-end_fn:
-    ;
 }
 END_NONMATCH
