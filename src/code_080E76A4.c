@@ -252,7 +252,132 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080E76A4/draw_obj_dma_tiles.s", void draw_obj_dma_tiles(void))
 
-ASM_FUNC("asm/code_080E76A4/upload_box_frame.s", void upload_box_frame(void))
+extern u8 *gUnk_03000FB4;
+extern u8 tile_shift_copy[];
+extern u8 tile_shift_upload[];
+extern u8 tile_shift_merge[];
+extern u8 tile_shift_copy_wide[];
+extern const u8 gHeapTagTiles[];
+void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
+void heap_free(void *p);
+
+// One DMA3 transfer of 0x20 words (8x32 units): source, destination, control, then read the control back.
+static inline void box_dma_copy(vu32 *dma, u8 *src, u8 *dst)
+{
+    dma[0] = (u32)src;
+    dma[1] = (u32)dst;
+    dma[2] = 0x84000008;
+    (void)dma[2];
+}
+
+NONMATCH("asm/code_080E76A4/upload_box_frame.s", void upload_box_frame(struct ObjWithState *obj, u32 target, u16 x, u16 y, u32 wArg, u32 hArg))
+{
+    vu32 *dma;
+    u8 *src;
+    u8 *buf;
+    u8 *s1c0;
+    u8 *s220;
+    u8 *s200;
+    u8 *s260;
+    s32 w8;
+    u32 h;
+    u32 wp1;
+    u32 off;
+    u32 offWide;
+    u32 xHi;
+    u32 yHi;
+    s32 xs;
+    s32 ys;
+    u32 yRow;
+    u32 yRow2;
+    u32 yRow3;
+    u32 y8;
+    u32 left;
+    u32 col2;
+    u32 x18;
+    u32 hm3;
+    u16 third;
+
+    dma = (vu32 *)REG_ADDR_DMA3SAD;
+    src = *(u8 **)((u8 *)obj->state + 0x180);
+    w8 = (u8)wArg;
+    h = (u8)hArg;
+    wp1 = (u8)(w8 + 1);
+    buf = heap_alloc_raw(1, 0x80, gHeapTagTiles);
+
+    box_dma_copy(dma, src + 0x320, buf);
+    box_dma_copy(dma, src + 0x340, (buf + 0x20));
+    s1c0 = src + 0x1C0;
+    box_dma_copy(dma, s1c0, (buf + 0x40));
+
+    off = (u32)tile_shift_upload - (u32)tile_shift_copy;
+    xHi = (u32)x << 16;
+    yHi = (u32)y << 16;
+    xs = (s32)xHi >> 16;
+    ys = (s32)yHi >> 16;
+    ((void (*)())(gUnk_03000FB4 + off))(target, buf, xHi >> 16, yHi >> 16, wp1, 3);
+
+    box_dma_copy(dma, src + 0x300, buf);
+    y8 = (yHi + 0x00080000) >> 16;
+    ((void (*)())gUnk_03000FB4)(target, buf, xHi >> 16, y8, wp1);
+
+    box_dma_copy(dma, src + 0x3E0, buf);
+    box_dma_copy(dma, src + 0x400, (buf + 0x20));
+    s220 = src + 0x220;
+    box_dma_copy(dma, s220, (buf + 0x40));
+    yRow = (u16)((h - 1) * 8 + ys);
+    ((void (*)())(gUnk_03000FB4 + off))(target, buf, xHi >> 16, yRow, wp1, 3);
+
+    box_dma_copy(dma, src + 0x3C0, buf);
+    yRow2 = (u16)((h - 2) * 8 + ys);
+    ((void (*)())gUnk_03000FB4)(target, buf, xHi >> 16, yRow2, wp1);
+
+    s200 = src + 0x200;
+    box_dma_copy(dma, s200, buf);
+    box_dma_copy(dma, src + 0x360, (buf + 0x20));
+    box_dma_copy(dma, src + 0x380, (buf + 0x40));
+    left = (u16)(xs + (w8 - 3) * 8);
+    ((void (*)())(gUnk_03000FB4 + off))(target, buf, left, yHi >> 16, wp1, 3);
+
+    box_dma_copy(dma, src + 0x3A0, buf);
+    col2 = (u16)(xs + (w8 - 1) * 8);
+    ((void (*)())gUnk_03000FB4)(target, buf, col2, y8, wp1);
+
+    s260 = src + 0x260;
+    box_dma_copy(dma, s260, buf);
+    box_dma_copy(dma, src + 0x420, (buf + 0x20));
+    box_dma_copy(dma, src + 0x440, (buf + 0x40));
+    ((void (*)())(gUnk_03000FB4 + off))(target, buf, left, yRow, wp1, 3);
+
+    box_dma_copy(dma, src + 0x460, buf);
+    ((void (*)())gUnk_03000FB4)(target, buf, col2, yRow2, wp1);
+
+    box_dma_copy(dma, src + 0x280, buf);
+    box_dma_copy(dma, src + 0x2A0, (buf + 0x20));
+    yRow3 = (u16)(ys + 0x10);
+    offWide = (u32)tile_shift_copy_wide - (u32)tile_shift_copy;
+    hm3 = ((h - 3) << 15) >> 16;
+    ((void (*)())(gUnk_03000FB4 + offWide))(target, buf, xHi >> 16, yRow3, wp1, 2, hm3);
+
+    box_dma_copy(dma, s1c0, buf);
+    box_dma_copy(dma, src + 0x1E0, (buf + 0x20));
+    box_dma_copy(dma, s200, (buf + 0x40));
+    x18 = (u16)(xs + 0x18);
+    third = (w8 - 4) / 3;
+    ((void (*)())(gUnk_03000FB4 + (u32)tile_shift_merge - (u32)tile_shift_copy))(target, buf, x18, yHi >> 16, wp1, 3, (u16)third);
+
+    box_dma_copy(dma, s220, buf);
+    box_dma_copy(dma, src + 0x240, (buf + 0x20));
+    box_dma_copy(dma, s260, (buf + 0x40));
+    ((void (*)())(gUnk_03000FB4 + (u32)tile_shift_merge - (u32)tile_shift_copy))(target, buf, x18, yRow, wp1, 3, (u16)third);
+
+    box_dma_copy(dma, src + 0x2C0, buf);
+    box_dma_copy(dma, src + 0x2E0, (buf + 0x20));
+    ((void (*)())(gUnk_03000FB4 + offWide))(target, buf, col2, yRow3, wp1, 2, hm3);
+
+    heap_free(buf);
+}
+END_NONMATCH
 
 ASM_FUNC("asm/code_080E76A4/dma_tile_upload.s", void dma_tile_upload(void))
 
