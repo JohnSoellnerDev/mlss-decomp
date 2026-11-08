@@ -656,16 +656,20 @@ static inline void text_cap_add(u16 *p, u32 step)
     }
 }
 
-static inline u32 text_done(u8 id)
+static inline u32 text_done_at(u8 *state)
 {
-    u8 *state = gParty + 0x8A + id;
-
     *state = *state - 1;
     return 1;
 }
 
+static inline u32 text_done(u8 id)
+{
+    return text_done_at(gParty + 0x8A + id);
+}
+
 NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, u8 value))
 {
+    u8 *st;
     struct ItemSlotRec *rec = (struct ItemSlotRec *)(gItemTable + (id << 4));
     struct TextRec *block;
     struct TextRec *slot;
@@ -674,7 +678,9 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
     u32 c;
     u8 state;
 
-    state = *(gParty + 0x8A + id);
+    st = gParty + 0x8A;
+    st += id;
+    state = *st;
     if (state == 0xFF)
     {
         return 0;
@@ -699,7 +705,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
     index = index - 1;
     if (index > 0xB)
     {
-        return text_done(id);
+        return text_done_at(st);
     }
 
     switch (index)
@@ -720,14 +726,14 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
             c = block->count;
             if (c == 0)
             {
-                return text_done(id);
+                return text_done_at(st);
             }
             if (!(block->limit > c))
             {
-                return text_done(id);
+                return text_done_at(st);
             }
             block->count = text_step(c, block->limit, rec->step);
-            return text_done(id);
+            return text_done_at(st);
         }
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -742,7 +748,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
             return 0;
         }
         slot->count = text_step(c, slot->limit, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 2:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -752,7 +758,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
             return 0;
         }
         slot->count = text_step(slot->count, slot->limit, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 3:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -763,7 +769,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         text_cap_add(&slot->unk10, rec->step);
         text_cap_add(&slot->limit, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 4:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -774,7 +780,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         text_cap_add(&slot->unk1E, rec->step);
         text_cap_add(&slot->unk20, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 5:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -785,7 +791,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         text_cap_add(&slot->unk26, rec->step);
         text_cap_add(&slot->unk28, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 6:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -800,7 +806,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         {
             slot->unk16 = 0x3E7;
         }
-        return text_done(id);
+        return text_done_at(st);
     case 7:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -811,7 +817,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         text_cap_add(&slot->unk1A, rec->step);
         text_cap_add(&slot->unk1C, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 8:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -822,7 +828,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         text_cap_add(&slot->unk22, rec->step);
         text_cap_add(&slot->unk24, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 10:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -832,7 +838,7 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
             return 0;
         }
         slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     case 11:
         off = ((u32)mode << 4) - mode;
         off <<= 2;
@@ -851,12 +857,12 @@ NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, 
         }
         if (!(slot->unk18 > slot->unk14))
         {
-            return text_done(id);
+            return text_done_at(st);
         }
         slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
-        return text_done(id);
+        return text_done_at(st);
     default:
-        return text_done(id);
+        return text_done_at(st);
     }
 }
 END_NONMATCH
