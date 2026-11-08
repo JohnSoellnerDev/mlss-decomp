@@ -128,6 +128,51 @@ struct Flags76Bits
     u8 bit7 : 1;
 };
 
+struct GaugeGroup
+{
+    u8 y;
+    u8 x;
+    u8 count;
+    u8 filler3;
+};
+
+struct GaugeRow
+{
+    struct GaugeGroup a;
+    struct GaugeGroup b;
+    struct GaugeGroup c;
+};
+
+struct GaugeSprite
+{
+    u16 x;
+    u16 y;
+    u16 attr;
+    u16 zero;
+    u32 one;
+    u8 filler0C[0x10 - 0x0C];
+    struct GaugeSprite *next;
+};
+
+struct GaugeCtx
+{
+    u8 filler0[0x14];
+    u8 *view;
+};
+
+struct GaugeLists
+{
+    u8 filler0[0x38];
+    struct GaugeSprite *sprites;
+    void *root;
+};
+
+extern struct GaugeLists gUnk_0203FFB8;
+extern u8 gSys[];
+extern u32 (*gUnk_03000D48)();
+extern u32 (*gUnk_03000D4C)();
+void obj_list_pass_0a8c(void);
+
 // The spawned child takes over two flag bits of its parent.
 static inline void part_child_flags(struct Part *obj, struct Part *child)
 {
@@ -213,6 +258,6 @@ void part_refresh_tiles(struct Part *obj);
 void part_spawn_timed(struct Part *obj);
 void part_update_nodes(struct Part *obj);
 
-ASM_FUNC("asm/code_08132FBC/gauge_oam_fill.s", void gauge_oam_fill(void))
+ASM_FUNC("asm/code_08132FBC/gauge_oam_fill.s", void gauge_oam_fill(struct GaugeCtx *ctx))
 
 ASM_FUNC("asm/code_08132FBC/status_hblank_scroll_irq.s", void status_hblank_scroll_irq(void))
