@@ -372,80 +372,60 @@ void obj_stop_motion(struct FieldObj *obj)
     }
 }
 
-NONMATCH("asm/code_08045F18/obj_set_motion_a_08046AA4.s", u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
-    u16 spd;
-    u32 target;
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
     s32 t;
-    u8 *flags;
-    u32 bits;
 
-    spd = speed;
     if (relative == 1)
     {
         sub = obj->sub;
         t = (s16)value;
-        target = (u16)(t + sub->h04);
-    }
-    else
-    {
-        target = value;
+        value = (u16)(t + sub->h04);
     }
     obj->axisACur = obj->sub->h04;
-    obj->axisATarget = target;
+    obj->axisATarget = value;
     now = (s16)obj->axisACur;
-    goal = (s16)target;
+    goal = (s16)value;
     if (now == goal)
         return 0;
     if (mode == 1)
     {
         step = speed;
         if (now >= goal)
-            step = -spd;
+            step = -speed;
         obj->axisAStep = step;
     }
     else
     {
-        obj->axisASpeed = spd;
+        obj->axisASpeed = speed;
     }
     obj->axisACount = 0;
     ((struct ModeBits45 *)&obj->moveFlags2B5)->mode = mode;
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
-    s32 keepMask = 0x3F;
-    u32 target;
-    u16 spd;
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
     s32 t;
-    u8 *flags;
-    u32 bits;
 
-    spd = speed;
     if (relative == 1)
     {
         sub = obj->sub;
         t = (s16)value;
-        target = (u16)(t + sub->h06);
-    }
-    else
-    {
-        target = value;
+        value = (u16)(t + sub->h06);
     }
     obj->axisBCur = obj->sub->h06;
-    obj->axisBTarget = target;
+    obj->axisBTarget = value;
     now = (s16)obj->axisBCur;
-    goal = (s16)target;
+    goal = (s16)value;
     if (now == goal)
         return 0;
     if (mode == 1)
@@ -457,20 +437,15 @@ NONMATCH("asm/code_08045F18/obj_set_motion_b.s", u32 obj_set_motion_b(struct Fie
     }
     else
     {
-        obj->axisBSpeed = spd;
+        obj->axisBSpeed = speed;
     }
     obj->axisBCount = 0;
-    flags = &obj->moveFlags2B5;
-    bits = mode << 6;
-    *flags = (*flags & keepMask) | bits;
+    ((struct ModeBits45 *)&obj->moveFlags2B5)->hi2 = mode;
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
-    u32 target;
-    u16 spd;
     s32 now;
     s32 goal;
     s32 step;
@@ -479,19 +454,14 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_0
     s16 *pNow;
     s16 *pGoal;
 
-    spd = speed;
     if (relative == 1)
     {
         sub = obj->sub;
         t = (s16)value;
-        target = (u16)(t + sub->h08);
-    }
-    else
-    {
-        target = value;
+        value = (u16)(t + sub->h08);
     }
     obj->axisACur = obj->sub->h08;
-    obj->axisATarget = target;
+    obj->axisATarget = value;
     pNow = (s16 *)&obj->unk2FE;
     pGoal = (s16 *)&obj->unk306;
     now = *pNow;
@@ -502,62 +472,53 @@ NONMATCH("asm/code_08045F18/obj_set_motion_a_08046BDC.s", u32 obj_set_motion_a_0
     {
         step = speed;
         if (now >= goal)
-            step = -spd;
+            step = -speed;
         obj->unk30E = step;
     }
     else
     {
-        obj->unk31E = spd;
+        obj->unk31E = speed;
     }
     obj->unk316 = 0;
     ((struct ModeBits01 *)&obj->flags2B6)->mode = mode;
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08045F18/obj_set_motion_a_compare.s", u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed))
+u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
-    u32 target;
-    u16 spd;
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
     s32 t;
 
-    spd = speed;
     if (relative == 1)
     {
         sub = obj->sub;
         t = (s16)value;
-        target = (u16)(t + sub->h0A);
-    }
-    else
-    {
-        target = value;
+        value = (u16)(t + sub->h0A);
     }
     obj->unk300 = obj->sub->h0A;
-    obj->unk308 = target;
+    obj->unk308 = value;
     now = (s16)obj->unk300;
-    goal = (s16)target;
+    goal = (s16)value;
     if (now == goal)
         return 0;
     if (mode == 1)
     {
         step = speed;
         if (now >= goal)
-            step = -spd;
+            step = -speed;
         obj->unk310 = step;
     }
     else
     {
-        obj->unk320 = spd;
+        obj->unk320 = speed;
     }
     obj->unk318 = 0;
     ((struct ModeBits23 *)&obj->flags2B6)->mode = mode;
     return 1;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08045F18/obj_advance_axes.s", void obj_advance_axes(struct FieldObj *obj))
 {
@@ -688,11 +649,10 @@ struct Flags11
     u8 hi1 : 1;
 };
 
-NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struct FieldObj *obj, s32 pos, u32 extra))
+void obj_set_cell_coord(struct FieldObj *obj, s32 pos, u32 extra)
 {
     u32 cell;
     u32 high;
-    u8 low;
     u8 entry;
 
     cell = 0;
@@ -731,9 +691,8 @@ NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struc
                 pos -= cell;
             }
         }
-        low = pos & 7;
-        ((struct MoveBits *)&obj->unk24)->lo3 = low;
-        ((struct MoveBits *)&obj->unk4C)->lo3 = low;
+        ((struct MoveBits *)&obj->unk24)->lo3 = pos;
+        ((struct MoveBits *)&obj->unk4C)->lo3 = pos;
         entry = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4)
             + ((((u32)obj->flags216 << 27) >> 31) << 3) + pos];
         pos = entry & 0x7F;
@@ -742,7 +701,6 @@ NONMATCH("asm/code_08045F18/obj_set_cell_coord.s", void obj_set_cell_coord(struc
     obj_load_record(obj->sub, cell + pos, extra, 0, 0);
     ((struct Flags11 *)&obj->sub->flags11)->bit6 = high;
 }
-END_NONMATCH
 
 struct SlotBits
 {
