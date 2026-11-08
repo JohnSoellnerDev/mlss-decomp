@@ -233,7 +233,9 @@ void menu_entry_mark_2(struct MenuObj *obj, u8 index)
     }
 }
 
-NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTable *obj, u32 flags))
+struct FlagsB { u8 lo3 : 3; u8 f : 3; u8 hi : 2; } __attribute__((packed));
+
+void menu_obj_free(struct MenuTable *obj, u32 flags)
 {
     struct MenuEntry *entry;
     s32 index;
@@ -246,7 +248,7 @@ NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTabl
         entryFlags = entry->flags;
         if ((entryFlags & 3) != 0)
         {
-            if (((u32)entryFlags << 26) >> 29 & 6)
+            if (((struct FlagsB *)&entry->flags)->f & 6)
             {
                 if (entry->unk14 != 0)
                 {
@@ -271,7 +273,6 @@ NONMATCH("asm/code_081171F8/menu_obj_free.s", void menu_obj_free(struct MenuTabl
     }
     task_remove(obj, flags);
 }
-END_NONMATCH
 
 struct SprHead { u16 w0; u16 w2; };
 NONMATCH("asm/code_081171F8/screen_obj_setup.s", struct ScreenObj *screen_obj_setup(struct ScreenObj *obj, u8 prio, u32 arg))
