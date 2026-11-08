@@ -1166,4 +1166,262 @@ END_NONMATCH
 void win_set_layout(s32 *win, u8 *src, s32 x, s32 y);
 ASM_FUNC("asm/code_08164468/win_draw_text.s", void win_draw_text(void))
 
-ASM_FUNC("asm/code_08164468/obj_dialog_step.s", void obj_dialog_step(void))
+struct DlgInput
+{
+    u8 filler0[2];
+    u16 keys;
+};
+
+extern u8 gUnk_03000374[];
+extern const u8 *gDialogJumpTargetFlagNonzero;
+extern const u8 *gDialogJumpTargetFlagZero;
+extern void frame_9slice_tiles_routine(void);
+u32 track_run(void *track);
+void set_slot_value(u32 id, s32 value);
+void sound_stop_song(u32 song);
+void mem_copy_fast(void *dst, void *src, u32 len);
+u32 layout_text_run(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f);
+
+NONMATCH("asm/code_08164468/obj_dialog_step.s", u32 obj_dialog_step(struct DialogObj *obj))
+{
+    struct DlgInput *input = (struct DlgInput *)gUnk_03000374;
+    u32 r6;
+    u8 *track;
+    u8 *r3;
+    u8 *r4;
+
+    while (1)
+    {
+        switch (obj->state)
+        {
+        case 0:
+        case 4:
+            if (obj->unk5C != 0)
+            {
+                if ((input->keys & 1) == 0)
+                {
+                    obj->unk5C--;
+                    return -1;
+                }
+                obj->unk5C = 0;
+                obj->state = 4;
+            }
+            {
+                u32 k;
+
+                track = (u8 *)obj + 8;
+                r6 = (u16)track_run(track);
+                if (r6 == 0)
+                {
+                    obj_release_slots(obj->sprite);
+                    obj->state = 1;
+                    continue;
+                }
+                k = ((r6 & 0xFFE0) == 0xFF00) ? (r6 & 0x1F) : 0;
+                switch (k)
+                {
+                case 0:
+                    if (obj->state == 4)
+                    {
+                        continue;
+                    }
+                    if (input->keys & 1)
+                    {
+                        obj->state = 4;
+                    }
+                    if (obj->soundOn == 0)
+                    {
+                        set_slot_value(obj->soundId, -1);
+                        obj->soundOn = 1;
+                    }
+                    obj->unk5C = 1;
+                    return -1;
+                case 1:
+                    obj_release_slots(obj->sprite);
+                    ((void (*)(void *))((u32)obj->unk4C + ((u32)frame_9slice_tiles_routine - (u32)frame_9slice_tiles)))((u8 *)obj + 0x20);
+                    obj->unk14 = 0xC;
+                    obj->unk15 = 0x14;
+                    obj->unk5C = 0;
+                    obj->unk58 = 0;
+                    obj->count = 0;
+                    obj->idx = obj->maxIdx;
+                    obj->text++;
+                    obj->state = 0;
+                    return -1;
+                case 3:
+                    obj->state = 4;
+                    continue;
+                case 4:
+                    r4 = (u8 *)obj + 0x70;
+                    *(s32 *)(r4 + obj->count * 8) = obj->unk28 + obj->unk14 + 0xB;
+                    r3 = (u8 *)obj + 0x74;
+                    *(s32 *)(r3 + obj->count * 8) = obj->unk2C + obj->unk15 - 7;
+                    if (obj->count == 0)
+                    {
+                        if (obj->soundOn != 0)
+                        {
+                            sound_stop_song(obj->soundId);
+                            obj->soundOn = 0;
+                        }
+                    }
+                    if (obj->count == obj->maxIdx)
+                    {
+                        obj_load_record(obj->sprite, 0, -1, 0, 0);
+                        sprite_update_cd0(obj->sprite);
+                        obj->sprite[0] = *(s32 *)(r4 + obj->count * 8);
+                        obj->sprite[1] = *(s32 *)(r3 + obj->count * 8);
+                    }
+                    obj->count++;
+                    continue;
+                case 10:
+                    if (obj->soundOn != 0)
+                    {
+                        sound_stop_song(obj->soundId);
+                        obj->soundOn = 0;
+                    }
+                    if (obj->unk58 == 0)
+                    {
+                        obj_release_slots(obj->sprite);
+                        obj->state = 1;
+                        return -1;
+                    }
+                    obj->text = obj->unk58;
+                    obj->unk58 = 0;
+                    continue;
+                case 11:
+                {
+                    u32 buf[5];
+                    s32 x;
+                    s32 w;
+
+                    r6 = *obj->text;
+                    obj->text++;
+                    mem_copy_fast(buf, track, 0x14);
+                    w = layout_text_run(buf[0], buf[1], buf[2], buf[3], buf[4], 0) & 0xFFFF;
+                    switch (r6)
+                    {
+                    case 0:
+                        x = 9;
+                        break;
+                    case 1:
+                        x = ((((obj->unk34 - 1) << 19) >> 16) - w + 0xA) >> 1;
+                        break;
+                    case 2:
+                        x = (((obj->unk34 - 1) << 16) >> 13) - w - 4;
+                        break;
+                    default:
+                        x = 0;
+                        break;
+                    }
+                    voice_set_data_ptr(track, 0, (u8)x, (void *)obj->text);
+                    continue;
+                }
+                case 12:
+                    obj->unk5C = *obj->text;
+                    obj->text++;
+                    if (obj->soundOn != 0)
+                    {
+                        sound_stop_song(obj->soundId);
+                        obj->soundOn = 0;
+                    }
+                    continue;
+                case 13:
+                {
+                    r6 = *obj->text;
+
+                    obj->text++;
+                    obj->unk58 = obj->text;
+                    if (r6 != 0)
+                    {
+                        obj->text = gDialogJumpTargetFlagNonzero;
+                    }
+                    else
+                    {
+                        obj->text = gDialogJumpTargetFlagZero;
+                    }
+                    continue;
+                }
+                case 17:
+                    if (obj->count != 0)
+                    {
+                        obj->state = 3;
+                        obj->text++;
+                        return -1;
+                    }
+                    if (obj->soundOn != 0)
+                    {
+                        sound_stop_song(obj->soundId);
+                        obj->soundOn = 0;
+                    }
+                    if (*obj->text == 1)
+                    {
+                        obj_load_record(obj->sprite, 6, -1, 0, 0);
+                    }
+                    else
+                    {
+                        obj_load_record(obj->sprite, 1, -1, 0, 0);
+                    }
+                    sprite_update_cd0(obj->sprite);
+                    obj->sprite[0] = obj->unk28 + (obj->unk30 << 3) - 8;
+                    obj->sprite[1] = obj->unk2C + (obj->unk34 << 3) - 8;
+                    obj->state = 2;
+                    obj->text++;
+                    return -1;
+                default:
+                    obj_release_slots(obj->sprite);
+                    obj->state = 1;
+                    return -1;
+                }
+            }
+            break;
+        case 2:
+            if (input->keys & 1)
+            {
+                obj_release_slots(obj->sprite);
+                obj->state = 0;
+                continue;
+            }
+            return -1;
+        case 3:
+            if (input->keys & 0x60)
+            {
+                obj->idx--;
+                if (obj->idx < 0)
+                {
+                    obj->idx = obj->count - 1;
+                }
+                set_slot_value(0x4E, -1);
+            }
+            else if (input->keys & 0x90)
+            {
+                obj->idx++;
+                if (obj->idx >= obj->count)
+                {
+                    obj->idx = 0;
+                }
+                set_slot_value(0x4E, -1);
+            }
+            obj->sprite[0] = obj->pos[obj->idx][0];
+            obj->sprite[1] = obj->pos[obj->idx][1];
+            if (input->keys & 1)
+            {
+                set_slot_value(0x60, -1);
+                obj_release_slots(obj->sprite);
+                obj->state = 0;
+                return obj->idx + 1;
+            }
+            if (input->keys & 2)
+            {
+                set_slot_value(0x60, -1);
+                obj_release_slots(obj->sprite);
+                obj->state = 0;
+                return 0x3E7;
+            }
+            return -1;
+        case 1:
+        default:
+            return 0;
+        }
+    }
+}
+END_NONMATCH
