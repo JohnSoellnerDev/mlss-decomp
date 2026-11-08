@@ -42,16 +42,510 @@ struct OamPart {
     u8 flags;
 };
 
-ASM_FUNC("asm/code_0801EED0/draw_parts_rec6.s", void draw_parts_rec6(void))
-
-ASM_FUNC("asm/code_0801EED0/draw_parts_rec5.s", void draw_parts_rec5(void))
-
 static inline s32 half_of(s32 v)
 {
     return (v + ((u32)v >> 31)) >> 1;
 }
 
+static inline s32 round_asr8(s32 v)
+{
+    if (v < 0) {
+        v += 0xFF;
+    }
+    return v >> 8;
+}
 
+static inline s32 round_asr14(s32 v)
+{
+    if (v < 0) {
+        v += 0x3FFF;
+    }
+    return v >> 14;
+}
+
+struct OamPart6 {
+    s8 y;
+    u8 flags1;
+    u8 x;
+    u8 byte3;
+    u8 tile;
+    u8 byte5;
+};
+
+NONMATCH("asm/code_0801EED0/draw_parts_rec6.s", u32 draw_parts_rec6(struct OamNode *nodeIn, struct RecObj *obj,
+                    u32 **streamIn, s32 countIn, u8 *tilePtr, s8 *slotTable, u32 slotNext, u8 *ctr))
+{
+    u16 pal[16];
+    u8 prioTab[4];
+    struct OamNode *node;
+    struct OamPart6 *part;
+    s32 mode;
+    s32 prio;
+    s32 index;
+    s32 sub;
+    s32 affine;
+    s32 slotKey;
+    s32 flags1;
+    s32 w, h, x, y, flip;
+
+    node = nodeIn;
+
+    {
+        s32 i = 0;
+        u16 *slot = pal;
+        s32 mask = obj->palMask;
+        if (mask != 0) {
+            do {
+                if (mask & 1) {
+                    *slot = i << 12;
+                    slot++;
+                }
+                i++;
+                mask >>= 1;
+            } while (mask != 0);
+        }
+    }
+
+    {
+        s32 angle = obj->angleS;
+        if ((angle != 0 && (obj->flags29 & 0x80) == 0)
+            || obj->scaleX > 0x100 || obj->scaleY > 0x100 || obj->pa > 0x100 || obj->pd > 0x100) {
+            mode = 3;
+        } else {
+            mode = 1;
+            if (angle == 0 && *(u32 *)&obj->scaleX == 0x01000100) {
+                mode = (*(u32 *)&obj->pa ^ *(u32 *)&obj->scaleX) != 0;
+            }
+        }
+    }
+
+    prioTab[0] = obj->priority & 3;
+    prioTab[1] = (obj->priority >> 2) & 3;
+    prioTab[2] = (obj->priority >> 4) & 3;
+    prioTab[3] = (obj->priority >> 6) & 3;
+
+    part = (struct OamPart6 *)*streamIn;
+    index = 0;
+
+    if (index < countIn) {
+        do {
+            s32 byte3;
+            flags1 = part->flags1;
+            sub = flags1 & 3;
+            affine = 3;
+            if (mode != 3) {
+                affine = mode;
+                if (sub != 0) {
+                    affine = sub;
+                }
+            }
+
+            byte3 = part->byte3;
+            {
+                const u8 *sz = gOamSizeTable + (((flags1 >> 6) << 3) + ((byte3 >> 6) << 1));
+                w = sz[0];
+                h = sz[1];
+            }
+            x = part->x;
+            if ((byte3 & 1) != 0) {
+                x |= -0x100;
+            }
+            y = part->y;
+            if (sub == 3) {
+                x = x + half_of(w);
+                y = y + half_of(h);
+            }
+
+            {
+                s32 sx = obj->scaleX;
+                if (sx != 0x100) {
+                    s32 w8 = w << 8;
+                    s32 xs = x * sx;
+                    s32 wsx = w8 * sx;
+                    wsx = round_asr8(wsx);
+                    x = xs - half_of(w8 - wsx);
+                    x = round_asr8(x);
+                    w = round_asr8(w8);
+                }
+            }
+
+            flip = obj->flip;
+            if ((flip & 0x40) != 0) {
+                x = -x - w;
+            }
+
+            {
+                s32 sy = obj->scaleY;
+                if (sy != 0x100) {
+                    s32 h8 = h << 8;
+                    s32 ys = y * sy;
+                    s32 hsy = h8 * sy;
+                    hsy = round_asr8(hsy);
+                    y = ys - half_of(h8 - hsy);
+                    y = round_asr8(y);
+                    h = round_asr8(h8);
+                }
+            }
+            if ((flip & 0x80) != 0) {
+                y = -y - h;
+            }
+
+            if ((*(u16 *)&obj->angleS) != 0) {
+                s32 hw = half_of(w);
+                s32 hh = half_of(h);
+                s32 cx = x + hw;
+                s32 cy = y + hh;
+                s32 ang = ((*(u16 *)&obj->angleS) >> 8) & 0xFF;
+                s32 cs = gCosineTable[ang];
+                s32 sn = gSineTable[ang];
+                s32 rx = cs * cx + sn * cy;
+                s32 ry = -cx * sn + cy * cs;
+                x = round_asr14(rx) - hw;
+                y = round_asr14(ry) - hh;
+            }
+
+            if (*(u32 *)&obj->pa != 0x01000100) {
+                s32 pa = obj->pa;
+                s32 pd = obj->pd;
+                s32 xp = pa * x;
+                s32 wpa = pa * w;
+                s32 yp = pd * y;
+                s32 hpd = pd * h;
+                xp = round_asr8(xp);
+                wpa = round_asr8(wpa);
+                x = xp - half_of(w - wpa);
+                yp = round_asr8(yp);
+                hpd = round_asr8(hpd);
+                y = yp - half_of(h - hpd);
+            }
+
+            if (affine == 3) {
+                x = x - half_of(w);
+                y = y - half_of(h);
+                w = w << 1;
+                h = h << 1;
+            }
+
+            x = x + obj->x;
+            y = y + obj->y;
+            if (x + w >= 0 && x <= 0xEF && y + h >= 0 && y <= 0x9F) {
+                s32 key;
+                s32 prioBits;
+
+                prio = prioTab[(part->byte5 >> 2) & 3];
+                prioBits = prio << 10;
+                key = (prio << 30) | (obj->group << 14);
+                key = key | (*ctr << 7);
+                key = key | index;
+                node->key = key;
+                (*ctr)++;
+
+                if (affine != 0 && sub == 0) {
+                    slotKey = (part->byte3 >> 4) & 3;
+                    slotKey = slotKey ^ ((((u32)obj->flip >> 6) & 1) | ((obj->flip >> 7) << 1));
+                    if (slotTable[slotKey] == -1) {
+                        slotTable[slotKey] = (u8)slotNext;
+                        slotNext++;
+                        {
+                            u32 ctrl = (*(u16 *)&obj->ctrlLo);
+                            (*(u16 *)&obj->ctrlLo) = (ctrl & 0xFFFFFC3F)
+                                        | (((((ctrl >> 6) & 0xF) + 1) & 0xF) << 6);
+                        }
+                    }
+                }
+
+                node->attr3 = 0;
+                {
+                    s32 attr0Hi;
+                    s32 byte1;
+                    s32 shape;
+                    s32 flipXBit;
+                    if ((obj->flip & 0xC) != 0) {
+                        attr0Hi = (((u32)obj->flip << 28) >> 30) << 10;
+                        byte1 = part->flags1;
+                    } else {
+                        byte1 = part->flags1;
+                        attr0Hi = (0xC & byte1) << 8;
+                    }
+                    shape = ((byte1 & 0xF0) | affine) << 8;
+                    flipXBit = ((((u32)obj->flip << 27) >> 31)) << 12;
+                    node->attr0 = attr0Hi | shape | flipXBit | (y & 0xFF);
+                }
+
+                if (affine != 0) {
+                    s32 b3hi = (part->byte3 & 0xC0) << 8;
+                    s32 xBits = x & 0x1FF;
+                    s32 slotVal;
+                    if (sub == 0) {
+                        slotVal = ((s8)slotTable[slotKey]) << 9;
+                    } else {
+                        slotVal = ((((u32)obj->ctrlLo << 26) >> 27) + ((part->byte3 & 0x3E) >> 1)) << 9;
+                    }
+                    node->attr1 = slotVal | b3hi | xBits;
+                } else {
+                    s32 v = (part->byte3 & 0xC0)
+                            | ((part->byte3 & 0x10) ^ ((((u32)obj->flip << 25) >> 31) << 4));
+                    node->attr1 = ((v | ((part->byte3 & 0x20) ^ ((obj->flip >> 7) << 5))) << 8)
+                                  | (x & 0x1FF);
+                }
+
+                {
+                    s32 b5 = part->byte5;
+                    s32 b5hi = b5 >> 4;
+                    s32 tile;
+                    if (tilePtr == 0) {
+                        tile = part->tile | ((b5 & 3) << 8);
+                    } else {
+                        tile = *tilePtr;
+                    }
+                    node->attr2 = prioBits | pal[b5hi] | ((obj->tileBase >> 5) + tile);
+                    node = node->next;
+                }
+            }
+
+            if (tilePtr != 0) {
+                tilePtr++;
+            }
+            index++;
+            part++;
+        } while (index < countIn);
+    }
+
+    *streamIn = (u32 *)part;
+    return (u32)node;
+}
+END_NONMATCH
+
+
+struct OamPart5 {
+    s8 dx;
+    s8 dy;
+    u8 form;
+    u8 tile;
+    u8 flags;
+};
+
+NONMATCH("asm/code_0801EED0/draw_parts_rec5.s", u32 draw_parts_rec5(struct OamNode *nodeIn, struct RecObj *obj,
+                    u32 **streamIn, s32 countIn, u8 *tilePtr, s8 *slotTable, u32 slotNext, u8 *ctr))
+{
+    u16 pal[16];
+    struct OamNode *node;
+    struct OamPart5 *part;
+    s32 mode;
+    s32 prio;
+    s32 index;
+    s32 flags;
+    s32 sub;
+    s32 affine;
+    s32 slotIdx;
+    s32 w, h, dx, dy, flip;
+
+    node = nodeIn;
+
+    {
+        s32 i = 0;
+        u16 *slot = pal;
+        s32 mask = obj->palMask;
+        if (mask != 0) {
+            do {
+                if (mask & 1) {
+                    *slot = i << 12;
+                    slot++;
+                }
+                i++;
+                mask >>= 1;
+            } while (mask != 0);
+        }
+    }
+
+    {
+        s32 angle = obj->angleS;
+        if ((angle != 0 && (obj->flags29 & 0x80) == 0)
+            || obj->scaleX > 0x100 || obj->scaleY > 0x100 || obj->pa > 0x100 || obj->pd > 0x100) {
+            mode = 3;
+        } else {
+            mode = 1;
+            if (angle == 0 && *(u32 *)&obj->scaleX == 0x01000100) {
+                mode = (*(u32 *)&obj->pa ^ *(u32 *)&obj->scaleX) != 0;
+            }
+        }
+    }
+
+    part = (struct OamPart5 *)*streamIn;
+    index = 0;
+
+    if (index < countIn) {
+        do {
+            flags = part->flags;
+            sub = (flags >> 2) & 3;
+            affine = 3;
+            if (mode != 3) {
+                affine = mode;
+                if (sub != 0) {
+                    affine = sub;
+                }
+            }
+
+            {
+                const u8 *sz = gOamSizeTable + (((u32)flags >> 4) << 1);
+                w = sz[0];
+                h = sz[1];
+            }
+            dx = part->dx;
+            dy = part->dy;
+            if (sub == 3) {
+                dx = dx + (w >> 1);
+                dy = dy + (h >> 1);
+            }
+
+            {
+                s32 sx = obj->scaleX;
+                if (sx != 0x100) {
+                    s32 w8 = w << 8;
+                    s32 dxs = dx * sx;
+                    s32 wsx = w8 * sx;
+                    wsx = round_asr8(wsx);
+                    dx = dxs - half_of(w8 - wsx);
+                    dx = round_asr8(dx);
+                    w = round_asr8(w8);
+                }
+            }
+
+            flip = obj->flip;
+            if ((flip & 0x40) != 0) {
+                dx = -dx - w;
+            }
+
+            {
+                s32 sy = obj->scaleY;
+                if (sy != 0x100) {
+                    s32 h8 = h << 8;
+                    s32 dys = dy * sy;
+                    s32 hsy = h8 * sy;
+                    hsy = round_asr8(hsy);
+                    dy = dys - half_of(h8 - hsy);
+                    dy = round_asr8(dy);
+                    h = round_asr8(h8);
+                }
+            }
+            if ((flip & 0x80) != 0) {
+                dy = -dy - h;
+            }
+
+            if ((*(u16 *)&obj->angleS) != 0) {
+                s32 hw = half_of(w);
+                s32 hh = half_of(h);
+                s32 cx = dx + hw;
+                s32 cy = dy + hh;
+                s32 ang = ((*(u16 *)&obj->angleS) >> 8) & 0xFF;
+                s32 cs = gCosineTable[ang];
+                s32 sn = gSineTable[ang];
+                s32 rx = cs * cx + sn * cy;
+                s32 ry = -cx * sn + cy * cs;
+                dx = round_asr14(rx) - hw;
+                dy = round_asr14(ry) - hh;
+            }
+
+            if (*(u32 *)&obj->pa != 0x01000100) {
+                s32 pa = obj->pa;
+                s32 pd = obj->pd;
+                s32 dxp = pa * dx;
+                s32 wpa = pa * w;
+                s32 dyp = pd * dy;
+                s32 hpd = pd * h;
+                dxp = round_asr8(dxp);
+                wpa = round_asr8(wpa);
+                dx = dxp - half_of(w - wpa);
+                dyp = round_asr8(dyp);
+                hpd = round_asr8(hpd);
+                dy = dyp - half_of(h - hpd);
+            }
+
+            if (affine == 3) {
+                dx = dx - half_of(w);
+                dy = dy - half_of(h);
+                w = w << 1;
+                h = h << 1;
+            }
+
+            dx = dx + obj->x;
+            dy = dy + obj->y;
+            if (dx + w >= 0 && dx <= 0xEF && dy + h >= 0 && dy <= 0x9F) {
+                s32 key;
+
+                if ((((u32)part->flags >> 1) & 1) == 0) {
+                    prio = ((u32)obj->priority << 30) >> 20;
+                } else {
+                    prio = (((u32)obj->priority << 28) >> 30) << 10;
+                }
+                key = (prio << 20) | (obj->group << 14);
+                key = key | (*ctr << 7);
+                key = key | index;
+                node->key = key;
+                (*ctr)++;
+
+                if (affine != 0 && sub == 0) {
+                    slotIdx = ((u32)part->form >> 2) & 3;
+                    slotIdx = slotIdx ^ ((((u32)obj->flip >> 6) & 1) | ((obj->flip >> 7) << 1));
+                    if (slotTable[slotIdx] == -1) {
+                        slotTable[slotIdx] = (u8)slotNext;
+                        slotNext++;
+                        {
+                            u32 ctrl = (*(u16 *)&obj->ctrlLo);
+                            (*(u16 *)&obj->ctrlLo) = (ctrl & 0xFFFFFC3F)
+                                        | (((((ctrl >> 6) & 0xF) + 1) & 0xF) << 6);
+                        }
+                    }
+                }
+
+                node->attr3 = 0;
+                node->attr0 = ((*(u16 *)&obj->ctrlLo) & 0x3C00) | ((flags & 0xC0) << 8)
+                            | (affine << 8) | (dy & 0xFF);
+
+                if (affine != 0) {
+                    s32 size = ((u32)flags & 0x30) << 10;
+                    s32 x9 = dx & 0x1FF;
+                    s32 rot;
+                    if (sub != 0) {
+                        s32 base = ((u32)obj->ctrlLo << 26) >> 27;
+                        rot = base + (part->form & 0xF);
+                    } else {
+                        rot = slotTable[slotIdx];
+                    }
+                    node->attr1 = (rot << 9) | size | x9;
+                } else {
+                    s32 flagsHi = flags & 0x30;
+                    s32 form = part->form;
+                    s32 fx = (form & 4) ^ ((((u32)obj->flip >> 6) & 1) << 2);
+                    s32 fy = (form & 8) ^ ((obj->flip >> 7) << 3);
+                    node->attr1 = ((flagsHi | (fx | fy)) << 10) | (dx & 0x1FF);
+                }
+
+                {
+                    s32 palIdx = (u32)part->form >> 4;
+                    s32 tile;
+                    if (tilePtr == 0) {
+                        tile = part->tile | ((flags & 1) << 8);
+                    } else {
+                        tile = *tilePtr;
+                    }
+                    node->attr2 = prio | pal[palIdx] | ((obj->tileBase >> 5) + tile);
+                    node = node->next;
+                }
+            }
+
+            if (tilePtr != 0) {
+                tilePtr++;
+            }
+            index++;
+            part++;
+        } while (index < countIn);
+    }
+
+    *streamIn = (u32 *)part;
+    return (u32)node;
+}
+END_NONMATCH
 
 NONMATCH("asm/code_0801EED0/draw_parts_rec4.s", u32 draw_parts_rec4(struct OamNode *nodeIn, struct RecObj *obj,
                     u32 **streamIn, s32 countIn, u8 *tilePtr, s8 *slotTable, u32 slotNext, u8 *ctr))
