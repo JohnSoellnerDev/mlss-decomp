@@ -1014,27 +1014,23 @@ void enemy_place_on_owner(struct Owner *owner, struct Enemy *ent, u32 *out)
     *out = (u32)enemy_after_step_906c;
 }
 
-NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out))
+void enemy_after_step_906c(struct Owner *owner, struct Enemy *ent, u32 *out)
 {
+    u8 zero = 0;
     u8 *ai = (u8 *)ent + 0x58;
     struct Record *rec = ent->rec;
     u16 *table = ent->wanderDist;
     struct Enemy *body = ent->body;
     struct Partner *active;
     u8 idx;
-    u8 zero;
-    u32 speed;
+    u16 speed;
     s32 goalZ;
-    s32 *stepLenPtr;
-    s32 *accYPtr;
-    s32 *accXPtr;
-    s32 cosX;
-    s32 sinY;
-    s32 *angXPtr;
-    s32 *angYPtr;
-    s32 *phaseXPtr;
-    s32 *phaseYPtr;
+    s32 vx;
+    s32 vy;
+    s32 dx;
+    s32 dy;
 
+    /* no active partner: wait, then settle */
     if (find_active_entry(owner, &idx) == 0)
     {
         ent->unk1D2 = table[ent->index + 0x14];
@@ -1043,43 +1039,42 @@ NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c
         return;
     }
     active = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
+    /* body overlaps a partner in state 5: fast turn rates, go on with the body step */
     if (widths_overlap_x(body, active) != 0 && heights_overlap_y(body, active) != 0 && active->unk4 == 5)
     {
         body->unk30E = 0x500;
         body->unk310 = 0x500;
+        ((struct Flags8 *)&body->unk20D)->bit3 = 0;
+        out[0] = (u32)bump_attack_enemy_move_3d_step;
     }
     else
     {
-        struct Partner *tgt = owner->unk200;
-        s32 t;
-        s32 dx;
-        s32 dy;
-        s32 q;
-        u16 left;
-
-        if (tgt->unk4 != 4 && ((struct Partner *)owner->unk204)->unk4 != 4)
+        /* target height and speed depend on whether a partner is in state 4 */
+        if (((struct Partner *)owner->unk200)->unk4 != 4 && ((struct Partner *)owner->unk204)->unk4 != 4)
         {
-            goalZ = tgt->posZ + tgt->unk18 + 0x2900;
+            goalZ = ((struct Partner *)owner->unk200)->posZ + ((struct Partner *)owner->unk200)->unk18 + 0x2900;
             speed = *(u16 *)((u8 *)((u16 *)rec + *(u16 *)(ai + 0x178)) + 0x3A);
         }
         else
         {
-            goalZ = tgt->posZ + tgt->unk18;
+            goalZ = ((struct Partner *)owner->unk200)->posZ + ((struct Partner *)owner->unk200)->unk18;
             speed = *(u16 *)((u8 *)((u16 *)rec + *(u16 *)(ai + 0x178)) + 0x32);
         }
-        t = speed;
+        /* new phase rates keep their old sign */
+        vx = speed;
         if ((s16)body->unk30A < 0)
         {
-            t = -t;
+            vx = -vx;
         }
-        body->unk30A = t;
-        t = speed + 0x80;
+        body->unk30A = vx;
+        vy = speed + 0x80;
         if ((s16)body->unk30C < 0)
         {
-            t = -t;
+            vy = -vy;
         }
-        body->unk30C = t;
+        body->unk30C = vy;
 
+        /* the longer axis to the partner turns faster */
         dx = active->posX - body->posX;
         if (dx < 0)
         {
@@ -1100,73 +1095,35 @@ NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c
             body->unk30E = 0xC0;
             body->unk310 = 0x140;
         }
-        start_move_to_3d(body, active->posX, active->posY, goalZ, speed, zero = 0);
+        start_move_to_3d(body, active->posX, active->posY, goalZ, speed, zero);
 
+        /* move the centre along, then place the body on an ellipse around it */
         body->copyVX = body->vx;
         body->copyVY = body->vy;
-        stepLenPtr = &body->stepLen;
-        *stepLenPtr = (s16)body->speed << 1;
-        accXPtr = &body->unk2E4;
-        *accXPtr += (s16)body->copyVX;
-        accYPtr = &body->unk2E8;
-        *accYPtr += (s16)body->copyVY;
-        body->unk2EC += *stepLenPtr;
-
-        angXPtr = &body->unk32C;
-        t = *angXPtr;
-        if (t < 0)
+        body->stepLen = (s16)body->speed << 1;
+        body->unk2E4 += (s16)body->copyVX;
+        body->unk2E8 += (s16)body->copyVY;
+        body->unk2EC += body->stepLen;
         {
-            t += 0xFF;
-        }
-        cosX = gCosineTable[(t >> 8) & 0xFF];
-        if (cosX < 0)
-        {
-            cosX += 0x3F;
-        }
-        cosX >>= 6;
+        s32 cosX;
+        s32 sinY;
 
-        angYPtr = &body->unk328;
-        t = *angYPtr;
-        if (t < 0)
-        {
-            t += 0xFF;
+        cosX = gCosineTable[((s32)body->unk32C / 0x100) & 0xFF] / 0x40;
+        sinY = gSineTable[((s32)body->unk328 / 0x100) & 0xFF] / 0x40;
+        body->posX = body->unk2E4 + cosX * MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(body->unk2F4, 0x100);
+        body->posY = body->unk2E8 + sinY * MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(body->unk2F0, 0x100);
         }
-        sinY = gSineTable[(t >> 8) & 0xFF];
-        if (sinY < 0)
-        {
-            sinY += 0x3F;
-        }
-        sinY >>= 6;
-
-        phaseXPtr = &body->unk2F4;
-        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*phaseXPtr, 0x100);
-        body->posX = *accXPtr + q * cosX;
-        phaseYPtr = &body->unk2F0;
-        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*phaseYPtr, 0x100);
-        body->posY = *accYPtr + q * sinY;
-        body->unk18 += *stepLenPtr;
-
-        t = *angXPtr + (s16)body->unk30E;
-        if (t < 0)
-        {
-            t += 0xFF;
-        }
-        *angXPtr = ((t >> 8) & 0xFF) << 8;
-
-        t = *angYPtr + (s16)body->unk310;
-        if (t < 0)
-        {
-            t += 0xFF;
-        }
-        *angYPtr = ((t >> 8) & 0xFF) << 8;
-
-        *phaseXPtr += (s16)body->unk30A;
-        if (*phaseXPtr < 0 || *phaseXPtr > (s32)(speed * 0x16))
+        body->unk18 += body->stepLen;
+        body->unk32C = ((((s32)body->unk32C + (s16)body->unk30E) / 0x100) & 0xFF) << 8;
+        body->unk328 = ((((s32)body->unk328 + (s16)body->unk310) / 0x100) & 0xFF) << 8;
+        /* the phases bounce between 0 and 22 * speed */
+        body->unk2F4 += (s16)body->unk30A;
+        if ((s32)body->unk2F4 < 0 || (s32)body->unk2F4 > speed * 0x16)
         {
             ((struct MotionBits *)&body->unk2B5)->xMode = 1;
         }
-        *phaseYPtr += (s16)body->unk30C;
-        if (*phaseYPtr < 0 || *phaseYPtr > (s32)(speed * 0x16))
+        body->unk2F0 += (s16)body->unk30C;
+        if ((s32)body->unk2F0 < 0 || (s32)body->unk2F0 > speed * 0x16)
         {
             ((struct MotionBits *)&body->unk2B5)->yMode = 1;
         }
@@ -1189,9 +1146,8 @@ NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c
 
         body->vx = body->posX - body->prevX;
         body->vy = body->posY - body->prevY;
-        left = *(u16 *)(ai + 0x17A) - 1;
-        *(u16 *)(ai + 0x17A) = left;
-        if (left != 0)
+        /* when the timer runs out, recentre the swing and reset its phases and rates */
+        if (--*(u16 *)(ai + 0x17A) != 0)
         {
             return;
         }
@@ -1205,8 +1161,7 @@ NONMATCH("asm/code_08147904/enemy_after_step_906c.s", void enemy_after_step_906c
         body->unk328 = 0;
         body->unk30E = 0x500;
         body->unk310 = 0x500;
+        ((struct Flags8 *)&body->unk20D)->bit3 = 0;
+        out[0] = (u32)bump_attack_enemy_move_3d_step;
     }
-    ((struct Flags8 *)&body->unk20D)->bit3 = 0;
-    out[0] = (u32)bump_attack_enemy_move_3d_step;
 }
-END_NONMATCH
