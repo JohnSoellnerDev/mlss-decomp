@@ -33,7 +33,15 @@ struct TrackObj
 {
     u8 filler0[0x1E];
     u16 selector;
-    u8 filler20[0x4E - 0x20];
+    u8 filler20[0x36 - 0x20];
+    u16 widthPx[2];
+    u8 filler3A[0x3C - 0x3A];
+    u16 heightPx[2];
+    u8 filler40[0x42 - 0x40];
+    u16 mapCols[2];
+    u8 filler46[0x48 - 0x46];
+    u16 mapRows[2];
+    u8 filler4C[0x4E - 0x4C];
     u16 posA[2];
     s16 camX;
     u16 posB[2];
@@ -96,6 +104,10 @@ extern const u8 gColumnTable[];
 extern s16 gWaveX[];
 extern s16 gWaveY[];
 void scroll_map_slot(struct TrackObj *obj, u32 slot, s16 a, s16 b);
+void redraw_metatile_column(struct TrackObj *obj, u16 slot, s16 col, s16 row);
+void redraw_metatile_row(struct TrackObj *obj, u16 slot, s16 col, s16 row);
+void redraw_map_row(struct TrackObj *obj, u16 slot, s16 col, s16 row, s16 dstCol, s16 dstRow);
+void redraw_map_column(struct TrackObj *obj, u16 slot, s16 col, s16 row, s16 dstCol, s16 dstRow);
 void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
 void cpu_fast_set(const void *src, void *dst, u32 control);
 extern const u8 gHeapTagObjBgLayers[];
@@ -261,6 +273,7 @@ u32 check_warm_reset_counter(void)
 }
 
 ASM_FUNC("asm/code_0805799C/map_obj_start.s", void map_obj_start(void))
+
 
 void obj_release_parts(struct MapObj *obj, u32 arg)
 {
