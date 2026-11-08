@@ -112,6 +112,7 @@ extern const u32 gRomBootWords[];
 extern struct LinkState *gUnk_03000D0C;
 extern u8 *gUnk_03000D10;
 extern const u8 decompress_routine[];
+extern const u8 decompress_routine_end[];  /* = sub_0800063C, the end of the routine block */
 extern const u8 gHeapTags[];
 extern const u8 gDefaultTaskDesc[];
 void sub_0800063C(void);
@@ -419,9 +420,9 @@ NONMATCH("asm/code_0801931C/read_varlen_plus1.s", u32 read_varlen_plus1(u8 *p))
 END_NONMATCH
 
 // The original loads the table end a second time from its own literal pool entry; GCC shares one.
-NONMATCH("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
+void load_rom_table(void)
 {
-    s32 len = (u32)sub_0800063C;
+    s32 len = (u32)decompress_routine_end;
     u8 *buf;
     len -= (u32)decompress_routine;
     buf = heap_alloc(len, 0, gHeapTags + 0x48, 0);
@@ -433,7 +434,6 @@ NONMATCH("asm/code_0801931C/load_rom_table.s", void load_rom_table(void))
     gUnk_03000D08 = 0;
     gUnk_03000C80 = 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0801931C/task_insert.s", struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data))
 
