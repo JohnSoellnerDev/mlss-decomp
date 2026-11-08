@@ -572,9 +572,8 @@ NONMATCH("asm/code_081599D8/set_win_blend_shadow.s", void set_win_blend_shadow(v
     {
         *(vu16 *)0x02000000 &= 0xFBFF;
         p = (vu16 *)gUnk_02000050;
-        *p = mode;
-        p += 2;
-        *p = mode;
+        p[0] = mode;
+        p[2] = mode;
     }
 }
 END_NONMATCH
