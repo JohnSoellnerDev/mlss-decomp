@@ -887,10 +887,10 @@ void sub_080514D4(void)
 {
 }
 
-NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 *obj, u32 *state))
+void obj_random_pick(u32 r0, u8 *obj, u32 *state)
 {
-    u16 entry;
-    s16 *table;
+    u32 entry;
+    u8 *table;
     u32 off;
     u8 *base;
     s16 value;
@@ -899,11 +899,12 @@ NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 
     u16 *pb;
     u16 xa;
 
-    table = (s16 *)(obj + 0x100);
+    /* wander with a random speed and distance from the object's tables */
+    table = obj + 0x100;
     off = rand_below(2, mt19937_next()) << 1;
     base = obj + 0x130;
     entry = *(u16 *)(base + off);
-    value = table[rand_below(4, mt19937_next())];
+    value = *(s16 *)(table + (rand_below(4, mt19937_next()) << 1));
     wander_to_edge(obj, entry, value);
     pa = (u16 *)(obj + 0x242);
     pb = (u16 *)(obj + 0x244);
@@ -920,7 +921,6 @@ NONMATCH("asm/code_080502DC/obj_random_pick.s", void obj_random_pick(u32 r0, u8 
     ((struct Mode3 *)(obj + 0x214))->mode = 3;
     *state = (u32)obj_random_enter;
 }
-END_NONMATCH
 
 void obj_random_enter(u32 owner, u8 *obj, u32 *state)
 {
