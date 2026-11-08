@@ -165,6 +165,20 @@ static inline u32 child_is_done(struct Obj *child)
     }
     return 0;
 }
+
+/* a child is finished when it has no script left or its mode is 1 */
+static inline u32 child_finished(struct Obj *child)
+{
+    if (child->unk44)
+    {
+        if (child->unk40 == 1)
+        {
+            return 1;
+        }
+        return 0;
+    }
+    return 1;
+}
 void cpu_fast_set(void *src, void *dst, u32 control);
 
 void obj_set_child_table(struct Obj *obj)
@@ -418,9 +432,9 @@ void obj_init_single(struct Obj *obj)
 
 NONMATCH("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_done(struct Obj *obj))
 {
-    struct Obj **base;
     struct Obj **slot;
     u32 count;
+    s32 i;
 
     if (obj->unk0 == 0)
     {
@@ -432,20 +446,18 @@ NONMATCH("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_do
     }
     count = 0;
     slot = (struct Obj **)&obj->unk4;
-    base = slot;
-    do
+    for (i = 0; i < 3; i++)
     {
-        if (child_is_done(*slot) != 0)
+        if (child_finished(slot[i]) != 0)
         {
             count++;
         }
         else
         {
-            obj_script_step(*slot);
-            update_obj_sprite_pos(*slot, 0, 0);
+            obj_script_step(slot[i]);
+            update_obj_sprite_pos(slot[i], 0, 0);
         }
-        slot++;
-    } while ((s32)slot <= (s32)(base + 2));
+    }
     if (count == 3)
     {
         obj->unk0 = 0;
@@ -455,11 +467,13 @@ END_NONMATCH
 
 NONMATCH("asm/code_08164468/obj_run_children3_free.s", void obj_run_children3_free(struct Obj *obj, u32 flags))
 {
-    struct Obj **children = (struct Obj **)&obj->unk4;
+    struct Obj **slot = (struct Obj **)&obj->unk4;
+    struct Obj **end = slot + 3;
 
-    obj_run_behavior(obj->unk4);
-    obj_run_behavior(children[1]);
-    obj_run_behavior((struct Obj *)obj->unkC);
+    while (slot < end)
+    {
+        obj_run_behavior(*slot++);
+    }
     if ((flags & 1) != 0)
     {
         heap_free_b(obj);
