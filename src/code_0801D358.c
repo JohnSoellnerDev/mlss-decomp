@@ -1,4 +1,5 @@
 #include "global.h"
+#include "ram_routines.h"
 
 struct HookObj14
 {
@@ -312,4 +313,374 @@ tail:
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0801D358/obj_gfx_step.s", void obj_gfx_step(void))
+struct GfxObj
+{
+    u8 filler0[4];
+    s16 h04;
+    s16 h06;
+    s16 h08;
+    s16 h0A;
+    u16 h0C;
+    u8 filler0E[2];
+    u8 b10;
+    u8 b11;
+    u8 b12;
+    u8 b13;
+    u16 h14;
+    u8 filler16[0xC];
+    u8 b22;
+    u8 filler23[3];
+    u8 b26;
+    u8 filler27;
+    u8 b28;
+    u8 b29;
+    u8 filler2A[4];
+    u16 h2E;
+    u16 h30;
+    u8 filler32[2];
+    u32 w34;
+    u8 filler38[8];
+    u8 *p40;
+    u8 *p44;
+    u32 *p48;
+    u8 *p4C;
+    u8 *p50;
+    u8 *p54;
+    u8 *p58;
+};
+
+typedef u32 (*GfxCmdFn)(u32 value, struct GfxObj *obj, u8 **cur, s32 arg, u8 *endp, s32 *slot, s32 k, u32 ctr);
+typedef s32 (*MathDivFn)(s32 num, s32 den);
+
+extern u8 gSys[];
+extern u8 gUnk_02000280[];
+extern u32 gUnk_03000D58[];
+
+void cpu_set(const void *src, void *dst, u32 ctl);
+void table_register(void *p);
+void obj_affine_set(void *params, void *dst, u32 count, u32 stride);
+u32 read_varlen_plus1(const void *src);
+
+NONMATCH("asm/code_0801D358/obj_gfx_step.s", u32 obj_gfx_step(struct GfxObj *obj, u32 value, u32 ctr))
+{
+    u8 *cur;
+    s32 slotw;
+    s32 k;
+    u8 *endp;
+    s32 r3;
+    s32 i;
+    u32 j;
+    s32 n;
+    s32 bit;
+    u32 mask;
+    u8 *oam;
+    u8 *oamBase;
+    u32 aA[2];
+    u32 aB[2];
+
+    if (obj->p50 != 0)
+    {
+        if (*obj->p48 == 1)
+        {
+            s32 len = ((u32)*(u16 *)&obj->b28 << 23) >> 18;
+            s32 d;
+            s32 n;
+
+            n = read_varlen_plus1(obj->p50);
+            d = len - n;
+            if (d > 0)
+            {
+                u32 zero = 0;
+
+                cpu_fast_set(&zero, obj->p4C + n, (((u32)d << 9) >> 11) | 0x01000000);
+            }
+            *(u16 *)&obj->b28 = (*(u16 *)&obj->b28 & -0x200) | ((n / 0x20) & 0x1FF);
+            table_register(obj->p48);
+        }
+        else if (*obj->p48 == 0)
+        {
+            obj->p50 = 0;
+            obj->b12 = (obj->b12 & 0x3F) | ((((gSys[0x888] >> 5) & 1) + 1) << 6);
+        }
+    }
+
+    if (obj->p48 != 0 && *obj->p48 != 0)
+    {
+        return value;
+    }
+    if (obj->p44 != 0)
+    {
+        if (*obj->p44 != 1)
+        {
+            return value;
+        }
+        obj->h30 = 0;
+    }
+    else
+    {
+        u32 m = obj->b12 & 0xC0;
+
+        if (m != 0)
+        {
+            if (m == 0x40)
+            {
+                s32 len2;
+
+                if (obj->b10 & 1)
+                {
+                    len2 = obj->h30;
+                }
+                else
+                {
+                    len2 = ((u32)*(u16 *)&obj->b28 << 23) >> 18;
+                }
+                dma_copy_or_queue(obj->p4C, (void *)(0x06010000 + obj->h2E), len2, 0x20, 0);
+            }
+            obj->b12 = (obj->b12 & 0x3F) | ((((obj->b12 >> 6) - 1)) << 6);
+        }
+    }
+
+    if (obj->b12 & 0x20)
+    {
+        return value;
+    }
+
+    {
+        s32 mode = obj->b13 & 3;
+
+        if (mode != 0)
+        {
+            if (mode == 1)
+            {
+                mask = obj->h14;
+                bit = 0;
+                for (j = 0; j < (obj->b13 >> 4); j++)
+                {
+                    while (((mask ^ 1) & 1) != 0)
+                    {
+                        bit++;
+                        mask >>= 1;
+                    }
+                    cpu_set(obj->p54 + (j << 5), gUnk_02000280 + (bit << 5), 0x04000008);
+                    *(u16 *)gSys |= 1 << bit;
+                    bit++;
+                    mask >>= 1;
+                }
+            }
+            obj->b13 = (obj->b13 & ~3) | (((obj->b13 & 3) - 1) & 3);
+        }
+    }
+
+    k = (obj->b10 >> 1) & 0x1F;
+    *(u16 *)&obj->b10 &= 0xFC3F;
+    if (obj->p44 != 0)
+    {
+        endp = obj->p44 + (obj->b22 * obj->b26 + 1);
+    }
+    else
+    {
+        endp = 0;
+    }
+
+    cur = obj->p40;
+    r3 = *cur++;
+    if (r3 & 0x80)
+    {
+        r3 &= 0x7F;
+        if (obj->b29 & 8)
+        {
+            cur += r3 * 6;
+            k += r3;
+            *(u16 *)&obj->b10 = (*(u16 *)&obj->b10 & 0xFC3F) | (((((*(u16 *)&obj->b10) >> 6) & 0xF) + r3) & 0xF) << 6;
+        }
+        else
+        {
+            oamBase = gSys + 0x86 + ((((gSys[0x888] >> 3) & 1)) << 10);
+            oam = oamBase + (k << 5);
+            if (r3 != 0)
+            {
+                n = r3;
+                do
+                {
+                    u16 q;
+                    s32 a;
+                    u16 c;
+
+                    a = (s16)(cur[2] | (cur[3] << 8));
+                    q = MATH_ROUTINE(MathDivFn, iwram_div)(0x01000000, a * obj->h04);
+                    if (obj->b11 & 0x40)
+                    {
+                        q = -q;
+                    }
+                    aA[0] = (aA[0] & 0xFFFF0000) | q;
+                    a = (s16)(cur[4] | (cur[5] << 8));
+                    q = MATH_ROUTINE(MathDivFn, iwram_div)(0x01000000, a * obj->h06);
+                    if (obj->b11 & 0x80)
+                    {
+                        q = -q;
+                    }
+                    aA[0] = (aA[0] & 0xFFFF) | ((u32)q << 16);
+                    c = cur[0] | (cur[1] << 8);
+                    if (obj->b11 & 0x40)
+                    {
+                        c = -c;
+                    }
+                    if (obj->b11 & 0x80)
+                    {
+                        c = -c;
+                    }
+                    aA[1] = (aA[1] & 0xFFFF0000) | (u16)(obj->h0C - (s16)c);
+                    obj_affine_set(aA, oam, 1, 8);
+                    if (obj->h08 != 256)
+                    {
+                        s16 *ov = (s16 *)oam;
+
+                        ov[0] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[0] << 8, obj->h08);
+                        ov[8] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[8] << 8, obj->h08);
+                    }
+                    if (obj->h0A != 256)
+                    {
+                        s16 *ov = (s16 *)oam;
+
+                        ov[4] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[4] << 8, obj->h0A);
+                        ov[12] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[12] << 8, obj->h0A);
+                    }
+                    oam += 0x20;
+                    k++;
+                    *(u16 *)&obj->b10 = (*(u16 *)&obj->b10 & 0xFC3F) | (((((*(u16 *)&obj->b10) >> 6) & 0xF) + 1) & 0xF) << 6;
+                    cur += 6;
+                } while (--n != 0);
+            }
+        }
+        r3 = *cur++;
+    }
+
+    {
+        u8 op = *cur++;
+
+        obj->w34 = value;
+        slotw = -1;
+        value = ((GfxCmdFn)gUnk_03000D58[op])(value, obj, &cur, r3, endp, &slotw, k, ctr);
+    }
+
+    if ((obj->b29 & 8) == 0)
+    {
+        oamBase = gSys + 0x86 + ((((gSys[0x888] >> 3) & 1)) << 10);
+        for (i = 0; i < 4; i++)
+        {
+            s32 v = ((s8 *)&slotw)[i];
+            u16 pa;
+            u16 pd;
+
+            if (v == -1)
+            {
+                continue;
+            }
+            oam = oamBase + (v << 5);
+            pa = *(u16 *)&obj->h04;
+            if (obj->h04 != 256)
+            {
+                pa = MATH_ROUTINE(MathDivFn, iwram_div)(0x10000, obj->h04);
+            }
+            if (i & 1)
+            {
+                pa = -pa;
+            }
+            aB[0] = (aB[0] & 0xFFFF0000) | pa;
+            pd = *(u16 *)&obj->h06;
+            if (obj->h06 != 256)
+            {
+                pd = MATH_ROUTINE(MathDivFn, iwram_div)(0x10000, obj->h06);
+            }
+            if (i & 2)
+            {
+                pd = -pd;
+            }
+            aB[0] = (aB[0] & 0xFFFF) | ((u32)pd << 16);
+            aB[1] = (aB[1] & 0xFFFF0000) | obj->h0C;
+            obj_affine_set(aB, oam, 1, 8);
+            if (obj->h08 != 256)
+            {
+                s16 *ov = (s16 *)oam;
+
+                ov[0] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[0] << 8, obj->h08);
+                ov[8] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[8] << 8, obj->h08);
+            }
+            if (obj->h0A != 256)
+            {
+                s16 *ov = (s16 *)oam;
+
+                ov[4] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[4] << 8, obj->h0A);
+                ov[12] = MATH_ROUTINE(MathDivFn, iwram_div)(ov[12] << 8, obj->h0A);
+            }
+        }
+    }
+
+    if (endp == 0)
+    {
+        return value;
+    }
+    {
+        u8 *p5;
+        s32 flip;
+        s32 hp;
+        u32 acc = 0;
+        s32 cnt;
+
+        p5 = (gSys[0x888] & 0x20) ? obj->p58 : cur;
+        flip = (obj->b29 >> 2) & 1;
+        if (p5 != 0)
+        {
+            cnt = *p5;
+            p5++;
+            hp = obj->h2E;
+            if (cnt > 0)
+            {
+                if (cnt & 1)
+                {
+                    s32 s1 = p5[0] | ((p5[1] & 3) << 8);
+                    s32 len = p5[2] << 5;
+
+                    if (flip == 0)
+                    {
+                        dma_copy_or_queue(obj->p4C + (s1 << 5), (void *)(0x06010000 + hp), len, 0x20, acc);
+                    }
+                    hp += len;
+                    acc = len;
+                    p5 += 3;
+                    n = cnt - 1;
+                }
+                else
+                {
+                    n = cnt;
+                }
+                while (n != 0)
+                {
+                    s32 s1 = p5[0] | ((p5[1] & 3) << 8);
+                    s32 len = p5[2] << 5;
+
+                    if (flip == 0)
+                    {
+                        dma_copy_or_queue(obj->p4C + (s1 << 5), (void *)(0x06010000 + hp), len, 0x20, 0);
+                    }
+                    hp += len;
+                    acc += len;
+                    s1 = p5[3] | ((p5[4] & 3) << 8);
+                    len = p5[5] << 5;
+                    if (flip == 0)
+                    {
+                        dma_copy_or_queue(obj->p4C + (s1 << 5), (void *)(0x06010000 + hp), len, 0x20, 0);
+                    }
+                    hp += len;
+                    acc += len;
+                    p5 += 6;
+                    n -= 2;
+                }
+            }
+        }
+        obj->h30 = acc;
+        obj->p58 = (gSys[0x888] & 0x20) ? cur : 0;
+    }
+    return value;
+}
+END_NONMATCH
