@@ -125,6 +125,23 @@ struct Body
 
 extern void spawn_hero_children(void);
 extern void spawn_hero_children(void);
+struct MemberData
+{
+    u8 filler0[0x1C];
+    u8 flags;
+};
+
+struct ChainMember
+{
+    struct ChainMember *next;
+    u8 filler4[0x10 - 0x4];
+    u8 *anim;
+    u8 fillerR14[0xF0 - 0x14];
+    struct MemberData *mdata;
+};
+
+extern void orbit_parts_sway(struct Body *body);
+extern void land_group_with_effect(struct Body *body);
 extern void move_between_poses(void);
 extern void counter_then_begin_motion(struct Body *body);
 extern void fall_step_then_remove(struct Body *body);
@@ -172,7 +189,6 @@ extern void anim4_with_effect_rate(struct Body *body);
 extern void arrange_group_on_ellipse(struct Body *body);
 extern s32 candidates_advance_progress(struct Body *body);
 extern void settle_members_then_orbit(struct Body *body);
-extern void orbit_parts_sway(void);
 extern void set_motion_start(struct Body *body, u32 speed);
 extern s8 gScriptA[];
 extern void companion_jump_land_step_toward_partner(void);
@@ -529,7 +545,256 @@ NONMATCH("asm/code_0809F588/orbit_parts_step.s", void orbit_parts_step(struct Bo
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_0809F588/orbit_parts_sway.s", void orbit_parts_sway(void))
+static inline struct Body *sway_group(struct Body *body)
+{
+    return (struct Body *)((u8 *)body->data + 8);
+}
+
+NONMATCH("asm/code_0809F588/orbit_parts_sway.s", void orbit_parts_sway(struct Body *body))
+{
+    struct ChainMember *member;
+    struct Body *child;
+    s32 *pBX;
+    s32 *pBY;
+    s16 *pB0;
+    u16 *pAE;
+    s16 *pB2;
+    s32 t;
+    s32 posOld;
+    s32 pos;
+    s32 newRel;
+    s32 oldRel;
+    s32 cosv;
+    s32 sinv;
+    s32 modeA;
+    s32 modeB;
+    s32 step;
+    s32 baseX;
+
+    pBY = &body->landY;
+    t = body->jumpDY + *pBY * 31;
+    t <<= 3;
+    if (t < 0)
+        t += 0xFF;
+    *pBY = t >> 8;
+
+    pBX = &body->landX;
+    baseX = *pBX;
+    posOld = *(u16 *)pBX;
+    baseX += *pBY;
+    *pBX = baseX;
+    pos = *(u16 *)pBX;
+    newRel = (s16)(baseX - 0x2000);
+    oldRel = (s16)(posOld - 0x2000);
+    if (newRel >= 0)
+    {
+        if (newRel > 0 && oldRel < 0)
+            set_slot_value(0x47, -1);
+    }
+    else if (oldRel > 0)
+    {
+        set_slot_value(0x47, -1);
+    }
+
+    member = (struct ChainMember *)body->data;
+    if ((member->mdata->flags & 0x80) == 0)
+    {
+        do
+        {
+            member = member->next;
+        } while ((member->mdata->flags & 0x80) == 0);
+    }
+
+    pB0 = &body->jumpDY;
+    pB2 = &body->unkB2;
+    pAE = &body->jumpDX;
+
+    if ((u32)((pos - 1) << 16) <= 0x57FE0000u && *pB0 < 0)
+    {
+        if (*pB2 > 29)
+        {
+            if (member->anim[0x21] != 0x27)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x27, 0, 0);
+        }
+        else
+        {
+            if (member->anim[0x21] != 0x28)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x28, 0, 0);
+        }
+    }
+
+    if ((u32)((pos - 0x2801) << 16) <= 0x57FE0000u && *pB0 > 0)
+    {
+        if ((s16)body->child->unkB2 > 29)
+        {
+            if (member->anim[0x21] != 0x27)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x27, 0, 0);
+        }
+        else
+        {
+            if (member->anim[0x21] != 0x28)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x28, 0, 0);
+        }
+    }
+
+    if (pos > 0xA800 && *pB0 > 0)
+    {
+        if (*pB2 > 29)
+        {
+            if (member->anim[0x21] != 0x27)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x27, 0, 0);
+        }
+        else
+        {
+            if (member->anim[0x21] != 0x28)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x28, 0, 0);
+        }
+    }
+
+    if ((u32)((pos + 0x7FFF) << 16) <= 0x67FE0000u && *pB0 < 0)
+    {
+        if ((s16)body->child->unkB2 > 29)
+        {
+            if (member->anim[0x21] != 0x27)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x27, 0, 0);
+        }
+        else
+        {
+            if (member->anim[0x21] != 0x28)
+                sprite_set_action((struct Body *)((u8 *)member + 8), 0x28, 0, 0);
+        }
+    }
+
+    t = *pBX;
+    if (t < 0)
+        t += 0xFF;
+    cosv = gCosineTable[(t >> 8) & 0xFF];
+    if (cosv < 0)
+        cosv += 0x3F;
+    body->posX = sway_group(body)->targetX - (cosv >> 6) * 160;
+
+    t = *pBX;
+    if (t < 0)
+        t += 0xFF;
+    sinv = gSineTable[(t >> 8) & 0xFF];
+    if (sinv < 0)
+        sinv += 0x3F;
+    t = (sinv >> 6) * 0x5780;
+    if (t < 0)
+        t += 0xFF;
+    body->posY = sway_group(body)->targetY - (t >> 8);
+
+    t = body->posZ * 0xF3 + *pB2 * 0xD00;
+    if (t < 0)
+        t += 0xFF;
+    body->posZ = t >> 8;
+
+    child = body->child;
+    t = child->landX * 0xCC + (*pBX - 0x8000) * 0x34;
+    if (t < 0)
+        t += 0xFF;
+    child->landX = t >> 8;
+
+    t = child->landX;
+    if (t < 0)
+        t += 0xFF;
+    cosv = gCosineTable[(t >> 8) & 0xFF];
+    if (cosv < 0)
+        cosv += 0x3F;
+    child->posX = sway_group(body)->targetX - (cosv >> 6) * 160;
+
+    t = child->landX;
+    if (t < 0)
+        t += 0xFF;
+    sinv = gSineTable[(t >> 8) & 0xFF];
+    if (sinv < 0)
+        sinv += 0x3F;
+    t = (sinv >> 6) * 0x5780;
+    if (t < 0)
+        t += 0xFF;
+    child->posY = sway_group(body)->targetY - (t >> 8);
+
+    t = child->posZ * 0xF3 + (s16)child->unkB2 * 0xD00;
+    if (t < 0)
+        t += 0xFF;
+    child->posZ = t >> 8;
+
+    if (*pB0 < 0)
+    {
+        if (((s16)*pAE << 8) < *pBX)
+            return;
+    }
+    else
+    {
+        if (*pBX < ((s16)*pAE << 8))
+            return;
+    }
+
+    step = gScriptA[body->unkA8] << 4;
+    *pB0 = step;
+    if (step != 0)
+    {
+        if (step > 0)
+            *pAE += 0x100;
+        else
+            *pAE -= 0x100;
+
+        switch (gScriptA[body->unkA8 + 1])
+        {
+        case 1:
+            modeA = 0;
+            break;
+        case 2:
+            modeA = 0;
+            break;
+        case 3:
+            modeA = 0x50;
+            break;
+        case 4:
+            modeA = 0x50;
+            break;
+        }
+        *pB2 = modeA;
+        switch (gScriptA[body->unkA8 + 1])
+        {
+        case 1:
+            modeB = 0;
+            break;
+        case 2:
+            modeB = 0x50;
+            break;
+        case 3:
+            modeB = 0;
+            break;
+        case 4:
+            modeB = 0x50;
+            break;
+        }
+        child->unkB2 = modeB;
+        body->unkA8 += 2;
+    }
+    else
+    {
+        t = body->data->posX;
+        if (t < 0)
+            t += 0xFF;
+        cosv = body->data->posY;
+        if (cosv < 0)
+            cosv += 0xFF;
+        place_targets(body, t >> 8, cosv >> 8, 0x20, 0x100);
+        t = body->data->posX;
+        if (t < 0)
+            t += 0xFF;
+        cosv = body->data->posY;
+        if (cosv < 0)
+            cosv += 0xFF;
+        place_targets(child, t >> 8, cosv >> 8, 0x20, 0x100);
+        set_motion_start(body, 0x400);
+        set_motion_start(child, 0x400);
+        body->state = (void *)land_group_with_effect;
+    }
+}
+END_NONMATCH
 
 void land_group_with_effect(struct Body *body)
 {
