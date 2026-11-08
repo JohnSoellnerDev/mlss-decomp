@@ -123,6 +123,10 @@ void ensure_code_entry(u32 id);
 void alloc_code_entry(u32 id);
 void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
 void draw_digits_49_p11(s32 a, s32 b, s32 c, s32 d);
+void set_slot_value(u32 id, s32 value);
+void sound_stop_song(u32 song);
+void copy_map_rect_add(void *src, u32 a, u32 b, u32 c, u32 d, u32 e, void *f, u32 g);
+void state_assign_figure(struct Owner *owner);
 extern u8 gSys[];
 extern u16 gGlyphIndexTable[];
 extern u32 gMapTable[];
@@ -355,9 +359,176 @@ NONMATCH("asm/code_08102934/obj_apply_world_mode.s", void obj_apply_world_mode(s
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08102934/state_result_wait_confirm.s", void state_result_wait_confirm(void))
+static inline u32 lang_text(u32 base)
+{
+    u8 lang;
+    u32 row;
 
-ASM_FUNC("asm/code_08102934/state_assign_figure.s", void state_assign_figure(void))
+    lang = gSys[0x8C0];
+    if (lang == 2)
+    {
+        row = 0x42;
+    }
+    else if (lang == 3)
+    {
+        row = 0x44;
+    }
+    else
+    {
+        row = 0x40;
+        if (lang == 4)
+        {
+            row = 0x46;
+        }
+    }
+    return gMapTable[*(u16 *)((u8 *)gGlyphIndexTable + row)] + (u32)gMapTable + base;
+}
+
+static inline void party_add_score(struct Figure *fig)
+{
+    u32 *slot;
+    u32 v;
+
+    slot = (u32 *)(gParty + (~(s32)fig->anim) * 0x3C + 4);
+    v = (*slot & 0xFF000000) | ((((*slot << 8) >> 8) + *(u16 *)((u8 *)gWorld + 0x16)) & 0xFFFFFF);
+    *slot = v;
+    if (((v << 8) >> 8) > 999999)
+    {
+        *slot = (v & 0xFF000000) | 999999;
+    }
+}
+
+NONMATCH("asm/code_08102934/state_result_wait_confirm.s", void state_result_wait_confirm(struct Owner *owner))
+{
+    u16 t3;
+    s16 timer;
+    u16 keys;
+    void *text;
+    s32 six;
+
+    six = 6;
+
+    if (gWorld->fig[1] != 0)
+    {
+        {
+            if ((gWorld->fig[0]->ctrl & six) == 2 && (s16)owner->timer == 0x5A)
+            {
+                set_slot_value(0x79, -1);
+                obj_apply_world_mode(gWorld->fig[0]);
+                copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, (void *)lang_text(0), 0x8000);
+            }
+        }
+        {
+            if ((gWorld->fig[1]->ctrl & six) == 2 && (s16)owner->timer == 0x5A)
+            {
+                obj_apply_world_mode(gWorld->fig[1]);
+                copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, six, (void *)lang_text(0x180), 0x8000);
+            }
+        }
+        if ((s16)owner->timer == 0x5A)
+        {
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+        }
+    }
+    else
+    {
+        if ((s16)owner->timer == 0x28)
+        {
+            set_slot_value(0x79, -1);
+            obj_apply_world_mode(gWorld->fig[0]);
+            if (gWorld->fig[0]->anim == -1)
+            {
+                text = (void *)lang_text(0);
+            }
+            else
+            {
+                text = (void *)lang_text(0x180);
+            }
+            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, text, 0x8000);
+        }
+        if ((s16)owner->timer == 0x3C)
+        {
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+        }
+    }
+
+    t3 = owner->timer;
+    timer = (s16)owner->timer;
+    if (timer > 0x6D)
+    {
+        sound_stop_song(0x79);
+        if (*(u16 *)(gSys + 0x3E) & 1)
+        {
+            *(u16 *)(gParty + 0x88) += *(u16 *)((u8 *)gWorld + 0x18);
+            if (*(u16 *)(gParty + 0x88) > 9999)
+            {
+                *(u16 *)(gParty + 0x88) = 9999;
+            }
+            if (gWorld->fig[0] != 0 && (gWorld->fig[0]->ctrl & six) == 2)
+            {
+                party_add_score(gWorld->fig[0]);
+            }
+            if (gWorld->fig[1] != 0 && (gWorld->fig[1]->ctrl & six) == 2)
+            {
+                party_add_score(gWorld->fig[1]);
+            }
+            owner->timer = 0;
+            owner->state = state_assign_figure;
+        }
+        return;
+    }
+    keys = *(u16 *)(gSys + 0x3E);
+    if (!(keys & 1))
+    {
+        owner->timer = t3 + 1;
+        return;
+    }
+    if (gWorld->fig[1] != 0)
+    {
+        {
+            if ((gWorld->fig[0]->ctrl & six) == 2 && timer <= 0x59)
+            {
+                obj_apply_world_mode(gWorld->fig[0]);
+                copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, (void *)lang_text(0), 0x8000);
+            }
+        }
+        {
+            if ((gWorld->fig[1]->ctrl & six) == 2 && timer <= 0x59)
+            {
+                obj_apply_world_mode(gWorld->fig[1]);
+                copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, six, (void *)lang_text(0x180), 0x8000);
+            }
+        }
+        if (timer <= 0x59)
+        {
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+        }
+    }
+    else
+    {
+        if (timer <= 0x27)
+        {
+            obj_apply_world_mode(gWorld->fig[0]);
+            if (gWorld->fig[0]->anim == -1)
+            {
+                text = (void *)lang_text(0);
+            }
+            else
+            {
+                text = (void *)lang_text(0x180);
+            }
+            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, text, 0x8000);
+        }
+        if (timer <= 0x3B)
+        {
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+        }
+    }
+    owner->timer = 0x6E;
+}
+END_NONMATCH
+
+ASM_FUNC("asm/code_08102934/state_assign_figure.s", void state_assign_figure(struct Owner *owner))
 
 void state_show_hero_label(struct Owner *owner)
 {
