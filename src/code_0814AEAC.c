@@ -830,7 +830,7 @@ NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_sta
 END_NONMATCH
 
 void sprite_step_e6a0(void *obj);
-NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state))
+void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
 {
     u8 *ai = (u8 *)obj + 0x58;
     s32 cellDir;
@@ -850,16 +850,19 @@ NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct 
     }
     else if (state == 1)
     {
-        struct Obj *target = (struct Obj *)parent->tgtA;
+        struct Obj *target;
+        s32 targetDx;
+        s32 targetDy;
 
         obj->cell->unk20 = 0x30;
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
         ((struct ModeBits *)&obj->mode)->low3 = 4;
-        dx = target->x - obj->x;
-        dy = target->y - obj->y;
-        if ((dx | dy) != 0)
+        target = (struct Obj *)parent->tgtA;
+        targetDx = target->x - obj->x;
+        targetDy = target->y - obj->y;
+        if ((targetDx | targetDy) != 0)
         {
-            angle = (u16)angle_of_vector16(dx, dy) + 0x1000;
+            angle = (u16)angle_of_vector16(targetDx, targetDy) + 0x1000;
             cellDir = ((angle >> 13) & 7) >> 1;
         }
         else
@@ -964,7 +967,7 @@ NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct 
     {
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
         ((struct ModeBits *)&obj->mode)->low3 = 1;
-        if ((obj->vx | obj->vy) != 0)
+        if ((s16)obj->vx | (s16)obj->vy)
         {
             angle = (u16)angle_of_vector16((s16)obj->vx, (s16)obj->vy) + 0x1000;
             dir = (angle >> 13) & 7;
@@ -991,7 +994,6 @@ NONMATCH("asm/code_0814AEAC/state_change_hook.s", void state_change_hook(struct 
         sprite_step_e6a0(obj->cell);
     }
 }
-END_NONMATCH
 
 void set_state_timers(struct Obj *parent, struct Obj *obj, u8 state)
 {
