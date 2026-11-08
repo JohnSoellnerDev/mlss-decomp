@@ -124,7 +124,11 @@ struct Obj
     s32 unk24;
     u8 filler28;
     u8 unk29;
-    u8 filler2A[0x40 - 0x2A];
+    u8 filler2A[0x32 - 0x2A];
+    u16 unk32;
+    u8 filler34[0x36 - 0x34];
+    u16 unk36;
+    u8 filler38[0x40 - 0x38];
     u8 *map40;
     struct OamEntry *oam44;
     u8 filler48[0x54 - 0x48];
@@ -198,9 +202,12 @@ extern const u8 gObjInitChildTag[];
 extern u8 gUnk_02000001[];
 extern const u8 gFacingTable[];
 
+typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
+
 ASM_FUNC("asm/code_0804EA7C/obj_snap_to_tile_walls.s", void obj_snap_to_tile_walls(void))
 
-ASM_FUNC("asm/code_0804EA7C/sweep_obj_motion.s", void sweep_obj_motion(void))
+ASM_FUNC("asm/code_0804EA7C/sweep_obj_motion.s", void sweep_obj_motion(struct Obj *obj))
 
 u8 *cell_offsets(struct Obj *obj, s16 x, s16 y, u32 *outA, u32 *outB, u32 *outC)
 {
