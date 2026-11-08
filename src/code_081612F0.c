@@ -195,6 +195,11 @@ u32 obj_classify_row(struct TileObj *obj, u32 index);
 u32 classify_tile_code(void *obj, u32 tile, s32 row);
 struct EffectObj *obj_init_class_ea30(struct EffectObj *obj);
 void *lookup_or_alloc_13b4(s32 a, s32 b, s32 c, s32 d);
+
+static inline void *obj_src_lookup(struct EffectObj *obj)
+{
+    return lookup_or_alloc_13b4(0, ((s16 *)obj)[3], -1, 1);
+}
 void *find_or_alloc_obj_slots(s32 a, s32 b, s32 c, s32 d, s32 e, void *f, s32 g);
 void set_irq_callback(u32 kind, void *cb);
 void obj_setup_tiles(void *obj, const void *src, u32 w, u32 h, u32 x, u32 y, void *vram, u32 extra);
@@ -563,7 +568,7 @@ void stub_nop_08161ff8(void)
 {
 }
 
-NONMATCH("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex(struct EffectObj *obj, void *src, void *parent, s32 extra))
+struct EffectChild *obj_init_ex(struct EffectObj *obj, void *src, void *parent, s32 extra)
 {
     s32 tmp;
     s32 x;
@@ -578,7 +583,7 @@ NONMATCH("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex(stru
     obj->unk18 = obj->unk20 = ((s16 *)obj)[1] << 8;
     obj->unk24 = 0;
     obj->unk28 = 0;
-    lookup_or_alloc_13b4(0, ((s16 *)obj)[3], -1, 1);
+    obj_src_lookup(obj);
     x = ((s16 *)obj)[3];
     hi = (x >> 12) & 0xf;
     lo = x & 0xfff;
@@ -587,7 +592,6 @@ NONMATCH("asm/code_081612F0/obj_init_ex.s", struct EffectChild *obj_init_ex(stru
     obj->unk30 = (s32)parent;
     return (struct EffectChild *)obj;
 }
-END_NONMATCH
 
 void obj_effect_child_method(struct EffectObj *obj)
 {
