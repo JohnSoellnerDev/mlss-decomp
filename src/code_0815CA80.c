@@ -1,5 +1,43 @@
 #include "global.h"
 
+// Class table of the objects obj_cmd_drop handles: each slot is a this-offset and a function.
+struct E0E0Table
+{
+    u8 filler0[0x10];
+    s16 unk10;
+    u8 filler12[2];
+    void (*unk14)(void *, u32, u32, u32, u32);
+    u8 filler18[0x18];
+    s16 unk30;
+    u8 filler32[2];
+    void (*unk34)(void *);
+    s16 unk38;
+    u8 filler3A[2];
+    void (*unk3C)(void *);
+};
+
+struct DfeObj
+{
+    u8 filler0[4];
+    s32 unk04;
+    s32 unk08;
+    u8 filler0C[8];
+    u16 unk14;
+    u8 filler16[2];
+    u16 unk18;
+    u8 filler1A[2];
+    u16 unk1C;
+    u8 filler1E[2];
+    u16 unk20;
+    u8 filler22[2];
+    u8 unk24;
+    u8 filler25[0xB];
+    struct E0E0Table *unk30;
+    u8 filler34[4];
+    s32 unk38;
+    s32 unk3C;
+};
+
 struct VtSlot
 {
     s16 offset;
@@ -253,50 +291,48 @@ ASM_FUNC("asm/code_0815CA80/obj_cmd_follow.s", void obj_cmd_follow(void))
 
 ASM_FUNC("asm/code_0815CA80/obj_cmd_fly.s", void obj_cmd_fly(void))
 
-NONMATCH("asm/code_0815CA80/obj_cmd_drop.s", u32 obj_cmd_drop(struct MotionObj *obj, u32 a1, u16 gravity, u32 a3, u8 mode))
+u32 obj_cmd_drop(struct DfeObj *obj, u32 unused1, u16 speed, u32 unused3, u8 mode)
 {
-    struct VtSlot *entry;
-    u8 *target;
-    void (*fn)();
+    struct E0E0Table *table;
+    s32 ay;
     s32 y;
-
     switch (mode)
     {
     case 3:
-        entry = &obj->cls30->slot30;
-        target = (u8 *)obj + entry->offset;
-        fn = entry->fn;
-        fn(target, fn, 0x30, mode);
+        table = obj->unk30;
+        table->unk34((u8 *)obj + table->unk30);
         obj->unk18 = 0xFE0C;
         obj->unk24 = 1;
-        return 0;
+        break;
     case 4:
-        entry = &obj->cls30->slot38;
-        target = (u8 *)obj + entry->offset;
-        fn = entry->fn;
-        fn(target, fn, 0x38, mode);
+        table = obj->unk30;
+        table->unk3C((u8 *)obj + table->unk38);
         obj->unk24 = 2;
-        return 0;
+        break;
     case 5:
-        return 0;
-    }
-    if (obj->unk24 == 1)
-    {
-        obj->unk14 += obj->unk1C;
-        obj->unk18 += (s16)gravity + obj->unk20;
-        obj->x += (s16)obj->unk14;
-        y = obj->y + (s16)obj->unk18;
-        obj->y = y;
-        if (y > obj->unk3C)
+        break;
+    default:
+        if (obj->unk24 == 1)
         {
-            obj->x = obj->unk38;
-            obj->y = obj->unk3C;
-            obj->unk18 = 0xFE0C;
+            obj->unk14 += obj->unk1C;
+            ay = (s16)speed + obj->unk20;
+            obj->unk18 = obj->unk18 + ay;
+            obj->unk04 += (s16)obj->unk14;
+            y = obj->unk08 + (s16)obj->unk18;
+            obj->unk08 = y;
+            if (y > obj->unk3C)
+            {
+                s32 x = obj->unk38;
+                s32 z = *(volatile s32 *)&obj->unk3C;
+                obj->unk04 = x;
+                obj->unk08 = z;
+                obj->unk18 = 0xFE0C;
+            }
         }
+        break;
     }
     return 0;
 }
-END_NONMATCH
 
 static inline void *spawn_5008(void)
 {
