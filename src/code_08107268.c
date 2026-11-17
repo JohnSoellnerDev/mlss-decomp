@@ -417,27 +417,26 @@ void state_clear_menu_flag_and_end(struct Owner *owner)
     }
 }
 
-NONMATCH("asm/code_08107268/state_menu_scroll_stop.s", void state_menu_scroll_stop(struct Owner *owner))
+void state_menu_scroll_stop(struct Owner *owner)
 {
+    register struct Owner *menu asm("r2") = owner;
     struct World *world = gWorld;
     u16 *scrollp = &world->scene->scroll;
     s32 scroll = *scrollp - 1;
-    s32 step = owner->scrollStep;
-
+    s32 step = menu->scrollStep, next;
     if (step < 0)
-    {
         step += 0xFF;
-    }
-    step >>= 8;
-    *scrollp = scroll - step;
-    owner->scrollStep += 0x19;
-    if ((s16)world->scene->scroll <= 0)
+    next = scroll - (step >> 8);
+    scroll = 0;
+    *scrollp = next;
+    menu->scrollStep += 25;
+    scrollp = &world->scene->scroll;
+    if ((s16)*scrollp <= 0)
     {
-        world->scene->scroll = 0;
-        owner->state = 0;
+        *scrollp = scroll;
+        menu->state = 0;
     }
 }
-END_NONMATCH
 
 void state_menu_scroll_begin(struct Owner *owner)
 {
