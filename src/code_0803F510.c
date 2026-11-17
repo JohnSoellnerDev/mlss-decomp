@@ -659,38 +659,29 @@ void motion_obj_step_motion(struct FieldObj *obj)
     }
 }
 
-NONMATCH("asm/code_0803F510/obj_update_state.s", void obj_update_state(struct FieldObj *obj))
+void obj_update_state(struct FieldObj *obj)
 {
-    s32 nextState = 2;
-    s32 a;
-    s32 b;
     s32 y;
 
-    if (obj->flags20C & 1)
+    if ((obj->flags20C & 1) && !(obj->flags216 & 0x20))
     {
-        if (!(obj->flags216 & 0x20))
+        if (obj->counter25C >= 0)
         {
-            if (obj->counter25C >= 0)
-            {
-                a = obj->unk14 + obj->unk18;
-                b = obj->unk3C + obj->unk40;
-                obj->state4 = (a < b) ? 3 : nextState;
-            }
+            if (obj->unk14 + obj->unk18 >= obj->unk3C + obj->unk40)
+                obj->state4 = 2;
             else
-            {
-                if (obj->unk242 != 0 || (y = obj->unk244) != 0)
-                {
-                    obj->state4 = 1;
-                }
-                else
-                {
-                    obj->state4 = y;
-                }
-            }
+                obj->state4 = 3;
+        }
+        else if (obj->unk242 || (y = obj->unk244))
+        {
+            obj->state4 = 1;
+        }
+        else
+        {
+            obj->state4 = y;
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0803F510/obj_create_sub.s", void obj_create_sub(void))
 
