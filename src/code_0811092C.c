@@ -200,27 +200,13 @@ u32 action_handler_return_minus1(void)
     return -1;
 }
 
-NONMATCH("asm/code_0811092C/link_to_slot.s", s32 link_to_slot(struct ActionObj *obj))
+s32 link_to_slot(struct ActionObj *obj)
 {
-    struct ActionObj *o = obj;
-    s32 slot;
-    s32 result;
-
-    slot = lookup_link_slot(o);
-    if (slot == 0)
-    {
-        set_motion_start(o, 0x300);
-        sprite_set_action(o, 1, 0, 0);
-        {
-            s32 *addr = (s32 *)((char *)o + 0x80);
-            *addr = slot;
-        }
-        result = 0;
-    }
-    else
-    {
-        result = slot;
-    }
-    return result;
+    register s32 slot asm("r4") = lookup_link_slot(obj);
+    if (slot != 0)
+        return slot;
+    set_motion_start(obj, 0x300);
+    sprite_set_action(obj, 1, 0, 0);
+    obj->link = slot;
+    return 0;
 }
-END_NONMATCH
