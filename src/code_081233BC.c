@@ -122,16 +122,15 @@ void state_free(void)
     gParty = 0;
 }
 
-NONMATCH("asm/code_081233BC/state_load.s", void state_load(void))
+void state_load(void)
 {
-    u8 *buf = (u8 *)gUnk_03000FFC;
-    u8 **party = &gParty;
-    u8 *block = heap_alloc2(0x1BC, 1, gPartyStateTag, 0);
-    *party = block;
-    cpu_set(buf + ((gUnk_03000D40 << 0x1C) >> 0x1E) * 0x6F8 + 0x30, block, 0xDE);
-    gUnk_03000FF8 = (u32)(*party + 0x78);
+    u32 base = gUnk_03000FFC;
+    u32 offset;
+    gParty = heap_alloc2(0x1BC, 1, gPartyStateTag, 0);
+    offset = ((gUnk_03000D40 << 28) >> 30) * 0x6F8;
+    cpu_set((void *)(offset + base + 0x30), gParty, 0xDE);
+    gUnk_03000FF8 = (u32)(gParty + 0x78);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081233BC/save_data_verify.s", void save_data_verify(void))
 
