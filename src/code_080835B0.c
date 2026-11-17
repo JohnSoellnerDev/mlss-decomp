@@ -831,7 +831,7 @@ struct PartObj *spawn_obj_by_id(u16 id, u32 variant, u32 attr, u32 mode)
 
 ASM_FUNC("asm/code_080835B0/init_sprite_object.s", struct PartObj *init_sprite_object(struct PartObj *obj))
 
-NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
+void load_vram_tiles(void)
 {
     u32 idx;
     u32 *entry;
@@ -839,7 +839,6 @@ NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
     u32 row;
     u32 flags;
     u32 mask;
-    u32 t;
 
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x06004000, 0x9000);
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x0600F000, 0x1000);
@@ -849,16 +848,13 @@ NONMATCH("asm/code_080835B0/load_vram_tiles.s", void load_vram_tiles(void))
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
     flags = ((struct SysBase *)gSys)->flags888;
     mask = 6;
-    t = mask & flags;
+    mask &= flags;
     row = 0x12;
-    if (t != 0)
-    {
+    if (mask != 0)
         row = 0x14;
-    }
     idx = *(u16 *)(gGlyphIndexTable + row);
     entry = gMapTable + idx;
     copy((u8 *)gMapTable + *entry, gUnk_02000180, 0xC0);
     ((struct SysBase *)gSys)->unk2 |= 0x3F00;
 }
-END_NONMATCH
 
