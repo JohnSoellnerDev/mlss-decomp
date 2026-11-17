@@ -1294,51 +1294,48 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_081348C4/mat4_mul.s", void mat4_mul(struct Mat4 *out, struct Mat4 *a, struct Mat4 *b))
 
+// Copies the 16 entries of p into m, then resets p's callback word.
+static inline void mat4_copy(struct Mat4 *m, struct Mat4 *p)
+{
+    m->m[0] = p->m[0]; m->m[1] = p->m[1]; m->m[2] = p->m[2]; m->m[3] = p->m[3];
+    m->m[4] = p->m[4]; m->m[5] = p->m[5]; m->m[6] = p->m[6]; m->m[7] = p->m[7];
+    m->m[8] = p->m[8]; m->m[9] = p->m[9]; m->m[10] = p->m[10]; m->m[11] = p->m[11];
+    m->m[12] = p->m[12]; m->m[13] = p->m[13]; m->m[14] = p->m[14]; m->m[15] = p->m[15];
+    p->cb40 = gAppearCallback40Class;
+}
 
-NONMATCH("asm/code_081348C4/mat4_apply_scale.s", void mat4_apply_scale(struct Mat4 *m, s32 x, s32 y, s32 z))
+// m = m * sc, through a temporary on the stack.
+static inline void mat4_mul_into(struct Mat4 *m, struct Mat4 *sc)
+{
+    struct Mat4 out;
+    mat4_mul(&out, m, sc);
+    mat4_copy(m, &out);
+}
+
+void mat4_apply_scale(struct Mat4 *m, s32 x, s32 y, s32 z)
 {
     struct Mat4 sc;
-    struct Mat4 out;
-    s32 i;
-
+    s32 zero = 0, one = 0x100;
     sc.cb40 = gAppearCallback40Class;
     sc.m[0] = x;
-    sc.m[1] = 0;
-    sc.m[2] = 0;
-    sc.m[3] = 0;
-    sc.m[4] = 0;
+    sc.m[1] = zero;
+    sc.m[2] = zero;
+    sc.m[3] = zero;
+    sc.m[4] = zero;
     sc.m[5] = y;
-    sc.m[6] = 0;
-    sc.m[7] = 0;
-    sc.m[8] = 0;
-    sc.m[9] = 0;
+    sc.m[6] = zero;
+    sc.m[7] = zero;
+    sc.m[8] = zero;
+    sc.m[9] = zero;
     sc.m[10] = z;
-    sc.m[11] = 0;
-    sc.m[12] = 0;
-    sc.m[13] = 0;
-    sc.m[14] = 0;
-    sc.m[15] = 0x100;
-    mat4_mul(&out, m, &sc);
-    m->m[0] = out.m[0];
-    m->m[1] = out.m[1];
-    m->m[2] = out.m[2];
-    m->m[3] = out.m[3];
-    m->m[4] = out.m[4];
-    m->m[5] = out.m[5];
-    m->m[6] = out.m[6];
-    m->m[7] = out.m[7];
-    m->m[8] = out.m[8];
-    m->m[9] = out.m[9];
-    m->m[10] = out.m[10];
-    m->m[11] = out.m[11];
-    m->m[12] = out.m[12];
-    m->m[13] = out.m[13];
-    m->m[14] = out.m[14];
-    m->m[15] = out.m[15];
-    out.cb40 = gAppearCallback40Class;
+    sc.m[11] = zero;
+    sc.m[12] = zero;
+    sc.m[13] = zero;
+    sc.m[14] = zero;
+    sc.m[15] = one;
+    mat4_mul_into(m, &sc);
     sc.cb40 = gAppearCallback40Class;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081348C4/mat4_apply_rotate_zxy.s", void mat4_apply_rotate_zxy(void))
 
