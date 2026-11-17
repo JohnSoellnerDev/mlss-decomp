@@ -406,41 +406,44 @@ void wait_progress_then_return_or_destroy(struct ActionObj *obj)
     }
 }
 
-NONMATCH("asm/code_0811121C/link_and_start_action_from_flags.s", u32 link_and_start_action_from_flags(struct ActionObj *obj))
+u32 link_and_start_action_from_flags(struct ActionObj *arg)
 {
-    struct ActionObj *owner;
-    u16 *flags;
-    u32 mask;
-    s16 inverted;
-    u32 bits;
-    u32 index;
-
-    owner = obj->owner;
-    flags = &owner->part->flags;
-    mask = 0xF000;
-    inverted = (mask & *flags) ^ 0xFFFF;
-    partner_link_update(obj, owner, 0xFF);
-    obj->state = timed_effect_then_step;
-    mask &= *flags;
-    bits = (inverted & mask) << 16;
-    if (bits != 0)
+  register struct ActionObj *obj asm("r6") = arg;
+  struct ActionObj *owner = obj->owner;
+  u16 *flags = &owner->part->flags;
+  register u32 old asm("r0") = *flags;
+  register u32 mask asm("r4") = 0xF000;
+  register s32 bits asm("r5") = (mask & old) ^ 0xFFFF;
+  register u32 test asm("r0");
+  register u16 index asm("r3");
+  partner_link_update(obj, owner, 0xFF);
+  obj->state = timed_effect_then_step;
+  mask &= *flags;
+  bits &= mask;
+  test = ((u32) bits) << 16;
+  if (test)
+  {
+    bits = test >> 28;
+    index = 0;
+    if (((s16) (1 ^ bits)) & 1)
     {
-        inverted = bits >> 28;
-        index = 0;
-        if (((inverted ^ 1) & 1) != 0)
-        {
-            do
-            {
-                index++;
-            } while ((((inverted >> index) ^ 1) & 1) != 0);
-        }
-        sprite_set_action(obj, (s16)index, 0x4136, 0);
-        obj->part->animFlag113 = 1;
-        set_slot_value(0xA3, -1);
+      register s32 one asm("r2");
+      register s32 shift asm("r1");
+      do
+      {
+        register s32 incr asm("r0") = 0x10000;
+        shift = index << 16;
+        shift += incr;
+        index = ((u32) shift) >> 16;
+      }
+      while (((s16) (1 ^ (bits >> (shift >> 16)))) & ((unsigned long) 1));
     }
-    return 0;
+    sprite_set_action(obj, (s16) index, 0x4136, 0);
+    obj->part->animFlag113 = 1;
+    set_slot_value(0xA3, -1);
+  }
+  return 0;
 }
-END_NONMATCH
 
 u32 mark_chain_then_state(struct ActionObj *obj)
 {
@@ -544,26 +547,16 @@ void obj_wait_motion_spawn_part(struct ActionObj *obj)
     }
 }
 
-NONMATCH("asm/code_0811121C/obj_lookup_link_or_move.s", u32 obj_lookup_link_or_move(struct ActionObj *obj))
+u32 obj_lookup_link_or_move(struct ActionObj *obj)
 {
-    u32 slot;
-    u32 result;
-
-    slot = lookup_link_slot(obj);
-    if (slot == 0)
-    {
-        set_motion_start(obj, 0x300);
-        sprite_set_action(obj, 1, 0, 0);
-        obj->link = slot;
-        result = 0;
-    }
-    else
-    {
-        result = slot;
-    }
-    return result;
+    register u32 slot asm("r4") = lookup_link_slot(obj);
+    if (slot != 0)
+        return slot;
+    set_motion_start(obj, 0x300);
+    sprite_set_action(obj, 1, 0, 0);
+    obj->link = slot;
+    return 0;
 }
-END_NONMATCH
 
 void obj_start_anim11_if_active(struct ActionObj *obj)
 {
