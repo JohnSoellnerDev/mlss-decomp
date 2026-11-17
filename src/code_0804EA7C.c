@@ -227,13 +227,12 @@ u8 *cell_offsets(struct Obj *obj, s16 x, s16 y, u32 *outA, u32 *outB, u32 *outC)
     return cell;
 }
 
-NONMATCH("asm/code_0804EA7C/write_oam_entry.s", void write_oam_entry(struct Obj *obj, u16 a, u16 b))
+void write_oam_entry(struct Obj *obj, u16 a, u16 b)
 {
-    obj->oam44->attr0 = (obj->unk8 / 0x100) - (s16)a;
-    obj->oam44->attr1 = ((obj->unkC - obj->unk10 - obj->unk14) / 0x100) - (s16)b;
+    obj->oam44->attr0 = (obj->unk8 / 0x100) - ((s32)((u32)a << 16) >> 16);
+    obj->oam44->attr1 = ((obj->unkC - obj->unk10 - obj->unk14) / 0x100) - ((s32)((u32)b << 16) >> 16);
     obj->oam44->attrE = ((((u32)*(u16 *)obj << 21) >> 28) << 12) | (0x800 - (obj->unkC / 0x100));
 }
-END_NONMATCH
 
 void obj_release_oam(struct Obj *obj)
 {
