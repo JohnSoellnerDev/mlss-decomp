@@ -849,12 +849,13 @@ struct DfeObj {
     s32 unk3C;
 };
 
-NONMATCH("asm/code_08154490/obj_behavior_dfe0.s", u32 obj_behavior_dfe0(struct DfeObj *obj, u32 unused1, u16 speed, u32 unused3, u8 mode))
+u32 obj_behavior_dfe0(struct DfeObj *obj, u32 unused1, u16 speed, u32 unused3, u8 mode)
 {
     struct E0E0Table *table;
     s32 ay;
-
-    switch (mode) {
+    s32 y;
+    switch (mode)
+    {
     case 3:
         table = obj->unk30;
         table->unk34((u8 *)obj + table->unk30);
@@ -869,15 +870,20 @@ NONMATCH("asm/code_08154490/obj_behavior_dfe0.s", u32 obj_behavior_dfe0(struct D
     case 5:
         break;
     default:
-        if (obj->unk24 == 1) {
+        if (obj->unk24 == 1)
+        {
             obj->unk14 += obj->unk1C;
             ay = (s16)speed + obj->unk20;
             obj->unk18 = obj->unk18 + ay;
             obj->unk04 += (s16)obj->unk14;
-            obj->unk08 += (s16)obj->unk18;
-            if (obj->unk08 > obj->unk3C) {
-                obj->unk04 = obj->unk38;
-                obj->unk08 = obj->unk3C;
+            y = obj->unk08 + (s16)obj->unk18;
+            obj->unk08 = y;
+            if (y > obj->unk3C)
+            {
+                s32 x = obj->unk38;
+                s32 z = *(volatile s32 *)&obj->unk3C;
+                obj->unk04 = x;
+                obj->unk08 = z;
                 obj->unk18 = 0xFE0C;
             }
         }
@@ -885,7 +891,6 @@ NONMATCH("asm/code_08154490/obj_behavior_dfe0.s", u32 obj_behavior_dfe0(struct D
     }
     return 0;
 }
-END_NONMATCH
 
 struct StateObj {
     void *unk00;
