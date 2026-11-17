@@ -290,31 +290,27 @@ u32 sub_0803C454(struct PairObj *obj)
     return hit;
 }
 
-NONMATCH("asm/code_0803C438/sub_0803C47C.s", u32 sub_0803C47C(struct PairObj *obj))
+u32 sub_0803C47C(struct PairObj *obj)
 {
-    s32 mask;
+    u16 *flags;
+    s32 mask = ~0x180;
     if ((u16)(obj->subA->state - 0x2A) <= 1)
-    {
         return 1;
-    }
-    mask = ~0x180;
-    obj->half20A = mask & obj->half20A;
+    flags = (u16 *)((u8 *)obj + 0x20A);
+    *flags = mask & *flags;
     return 0;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0803C438/sub_0803C4B4.s", u32 sub_0803C4B4(struct PairObj *obj))
+u32 sub_0803C4B4(struct PairObj *obj)
 {
-    s32 mask;
+    u16 *flags;
+    s32 mask = ~0x180;
     if ((u16)(obj->subA->state - 0x27) <= 1)
-    {
         return 1;
-    }
-    mask = ~0x180;
-    obj->half20A = mask & obj->half20A;
+    flags = (u16 *)((u8 *)obj + 0x20A);
+    *flags = mask & *flags;
     return 0;
 }
-END_NONMATCH
 
 u32 sub_0803C4EC(struct PairObj *obj)
 {
@@ -411,20 +407,20 @@ void advance_sub_a_state(struct PairObj *obj)
     }
 }
 
-NONMATCH("asm/code_0803C438/entry_table_value.s", u32 entry_table_value(struct PairObj *obj, u32 idx))
+u32 entry_table_value(struct PairObj *obj, u32 idx)
 {
     struct PairSub *e = obj->entries[idx];
     struct PairFrames *frames = e->frames;
     u32 mode = e->mode352;
+    u32 index = (mode >> 7) ^ 1;
     u8 *counters = (u8 *)frames + 0x10;
-    u8 v = counters[(mode >> 7) ^ 1];
-    if ((mode & 0x80) != 0 || (obj->flags208 & 0x10) == 0 || frames->count == 0xA)
-    {
+    u8 v = counters[index];
+    u32 high = 0x80;
+    high &= mode;
+    if (high != 0 || (obj->flags208 & 0x10) == 0 || frames->count == 0xA)
         v = gEntryValueRemap[v];
-    }
     return v;
 }
-END_NONMATCH
 
 void shift_and_advance_pair_subs(struct PairObj *obj, u32 which)
 {
@@ -464,26 +460,26 @@ void dma_tile_frame(struct TileCtx *ctx, struct PairSub *sub)
     dma_copy_or_queue(src, (void *)dst, gRomTileOfsB[frame] << 5, 0x20, 0);
 }
 
-NONMATCH("asm/code_0803C438/mark_link_entry.s", void mark_link_entry(struct PairObj *obj, u32 idx))
+void mark_link_entry(struct PairObj *obj, u32 idx)
 {
+    struct LinkBits { u8 low : 4; u8 high : 4; } __attribute__((packed));
     s32 link = obj_link_index(idx);
     if (link >= 0)
     {
-        u8 *mask = &obj->maskFA;
-        if (((((u32)*mask << 28) >> 28) & (1 << link)) == 0)
+        struct LinkBits *mask = (struct LinkBits *)&obj->maskFA;
+        u32 low = mask->low;
+        u32 bit = 1 << link;
+        if ((low & bit) == 0)
         {
-            u32 bit = 1 << link;
+            u32 value;
             layer3_entries_by_attr(obj->map304, (u16)link);
-            {
-                u32 v = *mask;
-                s32 keep = -16;
-                *mask = (v & keep) | (((((u32)v << 28) >> 28) | bit) & 0xF);
-            }
+            value = mask->low;
+            value |= bit;
+            mask->low = value;
             set_slot_value(0x53, -1);
         }
     }
 }
-END_NONMATCH
 
 void scan_ledge_contact(struct PairObj *obj, struct PairSub *other)
 {
