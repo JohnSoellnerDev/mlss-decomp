@@ -795,20 +795,22 @@ u32 status_anim_wait(void)
     return obj_motion_start((struct Obj *)value, gWorld->active->unk40, gWorld->active->unk44, 0x3000, 0x3800);
 }
 
-NONMATCH("asm/code_0810D6C0/status_anim_start.s", u32 status_anim_start(void))
+u32 status_anim_start(void)
 {
-    struct World *world = gWorld;
-    struct Obj **entry = &world->slotTable[world->statusObj->unk10];
-    struct Obj *slot = *entry;
-    struct Obj *active = world->active;
-    s32 y = active->unk44 - 0x800;
-    s32 x = active->unk40 - 0x2000;
-
-    world->statusValue = (u32)slot;
-    *entry = 0;
-    return obj_motion_start(slot, x, y, 0, 0x3800);
+ struct World *world = gWorld;
+ s32 offset = world->statusObj->unk10 * sizeof(struct Obj *);
+ struct Obj **entry = world->slotTable;
+ struct Obj *slot, *active, *empty;
+ s32 y;
+ entry = (struct Obj **)((u8 *)entry + offset);
+ slot = *entry;
+ active = world->active;
+ y = active->unk44 - 0x800;
+ empty = 0;
+ world->statusValue = (u32)slot;
+ *entry = empty;
+ return obj_motion_start(slot, active->unk40 - 0x2000, y, 0, 0x3800);
 }
-END_NONMATCH
 
 void set_status_word(void)
 {
