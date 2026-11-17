@@ -116,11 +116,10 @@ void obj_release_slots(void *sprite);
 void sprite_update_cd0(void *sprite);
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
-NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj *obj))
+s32 effect_step_d(struct EffectObj *obj)
 {
-    s32 pos;
     s32 delta;
-
+    register s32 pos asm("r1");
     switch (obj->unk30)
     {
     case 0:
@@ -143,13 +142,11 @@ NONMATCH("asm/code_08162C68/effect_step_d.s", s32 effect_step_d(struct EffectObj
         break;
     }
     return 0;
-
 finish:
     obj->unk2C = 0x50;
     obj->unk30 = 1;
     return 0;
 }
-END_NONMATCH
 
 void obj_release_child_free_c(void *obj, u32 freeFlag)
 {
