@@ -925,17 +925,18 @@ s32 effect_init_sprites(void *p)
     return (s32)obj;
 }
 
-NONMATCH("asm/code_081612F0/effect_step_a.s", s32 effect_step_a(struct EffectObj *obj))
+s32 effect_step_a(struct EffectObj *obj)
 {
     s32 delta;
-
+    register s32 pos asm("r1");
     switch (obj->unk30)
     {
     case 0:
         delta = obj->unk10 + 0x14;
         obj->unk10 = delta;
-        obj->unk08 += delta;
-        if (obj->unk08 > 0x4FFF)
+        pos = obj->unk08 + delta;
+        obj->unk08 = pos;
+        if (pos > 0x4FFF)
         {
             obj->unk10 = (-delta * 2) / 3;
             if ((obj->unk10 >> 8) == 0)
@@ -950,13 +951,11 @@ NONMATCH("asm/code_081612F0/effect_step_a.s", s32 effect_step_a(struct EffectObj
         break;
     }
     return 0;
-
 finish:
     obj->unk2C = 0x50;
     obj->unk30 = 1;
     return 0;
 }
-END_NONMATCH
 
 void obj_release_child_free(struct EffectObj *obj, u32 flags)
 {
