@@ -654,36 +654,27 @@ void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     }
 }
 
-NONMATCH("asm/code_08149500/enemy_start_fall.s", void enemy_start_fall(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
+void enemy_start_fall(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
-    u8 *ai;
-    u8 *roll;
-    u8 dice[2];
-    u8 threshold;
-    u8 rollValue;
-
-    ai = (u8 *)ent + 0x58;
-    ent->unk2C4 = ent->posZ + ent->unk18;
-    dice[0] = 3;
-    roll = &dice[1];
-    *roll = rand_below(0x64, mt19937_next());
-    threshold = dice[0];
-    rollValue = *roll;
-    if ((s8)rollValue - (s8)threshold < 0)
-    {
-        ent->unk2D4 = 0x1800;
-    }
-    else
-    {
-        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
-    }
-    ent->zspeed = 0x100;
-    ((struct Mode3 *)&ent->unk214)->mode = 4;
-    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
-    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
-    *stateOut = (u32)fall_landing_active;
+ u8 *ai = (u8 *)ent + 0x58;
+ u8 dice[2];
+ u8 *roll;
+ s32 threshold;
+ ent->unk2C4 = ent->posZ + ent->unk18;
+ dice[0] = 3;
+ roll = &dice[1];
+ *roll = rand_below(0x64, mt19937_next());
+ threshold = (s8)*(volatile u8 *)dice;
+ if ((s8)*(volatile u8 *)roll - threshold < 0)
+  ent->unk2D4 = 0x1800;
+ else
+  ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+ ent->zspeed = 0x100;
+ ((struct Mode3 *)&ent->unk214)->mode = 4;
+ ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+ ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+ *stateOut = (u32)fall_landing_active;
 }
-END_NONMATCH
 
 void fall_landing_pick_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
@@ -808,36 +799,27 @@ NONMATCH("asm/code_08149500/enemy_check_owner_box.s", void enemy_check_owner_box
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08149500/enemy_start_fall_alt.s", void enemy_start_fall_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
+void enemy_start_fall_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
-    u8 *ai;
-    u8 *roll;
-    u8 dice[2];
-    u8 threshold;
-    u8 rollValue;
-
-    ai = (u8 *)ent + 0x58;
-    ent->unk2C4 = ent->posZ + ent->unk18;
-    dice[0] = 3;
-    roll = &dice[1];
-    *roll = rand_below(0x64, mt19937_next());
-    threshold = dice[0];
-    rollValue = *roll;
-    if ((s8)rollValue - (s8)threshold < 0)
-    {
-        ent->unk2D4 = 0x1800;
-    }
-    else
-    {
-        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
-    }
-    ent->zspeed = 0x100;
-    ((struct Mode3 *)&ent->unk214)->mode = 4;
-    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
-    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
-    *stateOut = (u32)fall_landing;
+ u8 *ai = (u8 *)ent + 0x58;
+ u8 dice[2];
+ u8 *roll;
+ s32 threshold;
+ ent->unk2C4 = ent->posZ + ent->unk18;
+ dice[0] = 3;
+ roll = &dice[1];
+ *roll = rand_below(0x64, mt19937_next());
+ threshold = (s8)*(volatile u8 *)dice;
+ if ((s8)*(volatile u8 *)roll - threshold < 0)
+  ent->unk2D4 = 0x1800;
+ else
+  ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+ ent->zspeed = 0x100;
+ ((struct Mode3 *)&ent->unk214)->mode = 4;
+ ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+ ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+ *stateOut = (u32)fall_landing;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_partner_axis_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 {
