@@ -303,29 +303,40 @@ void update_scroll_shadows(struct ScrollObj *obj)
     gUnk_0200001A = sy;
 }
 
-NONMATCH("asm/code_080E2024/dma_win0_from_buffer.s", void dma_win0_from_buffer(u32 arg0, u32 arg1, u32 arg2, u32 arg3))
+void dma_win0_from_buffer(u32 arg0, u32 arg1, u32 arg2, u32 arg3)
 {
-    u32 callback;
-    u32 bank;
-    u32 win;
-    vu32 *dma;
-
-    callback = *(u32 *)(gWorld + 0x260);
-    ((void (*)(u32, u32, u32, u32))callback)(callback, 0x260, arg2, arg3);
-    dma = (vu32 *)0x040000B0;
-    ((vu16 *)dma)[5] &= 0xC5FF;
-    ((vu16 *)dma)[5] &= 0x7FFF;
-    ((vu16 *)dma)[5];
-    bank = ((u32)*(u8 *)(gWorld + 0xB) << 26) >> 31;
-    dma[0] = ((((bank << 2) + bank) << 7) + 0x3EF0) + (u32)gWorkBuf;
-    win = 0x04000040;
-    dma[1] = win;
-    dma[2] = 0xA6600001;
-    dma[2];
-    bank = ((u32)*(u8 *)(gWorld + 0xB) << 26) >> 31;
-    *(vu32 *)win = *(u32 *)((((((bank << 2) + bank) << 7) + (u32)gWorkBuf)) + 0x3EF0);
+ vu32 *dma;
+ u32 base, world;
+ vu32 *win;
+ typeof(gWorld) *worldPtr = &gWorld;
+ typeof(gWorkBuf) *buf;
+ (*(void (**)(void))(*worldPtr + 0x260))();
+ dma = (vu32 *)0x040000B0;
+ ((vu16 *)dma)[5] &= 0xC5FF;
+ ((vu16 *)dma)[5] &= 0x7FFF;
+ ((vu16 *)dma)[5];
+ buf = &gWorkBuf;
+ world = (u32)*worldPtr;
+ {
+ u32 bank = *(u8 *)(world + 11);
+ u32 offset;
+ bank <<= 26;
+ bank >>= 31;
+ offset = bank * 640 + 0x3ef0;
+ base = (u32)*buf;
+ dma[0] = base + offset;
+ }
+ win = (vu32 *)0x04000040;
+ dma[1] = (u32)win;
+ dma[2] = 0xA6600001;
+ dma[2];
+ {
+ u32 bank = *(u8 *)(world + 11);
+ bank <<= 26;
+ bank >>= 31;
+ *win = *(u32 *)(bank * 640 + base + 0x3ef0);
+ }
 }
-END_NONMATCH
 
 void release_or_update_rec(struct StreamObj *obj)
 {
