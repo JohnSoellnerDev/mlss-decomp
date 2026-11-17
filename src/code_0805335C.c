@@ -319,22 +319,21 @@ NONMATCH("asm/code_0805335C/textbox_open_scene.s", struct TextboxObj *textbox_op
     return obj;}
 END_NONMATCH
 
-NONMATCH("asm/code_0805335C/textbox_free.s", void textbox_free(struct TextboxObj *obj, u32 kind))
+void textbox_free(struct TextboxObj *obj, u32 kind)
 {
     u8 *base;
     struct SysFlags888 *flags;
-    u16 *word;
 
     obj->unk18 = gTaskDescrTextbox;
-    if (obj->unk34 != NULL)
+    if (obj->unk34)
         task_remove(obj->unk34, 3);
-    if (obj->unk38 != NULL)
+    if (obj->unk38)
         heap_free_a(obj->unk38);
-    if (obj->unk20 != NULL)
+    if (obj->unk20)
         heap_free_a(obj->unk20);
-    if (obj->unk28 != NULL)
+    if (obj->unk28)
         heap_free_a(obj->unk28);
-    if (obj->unk2C != NULL)
+    if (obj->unk2C)
         heap_free_a(obj->unk2C);
     heap_free_b(obj->unk30);
     run_pending_obj_callbacks();
@@ -343,13 +342,18 @@ NONMATCH("asm/code_0805335C/textbox_free.s", void textbox_free(struct TextboxObj
     flags->bit5 = 0;
     flags->bit6 = 0;
     flags->bit3 = 0;
-    base[0x31] = 2;
-    word = (u16 *)0x02000000;
-    *word = 0;
-    word[0x28] = 0;
+    {
+        u8 *state = base + 0x31;
+        u16 zero = 0;
+        u16 *word;
+
+        *state = 2;
+        word = (u16 *)0x02000000;
+        *word = zero;
+        word[0x28] = zero;
+    }
     task_remove(obj, kind);
 }
-END_NONMATCH
 
 #define CHANNEL_SLICE 0x3C00
 #define MAP_BYTES 0x800
@@ -776,27 +780,19 @@ void textbox_update(struct TextboxObj *obj)
     }
 }
 
-NONMATCH("asm/code_0805335C/textbox_place_style.s", void textbox_place_style(struct TextboxObj *obj))
+void textbox_place_style(struct TextboxObj *obj)
 {
     const u8 *sz = gLangBoxSizes;
-    u32 lang;
-    u32 t;
-    u32 w;
-    u32 h;
-    u32 x;
-    u32 y;
+    u32 lang = gSys[0x8C0];
+    u32 wt = (u32)sz[lang * 4] << 24;
+    u32 w = wt >> 24;
+    u32 ht = (u32)sz[(u16)(lang * 2 + 1) * 2] << 24;
+    u32 h = ht >> 24;
+    u8 x = 15 - (wt >> 25), y = 10 - (ht >> 25);
 
-    lang = gSys[0x8C0];
-    t = (u32)sz[lang * 4] << 24;
-    w = t >> 24;
-    x = (u8)(0xF - (t >> 25));
-    t = (u32)sz[(lang * 2 + 1) * 2] << 24;
-    h = t >> 24;
-    y = (u8)(0xA - (t >> 25));
     window_place(&obj->unk38, obj->unk34, x, y, w, h, 0xE000);
-    *(gBgRequestPtr + 0x4A) |= 0x10;
+    gBgRequestPtr[0x4A] |= 0x10;
 }
-END_NONMATCH
 
 void textbox_task_free(struct TextboxObj *obj, u32 kind)
 {
