@@ -188,54 +188,55 @@ void serial_schedule(u16 a, u16 b, u32 c)
     }
 }
 
-NONMATCH("asm/code_0801ABFC/serial_timer_tick.s", void serial_timer_tick(void))
+void serial_timer_tick(void)
 {
-    if ((gSys[0x888] & 6) == 2)
+    u8 *sys = gSys;
+
+    if ((sys[0x888] & 6) == 2)
     {
-        u8 *timer = gUnk_03000D28;
-        u32 st = timer[0];
-        u32 state = (st << 30) >> 30;
+        register u32 b asm("r4");
+        register u8 *timer asm("r3") = gUnk_03000D28;
+        u32 phase, count;
 
-        if (state == 1)
+        b = timer[0];
+        phase = (b << 30) >> 30;
+        switch (phase)
         {
-            s32 count = *(u16 *)(timer + 4) - 1;
-
+        case 1:
+            count = *(u16 *)(timer + 4) - 1;
             *(u16 *)(timer + 4) = count;
             if ((u16)count == 0)
             {
-                if ((state & gSys[0x88B]) != 0)
-                {
+                phase &= sys[0x88B];
+                if (phase)
                     ((struct Bits18 *)gUnk_03000D18)->field45 = 2;
-                }
                 ((struct SchedBits *)timer)->lo2 = 2;
                 *(u16 *)(timer + 4) = *(u16 *)(timer + 2);
             }
-        }
-        else if (state == 2)
-        {
-            s32 count = *(u16 *)(timer + 4);
-
+            break;
+        case 2:
+            count = *(u16 *)(timer + 4);
             if (count != 0)
             {
                 count--;
                 *(u16 *)(timer + 4) = count;
                 if ((u16)count == 0)
                 {
-                    if ((st & 4) == 0)
-                    {
+                    u32 cleared;
+
+                    if ((4 & b) == 0)
                         ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
-                    }
                     else
-                    {
                         ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
-                    }
-                    ((struct SchedBits *)timer)->lo2 = 0;
+                    cleared = ~3;
+                    cleared &= b;
+                    timer[0] = cleared;
                 }
             }
+            break;
         }
     }
 }
-END_NONMATCH
 
 void serial_enter_phase_1(void)
 {
@@ -318,26 +319,26 @@ struct SerialRx
     u32 word8;
 };
 
-NONMATCH("asm/code_0801ABFC/serial_rx_error.s", u32 serial_rx_error(void))
+u32 serial_rx_error(void)
 {
     u32 rx = ((struct SerialRx *)gUnk_03000D18)->word8;
-    u32 payload = rx >> 4;
-    u32 check = rx & 0xF;
-    u32 sum = payload >> 24;
-    u32 i = 6;
-    u32 mask = 0xF;
-    u32 diff;
-
-    do
-    {
-        i--;
-        sum ^= (payload >> (i << 2)) & mask;
-        i = (u8)i;
-    } while (i != 0);
-    diff = sum ^ check;
-    return ((0 - diff) | diff) >> 31;
+    register u32 payload asm("r4") = rx >> 4;
+    u32 check = rx & 15;
+    register u32 sum asm("r3") = payload >> 24;
+    register u32 i asm("r0") = 6;
+    register u32 mask asm("r6") = 15;
+    register u32 diff asm("r1");
+    do {
+        register u32 shift asm("r2") = --i * 4;
+        register u32 nibble asm("r1") = payload;
+        nibble >>= shift;
+        nibble &= mask;
+        sum ^= nibble;
+    } while ((i = (u8)i));
+    diff = sum;
+    diff ^= check;
+    return (-diff | diff) >> 31;
 }
-END_NONMATCH
 
 void init_vt_08cdd748_reset(struct AnimTask *obj, u32 kind)
 {
