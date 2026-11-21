@@ -175,38 +175,44 @@ void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void anim_bit1_chance(void *part, u32 chance);
 u32 query_or_arm_wait(struct WaveObj *obj);
 
-s32 wave_obj_dispatch_by_mode(struct WaveObj *ctl, struct WaveObj *obj)
+/*
+ * Contact handler: what `item` does to the unit it touches depends on its phase field.
+ * 0 heals the unit 8 HP (part->cursorX, at most part->cursorY) and pops up the amount healed,
+ * 1 sets gWorld->unk18, 2 rolls anim_bit1_chance(200) on it, anything else is a plain hit.
+ * The item is released either way.
+ */
+s32 wave_obj_dispatch_by_mode(struct WaveObj *item, struct WaveObj *unit)
 {
-    s32 mode = ctl->phase;
-    s32 cursor;
-    s32 sign;
+    s32 kind = item->phase;
+    s32 hp;
+    s32 popupKind;
 
-    switch (mode)
+    switch (kind)
     {
     case 0:
-        cursor = menu_cursor_pos(obj->part->cursorX, obj->part->cursorY, 8);
-        sign = signed_byte_e4(obj->part);
-        popup_digit_spawn(cursor - obj->part->cursorX, obj->baseX / 0x100, obj->baseY / 0x100, sign, 1);
-        obj->part->cursorX = cursor;
-        effect_spawn_at(0xF93, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        hp = menu_cursor_pos(unit->part->cursorX, unit->part->cursorY, 8);
+        popupKind = signed_byte_e4(unit->part);
+        popup_digit_spawn(hp - unit->part->cursorX, unit->baseX / 0x100, unit->baseY / 0x100, popupKind, 1);
+        unit->part->cursorX = hp;
+        effect_spawn_at(0xF93, unit->baseX / 0x100, unit->baseY / 0x100, unit->baseH / 0x100, unit);
         break;
     case 1:
-        gWorld->unk18 = mode;
-        effect_spawn_at(0x2375, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        gWorld->unk18 = kind;
+        effect_spawn_at(0x2375, unit->baseX / 0x100, unit->baseY / 0x100, unit->baseH / 0x100, unit);
         set_slot_value(0x2C, -1);
         break;
     case 2:
-        anim_bit1_chance(obj->part, 0xC8);
-        effect_spawn_at(0x2396, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        anim_bit1_chance(unit->part, 200);
+        effect_spawn_at(0x2396, unit->baseX / 0x100, unit->baseY / 0x100, unit->baseH / 0x100, unit);
         set_slot_value(0xA0, -1);
         break;
     default:
-        partner_link_update(ctl, obj, 0xFF);
-        effect_spawn_at(0x2381, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        obj_list_remove(ctl);
+        partner_link_update(item, unit, 0xFF);
+        effect_spawn_at(0x2381, unit->baseX / 0x100, unit->baseY / 0x100, unit->baseH / 0x100, unit);
+        obj_list_remove(item);
         break;
     }
-    obj_release(ctl);
+    obj_release(item);
     return -1;
 }
 

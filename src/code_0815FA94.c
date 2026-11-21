@@ -183,6 +183,9 @@ struct TransObj
     u8 state;
     u8 filler25;
     u8 unk26;
+    /* copied from the InitRecord by obj_init_from_record, used by obj_create_sprite:
+     * [0] sprite bank, [3] sprite id (0xFF: none), [4] animation, [5] the sprite's unk0E,
+     * [6] the 2-bit value put in all four fields of the sprite's unk1F; [1], [2] unknown */
     u8 filler27[0x2E - 0x27];
     u8 flags2E;
     u8 filler2F;
@@ -990,7 +993,25 @@ struct SceneObj *pool_find_kind1_2(struct GameVars *game, s32 kind)
     return 0;
 }
 
-ASM_FUNC("asm/code_0815FA94/sub_081604EC.s", void sub_081604EC(void))
+void *obj_spawn_by_kind();
+void *obj_spawn_by_kind(void *game, u8 *spec);
+void *sub_081604EC(struct GameVars *game, u8 *spec)
+{
+    s32 i;
+    s32 slot;
+
+    for (i = 0; i < 0x100; i++)
+    {
+        if (game->unk1898[i] == 0)
+        {
+            slot = i;
+            goto found;
+        }
+    }
+    slot = -1;
+found:
+    return game->unk1898[slot] = obj_spawn_by_kind(game, spec);
+}
 
 s32 pool_first_free_slot_3(struct GameVars *game)
 {
@@ -1146,12 +1167,15 @@ struct TransObj *obj_init_from_record(struct TransObj *obj, u32 arg)
     return obj;
 }
 
-void obj_create_sprite(struct TransObj *obj, u32 zero)
+/* Creates the object's sprite from its record (filler27) unless it already has one or the record
+ * has no sprite (id 0xFF): sets its unk0E and the four unk1F fields, puts it at the object's
+ * position in pixels and loads its animation. */
+void obj_create_sprite(struct TransObj *obj, u32 unused)
 {
-    struct SpriteObj *old;
+    struct SpriteObj *sprite;
 
-    old = obj->sprite;
-    if (old != 0)
+    sprite = obj->sprite;
+    if (sprite != NULL)
     {
         return;
     }
@@ -1167,7 +1191,8 @@ void obj_create_sprite(struct TransObj *obj, u32 zero)
     ((struct Attr1F *)&obj->sprite->unk1F)->f6 = obj->filler27[6];
     obj->sprite->x = obj->posX >> 8;
     obj->sprite->y = obj->posY >> 8;
-    obj_load_record(obj->sprite, obj->filler27[4], -1, 0, (u32)old);
+    /* the last argument is 0: the old, empty sprite pointer */
+    obj_load_record(obj->sprite, obj->filler27[4], -1, 0, (u32)sprite);
 }
 
 struct SpriteObj *obj_get_sprite(struct TransObj *obj)

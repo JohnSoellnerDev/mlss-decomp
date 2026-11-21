@@ -135,31 +135,35 @@ void obj_wait_ready_spawn_glide(struct ActorObj *obj);
 void obj_wait_ready_setup_offsets(struct ActorObj *obj);
 void base_moves_obj_wait_ready_place_sprite(struct ActorObj *obj);
 
+/* State after obj_index_zero_action5_timer2: once the current animation has ended (pose flag 8) and
+ * the timer runs out, plays action 6 and sound 0x11D and swoops at 3 px a frame toward the owner's
+ * part's target, 16 pixels below the height saved in dh (dh then keeps the height it starts from).
+ * Goes on to obj_index_zero_set_motion. */
 void obj_timer_expired_set_motion(struct ActorObj *obj)
 {
-    s32 t;
-    s32 f;
+    s32 timer;
+    s32 flags;
 
     if (obj->pose->flags & 8)
     {
-        t = obj->timer;
-        t--;
-        obj->timer = t;
-        if ((s16)t <= 0)
+        timer = obj->timer;
+        timer--;
+        obj->timer = timer;
+        if ((s16)timer <= 0)
         {
             sprite_set_action(obj, 6, 0, 0);
             obj->targetX = obj->owner->part->targetX;
             obj->targetY = obj->owner->part->targetY;
             obj->targetH = (obj->dh - 0x10) << 8;
             obj->dh = obj->posH / 0x100;
-            f = obj->flags;
-            f |= 0x20;
-            obj->flags = f;
+            flags = obj->flags;
+            flags |= 0x20;
+            obj->flags = flags;
             obj->motionSpeed = 0x300;
             obj->motionStart = 0;
             start_motion(obj);
             obj->state = obj_index_zero_set_motion;
-            set_slot_value(0x11D, -1);
+            set_slot_value(0x11D, -1); /* plays sound 0x11D */
         }
     }
 }

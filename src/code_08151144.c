@@ -110,8 +110,8 @@ struct Obj
     u8 filler1B4[0x1BE - 0x1B4];
     s16 kind;
     u8 filler1C0[0x1D0 - 0x1C0];
-    u16 entryIndex;
-    u16 timerB;
+    u16 entryIndex; /* frames to wait before each move (record +0x18), reloads timerB */
+    u16 timerB;     /* counts the wait down (zone_timer_step) */
     u8 filler1D4[0x1DC - 0x1D4];
     s32 homeX;
     s32 homeY;
@@ -150,6 +150,17 @@ u32 read_var(u16 id);
 void write_var(u16 id, u16 value);
 u8 game_var_read(s32 index);
 extern u8 gGameMode;
+
+struct GameModeFlags
+{
+    u32 mode : 5;
+    u32 bit5 : 1;
+    u32 bit6 : 1;
+    u32 sub7 : 3;
+    u32 sub10 : 5;
+    u32 bit15 : 1;
+};
+
 void *scene_init_display(void *obj, u32 kind, const void *table);
 void run_pending_obj_callbacks(void);
 extern u8 *gUnk_03000FC0;
@@ -308,6 +319,9 @@ void zone_target_check(struct Obj *parent, struct Obj *obj, void **slot)
     }
 }
 
+/* Starts the zone AI: plain animation tables, motion axis A eased to 0x10 at speed 1, sprite
+ * unlinked, the current position kept as home, the wait between moves loaded from the record,
+ * and zone_entry_handler installed as the state handler. */
 void obj_reset_home(void *parent, struct Obj *obj)
 {
     ((struct Bit4Bits *)&obj->flags33E)->bit4 = 0;
@@ -349,18 +363,21 @@ void obj_load_kind_record(s32 unused, struct Obj *obj, void **slot)
     slot[0] = follow_entry_axis;
 }
 
+/* Once obj's cell value v2C passes 0xDF, clears obj's and its linked object's flags and starts the
+ * linked one at a random offset: 3 times in 4 (roll above 249 of 1000) with flag 1 and
+ * spawn_big_handler, else with flag 0 and spawn_small_handler. obj goes on to zone_pick_handler. */
 void obj_roll_spawn(s32 unused, struct Obj *obj, void **slot)
 {
     struct Obj *linked = obj->linked;
-    u32 seed;
+    u32 rnd;
 
     if (((struct Cell *)obj->cell294)->v2C > 0xDF)
     {
         ((struct Lo3Bits *)&obj->flags214)->low3 = 0;
         ((struct Bit2Bits *)&obj->flags20D)->bit2 = 0;
         ((struct Bit5Bits *)&linked->unk216)->bit5 = 0;
-        seed = mt19937_next();
-        if (rand_below(1000, seed) > 0xF9)
+        rnd = mt19937_next();
+        if (rand_below(1000, rnd) > 249)
         {
             spawn_random_offset(linked, 1);
             linked->handlerB = (void *)spawn_big_handler;
@@ -466,68 +483,57 @@ void obj_air_step(s32 unused, struct Obj *obj, void **slot)
     }
 }
 
-NONMATCH("asm/code_08151144/scene_setup.s", void scene_setup(s32 kind))
+/*
+ * Starts scene `scene` (0-4) once the previous one is unloaded (unload_scene): resets the sprite
+ * heap (init_obj_09a8), allocates the scene's state and runs its init. Scene 0 also sets
+ * gGameMode: its mode is game var 0x1E, and when that's nonzero, var 0x1CD9 (1 if that is 0).
+ */
+void scene_setup(s32 scene)
 {
-    s32 v;
-    s32 bits;
-    void *buf;
-    s32 mask;
-    s32 lo;
-    s32 m1;
-    s32 f;
-    u8 *gm;
+    void *state;
 
-    switch (kind)
+    switch (scene)
     {
     case 0:
         init_obj_09a8(0, 0, 0, 0xBF);
-        v = game_var_read(0x1E);
-        lo = 0x1F;
-        gm = &gGameMode;
-        mask = -0x20;
-        m1 = (gm[0] & mask) | (v & lo);
-        gm[0] = m1;
-        if ((m1 & lo) != 0)
+        ((struct GameModeFlags *)&gGameMode)->mode = game_var_read(0x1E);
+        if ((gGameMode & 0x1F) != 0)
         {
             if ((u16)read_var(0x1CD9) == 0)
-            {
-                bits = 1;
-            }
+                ((struct GameModeFlags *)&gGameMode)->mode = 1;
             else
-            {
-                bits = (u16)read_var(0x1CD9) & lo;
-            }
-            gm[0] = (gm[0] & mask) | bits;
+                ((struct GameModeFlags *)&gGameMode)->mode = (u16)read_var(0x1CD9);
         }
-        gGameMode |= 0x60;
-        *(u16 *)&gGameMode &= ~0x380;
-        ((u8 *)&gGameMode)[1] = ((((u8 *)&gGameMode)[1] & -0x7D) | 0x20) & 0x7F;
-        buf = heap_alloc2(0x1F34, 1, gHeapTagSceneKind0, 0);
-        scene_init_display(buf, 8, gHeapTagSceneKind0);
+        ((struct GameModeFlags *)&gGameMode)->bit5 = 1;
+        ((struct GameModeFlags *)&gGameMode)->bit6 = 1;
+        ((struct GameModeFlags *)&gGameMode)->sub7 = 0;
+        ((struct GameModeFlags *)&gGameMode)->sub10 = 8;
+        ((struct GameModeFlags *)&gGameMode)->bit15 = 0;
+        state = heap_alloc2(0x1F34, 1, gHeapTagSceneKind0, 0);
+        scene_init_display(state, 8, gHeapTagSceneKind0);
         break;
     case 1:
         init_obj_09a8(0, 0, 0, 0);
-        buf = heap_alloc2(0x70, 0, gHeapTagSceneKind1, 0);
-        obj_scene_init(buf, 8, gHeapTagSceneKind1);
+        state = heap_alloc2(0x70, 0, gHeapTagSceneKind1, 0);
+        obj_scene_init(state, 8, gHeapTagSceneKind1);
         break;
     case 2:
         init_obj_09a8(0, 0, 0, 0);
-        buf = heap_alloc2(0x70, 0, gHeapTagSceneKind2, 0);
-        scene_init_kind2(buf, 8, gHeapTagSceneKind2);
+        state = heap_alloc2(0x70, 0, gHeapTagSceneKind2, 0);
+        scene_init_kind2(state, 8, gHeapTagSceneKind2);
         break;
     case 3:
         init_obj_09a8(0, 0, 0, 0);
-        buf = heap_alloc2(0x54, 0, gHeapTagSceneKind3, 0);
-        scene_build_hud(buf, 8, gHeapTagSceneKind3);
+        state = heap_alloc2(0x54, 0, gHeapTagSceneKind3, 0);
+        scene_build_hud(state, 8, gHeapTagSceneKind3);
         break;
     case 4:
         init_obj_09a8(0, 0, 0, 0);
-        buf = heap_alloc2(0x494, 0, gHeapTagSceneKind4, 0);
-        obj_init_screen(buf, 8, gHeapTagSceneKind4);
+        state = heap_alloc2(0x494, 0, gHeapTagSceneKind4, 0);
+        obj_init_screen(state, 8, gHeapTagSceneKind4);
         break;
     }
 }
-END_NONMATCH
 
 void store_byte_base_53c(s32 index, u8 value)
 {
@@ -554,12 +560,11 @@ void obj_run_callbacks(void)
 void *heap_alloc(u32 size, u32 pool, const void *tag, u32 flags);
 extern const u8 gHeapTagObjTableBuf[];
 
-NONMATCH("asm/code_08151144/obj_init_table.s", struct Obj *obj_init_table(struct Obj *obj))
+struct Obj *obj_init_table(struct Obj *obj)
 {
-    s32 col;
-    s32 j;
-    u16 *row;
-    u8 *buf;
+    s32 i;
+    u16 *buf;
+    u16 fill;
 
     obj->posX = 0;
     obj->posY = 0;
@@ -578,20 +583,11 @@ NONMATCH("asm/code_08151144/obj_init_table.s", struct Obj *obj_init_table(struct
     obj->value = 0x10000;
     buf = heap_alloc(0x1C8, 1, gHeapTagObjTableBuf, 0);
     obj->rows = buf;
-    col = 0x9F;
-    row = (u16 *)(buf + 0x13E);
-    do
-    {
-        for (j = 0; j < 10; j++)
-        {
-            *row = 0xEF;
-            row--;
-        }
-        col -= 10;
-    } while (col >= 0);
+    fill = 0xEF;
+    for (i = 0x9F; i >= 0; i--)
+        buf[i] = fill;
     return obj;
 }
-END_NONMATCH
 
 
 
@@ -602,67 +598,48 @@ struct SysKeys28
     u16 keys;
 };
 
-extern u16 gUnk_02000052;
+extern u16 gUnk_02000052; /* BLDALPHA shadow: EVB << 8 | EVA */
 
-NONMATCH("asm/code_08151144/cam_update.s", void cam_update(struct Obj *cam))
+/* Obj.flags of an iris: base (the radius scale) is growing towards value (obj_set_value_steps) */
+#define IRIS_FLAG_GROWING 4
+
+/* Moves the iris's centre 4 pixels a frame with the held D-pad, and while flags 1 and 8 are set
+ * grows its radius scale (base) towards value, or shrinks it by 0x20 down to 0, and sets the
+ * blend's EVB from it (EVA 8). */
+void cam_update(struct Obj *cam)
 {
-    u8 *sys;
-    u16 held;
-    s32 flags;
-    s32 fadeBits;
-    s32 t;
+    u8 *sys = gSys;
+    s32 evb;
 
-    sys = gSys;
-    if ((((struct SysKeys28 *)sys)->keys & 0x10) != 0)
-    {
+    if (((struct SysKeys28 *)sys)->keys & DPAD_RIGHT)
         cam->x += 0x400;
-    }
-    held = ((struct SysKeys28 *)sys)->keys;
-    if ((held & 0x20) != 0)
-    {
+    if (((struct SysKeys28 *)sys)->keys & DPAD_LEFT)
         cam->x -= 0x400;
-    }
-    if ((held & 0x80) != 0)
-    {
+    if (((struct SysKeys28 *)sys)->keys & DPAD_DOWN)
         cam->y += 0x400;
-    }
-    if ((held & 0x40) != 0)
-    {
+    if (((struct SysKeys28 *)sys)->keys & DPAD_UP)
         cam->y -= 0x400;
-    }
-    flags = cam->flags;
-    if ((flags & 1) != 0)
+    if ((*(s16 *)&cam->flags & 1) && (*(s16 *)&cam->flags & 8))
     {
-        if ((flags & 8) != 0)
+        if ((s16)(*(s16 *)&cam->flags & IRIS_FLAG_GROWING))
         {
-            fadeBits = (s16)(flags & 4);
-            if (fadeBits != 0)
+            cam->base += cam->steps;
+            if (cam->base >= cam->value)
             {
-                cam->base += cam->steps;
-                if (cam->base >= cam->value)
-                {
-                    cam->base = cam->value;
-                    cam->flags = flags & -5;
-                }
+                cam->base = cam->value;
+                *(s16 *)&cam->flags &= ~IRIS_FLAG_GROWING;
             }
-            else
-            {
-                cam->base -= 0x20;
-                if (cam->base < 0)
-                {
-                    cam->base = fadeBits;
-                }
-            }
-            t = cam->base;
-            if (t < 0)
-            {
-                t += 0xFFF;
-            }
-            gUnk_02000052 = ((t >> 12) + 1) << 8 | 8;
         }
+        else
+        {
+            cam->base -= 0x20;
+            if (cam->base < 0)
+                cam->base = 0;
+        }
+        evb = cam->base / 0x1000 + 1;
+        gUnk_02000052 = evb << 8 | 8;
     }
 }
-END_NONMATCH
 
 
 
@@ -676,58 +653,63 @@ struct CamXY
     s32 y;
 };
 
+/* Keeps the iris circle's centre (camera + offset, 8.8 fixed point) inside the 240x160 screen,
+ * runs the wobble obj_set_vy_if_free started (count steps 12 per frame through a cosine until it
+ * passes 0xFF), then rebuilds the window's scanline rows and queues their copy into the HBlank
+ * buffer at gUnk_03001014. */
 void obj_place_on_screen(struct Obj *obj, struct CamXY *cam)
 {
-    s32 sx;
-    s32 sy;
+    s32 screenX;
+    s32 screenY;
     s32 camY;
     s32 v;
-    s32 dz;
-    s32 flagBit;
+    s32 wobble;
+    s32 frozen;
 
-    sx = obj->x + cam->x;
-    sy = obj->y + cam->y;
-    if (sx > 0xF000)
+    screenX = obj->x + cam->x;
+    screenY = obj->y + cam->y;
+    if (screenX > 240 << 8)
     {
-        obj->x = 0xF000 - cam->x;
+        obj->x = (240 << 8) - cam->x;
     }
-    else if (sx < 0)
+    else if (screenX < 0)
     {
         obj->x = -cam->x;
     }
-    if (sy > 0xA000)
+    if (screenY > 160 << 8)
     {
         v = cam->y;
-        obj->y = 0xA000 - v;
+        obj->y = (160 << 8) - v;
         camY = v;
     }
     else
     {
         camY = cam->y;
-        if (sy < 0)
+        if (screenY < 0)
         {
             obj->y = -camY;
         }
     }
-    flagBit = (s16)(obj->flags & 0x20);
-    if (flagBit == 0)
+    frozen = (s16)(obj->flags & 0x20);
+    if (frozen == 0)
     {
         if (*(s16 *)&obj->count > 0)
         {
-            obj->count += 0xC;
+            obj->count += 12;
             if (*(s16 *)&obj->count > 0xFF)
             {
                 obj->count = 0;
             }
+            /* wobble = cos / 64 * 3, rounding towards zero */
             v = gCosineTable[(u8)obj->count];
             if (v < 0)
             {
                 v += 0x3F;
             }
             v >>= 6;
-            dz = (v << 1) + v;
-            obj->unk20 = dz;
-            obj->field18.vy = dz;
+            wobble = (v << 1) + v;
+            obj->unk20 = wobble;
+            obj->field18.vy = wobble;
             obj->x += *(s16 *)&obj->z;
             obj->y += *(s16 *)&obj->field18.vy;
         }
@@ -735,7 +717,7 @@ void obj_place_on_screen(struct Obj *obj, struct CamXY *cam)
     obj->posX = -(cam->x + obj->x);
     obj->posY = -(camY + obj->y);
     obj_build_iris_rows(obj, (s32 *)cam);
-    dma_copy_or_queue(obj->rows, gUnk_03001014 + 4, 0x1C8, 0x10, 1);
+    dma_copy_or_queue(obj->rows, gUnk_03001014 + 4, 228 * sizeof(u16), 0x10, 1);
 }
 
 NONMATCH("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(struct Obj *obj, s32 *pos))
@@ -798,23 +780,23 @@ NONMATCH("asm/code_08151144/obj_build_iris_rows.s", void obj_build_iris_rows(str
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08151144/obj_set_flag_08.s", void obj_set_flag_08(struct Obj *obj, s32 on))
+void obj_set_flag_08(struct Obj *obj, s32 on)
 {
-    s32 m;
-
     if (on == 0)
     {
         s32 f = obj->flags;
-        m = -9 & f;
+        s32 m = -9;
+        m &= f;
+        obj->flags = m;
     }
     else
     {
         s32 f = obj->flags;
-        m = 8 | f;
+        s32 m = 8;
+        m |= f;
+        obj->flags = m;
     }
-    obj->flags = m;
 }
-END_NONMATCH
 
 void obj_set_behavior_table(struct Obj *obj, void *table)
 {
@@ -867,14 +849,14 @@ void obj_set_vy_if_free(struct Obj *obj, s32 vy)
     }
 }
 
-NONMATCH("asm/code_08151144/obj_point_in_iris.s", u32 obj_point_in_iris(struct Obj *obj, s32 *target, s32 *anchor))
+u32 obj_point_in_iris(struct Obj *obj, s32 *target, s32 *anchor)
 {
     s32 ax;
     s32 ay;
     s32 dx;
     s32 dy;
-    s32 scale;
     s32 limit;
+    s32 reach;
     s32 dist;
 
     ax = anchor[0] + obj->x;
@@ -882,20 +864,19 @@ NONMATCH("asm/code_08151144/obj_point_in_iris.s", u32 obj_point_in_iris(struct O
     dx = target[0] - ax;
     dy = target[1] - ay;
     dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-    scale = obj->base / 0x100;
-    limit = scale * obj->field30.radius;
-    limit = (limit << 1) + limit;
-    if (limit < 0)
+    limit = obj->base / 0x100 * obj->field30.radius;
+    reach = (limit << 1) + limit;
+    if (reach < 0)
     {
-        limit += 3;
+        reach += 3;
     }
-    if (dist < (limit >> 2))
+    limit = reach >> 2;
+    if (dist < limit)
     {
         return 1;
     }
     return 0;
 }
-END_NONMATCH
 
 void obj_set_iris(struct Obj *obj, s32 *target, s32 *anchor, s32 radius)
 {
@@ -950,9 +931,13 @@ extern u8 gGameMode;
 extern u8 *gGamePtr;
 s32 obj_get_value(void *obj);
 void game_var_write(s32 index, u8 value);
+/* Saves the minigame's results in script vars: the level reached in 0x1CD9 (6 in modes above 5)
+ * and the score (the digits object at +0x1CB0) in 0x1CDA. A level or score above the records
+ * read at setup (+0x1F24 / +0x1F26) becomes the new record in 0x1CDF / 0x1CE0. Game var 0x1C
+ * gets the current level (+0x1F20). */
 void sync_script_vars(void)
 {
-    u16 var;
+    u16 level;
 
     if (((s32)((u32)gGameMode << 27) >> 27) > 5)
     {
@@ -962,10 +947,10 @@ void sync_script_vars(void)
     {
         write_var(0x1CD9, gGamePtr[0x1F20]);
     }
-    var = read_var(0x1CD9);
-    if (var > *(s16 *)(gGamePtr + 0x1F24))
+    level = read_var(0x1CD9);
+    if (level > *(s16 *)(gGamePtr + 0x1F24))
     {
-        write_var(0x1CDF, var);
+        write_var(0x1CDF, level);
     }
     write_var(0x1CDA, obj_get_value(*(void **)(gGamePtr + 0x1CB0)));
     if ((s16)obj_get_value(*(void **)(gGamePtr + 0x1CB0)) > *(s16 *)(gGamePtr + 0x1F26))
@@ -975,7 +960,54 @@ void sync_script_vars(void)
     game_var_write(0x1C, gGamePtr[0x1F20]);
 }
 
-ASM_FUNC("asm/code_08151144/hblank_iris_window.s", void hblank_iris_window(void))
+/* The per-line buffer at gUnk_03001014 that hblank_iris_window reads. */
+struct IrisBuf
+{
+    s16 surfaceY;      /* the surface's world y in pixels (code_08154490) */
+    s16 barLines;      /* lines blacked out at the top and at the bottom */
+    u16 win0h[0xE4];   /* REG_WIN0H for each line */
+    u16 color[0xE4];   /* backdrop colour for each line */
+};
+
+// HBlank handler of the shutter effect: every line shows BG2's row 0x80. The top and bottom
+// barLines lines are darkened to black with window 0 off. The lines between them show window 0's
+// span for that line, with BG2 alpha-blended over everything. Unless game flag 4 is set, it also
+// sets the backdrop colour from the per-line gradient.
+void hblank_iris_window(void)
+{
+    s32 line = (u8)REG_VCOUNT;
+    struct IrisBuf *buf;
+
+    REG_BG2HOFS = 0;
+    REG_BG2VOFS = 0x80 - line;
+    buf = (struct IrisBuf *)gUnk_03001014;
+    if (line <= buf->barLines)
+    {
+        REG_BLDCNT = BLDCNT_EFFECT_DARKEN | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG3 | BLDCNT_TGT1_BG2
+                   | BLDCNT_TGT1_BG1 | BLDCNT_TGT1_BG0;
+        REG_BLDY = 0x1F;
+        REG_WIN0H = 0;
+        REG_DISPCNT &= (u16)~DISPCNT_WIN0_ON;
+    }
+    else if (line > SCREEN_HEIGHT - buf->barLines)
+    {
+        REG_BLDCNT = BLDCNT_EFFECT_DARKEN | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BG3 | BLDCNT_TGT1_BG2
+                   | BLDCNT_TGT1_BG1 | BLDCNT_TGT1_BG0;
+        REG_BLDY = 0x1F;
+        REG_WIN0H = 0;
+        REG_DISPCNT &= (u16)~DISPCNT_WIN0_ON;
+    }
+    else
+    {
+        REG_DISPCNT |= DISPCNT_WIN0_ON;
+        REG_BLDCNT = BLDCNT_TGT2_ALL | BLDCNT_EFFECT_BLEND | BLDCNT_TGT1_BG2;
+        REG_WIN0H = buf->win0h[line];
+    }
+    if ((*(u16 *)(gGamePtr + 0x1CC4) & 4) == 0)
+    {
+        *(u16 *)BG_PLTT = ((struct IrisBuf *)gUnk_03001014)->color[line];
+    }
+}
 
 
 u32 hitboxes_overlap(struct Obj *a, struct Obj *b)
@@ -1221,6 +1253,10 @@ struct SysHalf2
     u16 v2;
 };
 
+/* Ends the scene: turns off the HBlank interrupt (shadow of REG_DISPSTAT at 0x02000004, REG_IE,
+   pending REG_IF) and its callbacks, releases the scene's objects, game task and iris, stops the
+   HBlank DMA from the scanline buffer gUnk_03001014 and frees it, resets the display (shadow of
+   REG_DISPCNT at 0x02000000) to OBJ 1D mapping only, frees the tile sets and removes the task. */
 void scene_teardown(struct SceneState *state, u32 task)
 {
     s32 flagsByte;
@@ -1228,32 +1264,32 @@ void scene_teardown(struct SceneState *state, u32 task)
 
     state->sceneTable = (void *)gSceneTable08cdde80;
     slot_reset(0);
-    set_irq_callback(2, 0);
+    set_irq_callback(2, NULL);
     REG_IME = 0;
-    gUnk_02000004 = gUnk_02000004 & 0xFFEF;
-    REG_IE = REG_IE & 0xFFFD;
-    REG_IF = REG_IF | 2;
+    gUnk_02000004 = gUnk_02000004 & (u16)~DISPSTAT_HBLANK_IRQ;
+    REG_IE = REG_IE & (u16)~IRQ_HBLANK;
+    REG_IF = REG_IF | IRQ_HBLANK;
     REG_IME = 1;
-    set_irq_callback(4, 0);
+    set_irq_callback(4, NULL);
     scene_release_objects(state);
-    if (state->gameTask != 0)
+    if (state->gameTask != NULL)
     {
         task_remove(state->gameTask, 3);
     }
     dma_cancel_request(gUnk_03001014 + 4);
-    if (state->iris != 0)
+    if (state->iris != NULL)
     {
         obj_destroy_iris((struct Obj *)state->iris, 3);
     }
     heap_free(gUnk_03001014);
     ((struct SysHalf2 *)gSys)->v2 = 0xFFFF;
     flagsByte = *(u8 *)(gSys + 0x888);
-    mask = -0x21;
+    mask = ~0x20;
     mask &= flagsByte;
     *(u8 *)(gSys + 0x888) = mask;
     set_flags_2_3(state->x14);
     obj_run_callbacks();
-    *(u16 *)0x02000000 = 0x40;
+    *(u16 *)0x02000000 = DISPCNT_OBJ_1D_MAP;
     obj_free_tiles((u8 *)state + 0x1064, 2);
     obj_free_tiles((u8 *)state + 0x840, 2);
     obj_free_tiles((u8 *)state + 0x1C, 2);

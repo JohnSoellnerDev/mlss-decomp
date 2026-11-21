@@ -61,6 +61,8 @@ struct ChainNode
     s32 h;
 };
 
+#define EFFECT_SLIDE_TRAIL 0x2276 /* effect_spawn_at type left behind every 5 frames of a dive */
+
 extern u16 gUnk_03000E80[];
 extern u16 gUnk_03000E98[];
 
@@ -103,12 +105,12 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
-    u16 timer;
-    u16 dx;
+    s32 param9C; /* slides (prepare_slide_timing, start_slide_to_owner): height arc factor per step² */
+    s32 paramA0; /* slides: number of steps */
+    s32 paramA4; /* slides: X distance to cover (1/256 px) */
+    s32 paramA8; /* slides: Y distance to cover (1/256 px) */
+    u16 timer;   /* slides: current step */
+    u16 dx;      /* slides: start X, Y and height in whole pixels */
     s16 dy;
     s16 dh;
 };
@@ -118,7 +120,7 @@ u32 partner_link_update(struct ActorObj *obj, u32 partner, u32 mode);
 u32 lookup_link_slot(struct ActorObj *obj);
 u32 mt19937_next(void);
 void anim_bit200_step(struct ActorPart *part, u32 value);
-void set_slot_value(u32 id, s32 value);
+void set_slot_value(u32 id, s32 value); /* plays sound/song id (queue_song_play); -1 keeps the volume */
 void sound_stop_song(u32 song);
 void obj_list_remove(struct ActorObj *obj);
 void obj_release(struct ActorObj *obj);
@@ -206,6 +208,10 @@ void settle_to_owner_data(struct ActorObj *obj);
 void pose_action0_then_idle(struct ActorObj *obj);
 void on_arrive(struct ActorObj *obj);
 
+/* State: once the current animation is over (pose flag 8), plays action 3, spawns effect 0x2266 at the
+   obj's base and a 0x4144 child 0x20 above it, facing the same way. The child keeps the obj's flags,
+   owner and group, moves (speed 0x400) to the obj's position raised by 0x80 pixels and then settles on
+   its owner's data (settle_to_owner_data). Plays sound 0x10B; the obj goes on to pose_action0_then_idle. */
 void spawn_child_at_base(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -214,6 +220,7 @@ void spawn_child_at_base(struct ActorObj *obj)
     {
         sprite_set_action(obj, 3, 0, 0);
         effect_spawn_at(0x2266, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        /* the last argument but one: the pose's mirror bit (bit 6 of unk11) */
         child = obj_spawn(obj->part, 0x4144, obj->baseX / 0x100, obj->baseY / 0x100,
                           obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
@@ -226,6 +233,7 @@ void spawn_child_at_base(struct ActorObj *obj)
         obj_list_push_default(child);
         child->handler58 = notify_effect_unlink_finish;
         child->handler60 = lookup_then_notify;
+        /* move to the obj's position, 0x80 pixels higher */
         child->targetX = obj->posX;
         child->targetY = obj->posY;
         child->targetH = obj->posH + 0x8000;
@@ -262,14 +270,17 @@ void timer_then_target_from_owner(struct ActorObj *obj)
     }
 }
 
+/* Plays action 2 and sets up a jump from the obj's base (dx, dy, dh) to its part's target for
+   slide_step: one step per 4 pixels of ground distance, and a height arc factor that peaks 0x30
+   pixels above the start halfway through (at least 2 in size). */
 void prepare_slide_timing(struct ActorObj *obj)
 {
-    s32 dirX;
-    s32 dirY;
+    s32 distX;
+    s32 distY;
     s32 dist;
     s32 steps;
-    s32 half;
-    s32 speed;
+    s32 halfSteps;
+    s32 arcFactor;
 
     sprite_set_action(obj, 2, 0, 0);
     obj->targetX = obj->part->targetX;
@@ -278,45 +289,50 @@ void prepare_slide_timing(struct ActorObj *obj)
     obj->dx = obj->baseX / 0x100;
     obj->dy = obj->baseY / 0x100;
     obj->dh = obj->baseH / 0x100;
-    dirX = obj->targetX - ((s16)obj->dx << 8);
-    dirY = obj->targetY - ((s16)obj->dy << 8);
-    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dirX * dirX + dirY * dirY);
+    distX = obj->targetX - ((s16)obj->dx << 8);
+    distY = obj->targetY - ((s16)obj->dy << 8);
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(distX * distX + distY * distY);
     if (dist < 0)
     {
         dist += 0x3FF;
     }
-    steps = dist >> 10;
-    half = steps / 2;
-    speed = 0x3000 / (half * half);
-    if (speed == 1)
+    steps = dist >> 10; /* 4 px (0x400 in 1/256 px) per step */
+    halfSteps = steps / 2;
+    arcFactor = 0x3000 / (halfSteps * halfSteps);
+    if (arcFactor == 1)
     {
-        speed = 2;
+        arcFactor = 2;
     }
-    obj->param9C = -speed;
+    obj->param9C = -arcFactor;
     obj->paramA0 = steps;
-    obj->paramA4 = dirX;
-    obj->paramA8 = dirY;
+    obj->paramA4 = distX;
+    obj->paramA8 = distY;
     obj->timer = 0;
     obj->state = slide_step;
 }
 
+/* State set by prepare_slide_timing: spins the pose and moves the obj one step along a jump arc
+   from its start (dx, dy, dh) to its part's target, peaking 0x30 pixels above the start. After the
+   last step: plays sound 0xCC, spawns effect 0x226E at the part's target, makes the part's object
+   react to the hit (contact action 0x13, or 0x12 when its owner's part has unkEC == -1) and play
+   action 1, then moves the obj off screen and waits 30 frames (wait_counter_then_finish). */
 void slide_step(struct ActorObj *obj)
 {
     struct ActorPart *part;
-    struct ActorObj *link;
-    struct ActorObj *owner;
-    s32 d;
-    s32 h;
-    s32 dh;
+    struct ActorObj *hitObj;
+    struct ActorObj *hitOwner;
+    s32 fromMid;
+    s32 arc;
+    s32 base;
 
     obj->pose->unkC += 0x400;
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    h = d * d * obj->param9C;
-    dh = (s16)obj->dh << 8;
-    dh += 0x3000;
-    obj->posH = h + dh;
+    fromMid = (s16)obj->timer - obj->paramA0 / 2;
+    arc = fromMid * fromMid * obj->param9C;
+    base = (s16)obj->dh << 8;
+    base += 0x3000;
+    obj->posH = arc + base;
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {
@@ -324,14 +340,15 @@ void slide_step(struct ActorObj *obj)
         part = obj->part;
         effect_spawn_at(0x226E, part->targetX / 0x100, part->targetY / 0x100,
                         part->targetH / 0x100, obj);
-        link = (struct ActorObj *)((u8 *)obj->part + 8);
-        owner = link->owner;
-        resolve_contact_action(owner, link, link->posX / 0x100, link->posH / 0x100,
-                               owner->part->unkEC != -1 ? 0x13 : 0x12);
-        sprite_set_action(link, 1, 0, 0);
-        obj->targetX = 0x1E;
+        /* the object the part embeds at +8 */
+        hitObj = (struct ActorObj *)((u8 *)obj->part + 8);
+        hitOwner = hitObj->owner;
+        resolve_contact_action(hitOwner, hitObj, hitObj->posX / 0x100, hitObj->posH / 0x100,
+                               hitOwner->part->unkEC != -1 ? 0x13 : 0x12);
+        sprite_set_action(hitObj, 1, 0, 0);
+        obj->targetX = 30; /* frames for wait_counter_then_finish */
         obj->state = wait_counter_then_finish;
-        obj->posX = 0x12C00;
+        obj->posX = 300 << 8; /* off screen */
     }
 }
 
@@ -360,13 +377,18 @@ void wait_timer_then_settle(struct ActorObj *obj)
     }
 }
 
+/* Plays action 5 and sets up a dive from the obj's base (dx, dy, dh) down to its owner's part target:
+   one step per 3 pixels of ground distance, with a height arc factor that brings the height from dh to 0
+   over those steps (at least 2). Keeps param9C in targetH until the dive ends, clears flags77 bits 5-6,
+   puts the obj back on the default list (handler60 = lookup_then_slide) and goes on to
+   slide_step_with_pose, with targetX as its 5-frame trail-effect countdown. */
 void start_slide_to_owner(struct ActorObj *obj)
 {
     struct ActorPart *part;
-    s32 dX;
-    s32 dY;
-    s32 dur;
-    s32 q;
+    s32 distX;
+    s32 distY;
+    s32 steps;
+    s32 arcFactor;
 
     sprite_set_action(obj, 5, 0, 0);
     obj->targetH = obj->param9C;
@@ -374,18 +396,18 @@ void start_slide_to_owner(struct ActorObj *obj)
     obj->dy = obj->baseY / 0x100;
     obj->dh = obj->baseH / 0x100;
     part = obj->owner->part;
-    dX = part->targetX - ((s16)obj->dx << 8);
-    dY = part->targetY - ((s16)obj->dy << 8);
-    dur = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dX * dX + dY * dY) / 0x300;
-    q = ((s16)obj->dh << 8) / (dur * dur);
-    if (q == 1)
+    distX = part->targetX - ((s16)obj->dx << 8);
+    distY = part->targetY - ((s16)obj->dy << 8);
+    steps = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(distX * distX + distY * distY) / 0x300;
+    arcFactor = ((s16)obj->dh << 8) / (steps * steps);
+    if (arcFactor == 1)
     {
-        q = 2;
+        arcFactor = 2;
     }
-    obj->param9C = q;
-    obj->paramA0 = dur;
-    obj->paramA4 = dX;
-    obj->paramA8 = dY;
+    obj->param9C = arcFactor;
+    obj->paramA0 = steps;
+    obj->paramA4 = distX;
+    obj->paramA8 = distY;
     obj->timer = 0;
     ((struct Flags77Bits *)&obj->flags77)->bit6 = 0;
     ((struct Flags77Bits *)&obj->flags77)->bit5 = 0;
@@ -395,23 +417,27 @@ void start_slide_to_owner(struct ActorObj *obj)
     obj->targetX = 5;
 }
 
+/* One step of the dive start_slide_to_owner set up: leaves a trail effect every 5 frames, turns the
+ * pose by up to a quarter turn, moves X and Y linearly and the height along a parabola down to 0.
+ * After the last step it restores param9C from targetH and goes on to hover_bob_step at angle
+ * 0xC000. */
 void slide_step_with_pose(struct ActorObj *obj)
 {
     struct ActorPose *pose;
-    s32 d;
+    s32 stepsLeft;
 
     obj->targetX--;
     if (obj->targetX <= 0)
     {
-        effect_spawn_at(0x2276, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
+        effect_spawn_at(EFFECT_SLIDE_TRAIL, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         obj->targetX = 5;
     }
     pose = obj->pose;
     pose->unkC = (-((s16)obj->timer << 14)) / obj->paramA0;
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0;
-    obj->posH = (d * d) * obj->param9C;
+    stepsLeft = (s16)obj->timer - obj->paramA0;
+    obj->posH = (stepsLeft * stepsLeft) * obj->param9C;
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {
@@ -481,6 +507,9 @@ NONMATCH("asm/code_08072FA0/hover_bob_step.s", void hover_bob_step(struct ActorO
 }
 END_NONMATCH
 
+/* State: spins the pose (angle pose->unkC += 0x800 a frame) until index drops to 0, then plays
+   action 1 at a half turn (0x8000), moves (speed 0x500) to 0x20 px above its part's target, plays
+   sound 0x8B and goes on to link_owner_then_wait. */
 void settle_to_data_target(struct ActorObj *obj)
 {
     struct ActorPart *part;
@@ -508,6 +537,10 @@ void settle_to_data_target(struct ActorObj *obj)
     }
 }
 
+/* Moves obj's chain of sprite nodes (the list at +0x0C) along the line from its target to
+   (dx, dy, dh + 8) px. Node i sits at gUnk_03000E80[i] / 256 of the way and advances 12/256 a
+   frame; past the end its progress goes back to 0 and obj->timer is set to 1. Nodes with no
+   progress are parked off screen (0x100 px). */
 void step_child_chain(struct ActorObj *obj)
 {
     struct ChainNode *node = (struct ChainNode *)((u8 *)obj + 0x0C);
@@ -521,14 +554,14 @@ void step_child_chain(struct ActorObj *obj)
     {
         if (gUnk_03000E80[i] != 0)
         {
-            s32 v;
+            s32 progress;
 
             node->x = obj->targetX + (gUnk_03000E80[i] * dX) / unit;
             node->y = obj->targetY + (gUnk_03000E80[i] * dY) / unit;
             node->h = obj->targetH + (gUnk_03000E80[i] * dH) / unit;
-            v = gUnk_03000E80[i] + 0xC;
-            gUnk_03000E80[i] = v;
-            if ((u16)v > 0xFF)
+            progress = gUnk_03000E80[i] + 0xC;
+            gUnk_03000E80[i] = progress;
+            if ((u16)progress > 0xFF)
             {
                 gUnk_03000E80[i] = 0;
                 obj->timer = 1;
@@ -545,6 +578,10 @@ void step_child_chain(struct ActorObj *obj)
     }
 }
 
+/* Like step_child_chain, with the second progress table: moves obj's chain of sprite nodes (the
+   list at +0x0C) along the line from its target to (dx, dy, dh + 8) px. Node i sits at
+   gUnk_03000E98[i] / 256 of the way and advances 12/256 a frame; past the end its progress goes
+   back to 0 and obj->timer is set to 1. Nodes with no progress are parked off screen (0x100 px). */
 void step_child_chain_b(struct ActorObj *obj)
 {
     struct ChainNode *node = (struct ChainNode *)((u8 *)obj + 0x0C);
@@ -558,14 +595,14 @@ void step_child_chain_b(struct ActorObj *obj)
     {
         if (gUnk_03000E98[i] != 0)
         {
-            s32 v;
+            s32 progress;
 
             node->x = obj->targetX + (gUnk_03000E98[i] * dX) / unit;
             node->y = obj->targetY + (gUnk_03000E98[i] * dY) / unit;
             node->h = obj->targetH + (gUnk_03000E98[i] * dH) / unit;
-            v = gUnk_03000E98[i] + 0xC;
-            gUnk_03000E98[i] = v;
-            if ((u16)v > 0xFF)
+            progress = gUnk_03000E98[i] + 0xC;
+            gUnk_03000E98[i] = progress;
+            if ((u16)progress > 0xFF)
             {
                 gUnk_03000E98[i] = 0;
                 obj->timer = 1;

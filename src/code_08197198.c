@@ -11,13 +11,16 @@ extern u32 gDriverParams[];
 struct ObjRecord
 {
     u8 filler0[4];
-    u16 unk4;
-    u16 unk6;
+    u16 unk4; /* sprite width / x scale (ObjRecord.width in code_08187938) */
+    u16 unk6; /* sprite height / y scale */
     u8 filler8[4];
-    u16 unkC;
+    u16 unkC; /* rotation angle, 0x10000 = one turn */
     u8 filler10[0x34 - 0x10];
     u32 model;
 };
+
+/* Point1Obj.flags: the object faces left, so x offsets and angles are mirrored. */
+#define POINT1_OBJ_MIRRORED 0x80
 
 struct Point1Obj
 {
@@ -238,762 +241,804 @@ extern u8 gZoomModel8Tilt22Params08506df8[];
 extern u8 gZoomModel8Tilt45Params08506db0[];
 extern u8 gZoomModel8Tilt45Params08506db8[];
 
+/*
+ * Draws the object's one point (an offset in 1/256 pixels from its position, mirrored when
+ * flags bit 7 flips it), then grows it: data[1] (the scale) gains data[0] (the constant growth
+ * rate). The record's x scale gets the new scale + 0x20, its y scale the scale - 0x20.
+ */
 void obj_point1_pm20(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *data;
+    u32 growth;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 blockFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offsetX;
     s32 pos;
-    s32 t;
+    s32 offset;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    data = obj->data;
+    growth = *data++;
+    scale = *data++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    blockFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, blockFlags);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offsetX = *data++;
+        pt.x = offsetX;
+        pt.y = *data++;
+        pt.z = *data++;
         if (obj->flags & 0x80) {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offset >>= 8;
+            pt.x = pos - offset;
         } else {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offset >>= 8;
+            pt.x = pos + offset;
         }
         pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.y;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
+        offset >>= 8;
+        pt.y = pos + offset;
         pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.z;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offset >>= 8;
+        pt.z = pos + offset;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, blockFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase + 0x20;
-    rec->unk6 = phase + 0x20 - 0x40;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += growth;
+    rec->unk4 = scale + 0x20;
+    rec->unk6 = scale + 0x20 - 0x40;
+    data = obj->data;
+    *data++ = growth;
+    *data = scale;
 }
 
+// Effect update: draws one sprite piece at the object's position plus its 8.8 offset (x mirrored when the
+// object faces left) and grows the sprite by a fixed step each frame, drawn 0x20/256 narrower and 0x20/256
+// taller than its scale. State in obj->data: the step, the scale, then the piece's x, y, z.
 void obj_point1_mp20(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *state;
+    u32 step;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
-    s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
+    u32 attr;
+    u32 modelSaved;
+    s32 piece;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offsetX;
+    s32 base;
+    s32 offset;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    state = obj->data;
+    step = *state++;
+    scale = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+    pt.model = rec->model;
+    attr = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, attr);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
+    for (piece = 0; piece < 1; piece++) {
+        offsetX = *state++;
+        pt.x = offsetX;
+        pt.y = *state++;
+        pt.z = *state++;
+        if (obj->flags & POINT1_OBJ_MIRRORED) {
+            base = obj->posX;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offset >>= 8;
+            pt.x = base - offset;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offset >>= 8;
+            pt.x = base + offset;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        base = obj->posY;
+        offset = pt.y;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offset >>= 8;
+        pt.y = base + offset;
+        base = obj->posZ;
+        offset = pt.z;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offset >>= 8;
+        pt.z = base + offset;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, attr, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase - 0x20;
-    rec->unk6 = phase - 0x20 + 0x40;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += step;
+    rec->unk4 = scale - 0x20;
+    rec->unk6 = scale - 0x20 + 0x40;
+    state = obj->data;
+    *state++ = step;
+    *state = scale;
 }
 
+/*
+ * Draws the object's one point (an offset in 1/256 pixels from its position, mirrored when the
+ * object faces left), then grows it: data[1] (the scale) gains data[0] (the growth rate) each
+ * frame. The record's x scale gets the new scale, its y scale half of it.
+ */
 void obj_point1_half(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    s32 phase;
+    struct Point1Local pt;
+    u32 *data;
+    u32 growth;
+    s32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 blockFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offsetX;
     s32 pos;
-    s32 t;
+    s32 offset;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    data = obj->data;
+    growth = *data++;
+    scale = *data++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    blockFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, blockFlags);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        if (obj->flags & 0x80) {
+        offsetX = *data++;
+        pt.x = offsetX;
+        pt.y = *data++;
+        pt.z = *data++;
+        if (obj->flags & POINT1_OBJ_MIRRORED) {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offset >>= 8;
+            pt.x = pos - offset;
         } else {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offset >>= 8;
+            pt.x = pos + offset;
         }
         pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.y;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
+        offset >>= 8;
+        pt.y = pos + offset;
         pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.z;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offset >>= 8;
+        pt.z = pos + offset;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, blockFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase / 2;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += growth;
+    rec->unk4 = scale;
+    rec->unk6 = scale / 2;
+    data = obj->data;
+    *data++ = growth;
+    *data = scale;
 }
 
+// One point whose sprite grows and turns: every frame its scale gains zoom (x scale = scale,
+// y scale = scale / 3) and its angle is set to spin / 256 of a turn (the other way when mirrored).
+// State in obj->data: zoom, scale, spin, then the point's x, y, z.
 void obj_point1_turn_a(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
+    struct Point1Local pt;
+    u32 *state;
     u32 zoom;
-    s32 phase;
+    s32 scale;
     u32 spin;
-    s32 v;
+    s32 angle;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 rows;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 srcX;
+    s32 base;
+    s32 whole;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
-    spin = *words++;
+    state = obj->data;
+    zoom = *state++;
+    scale = *state++;
+    spin = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rows = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rows);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+        srcX = *state++;
+        pt.x = srcX;
+        pt.y = *state++;
+        pt.z = *state++;
+        /* 8.8 offsets to whole pixels around the object, mirrored in x when it faces left */
+        if (obj->flags & POINT1_OBJ_MIRRORED) {
+            base = obj->posX;
+            whole = srcX;
+            if (whole < 0) {
+                whole += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            whole >>= 8;
+            pt.x = base - whole;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            whole = srcX;
+            if (whole < 0) {
+                whole += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            whole >>= 8;
+            pt.x = base + whole;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        base = obj->posY;
+        whole = pt.y;
+        if (whole < 0) {
+            whole += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        whole >>= 8;
+        pt.y = base + whole;
+        base = obj->posZ;
+        whole = pt.z;
+        if (whole < 0) {
+            whole += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        whole >>= 8;
+        pt.z = base + whole;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rows, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase / 3;
-    if (obj->flags & 0x80) {
-        v = (-spin) << 8;
+    scale += zoom;
+    rec->unk4 = scale;
+    rec->unk6 = scale / 3;
+    if (obj->flags & POINT1_OBJ_MIRRORED) {
+        angle = (-spin) << 8;
     } else {
-        v = spin << 8;
+        angle = spin << 8;
     }
-    rec->unkC = v;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = phase;
-    *words = spin;
+    rec->unkC = angle;
+    state = obj->data;
+    *state++ = zoom;
+    *state++ = scale;
+    *state = spin;
 }
 
+/*
+ * Draws one sprite that grows while held at a fixed angle. obj->data holds the growth per frame,
+ * the size and the angle (256 to a turn), then one x/y/z point. The point is mirrored when the
+ * object faces left, offset by the object's position and placed on screen through the camera.
+ * Each frame the size grows; the sprite is size wide and size/3 high, turned by the angle
+ * (mirrored too).
+ */
 void obj_point1_turn_b(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    s32 phase;
-    u32 spin;
-    s32 v;
+    struct Point1Local pt;
+    u32 *data;
+    u32 growth;
+    s32 size;
+    u32 angle;
+    s32 rotation;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 pieceCount;
+    u32 cursorSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *py;
+    s32 *pz;
+    u32 *cursor;
+    s32 srcX;
     s32 pos;
-    s32 t;
+    s32 offs;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
-    spin = *words++;
+    data = obj->data;
+    growth = *data++;
+    size = *data++;
+    angle = *data++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    pieceCount = block_flag_byte(rec);
+    cursorSaved = 0;
+    oam_list_rows_b(pt.model, pieceCount);
+    py = &pt.y;
+    pz = &pt.z;
+    cursor = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        if (obj->flags & 0x80) {
+        srcX = *data++;
+        pt.x = srcX;
+        pt.y = *data++;
+        pt.z = *data++;
+        if (obj->flags & POINT1_OBJ_MIRRORED) {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offs = srcX;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offs >>= 8;
+            pt.x = pos - offs;
         } else {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offs = srcX;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offs >>= 8;
+            pt.x = pos + offs;
         }
         pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        offs = pt.y;
+        if (offs < 0) {
+            offs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
+        offs >>= 8;
+        pt.y = pos + offs;
         pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offs = pt.z;
+        if (offs < 0) {
+            offs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offs >>= 8;
+        pt.z = pos + offs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(cursor, pieceCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!cursorSaved) {
+            pt.model = gModelCtx->model;
+            cursorSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (cursorSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase / 3;
-    if (obj->flags & 0x80) {
-        v = (-spin) << 8;
+    size += growth;
+    rec->unk4 = size;
+    rec->unk6 = size / 3;
+    if (obj->flags & POINT1_OBJ_MIRRORED) {
+        rotation = (-angle) << 8;
     } else {
-        v = spin << 8;
+        rotation = angle << 8;
     }
-    rec->unkC = v;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = phase;
-    *words = spin;
+    rec->unkC = rotation;
+    data = obj->data;
+    *data++ = growth;
+    *data++ = size;
+    *data = angle;
 }
 
+/*
+ * Effect update: draws one sprite at its 8.8 fixed-point offset from the object
+ * (mirrored in X when flag 0x80 is set) and grows its scale by a constant speed
+ * every frame. State in obj->data: the scale speed, the scale, then the offset (x, y, z).
+ */
 void obj_point1_sum_a(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *data;
+    u32 scaleSpeed;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 blockFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offsetX;
     s32 pos;
-    s32 t;
+    s32 offset;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    data = obj->data;
+    scaleSpeed = *data++;
+    scale = *data++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    blockFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, blockFlags);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offsetX = *data++;
+        pt.x = offsetX;
+        pt.y = *data++;
+        pt.z = *data++;
+        /* bit 7: mirrored */
         if (obj->flags & 0x80) {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offset >>= 8;
+            pt.x = pos - offset;
         } else {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offset >>= 8;
+            pt.x = pos + offset;
         }
         pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.y;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
+        offset >>= 8;
+        pt.y = pos + offset;
         pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.z;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offset >>= 8;
+        pt.z = pos + offset;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, blockFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += scaleSpeed;
+    rec->unk4 = scale;
+    rec->unk6 = scale;
+    data = obj->data;
+    *data++ = scaleSpeed;
+    *data = scale;
 }
 
+/* Effect update: draws one sprite piece at the object's position plus its 8.8 offset (x mirrored when
+   flag 0x80 is set) and grows (or shrinks) the sprite's scale by a constant step each frame.
+   obj->data holds the step, the current scale, then the piece's offset (x, y, z). */
 void obj_point1_sum_b(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *state;
+    u32 scaleStep;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 base;
+    s32 ofs;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    state = obj->data;
+    scaleStep = *state++;
+    scale = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            ofs >>= 8;
+            pt.x = base - ofs;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            ofs >>= 8;
+            pt.x = base + ofs;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        base = obj->posY;
+        ofs = pt.y;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        ofs >>= 8;
+        pt.y = base + ofs;
+        base = obj->posZ;
+        ofs = pt.z;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        ofs >>= 8;
+        pt.z = base + ofs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += scaleStep;
+    rec->unk4 = scale;
+    rec->unk6 = scale;
+    state = obj->data;
+    *state++ = scaleStep;
+    *state = scale;
 }
 
+/*
+ * Effect update: draws one sprite at its 8.8 fixed-point offset from the object
+ * (mirrored in X when flag 0x80 is set) and grows its scale by a constant speed
+ * every frame. State in obj->data: the scale speed, the scale, then the offset (x, y, z).
+ */
 void obj_point1_sum_c(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *data;
+    u32 scaleSpeed;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 blockFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offsetX;
     s32 pos;
-    s32 t;
+    s32 offset;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    data = obj->data;
+    scaleSpeed = *data++;
+    scale = *data++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    blockFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, blockFlags);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offsetX = *data++;
+        pt.x = offsetX;
+        pt.y = *data++;
+        pt.z = *data++;
+        /* bit 7: mirrored */
         if (obj->flags & 0x80) {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            offset >>= 8;
+            pt.x = pos - offset;
         } else {
             pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            offset = offsetX;
+            if (offset < 0) {
+                offset += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            offset >>= 8;
+            pt.x = pos + offset;
         }
         pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.y;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
+        offset >>= 8;
+        pt.y = pos + offset;
         pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        offset = pt.z;
+        if (offset < 0) {
+            offset += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        offset >>= 8;
+        pt.z = pos + offset;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, blockFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase += zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale += scaleSpeed;
+    rec->unk4 = scale;
+    rec->unk6 = scale;
+    data = obj->data;
+    *data++ = scaleSpeed;
+    *data = scale;
 }
 
+/* Effect update: draws one sprite piece at the object's position plus its 8.8 offset (x mirrored when
+   flag 0x80 is set) and shrinks the sprite's scale by a constant step each frame.
+   obj->data holds the step, the current scale, then the piece's offset (x, y, z). */
 void obj_point1_diff(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
-    u32 zoom;
-    u32 phase;
+    struct Point1Local pt;
+    u32 *state;
+    u32 scaleStep;
+    u32 scale;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 base;
+    s32 ofs;
 
-    words = obj->data;
-    zoom = *words++;
-    phase = *words++;
+    state = obj->data;
+    scaleStep = *state++;
+    scale = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            ofs >>= 8;
+            pt.x = base - ofs;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            ofs >>= 8;
+            pt.x = base + ofs;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        base = obj->posY;
+        ofs = pt.y;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        ofs >>= 8;
+        pt.y = base + ofs;
+        base = obj->posZ;
+        ofs = pt.z;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        ofs >>= 8;
+        pt.z = base + ofs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    phase -= zoom;
-    rec->unk4 = phase;
-    rec->unk6 = phase;
-    words = obj->data;
-    *words++ = zoom;
-    *words = phase;
+    scale -= scaleStep;
+    rec->unk4 = scale;
+    rec->unk6 = scale;
+    state = obj->data;
+    *state++ = scaleStep;
+    *state = scale;
 }
 
 void spawn_cb_08197a90(u32 p0, u32 p1, u32 p2, u32 flags)

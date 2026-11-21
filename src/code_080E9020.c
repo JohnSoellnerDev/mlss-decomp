@@ -2,22 +2,23 @@
 
 struct SlotObj
 {
-    u16 unk0;
-    u16 unk2;
+    u16 x;
+    u16 y;
     u8 filler4[0xA];
-    u16 unkE;
+    u16 unkE; /* draw order: 0x7FFF - y, so lower sprites are drawn in front */
 };
 
+/* One of the 4 sprite slots of a slot table (init_slot_table, claim_table_slot). */
 struct SlotEntry
 {
     struct SlotObj *obj;
-    u16 unk4;
-    u16 unk6;
-    u16 unk8;
-    u16 unkA;
-    u8 unkC;
-    u8 counter;
-    u8 unkE;
+    u16 baseX;    /* the sprite's position: base + offset (update_slot_bounds) */
+    u16 baseY;
+    u16 offsetX;  /* the camera offset of the entity it follows */
+    u16 offsetY;
+    u8 objIndex;  /* the slot object the sprite follows while `follow` is set */
+    u8 lifetime;  /* frames left (slot_countdown), 0: until cleared */
+    u8 follow;
     u8 inUse;
 };
 
@@ -50,17 +51,20 @@ struct Voice
     u32 unk10;
 };
 
-struct CounterEntry
+/* One hero's record in gParty (Mario, then Luigi). */
+struct PartyHero
 {
     u8 filler0[0xE];
-    u16 unkE;
+    u16 hp;
     u8 filler10[2];
-    u16 unk12;
-    u16 unk14;
+    u16 hpMax;
+    u16 bp;
     u16 unk16;
-    u16 unk18;
+    u16 bpMax;
     u8 filler1A[0x22];
 };
+
+#define PARTY_HERO_COUNT 2
 
 extern u8 gSys[];
 extern u8 gItemTable[];
@@ -85,6 +89,16 @@ void obj_release_slots(void *obj, u32 off, u32 a, u32 b);
 void free_engine_block(void);
 u32 arc_tan2(s32 a, s32 b);
 void text_state_free(void);
+struct VarBlock
+{
+    u8 filler0[0x20];
+    u32 flags[0x1B60 / 32];
+    u8 filler38C[8];
+    u16 vars16[0x40];
+    u8 vars8[0x128];
+    u8 vars8b[0x20];
+};
+
 u8 test_flag(u8 *table, u8 *tableB, u16 id);
 void set_flag(u8 *flagsA, u8 *flagsB, u16 id, u8 value);
 u32 read_var(u16 id);
@@ -131,28 +145,31 @@ void *init_slot_table(void **slot)
 }
 
 void sprite_update_cd0(void *sprite);
-u8 claim_table_slot(void *state, u8 a, u8 b, u8 c, u16 d, u16 e, u8 f)
+/* Takes the first free one of the table's 4 sprite slots: loads animation record `record` into its
+ * sprite and places it at (x, y), following slot object objIndex when `follow` is set, for
+ * `lifetime` frames (0: until cleared). Returns the slot's index, or 0xFF when all are in use. */
+u8 claim_table_slot(void *table, u8 objIndex, u8 record, u8 follow, u16 x, u16 y, u8 lifetime)
 {
-    struct SlotEntry *p;
+    struct SlotEntry *entry;
     struct SlotObj *obj;
     s16 i;
 
     i = 0;
-    p = *(struct SlotEntry **)state;
-    for (; i <= 3; i++, p++)
+    entry = *(struct SlotEntry **)table;
+    for (; i <= 3; i++, entry++)
     {
-        if (p->inUse == 0)
+        if (entry->inUse == 0)
         {
-            obj = p->obj;
-            obj_load_record(obj, b, -1, 0, 0);
-            p->unkC = a;
-            p->unkE = c;
-            p->unk4 = d;
-            p->unk6 = e;
-            p->unk8 = 0;
-            p->unkA = 0;
-            p->counter = f;
-            p->inUse = 1;
+            obj = entry->obj;
+            obj_load_record(obj, record, -1, 0, 0);
+            entry->objIndex = objIndex;
+            entry->follow = follow;
+            entry->baseX = x;
+            entry->baseY = y;
+            entry->offsetX = 0;
+            entry->offsetY = 0;
+            entry->lifetime = lifetime;
+            entry->inUse = 1;
             ((struct FlagPairs *)((u8 *)obj + 0x1F))->b67 = 1;
             ((struct FlagPairs *)((u8 *)obj + 0x1F))->b45 = 1;
             ((struct FlagPairs *)((u8 *)obj + 0x1F))->b23 = 1;
@@ -170,58 +187,70 @@ ASM_FUNC("asm/code_080E9020/layout_text_run.s", u32 layout_text_run())
 struct TextStream
 {
     u8 filler0[8];
-    u8 *cursor;
+    u8 *cursor; /* the next byte of the text */
 };
 
+/* The text window's insert state (gUnk_03000FBC, 0x34 bytes, text_state_alloc). */
 struct TextStreamState
 {
-    u32 *unk0;
-    u16 *unk4;
+    u32 *number;       /* the value TEXT_CODE_NUMBER and TEXT_CODE_NUMBER_WIDTH print */
+    u16 *itemId;       /* the item TEXT_CODE_ITEM_NAME prints */
     u8 filler8[4];
-    u32 unkC;
+    u32 returnCursor;  /* where the text goes on after the inserted string; 0: none */
+    u8 insert[0x24];   /* the inserted string, ended by 0xFF, TEXT_CODE_RETURN */
 };
 
+/* Text control codes text_stream_step handles. Codes above TEXT_CODE_RETURN take one argument byte. */
+#define TEXT_CODE_RETURN 0x0A       /* end of an inserted string: go back to the text */
+#define TEXT_CODE_ITEM_NAME 0x0E    /* insert the name of item *itemId */
+#define TEXT_CODE_NUMBER 0x0F       /* insert *number, unpadded */
+#define TEXT_CODE_NUMBER_WIDTH 0x10 /* insert *number right-aligned in (argument) digits */
+
+/* The text window's control-code hook (set_03001074). `code` is the byte the window has just read;
+ * codes above TEXT_CODE_RETURN take one argument byte, which is skipped. The insert codes save the
+ * cursor and point it at the inserted string (an item name or a number) instead; the
+ * TEXT_CODE_RETURN at that string's end goes back to the saved cursor. Nothing when `advance` is 0. */
 void text_stream_step(struct TextStream *st, u32 advance)
 {
     u8 *p;
-    u8 prev;
-    u8 cur;
-    struct TextStreamState *g;
+    u8 code;
+    u8 arg;
+    struct TextStreamState *state;
 
     p = st->cursor;
-    prev = p[-1];
-    cur = *p;
+    code = p[-1];
+    arg = *p;
     if (advance == 0)
     {
         return;
     }
-    if (prev > 0xA)
+    if (code > TEXT_CODE_RETURN)
     {
         st->cursor = p + 1;
     }
-    switch (prev)
+    switch (code)
     {
-    case 0x0E:
-        g = (struct TextStreamState *)gUnk_03000FBC;
-        g->unkC = (u32)st->cursor;
-        st->cursor = text_copy_entry((char *)g + 0x10, *g->unk4);
+    case TEXT_CODE_ITEM_NAME:
+        state = (struct TextStreamState *)gUnk_03000FBC;
+        state->returnCursor = (u32)st->cursor;
+        st->cursor = text_copy_entry((char *)state->insert, *state->itemId);
         break;
-    case 0x0F:
-        g = (struct TextStreamState *)gUnk_03000FBC;
-        g->unkC = (u32)st->cursor;
-        st->cursor = format_decimal((u8 *)g + 0x10, 0, *g->unk0);
+    case TEXT_CODE_NUMBER:
+        state = (struct TextStreamState *)gUnk_03000FBC;
+        state->returnCursor = (u32)st->cursor;
+        st->cursor = format_decimal(state->insert, 0, *state->number);
         break;
-    case 0x10:
-        g = (struct TextStreamState *)gUnk_03000FBC;
-        g->unkC = (u32)st->cursor;
-        st->cursor = format_decimal((u8 *)g + 0x10, cur, *g->unk0);
+    case TEXT_CODE_NUMBER_WIDTH:
+        state = (struct TextStreamState *)gUnk_03000FBC;
+        state->returnCursor = (u32)st->cursor;
+        st->cursor = format_decimal(state->insert, arg, *state->number);
         break;
-    case 0x0A:
-        g = (struct TextStreamState *)gUnk_03000FBC;
-        if (g->unkC != 0)
+    case TEXT_CODE_RETURN:
+        state = (struct TextStreamState *)gUnk_03000FBC;
+        if (state->returnCursor != 0)
         {
-            st->cursor = (u8 *)g->unkC;
-            g->unkC = 0;
+            st->cursor = (u8 *)state->returnCursor;
+            state->returnCursor = 0;
         }
         break;
     }
@@ -345,11 +374,11 @@ void update_slot_bounds(u8 **table, u8 idx)
     base += off;
     entry = (struct SlotEntry *)base;
     obj = entry->obj;
-    obj->unk0 = entry->unk4 + entry->unk8;
-    sum1 = entry->unkA;
-    base = (u8 *)(u32)entry->unk6;
+    obj->x = entry->baseX + entry->offsetX;
+    sum1 = entry->offsetY;
+    base = (u8 *)(u32)entry->baseY;
     sum1 += (u32)base;
-    obj->unk2 = sum1;
+    obj->y = sum1;
     obj->unkE = 0x7FFF - sum1;
 }
 
@@ -358,20 +387,20 @@ u32 slot_countdown(u8 **table, u8 idx, u32 unused2, u32 a3)
     u32 off = (u8)idx << 4;
     struct SlotEntry *entry = (struct SlotEntry *)(*table + off);
     struct SlotEntry *entry2;
-    u8 counter;
+    u8 frames;
     u8 left;
 
     if (entry->inUse == 0)
     {
         return 0;
     }
-    counter = entry->counter;
-    if (counter == 0)
+    frames = entry->lifetime;
+    if (frames == 0)
     {
         return 1;
     }
-    entry->counter = counter - 1;
-    left = counter - 1;
+    entry->lifetime = frames - 1;
+    left = frames - 1;
     if (left != 0)
     {
         return 1;
@@ -444,7 +473,32 @@ void text_mode_update(u32 unused, u32 a1, u32 a2)
 
 ASM_FUNC("asm/code_080E9020/fill_tile_map_rect.s", void fill_tile_map_rect(void))
 
-ASM_FUNC("asm/code_080E9020/unknown_thumb_080e98a8.s", void unknown_thumb_080e98a8(void))
+void unknown_thumb_080e98a8(void *unused, u8 *state, s16 a, s16 b, s16 c, s16 d)
+{
+    u16 oldStart = *(u16 *)(state + 0x30);
+    u16 oldLength = *(u16 *)(state + 0x32);
+    s32 count = state[0x38] + 1;
+    s32 offset = b * count;
+    s32 start = (a + offset) << 5;
+    s32 length;
+
+    *(u16 *)(state + 0x30) = start;
+    count *= d;
+    length = (c + count) * 32 - start;
+    *(u16 *)(state + 0x32) = length;
+    if (oldLength != 0)
+    {
+        if (oldStart < (u16)start)
+        {
+            *(u16 *)(state + 0x32) = length + (start - oldStart);
+            *(u16 *)(state + 0x30) = oldStart;
+        }
+        else
+        {
+            *(u16 *)(state + 0x32) = oldLength + (oldStart - start);
+        }
+    }
+}
 
 void fill_rect_88(u32 a0, u32 a1, s16 a2, s16 a3, u8 a4, u8 a5)
 {
@@ -505,41 +559,22 @@ struct RecBits
     u8 hi : 1;
 };
 
-NONMATCH("asm/code_080E9020/bump_record.s", void bump_record(struct SlotState *st, u16 k))
+void bump_record(struct SlotState *st, u16 k)
 {
     u8 *p;
     s32 v;
-    u8 *q;
-    u8 rec;
+    struct __attribute__((packed)) { u8 low : 2; u8 pending : 1; u8 counter : 4; u8 high : 1; } *q;
 
     p = st->unk4;
     v = (s32)p[0x1B2] >> k;
     if ((((u8)v ^ 1) & 1) != 0)
-    {
         return;
-    }
-    q = p + k * 0x4C + 0x42;
-    rec = *q;
-    if ((rec & 4) != 0)
-    {
-        s32 t = -5;
-        t &= rec;
-        *q = t;
-    }
+    q = (void *)(p + k * 0x4C + 0x42);
+    if (q->pending)
+        q->pending = 0;
     else
-    {
-        s32 f = ((((u32)rec << 25) >> 28) + 1) & 0xF;
-        s32 t;
-
-        f <<= 3;
-        t = 0x79;
-        t = -t;
-        t &= rec;
-        t |= f;
-        *q = t;
-    }
+        q->counter++;
 }
-END_NONMATCH
 
 struct FreeDesc
 {
@@ -628,18 +663,16 @@ void free_list_move(struct FreeListState *st, u32 a1)
     }
 }
 
-NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeListState *st, u32 a1))
+u32 free_list_alloc(struct FreeListState *st, u32 a1)
 {
     struct FreeDesc *best;
-    struct FreeDesc *cur;
-    struct FreeDesc *back;
+    register struct FreeDesc *back asm("r1");
+    register struct FreeDesc *cur asm("r2");
     struct FreeDesc *newDesc;
     u32 size;
 
     if (st->unk8 == 0)
-    {
         return 0;
-    }
     best = 0;
     back = 0;
     cur = st->unk4;
@@ -649,20 +682,14 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
         if (size > a1)
         {
             if (best == 0)
-            {
                 best = cur;
-            }
         }
         else if (size == a1)
         {
-            if (back == 0)
-            {
-                st->unk4 = cur->next;
-            }
-            else
-            {
+            if (back != 0)
                 back->next = cur->next;
-            }
+            else
+                st->unk4 = cur->next;
             cur->next = st->unk0;
             st->unk0 = cur;
             return cur->start;
@@ -683,7 +710,6 @@ NONMATCH("asm/code_080E9020/free_list_alloc.s", u32 free_list_alloc(struct FreeL
     }
     return 0;
 }
-END_NONMATCH
 
 void free_text_pair(struct TextPair *st, u32 flag)
 {
@@ -743,85 +769,104 @@ u32 angle_of_vector16(s32 x, s32 y)
     return (u16)(arc_tan2((s16)a, (s16)b) + 0x5000);
 }
 
-NONMATCH("asm/code_080E9020/unknown_thumb_080e9e2e.s", void unknown_thumb_080e9e2e(s16 idx, s16 mode, u16 bit))
+void unknown_thumb_080e9e2e(s16 idx, s16 mode, u16 bit)
 {
-    u8 *entry;
-    u32 b;
-    u32 f;
-    s32 t;
+    struct { u8 unused[7]; u8 low : 2; u8 first : 6; u16 second : 6; u16 third : 6; } *entry;
 
-    entry = gParty + idx * 60;
+    entry = (void *)(gParty + idx * 60);
     switch (mode)
     {
     case 0:
-        b = entry[7];
-        f = (b >> 2) | (1 << (s16)bit);
+    {
+        u32 b = ((u8 *)entry)[7];
+        u32 f = (b >> 2) | (1 << (s16)bit);
+        s32 t;
+        f <<= 2;
         t = 3;
         t &= b;
-        t |= f << 2;
-        entry[7] = t;
-        break;
-    case 1:
-        b = entry[8];
-        f = (((b << 26) >> 26) | (1 << (s16)bit)) & 0x3F;
-        t = -0x40;
-        t &= b;
         t |= f;
-        entry[8] = t;
+        ((u8 *)entry)[7] = t;
+        break;
+    }
+    case 1:
+        entry->second |= 1 << (s16)bit;
         break;
     case 2:
-        b = *(u16 *)(entry + 8);
-        f = ((((b << 20) >> 26) | (1 << (s16)bit)) & 0x3F) << 6;
-        t = 0xFFFFF03F;
-        t &= b;
-        t |= f;
-        *(u16 *)(entry + 8) = t;
+        entry->third |= 1 << (s16)bit;
         break;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080E9020/sub_080E9EC4.s", void sub_080E9EC4(s16 idx, s16 mode, u16 bit))
+void sub_080E9EC4(s16 idx, s16 mode, u16 bit)
 {
-    u8 *entry;
-    u32 b;
-    u32 f;
-    s32 t;
+    struct { u8 unused[7]; u8 low : 2; u8 first : 6; u16 second : 6; u16 third : 6; } *entry;
 
-    entry = gParty + idx * 60;
+    entry = (void *)(gParty + idx * 60);
     switch (mode)
     {
     case 0:
-        b = entry[7];
-        f = ((b >> 2) & ~(1 << (s16)bit)) << 2;
+    {
+        u32 b = ((u8 *)entry)[7];
+        u32 f = (b >> 2) & ~(1 << (s16)bit);
+        s32 t;
+        f <<= 2;
         t = 3;
         t &= b;
         t |= f;
-        entry[7] = t;
+        ((u8 *)entry)[7] = t;
         break;
+    }
     case 1:
-        b = entry[8];
-        f = ((b << 26) >> 26) & ~(1 << (s16)bit);
-        t = -0x40;
-        t &= b;
-        t |= f;
-        entry[8] = t;
+        entry->second &= ~(1 << (s16)bit);
         break;
     case 2:
-        b = *(u16 *)(entry + 8);
-        f = (((b << 20) >> 26) & ~(1 << (s16)bit)) << 6;
-        t = 0xFFFFF03F;
-        t &= b;
-        t |= f;
-        *(u16 *)(entry + 8) = t;
+        entry->third &= ~(1 << (s16)bit);
         break;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E9020/decode_stream_run.s", void decode_stream_run(void))
 
-ASM_FUNC("asm/code_080E9020/test_flag.s", u8 test_flag(u8 *table, u8 *tableB, u16 id))
+u8 test_flag(u8 *flagsA, u8 *flagsB, u16 id)
+{
+    u32 *word;
+    u32 bit;
+
+    if (id <= 0x1B5F)
+    {
+        bit = id & 0x1F;
+        id = (((struct VarBlock *)gUnk_03000FC0)->flags[id >> 5] >> bit) & 1;
+    }
+    else if (id <= 0x1B7F)
+    {
+        id = id - 0x1B60;
+        bit = id & 0x1F;
+        word = (u32 *)(((id >> 5) << 2) + (u32)flagsA);
+        id = (*word >> bit) & 1;
+    }
+    else if (id <= 0x1B8F)
+    {
+        if (flagsB != 0)
+        {
+            id = id - 0x1B80;
+            bit = id & 0x1F;
+            word = (u32 *)(((id >> 5) << 2) + (u32)flagsB);
+            id = (*word >> bit) & 1;
+        }
+        else
+        {
+            id = id - 0x1B60;
+            bit = id & 0x1F;
+            word = (u32 *)(((id >> 5) << 2) + (u32)flagsA);
+            id = (*word >> bit) & 1;
+        }
+    }
+    else
+    {
+        return 0;
+    }
+    return id;
+}
 
 void set_flag(u8 *flagsA, u8 *flagsB, u16 id, u8 value)
 {
@@ -858,32 +903,24 @@ void set_flag(u8 *flagsA, u8 *flagsB, u16 id, u8 value)
     *word = (*word & ~(1 << bit)) | ((value & 1) << bit);
 }
 
-NONMATCH("asm/code_080E9020/read_var.s", u32 read_var(u16 arg))
+u32 read_var(u16 id)
 {
-    u32 id;
-    u8 *base;
     u32 value;
 
-    id = arg;
     if (id <= 0x1CB7)
     {
-        id = (u16)(id - 0x1B90);
-        base = (u8 *)gUnk_03000FC0 + 0x414;
-        value = base[id];
+        id = id - 0x1B90;
+        value = ((struct VarBlock *)gUnk_03000FC0)->vars8[id];
     }
     else if (id <= 0x1CD7)
     {
-        id = (u16)(id - 0x1CB8);
-        base = (u8 *)gUnk_03000FC0 + 0x53C;
-        value = base[id];
+        id = id - 0x1CB8;
+        value = ((struct VarBlock *)gUnk_03000FC0)->vars8b[id];
     }
     else if (id <= 0x1D17)
     {
-        u32 off;
-
-        off = ((u32)(u16)(id - 0x1CD8) << 16) >> 15;
-        base = (u8 *)gUnk_03000FC0 + 0x394;
-        value = *(u16 *)(base + off);
+        id = id - 0x1CD8;
+        value = ((struct VarBlock *)gUnk_03000FC0)->vars16[id];
     }
     else
     {
@@ -891,9 +928,25 @@ NONMATCH("asm/code_080E9020/read_var.s", u32 read_var(u16 arg))
     }
     return value;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080E9020/write_var.s", void write_var(u16 id, u16 value))
+void write_var(u16 id, u16 value)
+{
+    if (id <= 0x1CB7)
+    {
+        id = id - 0x1B90;
+        ((struct VarBlock *)gUnk_03000FC0)->vars8[id] = value;
+    }
+    else if (id <= 0x1CD7)
+    {
+        id = id - 0x1CB8;
+        ((struct VarBlock *)gUnk_03000FC0)->vars8b[id] = value;
+    }
+    else if (id <= 0x1D17)
+    {
+        id = id - 0x1CD8;
+        ((struct VarBlock *)gUnk_03000FC0)->vars16[id] = value;
+    }
+}
 
 void free_var_block(void)
 {
@@ -1077,31 +1130,37 @@ void alloc_flag_block(void)
 u32 lang_table_pair(u32 unused0, u8 **table);
 ASM_FUNC("asm/code_080E9020/draw_text_item.s", void draw_text_item(void))
 
+/* Byte 0x28 of the on-screen timer task gCurObj (see timer_set_time, anim_set_gfx). */
 struct ObjFlags28
 {
     u8 filler0[0x28];
     u8 bit0 : 1;
-    u8 bit1 : 1;
-    u8 field : 4;
+    u8 bit1 : 1; /* cleared by timer_set_time */
+    u8 field : 4; /* palette passed to anim_set_gfx */
     u8 rest : 2;
 };
 
+/* The on-screen timer task (anim_global_create); byte 2 holds its task flags. */
 extern u8 *gCurObj;
 
 void anim_set_gfx(u8 *obj, u32 half, u32 field);
 void set_flags_2_3(u8 *p);
 void set_flag_2_2(u8 *p);
 
-u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
+/* Script command for the on-screen timer gCurObj, args[0]: 0 clears flag bit 0, 1 sets it and
+ * reloads the timer's glyph graphics with its palette, 2 clears flag bit 1, 3 sets it. Commands 1
+ * and 2 wake the task (set_flags_2_3); when both flag bits are clear it is put to sleep
+ * (set_flag_2_2). */
+u32 apply_obj_mode(u32 unused0, u32 unused1, s32 *args)
 {
-    switch (*modePtr)
+    switch (*args)
     {
     case 0:
         ((struct ObjFlags28 *)gCurObj)->bit0 = 0;
         {
-            u32 lo = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
-            u32 hi = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
-            if ((hi | lo) == 0)
+            u32 bit0 = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
+            u32 bit1 = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
+            if ((bit1 | bit0) == 0)
                 set_flag_2_2(gCurObj);
         }
         break;
@@ -1117,9 +1176,9 @@ u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
     case 3:
         ((struct ObjFlags28 *)gCurObj)->bit1 = 1;
         {
-            u32 lo = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
-            u32 hi = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
-            if ((hi | lo) == 0)
+            u32 bit0 = ((u32)((u8 *)gCurObj)[0x28] << 31) >> 31;
+            u32 bit1 = ((u32)((u8 *)gCurObj)[0x28] << 30) >> 31;
+            if ((bit1 | bit0) == 0)
                 set_flag_2_2(gCurObj);
         }
         break;
@@ -1127,131 +1186,131 @@ u32 apply_obj_mode(u32 a, u32 b, s32 *modePtr)
     return 1;
 }
 
-NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 a, u32 b, u32 *p))
+/* Script command: add to or take from a hero's HP or BP, kept within 0 (1 for HP) and the
+ * maximum. cmd: hero index, or bit 1 set for both heroes; stat (0 HP, 1 BP); 0 add, 1 subtract;
+ * amount. */
+u32 update_obj_counters(u32 unused0, u32 unused1, u32 *cmd)
 {
-    struct CounterEntry *e;
-    u32 sel;
-    u32 mode;
+    register u32 amount asm("r1");
+    struct PartyHero *hero;
+    u32 stat;
+    u32 op;
     s16 n;
+    s32 sum;
+    u16 value;
 
-    if ((*p & 2) == 0)
+    if ((*cmd & 2) == 0)
     {
-        e = (struct CounterEntry *)(gParty + *p * 0x3C);
-        p++;
-        sel = *p++;
-        switch (sel)
+        hero = (struct PartyHero *)(gParty + *cmd * sizeof(struct PartyHero));
+        cmd++;
+        stat = *cmd++;
+        switch (stat)
         {
         case 0:
-        {
-            s32 t;
-            u16 counter = e->unkE;
-            mode = *p++;
-            switch (mode)
+            value = hero->hp;
+            op = *cmd++;
+            switch (op)
             {
             case 0:
-                t = (s16)counter + *p;
-                counter = (u16)t;
-                if ((s32)(s16)t > (s32)e->unk12)
-                    counter = e->unk12;
+                amount = *cmd;
+                sum = (s16)value + amount;
+                value = sum;
+                if ((s16)sum > hero->hpMax)
+                    value = hero->hpMax;
                 break;
             case 1:
-                t = (s16)counter - *p;
-                counter = (u16)t;
-                if ((s16)t <= 0)
-                    counter = 1;
+                amount = *cmd;
+                sum = (s16)value - amount;
+                value = sum;
+                if ((s16)sum <= 0)
+                    value = 1;
                 break;
             }
-            e->unkE = counter;
+            hero->hp = value;
             break;
-        }
         case 1:
-        {
-            s32 t;
-            u16 counter = e->unk14;
-            mode = *p++;
-            switch (mode)
+            value = hero->bp;
+            op = *cmd++;
+            switch (op)
             {
             case 0:
-                t = (s16)counter + *p;
-                counter = (u16)t;
-                if ((s32)(s16)t > (s32)e->unk18)
-                    counter = e->unk18;
+                amount = *cmd;
+                sum = (s16)value + amount;
+                value = sum;
+                if ((s16)sum > hero->bpMax)
+                    value = hero->bpMax;
                 break;
             case 1:
-                t = (s16)counter - *p;
-                counter = (u16)t;
-                if ((s16)t < 0)
-                    counter = 0;
+                amount = *cmd;
+                sum = (s16)value - amount;
+                value = sum;
+                if ((s16)sum < 0)
+                    value = 0;
                 break;
             }
-            e->unk14 = counter;
+            hero->bp = value;
             break;
-        }
         }
     }
     else
     {
-        e = (struct CounterEntry *)gParty;
-        p++;
-        sel = *p++;
-        switch (sel)
+        hero = (struct PartyHero *)gParty;
+        cmd++;
+        stat = *cmd++;
+        switch (stat)
         {
         case 0:
-            mode = *p++;
-            switch (mode)
+            op = *cmd++;
+            switch (op)
             {
             case 0:
-                for (n = 2; n > 0; n--, e++)
+                for (n = PARTY_HERO_COUNT; n > 0; n--, hero++)
                 {
-                    s32 t;
-                    u16 counter;
-                    t = e->unkE + *p;
-                    counter = (u16)t;
-                    if ((s32)(s16)t > (s32)e->unk12)
-                        counter = e->unk12;
-                    e->unkE = counter;
+                    amount = *cmd;
+                    sum = hero->hp + amount;
+                    value = sum;
+                    if ((s16)sum > hero->hpMax)
+                        value = hero->hpMax;
+                    hero->hp = value;
                 }
                 break;
             case 1:
-                for (n = 2; n > 0; n--, e++)
+                for (n = PARTY_HERO_COUNT; n > 0; n--, hero++)
                 {
-                    s32 t;
-                    u16 counter;
-                    t = e->unkE - *p;
-                    counter = (u16)t;
-                    if ((s16)t <= 0)
-                        counter = 1;
-                    e->unkE = counter;
+                    amount = *cmd;
+                    sum = hero->hp - amount;
+                    value = sum;
+                    if ((s16)sum <= 0)
+                        value = 1;
+                    hero->hp = value;
                 }
                 break;
             }
             break;
         case 1:
-            mode = *p++;
-            switch (mode)
+            op = *cmd++;
+            switch (op)
             {
             case 0:
-                for (n = 2; n > 0; n--, e++)
+                for (n = PARTY_HERO_COUNT; n > 0; n--, hero++)
                 {
-                    s32 t;
-                    u16 counter;
-                    t = e->unk14 + *p;
-                    counter = (u16)t;
-                    if ((s32)(s16)t > (s32)e->unk18)
-                        counter = e->unk18;
-                    e->unk14 = counter;
+                    amount = *cmd;
+                    sum = hero->bp + amount;
+                    value = sum;
+                    if ((s16)sum > hero->bpMax)
+                        value = hero->bpMax;
+                    hero->bp = value;
                 }
                 break;
             case 1:
-                for (n = 2; n > 0; n--, e++)
+                for (n = PARTY_HERO_COUNT; n > 0; n--, hero++)
                 {
-                    s32 t;
-                    u16 counter;
-                    t = e->unk14 - *p;
-                    counter = (u16)t;
-                    if ((s16)t < 0)
-                        counter = 0;
-                    e->unk14 = counter;
+                    amount = *cmd;
+                    sum = hero->bp - amount;
+                    value = sum;
+                    if ((s16)sum < 0)
+                        value = 0;
+                    hero->bp = value;
                 }
                 break;
             }
@@ -1260,4 +1319,3 @@ NONMATCH("asm/code_080E9020/update_obj_counters.s", u32 update_obj_counters(u32 
     }
     return 1;
 }
-END_NONMATCH

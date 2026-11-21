@@ -4,10 +4,10 @@
 struct OrbitNode
 {
     struct OrbitNode *next;
-    s32 unk4;
-    s32 unk8;
+    s32 unk4; /* X (8.8 fixed point) */
+    s32 unk8; /* Y */
     u8 filler0C[0x1B - 0x0C];
-    u8 unk1B;
+    u8 unk1B; /* bit 7 (OrbitFlagBits) toggled on every 5th node by place_members_on_orbit */
 };
 
 struct OrbitFlagBits
@@ -105,21 +105,22 @@ struct Body
     u16 speed;
     s16 progress;
     u8 filler80[0x84 - 0x80];
-    s16 spanA;
-    s16 spanB;
-    s32 baseY;
-    s32 swing;
+    s16 spanA; /* motion start X in pixels (place_targets packs the current X here) */
+    s16 spanB; /* motion target X in pixels */
+    s32 baseY;      /* orbiting body: angular speed (8.8 fixed point) */
+    s32 swing;      /* orbiting body: orbit radius (8.8 fixed point) */
     u8 filler90[0x92 - 0x90];
     u16 arc;
-    s32 motionX;
-    s32 motionY;
+    /* jump arc set by set_motion_offsets: height = peak - (arcSpan * progress / 0x4000 - arcRise)^2 / 0x100 */
+    s32 arcSpan;
+    s32 arcRise;
     s32 height;
     u8 fillerA0[0xA8 - 0xA0];
-    u32 scriptPos;
-    s16 stepLen;
-    u16 timer;
-    u16 scriptB0;
-    u16 speedZ;
+    u32 scriptPos;  /* orbiting body: next byte of gEllipseStepScript */
+    s16 prevProgress; /* progress before the last step_motion */
+    u16 timer;      /* orbiting body: angle (whole units) where the current script step ends */
+    u16 scriptB0;   /* orbiting body: current script step (s8; its sign is the turn direction, 0 ends) */
+    u16 speedZ;     /* orbiting body: radius (whole units) the orbit closes in to */
     u8 fillerB4[0xC3 - 0xB4];
     s8 ofsX;
     s8 ofsY;
@@ -145,6 +146,9 @@ struct World
 extern struct World *gWorld;
 extern u8 *gParty;
 extern u8 gEllipseStepScript[];
+
+/* An orbiting body's angle (8.8 fixed point, 256 = a full turn), kept in spanA/spanB. */
+#define BODY_ORBIT_ANGLE(body) (*(s32 *)&(body)->spanA)
 
 struct PoseTable
 {
@@ -186,125 +190,219 @@ ASM_FUNC("asm/code_080A048C/place_chain_nodes.s", void place_chain_nodes(void))
 
 ASM_FUNC("asm/code_080A048C/build_twin_part_chain.s", void build_twin_part_chain(struct Body *body))
 
-NONMATCH("asm/code_080A048C/start_script_step.s", void start_script_step(struct Body *body))
+/* Starts an orbiting body's spiral-in: gEllipseStepScript holds 0-terminated scripts and body->height
+   picks one. Reads its first step (its sign is the turn direction), sets the radius to close in to
+   (sqrt(0x4C4) / 2 = 17), the angle where the step ends (the next half turn in the turn direction) and
+   the angular speed (step * 8), then hands over to move_base_toward_target. */
+void start_script_step(struct Body *body)
 {
-    s32 count;
+    s32 scriptsToSkip;
     u32 pos;
-    s8 entry;
-    s8 byte;
-    u8 *tb;
-    u8 *script;
-    u8 *outer;
-    u8 *inner;
-    s32 res;
-    s32 sx;
-    s32 lim;
+    s32 step;
+    s32 byte;
+    s32 root;
+    u8 angle;
+    s32 signedAngle;
+    register s16 stepEnd asm("r1");
 
     pos = 0;
-    count = body->height;
-    script = gEllipseStepScript;
-    if (count > 0)
+    scriptsToSkip = body->height;
+    if (scriptsToSkip > 0)
     {
-        outer = script;
-        inner = script;
         for (;;)
         {
-            entry = (s8)outer[pos];
+            step = (s8)gEllipseStepScript[pos];
             pos++;
-            count--;
-            if (entry != 0)
+            scriptsToSkip--;
+            if (step != 0)
             {
-                tb = inner;
                 do
                 {
-                    byte = (s8)tb[pos];
+                    byte = (s8)gEllipseStepScript[pos];
                     pos++;
                 } while (byte != 0);
             }
-            if (count <= 0)
+            if (scriptsToSkip <= 0)
             {
                 break;
             }
         }
     }
     body->scriptPos = pos;
-    body->scriptB0 = (s8)script[pos];
+    body->scriptB0 = (s8)gEllipseStepScript[pos];
     body->scriptPos = pos + 1;
-    res = ((s32 (*)(s32, u8 *, u8 **, u8 *))gMathRoutines)(0x4C4, gMathRoutines, &gMathRoutines, tb);
-    body->speedZ = res / 2;
+    /* gMathRoutines + 0 is the square root */
+    root = ((s32 (*)(s32))gMathRoutines)(0x4C4);
+    body->speedZ = root / 2;
     if ((s16)body->scriptB0 < 0)
     {
-        sx = *(s32 *)&body->spanA;
-        if (sx < 0)
-        {
-            sx += 0xFF;
-        }
-        lim = 0x80;
-        if ((u8)(sx >> 8) <= 0x80)
-        {
-            lim = -0x80;
-        }
+        angle = BODY_ORBIT_ANGLE(body) / 0x100;
+        stepEnd = 0x80;
+        if (angle <= 0x80)
+            stepEnd = -0x80;
+        body->timer = stepEnd;
     }
     else
     {
-        sx = *(s32 *)&body->spanA;
-        if (sx < 0)
-        {
-            sx += 0xFF;
-        }
-        lim = 0x80;
-        if ((sx << 16) < 0)
-        {
-            lim = 0x180;
-        }
+        signedAngle = (s8)(BODY_ORBIT_ANGLE(body) / 0x100);
+        stepEnd = 0x80;
+        if (signedAngle < 0)
+            stepEnd = 0x180;
+        body->timer = stepEnd;
     }
-    body->timer = lim;
     body->baseY = (s16)body->scriptB0 << 3;
     body->state = (u32)move_base_toward_target;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080A048C/move_base_toward_target.s", void move_base_toward_target(struct Body *body))
-
-void swing_then_draw(struct Body *body)
+void obj_list_push_default(struct Body *obj);
+void sound_stop_song(u32 song);
+u32 link_to_partner_fx(struct Body *body, struct Body *partner, u32 mode);
+void swing_then_draw(struct Body *body);
+/*
+ * Orbiting body, spiral-in phase: eases the angular speed toward the script step's (step * 16) and
+ * the radius down toward speedZ; once the radius gets there, the body and its child become
+ * collidable (link_to_partner_fx) and sound 0x10F starts. The sprite grows from 0 to full size
+ * (min 4) as the radius closes in, and the body is placed on an ellipse around (0x2F, 0x6C),
+ * stretched 2.5x horizontally. Each time the angle passes the step's end, the next script step is
+ * read (once the radius has settled) and the end moves a full turn on; step 0 stops the sound and
+ * switches to swing_then_draw.
+ */
+void move_base_toward_target(struct Body *body)
 {
-    s32 speed;
-    s32 width;
-    s32 bx;
-    s32 cdiv;
-    s32 prod;
-    s32 p8;
-    s32 x2;
+    s32 scale;
+    s32 angle;
+    s32 trig;
+    s32 product;
+    s32 offsetX;
+    s32 stretchedX;
     struct SpriteEntry *sprite;
 
-    body->timer += 0x33;
-    speed = body->swing + (s16)body->timer;
-    body->swing = speed;
-    if (speed <= 0x4FFF)
+    body->baseY = (body->baseY * 0xF8 + (s16)body->scriptB0 * 0x80) / 0x100;
+    if (body->swing != (s16)body->speedZ << 8)
     {
-        width = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5000 - speed, 0x50 - (s16)body->speedZ);
+        body->swing = (body->swing * 0xF8 + (s16)body->speedZ * 0x800) / 0x100;
+        if (body->swing - ((s16)body->speedZ << 8) < 0x100)
+        {
+            body->swing = (s16)body->speedZ << 8;
+        }
+        if (body->swing == (s16)body->speedZ << 8)
+        {
+            obj_list_push_default(body);
+            obj_list_push_default(body->child);
+            body->child->slot58 = (u32)link_to_partner_fx;
+            body->slot58 = (u32)link_to_partner_fx;
+            set_slot_value(0x10F, -1);
+        }
+    }
+
+    /* the sprite grows as the radius closes in */
+    scale = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5000 - body->swing, 0x50 - (s16)body->speedZ);
+    sprite = body->sprite;
+    scale = (scale < 4) ? 4 : scale;
+    sprite->unk6 = scale;
+    sprite->unk4 = scale;
+
+    /* turn, and place the body on the ellipse */
+    BODY_ORBIT_ANGLE(body) += body->baseY;
+    angle = BODY_ORBIT_ANGLE(body);
+    trig = gCosineTable[(angle / 0x100) & 0xFF] / 0x40;
+    product = body->swing * trig;
+    if (product < 0)
+    {
+        product += 0xFF;
+    }
+    offsetX = product >> 8;
+    stretchedX = ((offsetX << 2) + offsetX) << 7;
+    if (stretchedX < 0)
+    {
+        stretchedX += 0xFF;
+    }
+    body->x = 0x2F00 - (stretchedX >> 8);
+    trig = gSineTable[(BODY_ORBIT_ANGLE(body) / 0x100) & 0xFF] / 0x40;
+    product = body->swing * trig;
+    body->y = 0x6C00 - (product / 0x100);
+
+    /* wait until the angle passes the current step's end */
+    if ((s16)body->scriptB0 < 0)
+    {
+        if ((s16)body->timer << 8 < BODY_ORBIT_ANGLE(body))
+            return;
+    }
+    else
+    {
+        if (BODY_ORBIT_ANGLE(body) < (s16)body->timer << 8)
+            return;
+    }
+    if (body->swing == (s16)body->speedZ << 8)
+    {
+        body->scriptB0 = (s8)gEllipseStepScript[body->scriptPos++];
+    }
+    if ((s16)body->scriptB0 > 0)
+    {
+        body->timer += 0x100;
+    }
+    else if ((s16)body->scriptB0 < 0)
+    {
+        body->timer -= 0x100;
+    }
+    else
+    {
+        sound_stop_song(0x10F);
+        body->timer = 0;
+        body->state = (u32)swing_then_draw;
+    }
+}
+
+/*
+ * Orbiting body, spiral-out phase (after move_base_toward_target's script ends): the radius grows
+ * by a step that speeds up every frame (timer, +0x33 per frame) while the body keeps turning at its
+ * last angular speed. The sprite shrinks back down (min 4), and the body is placed on the same
+ * ellipse around (0x2F, 0x6C). Once the radius reaches 0x50 pixels, the body, its child and the
+ * child's child are released.
+ */
+void swing_then_draw(struct Body *body)
+{
+    s32 radius;
+    s32 scale;
+    s32 angle;
+    s32 trig;
+    s32 product;
+    s32 offsetX;
+    s32 stretchedX;
+    struct SpriteEntry *sprite;
+
+    /* timer is the outward speed in this phase */
+    body->timer += 0x33;
+    radius = body->swing + (s16)body->timer;
+    body->swing = radius;
+    if (radius <= 0x4FFF)
+    {
+        /* the sprite shrinks as the radius grows */
+        scale = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5000 - radius, 0x50 - (s16)body->speedZ);
         sprite = body->sprite;
-        width = (width < 4) ? 4 : width;
-        sprite->unk6 = width;
-        sprite->unk4 = width;
-        *(s32 *)&body->spanA += body->baseY;
-        bx = *(s32 *)&body->spanA;
-        cdiv = gCosineTable[(bx / 0x100) & 0xFF] / 0x40;
-        prod = body->swing * cdiv;
-        if (prod < 0)
+        scale = (scale < 4) ? 4 : scale;
+        sprite->unk6 = scale;
+        sprite->unk4 = scale;
+
+        /* turn, and place the body on the ellipse */
+        BODY_ORBIT_ANGLE(body) += body->baseY;
+        angle = BODY_ORBIT_ANGLE(body);
+        trig = gCosineTable[(angle / 0x100) & 0xFF] / 0x40;
+        product = body->swing * trig;
+        if (product < 0)
         {
-            prod += 0xFF;
+            product += 0xFF;
         }
-        p8 = prod >> 8;
-        x2 = ((p8 << 2) + p8) << 7;
-        if (x2 < 0)
+        offsetX = product >> 8;
+        stretchedX = ((offsetX << 2) + offsetX) << 7;
+        if (stretchedX < 0)
         {
-            x2 += 0xFF;
+            stretchedX += 0xFF;
         }
-        body->x = 0x2F00 - (x2 >> 8);
-        cdiv = gSineTable[(*(s32 *)&body->spanA / 0x100) & 0xFF] / 0x40;
-        prod = body->swing * cdiv;
-        body->y = 0x6C00 - (prod / 0x100);
+        body->x = 0x2F00 - (stretchedX >> 8);
+        trig = gSineTable[(BODY_ORBIT_ANGLE(body) / 0x100) & 0xFF] / 0x40;
+        product = body->swing * trig;
+        body->y = 0x6C00 - (product / 0x100);
     }
     else
     {
@@ -340,35 +438,43 @@ static inline void copy_sprite_unk6(struct Body *body, struct Body *head)
     bodySpr->unk6 = headSpr->unk6;
 }
 
+/*
+ * Orbiting pair, follower's update: shifts the child's chain of trail nodes one step (each node
+ * takes the next one's position; node 9 restarts at the leader's target, node 19 at this body's
+ * target), toggles bit 7 of every 5th node, then puts the body half a turn round the leader's
+ * ellipse (centre (0x2F, 0x6C), stretched 2.5x horizontally) at the leader's height, its sprites
+ * scaled like the leader's.
+ */
 void place_members_on_orbit(struct Body *body)
 {
-    u32 count;
-    struct Body *head;
+    u32 n;
+    struct Body *leader;
     struct OrbitNode *node;
-    s32 *speed;
-    s32 *span;
+    s32 *radius;
+    s32 *angle;
     const s16 *cosTab;
-    s32 bx;
-    s32 cdiv;
-    s32 prod;
-    s32 p8;
-    s32 x2;
+    s32 a;
+    s32 trig;
+    s32 product;
+    s32 offsetX;
+    s32 stretchedX;
 
-    head = body->data->leader;
-    count = 0;
+    leader = body->data->leader;
+    n = 0;
     node = (struct OrbitNode *)((u8 *)body->child + 0xC);
     while (node != NULL)
     {
-        if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(count, 5) == 0)
+        /* n % 5 */
+        if (MATH_ROUTINE(u32 (*)(u32, u32), iwram_math_08199424)(n, 5) == 0)
         {
             ((struct OrbitFlagBits *)&node->unk1B)->bit7 = ((struct OrbitFlagBits *)&node->unk1B)->bit7 ^ 1;
         }
-        if (count == 9)
+        if (n == 9)
         {
-            node->unk4 = head->targetX;
-            node->unk8 = head->targetY;
+            node->unk4 = leader->targetX;
+            node->unk8 = leader->targetY;
         }
-        else if (count == 0x13)
+        else if (n == 19)
         {
             node->unk4 = body->targetX;
             node->unk8 = body->targetY;
@@ -379,36 +485,37 @@ void place_members_on_orbit(struct Body *body)
             node->unk8 = node->next->unk8;
         }
         node = node->next;
-        count++;
+        n++;
     }
 
-    speed = (s32 *)&head->swing;
+    /* the leader's angle plus half a turn */
+    radius = &leader->swing;
     cosTab = gCosineTable;
-    span = (s32 *)&head->spanA;
-    bx = *span;
-    if (bx < 0)
+    angle = &BODY_ORBIT_ANGLE(leader);
+    a = *angle;
+    if (a < 0)
     {
-        bx += 0xFF;
+        a += 0xFF;
     }
-    cdiv = cosTab[((bx >> 8) + 0x80) & 0xFF] / 0x40;
-    prod = *speed * cdiv;
-    if (prod < 0)
+    trig = cosTab[((a >> 8) + 0x80) & 0xFF] / 0x40;
+    product = *radius * trig;
+    if (product < 0)
     {
-        prod += 0xFF;
+        product += 0xFF;
     }
-    p8 = prod >> 8;
-    x2 = ((p8 << 2) + p8) << 7;
-    if (x2 < 0)
+    offsetX = product >> 8;
+    stretchedX = ((offsetX << 2) + offsetX) << 7;
+    if (stretchedX < 0)
     {
-        x2 += 0xFF;
+        stretchedX += 0xFF;
     }
-    body->x = 0x2F00 - (x2 >> 8);
-    cdiv = gSineTable[((*span / 0x100) + 0x80) & 0xFF] / 0x40;
-    prod = *speed * cdiv;
-    body->y = 0x6C00 - (prod / 0x100);
-    body->z = head->z;
-    copy_sprite_unk4(body, head);
-    copy_sprite_unk6(body, head);
+    body->x = 0x2F00 - (stretchedX >> 8);
+    trig = gSineTable[((*angle / 0x100) + 0x80) & 0xFF] / 0x40;
+    product = *radius * trig;
+    body->y = 0x6C00 - (product / 0x100);
+    body->z = leader->z;
+    copy_sprite_unk4(body, leader);
+    copy_sprite_unk6(body, leader);
 }
 
 u32 link_to_partner_fx(struct Body *body, struct Body *partner, u32 mode)
@@ -518,11 +625,18 @@ u32 pair_heroes_with_partner(struct Body *body)
     return 1;
 }
 
+/*
+ * Cutscene step: sets the body's playback speed from its data flags (0x400: 0x199
+ * with sprite frame 25, 0x800: 0x66 with frame 6; 0x100 is normal), spawns effect 1
+ * on hero A and walks hero A to 24 px right of its data target at speed 0x300, with
+ * its walk action (0x2002 with no pose, else 0x204F) and facing the way it walks.
+ * Hero A is only touched while its mode is 2 or 4. Goes on to hero_step_and_set_pose.
+ */
 void hero_pose_and_fx(struct Body *body)
 {
     struct Hero *hero;
     struct Body *bodyA;
-    s16 *span;
+    s16 *move_x;
 
     hero = gWorld->heroA;
     bodyA = &hero->body;
@@ -553,7 +667,8 @@ void hero_pose_and_fx(struct Body *body)
         {
             sprite_set_action(bodyA, 0, 0x204F, 0);
         }
-        ((struct SpriteMirrorByte *)&bodyA->sprite->unk11)->mirror = (span = &bodyA->spanA)[0] >= span[1];
+        /* face left when the walk goes towards smaller X */
+        ((struct SpriteMirrorByte *)&bodyA->sprite->unk11)->mirror = (move_x = &bodyA->spanA)[0] >= move_x[1];
         ((struct SpriteModeByte *)&bodyA->sprite->flags)->mode = 0;
     }
     body->state = (u32)hero_step_and_set_pose;
@@ -603,55 +718,64 @@ void hero_advance_and_pose(struct Body *body)
     }
 }
 
+/*
+ * Once hero A's animation has finished: plays sound 0x2B and sends hero A on an
+ * arc onto its target (higher the higher the target stands), in its jump pose,
+ * then hands over to hero_a_move_to_partner_step.
+ */
 void hero_a_move_to_partner_target(struct Body *body)
 {
     struct Hero *hero;
-    struct Body *hbody;
-    struct Body *partner;
+    struct Body *heroA;
+    struct Body *target;
     s32 x;
     s32 y;
     s32 z;
-    s32 dist;
+    s32 height;
 
     hero = gWorld->heroA;
-    hbody = &hero->body;
-    partner = body->partner;
-    if (hbody->sprite->flags & 8)
+    heroA = &hero->body;
+    target = body->partner;
+    /* sprite flags bit 3: the animation has finished */
+    if (heroA->sprite->flags & 8)
     {
         set_slot_value(0x2B, -1);
-        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        /* mode bits 1-2 are 2 or 4 while the body is on the field */
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            x = partner->targetX / 0x100 + partner->ofsX;
-            y = partner->targetY / 0x100 + partner->ofsY;
-            z = partner->targetZ / 0x100 + partner->ofsZ;
-            place_targets(hbody, x, y, z, -1);
-            if ((u8 *)partner == (u8 *)partner->data + 8)
+            x = target->targetX / 0x100 + target->ofsX;
+            y = target->targetY / 0x100 + target->ofsY;
+            z = target->targetZ / 0x100 + target->ofsZ;
+            place_targets(heroA, x, y, z, -1);
+            /* the target's own body uses its offset, a part its current frame */
+            if ((u8 *)target == (u8 *)target->data + 8)
             {
-                dist = partner->ofsZ;
+                height = target->ofsZ;
             }
             else
             {
-                find_frame_entry(partner, 0);
-                dist = partner->unk47;
+                find_frame_entry(target, 0);
+                height = target->unk47;
             }
-            dist += partner->targetZ / 0x100;
-            dist += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5A4, (dist * dist) / 0x40 + 0x26);
-            hbody->arc = dist;
-            set_motion_offsets(hbody, 0x680);
+            height += target->targetZ / 0x100;
+            /* the jump's peak: the target's height plus 0x5A4 / (height^2 / 0x40 + 0x26) */
+            height += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x5A4, (height * height) / 0x40 + 0x26);
+            heroA->arc = height;
+            set_motion_offsets(heroA, 0x680);
         }
-        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            if (hbody->data->pose == -1)
+            if (heroA->data->pose == -1)
             {
-                sprite_set_action(hbody, 5, 0x2000, 0);
+                sprite_set_action(heroA, 5, 0x2000, 0);
             }
             else
             {
-                sprite_set_action(hbody, 5, 0x204D, 0);
+                sprite_set_action(heroA, 5, 0x204D, 0);
             }
-            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+            ((struct SpriteModeByte *)&heroA->sprite->flags)->mode = 1;
         }
-        hbody->timer &= 0xFFF;
+        heroA->timer &= 0xFFF;
         body->state = (u32)hero_a_move_to_partner_step;
     }
 }
@@ -675,139 +799,161 @@ void hero_a_arm_full_step(struct Body *body)
     }
 }
 
+/* State handler: advances hero A's progress; once it is done (flag 0x20), hero A (if on the field)
+ * jumps to 0x2E px left of its own target X/Y plus its offsets, at height 0, in an arc 0x10 above
+ * its target height (speed 0x633), and hero_a_step_end_fx takes over. */
 void hero_a_advance_and_place(struct Body *body)
 {
-    struct Hero *heroA;
-    struct Body *bodyA;
+    struct Hero *hero;
+    struct Body *heroA;
     s32 x;
     s32 y;
 
-    heroA = gWorld->heroA;
-    bodyA = &heroA->body;
-    state_stack_advance_progress(bodyA);
-    if (heroA->body.flags & 0x20)
+    hero = gWorld->heroA;
+    heroA = &hero->body;
+    state_stack_advance_progress(heroA);
+    if (hero->body.flags & 0x20)
     {
-        if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
+        /* mode bits 1-2 are 2 or 4 while the body is on the field */
+        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
         {
-            x = bodyA->targetX / 0x100 + heroA->body.ofsX - 0x2E;
-            y = bodyA->targetY / 0x100 + heroA->body.ofsY;
-            place_targets(bodyA, x, y, 0, -1);
-            bodyA->arc = bodyA->targetZ / 0x100 + 0x10;
-            set_motion_offsets(bodyA, 0x633);
+            x = heroA->targetX / 0x100 + hero->body.ofsX - 0x2E;
+            y = heroA->targetY / 0x100 + hero->body.ofsY;
+            place_targets(heroA, x, y, 0, -1);
+            heroA->arc = heroA->targetZ / 0x100 + 0x10;
+            set_motion_offsets(heroA, 0x633);
         }
-        bodyA->timer &= 0xFFF;
+        heroA->timer &= 0xFFF;
         body->state = (u32)hero_a_step_end_fx;
     }
 }
 
-NONMATCH("asm/code_080A048C/hero_a_step_end_fx.s", void hero_a_step_end_fx(struct Body *body))
+/*
+ * State handler: moves hero A along its jump arc. In the frame the arc passes its
+ * apex, hero A switches to its falling pose (action 6); once it has landed it plays
+ * sound 0x2E, takes its landing pose, spawns effect 0x33 where it stands and hands
+ * over to hero_pair_place_finish_t3cc.
+ */
+void hero_a_step_end_fx(struct Body *body)
 {
     struct Hero *hero;
-    struct Body *hbody;
-    s32 motionX;
-    s32 motionY;
-    s32 ratio;
-    s32 reached;
-    s32 mode;
+    struct Body *heroA;
+    s32 passedApex;
+    register s32 apex asm("r2");
+    s32 progress;
+    s32 span;
+    s32 rise;
 
     hero = gWorld->heroA;
-    hbody = &hero->body;
-    step_motion(hbody);
-    motionX = hero->body.motionX;
-    motionY = hero->body.motionY;
-    ratio = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(motionY << 14, motionX);
-    if (hero->body.stepLen > ratio)
-        reached = 0;
-    else
+    heroA = &hero->body;
+    step_motion(heroA);
+    span = hero->body.arcSpan;
+    rise = hero->body.arcRise;
+    /* the arc is highest where arcSpan * progress / 0x4000 == arcRise */
+    apex = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(rise << 14, span);
+    if (hero->body.prevProgress <= apex)
     {
-        reached = 1;
-        if (hero->body.progress < ratio)
-            reached = 0;
+        progress = hero->body.progress;
+        passedApex = 1;
+        if (progress >= apex)
+            goto done;
     }
-    if (reached != 0)
+    passedApex = 0;
+done:
+    if (passedApex)
     {
-        mode = hbody->mode & 6;
-        if (mode == 2 || mode == 4)
+        /* mode bits 1-2 are 2 or 4 while the body is on the field */
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            if (hbody->data->pose == -1)
-                sprite_set_action(hbody, 6, 0x2000, 0);
+            if (heroA->data->pose == -1)
+            {
+                sprite_set_action(heroA, 6, 0x2000, 0);
+            }
             else
-                sprite_set_action(hbody, 6, 0x204D, 0);
-            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+            {
+                sprite_set_action(heroA, 6, 0x204D, 0);
+            }
+            ((struct SpriteModeByte *)&heroA->sprite->flags)->mode = 1;
         }
     }
-    if (hbody->flags & 0x20)
+    /* flags bit 5: step_motion has reached the end of the motion */
+    if (heroA->flags & 0x20)
     {
-        set_slot_value(0x2E, -1);
-        mode = hbody->mode & 6;
-        if (mode == 2 || mode == 4)
+        set_slot_value(0x2E, -1); /* plays sound 0x2E */
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(hbody, 0, 0x2004, 0);
-            ((struct SpriteModeByte *)&hbody->sprite->flags)->mode = 1;
+            sprite_set_action(heroA, 0, 0x2004, 0);
+            ((struct SpriteModeByte *)&heroA->sprite->flags)->mode = 1;
         }
-        effect_spawn_at(0x33, hbody->x / 0x100, hbody->y / 0x100, hbody->z / 0x100, hbody);
+        effect_spawn_at(0x33, heroA->x / 0x100, heroA->y / 0x100, heroA->z / 0x100, heroA);
         body->state = (u32)hero_pair_place_finish_t3cc;
     }
 }
-END_NONMATCH
 
+/*
+ * State handler: once hero A's sprite animation has finished, send both heroes (A first,
+ * then B) walking back to the home positions stored in their BodyData at speed 0x3CC.
+ * Each hero on the field gets the walk action (0x204F if it has a pose, else 0x2002),
+ * faces the way it walks, and then hands over to the finish-rebuild state.
+ */
 void hero_pair_place_finish_t3cc(struct Body *body)
 {
-    struct Body *bodyA;
-    struct Body *bodyB;
-    s16 *span;
+    struct Body *hero_a;
+    struct Body *hero_b;
+    s16 *move_x;
 
-    bodyA = &gWorld->heroA->body;
-    bodyB = &gWorld->heroB->body;
-    if (bodyA->sprite->flags & 8)
+    hero_a = &gWorld->heroA->body;
+    hero_b = &gWorld->heroB->body;
+    if (hero_a->sprite->flags & 8)
     {
-        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        if ((hero_a->mode & 6) == 2 || (hero_a->mode & 6) == 4)
         {
-            place_targets(bodyA, bodyA->data->targetX / 0x100, bodyA->data->targetY / 0x100,
-                          bodyA->data->targetZ / 0x100, -1);
-            set_motion_start(bodyA, 0x3CC);
+            place_targets(hero_a, hero_a->data->targetX / 0x100, hero_a->data->targetY / 0x100,
+                          hero_a->data->targetZ / 0x100, -1);
+            set_motion_start(hero_a, 0x3CC);
         }
-        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        if ((hero_a->mode & 6) == 2 || (hero_a->mode & 6) == 4)
         {
-            if (bodyA->data->pose == -1)
+            if (hero_a->data->pose == -1)
             {
-                sprite_set_action(bodyA, 0, 0x2002, 0);
+                sprite_set_action(hero_a, 0, 0x2002, 0);
             }
             else
             {
-                sprite_set_action(bodyA, 0, 0x204F, 0);
+                sprite_set_action(hero_a, 0, 0x204F, 0);
             }
-            ((struct SpriteMirrorByte *)&bodyA->sprite->unk11)->mirror = (span = &bodyA->spanA)[0] >= span[1];
-            ((struct SpriteModeByte *)&bodyA->sprite->flags)->mode = 0;
+            /* face left when the walk goes towards smaller X */
+            ((struct SpriteMirrorByte *)&hero_a->sprite->unk11)->mirror = (move_x = &hero_a->spanA)[0] >= move_x[1];
+            ((struct SpriteModeByte *)&hero_a->sprite->flags)->mode = 0;
         }
-        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        if ((hero_a->mode & 6) == 2 || (hero_a->mode & 6) == 4)
         {
-            bodyA->state = 0;
-            enter_finish_rebuild(bodyA);
+            hero_a->state = 0;
+            enter_finish_rebuild(hero_a);
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        if ((hero_b->mode & 6) == 2 || (hero_b->mode & 6) == 4)
         {
-            place_targets(bodyB, bodyB->data->targetX / 0x100, bodyB->data->targetY / 0x100,
-                          bodyB->data->targetZ / 0x100, -1);
-            set_motion_start(bodyB, 0x3CC);
+            place_targets(hero_b, hero_b->data->targetX / 0x100, hero_b->data->targetY / 0x100,
+                          hero_b->data->targetZ / 0x100, -1);
+            set_motion_start(hero_b, 0x3CC);
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        if ((hero_b->mode & 6) == 2 || (hero_b->mode & 6) == 4)
         {
-            if (bodyB->data->pose == -1)
+            if (hero_b->data->pose == -1)
             {
-                sprite_set_action(bodyB, 0, 0x2002, 0);
+                sprite_set_action(hero_b, 0, 0x2002, 0);
             }
             else
             {
-                sprite_set_action(bodyB, 0, 0x204F, 0);
+                sprite_set_action(hero_b, 0, 0x204F, 0);
             }
-            ((struct SpriteMirrorByte *)&bodyB->sprite->unk11)->mirror = (span = &bodyB->spanA)[0] >= span[1];
-            ((struct SpriteModeByte *)&bodyB->sprite->flags)->mode = 0;
+            ((struct SpriteMirrorByte *)&hero_b->sprite->unk11)->mirror = (move_x = &hero_b->spanA)[0] >= move_x[1];
+            ((struct SpriteModeByte *)&hero_b->sprite->flags)->mode = 0;
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        if ((hero_b->mode & 6) == 2 || (hero_b->mode & 6) == 4)
         {
-            bodyB->state = 0;
-            enter_finish_rebuild(bodyB);
+            hero_b->state = 0;
+            enter_finish_rebuild(hero_b);
         }
     }
 }

@@ -11,6 +11,8 @@ struct ActorPose
     u8 cmd20;
 };
 
+#define ACTOR_POSE_ANIM_DONE 0x08 /* ActorPose.flags: the current animation has finished */
+
 struct ActorPart
 {
     u8 filler0[0xB4];
@@ -61,23 +63,34 @@ struct ActorObj
     u8 filler76;
     u8 mode;
     u8 dir;
-    u8 flags;
-    s16 motionStart;
+    u8 flags;           /* MOTION_TARGET_ABSOLUTE */
+    s16 motionStart;    /* start_motion: frames of the move, or 0 to work them out from motionSpeed */
     s16 motionSpeed;
-    s32 index;
+    s32 index;          /* time of the move left, 8.8 frames (0: arrived) */
     s32 targetX;
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
-    u16 timer;
-    s16 dx;
+    s32 param9C;    /* arc moves (obj_lift_step_finish): height curve, < 0; else a mode/counter */
+    s32 paramA0;    /* arc length in frames */
+    s32 paramA4;    /* X distance to travel (8.8) */
+    s32 paramA8;    /* Y distance to travel (8.8) */
+    u16 timer;      /* frames into the arc */
+    s16 dx;         /* arc start, pixels */
     s16 dy;
     s16 dh;
 };
+
+/* ActorObj.flags: start_motion takes targetX/Y/H as a position instead of an offset from posX/Y/H
+   (and clears the flag) */
+#define MOTION_TARGET_ABSOLUTE 0x20
+
+/* ActorObj.param9C during the child sequence (obj_respawn_child_6, obj_respawn_child_7_move):
+   bits 4-7 the step, bits 0-3 how often the step has been restarted after its link was lost */
+#define CHILD_SEQ_STEP_MASK 0xF0
+#define CHILD_SEQ_RETRY_MASK 0x0F
+#define CHILD_SEQ_STEP_SPAWN 0x00 /* obj_respawn_child_6 */
+#define CHILD_SEQ_STEP_MOVE 0x10  /* obj_respawn_child_7_move */
 
 s32 is_state_busy(void);
 s32 query_contact(struct ActorObj *obj, s32 a, s32 b);
@@ -143,18 +156,22 @@ struct ActorObj *obj_spawn(struct ActorPart *part, u32 type, s32 x, s32 y, s32 h
 void on_arrive(struct ActorObj *obj);
 void obj_stop(struct ActorObj *obj);
 
+/* After the actor lost its link in the child sequence (obj_link_lookup_action1 waits 8 frames):
+ * the first time in a step it restarts that step (action 5 for obj_respawn_child_6, action 6 for
+ * obj_respawn_child_7_move) and counts the retry in param9C; a second loss, or a later step, gives
+ * up with action 0xC and waits in wait_for_index. */
 void obj_timer_next_action(struct ActorObj *obj)
 {
-    s32 mode;
+    s32 step;
 
     obj->timer--;
     if ((s16)obj->timer <= 0)
     {
-        mode = obj->param9C & 0xF0;
-        switch (mode)
+        step = obj->param9C & CHILD_SEQ_STEP_MASK;
+        switch (step)
         {
-        case 0:
-            if ((obj->param9C & 0xF) == 0)
+        case CHILD_SEQ_STEP_SPAWN:
+            if ((obj->param9C & CHILD_SEQ_RETRY_MASK) == 0)
             {
                 sprite_set_action(obj, 5, 0, 0);
                 obj->param9C++;
@@ -166,8 +183,8 @@ void obj_timer_next_action(struct ActorObj *obj)
                 obj->state = wait_for_index;
             }
             break;
-        case 0x10:
-            if ((obj->param9C & 0xF) == 0)
+        case CHILD_SEQ_STEP_MOVE:
+            if ((obj->param9C & CHILD_SEQ_RETRY_MASK) == 0)
             {
                 sprite_set_action(obj, 6, 0, 0);
                 obj->param9C++;
@@ -188,13 +205,16 @@ void obj_timer_next_action(struct ActorObj *obj)
     }
 }
 
+/* One frame of the arc obj_spawn_linked_child throws an object in: X moves evenly from dx over
+ * paramA4 in paramA0 frames, the height follows a parabola (param9C < 0) peaking 0x3000 above dh
+ * halfway through. Once it is down to 8 pixels, spawns effect 0x113D where it is and releases it. */
 void obj_lift_step_finish(struct ActorObj *obj)
 {
-    s32 d;
+    s32 fromPeak;
 
     obj->posX = obj->paramA4 * (s16)obj->timer / obj->paramA0 + ((s32)obj->dx << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    obj->posH = (d * d) * obj->param9C + 0x3000 + ((s32)obj->dh << 8);
+    fromPeak = (s16)obj->timer - obj->paramA0 / 2;
+    obj->posH = (fromPeak * fromPeak) * obj->param9C + 0x3000 + ((s32)obj->dh << 8);
     obj->timer++;
     if (obj->posH <= 0x800)
     {
@@ -479,11 +499,15 @@ void obj_no_child_action_c(struct ActorObj *obj)
     }
 }
 
+/* Once the actor's animation has finished: it plays action 3 (4 when param9C is set) and moves at
+   speed 0x14C to 0x40 px right of its owner's part's target, at Y 0x68 px and its own base height,
+   with move sound 0x129 (0x12A when paramA0 is set), which obj_wait_slots_action stops when it
+   arrives. */
 void obj_active_motion_14c(struct ActorObj *obj)
 {
     u8 *flags;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & ACTOR_POSE_ANIM_DONE)
     {
         if (obj->param9C == 0)
         {
@@ -497,7 +521,7 @@ void obj_active_motion_14c(struct ActorObj *obj)
         obj->targetY = 0x6800;
         obj->targetH = obj->baseH;
         flags = &obj->flags;
-        *flags |= 0x20;
+        *flags |= MOTION_TARGET_ABSOLUTE;
         obj->motionSpeed = 0x14C;
         obj->motionStart = 0;
         start_motion(obj);

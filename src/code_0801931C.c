@@ -27,6 +27,25 @@ struct LinkStateBits
     u8 rest : 2;
 };
 
+struct TaskData
+{
+    u8 b[4];
+};
+
+/* A task's header (the start of its ListNode) as task_insert fills it in */
+struct TaskHeader
+{
+    u8 unk0;
+    u8 prio;               /* the list is kept sorted by it, lowest first */
+    u16 active : 1;        /* run_tasks only runs active tasks (cleared to pause one) */
+    u16 ranThisFrame : 1;  /* set once the task has run this frame */
+    u16 unk2_2 : 4;
+    u16 unk2_6 : 4;
+    u16 depth : 6;         /* the task's position in the list when it was inserted */
+    u32 unk4;
+    struct TaskData data;
+};
+
 struct ListNode
 {
     u8 unk0;
@@ -41,12 +60,21 @@ struct ListNode
     void *desc;
 };
 
-struct RegEntry
+/* A decompression job, as handed to table_register (embedded in e.g. struct DispEntry). */
+struct UnpackJob
 {
-    u32 state;
-    u32 unk4;
-    u32 key;
+    u32 state;      /* UNPACK_* */
+    const void *src; /* packed data */
+    void *dst;      /* where it unpacks to; also the job's key in the queue */
 };
+
+/* UnpackJob.state */
+#define UNPACK_DONE    0 /* unpacked */
+#define UNPACK_PENDING 1 /* to submit */
+#define UNPACK_QUEUED  2 /* waiting in gUnk_03000C88 */
+
+/* Size of the decompression queue gUnk_03000C88 (a ring) */
+#define UNPACK_QUEUE_SIZE 32
 
 struct SysArea
 {
@@ -57,48 +85,57 @@ struct SysArea
     u8 taskCount;
     u8 filler19[0x88C - 0x19];
     u8 unk88C;
-    u8 rampFlags;
+    u8 rampFlags;               /* RAMP_*: the fades in progress */
     u8 filler88E[0x890 - 0x88E];
-    u16 ramp0Value;
+    /* Levels are 8.8 fixed point: the high byte goes to the sound driver. */
+    u16 ramp0Value;             /* player 0 (song) volume */
     u8 ramp0Period;
     u8 unk893;
     u16 ramp0Target;
     u16 ramp0Speed;
-    u16 songSlot[2];
-    u16 slot89C[2];
-    u16 slot8A0[2];
-    u16 slot8A4[2];
-    u8 period8A8[2];
-    u8 unk8AA[2];
-    u16 target8AC[2];
-    u16 speed8B0[2];
-    u8 period8B4[2];
+    u16 songSlot[2];            /* song playing on players 1 and 2 */
+    u16 slot89C[2];             /* volume of players 1 and 2 */
+    u16 slot8A0[2];             /* volume to restore when the slot restarts */
+    u16 slot8A4[2];             /* word of players 1 and 2 (sound command 8), default 0x4B00 */
+    u8 period8A8[2];            /* volume fade: frames it takes */
+    u8 unk8AA[2];               /* volume fade: frames done */
+    u16 target8AC[2];           /* volume fade: target */
+    u16 speed8B0[2];            /* volume fade: step added each frame (signed) */
+    u8 period8B4[2];            /* word fade: the same four */
     u8 unk8B6[2];
     u16 target8B8[2];
     u16 speed8BC[2];
 };
 
+/* SysArea.rampFlags bits, stepped once a frame by update_meter_ramps */
+#define RAMP_SONG_VOL  0x04
+#define RAMP_SLOT0_VOL 0x08
+#define RAMP_SLOT1_VOL 0x10
+#define RAMP_SLOT0_WORD 0x20
+#define RAMP_SLOT1_WORD 0x40
+
 #define SYS_AREA ((struct SysArea *)gSys)
 
+/* The multiplayer serial link (gUnk_03000D0C), set up by serial_link_init. */
 struct LinkState
 {
-    u8 unk0;
-    u8 unk1;
+    u8 unk0;               /* SIO_MULTI_SD (8) on the parent GBA, 0 on a child */
+    u8 unk1;               /* phase (serial_frame): 0 handshake, 1 settling (unk8 counts up to 8), 2 linked */
     u8 unk2;
     u8 unk3;
-    u8 unk4;
+    u8 unk4;               /* buf1C holds a finished packet (serial_packet_checksum_write) */
     u8 filler5;
-    u8 unk6;
-    u8 unk7;
+    u8 unk6;               /* parent: a transfer was requested (serial_flag6_if_active) */
+    u8 unk7;               /* SIOCNT's error bit when the last transfer started */
     u8 unk8;
     u8 unk9;
     u8 unkA;
-    u8 unkB;
+    u8 unkB;               /* packet counter, written as each packet's first byte */
     u8 filler0C[0x14 - 0x0C];
-    u32 unk14;
+    u32 unk14;             /* position in buf20, reset when the packets swap */
     u32 unk18;
-    u8 *buf1C;
-    u8 *buf20;
+    u8 *buf1C;             /* packet being built */
+    u8 *buf20;             /* packet being sent */
     u32 unk24;
     u32 unk28;
     u8 *recs2C;
@@ -116,17 +153,17 @@ extern const u8 decompress_routine_end[];  /* = sub_0800063C, the end of the rou
 extern const u8 gHeapTags[];
 extern const u8 gDefaultTaskDesc[];
 void sub_0800063C(void);
-extern u32 gUnk_03000C84;
-extern u32 gUnk_03000C78;
-extern u8 gUnk_03000D08;
-extern u8 gUnk_03000C80;
+extern u32 gUnk_03000C84;   /* decompress function: the RAM copy of decompress_routine, (src, dst) */
+extern u32 gUnk_03000C78;   /* unpack mode: sub_0800063C queues jobs, 0 decompresses them at once */
+extern u8 gUnk_03000D08;    /* unpack queue head: the slot the search for a free one starts at */
+extern u8 gUnk_03000C80;    /* number of jobs waiting in the unpack queue */
 extern u8 gUnk_03000D18;
 extern u8 gUnk_03000D30[];
 void serial_irq_handler(void);
 void serial_timeout(void);
 void serial_clear_timer(void);
 void set_irq_callback(u32 kind, void *cb);
-extern struct RegEntry *gUnk_03000C88[];
+extern struct UnpackJob *gUnk_03000C88[UNPACK_QUEUE_SIZE]; /* unpack queue: jobs waiting to decompress */
 void *heap_alloc(u32 size, u32 mode, const u8 *tag, u32 flags);
 void cpu_set(const void *src, void *dst, u32 ctl);
 void heap_free_b(void *p);
@@ -152,80 +189,119 @@ void set_ramp0_target(u8 level, u8 period);
 u8 move_complete_records(u8 *base, u32 unused, u32 arg2, u32 arg3);
 struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data);
 
-void set_slot_target(u32 idx, u32 value, u32 mode)
+/* Plays `song` on music player slot+1 (song 0 stops it), unless the player already plays it. A
+ * started song gets volume `volume` (0xFFFFFFFF: the slot's last volume, slot8A0, or full volume
+ * 0xFF when there is none yet) and slot8A4 0x4B00. The slot's song is remembered in songSlot. */
+void set_slot_target(u32 slot, u32 song, u32 volume)
 {
-    if (value == 0)
+    if (song == 0)
     {
-        slot_reset(idx);
+        slot_reset(slot);
     }
     else
     {
-        if ((u8)slot_bit_test(idx) == 0 || SYS_AREA->songSlot[idx] != value)
+        if ((u8)slot_bit_test(slot) == 0 || SYS_AREA->songSlot[slot] != song)
         {
-            queue_player_start(idx + 1, value);
-            if (mode == 0xFFFFFFFF)
+            queue_player_start(slot + 1, song);
+            if (volume == 0xFFFFFFFF)
             {
-                u16 stored = SYS_AREA->slot8A0[idx];
-                if (stored == 0)
-                    set_slot_fields(idx, 0xFF, 0);
+                u16 lastVolume = SYS_AREA->slot8A0[slot];
+                if (lastVolume == 0)
+                    set_slot_fields(slot, 0xFF, 0);
                 else
-                    SYS_AREA->slot89C[idx] = stored;
+                    SYS_AREA->slot89C[slot] = lastVolume;
             }
             else
             {
-                set_slot_fields(idx, (u8)mode, 0);
+                set_slot_fields(slot, (u8)volume, 0);
             }
-            SYS_AREA->slot8A4[idx] = 0x4B00;
+            SYS_AREA->slot8A4[slot] = 0x4B00;
         }
     }
-    SYS_AREA->songSlot[idx] = value;
+    SYS_AREA->songSlot[slot] = song;
 }
 
-NONMATCH("asm/code_0801931C/set_slot_fields.s", void set_slot_fields(u32 idx, u8 level, u8 period))
+/* Sets the volume of sound player slot `slot` (player slot + 1) to `level`: at once (also as the
+   volume to restore) when `frames` is 0, otherwise as a fade over that many frames that
+   update_meter_ramps steps (target, period, count reset, per-frame step and its RAMP_SLOTn_VOL flag). */
+void set_slot_fields(u32 slot, u8 level, u8 frames)
 {
+    register u8 period asm("r6") = frames;
     if (period == 0)
     {
-        SYS_AREA->slot89C[idx] = SYS_AREA->slot8A0[idx] = level << 8;
-        queue_player_volume(idx + 1, level);
+        SYS_AREA->slot89C[slot] = SYS_AREA->slot8A0[slot] = level << 8;
+        queue_player_volume(slot + 1, level);
     }
     else
     {
         u16 target = level << 8;
-        SYS_AREA->target8AC[idx] = target;
-        SYS_AREA->period8A8[idx] = period;
-        SYS_AREA->unk8AA[idx] = 0;
-        SYS_AREA->speed8B0[idx] = (target - SYS_AREA->slot89C[idx]) / period;
-        if (idx == 0)
-            SYS_AREA->rampFlags |= 0x08;
-        else
-            SYS_AREA->rampFlags |= 0x10;
-    }
-}
-END_NONMATCH
-
-NONMATCH("asm/code_0801931C/set_slot_fields_45.s", void set_slot_fields_45(u32 idx, u8 level, u8 period))
-{
-    if (period == 0)
-    {
-        SYS_AREA->slot8A4[idx] = level << 8;
-        queue_player_word(idx + 1, level);
-    }
-    else
-    {
-        u16 target = level << 8;
-        SYS_AREA->target8B8[idx] = target;
-        SYS_AREA->period8B4[idx] = period;
-        SYS_AREA->unk8B6[idx] = 0;
-        SYS_AREA->speed8BC[idx] = (target - (SYS_AREA->slot8A4[idx] << 8)) / period;
+        register u32 offset asm("r4");
+        register u8 zero asm("r3");
+        register u32 sys asm("r5") = (u32)gSys;
+        u32 index = slot * 2;
+        u32 base = sys + 0x8AC;
+        u16 *fadeTarget = (u16 *)(index + base); /* &SYS_AREA->target8AC[slot] */
+        zero = 0;
+        *fadeTarget = target;
+        offset = 0x8A8;
+        base = sys + offset;
+        *(u8 *)(slot + base) = period;  /* SYS_AREA->period8A8[slot] */
+        offset += 2;
+        base = sys + offset;
+        *(u8 *)(slot + base) = zero;    /* SYS_AREA->unk8AA[slot], the frames done */
+        SYS_AREA->speed8B0[slot] = (target - SYS_AREA->slot89C[slot]) / period;
+        if (slot == 0)
         {
-            if (idx == 0)
-                SYS_AREA->rampFlags |= 0x20;
-            else
-                SYS_AREA->rampFlags |= 0x40;
+            u8 flags = SYS_AREA->rampFlags;
+            SYS_AREA->rampFlags = flags | RAMP_SLOT0_VOL;
+        }
+        else
+        {
+            u8 flags = SYS_AREA->rampFlags;
+            SYS_AREA->rampFlags = flags | RAMP_SLOT1_VOL;
         }
     }
 }
-END_NONMATCH
+
+/* Sets the word of sound player slot `slot` (player slot + 1, sound command 8) to `level`: at once
+   when `period` is 0, otherwise as a fade over that many frames that update_meter_ramps steps
+   (target, period, count reset, per-frame step and its RAMP_SLOTn_WORD flag), like set_slot_fields
+   does for the volume. */
+void set_slot_fields_45(u32 slot, u8 level, u8 period)
+{
+    if (period == 0)
+    {
+        SYS_AREA->slot8A4[slot] = level << 8;
+        queue_player_word(slot + 1, level);
+    }
+    else
+    {
+        u16 target = level << 8;
+        register u8 zero asm("r3");
+        register u32 sys asm("r5") = (u32)gSys;
+        u32 index = slot * 2;
+        u32 base = sys + 0x8B8;
+        u16 *fadeTarget = (u16 *)(index + base); /* &SYS_AREA->target8B8[slot] */
+        zero = 0;
+        *fadeTarget = target;
+        base = sys + 0x8B4;
+        *(u8 *)(slot + base) = period;  /* SYS_AREA->period8B4[slot] */
+        base = sys + 0x8B6;
+        *(u8 *)(slot + base) = zero;    /* SYS_AREA->unk8B6[slot], the frames done */
+        /* the current word is shifted up once more here, as for player 0's volume */
+        SYS_AREA->speed8BC[slot] = (target - (SYS_AREA->slot8A4[slot] << 8)) / period;
+        if (slot == 0)
+        {
+            u8 flags = SYS_AREA->rampFlags;
+            SYS_AREA->rampFlags = flags | RAMP_SLOT0_WORD;
+        }
+        else
+        {
+            u8 flags = SYS_AREA->rampFlags;
+            SYS_AREA->rampFlags = flags | RAMP_SLOT1_WORD;
+        }
+    }
+}
 
 void set_ramp0_target(u8 level, u8 period)
 {
@@ -391,33 +467,79 @@ void reset_state_0c28(void)
     gUnk_03000C78 = 0;
 }
 
-ASM_FUNC("asm/code_0801931C/table_register.s", u32 table_register(struct RegEntry *p))
+/* Submits a decompression job. When jobs are queued (gUnk_03000C78), a job not queued yet goes into
+   the first free slot of the unpack queue from its head on and 1 is returned; a job for the same dst
+   already waiting, or a full queue, leaves it out. Otherwise the job is decompressed at once. */
+u32 table_register(struct UnpackJob *job)
+{
+    if (gUnk_03000C78 == (u32)sub_0800063C)
+    {
+        if (job->state <= UNPACK_PENDING)
+        {
+            register s32 slot asm("r2") = gUnk_03000D08;
+            s32 tries = 0;
+            register struct UnpackJob **queue asm("r1") = gUnk_03000C88;
+            do
+            {
+                struct UnpackJob *queued = queue[slot];
+                if (queued == NULL)
+                    goto found;
+                if (queued->dst == job->dst)
+                    break; /* already waiting */
+                if (queue[slot] == NULL)
+                {
+                found:
+                    {
+                        register u32 addr asm("r0") = slot * sizeof(*queue);
+                        addr += (u32)queue;
+                        *(struct UnpackJob **)addr = job;
+                    }
+                    job->state = UNPACK_QUEUED;
+                    gUnk_03000C80++;
+                    return 1;
+                }
+                {
+                    /* slot = (slot + 1) % UNPACK_QUEUE_SIZE */
+                    register s32 next asm("r0") = ++slot;
+                    if (slot < 0)
+                        next += UNPACK_QUEUE_SIZE - 1;
+                    slot -= (next >> 5) * UNPACK_QUEUE_SIZE;
+                }
+                tries++;
+            } while (tries < UNPACK_QUEUE_SIZE);
+        }
+    }
+    else
+    {
+        ((void (*)(const void *, void *))gUnk_03000C84)(job->src, job->dst);
+        job->state = UNPACK_DONE;
+    }
+    return 0;
+}
 
 // The original loop was unrolled by the compiler; the remainder entry differs slightly.
-NONMATCH("asm/code_0801931C/read_varlen_plus1.s", u32 read_varlen_plus1(u8 *p))
+u32 read_varlen_plus1(u8 *p)
 {
-    u32 v = p[0];
-    u32 n = v >> 6;
-    s32 shift;
-    u32 count;
-
-    v &= 0x3F;
-
-    if (n != 0)
+  u32 v = p[0];
+  u32 n = v >> 6;
+  s32 shift;
+  u32 count;
+  v &= 0x3F;
+  if (n != 0)
+  {
+    shift = 6;
+    count = n;
+    do
     {
-        shift = 6;
-        count = n;
-        do
-        {
-            p++;
-            v += *p << shift;
-            shift += 8;
-        } while (--count != 0);
+      n = *(++p);
+      v += n << shift;
+      shift += 8;
     }
-    v += 1;
-    return v;
+    while ((--count) != 0);
+  }
+  v += 1;
+  return v;
 }
-END_NONMATCH
 
 // The original loads the table end a second time from its own literal pool entry; GCC shares one.
 void load_rom_table(void)
@@ -435,7 +557,75 @@ void load_rom_table(void)
     gUnk_03000C80 = 0;
 }
 
-ASM_FUNC("asm/code_0801931C/task_insert.s", struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data))
+/* Links `task` into the system's task list, which is kept sorted by priority (lowest first; a task
+   goes after the ones of its own priority), and sets up its header: priority, active and
+   ran-this-frame set, its position in the list, the task running now as its parent (unk14), and
+   the 4 bytes of `data`. Returns the task. */
+struct ListNode *task_insert(struct ListNode *task, u8 prio, u8 *data)
+{
+    struct ListNode *node;
+    u32 position;
+    s32 j;
+
+    task->desc = (void *)gDefaultTaskDesc;
+    position = 0;
+    node = SYS_AREA->listHead;
+    if (node == 0)
+    {
+        /* the list is empty */
+        SYS_AREA->listHead = task;
+        task->prev = 0;
+        task->next = 0;
+    }
+    else
+    {
+        for (;;)
+        {
+            /* unk1 is the node's priority: insert before the first node with a higher one */
+            if (node->unk1 > prio)
+            {
+                if (node->prev == 0)
+                {
+                    SYS_AREA->listHead = task;
+                    task->prev = 0;
+                }
+                else
+                {
+                    node->prev->next = task;
+                    task->prev = node->prev;
+                }
+                task->next = node;
+                node->prev = task;
+                break;
+            }
+            if (node->next == 0)
+            {
+                /* append at the end */
+                node->next = task;
+                task->prev = node;
+                task->next = 0;
+                position++;
+                goto done;
+            }
+            node = node->next;
+            position++;
+        }
+    }
+done:
+    task->unk14 = SYS_AREA->current;
+    ((struct TaskHeader *)task)->depth = position;
+    ((struct TaskHeader *)task)->unk0 = 0;
+    ((struct TaskHeader *)task)->prio = prio;
+    ((struct TaskHeader *)task)->active = 1;
+    ((struct TaskHeader *)task)->ranThisFrame = 1;
+    ((struct TaskHeader *)task)->unk2_2 = 1;
+    ((struct TaskHeader *)task)->unk2_6 = 0;
+    ((struct TaskHeader *)task)->unk4 = 0;
+    for (j = 0; j < 4; j++)
+        task->unk8[j] = data[j];
+    SYS_AREA->taskCount++;
+    return task;
+}
 
 ASM_FUNC("asm/code_0801931C/run_tasks.s", void run_tasks(void))
 
@@ -492,6 +682,8 @@ void set_flags_2_3(u8 *p)
     p[2] = b;
 }
 
+/* Pauses a task: clears its active bit and sets its ran-this-frame bit, so run_tasks skips it
+   (set_flags_2_3 sets both bits and resumes it from the next frame). */
 void set_flag_2_2(u8 *p)
 {
     ((struct FlagBits2 *)(p + 2))->unk0 = 0;
@@ -519,19 +711,23 @@ void task_remove(struct ListNode *task, u32 flags)
 ASM_FUNC("asm/code_0801931C/serial_link_init.s", void serial_link_init(void))
 
 void heap_free(void *p);
+/* Tears down the serial link serial_link_init set up: masks and acknowledges the timer 3 and serial
+   IRQs, leaves SIO idle in multiplayer mode at 115200 bps, stops timer 3 (reload 0xABFB), frees the
+   link state (and its buffer at +0x180) and the transfer buffer, and clears bit 7 of the system's
+   link mode byte (gSys + 0x888). */
 void serial_link_shutdown(void)
 {
     REG_IME = 0;
-    REG_IE = REG_IE & 0xFFBF;
-    REG_IF = REG_IF | 0x40;
+    REG_IE = REG_IE & (u16)~IRQ_TIMER3;
+    REG_IF = REG_IF | IRQ_TIMER3;
     REG_IME = 1;
     REG_IME = 0;
-    REG_IE = REG_IE & 0xFF7F;
-    REG_IF = REG_IF | 0x80;
+    REG_IE = REG_IE & (u16)~IRQ_SERIAL;
+    REG_IF = REG_IF | IRQ_SERIAL;
     REG_IME = 1;
     REG_IME = 0;
-    REG_SIOCNT = 0x2003;
-    REG_TM3CNT = 0xABFB;
+    REG_SIOCNT = SIO_MULTI_MODE | SIO_115200_BPS;
+    REG_TM3CNT = 0xABFB; /* timer off (control 0), reload 0xABFB */
     REG_IME = 1;
     heap_free(gUnk_03000D10);
     heap_free(*(void **)((u8 *)gUnk_03000D0C + 0x180));
@@ -545,18 +741,25 @@ void serial_link_shutdown(void)
 
 ASM_FUNC("asm/code_0801931C/serial_frame.s", void serial_frame(void))
 
-NONMATCH("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_checksum_write(void))
+void serial_packet_checksum_write(void)
 {
+    u8 *buf;
+    u8 first;
     u16 *hw;
     u32 sum;
     s32 i;
     u16 zero;
 
-    gUnk_03000D0C->buf1C[0] = gUnk_03000D0C->unkB;
+    buf = gUnk_03000D0C->buf1C;
+    first = gUnk_03000D0C->unkB;
     zero = 0;
+    buf[0] = first;
     gUnk_03000D0C->buf1C[1] = gUnk_03000D0C->unk2 ^ gUnk_03000D0C->unk3;
-    ((u16 *)gUnk_03000D0C->buf1C)[1] = zero;
-    cpu_set(gUnk_03000D10 + 2, gUnk_03000D0C->buf1C + 4, 0x04000004);
+    {
+        struct LinkState *state = gUnk_03000D0C;
+        ((u16 *)state->buf1C)[1] = zero;
+        cpu_set(gUnk_03000D10 + 2, *(u8 *volatile *)&state->buf1C + 4, 0x04000004);
+    }
     hw = (u16 *)gUnk_03000D0C->buf1C;
     sum = 0;
     for (i = 0; i < 10; i++)
@@ -564,53 +767,56 @@ NONMATCH("asm/code_0801931C/serial_packet_checksum_write.s", void serial_packet_
     hw[1] = ~sum - 12;
     gUnk_03000D0C->unk4 = 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0801931C/move_complete_records.s", u8 move_complete_records(u8 *base, u32 unused, u32 arg2, u32 arg3))
 
+/* Once a frame, while a serial link is open. The parent, once past the handshake and asked to send,
+ * starts the next transfer: swaps the receive buffers, swaps in the newly built packet if there is
+ * one, notes SIOCNT's error bit, sends the 0xFEFE sync word and starts timer 3 to clock the rest.
+ * A child instead sets the serial bit of the BIOS IntrWait flags if unk9 is clear, then clears unk9. */
 void serial_link_update(void)
 {
-    struct LinkState *s = gUnk_03000D0C;
-    if (s != 0)
+    struct LinkState *link = gUnk_03000D0C;
+    if (link != 0)
     {
-        u32 b0 = s->unk0;
-        if (b0 != 0)
+        u32 isParent = link->unk0;
+        if (isParent != 0)
         {
-            if (s->unk1 != 0 && s->unk6 != 0)
+            if (link->unk1 != 0 && link->unk6 != 0)
             {
-                u32 t;
-                u8 *p;
+                u32 recv;
+                u8 *packet;
                 vu16 *sio;
-                u32 fefe;
-                s->unk18 = 0xFFFFFFFE;
-                t = s->unk28;
-                s->unk28 = s->unk24;
-                s->unk24 = t;
-                if (s->unk4 != 0)
+                u32 sync;
+                link->unk18 = 0xFFFFFFFE;
+                recv = link->unk28;
+                link->unk28 = link->unk24;
+                link->unk24 = recv;
+                if (link->unk4 != 0)
                 {
-                    p = s->buf20;
-                    s->buf20 = s->buf1C;
-                    s->buf1C = p;
-                    s->unk4 = 0;
+                    packet = link->buf20;
+                    link->buf20 = link->buf1C;
+                    link->buf1C = packet;
+                    link->unk4 = 0;
                     gUnk_03000D0C->unk14 = 0;
                 }
-                gUnk_03000D0C->unk7 = ((*(vu32 *)REG_ADDR_SIOCNT) << 25) >> 31;
+                gUnk_03000D0C->unk7 = ((*(vu32 *)REG_ADDR_SIOCNT) << 25) >> 31; /* SIOCNT bit 6: error */
                 sio = (vu16 *)REG_ADDR_SIOCNT;
-                fefe = 0xFEFE;
-                sio[1] = fefe;
-                sio[0] = sio[0] | 0x80;
-                REG_TM3CNT_H = 0xC0;
+                sync = 0xFEFE;
+                sio[1] = sync;                 /* REG_SIOMLT_SEND */
+                sio[0] = sio[0] | SIO_START;
+                REG_TM3CNT_H = TIMER_ENABLE | TIMER_IRQ_ENABLE;
             }
         }
         else
         {
-            if (s->unk9 == 0)
+            if (link->unk9 == 0)
             {
-                REG_IME = b0;
-                *(vu16 *)0x03007FF8 = *(vu16 *)0x03007FF8 | 0x80;
+                REG_IME = isParent;
+                *(vu16 *)0x03007FF8 = *(vu16 *)0x03007FF8 | IRQ_SERIAL; /* INTR_CHECK, BIOS IntrWait flags */
                 REG_IME = 1;
             }
-            gUnk_03000D0C->unk9 = b0;
+            gUnk_03000D0C->unk9 = isParent;
         }
     }
 }
@@ -694,84 +900,108 @@ NONMATCH("asm/code_0801931C/obj_init_gfx.s", struct ListNode *obj_init_gfx(struc
 END_NONMATCH
 
 void task_remove(struct ListNode *task, u32 flags);
+/* The task that shows the full-screen picture obj_init_gfx loads (it sets BLDCNT to brighten and
+   BLDY to 16, so the screen starts white). */
 struct AnimObj
 {
-    u8 state;
+    u8 state;           /* a PICTURE_* state */
     u8 filler1[3];
-    u32 unk4;
+    u32 counter;        /* task header word, cleared by task_insert */
     u8 filler8[0x18 - 0x8];
     void *handler;
-    u8 timer;
+    s8 timer;           /* frames left in the current state */
     u8 filler1D;
-    u16 keys;
+    u16 keys;           /* d-pad keys held this frame */
     u16 prevKeys;
     u8 filler22[2];
-    u32 unk24;
-    u32 unk28;
-    void (*fn)(void);
+    u32 dpadPressTime;      /* counter when all four directions were last pressed together */
+    u32 prevDpadPressTime;
+    void (*onDone)(void);   /* runs once the picture has faded out */
 };
 
-NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct AnimObj *p))
+enum
 {
-    u32 mask;
-    u16 old;
-    u16 keys;
-    u32 start;
-    u32 cnt;
+    PICTURE_FADE_IN,  /* BLDY 16 -> 0 */
+    PICTURE_HOLD,     /* 50 frames */
+    PICTURE_FADE_OUT, /* BLDY 0 -> 16 */
+};
 
-    switch (p->state)
+/*
+ * Runs the picture task once a frame: fades the picture in from white, holds it 50 frames and fades
+ * it back to white through the BLDY shadow (gUnk_02000054), then clears the DISPCNT and BLDCNT
+ * shadows, removes the task and calls onDone. Meanwhile, pressing all four d-pad directions at once
+ * twice within 3 ticks (which a real d-pad can't do) switches the system's link mode to 1.
+ */
+void anim_state_step(struct AnimObj *task)
+{
+    u16 old;
+    register u32 keys asm("r0");
+    u32 lastPress;
+    u32 now;
+
+    switch (task->state)
     {
-    case 0:
-        p->timer--;
-        gUnk_02000054 = (s8)p->timer;
-        if (*(vs8 *)&p->timer == 0)
+    case PICTURE_FADE_IN:
+    {
+        s32 t;
+
+        task->timer--;
+        gUnk_02000054 = task->timer;
+        t = task->timer;
+        if (t == 0)
         {
-            p->timer = 0x32;
-            p->state++;
+            task->timer = 50;
+            task->state++;
         }
         break;
-    case 1:
-        p->timer--;
-        if (p->timer == 0)
+    }
+    case PICTURE_HOLD:
+        task->timer--;
+        if (task->timer == 0)
         {
-            p->timer = 0x10;
-            p->state++;
+            task->timer = 16;
+            task->state++;
         }
         break;
-    case 2:
-        p->timer--;
-        gUnk_02000054 = 0x10 - (s8)p->timer;
-        if (*(vs8 *)&p->timer == 0)
+    case PICTURE_FADE_OUT:
+    {
+        s32 t;
+
+        task->timer--;
+        gUnk_02000054 = 16 - task->timer;
+        t = task->timer;
+        if (t == 0)
         {
-            if (p != 0)
+            if (task != NULL)
             {
                 u8 *sys;
-                p->handler = (void *)gObjHandler;
+                task->handler = (void *)gObjHandler;
                 sys = gSys;
-                sys[0x88A] |= 8;
-                *(vu16 *)0x02000000 = 0;
-                *(vu16 *)0x02000050 = 0;
-                task_remove((struct ListNode *)p, 3);
+                sys[0x88A] |= 8; /* SysBits88A.bit3 */
+                *(vu16 *)&REG_BUF_DISPCNT = 0;
+                *(vu16 *)&REG_BUF_BLDCNT = 0;
+                task_remove((struct ListNode *)task, 3);
             }
-            if (p->fn != 0)
-                p->fn();
+            if (task->onDone != NULL)
+                task->onDone();
             return;
         }
         break;
     }
+    }
 
-    old = p->keys;
-    p->prevKeys = old;
-    mask = 0xF0;
-    keys = mask & ~REG_KEYINPUT;
-    p->keys = keys;
-    if ((keys & ~old & mask) == mask)
+    old = task->keys;
+    task->prevKeys = old;
+    keys = REG_KEYINPUT;
+    keys = ~keys & DPAD_ANY;
+    task->keys = keys;
+    if ((keys & ~old & DPAD_ANY) == DPAD_ANY)
     {
-        start = p->unk24;
-        p->unk28 = start;
-        cnt = p->unk4;
-        p->unk24 = cnt;
-        if (start != 0 && cnt - start <= 3)
+        lastPress = task->dpadPressTime;
+        task->prevDpadPressTime = lastPress;
+        now = task->counter;
+        task->dpadPressTime = now;
+        if (lastPress != 0 && now - lastPress <= 3)
         {
             u8 *sys = gSys;
             ((struct LinkModeBits *)&sys[0x888])->mode = 1;
@@ -779,8 +1009,12 @@ NONMATCH("asm/code_0801931C/anim_state_step.s", void anim_state_step(struct Anim
         }
     }
 }
-END_NONMATCH
 
+/* Starts the serial link when the system's link mode (gSys + 0x888, bits 1-2) is 1: resets the
+   link state (gUnk_03000D18), puts SIO in 32-bit normal mode with its IRQ on and an external
+   clock, installs serial_irq_handler and serial_timeout as the serial and timer 3 handlers,
+   clears the 3-word buffer at gUnk_03000D30, starts a transfer and runs timer 3 as the timeout
+   (reload 0x8000, 64-cycle ticks, IRQ on). */
 void serial_link_enable(void)
 {
     u8 *base = gSys;
@@ -792,39 +1026,44 @@ void serial_link_enable(void)
         ((struct LinkStateBits *)&gUnk_03000D18)->b4_5 = 0;
         ((struct LinkStateBits *)&gUnk_03000D18)->rest = 0;
         ((struct LinkStateBits *)&gUnk_03000D18)->b0 = 1;
+        // both IRQs off and acknowledged while the link is set up
         REG_IME = 0;
-        REG_IE = REG_IE & 0xFFBF;
-        REG_IF = REG_IF | 0x40;
+        REG_IE = REG_IE & (u16)~IRQ_TIMER3;
+        REG_IF = REG_IF | IRQ_TIMER3;
         REG_IME = 1;
         REG_IME = 0;
-        REG_IE = REG_IE & 0xFF7F;
-        REG_IF = REG_IF | 0x80;
+        REG_IE = REG_IE & (u16)~IRQ_SERIAL;
+        REG_IF = REG_IF | IRQ_SERIAL;
         REG_IME = 1;
         REG_RCNT = 0;
-        REG_SIOCNT = 0x1008;
-        REG_SIOCNT = REG_SIOCNT | 0x4000;
+        REG_SIOCNT = SIO_32BIT_MODE | SIO_SO_HIGH;
+        REG_SIOCNT = REG_SIOCNT | SIO_IRQ_ENABLE;
         set_irq_callback(1, serial_irq_handler);
         set_irq_callback(0, serial_timeout);
         REG_IME = 0;
-        REG_IE = REG_IE | 0x80;
-        REG_IF = REG_IF | 0x80;
+        REG_IE = REG_IE | IRQ_SERIAL;
+        REG_IF = REG_IF | IRQ_SERIAL;
         REG_IME = 1;
         REG_IME = 0;
-        REG_IE = REG_IE | 0x40;
-        REG_IF = REG_IF | 0x40;
+        REG_IE = REG_IE | IRQ_TIMER3;
+        REG_IF = REG_IF | IRQ_TIMER3;
         REG_IME = 1;
+        // external shift clock
         ((struct BitB0 *)REG_ADDR_SIOCNT)->b0 = 0;
         ((struct LinkStateBits *)&gUnk_03000D18)->b1_3 = 1;
         zero = 0;
-        cpu_set(&zero, gUnk_03000D30, 0x05000003);
+        cpu_set(&zero, gUnk_03000D30, 0x05000003); // fill 3 words with 0
         REG_IME = 0;
-        REG_SIOCNT = REG_SIOCNT | 0x80;
+        REG_SIOCNT = REG_SIOCNT | SIO_START;
         REG_IME = 1;
         REG_TM3CNT_L = 0x8000;
-        REG_TM3CNT_H = 0xC1;
+        REG_TM3CNT_H = TIMER_ENABLE | TIMER_IRQ_ENABLE | TIMER_64CLK;
     }
 }
 
+/* Stops the serial link started by serial_link_enable (when the link mode, gSys + 0x888 bits 1-2,
+   is 1): clears the link state bits, turns the timer 3 and serial IRQs off and acknowledges them,
+   puts SIO back in multiplayer mode and stops timer 3 (reload 0x8000, control 0). */
 void serial_link_disable(void)
 {
     u8 *base = gSys;
@@ -835,16 +1074,16 @@ void serial_link_disable(void)
         ((struct LinkStateBits *)&gUnk_03000D18)->b1_3 = 0;
         ((struct LinkStateBits *)&gUnk_03000D18)->b4_5 = 0;
         REG_IME = 0;
-        REG_IE = REG_IE & 0xFFBF;
-        REG_IF = REG_IF | 0x40;
+        REG_IE = REG_IE & (u16)~IRQ_TIMER3;
+        REG_IF = REG_IF | IRQ_TIMER3;
         REG_IME = 1;
         REG_IME = 0;
-        REG_IE = REG_IE & 0xFF7F;
-        REG_IF = REG_IF | 0x80;
+        REG_IE = REG_IE & (u16)~IRQ_SERIAL;
+        REG_IF = REG_IF | IRQ_SERIAL;
         REG_IME = 1;
         REG_IME = 0;
-        REG_SIOCNT = 0x2000;
-        REG_TM3CNT = 0x8000;
+        REG_SIOCNT = SIO_MULTI_MODE;
+        REG_TM3CNT = 0x8000; /* TM3CNT_L (reload) = 0x8000, TM3CNT_H = 0: timer off */
         REG_IME = 1;
     }
 }

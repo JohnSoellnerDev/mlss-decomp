@@ -1,14 +1,15 @@
 #include "global.h"
 #include "ram_routines.h"
 
+/* the sprite drawn for a FieldObj; scales are 8.8 fixed point */
 struct FieldSub
 {
     u8 filler0[4];
-    u16 h04;
-    u16 h06;
-    u16 h08;
-    u16 h0A;
-    u16 h0C;
+    u16 scaleX;         /* sprite scale, applied before the rotation */
+    u16 scaleY;
+    u16 postScaleX;     /* screen scale, applied after the rotation */
+    u16 postScaleY;
+    u16 rotation;       /* high byte: angle 0-255 */
     u8 filler0E[0x11 - 0x0E];
     u8 flags11;
     u8 flags12;
@@ -39,13 +40,13 @@ struct FieldObj
     s32 posZ;
     s32 posZB;
     u8 filler1C[0x24 - 0x1C];
-    u8 unk24;
+    u8 unk24;           /* bits 0-2: facing direction 0-7 (unk02 = direction * 32) */
     u8 filler25[0x34 - 0x25];
     s32 tgtX;
     s32 tgtY;
     s32 unk3C;
     u8 filler40[0x4C - 0x40];
-    u8 unk4C;
+    u8 unk4C;           /* bits 0-2: facing direction too */
     u8 filler4D[0x4E - 0x4D];
     u8 flags4E;
     u8 filler4F[0x1EC - 0x4F];
@@ -57,16 +58,16 @@ struct FieldObj
     u8 flags20F;
     u8 filler210[0x213 - 0x210];
     u8 change213;
-    u8 state214;
-    u8 flags215;
+    u8 state214;        /* struct StateBits214; bit 7: id218 was overridden, the old id is in nextId21A */
+    u8 flags215;        /* struct SlotBits; bit 0: id218 was overridden, the old id is in prevId21C */
     u8 flags216;
     u8 filler217;
     u16 id218;
-    u16 nextId21A;
-    u16 prevId21C;
+    u16 nextId21A;      /* id218 to restore when state214 bit 7 is undone */
+    u16 prevId21C;      /* id218 to restore when flags215 bit 0 is undone */
     u16 h21E;
-    u8 anim220;
-    u8 anim221;
+    u8 anim220;         /* sprite animation saved in slot 0 (obj_sync_sub_slot) */
+    u8 anim221;         /* sprite animation saved in slot 1 */
     u8 unk222;
     u8 filler223[0x23D - 0x223];
     u8 unk23D;
@@ -93,54 +94,68 @@ struct FieldObj
     u8 flags2B7;
     u8 flags2B8;
     u8 filler2B9[0x2BC - 0x2B9];
-    s32 unk2BC;
-    s32 unk2C0;
-    s32 unk2C4;
+    /* the current move (moveFlags2B5 bits 0-2): 1 steps by moveStep, 2 goes from moveStart to
+     * moveDest in moveDuration frames, 3-5 swing around a pivot (4 over moveDuration frames,
+     * 3/5 by arcStep a frame) */
+    s32 moveStartX;
+    s32 moveStartY;
+    s32 moveStartZ;
     u8 filler2C8[0x2CC - 0x2C8];
-    s32 unk2CC;
-    s32 unk2D0;
-    s32 unk2D4;
-    s16 unk2D8;
-    s16 unk2DA;
-    s16 unk2DC;
-    u16 unk2DE;
-    u16 v2E0;
+    s32 moveDestX;
+    s32 moveDestY;
+    s32 moveDestZ;
+    s16 moveStepX;
+    s16 moveStepY;
+    s16 moveStepZ;
+    u16 moveTime;
+    u16 moveDuration;
     u8 filler2E2[0x2E4 - 0x2E2];
-    s32 unk2E4;
-    s32 unk2E8;
-    s32 unk2EC;
-    s32 unk2F0;
-    s32 unk2F4;
-    s16 unk2F8;
+    s32 pivotX;
+    s32 pivotY;
+    s32 pivotZ;
+    s32 arcAngle; /* how far to swing, 8.8 angle units */
+    s32 arcPos;   /* how far it has swung */
+    s16 arcStep;
     u16 axisACur;
     u16 axisBCur;
-    u16 unk2FE;
-    u16 unk300;
+    u16 axisCCur;
+    u16 axisDCur;
     u16 axisATarget;
     u16 axisBTarget;
-    u16 unk306;
-    u16 unk308;
+    u16 axisCTarget;
+    u16 axisDTarget;
     u16 axisAStep;
     u16 axisBStep;
-    u16 unk30E;
-    u16 unk310;
+    u16 axisCStep;
+    u16 axisDStep;
     u16 axisACount;
     u16 axisBCount;
-    u16 unk316;
-    u16 unk318;
+    u16 axisCCount;
+    u16 axisDCount;
     u16 axisASpeed;
     u16 axisBSpeed;
-    u16 unk31E;
-    u16 unk320;
-    s16 unk322;
-          s16 unk324;
-      u8 filler326[0x328 - 0x326];
-    s32 unk328;
-    s32 unk32C;
-          u16 unk330;
-      u16 unk332;
-      void *unk334;
+    u16 axisCSpeed;
+    u16 axisDSpeed;
+    s16 axisEBase;
+    s16 axisEStep;
+    u8 filler326[0x328 - 0x326];
+    s32 axisETarget;
+    s32 axisEOffset;
+    u16 axisECount;
+    u16 axisESpeed;
+    void *unk334;
     struct ObjClass *klass338;
+};
+
+/*
+ * Sprite tweens: axis A moves sub->scaleX, B scaleY, C postScaleX, D postScaleY, E rotation
+ * (as axisEBase + axisEOffset). Each axis has a 2-bit enum TweenMode, at moveFlags2B5 bits 4-5 (A)
+ * and 6-7 (B), flags2B6 bits 0-1 (C), 2-3 (D) and 4-5 (E).
+ */
+enum TweenMode
+{
+    TWEEN_STEP = 1,     /* add axisStep every frame until the target */
+    TWEEN_TIMED = 2,    /* reach the target after axisSpeed frames */
 };
 
 static inline u32 round_to_pixel(u32 v)
@@ -157,8 +172,8 @@ void obj_refresh_anim_state(struct FieldObj *obj, u32 a, s32 b, s32 c);
 struct ModeBits45
 {
     u8 lo4 : 4;
-    u8 mode : 2;
-    u8 hi2 : 2;
+    u8 mode : 2; /* axis A's enum TweenMode */
+    u8 hi2 : 2;  /* axis B's enum TweenMode */
 };
 
 struct ModeBits23
@@ -210,6 +225,22 @@ struct ModeBits23P
     u8 hi4 : 4;
 } __attribute__((packed));
 
+/* motion mode, pending-axis pairs and axis lock bits at +0x2B5..+0x2B7 */
+struct MotionBits
+{
+    u8 filler0[0x2B5];
+    u32 mode : 3;
+    u32 bit3 : 1;
+    u8 axisA : 2;
+    u8 axisB : 2;
+    u8 axisC : 2;
+    u8 axisD : 2;
+    u8 axisE : 2;
+    u8 hi6 : 2;
+    u32 lock : 3;
+    u32 hi3 : 5;
+};
+
 /* axis lock bits and an 8-bit shape index spanning bytes +0x2B7/+0x2B8 */
 struct ObjShape2B7
 {
@@ -231,23 +262,23 @@ NONMATCH("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(struc
     {
         if (obj->moveFlags2B5 & 7)
         {
-            obj->unk2DE++;
+            obj->moveTime++;
             switch ((u32)((struct MoveBitsP *)&obj->moveFlags2B5)->lo3)
             {
             case 1:
-                if (((((struct ObjShape2B7 *)obj)->lock ^ 1) & 1) != 0 && obj->unk2CC != obj->unk2BC)
-                    obj->posX += obj->unk2D8;
-                if (!(((struct ObjShape2B7 *)obj)->lock & 2) && obj->unk2D0 != obj->unk2C0)
-                    obj->posY += obj->unk2DA;
-                if (!(((struct ObjShape2B7 *)obj)->lock & 4) && obj->unk2D4 != obj->unk2C4 && obj->counter25C == -1)
-                    obj->posZB += obj->unk2DC;
+                if (((((struct ObjShape2B7 *)obj)->lock ^ 1) & 1) != 0 && obj->moveDestX != obj->moveStartX)
+                    obj->posX += obj->moveStepX;
+                if (!(((struct ObjShape2B7 *)obj)->lock & 2) && obj->moveDestY != obj->moveStartY)
+                    obj->posY += obj->moveStepY;
+                if (!(((struct ObjShape2B7 *)obj)->lock & 4) && obj->moveDestZ != obj->moveStartZ && obj->counter25C == -1)
+                    obj->posZB += obj->moveStepZ;
                 break;
             case 2:
-                obj->posX = obj->unk2BC + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2CC - obj->unk2BC) * obj->unk2DE, obj->v2E0);
-                obj->posY = obj->unk2C0 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D0 - obj->unk2C0) * obj->unk2DE, obj->v2E0);
+                obj->posX = obj->moveStartX + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->moveDestX - obj->moveStartX) * obj->moveTime, obj->moveDuration);
+                obj->posY = obj->moveStartY + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->moveDestY - obj->moveStartY) * obj->moveTime, obj->moveDuration);
                 if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
                 {
-                    obj->posZB = obj->unk2C4 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk2D4 - obj->unk2C4) * obj->unk2DE, obj->v2E0) - obj->unk3C;
+                    obj->posZB = obj->moveStartZ + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->moveDestZ - obj->moveStartZ) * obj->moveTime, obj->moveDuration) - obj->unk3C;
                 }
                 break;
             case 3:
@@ -255,35 +286,35 @@ NONMATCH("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(struc
             case 5:
                 if (((struct MoveBitsP *)&obj->moveFlags2B5)->lo3 == 4)
                 {
-                    obj->unk2F4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk2F0 * obj->unk2DE, obj->v2E0);
+                    obj->arcPos = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->arcAngle * obj->moveTime, obj->moveDuration);
                 }
                 else
                 {
-                    obj->unk2F4 += obj->unk2F8;
+                    obj->arcPos += obj->arcStep;
                 }
-                if (obj->unk2F0 > 0)
+                if (obj->arcAngle > 0)
                 {
-                    if (obj->unk2F4 > obj->unk2F0)
-                        obj->unk2F4 = obj->unk2F0;
+                    if (obj->arcPos > obj->arcAngle)
+                        obj->arcPos = obj->arcAngle;
                 }
-                else if (obj->unk2F0 < 0)
+                else if (obj->arcAngle < 0)
                 {
-                    if (obj->unk2F4 < obj->unk2F0)
-                        obj->unk2F4 = obj->unk2F0;
+                    if (obj->arcPos < obj->arcAngle)
+                        obj->arcPos = obj->arcAngle;
                 }
-                rotate_vec(obj->vec1EC, (u8)(obj->unk2F4 / 0x100), &vx, &vy, &vz);
+                rotate_vec(obj->vec1EC, (u8)(obj->arcPos / 0x100), &vx, &vy, &vz);
                 if (((struct ObjShape2B7 *)obj)->shape >= 0)
                 {
-                    obj->unk2E4 = shapes[((struct ObjShape2B7 *)obj)->shape]->a0C;
-                    obj->unk2E8 = shapes[((struct ObjShape2B7 *)obj)->shape]->a10;
-                    obj->unk2EC = shapes[((struct ObjShape2B7 *)obj)->shape]->a14 + shapes[((struct ObjShape2B7 *)obj)->shape]->a18;
+                    obj->pivotX = shapes[((struct ObjShape2B7 *)obj)->shape]->a0C;
+                    obj->pivotY = shapes[((struct ObjShape2B7 *)obj)->shape]->a10;
+                    obj->pivotZ = shapes[((struct ObjShape2B7 *)obj)->shape]->a14 + shapes[((struct ObjShape2B7 *)obj)->shape]->a18;
                 }
-                obj->posX = obj->unk2E4 + vx;
-                obj->posY = obj->unk2E8 + vy;
+                obj->posX = obj->pivotX + vx;
+                obj->posY = obj->pivotY + vy;
                 if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
                 {
                     obj->posZ = 0;
-                    obj->posZB = obj->unk2EC + vz;
+                    obj->posZB = obj->pivotZ + vz;
                 }
                 if (obj->tgtX != obj->posX || obj->tgtY != obj->posY)
                 {
@@ -327,7 +358,114 @@ NONMATCH("asm/code_08045F18/advance_obj_motion.s", void advance_obj_motion(struc
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08045F18/obj_advance_motion.s", void obj_advance_motion(void))
+void obj_finish_move_step(struct FieldObj *obj);
+void obj_stop_motion(struct FieldObj *obj);
+/*
+ * Checks whether the object's current move is over: a stepped move (mode 1) locks each axis once
+ * it has reached or passed moveDest and ends when its main (fastest) axis has arrived, a swing
+ * (3/5) when arcPos reaches arcAngle, a timed move (2/4) after moveDuration frames. Then ends the
+ * height motion (bit 3) once its counter has run out, and clears each running scale animation
+ * that has reached its target.
+ */
+void obj_advance_motion(struct FieldObj *obj)
+{
+    s32 speedX;
+    s32 speedY;
+    s32 speedZ;
+    u32 mainAxis;
+
+    if (obj->flags20C & 1)
+    {
+        switch (((struct MotionBits *)obj)->mode)
+        {
+        case 1:
+            if ((((u8)((struct MotionBits *)obj)->lock ^ 1) & 1) != 0)
+            {
+                if ((obj->moveDestX >= obj->moveStartX && obj->moveDestX <= obj->posX)
+                    || (obj->moveDestX <= obj->moveStartX && obj->moveDestX >= obj->posX))
+                {
+                    obj->posX = obj->moveDestX;
+                    ((struct MotionBits *)obj)->lock |= 1;
+                }
+            }
+            if (!(((struct MotionBits *)obj)->lock & 2))
+            {
+                if ((obj->moveDestY >= obj->moveStartY && obj->moveDestY <= obj->posY)
+                    || (obj->moveDestY <= obj->moveStartY && obj->moveDestY >= obj->posY))
+                {
+                    obj->posY = obj->moveDestY;
+                    ((struct MotionBits *)obj)->lock |= 2;
+                }
+            }
+            if (!(((struct MotionBits *)obj)->lock & 4) && !(obj->flags20D & 0x40) && obj->counter25C == -1)
+            {
+                if ((obj->moveDestZ >= obj->moveStartZ && obj->moveDestZ <= obj->posZ + obj->posZB)
+                    || (obj->moveDestZ <= obj->moveStartZ && obj->moveDestZ >= obj->posZ + obj->posZB))
+                {
+                    obj->posZB = obj->moveDestZ;
+                    obj->posZ = 0;
+                    ((struct MotionBits *)obj)->lock |= 4;
+                }
+            }
+            speedX = obj->moveStepX;
+            if (speedX < 0)
+                speedX = -speedX;
+            speedY = obj->moveStepY;
+            if (speedY < 0)
+                speedY = -speedY;
+            speedZ = obj->moveStepZ;
+            if (speedZ < 0)
+                speedZ = -speedZ;
+            /* lock bit of the axis that moves fastest */
+            if (speedX >= speedY)
+                mainAxis = speedX >= speedZ ? 1 : 4;
+            else
+                mainAxis = speedY >= speedZ ? 2 : 4;
+            if (((struct MotionBits *)obj)->lock & mainAxis)
+            {
+                obj->posX = obj->moveDestX;
+                obj->posY = obj->moveDestY;
+                if (!(obj->flags20D & 0x40) && obj->counter25C == -1)
+                    obj->posZB = obj->moveDestZ - obj->posZ;
+                obj_finish_move_step(obj);
+            }
+            break;
+        case 3:
+        case 5:
+            if (obj->arcAngle > 0)
+            {
+                if (obj->arcPos >= obj->arcAngle)
+                    obj_finish_move_step(obj);
+            }
+            else if (obj->arcAngle < 0)
+            {
+                if (obj->arcPos <= obj->arcAngle)
+                    obj_finish_move_step(obj);
+            }
+            break;
+        case 2:
+        case 4:
+            if (obj->moveTime >= obj->moveDuration)
+                obj_finish_move_step(obj);
+            break;
+        }
+        if ((obj->moveFlags2B5 & 8) && obj->counter25C == -1)
+            obj_stop_motion(obj);
+    }
+    if (obj->flags20F & 2)
+    {
+        if (((struct MotionBits *)obj)->axisA && (s16)obj->sub->scaleX == (s16)obj->axisATarget)
+            ((struct MotionBits *)obj)->axisA = 0;
+        if (((struct MotionBits *)obj)->axisB && (s16)obj->sub->scaleY == (s16)obj->axisBTarget)
+            ((struct MotionBits *)obj)->axisB = 0;
+        if (((struct MotionBits *)obj)->axisC && (s16)obj->sub->postScaleX == (s16)obj->axisATarget)
+            ((struct MotionBits *)obj)->axisC = 0;
+        if (((struct MotionBits *)obj)->axisD && (s16)obj->sub->postScaleY == (s16)obj->axisBTarget)
+            ((struct MotionBits *)obj)->axisD = 0;
+        if (((struct MotionBits *)obj)->axisE && obj->axisEBase + obj->axisEOffset == obj->axisETarget)
+            ((struct MotionBits *)obj)->axisE = 0;
+    }
+}
 
 
 void obj_finish_move_step(struct FieldObj *obj)
@@ -341,7 +479,7 @@ void obj_finish_move_step(struct FieldObj *obj)
             obj->posZ = round_to_pixel(obj->posZ);
             obj->posZB = round_to_pixel(obj->posZB);
         }
-        obj->v2E0 = 0;
+        obj->moveDuration = 0;
         obj->v242 = 0;
         obj->v244 = 0;
         ((struct MoveBits *)&obj->moveFlags2B5)->lo3 = 0;
@@ -378,27 +516,30 @@ void obj_stop_motion(struct FieldObj *obj)
     }
 }
 
+/* Starts the axis A tween (sub->scaleX) toward value (added to the current scale when relative is
+ * 1): TWEEN_STEP moves by speed each frame, TWEEN_TIMED takes speed frames. Returns 0 (and starts
+ * nothing) if the scale is already there, else 1. */
 u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
-    s32 t;
+    s32 offset;
 
     if (relative == 1)
     {
         sub = obj->sub;
-        t = (s16)value;
-        value = (u16)(t + sub->h04);
+        offset = (s16)value;
+        value = (u16)(offset + sub->scaleX);
     }
-    obj->axisACur = obj->sub->h04;
+    obj->axisACur = obj->sub->scaleX;
     obj->axisATarget = value;
     now = (s16)obj->axisACur;
     goal = (s16)value;
     if (now == goal)
         return 0;
-    if (mode == 1)
+    if (mode == TWEEN_STEP)
     {
         step = speed;
         if (now >= goal)
@@ -410,31 +551,34 @@ u32 obj_set_motion_a_08046AA4(struct FieldObj *obj, u32 mode, u32 relative, u16 
         obj->axisASpeed = speed;
     }
     obj->axisACount = 0;
-    ((struct ModeBits45 *)&obj->moveFlags2B5)->mode = mode;
+    ((struct ModeBits45 *)&obj->moveFlags2B5)->mode = mode; /* axis A's TweenMode */
     return 1;
 }
 
+/* Starts the axis B tween (sub->scaleY) toward value (added to the current scale when relative is
+ * 1): TWEEN_STEP moves by speed each frame, TWEEN_TIMED takes speed frames. Returns 0 (and starts
+ * nothing) if the scale is already there, else 1. */
 u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
-    s32 t;
+    s32 offset;
 
     if (relative == 1)
     {
         sub = obj->sub;
-        t = (s16)value;
-        value = (u16)(t + sub->h06);
+        offset = (s16)value;
+        value = (u16)(offset + sub->scaleY);
     }
-    obj->axisBCur = obj->sub->h06;
+    obj->axisBCur = obj->sub->scaleY;
     obj->axisBTarget = value;
     now = (s16)obj->axisBCur;
     goal = (s16)value;
     if (now == goal)
         return 0;
-    if (mode == 1)
+    if (mode == TWEEN_STEP)
     {
         step = speed;
         if (now >= goal)
@@ -446,196 +590,204 @@ u32 obj_set_motion_b(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u1
         obj->axisBSpeed = speed;
     }
     obj->axisBCount = 0;
-    ((struct ModeBits45 *)&obj->moveFlags2B5)->hi2 = mode;
+    ((struct ModeBits45 *)&obj->moveFlags2B5)->hi2 = mode; /* axis B's TweenMode */
     return 1;
 }
 
+/* Starts the axis C tween (sub->postScaleX) toward value (added to the current scale when relative
+ * is 1): TWEEN_STEP moves by speed each frame, TWEEN_TIMED takes speed frames. Returns 0 if there
+ * is nothing to do. The game stores the start and goal in axis A's fields here (a bug), so the
+ * check reads axis C's old start and goal. */
 u32 obj_set_motion_a_08046BDC(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
-    s32 t;
-    s16 *pNow;
-    s16 *pGoal;
+    s32 offset;
+    s16 *cur;
+    s16 *target;
 
     if (relative == 1)
     {
         sub = obj->sub;
-        t = (s16)value;
-        value = (u16)(t + sub->h08);
+        offset = (s16)value;
+        value = (u16)(offset + sub->postScaleX);
     }
-    obj->axisACur = obj->sub->h08;
+    obj->axisACur = obj->sub->postScaleX;
     obj->axisATarget = value;
-    pNow = (s16 *)&obj->unk2FE;
-    pGoal = (s16 *)&obj->unk306;
-    now = *pNow;
-    goal = *pGoal;
+    cur = (s16 *)&obj->axisCCur;
+    target = (s16 *)&obj->axisCTarget;
+    now = *cur;
+    goal = *target;
     if (now == goal)
         return 0;
-    if (mode == 1)
+    if (mode == TWEEN_STEP)
     {
         step = speed;
         if (now >= goal)
             step = -speed;
-        obj->unk30E = step;
+        obj->axisCStep = step;
     }
     else
     {
-        obj->unk31E = speed;
+        obj->axisCSpeed = speed;
     }
-    obj->unk316 = 0;
+    obj->axisCCount = 0;
     ((struct ModeBits01 *)&obj->flags2B6)->mode = mode;
     return 1;
 }
 
+/* Starts the axis D tween (sub->postScaleY) toward value (added to the current scale when relative
+ * is 1): TWEEN_STEP moves by speed each frame, TWEEN_TIMED takes speed frames. Returns 0 if the
+ * scale is already there, else 1. */
 u32 obj_set_motion_a_compare(struct FieldObj *obj, u32 mode, u32 relative, u16 value, u16 speed)
 {
     s32 now;
     s32 goal;
     s32 step;
     struct FieldSub *sub;
-    s32 t;
+    s32 offset;
 
     if (relative == 1)
     {
         sub = obj->sub;
-        t = (s16)value;
-        value = (u16)(t + sub->h0A);
+        offset = (s16)value;
+        value = (u16)(offset + sub->postScaleY);
     }
-    obj->unk300 = obj->sub->h0A;
-    obj->unk308 = value;
-    now = (s16)obj->unk300;
+    obj->axisDCur = obj->sub->postScaleY;
+    obj->axisDTarget = value;
+    now = (s16)obj->axisDCur;
     goal = (s16)value;
     if (now == goal)
         return 0;
-    if (mode == 1)
+    if (mode == TWEEN_STEP)
     {
         step = speed;
         if (now >= goal)
             step = -speed;
-        obj->unk310 = step;
+        obj->axisDStep = step;
     }
     else
     {
-        obj->unk320 = speed;
+        obj->axisDSpeed = speed;
     }
-    obj->unk318 = 0;
+    obj->axisDCount = 0;
     ((struct ModeBits23 *)&obj->flags2B6)->mode = mode;
     return 1;
 }
 
+/* Advances each running sprite tween (scale, screen scale, rotation) of obj by one frame. */
 void obj_advance_axes(struct FieldObj *obj)
 {
-    s32 v;
-    s32 lim;
+    s32 offset;
+    s32 target;
 
     if (obj->flags20F & 2)
     {
-        if ((obj->moveFlags2B5 & 0x30) == 0x10)
+        if ((obj->moveFlags2B5 & 0x30) == TWEEN_STEP << 4)
         {
             obj->axisACount++;
-            obj->sub->h04 += obj->axisAStep;
+            obj->sub->scaleX += obj->axisAStep;
             if ((s16)obj->axisAStep > 0)
             {
-                if ((s16)obj->sub->h04 > (s16)obj->axisATarget)
-                    obj->sub->h04 = obj->axisATarget;
+                if ((s16)obj->sub->scaleX > (s16)obj->axisATarget)
+                    obj->sub->scaleX = obj->axisATarget;
             }
             else
             {
-                if ((s16)obj->sub->h04 < (s16)obj->axisATarget)
-                    obj->sub->h04 = obj->axisATarget;
+                if ((s16)obj->sub->scaleX < (s16)obj->axisATarget)
+                    obj->sub->scaleX = obj->axisATarget;
             }
         }
-        else if ((obj->moveFlags2B5 & 0x30) == 0x20)
+        else if ((obj->moveFlags2B5 & 0x30) == TWEEN_TIMED << 4)
         {
             obj->axisACount++;
-            obj->sub->h04 = obj->axisACur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisATarget - (s16)obj->axisACur) * obj->axisACount, obj->axisASpeed);
+            obj->sub->scaleX = obj->axisACur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisATarget - (s16)obj->axisACur) * obj->axisACount, obj->axisASpeed);
         }
-        if ((obj->moveFlags2B5 & 0xC0) == 0x40)
+        if ((obj->moveFlags2B5 & 0xC0) == TWEEN_STEP << 6)
         {
             obj->axisBCount++;
-            obj->sub->h06 += obj->axisBStep;
+            obj->sub->scaleY += obj->axisBStep;
             if ((s16)obj->axisBStep > 0)
             {
-                if ((s16)obj->sub->h06 > (s16)obj->axisBTarget)
-                    obj->sub->h06 = obj->axisBTarget;
+                if ((s16)obj->sub->scaleY > (s16)obj->axisBTarget)
+                    obj->sub->scaleY = obj->axisBTarget;
             }
             else
             {
-                if ((s16)obj->sub->h06 < (s16)obj->axisBTarget)
-                    obj->sub->h06 = obj->axisBTarget;
+                if ((s16)obj->sub->scaleY < (s16)obj->axisBTarget)
+                    obj->sub->scaleY = obj->axisBTarget;
             }
         }
-        else if ((obj->moveFlags2B5 & 0xC0) == 0x80)
+        else if ((obj->moveFlags2B5 & 0xC0) == TWEEN_TIMED << 6)
         {
             obj->axisBCount++;
-            obj->sub->h06 = obj->axisBCur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisBTarget - (s16)obj->axisBCur) * obj->axisBCount, obj->axisBSpeed);
+            obj->sub->scaleY = obj->axisBCur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisBTarget - (s16)obj->axisBCur) * obj->axisBCount, obj->axisBSpeed);
         }
-        if ((obj->flags2B6 & 3) == 1)
+        if ((obj->flags2B6 & 3) == TWEEN_STEP)
         {
-            obj->unk316++;
-            obj->sub->h08 += obj->unk30E;
-            if ((s16)obj->unk30E > 0)
+            obj->axisCCount++;
+            obj->sub->postScaleX += obj->axisCStep;
+            if ((s16)obj->axisCStep > 0)
             {
-                if ((s16)obj->sub->h08 > (s16)obj->unk306)
-                    obj->sub->h08 = obj->unk306;
+                if ((s16)obj->sub->postScaleX > (s16)obj->axisCTarget)
+                    obj->sub->postScaleX = obj->axisCTarget;
             }
             else
             {
-                if ((s16)obj->sub->h08 < (s16)obj->unk306)
-                    obj->sub->h08 = obj->unk306;
+                if ((s16)obj->sub->postScaleX < (s16)obj->axisCTarget)
+                    obj->sub->postScaleX = obj->axisCTarget;
             }
         }
-        else if ((obj->flags2B6 & 3) == 2)
+        else if ((obj->flags2B6 & 3) == TWEEN_TIMED)
         {
-            obj->unk316++;
-            obj->sub->h08 = obj->unk2FE + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->unk306 - (s16)obj->unk2FE) * obj->unk316, obj->unk31E);
+            obj->axisCCount++;
+            obj->sub->postScaleX = obj->axisCCur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisCTarget - (s16)obj->axisCCur) * obj->axisCCount, obj->axisCSpeed);
         }
-        if ((obj->flags2B6 & 0xC) == 4)
+        if ((obj->flags2B6 & 0xC) == TWEEN_STEP << 2)
         {
-            obj->unk318++;
-            obj->sub->h0A += obj->unk310;
-            if ((s16)obj->unk310 > 0)
+            obj->axisDCount++;
+            obj->sub->postScaleY += obj->axisDStep;
+            if ((s16)obj->axisDStep > 0)
             {
-                if ((s16)obj->sub->h0A > (s16)obj->unk308)
-                    obj->sub->h0A = obj->unk308;
+                if ((s16)obj->sub->postScaleY > (s16)obj->axisDTarget)
+                    obj->sub->postScaleY = obj->axisDTarget;
             }
             else
             {
-                if ((s16)obj->sub->h0A < (s16)obj->unk308)
-                    obj->sub->h0A = obj->unk308;
+                if ((s16)obj->sub->postScaleY < (s16)obj->axisDTarget)
+                    obj->sub->postScaleY = obj->axisDTarget;
             }
         }
-        else if ((obj->flags2B6 & 0xC) == 8)
+        else if ((obj->flags2B6 & 0xC) == TWEEN_TIMED << 2)
         {
-            obj->unk318++;
-            obj->sub->h0A = obj->unk300 + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->unk308 - (s16)obj->unk300) * obj->unk318, obj->unk320);
+            obj->axisDCount++;
+            obj->sub->postScaleY = obj->axisDCur + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((s16)obj->axisDTarget - (s16)obj->axisDCur) * obj->axisDCount, obj->axisDSpeed);
         }
-        if ((obj->flags2B6 & 0x30) == 0x10)
+        if ((obj->flags2B6 & 0x30) == TWEEN_STEP << 4)
         {
-            obj->unk330++;
-            obj->unk32C += obj->unk324;
-            lim = obj->unk328;
-            if (lim > 0)
+            obj->axisECount++;
+            obj->axisEOffset += obj->axisEStep;
+            target = obj->axisETarget;
+            if (target > 0)
             {
-                if (obj->unk32C > lim)
-                    obj->unk32C = lim;
+                if (obj->axisEOffset > target)
+                    obj->axisEOffset = target;
             }
-            else if (lim < 0)
+            else if (target < 0)
             {
-                if (obj->unk32C < lim)
-                    obj->unk32C = lim;
+                if (obj->axisEOffset < target)
+                    obj->axisEOffset = target;
             }
-            obj->sub->h0C = obj->unk322 + obj->unk32C;
+            obj->sub->rotation = obj->axisEBase + obj->axisEOffset;
         }
-        else if ((obj->flags2B6 & 0x30) == 0x20)
+        else if ((obj->flags2B6 & 0x30) == TWEEN_TIMED << 4)
         {
-            obj->unk330++;
-            v = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->unk328 - (s16)obj->unk322) * obj->unk330, obj->unk332);
-            obj->unk32C = v;
-            obj->sub->h0C = obj->unk322 + v;
+            obj->axisECount++;
+            offset = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->axisETarget - (s16)obj->axisEBase) * obj->axisECount, obj->axisESpeed);
+            obj->axisEOffset = offset;
+            obj->sub->rotation = obj->axisEBase + offset;
         }
     }
 }
@@ -643,61 +795,79 @@ void obj_advance_axes(struct FieldObj *obj)
 struct Flags11
 {
     u8 lo6 : 6;
-    u8 bit6 : 1;
+    u8 bit6 : 1;        /* drawn flipped horizontally */
     u8 hi1 : 1;
 };
 
-void obj_set_cell_coord(struct FieldObj *obj, s32 pos, u32 extra)
-{
-    u32 cell;
-    u32 high;
-    u8 entry;
+/* FieldObj.flags216 bits 2-3: how many directions the object's frames face (0: one, 1: four,
+   2/3: eight). Bit 4 clear: mirrored directions share frames, so a group has 3 (or 5) frames;
+   set: every direction has its own. gFrameAttrTable[bits 2-3][bit 4][direction] gives the
+   frame within the group (bits 0-6) and whether it is drawn flipped (bit 7). */
+#define FIELD_OBJ_DIRS_MASK 0x0C
+#define FIELD_OBJ_DIRS_4 0x04
+#define FIELD_OBJ_ALL_DIRS_DRAWN 0x10
 
-    cell = 0;
-    high = 0;
-    if ((obj->flags216 & 0xC) != 0)
+/*
+ * Shows frame `index` of an object whose frames face several directions (index = group *
+ * directions + direction, see FIELD_OBJ_DIRS_MASK): stores the direction (four-direction indices
+ * are doubled to 0, 2, 4, 6) as the object's facing, looks up the group's frame for it in
+ * gFrameAttrTable, loads that record into the sprite and flips the sprite when the table says so.
+ * An object with one direction just loads record `index`.
+ */
+void obj_set_cell_coord(struct FieldObj *obj, s32 index, u32 loadFlags)
+{
+    u32 groupStart;
+    u32 flipped;
+    u8 attr;
+
+    groupStart = 0;
+    flipped = 0;
+    if ((obj->flags216 & FIELD_OBJ_DIRS_MASK) != 0)
     {
-        if ((obj->flags216 & 0x10) == 0)
+        if ((obj->flags216 & FIELD_OBJ_ALL_DIRS_DRAWN) == 0)
         {
-            if ((obj->flags216 & 0xC) == 4)
+            if ((obj->flags216 & FIELD_OBJ_DIRS_MASK) == FIELD_OBJ_DIRS_4)
             {
-                s32 t = pos / 4;
-                cell = (t << 1) + t;
-                pos -= t << 2;
-                pos <<= 1;
+                /* 3 frames a group */
+                s32 group = index / 4;
+                groupStart = (group << 1) + group;
+                index -= group << 2;
+                index <<= 1;
             }
             else
             {
-                s32 t = pos / 8;
-                cell = (t << 2) + t;
-                pos -= t << 3;
+                /* 5 frames a group */
+                s32 group = index / 8;
+                groupStart = (group << 2) + group;
+                index -= group << 3;
             }
         }
         else
         {
-            if ((obj->flags216 & 0xC) == 4)
+            if ((obj->flags216 & FIELD_OBJ_DIRS_MASK) == FIELD_OBJ_DIRS_4)
             {
-                s32 t = pos / 4;
-                cell = t << 2;
-                pos -= cell;
-                pos <<= 1;
+                s32 group = index / 4;
+                groupStart = group << 2;
+                index -= groupStart;
+                index <<= 1;
             }
             else
             {
-                s32 t = pos / 8;
-                cell = t << 3;
-                pos -= cell;
+                s32 group = index / 8;
+                groupStart = group << 3;
+                index -= groupStart;
             }
         }
-        ((struct MoveBits *)&obj->unk24)->lo3 = pos;
-        ((struct MoveBits *)&obj->unk4C)->lo3 = pos;
-        entry = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4)
-            + ((((u32)obj->flags216 << 27) >> 31) << 3) + pos];
-        pos = entry & 0x7F;
-        high = entry >> 7;
+        ((struct MoveBits *)&obj->unk24)->lo3 = index;
+        ((struct MoveBits *)&obj->unk4C)->lo3 = index;
+        /* [flags216 bits 2-3][flags216 bit 4][direction] */
+        attr = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4)
+            + ((((u32)obj->flags216 << 27) >> 31) << 3) + index];
+        index = attr & 0x7F;
+        flipped = attr >> 7;
     }
-    obj_load_record(obj->sub, cell + pos, extra, 0, 0);
-    ((struct Flags11 *)&obj->sub->flags11)->bit6 = high;
+    obj_load_record(obj->sub, groupStart + index, loadFlags, 0, 0);
+    ((struct Flags11 *)&obj->sub->flags11)->bit6 = flipped;
 }
 
 struct SlotBits
@@ -776,47 +946,58 @@ struct StateBits214
     u8 bit7 : 1;
 } __attribute__((packed));
 
-NONMATCH("asm/code_08045F18/obj_set_state.s", void obj_set_state(struct FieldObj *obj, u8 state))
+void obj_set_state(struct FieldObj *obj, u8 state)
 {
-    struct StateBits214 *st;
+    struct StateBits214 *st = (struct StateBits214 *)&obj->state214;
 
-    st = (struct StateBits214 *)&obj->state214;
     st->prev = st->cur;
     st->cur = state;
     if (st->cur > 2)
     {
+        u32 v;
         obj->unk02 = obj->unk24 << 5;
-        if (st->cur == 3)
+        v = obj->state214;
         {
-            struct FieldSub *sub = obj->sub;
-            obj_load_record(sub, sub->anim21, 0, 0, 0);
+            register u32 mask asm("r0") = 7;
+            mask &= v;
+            if (mask == 3)
+            {
+                struct FieldSub *sub = obj->sub;
+                obj_load_record(sub, sub->anim21, 0, 0, 0);
+            }
         }
     }
     ((struct StateBits214 *)&obj->state214)->bit6 = 1;
 }
-END_NONMATCH
 
+/*
+ * Undoes a temporary override: a pending state change goes back to the previous state (facing
+ * reset for states above 2), an id set by obj_set_table_id_flag7 goes back to the saved one, and
+ * the sprite animation is refreshed with the one saved in slot 0 (or the default). Then the
+ * override flags are cleared and the class callback runs with 1.
+ */
 void obj_apply_state_a(struct FieldObj *obj)
 {
-    u8 *p;
-    u32 v;
-    u32 w;
-    u32 idx;
-    u32 f;
+    u8 *state;
+    u32 bits;
+    u32 restored;
+    u32 prevState;
+    u32 slotFlags;
     s32 anim;
-    s32 sub;
-    u32 top;
+    s32 flip;
+    u32 idOverridden;
 
-    p = &obj->state214;
-    v = *p;
-    if (v & 0x40)
+    state = &obj->state214;
+    bits = *state;
+    if (bits & 0x40)
     {
-        idx = ((u32)(v << 26)) >> 29;
-        w = (v & -8) | idx;
-        *p = w;
-        if (((u32)(w << 29) >> 29) > 2)
+        /* state changed: cur = prev */
+        prevState = ((u32)(bits << 26)) >> 29;
+        restored = (bits & -8) | prevState;
+        *state = restored;
+        if (((u32)(restored << 29) >> 29) > 2)
             obj->unk02 = obj->unk24 << 5;
-        *(s8 *)p &= -0x41;
+        *(s8 *)state &= -0x41;
     }
     if (obj->state214 & 0x80)
     {
@@ -826,43 +1007,50 @@ void obj_apply_state_a(struct FieldObj *obj)
             obj_update_special_flag(obj);
         }
     }
-    top = obj->state214 >> 7;
+    idOverridden = obj->state214 >> 7;
     if (obj->flags215 & 2)
         anim = obj->anim220;
     else
         anim = -1;
-    f = obj->flags215;
-    if (f & 2)
-        sub = (f << 28) >> 31;
+    slotFlags = obj->flags215;
+    if (slotFlags & 2)
+        flip = (slotFlags << 28) >> 31;
     else
-        sub = -1;
-    obj_refresh_anim_state(obj, top, anim, sub);
+        flip = -1;
+    obj_refresh_anim_state(obj, idOverridden, anim, flip);
     obj->state214 &= 0x7F;
     *(s8 *)&obj->flags215 &= -3;
     obj->klass338->fn3C((u8 *)obj + obj->klass338->thisOffset38, 1);
 }
 
+/*
+ * The slot-1 twin of obj_apply_state_a: undoes a temporary override. A pending state change goes
+ * back to the previous state (facing reset for states above 2), an id overridden under flags215
+ * bit 0 goes back to prevId21C, and the sprite animation is refreshed with the one saved in slot 1
+ * (or the default). Then flags215 bit 0 and slot 1 are cleared; no class callback runs.
+ */
 void obj_apply_state_b(struct FieldObj *obj)
 {
-    u8 *p;
-    u32 v;
-    u32 w;
-    u32 idx;
-    u32 mode;
-    u32 f;
-    s32 a;
-    s32 b;
+    u8 *state;
+    u32 bits;
+    u32 restored;
+    u32 prevState;
+    u32 idOverridden;
+    u32 slotFlags;
+    s32 anim;
+    s32 flip;
 
-    p = &obj->state214;
-    v = *p;
-    if (v & 0x40)
+    state = &obj->state214;
+    bits = *state;
+    if (bits & 0x40)
     {
-        idx = ((u32)(v << 26)) >> 29;
-        w = (v & -8) | idx;
-        *p = w;
-        if (((u32)(w << 29) >> 29) > 2)
+        /* state changed: cur = prev */
+        prevState = ((u32)(bits << 26)) >> 29;
+        restored = (bits & -8) | prevState;
+        *state = restored;
+        if (((u32)(restored << 29) >> 29) > 2)
             obj->unk02 = obj->unk24 << 5;
-        *(s8 *)p &= -0x41;
+        *(s8 *)state &= -0x41;
     }
     if (obj->flags215 & 1)
     {
@@ -872,17 +1060,17 @@ void obj_apply_state_b(struct FieldObj *obj)
             obj_update_special_flag(obj);
         }
     }
-    mode = obj->flags215 & 1;
+    idOverridden = obj->flags215 & 1;
     if (obj->flags215 & 4)
-        a = obj->anim221;
+        anim = obj->anim221;
     else
-        a = -1;
-    f = obj->flags215;
-    if (f & 4)
-        b = ((u32)(f << 27)) >> 31;
+        anim = -1;
+    slotFlags = obj->flags215;
+    if (slotFlags & 4)
+        flip = ((u32)(slotFlags << 27)) >> 31;
     else
-        b = -1;
-    obj_refresh_anim_state(obj, mode, a, b);
+        flip = -1;
+    obj_refresh_anim_state(obj, idOverridden, anim, flip);
     ((struct SlotBits *)&obj->flags215)->bit0 = 0;
     ((struct SlotBits *)&obj->flags215)->has1 = 0;
 }

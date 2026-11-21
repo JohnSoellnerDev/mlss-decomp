@@ -52,7 +52,8 @@ struct ActionPart
 
 struct ActionRecord
 {
-    u8 filler0[0x12];
+    u8 filler0[0x11];
+    u8 unk11;
     u8 flags;
     u8 filler13[0x16 - 0x13];
     u16 unk16;
@@ -73,11 +74,25 @@ struct ActionFlagBits
     u8 high : 4;
 };
 
+struct SpriteTake
+{
+    u8 filler0[0x04];
+    struct ActionRecord *record;
+    struct LayoutNode *pos;
+};
+
+struct Bits78
+{
+    u8 lo5 : 5;
+    u8 hi3 : 3;
+};
+
 struct ActionObj
 {
-    u8 filler0[0x08];
+    u8 filler0[0x04];
+    struct SpriteTake *take;
     struct ActionRecord *record;
-    u8 filler0C[0x10 - 0x0C];
+    struct LayoutNode *chain;
     s32 posX;
     s32 posY;
     s32 posZ;
@@ -123,6 +138,12 @@ struct ActionObj
     s16 dirY;
     s16 steps;
 };
+
+/* sprite id an ActionRecord shows: unk16 | (low nibble of unk1E) << 12, plus 0x1000 */
+#define RECORD_SPRITE_ID(rec) ((rec)->unk16 | ((((u32)(rec)->unk1E << 28) >> 16) + 0x1000))
+#define SPRITE_FLYER 0x4136       /* the object thrown in timed_effect_then_step */
+#define SPRITE_FLYER_TRAIL 0x4137 /* the afterimages it leaves */
+#define FLYER_TRAIL_INTERVAL 3    /* frames between afterimages */
 
 struct AngleStep
 {
@@ -207,32 +228,38 @@ u32 lookup_part(struct ActionObj *obj);
 u32 lookup_link_slot(struct ActionObj *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActionObj *owner);
 
-NONMATCH("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_step(struct ActionObj *obj))
+/*
+ * One frame of the object's throw: it flies along a parabola from (unk1C, unk1E), speeding up
+ * each frame, and drops an afterimage every few frames while effectTimer lasts. Once it has
+ * flown twice the distance to the apex, it reappears high above the right edge of the screen,
+ * level with its part, and falls back onto it (start_move_to_part).
+ */
+void timed_effect_then_step(struct ActionObj *obj)
 {
-    struct ActionObj *effect;
+    struct ActionObj *trail;
     struct ActionRecord *rec;
-    s32 t;
-    s32 q;
-    s32 y;
-    u32 key;
+    s32 left;
+    s32 dist;
+    s32 fromApex;
+    u32 sprite;
     s32 anim;
-    s32 *accum;
-    s16 *steps;
-    s32 *p;
-    s32 c;
+    s32 *progress;
+    s16 *apex;
+    s32 speed;
 
     if (obj->effectTimer != 0)
     {
-        t = (s16)(--obj->effectCount);
-        if (t == 0)
+        left = (s16)(--obj->effectCount);
+        if (left == 0)
         {
-            effect = obj_spawn_linked(obj, 0x4137, 0);
-            ((struct HalfBit0 *)&effect->childFlags)->bit0 = 1;
-            effect->level = t;
-            effect->timer = obj->timer + 1;
+            trail = obj_spawn_linked(obj, SPRITE_FLYER_TRAIL, 0);
+            ((struct HalfBit0 *)&trail->childFlags)->bit0 = 1;
+            trail->level = left;
+            trail->timer = obj->timer + 1;
+            /* the afterimage copies the pose the flyer is showing */
             rec = obj->record;
-            key = rec->unk16 | ((((u32)rec->unk1E << 28) >> 16) + 0x1000);
-            if (key == 0x4136)
+            sprite = RECORD_SPRITE_ID(rec);
+            if (sprite == SPRITE_FLYER)
             {
                 anim = rec->unk21 + 2;
             }
@@ -240,40 +267,42 @@ NONMATCH("asm/code_0811121C/timed_effect_then_step.s", void timed_effect_then_st
             {
                 anim = 0;
             }
-            sprite_set_action(effect, anim, 0, 0);
-            effect->record->unk23 = obj->record->unk23;
-            ((struct HalfBit4 *)&effect->record->flags)->bit4 = 1;
-            effect->state = wait_progress_then_return_or_destroy;
-            set_motion_from_value(effect, 0xC);
-            obj->effectCount = 3;
+            sprite_set_action(trail, anim, 0, 0);
+            trail->record->unk23 = obj->record->unk23;
+            ((struct HalfBit4 *)&trail->record->flags)->bit4 = 1;
+            trail->state = wait_progress_then_return_or_destroy;
+            set_motion_from_value(trail, 0xC);
+            obj->effectCount = FLYER_TRAIL_INTERVAL;
             obj->effectTimer--;
         }
     }
 
-    obj->posX = (obj->dirX * *(accum = &obj->accum)) / *(steps = &obj->steps) + obj->unk1C;
-    obj->posY = (obj->dirY * *accum) / *steps + obj->unk1E;
-    q = *accum / 0x100 - *steps;
-    obj->posZ = obj->level * (q * q);
-    c = (u16)obj->counter + 0x14;
-    obj->counter = c;
-    *accum += obj->counter;
-    q = *accum / 0x100;
-    if (q > *steps * 2)
+    /* x, y move linearly with progress; height is level * (progress - apex)^2 */
+    obj->posX = (obj->dirX * *(progress = &obj->accum)) / *(apex = &obj->steps) + obj->unk1C;
+    obj->posY = (obj->dirY * *progress) / *apex + obj->unk1E;
+    fromApex = *progress / 0x100 - *apex;
+    dist = fromApex * fromApex;
+    obj->posZ = obj->level * dist;
+    speed = (u16)obj->counter + 20;
+    obj->counter = speed;
+    *progress += obj->counter;
+    dist = *progress / 0x100;
+    if (dist > *apex * 2)
     {
-        p = &obj->targetX;
-        *p = 0x10000;
-        obj->posX = 0x10000;
-        p = p + 1;
-        y = obj->part->targetY;
-        *p = y;
-        obj->posY = y;
-        obj->posZ = 0x12C00;
+        obj->posX = obj->targetX = 256 << 8;
+        obj->posY = obj->targetY = obj->part->targetY;
+        obj->posZ = 300 << 8;
         sound_stop_song(0x10F);
         obj->state = start_move_to_part;
     }
 }
-END_NONMATCH
 
+/*
+ * Waits until the object's child is gone, then sets up its fall onto its part
+ * (linear_step_then_arrive): the ground distance to the part is covered at 3 px a frame, in
+ * `steps` frames, and the height follows a parabola whose curve (level) is the height difference
+ * over steps^2, made positive (0 and 1 become 2). The object leaves its object list.
+ */
 void start_move_to_part(struct ActionObj *obj)
 {
     struct ActionPart *part;
@@ -282,10 +311,10 @@ void start_move_to_part(struct ActionObj *obj)
     s32 dz;
     s32 dist;
     s32 steps;
-    s32 q;
+    s32 curve;
     s32 *level;
 
-    if (obj->child == 0)
+    if (obj->child == NULL)
     {
         part = obj->part;
         dx = part->targetX - obj->posX;
@@ -293,20 +322,20 @@ void start_move_to_part(struct ActionObj *obj)
         dz = part->targetZ - obj->posZ;
         dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
         steps = dist / 0x300;
-        q = dz / (steps * steps);
+        curve = dz / (steps * steps);
         level = &obj->level;
-        if (q <= 1)
+        if (curve <= 1)
         {
-            if (q < 0)
+            if (curve < 0)
             {
-                q = -q;
+                curve = -curve;
             }
             else
             {
-                q = 2;
+                curve = 2;
             }
         }
-        *level = q;
+        *level = curve;
         obj->dirX = dx / 0x100;
         obj->dirY = dy / 0x100;
         obj->steps = steps;
@@ -316,6 +345,13 @@ void start_move_to_part(struct ActionObj *obj)
     }
 }
 
+/*
+ * State set by start_move_to_part: moves the object from (targetX, targetY) to its part in
+ * `steps` frames, in a straight line on the ground while its height falls along a parabola
+ * ((counter - steps)^2 * level above the part). On arrival it is placed on the part; if the part's
+ * animFlag113 is set it plays action unk21 + 4, plays sound 0xA3 and waits in end_action_clear_b,
+ * otherwise its action is cleared and it stops (state NULL).
+ */
 void linear_step_then_arrive(struct ActionObj *obj)
 {
     struct ActionPart *part;
@@ -323,7 +359,7 @@ void linear_step_then_arrive(struct ActionObj *obj)
     s32 x;
     s32 y;
     s32 z;
-    u8 flag;
+    u8 animFlag;
 
     obj->posX = ((obj->dirX * obj->counter) << 8) / obj->steps + obj->targetX;
     obj->posY = ((obj->dirY * obj->counter) << 8) / obj->steps + obj->targetY;
@@ -343,8 +379,8 @@ void linear_step_then_arrive(struct ActionObj *obj)
         z = part->targetZ;
         obj->baseZ = z;
         obj->posZ = z;
-        flag = part->animFlag113;
-        if (flag != 0)
+        animFlag = part->animFlag113;
+        if (animFlag != 0)
         {
             sprite_set_action(obj, obj->record->unk21 + 4, 0, 0);
             ((struct ActionFlagBits *)&obj->record->flags)->mode = 1;
@@ -354,49 +390,55 @@ void linear_step_then_arrive(struct ActionObj *obj)
         else
         {
             sprite_set_action(obj, -1, -1, 0);
-            obj->state = (void (*)(struct ActionObj *))(u32)flag;
+            /* animFlag is 0 here: no state */
+            obj->state = (void (*)(struct ActionObj *))(u32)animFlag;
         }
     }
 }
 
+/* State of a flyer afterimage (spawned by timed_effect_then_step): once its motion progress runs
+ * out, an afterimage with level 0 jumps back to the flyer (the object at part + 8) while the flyer
+ * is still short of its part's x: it takes the flyer's position, timer and pose and starts again.
+ * Otherwise it is released. */
 void wait_progress_then_return_or_destroy(struct ActionObj *obj)
 {
-    struct ActionObj *src;
-    s32 flags;
+    struct ActionObj *flyer;
+    s32 recFlags;
     s32 x;
     s32 y;
     s32 z;
-    u32 key;
-    s32 action;
+    u32 sprite;
+    s32 anim;
 
     if (candidates_advance_progress(obj) == 0)
     {
-        src = (struct ActionObj *)((u8 *)obj->part + 8);
-        if (obj->level == 0 && src->posX < src->part->targetX)
+        flyer = (struct ActionObj *)((u8 *)obj->part + 8);
+        if (obj->level == 0 && flyer->posX < flyer->part->targetX)
         {
-            x = src->posX;
+            x = flyer->posX;
             obj->baseX = x;
             obj->posX = x;
-            y = src->posY;
+            y = flyer->posY;
             obj->baseY = y;
             obj->posY = y;
-            z = src->posZ;
+            z = flyer->posZ;
             obj->baseZ = z;
             obj->posZ = z;
-            obj->timer = obj->part->unk7D + 1;
-            key = src->record->unk16 | ((((u32)src->record->unk1E << 28) >> 16) + 0x1000);
-            if (key == 0x4136)
+            obj->timer = obj->part->unk7D + 1; /* the flyer's timer + 1 */
+            /* copy the pose the flyer is showing */
+            sprite = RECORD_SPRITE_ID(flyer->record);
+            if (sprite == SPRITE_FLYER)
             {
-                action = src->record->unk21 + 2;
+                anim = flyer->record->unk21 + 2;
             }
             else
             {
-                action = 0;
+                anim = 0;
             }
-            sprite_set_action(obj, action, 0, 0);
-            obj->record->unk23 = src->record->unk23;
-            flags = obj->record->flags;
-            obj->record->flags = flags | 0x10;
+            sprite_set_action(obj, anim, 0, 0);
+            obj->record->unk23 = flyer->record->unk23;
+            recFlags = obj->record->flags;
+            obj->record->flags = recFlags | 0x10;
             set_motion_from_value(obj, 0xC);
         }
         else
@@ -620,7 +662,57 @@ void obj_finish_when_idle(struct ActionObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0811121C/obj_spawn_part_chain.s", void obj_spawn_part_chain(struct ActionObj *obj))
+struct ActionObj *obj_spawn(struct ActionPart *part, u32 kind, s32 x, s32 y, s32 z, u32 flip, u32 one);
+struct SpriteTake *sprite_node_take(void);
+struct LayoutNode *sprite_node_alloc(s32 x, s32 y, s32 z);
+void obj_place_at_owner_target(struct ActionObj *obj);
+void obj_layout_node_chain(struct ActionObj *obj);
+void obj_anim_6_or_9_unless_held(struct ActionObj *obj);
+/* Once the current animation ends: plays animation 5 or 8 (by the owner's part kind), spawns the
+ * companion object 0x40A7/0x40A8 next to obj, and object 0x40A9 with a chain of 5 layout nodes
+ * that obj_layout_node_chain spreads out each frame. */
+void obj_spawn_part_chain(struct ActionObj *obj)
+{
+    struct ActionObj *companion;
+    struct ActionObj *chainObj;
+    struct SpriteTake *take;
+    struct LayoutNode *tail;
+    struct LayoutNode *node;
+    s32 i;
+
+    if (obj->record->flags & 8)
+    {
+        sprite_set_action(obj, (-obj->owner->part->kind != 1) ? 8 : 5, 0, 0);
+        ((struct ActionFlagBits *)&obj->record->flags)->mode = 1;
+        companion = obj_spawn_linked(obj, (-obj->owner->part->kind != 1) ? 0x40A8 : 0x40A7, 0);
+        companion->posX = companion->baseX = obj->baseX - 0x1B00;
+        companion->posY = companion->baseY = obj->baseY + 0x200;
+        companion->posZ = companion->baseZ = obj->baseZ + 0xF00;
+        companion->timer = obj->timer - 1;
+        companion->state = obj_place_at_owner_target;
+        ((struct Bits78 *)&companion->filler78)->hi3 = 1;
+        chainObj = obj_spawn(obj->part, 0x40A9, obj->baseX / 0x100 - 0xE, obj->baseY / 0x100 - 1,
+                             obj->baseZ / 0x100 + 0x10, ((u32)obj->record->unk11 << 25) >> 31, 1);
+        companion->child = chainObj;
+        sprite_set_action(chainObj, 0, 0, 0);
+        chainObj->state = obj_layout_node_chain;
+        ((struct Bits78 *)&chainObj->filler78)->hi3 = 0;
+        /* obj->chain is the list head: treat its address as a node whose next is the head */
+        tail = (struct LayoutNode *)&chainObj->chain;
+        take = sprite_node_take();
+        chainObj->take = take;
+        take->record = chainObj->record;
+        take->pos = tail;
+        for (i = 0; i < 5; i++)
+        {
+            node = sprite_node_alloc(chainObj->posX, chainObj->posY, chainObj->posZ);
+            tail->next = node;
+            tail = node;
+        }
+        tail->next = NULL;
+        obj->state = obj_anim_6_or_9_unless_held;
+    }
+}
 
 NONMATCH("asm/code_0811121C/obj_layout_node_chain.s", void obj_layout_node_chain(struct ActionObj *obj))
 {

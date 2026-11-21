@@ -2111,11 +2111,8 @@ static mchunkptr mremap_chunk(p, new_size) mchunkptr p; size_t new_size;
   Main interface to _sbrk (but see also malloc_trim).
 */
 
-#if __STD_C
-static void malloc_extend_top(RARG INTERNAL_SIZE_T nb)
-#else
-static void malloc_extend_top(RARG nb) RDECL INTERNAL_SIZE_T nb;
-#endif
+/* static in newlib; global here so the call from _malloc_r keeps its relocation like the ROM's split objects. */
+void malloc_extend_top(RARG INTERNAL_SIZE_T nb)
 {
   char*     brk;                  /* return value from _sbrk */
   INTERNAL_SIZE_T front_misalign; /* unusable bytes at front of sbrked space */

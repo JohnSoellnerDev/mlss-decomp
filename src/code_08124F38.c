@@ -7,18 +7,13 @@ struct ByteBit1
     u8 hi : 6;
 };
 
-struct HalfBit5
+struct SaveHdrBits
 {
-    u16 lo : 5;
-    u16 bit5 : 1;
-    u16 hi : 10;
-};
-
-struct HalfBit4
-{
-    u16 lo : 4;
-    u16 bit4 : 1;
-    u16 hi : 11;
+    u8 lo3 : 3;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 hi : 2;
 };
 
 struct SysBits888
@@ -59,13 +54,13 @@ struct ScreenObj
     struct ScreenObj *unk14;
     const void *cls18;
     u8 filler1C[0x50 - 0x1C];
-    u8 *settings50;
+    u8 *settings50;     /* gUnk_03000388: KEY_REPEAT_DELAY, KEY_REPEAT_RATE */
     void *heapBlock54;
     u8 filler58[0xE4 - 0x58];
     u16 flagsE4;
     u8 filler_E6[0xF7 - 0xE6];
-    u8 unkF7;
-    u8 unkF8;
+    u8 unkF7;           /* the key repeat delay from before open_screen */
+    u8 unkF8;           /* the key repeat rate from before open_screen */
     u8 filler_F9[0x158 - 0xF9];
     struct ScreenObj *childTask158;
     struct ScreenObj *childObj15C;
@@ -79,6 +74,9 @@ extern const u8 gSaveScreenClass[];
 extern const u8 gOpenScreenTaskTag[];
 extern const u8 gOpenScreenObjTag[];
 extern u8 gUnk_03000388[];
+/* Bytes of gUnk_03000388: frames before a held key repeats, and frames between repeats. */
+#define KEY_REPEAT_DELAY 8
+#define KEY_REPEAT_RATE 9
 
 void owner_destroy(void *obj, u32 kind);
 void run_pending_obj_callbacks(void);
@@ -102,62 +100,65 @@ void sound_driver_init(void);
 u16 eeprom_write_block_wait(u16 idx, void *data);
 u32 eeprom_verify(u16 idx, void *data);
 u16 eeprom_read_block(u16 idx, void *data);
-extern u8 gUnk_03001004;
-extern u8 gUnk_03001006[];
+#define EEPROM_BLOCK_COUNT 0x400 // 8-byte blocks in the 8 KiB EEPROM
+
+extern u8 gUnk_03001004; // song slots playing (bit 0, bit 1) when an EEPROM erase started
+extern u8 gUnk_03001006[]; // both slots' song ids, saved when an EEPROM erase started
 extern u8 *gUnk_03001BD0;
 
-NONMATCH("asm/code_08124F38/init_save_buffer.s", void init_save_buffer(void))
+/* Starts a blank save: clears the 8 KiB EEPROM image at gUnk_03000FFC and writes its header
+ * ("MALRPG", no save slots in use, the default option bits and their checksum at byte 15) and the
+ * record in its last 8 bytes that check_warm_reset_counter uses (20000 and 3, checksummed in byte
+ * 7). Then stops both song slots and the sound FIFO DMAs 1 and 2. */
+void init_save_buffer(void)
 {
-    s32 v;
-    u8 *buf;
-    u8 *counter;
+    s32 trailerSum;
+    s32 headerSum;
+    u8 *save;
+    u8 *trailer;
     u32 zero;
     s32 i;
-    struct DmaChannel *dma;
+    struct DmaChannel *dma1;
     struct DmaChannel *dma2;
 
-    buf = (u8 *)gUnk_03000FFC;
+    save = (u8 *)gUnk_03000FFC;
     zero = 0;
-    cpu_fast_set(&zero, buf, 0x01000800);
-    buf[0] = 0x4D;
-    buf[1] = 0x41;
-    buf[2] = 0x4C;
-    buf[3] = 0x52;
-    buf[4] = 0x50;
-    buf[5] = 0x47;
-    buf[6] = 0;
-    buf[7] = 0;
-    v = (buf[8] | 7) & -9;
-    ((struct HalfBit4 *)&v)->bit4 = 0;
-    ((struct HalfBit5 *)&v)->bit5 = 0;
-    buf[8] = v;
-    v = buf[8];
-    for (i = 9; i <= 0xE; i++)
-        v += buf[i];
-    buf[0xF] = v;
-    counter = ptr_03000ffc_plus_1ff8();
-    *(u32 *)counter = 0x4E20;
-    *(u32 *)(counter + 4) = 3;
-    v = counter[0];
-    for (i = 1; i <= 6; i++)
-        v += counter[i];
-    counter[7] = v;
+    cpu_fast_set(&zero, save, 0x01000800); /* fill 0x800 words */
+    save[0] = 'M';
+    save[1] = 'A';
+    save[2] = 'L';
+    save[3] = 'R';
+    save[4] = 'P';
+    save[5] = 'G';
+    save[6] = 0; /* save slots in use (save_slot_in_use) */
+    save[7] = 0;
+    ((struct SaveHdrBits *)&save[8])->lo3 = 7;
+    ((struct SaveHdrBits *)&save[8])->bit3 = 0;
+    ((struct SaveHdrBits *)&save[8])->bit4 = 0;
+    ((struct SaveHdrBits *)&save[8])->bit5 = 0;
+    headerSum = 0;
+    for (i = 8; i <= 0xE; i++)
+        headerSum += save[i];
+    save[0xF] = headerSum;
+    trailer = ptr_03000ffc_plus_1ff8();
+    *(u32 *)trailer = 20000;
+    *(u32 *)(trailer + 4) = 3;
+    trailerSum = 0;
+    for (i = 0; i <= 6; i++)
+        trailerSum += trailer[i];
+    trailer[7] = trailerSum;
     slot_reset(0);
     slot_reset(1);
-    dma = (struct DmaChannel *)0x040000BC;
-    v = dma->cntH;
-    *(u16 *)&dma->cntH = v & 0xC5FF;
-    v = dma->cntH;
-    *(u16 *)&dma->cntH = v & 0x7FFF;
-    dma->cntH;
+    /* clear repeat and start timing, then the enable bit */
+    dma1 = (struct DmaChannel *)0x040000BC;
+    *(u16 *)&dma1->cntH = dma1->cntH & 0xC5FF;
+    *(u16 *)&dma1->cntH = dma1->cntH & 0x7FFF;
+    dma1->cntH;
     dma2 = (struct DmaChannel *)0x040000C8;
-    v = dma2->cntH;
-    *(u16 *)&dma2->cntH = v & 0xC5FF;
-    v = dma2->cntH;
-    *(u16 *)&dma2->cntH = v & 0x7FFF;
+    *(u16 *)&dma2->cntH = dma2->cntH & 0xC5FF;
+    *(u16 *)&dma2->cntH = dma2->cntH & 0x7FFF;
     dma2->cntH;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08124F38/save_blocks_write.s", void save_blocks_write(void))
 
@@ -223,60 +224,68 @@ NONMATCH("asm/code_08124F38/save_game_flush_sound_off.s", void save_game_flush_s
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08124F38/eeprom_write_block_muted.s", u16 eeprom_write_block_muted(u32 unused0, u32 unused1, u16 block))
+// One step of wiping the save EEPROM: writes 8 zero bytes to `block` and verifies them,
+// with interrupts off. Block 0 stops both song slots (remembering which were playing);
+// after the last block they are started again.
+u16 eeprom_write_block_muted(u32 unused0, u32 unused1, u16 block)
 {
-    u16 ie[2];
-    u16 buf[4];
-    s32 i;
-    u32 flags;
+    vu16 savedIe;
+    u16 zeros[4];
+    s32 ofs;
+    u32 playingMask;
+    u32 savedMask;
+    u8 mask;
     u8 *sys;
-    u8 *slots;
-    vu16 *ieReg;
-    vu16 *imeReg;
+    u8 *songs;
+    u16 *fill;
+    u16 *start;
+    s32 nextBlock;
 
-    ie[0] = *(u16 *)0x04000200;
-    *(u16 *)0x04000208 = 0;
-    *(u16 *)0x04000200 = 0;
+    savedIe = REG_IE;
+    REG_IME = 0;
+    REG_IE = 0;
     if (block == 0)
     {
         sys = gSys;
         sys[0x888] |= 0x40;
-        slots = gUnk_03001006;
-        flags = 0;
+        songs = gUnk_03001006;
+        playingMask = 0;
         if ((u8)slot_bit_test(0) == 1)
-            flags = 1;
-        slots[0] = ((struct SysSlots *)sys)->songSlot[0];
+            playingMask = 1;
+        songs[0] = ((struct SysSlots *)sys)->songSlot[0];
         slot_reset(0);
         if ((u8)slot_bit_test(1) == 1)
-            flags |= 2;
-        slots[1] = ((struct SysSlots *)sys)->songSlot[1];
+            playingMask |= 2;
+        songs[1] = ((struct SysSlots *)sys)->songSlot[1];
         slot_reset(1);
         sound_dma_reset();
-        gUnk_03001004 = flags;
+        gUnk_03001004 = playingMask;
     }
-    {
-        u16 *p = buf;
-        for (i = 0; i < 4; i++)
-            *p++ = 0;
-    }
-    eeprom_write_block_wait(block, buf);
-    eeprom_verify(block, buf);
-    if (block + 1 == 0x400)
+    fill = zeros;
+    start = fill;
+    nextBlock = block + 1;
+    for (ofs = 0; ofs < 8; ofs += 2)
+        *fill++ = 0;
+    fill = zeros;
+    fill = start;
+    eeprom_write_block_wait(block, fill);
+    eeprom_verify(block, zeros);
+    if (nextBlock == EEPROM_BLOCK_COUNT)
     {
         ((struct SysFlags888 *)gSys)->bits.bit6 = 0;
-        flags = gUnk_03001004;
-        if (flags != 0)
+        savedMask = gUnk_03001004;
+        mask = savedMask;
+        if (mask != 0)
         {
-            if (flags & 1)
+            if (mask & 1)
                 slot_set_mode(0, 0xFF, 0x1E);
-            if (flags & 2)
+            if (mask & 2)
                 slot_set_mode(1, 0xFF, 0x1E);
         }
     }
-    *(u16 *)0x04000200 = ie[0];
-    return block + 1;
+    REG_IE = savedIe;
+    return nextBlock;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08124F38/eeprom_read_slots_setup.s", void eeprom_read_slots_setup(void))
 
@@ -345,27 +354,30 @@ u32 checksum_bytes_sum(u8 *data, u16 len)
     return sum;
 }
 
+/* Opens the save screen: inserts obj as a task of the given kind, saves the key repeat delay and rate
+ * and sets them to 10 and 8 frames, creates its child task and menu object (both pointing back at obj),
+ * then runs a frame and sets bits 5 and 6 of byte 0x84C of gUnk_03000388. */
 struct ScreenObj *open_screen(struct ScreenObj *obj, u8 kind, u32 arg, u16 flags)
 {
-    struct ScreenObj *child;
-    struct ScreenObj **slot158;
-    struct ScreenObj **slot15C;
+    struct ScreenObj *menu;
+    struct ScreenObj **taskSlot;
+    struct ScreenObj **menuSlot;
 
     task_insert(obj, kind, arg);
     obj->cls18 = gSaveScreenClass;
     obj->flagsE4 = flags;
     obj->settings50 = gUnk_03000388;
-    obj->unkF7 = gUnk_03000388[8];
-    obj->unkF8 = obj->settings50[9];
-    obj->settings50[8] = 0xA;
-    obj->settings50[9] = 8;
-    slot158 = &obj->childTask158;
-    *slot158 = create_child_task(heap_alloc2(0x1C, 0, gOpenScreenTaskTag, 0), 8, gOpenScreenTaskTag);
-    slot15C = &obj->childObj15C;
-    child = menu_obj_init(heap_alloc2(0x5C, 0, gOpenScreenObjTag, 1), 8, gOpenScreenObjTag, 8);
-    *slot15C = child;
-    (*slot158)->unk14 = obj;
-    child->unk14 = obj;
+    obj->unkF7 = gUnk_03000388[KEY_REPEAT_DELAY];
+    obj->unkF8 = obj->settings50[KEY_REPEAT_RATE];
+    obj->settings50[KEY_REPEAT_DELAY] = 10;
+    obj->settings50[KEY_REPEAT_RATE] = 8;
+    taskSlot = &obj->childTask158;
+    *taskSlot = create_child_task(heap_alloc2(0x1C, 0, gOpenScreenTaskTag, 0), 8, gOpenScreenTaskTag);
+    menuSlot = &obj->childObj15C;
+    menu = menu_obj_init(heap_alloc2(0x5C, 0, gOpenScreenObjTag, 1), 8, gOpenScreenObjTag, 8);
+    *menuSlot = menu;
+    (*taskSlot)->unk14 = obj;
+    menu->unk14 = obj;
     frame_update();
     gUnk_03000388[0x84C] |= 0x20;
     gUnk_03000388[0x84C] |= 0x40;

@@ -59,9 +59,9 @@ struct HeroData
     u8 filler0E4[0xEC - 0xE4];
     s16 poseIndex;
     u8 filler0EE[0xF6 - 0xEE];
-    s16 unkF6;
+    s16 unkF6;    /* hp (named so in code_080AD9C4) */
     u8 filler0F8[0x111 - 0xF8];
-    u8 flags111;
+    u8 flags111; /* bit 1: damage that would defeat it doesn't (see code_080F5884) */
     u8 filler112[0x114 - 0x112];
     u32 poseValue;
     u8 filler118[0x11E - 0x118];
@@ -94,12 +94,12 @@ struct HeroBody
     u8 filler70[0x74 - 0x70];
     u8 unk74;
     u8 unk75;
-    u8 mode;
+    u8 mode;            /* bits 1-2: 1 or 2 while the hero can still act (not knocked out) */
     u8 filler77[0x79 - 0x77];
-    u8 flags;
+    u8 flags;           /* bit 5: the current move (or progress) has finished */
     u16 rate;
     u16 unk7C;
-    s16 progress;
+    s16 progress;       /* 0..0x3FFF, advanced by state_stack_advance_progress */
     u8 filler80[0x84 - 0x80];
     struct HeroSpan span;
     u8 filler88[0x92 - 0x88];
@@ -200,6 +200,9 @@ void visible_place_hero_a_active_link_partner(struct HeroBody *body);
 void hero_a_visible_place_on_target(struct HeroBody *body);
 void hero_a_sprite_active_anim8_to_2520(struct HeroBody *body);
 
+/* Attack step: waits for hero B's timed progress to finish. Then plays sound 0x7E, starts hero A's
+ * action 9 (art 0x2034) if it can still act, spawns effect 0 on hero A and moves on to
+ * hero_b_slot_anim_rate_next. */
 void hero_a_active_fx_anim_next(struct HeroBody *body)
 {
     struct Hero *hero_a;
@@ -225,6 +228,9 @@ void hero_a_active_fx_anim_next(struct HeroBody *body)
     }
 }
 
+/* Attack step: once hero B's animation has ended, plays sound 0xAF and, if hero B can still act,
+ * starts its action 7 (art 0x2063) and a 35-frame timed progress (rate 0x4000 / 35). Then
+ * hero_a_follow_partner_target waits for that progress to finish. */
 void hero_b_slot_anim_rate_next(struct HeroBody *body)
 {
     struct Hero *hero_b;
@@ -242,7 +248,7 @@ void hero_b_slot_anim_rate_next(struct HeroBody *body)
         }
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
-            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x23);
+            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 35);
             body_b->progress = 0;
             ((struct HeroFlagBits *)&body_b->flags)->active = 0;
         }
@@ -250,19 +256,24 @@ void hero_b_slot_anim_rate_next(struct HeroBody *body)
     }
 }
 
+/*
+ * Waits for hero B's timed progress to finish. Then plays sound 0x7E and effect 0 on hero A,
+ * and, if hero A can still act, sends it to 10 px left of the target (body->partner) and starts
+ * its looping action 0xA. visible_place_hero_a_active_link_partner hits the target on arrival.
+ */
 void hero_a_follow_partner_target(struct HeroBody *body)
 {
     struct Hero *hero_a;
     struct Hero *hero_b;
     struct HeroBody *body_a;
     struct HeroBody *body_b;
-    struct HeroBody *partner;
+    struct HeroBody *target;
 
     hero_a = gWorld->heroA;
     body_a = &hero_a->body;
     hero_b = gWorld->heroB;
     body_b = &hero_b->body;
-    partner = body->partner;
+    target = body->partner;
     state_stack_advance_progress(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
     {
@@ -270,8 +281,8 @@ void hero_a_follow_partner_target(struct HeroBody *body)
         effect_spawn_at(0, body_a->x / 0x100, body_a->y / 0x100, body_a->z / 0x100, body_a);
         if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
         {
-            place_targets(body_a, partner->targetX / 0x100 + partner->ofsX - 0xA,
-                          partner->targetY / 0x100 + partner->ofsY, 0, -1);
+            place_targets(body_a, target->targetX / 0x100 + target->ofsX - 0xA,
+                          target->targetY / 0x100 + target->ofsY, 0, -1);
             set_motion_start(body_a, 0x400);
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
@@ -283,30 +294,35 @@ void hero_a_follow_partner_target(struct HeroBody *body)
     }
 }
 
+/* Attack step: once hero A has finished moving next to the target (body->partner), plays sound
+   0x63 and hits the target (resolve_contact_action), counting the hit. Spawns effect 0x6E3 on the
+   target if it is still standing, starts hero A's action 0xB and moves on to
+   hero_a_visible_place_on_target. */
 void visible_place_hero_a_active_link_partner(struct HeroBody *body)
 {
     struct Hero *hero_a;
     struct HeroBody *body_a;
-    struct HeroBody *partner;
+    struct HeroBody *target;
     s32 x;
     s32 y;
 
     hero_a = gWorld->heroA;
     body_a = &hero_a->body;
-    partner = body->partner;
+    target = body->partner;
     step_motion(body_a);
     if ((hero_a->body.flags & 0x20) != 0)
     {
         set_slot_value(0x63, -1);
         ((struct HeroCcBits *)&body_a->cc)->low = 0;
         body_a->scale = 0x100;
-        resolve_contact_action(body_a, partner, 0, 0, 0x0803008B);
+        resolve_contact_action(body_a, target, 0, 0, 0x0803008B);
         body_a->count = body_a->count + 1;
-        if (partner->data->unkF6 > 0 || (partner->data->flags111 & 2) != 0)
+        /* still has hp, or can't be defeated */
+        if (target->data->unkF6 > 0 || (target->data->flags111 & 2) != 0)
         {
-            x = partner->targetX / 0x100 + partner->ofsX + 4;
-            y = partner->targetY / 0x100 + partner->ofsY;
-            effect_spawn_at(0x6E3, x, y, 0x10, partner);
+            x = target->targetX / 0x100 + target->ofsX + 4;
+            y = target->targetY / 0x100 + target->ofsY;
+            effect_spawn_at(0x6E3, x, y, 0x10, target);
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
@@ -317,6 +333,10 @@ void visible_place_hero_a_active_link_partner(struct HeroBody *body)
     }
 }
 
+/* Attack step after the hit: once hero A's action has ended, a hero A standing on the ground
+   (targetZ 0) that can still act gets hero_pair_place_and_finish as its own state. A hero A in the
+   air hops back to 58 px left of its target, 8 px above it, at speed 0x500 (if it can still act),
+   and this body moves on to hero_a_wide_step_finish. */
 void hero_a_visible_place_on_target(struct HeroBody *body)
 {
     struct Hero *hero_a;

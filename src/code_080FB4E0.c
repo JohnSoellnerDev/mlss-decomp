@@ -48,8 +48,19 @@ struct Owner
     u8 *entry;
 };
 
+/* The text tables in the var block gUnk_03000FC0: which of the sets in gText*Ptrs is in use */
+struct VarBlockText
+{
+    u8 filler0[0x55C];
+    u32 extraFlags; /* gTextExtraFlagPtrs[set] */
+    u32 count;      /* gTextCountPtrs[set] */
+    u32 kind;       /* gTextKindPtrs[set] */
+    u32 mode;       /* gTextModePtrs[set] */
+    u32 half;       /* gTextHalfPtrs[set] */
+};
+
 extern u8 *gUnk_03000FC0;
-extern u8 gOwnerTypeCreateDestroy[];
+extern u8 gOwnerTypeCreateDestroy[]; /* handler table of the Owner task (Owner.type) */
 extern u8 gStateTag[];
 extern u32 gTextExtraFlagPtrs[];
 extern u32 gTextCountPtrs[];
@@ -321,9 +332,12 @@ void owner_clear_entries(struct Owner *owner)
     copy_map_rects(owner->entry, 0x10);
 }
 
+/* Destructor of the Owner task (the counterpart of owner_create): stops it, releases its aux pair,
+   its object parts and its state block, points the var block's text tables back at their default
+   set (0) and takes the task out of the task list. */
 void owner_destroy(struct Owner *owner, u32 arg)
 {
-    u8 *flag;
+    struct VarBlockText *vars;
 
     owner->type = (u32)gOwnerTypeCreateDestroy;
     owner_stop(owner);
@@ -338,33 +352,36 @@ void owner_destroy(struct Owner *owner, u32 arg)
         owner->entry = 0;
     }
     heap_free((u8 *)owner->state);
-    flag = gUnk_03000FC0;
-    *(u32 *)(flag + 0x55C) = gTextExtraFlagPtrs[0];
-    *(u32 *)(flag + 0x560) = gTextCountPtrs[0];
-    *(u32 *)(flag + 0x564) = gTextKindPtrs[0];
-    *(u32 *)(flag + 0x568) = gTextModePtrs[0];
-    *(u32 *)(flag + 0x56C) = gTextHalfPtrs[0];
+    vars = (struct VarBlockText *)gUnk_03000FC0;
+    vars->extraFlags = gTextExtraFlagPtrs[0];
+    vars->count = gTextCountPtrs[0];
+    vars->kind = gTextKindPtrs[0];
+    vars->mode = gTextModePtrs[0];
+    vars->half = gTextHalfPtrs[0];
     task_remove(owner, arg);
 }
 
-struct Owner *owner_create(struct Owner *owner, u32 kind, u32 arg)
+/* Constructor of the Owner task (the counterpart of owner_destroy): inserts it in the task list,
+   allocates and clears its 0x9A8-byte state block and points the var block's text tables at
+   set 2. */
+struct Owner *owner_create(struct Owner *owner, u32 prio, u32 arg)
 {
     u8 *state;
-    u8 *flag;
+    struct VarBlockText *vars;
 
-    task_insert(owner, (u8)kind, arg);
+    task_insert(owner, (u8)prio, arg);
     owner->type = (u32)gOwnerTypeCreateDestroy;
     owner->entry = 0;
     owner->aux = 0;
     state = heap_alloc_raw(1, 0x9A8, gStateTag);
     owner->state = (struct OwnerState *)state;
     ((void (*)(u32, u8 *, u32))gMemRoutines)(0, state, 0x9A8);
-    flag = gUnk_03000FC0;
-    *(u32 *)(flag + 0x55C) = gTextExtraFlagPtrs[2];
-    *(u32 *)(flag + 0x560) = gTextCountPtrs[2];
-    *(u32 *)(flag + 0x564) = gTextKindPtrs[2];
-    *(u32 *)(flag + 0x568) = gTextModePtrs[2];
-    *(u32 *)(flag + 0x56C) = gTextHalfPtrs[2];
+    vars = (struct VarBlockText *)gUnk_03000FC0;
+    vars->extraFlags = gTextExtraFlagPtrs[2];
+    vars->count = gTextCountPtrs[2];
+    vars->kind = gTextKindPtrs[2];
+    vars->mode = gTextModePtrs[2];
+    vars->half = gTextHalfPtrs[2];
     return owner;
 }
 

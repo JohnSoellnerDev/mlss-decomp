@@ -152,17 +152,25 @@ void obj_pose_release_partner(struct ActorObj *obj);
 struct ActorObj *obj_spawn_linked(struct ActorObj *parent, u32 kind, u32 value);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActorObj *owner);
 
+/*
+ * One frame of the jump set up by obj_launch_to_target: x and y move in a straight line from the
+ * start (dx, dy) by (paramA4, paramA8) over paramA0 frames, and the height follows a parabola
+ * (param9C < 0) that peaks 0x3000 above the start half way through. Once past the peak and back on
+ * the ground it lands: action 0x1A, sound 0xA3, dust effect 0x2001, param9C gets back the count
+ * saved in targetH, and the next state is obj_random_pick_start.
+ */
 void obj_move_by_path(struct ActorObj *obj)
 {
-    s32 dt;
-    s32 dtSq;
-    s32 hBias = 0x3000;
+    s32 fromPeak;
+    s32 fromPeakSq;
+    s32 peakHeight = 0x3000;
 
+    /* timer: frames since the launch; paramA0: frames the whole jump takes */
     obj->posX = (obj->paramA4 * (s16)obj->timer / obj->paramA0) + (obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer / obj->paramA0) + (obj->dy << 8);
-    dt = (s16)obj->timer - obj->paramA0 / 2;
-    dtSq = dt * dt;
-    obj->posH = obj->param9C * dtSq + ((obj->dh << 8) + hBias);
+    fromPeak = (s16)obj->timer - obj->paramA0 / 2;
+    fromPeakSq = fromPeak * fromPeak;
+    obj->posH = obj->param9C * fromPeakSq + ((obj->dh << 8) + peakHeight);
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {
@@ -178,6 +186,10 @@ void obj_move_by_path(struct ActorObj *obj)
     }
 }
 
+/* State: at the end of each loop of the pose's animation, counts timer down. When it runs out,
+ * plays action 0x1E and sound 0xAF, spawns effect 0x200A at the base position (in pixels), starts
+ * table effect 0x17D2 (kept in gUnk_03000E3C), hooks obj_notify_and_show and obj_lookup_part_move
+ * and goes on to obj_count_down_exit. */
 void wave_obj_timer_spawn_effect(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)

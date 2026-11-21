@@ -157,22 +157,31 @@ struct WorldBit5
     u8 hi2 : 2;
 };
 
+/*
+ * Turns the iris (circle window) effect on, unless it already is (saved260 holds the replaced IRQ
+ * callback while it's on): saves the BLDCNT (gUnk_02000050) and WINOUT (gUnk_0200004A) shadows
+ * in tile26C/tile26E and the type-2 callback (gSys + 0x8C4) in saved260, sets BLDCNT 0x3744,
+ * WINOUT 0x3F3B and WIN0H (gUnk_02000040) 0, installs reset_display_step, clears the start of the
+ * window table (gWorkBuf + 0x3EF0), fills BG tile 0x3FF at 0x06007FE0 with colour 0xE, stores
+ * `mode` in gUnk_0200025C, sets bit 0x4000 of gSys's halfword 2 and selects table half 0
+ * (flags0B bit 5). leave_special_mode undoes it.
+ */
 void enter_special_mode(u32 mode)
 {
-    u16 m = mode;
+    u16 irisMode = mode;
     struct World *world = gWorld;
-    u32 saved = world->saved260;
-    u8 *base;
+    u32 savedIrq = world->saved260;
+    u8 *sys;
 
-    if (saved == 0)
+    if (savedIrq == 0)
     {
         world->tile26C = gUnk_02000050;
         world->tile26E = gUnk_0200004A;
-        base = gSys;
-        world->saved260 = *(u32 *)(base + 0x8C4);
+        sys = gSys;
+        world->saved260 = *(u32 *)(sys + 0x8C4);
         gUnk_02000050 = 0x3744;
         gUnk_0200004A = 0x3F3B;
-        gUnk_02000040 = saved;
+        gUnk_02000040 = savedIrq; /* 0 */
         set_irq_callback(2, reset_display_step);
         ((void (*)(u32, u8 *, u32))gMemRoutines)(0, gWorkBuf + 0x3EF0, 4);
         *(u32 *)0x06007FFC = 0xEEEEEEEE;
@@ -183,43 +192,48 @@ void enter_special_mode(u32 mode)
         *(u32 *)0x06007FE8 = 0xEEEEEEEE;
         *(u32 *)0x06007FE4 = 0xEEEEEEEE;
         *(u32 *)0x06007FE0 = 0xEEEEEEEE;
-        gUnk_0200025C = m;
-        ((struct SysHead *)base)->unk2 |= 0x4000;
+        gUnk_0200025C = irisMode;
+        ((struct SysHead *)sys)->unk2 |= 0x4000;
         ((struct WorldBit5 *)&gWorld->flags0B)->bit5 = 0;
     }
 }
 
-NONMATCH("asm/code_080E0814/leave_special_mode.s", void leave_special_mode(void))
+void leave_special_mode(void)
 {
-    struct World *world = gWorld;
-    u32 saved = world->saved260;
-    u16 *ram;
-    struct DmaCtl0 *dma;
-
-    if (saved != 0)
-    {
-        ram = &gUnk_02000050;
-        *ram = world->tile26C;
-        ram -= 3;
-        *ram = world->tile26E;
-        ram -= 5;
-        *ram = 0xF0;
-        set_irq_callback(2, (void *)saved);
-        gWorld->tile26C = 0;
-        gWorld->tile26E = 0;
-        gWorld->saved260 = 0;
-        ((void (*)(u32, u8 *, u32))gMemRoutines)(0, (u8 *)0x0600F000, 0x500);
-        dma = (struct DmaCtl0 *)0x040000B0;
-        dma->cnt_h = *(vu16 *)&dma->cnt_h & 0xC5FF;
-        dma->cnt_h = *(vu16 *)&dma->cnt_h & 0x7FFF;
-        *(vu16 *)&dma->cnt_h;
-    }
+ struct World *world = gWorld;
+ u32 saved = world->saved260;
+ register u16 *ram asm("r1");
+ struct DmaCtl0 *dma;
+ if (saved != 0) {
+ ram = &gUnk_02000050;
+ *ram = world->tile26C;
+ ram -= 3;
+ *ram = world->tile26E;
+ ram -= 5;
+ *ram = 0xF0;
+ set_irq_callback(2, (void *)saved);
+ gWorld->tile26C = 0;
+ gWorld->tile26E = 0;
+ gWorld->saved260 = 0;
+ ((void (*)(u32, u8 *, u32))gMemRoutines)(0, (u8 *)0x0600F000, 0x500);
+ dma = (struct DmaCtl0 *)0x040000B0;
+ dma->cnt_h = *(vu16 *)&dma->cnt_h & 0xC5FF;
+ dma->cnt_h = *(vu16 *)&dma->cnt_h & 0x7FFF;
+ *(vu16 *)&dma->cnt_h;
+ }
 }
-END_NONMATCH
 
 void offset_three_words(u32 item, s32 *a, s32 *b, s32 *c, u32 d);
 
-NONMATCH("asm/code_080E0814/build_iris_rows.s", void build_iris_rows(s32 x, s32 y, s32 z, u32 radius))
+/*
+ * Fills the window table of the iris (circle) effect for one frame. Only while the effect is on
+ * (saved260 holds the IRQ callback enter_special_mode replaced): the world point (x, y, z) goes
+ * through the camera to the screen, and for each of the 160 scanlines a u32 gets the circle's
+ * span around it, as a window register value (left << 8 | right) in both halves; 0 hides the
+ * line. The table is the half of gWorkBuf + 0x3EF0 that flags0B bit 5 selects (double buffered,
+ * 160 * 4 bytes each).
+ */
+void build_iris_rows(s32 x, s32 y, s32 z, u32 radius)
 {
     u32 *out;
     u32 radiusSq;
@@ -232,20 +246,21 @@ NONMATCH("asm/code_080E0814/build_iris_rows.s", void build_iris_rows(s32 x, s32 
         radiusSq = radius * radius;
         for (row = 0; row < 160; row++)
         {
-            s32 dy = y - row;
-            s32 half = radiusSq - dy * dy;
-            s32 h;
-            s32 left;
+            s32 half;
             s32 right;
-            u32 v;
+            u32 span;
 
+            /* half width of the circle on this row: sqrt(r^2 - dy^2) */
+            half = y - row;
+            half = half * half;
+            half = radiusSq - half;
             if (half <= 0)
             {
                 *out++ = 0;
                 continue;
             }
-            h = ((s32 (*)(s32))gMathRoutines)(half);
-            right = x + h;
+            half = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(half);
+            right = x + half;
             if (right < 0)
             {
                 *out++ = 0;
@@ -255,25 +270,24 @@ NONMATCH("asm/code_080E0814/build_iris_rows.s", void build_iris_rows(s32 x, s32 
             {
                 right = 240;
             }
-            left = x - h;
-            if (left > 239)
+            half = x - half; /* the left edge */
+            if (half > 239)
             {
                 *out++ = 0;
                 continue;
             }
-            if (left < 0)
+            if (half < 0)
             {
                 *out++ = right | (right << 16);
             }
             else
             {
-                v = (left << 8) | right;
-                *out++ = v | (v << 16);
+                span = (half << 8) | right;
+                *out++ = span | (span << 16);
             }
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E0814/scale_point_list.s", void scale_point_list(void))
 
@@ -316,89 +330,96 @@ void advance_path(struct StreamObj *obj)
 }
 
 void copy_bg_block_flipped(struct StreamObj *obj);
+/* Shows picture `index` of the picture archive gUnk_089F46B0 (u32 offsets to its entries, which
+   gTileHalfTable numbers): entry [index] is the tile graphics, queued to BG VRAM at 0x06004000;
+   [index+2] and [index+3] are two palettes of the same size (the second one when gSys[0x888] & 6),
+   loaded into BG palette banks 8 and up (gUnk_02000180) after the old colours are saved to
+   gWorkBuf + 0x3DF0, with those banks marked for upload; copy_bg_block_flipped then writes the
+   tilemap [index+1]. */
 void show_frame_pair(u32 index)
 {
-    u32 *entryA;
-    u32 *entryB;
-    u32 *entry;
-    s32 diff;
-    u32 i2;
-    u32 i3;
-    u32 sel;
-    s32 h;
-    u8 *frame;
-    void (*copy)(u8 *, u8 *, u32);
-    void (*copy2)(u8 *, u8 *, u32);
+    u32 *palEndOfs;
+    u32 *palOfs;
+    u32 *srcPalOfs;
+    s32 palSize;
+    u32 palEntry;
+    u32 altPalEntry;
+    u32 srcEntry;
+    s32 roundedSize;
+    u8 *tiles;
+    void (*saveCopy)(u8 *, u8 *, u32);
+    void (*loadCopy)(u8 *, u8 *, u32);
 
     gWorld->tile26C = index;
-    frame = (u8 *)((u32)gUnk_089F46B0 + *(u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[index] * 4));
-    queue_display_entry(2, frame, (void *)0x06004000, -1, 0, 0);
-    i3 = (index + 3) << 1;
-    entryA = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + i3) * 4);
-    i2 = (index + 2) << 1;
-    entryB = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + i2) * 4);
-    diff = *entryA - *entryB;
-    copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
-    copy(gUnk_02000180, gWorkBuf + 0x3DF0, diff);
-    copy2 = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
-    sel = i2;
+    tiles = (u8 *)((u32)gUnk_089F46B0 + *(u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[index] * 4));
+    queue_display_entry(2, tiles, (void *)0x06004000, -1, 0, 0);
+    /* byte offsets into gTileHalfTable of entries index+3 and index+2 */
+    altPalEntry = (index + 3) << 1;
+    palEndOfs = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + altPalEntry) * 4);
+    palEntry = (index + 2) << 1;
+    palOfs = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + palEntry) * 4);
+    palSize = *palEndOfs - *palOfs;
+    saveCopy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    saveCopy(gUnk_02000180, gWorkBuf + 0x3DF0, palSize);
+    loadCopy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
+    srcEntry = palEntry;
     if ((gSys[0x888] & 6) != 0)
     {
-        sel = i3;
+        srcEntry = altPalEntry;
     }
-    entry = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + sel) * 4);
-    copy2((u8 *)((u32)gUnk_089F46B0 + *entry), gUnk_02000180, diff);
-    h = diff;
-    if (h < 0)
+    srcPalOfs = (u32 *)((u32)gUnk_089F46B0 + *(u16 *)((u32)gTileHalfTable + srcEntry) * 4);
+    loadCopy((u8 *)((u32)gUnk_089F46B0 + *srcPalOfs), gUnk_02000180, palSize);
+    /* one dirty bit per 32-byte palette bank, from bank 8 up */
+    roundedSize = palSize;
+    if (roundedSize < 0)
     {
-        h += 0x1F;
+        roundedSize += 0x1F;
     }
-    ((struct SysHead *)gSys)->unk2 |= (0xFF00 >> (8 - (h >> 5))) & 0xFF00;
+    ((struct SysHead *)gSys)->unk2 |= (0xFF00 >> (8 - (roundedSize >> 5))) & 0xFF00;
     task_push_list_50(copy_bg_block_flipped, 0);
 }
 
-NONMATCH("asm/code_080E0814/frame_copy_fade_clear.s", void frame_copy_fade_clear(void))
+/* Takes down the picture show_frame_pair put up (gWorld->tile26C): copies the colours it saved at
+   gWorkBuf + 0x3DF0 back into BG palette banks 8 and up (gUnk_02000180), marks those banks for
+   upload, stops the scroll task and zeroes the scroll offsets (gUnk_02000018/1A), and clears the
+   picture's tilemap at 0x0600F000. */
+void frame_copy_fade_clear(void)
 {
-    s32 span;
-    s32 ctrl;
-    u32 idx;
-    u32 *entryA;
-    u32 *entryB;
-    u8 *dst;
-    struct ScrollBlock *block;
-    u16 *ram;
+    s32 palSize;
+    u32 index;
+    u32 *palEndOfs;
+    u32 *palOfs;
+    u8 *bgPal;
+    struct ScrollBlock *scroll;
+    u16 *scrollOfs;
     struct SysHead *sys;
-    s32 amount;
 
-    idx = gWorld->tile26C;
-    entryA = (u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[idx + 3] * 4);
-    entryB = (u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[idx + 2] * 4);
-    span = *entryA;
-    span -= *entryB;
-    dst = gUnk_02000180;
-    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3DF0, dst, span);
+    index = gWorld->tile26C;
+    palEndOfs = (u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[index + 3] * 4);
+    palOfs = (u32 *)((u32)gUnk_089F46B0 + gTileHalfTable[index + 2] * 4);
+    palSize = *palEndOfs;
+    palSize -= *palOfs;
+    bgPal = gUnk_02000180;
+    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gWorkBuf + 0x3DF0, bgPal, palSize);
     sys = (struct SysHead *)gSys;
-    if (span < 0)
+    /* one dirty bit per 32-byte palette bank, from bank 8 up */
+    if (palSize < 0)
     {
-        span += 0x1F;
+        palSize += 0x1F;
     }
-    amount = 8 - (span >> 5);
-    ctrl = 0xFF00 >> amount;
-    ctrl &= 0xFFFFFF00;
-    sys->unk2 = ctrl | sys->unk2;
-    block = gWorld->scrollBlock;
-    if (block != 0)
+    sys->unk2 |= (0xFF00 >> (8 - (palSize >> 5))) & ~0xFF;
+    scroll = gWorld->scrollBlock;
+    if (scroll != 0)
     {
-        block->unk4 = 0;
+        scroll->unk4 = 0;
         gWorld->scrollBlock = 0;
-        ram = &gUnk_02000018;
-        *ram = 0;
-        ram += 1;
-        *ram = 0;
+        scrollOfs = &gUnk_02000018;
+        *scrollOfs = 0;
+        scrollOfs += 1;
+        *scrollOfs = 0;
     }
     dma_fill_or_queue(0, (void *)0x0600F000, 0x800, 0x20, 0);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E0814/unknown_thumb_080e16b8.s", void unknown_thumb_080e16b8(void))
 
@@ -466,28 +487,26 @@ void set_scroll_slot(s32 x, s32 y)
     gWorld->scrollBlock = block;
 }
 
-NONMATCH("asm/code_080E0814/copy_bg_block_flipped.s", void copy_bg_block_flipped(struct StreamObj *obj))
+void copy_bg_block_flipped(struct StreamObj *obj)
 {
-    struct World *world = gWorld;
-    u32 *src;
-    u32 *dst;
-    u32 remaining;
-    u32 flip;
-
-    src = (u32 *)(gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (gTileHalfTable[world->tile26C + 1] << 2)));
-    flip = 0x80008000;
-    dst = (u32 *)0x0600F000;
-    remaining = 0x200;
-    do
-    {
-        dst[0] = src[0] + flip;
-        dst[1] = src[1] + flip;
-        dst[2] = src[2] + flip;
-        dst[3] = src[3] + flip;
-        src += 4;
-        dst += 4;
-        remaining -= 4;
-    } while ((u16)remaining != 0);
-    obj->state = (void (*)(void))(u32)remaining;
+ u32 tile = gWorld->tile26C;
+ register u32 *src asm("r0");
+ u32 *dst;
+ register u32 remaining asm("r4");
+ register u32 flip asm("r3");
+ u32 offset = *(u32 *)(gUnk_089F46B0 + (gTileHalfTable[tile + 1] << 2));
+ flip = 0x80008000;
+ src = (u32 *)(gUnk_089F46B0 + offset);
+ dst = (u32 *)0x0600F000;
+ remaining = 0x200;
+loop:
+ dst[0] = src[0] + flip;
+ dst[1] = src[1] + flip;
+ dst[2] = src[2] + flip;
+ dst[3] = src[3] + flip;
+ src += 4;
+ dst += 4;
+ remaining -= 4;
+ if (remaining != 0) goto loop;
+ obj->state = (void (*)(void))remaining;
 }
-END_NONMATCH

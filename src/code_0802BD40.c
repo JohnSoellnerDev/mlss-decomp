@@ -116,6 +116,12 @@ struct Bits246
     u8 hi3 : 3;
 } __attribute__((packed));
 
+struct Low3Bits
+{
+    u8 low3 : 3;
+    u8 rest : 5;
+};
+
 struct Bits351
 {
     u8 filler0[0x351];
@@ -150,259 +156,265 @@ void update_pair_facing(struct FollowObj *obj, u8 reset, u8 enable);
 
 ASM_FUNC("asm/code_0802BD40/obj_follow_step.s", void obj_follow_step(void))
 
-void set_dir_and_offsets(struct FollowObj *a, u8 dir)
+/*
+ * Points obj's lead part (partA) in direction dir (0-255, 8 sectors) and sets its move
+ * offsets: the sector's unit vector from gDirVectors times its speed (8.8 fixed point),
+ * halved per step of the slow-down level in bits 2-3 of flags353, rounded away from 0
+ * to a whole multiple of 0x40.
+ */
+void set_dir_and_offsets(struct FollowObj *obj, u8 dir)
 {
-    s16 *tab;
-    s32 x;
-    s32 y;
-    u32 shift;
+    s16 *vec;
+    s32 dx;
+    s32 dy;
+    u32 slowShift;
 
-    a->partA->dir2 = dir;
-    tab = &gDirVectors[((dir >> 5) & 7) << 1];
-    x = (a->partA->speed * tab[0]) / 0x100;
-    shift = ((u32)a->partA->flags353 << 26) >> 30;
-    x >>= shift;
-    y = (a->partA->speed * tab[1]) / 0x100;
-    y >>= shift;
-    if (x > 0)
-        x = (x + 0x3F) & -0x40;
-    else if (x < 0)
+    obj->partA->dir2 = dir;
+    vec = &gDirVectors[((dir >> 5) & 7) << 1];
+    dx = (obj->partA->speed * vec[0]) / 0x100;
+    slowShift = ((u32)obj->partA->flags353 << 26) >> 30;
+    dx >>= slowShift;
+    dy = (obj->partA->speed * vec[1]) / 0x100;
+    dy >>= slowShift;
+    if (dx > 0)
+        dx = (dx + 0x3F) & -0x40;
+    else if (dx < 0)
     {
-        x = -x;
-        x = (x + 0x3F) & -0x40;
-        x = -x;
+        dx = -dx;
+        dx = (dx + 0x3F) & -0x40;
+        dx = -dx;
     }
-    if (y > 0)
-        y = (y + 0x3F) & -0x40;
-    else if (y < 0)
+    if (dy > 0)
+        dy = (dy + 0x3F) & -0x40;
+    else if (dy < 0)
     {
-        y = -y;
-        y = (y + 0x3F) & -0x40;
-        y = -y;
+        dy = -dy;
+        dy = (dy + 0x3F) & -0x40;
+        dy = -dy;
     }
-    a->partA->offX = x;
-    a->partA->offY = y;
+    obj->partA->offX = dx;
+    obj->partA->offY = dy;
 }
 
-NONMATCH("asm/code_0802BD40/follow_obj_move_step.s", void follow_obj_move_step(struct FollowObj *obj, u16 *p))
+/* Steers obj's lead part (partA) from the held keys: a d-pad direction sets its move offsets.
+ * With no direction held, a lead in rate 4 slides on with its saved offsets (unk362/unk364),
+ * which shrink by 8 towards 0 each frame along with its speed (copied to partB); otherwise
+ * it stops. */
+void follow_obj_move_step(struct FollowObj *obj, u16 *keys)
 {
-    struct FollowObj *b;
-    u32 bit6;
-    u32 idx;
-    u8 t;
+    struct FollowObj *lead;
+    u32 zero;
+    u32 dpad;
+    s32 dir;
+    u16 old;
 
     if ((obj->flags2B8 & 0x10) != 0)
         return;
-    b = obj->partA;
-    if ((b->flags2B5 & 7) != 0)
+    lead = obj->partA;
+    if ((lead->flags2B5 & 7) != 0)
         return;
-    if (obj->unk12A != 2)
-        goto clear;
-    bit6 = b->flags351 & 0x40;
-    if (bit6 != 0)
-        goto clear;
-    if (p == 0)
-        goto clear;
-    idx = (*p & 0xF0) >> 4;
-    t = gNibbleDirTable[idx];
-    if (t != 0xFF)
+    /* zero: bit 6 of flags351, which is clear inside this block */
+    if (obj->unk12A == 2 && (zero = lead->flags351 & 0x40) == 0 && keys != 0)
     {
-        set_dir_and_offsets(obj, t);
-        return;
-    }
-    if (b->rate4 == 4)
-    {
-        b->offX = b->unk362;
-    obj->partA->offY = obj->partA->unk364;
-    {
-        u16 u242 = obj->partA->offX;
-        s32 x2 = obj->partA->offX;
-
-        if (x2 > 0)
+        dpad = (*keys & 0xF0) >> 4;
+        dir = gNibbleDirTable[dpad];
+        if (dir != 0xFF)
         {
-            obj->partA->offX = u242 - 8;
-            if (obj->partA->offX < 0)
-                obj->partA->offX = bit6;
+            set_dir_and_offsets(obj, dir);
+            return;
         }
-        else
+        if (lead->rate4 == 4)
         {
-            if (x2 < 0)
+            lead->offX = lead->unk362;
+            obj->partA->offY = obj->partA->unk364;
             {
-                obj->partA->offX = u242 + 8;
-                if (obj->partA->offX > 0)
-                    obj->partA->offX = bit6;
+                s32 offX;
+
+                old = obj->partA->offX;
+                offX = obj->partA->offX;
+                if (offX > 0)
+                {
+                    obj->partA->offX = old - 8;
+                    if (obj->partA->offX < 0)
+                        obj->partA->offX = zero;
+                }
+                else if (offX < 0)
+                {
+                    obj->partA->offX = old + 8;
+                    if (obj->partA->offX > 0)
+                        obj->partA->offX = zero;
+                }
             }
-        }
-    }
-    {
-        u16 u244 = obj->partA->offY;
-        s32 y = obj->partA->offY;
-
-        if (y > 0)
-        {
-            obj->partA->offY = u244 - 8;
-            if (obj->partA->offY < 0)
-                obj->partA->offY = 0;
-        }
-        else
-        {
-            if (y < 0)
+            old = obj->partA->offY;
+            dir = obj->partA->offY;
+            if (dir > 0)
             {
-                obj->partA->offY = u244 + 8;
+                obj->partA->offY = old - 8;
+                if (obj->partA->offY < 0)
+                    obj->partA->offY = 0;
+            }
+            else if (dir < 0)
+            {
+                obj->partA->offY = old + 8;
                 if (obj->partA->offY > 0)
                     obj->partA->offY = 0;
             }
+            obj->partA->speed = (u16)obj->partA->speed - 8;
+            if (obj->partA->speed < 0)
+                obj->partA->speed = 0;
+            obj->partB->speed = obj->partA->speed;
         }
-    }
-    obj->partA->speed = (u16)obj->partA->speed - 8;
-    if (obj->partA->speed < 0)
-        obj->partA->speed = 0;
-    obj->partB->speed = obj->partA->speed;
+        else
+        {
+            lead->offX = zero;
+            obj->partA->offY = zero;
+        }
         return;
     }
-    b->offX = bit6;
-    obj->partA->offY = bit6;
-    return;
-clear:
     obj->partA->offX = 0;
     obj->partA->offY = 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0802BD40/anchor_frame_update.s", void anchor_frame_update(void))
 
+/* Slides obj's Y offset by 8 per frame: towards -0x38 while A, B, Left and Right are all disabled
+ * in gSys (or unk20A bits 7-8 force it with 0x100), back towards 0 while any of them is enabled
+ * (or forced with 0x80). */
 void step_offset_244(struct FollowObj *obj)
 {
-    u32 k;
-    u32 cur;
-    s32 v;
-    u32 cur2;
-    s32 v2;
+    u32 force;
+    u32 raw;
+    s32 offY;
+    u32 raw2;
+    s32 offY2;
 
-    k = obj->unk20A & 0x180;
-    if (k == 0x100 || (k == 0 && (((struct SysKeys78 *)gSys)->keyEnable & 0x33) == 0))
+    force = obj->unk20A & 0x180;
+    if (force == 0x100
+        || (force == 0 && (((struct SysKeys78 *)gSys)->keyEnable & (A_BUTTON | B_BUTTON | DPAD_RIGHT | DPAD_LEFT)) == 0))
     {
-        cur = (u16)obj->offY;
-        v = obj->offY;
-        if (v > -0x38)
-            obj->offY = cur - 8;
+        raw = (u16)obj->offY;
+        offY = obj->offY;
+        if (offY > -0x38)
+            obj->offY = raw - 8;
     }
     else
     {
-        k = obj->unk20A & 0x180;
-        if (k == 0x80 || (k == 0 && (((struct SysKeys78 *)gSys)->keyEnable & 0x33) != 0))
+        force = obj->unk20A & 0x180;
+        if (force == 0x80
+            || (force == 0 && (((struct SysKeys78 *)gSys)->keyEnable & (A_BUTTON | B_BUTTON | DPAD_RIGHT | DPAD_LEFT)) != 0))
         {
-            cur2 = (u16)obj->offY;
-            v2 = obj->offY;
-            if (v2 < 0)
-                obj->offY = cur2 + 8;
+            raw2 = (u16)obj->offY;
+            offY2 = obj->offY;
+            if (offY2 < 0)
+                obj->offY = raw2 + 8;
         }
     }
 }
 
-void obj_anim_tick_queue_tiles(struct FollowObj *p, u32 idx, s32 v)
+/* Stores a frame count for part `idx` of obj (obj->subs[idx]) in its frame's slot10 (the slot of
+ * the other bro: index !(flags352 bit 7)), one less than `count` if it is above 0 and that part is
+ * bro 1 or the pair doesn't move together (unk208 bit 4), and one less anyway in action 0x0A.
+ * Then queues a DMA of that frame kind's tiles (gRomTileOfsB[kind] tiles from tile
+ * gRomTileOfsA[kind] of obj's animation) to OBJ VRAM 0x06010DC0 + the part's bank54 * 0x400. */
+void obj_anim_tick_queue_tiles(struct FollowObj *obj, u32 idx, s32 count)
 {
-    struct FollowObj *obj = p->subs[idx];
-    struct FollowFrame *frame = obj->frame;
-    const u8 *tableA;
+    struct FollowObj *part = obj->subs[idx];
+    struct FollowFrame *frame = part->frame;
+    const u8 *tileStart;
     u32 kind;
-    u32 base;
+    u32 firstTile;
     struct FollowSrc *src;
 
-    if ((obj->flags352 & 0x80) != 0)
+    if ((part->flags352 & 0x80) != 0)
     {
-        if (v > 0)
-            v--;
+        if (count > 0)
+            count--;
     }
     else
     {
-        if ((p->unk208 & 0x10) == 0 && v > 0)
-            v--;
+        if ((obj->unk208 & 0x10) == 0 && count > 0)
+            count--;
         else if (frame->first == 0x0A)
-            v--;
+            count--;
     }
-    frame->slot10[((obj->flags352 >> 7) ^ 1)] = v;
-    src = p->anim->src10;
-    tableA = gRomTileOfsA;
-    kind = obj->frame->kind;
-    base = tableA[kind];
-    dma_copy_or_queue(src->tiles + (base << 5), (void *)(0x06010DC0 + (obj->bank54 << 10)),
+    frame->slot10[((part->flags352 >> 7) ^ 1)] = count;
+    src = obj->anim->src10;
+    tileStart = gRomTileOfsA;
+    kind = part->frame->kind;
+    firstTile = tileStart[kind];
+    /* 0x20 bytes per 4bpp tile */
+    dma_copy_or_queue(src->tiles + (firstTile << 5), (void *)(0x06010DC0 + (part->bank54 << 10)),
         gRomTileOfsB[kind] << 5, 0x20, 0);
 }
 
-NONMATCH("asm/code_0802BD40/update_pair_facing.s", void update_pair_facing(struct FollowObj *obj, u8 reset, u8 enable))
+/* Stops the bros pair: clears the lead's (partA) move offsets when stopLead is set, and the
+ * follower's (partB) when stopFollower is set. When the pair moves together (unk208 bit 4)
+ * the follower is then turned to face the lead (one of 8 directions, via gRomFacingTable);
+ * a follower in a mode above 2 (unk214 bits 0-2) gets that direction in unk24 too. */
+void update_pair_facing(struct FollowObj *obj, u8 stopLead, u8 stopFollower)
 {
-    struct FollowObj *me;
-    struct FollowObj *other;
-    s32 dx;
+    struct FollowObj *follower = obj->partB;
+    struct FollowObj *lead = obj->partA;
+    s32 dx = 0; /* also the 0 the offsets are cleared with */
     s32 dy;
-    u32 ang;
-    u8 t;
-    u8 tb;
-    u32 off;
-    u8 zero;
+    u32 angle;
+    u8 dir;
 
-    other = obj->partB;
-    me = obj->partA;
-    zero = 0;
-    if (reset != 0)
+    if (stopLead != 0)
     {
-        off = 0x242;
-        *(s16 *)((u8 *)me + off) = zero;
-        off += 2;
-        *(s16 *)((u8 *)me + off) = zero;
+        lead->offX = dx;
+        lead->offY = dx;
     }
-    if (other != 0 && enable != 0)
+    if (follower != NULL && stopFollower != 0)
     {
-        off = 0x242;
-        *(s16 *)((u8 *)other + off) = zero;
-        off += 2;
-        *(s16 *)((u8 *)other + off) = zero;
-        if ((obj->unk208 & 0x10) != 0)
+        follower->offX = dx;
+        follower->offY = dx;
+        if (obj->unk208 & 0x10)
         {
-            dx = me->posX - other->posX;
-            dy = me->posY - other->posY;
+            dx = lead->posX - follower->posX;
+            dy = lead->posY - follower->posY;
             if (dx != 0 || dy != 0)
             {
-                ang = arc_tan2((s16)(-dy), (s16)dx);
-                tb = gRomFacingTable[(ang << 16) >> 28];
-                t = tb & 7;
-                other->dir2 = t << 5;
-                if ((other->unk214 & 7) > 2)
-                {
-                    s32 low = other->unk24;
-                    other->unk24 = (low & -8) | t;
-                }
+                angle = arc_tan2((s16)-dy, (s16)dx);
+                /* the angle's top 4 bits (16 sectors) map to a direction 0-7 */
+                dir = gRomFacingTable[(angle << 16) >> 28];
+                follower->dir2 = (dir & 7) << 5;
+                if (((u32)(follower->unk214 << 29) >> 29) > 2)
+                    ((struct Low3Bits *)&follower->unk24)->low3 = dir;
             }
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0802BD40/obj_state_tick.s", void obj_state_tick(struct FollowObj *obj, struct FollowObj *sub))
 
 ASM_FUNC("asm/code_0802BD40/update_sub_state.s", void update_sub_state(void))
 
+/* Puts one part of the pair (sub) back to its idle state: unlinks its aux control (aux36C), clears
+ * its animation state and flags, ends its partner's (ptr388) action, restores its speed from the
+ * owner's base speed (obj->unk100) and restarts its animation. When the pair moves together
+ * (obj->unk208 bit 4) the partner is reset the same way and pair_turn_and_sample runs. */
 void reset_sub_object(struct FollowObj *obj, struct FollowObj *sub)
 {
-    u16 h;
+    u16 baseSpeed;
 
     unlink_d54(sub->aux36C);
-    ((u8 *)obj)[0x20B] &= 0x7F;
+    ((u8 *)obj)[0x20B] &= 0x7F; /* unk20A bit 15 */
     ((u8 *)obj)[0x208] |= 1;
     ((struct Bits246 *)obj)->mid3 = 0;
     ((u8 *)sub)[0x351] &= 0x7F;
     sub->frame->first = 0;
     sub->rate4 = 0;
     ((struct Bits351 *)sub)->bit6 = 0;
+    /* partner in action 1 or 2: clear its sub-step, else its action */
     if ((u8)(sub->ptr388->frame->first - 1) <= 1)
         sub->ptr388->frame->unk1 = 0;
     else
         sub->ptr388->frame->first = 0;
     ((struct Bits35B *)sub)->bit6 = 0;
-    h = obj->unk100;
-    sub->speed = h;
-    sub->unk260 = h;
+    baseSpeed = obj->unk100;
+    sub->speed = baseSpeed;
+    sub->unk260 = baseSpeed;
     sub->frame->slot10[0] = sub->frame->unk12;
     sub->frame->unk12 = 0xFF;
     advance_anim_frame(obj, sub, 0, 0);
@@ -415,54 +427,59 @@ void reset_sub_object(struct FollowObj *obj, struct FollowObj *sub)
     ((struct Bits351 *)sub->ptr388)->bit6 = 0;
     if ((obj->unk208 & 0x10) != 0)
     {
-        struct FollowObj *p;
+        struct FollowObj *partner;
 
         sub->ptr388->rate4 = 0;
         advance_anim_frame(obj, sub->ptr388, sub->flags352 >> 7, 0);
-        p = sub->ptr388;
-        p->speed = obj->unk100;
-        p->unk260 = obj->unk100;
+        partner = sub->ptr388;
+        partner->speed = obj->unk100;
+        partner->unk260 = obj->unk100;
         pair_turn_and_sample(obj, 0);
     }
 }
 
-void obj_step_if_ready(struct FollowObj *obj, u32 flag)
+/* Per-frame step of the bros pair: unless obj or its lead bro (partA) is blocked or animFlag is 0,
+ * when the partner (partB) is nearly still and the lead too (rate4 <= 1, or <= 4 when flagsFB bit 2
+ * is set and its frame is of kind 0) and the lead's action button was pressed (obj_test_mode 0),
+ * runs the lead's action (obj_state_tick), or clears slot 0x50 when its frame's state16 bit 7 is
+ * set. Always ends by advancing the lead's animation frame. */
+void obj_step_if_ready(struct FollowObj *obj, u32 animFlag)
 {
-    struct FollowObj *a;
-    struct FollowObj *b;
-    struct FollowObj *a2;
-    struct FollowFrame *t;
-    u32 test;
+    struct FollowObj *lead;
+    struct FollowObj *partner;
+    struct FollowObj *leadAgain;
+    struct FollowFrame *frame;
+    u32 pressed;
 
     if ((obj->flags2B8 & 0x10) != 0)
-        goto finish;
+        goto advance;
     if ((obj->flags291 & 1) != 0)
-        goto finish;
-    a = obj->partA;
-    if ((a->flags2B5 & 8) != 0)
-        goto finish;
-    if (flag == 0)
-        goto finish;
-    b = obj->partB;
-    if (b->rate4 > 4)
-        goto finish;
-    if ((obj->flagsFB & 4) == 0 || a->frame->kind != 0 || a->rate4 > 4)
+        goto advance;
+    lead = obj->partA;
+    if ((lead->flags2B5 & 8) != 0)
+        goto advance;
+    if (animFlag == 0)
+        goto advance;
+    partner = obj->partB;
+    if (partner->rate4 > 4)
+        goto advance;
+    if ((obj->flagsFB & 4) == 0 || lead->frame->kind != 0 || lead->rate4 > 4)
     {
-        a2 = obj->partA;
-        if (a2->rate4 > 1)
-            goto finish;
+        leadAgain = obj->partA;
+        if (leadAgain->rate4 > 1)
+            goto advance;
     }
-    test = obj_test_mode(obj, 0);
-    if (((u32)test << 24) == 0)
-        goto finish;
-    a = obj->partA;
-    t = a->frame;
-    if ((t->state16 & 0x80) == 0)
+    pressed = obj_test_mode(obj, 0);
+    if (((u32)pressed << 24) == 0)
+        goto advance;
+    lead = obj->partA;
+    frame = lead->frame;
+    if ((frame->state16 & 0x80) == 0)
     {
-        obj_state_tick(obj, a);
-        goto finish;
+        obj_state_tick(obj, lead);
+        goto advance;
     }
     reset_slot_50(obj);
-finish:
-    advance_anim_frame(obj, obj->partA, 0, flag);
+advance:
+    advance_anim_frame(obj, obj->partA, 0, animFlag);
 }

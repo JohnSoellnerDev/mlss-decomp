@@ -17,7 +17,7 @@ struct ActorSprite
 {
     s16 unk0;
     u8 filler2[0x6 - 0x2];
-    s16 unk6;
+    s16 scale; /* 0x100 = full size */
     u8 filler8[0xC - 0x8];
     s16 unkC;
     u8 filler[0x11 - 0xE];
@@ -48,6 +48,14 @@ struct ActorData;
 struct ActorBody;
 
 typedef void (*BodyFunc)(struct ActorBody *body);
+/* Called by partner_link_update when `attacker` hits `body` */
+typedef s32 (*BodyHitFunc)(struct ActorBody *body, struct ActorBody *attacker);
+
+struct BodyGround
+{
+    s16 unk0;
+    s16 floorZ; /* height in pixels the body lands on */
+};
 
 struct ActorBody
 {
@@ -70,7 +78,7 @@ struct ActorBody
     BodyFunc state;
     u8 filler50[0x54 - 0x50];
     BodyFunc subState;
-    BodyFunc unk58;
+    BodyHitFunc onHit; /* set by obj_list_push_default */
     u8 filler5C[0x6C - 0x5C];
     s32 unk6C;
     u8 filler70[0x75 - 0x70];
@@ -82,8 +90,7 @@ struct ActorBody
     u8 filler7A[0x84 - 0x7A];
     s32 baseX;
     s32 baseY;
-    u8 filler8C[0x8E - 0x8C];
-    s16 unk8E;
+    struct BodyGround ground;
     u8 filler90[0x9C - 0x90];
     s32 height;
     u8 filler_A0[0xA8 - 0xA0];
@@ -140,13 +147,19 @@ struct World
 
 extern struct World *gWorld;
 
+/* gWorld->partners[6] and [7] are the two heroes; their actor body sits 8 bytes in */
+#define HERO_SLOT_A 6
+#define HERO_SLOT_B 7
+/* ActorBody.mode bits 1-2 == 1: the hero is standing on the field */
+#define HERO_ON_FIELD(mode) ((6 & (mode)) == 2)
+
 struct ActorData
 {
     u8 filler0[0x08];
     u8 filler08[0x18 - 0x08];
-    s32 unk18;
-    s32 unk1C;
-    s32 unk20;
+    s32 x; /* 8.8 fixed point */
+    s32 y;
+    s32 z;
     u8 filler24[0x38 - 0x24];
     struct ActorBody *members;
     u8 filler3C[0x44 - 0x3C];
@@ -161,7 +174,12 @@ struct ActorData
     s16 effect;
     u8 fillerF8[0x113 - 0xF8];
     u8 flag113;
+    u8 filler114[0x11E - 0x114];
+    u16 flags11E;
 };
+
+/* ActorData.poseOfs is -1 for the hero driven by the A button, else the B button */
+#define HERO_BUTTON(data) (((data)->poseOfs == -1) ? A_BUTTON : B_BUTTON)
 
 void on_arrive(struct ActorBody *body);
 void sprite_set_action(struct ActorBody *obj, u32 action, u32 arg, u32 extra);
@@ -317,9 +335,14 @@ static inline void push_node_part(struct ActorBody *child)
     child->parts = node;
 }
 
+/* Once the current animation is done: queues sounds 0x8B and 0x8C, plays action 7, spawns effect
+   0x1E47 at the body's target point and an orbit object (0x403D) 21 px left of it, put at the head
+   of the body's child chain. The orbit draws its own sprite plus a trail of 3 sprite nodes, circles
+   slowly (vspeed 2) around where it was spawned (orbit_parts_gentle) and shares the body's unk6C and
+   partner. The body then waits for the end of its animation (pose_update_a). */
 void spawn_small_child(struct ActorBody *body)
 {
-    struct ActorBody *child;
+    struct ActorBody *orbit;
     s32 minusOne;
 
     if ((body->sprite->flags & 8) != 0)
@@ -329,24 +352,24 @@ void spawn_small_child(struct ActorBody *body)
         set_slot_value(0x8C, minusOne);
         sprite_set_action(body, 7, 0, 0);
         effect_spawn_at(0x1E47, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-        child = obj_spawn(body->data, 0x403D, body->targetX / 0x100 - 0x15, body->targetY / 0x100 + 1,
+        orbit = obj_spawn(body->data, 0x403D, body->targetX / 0x100 - 0x15, body->targetY / 0x100 + 1,
                           body->targetZ / 0x100, 1, 1);
-        child->child = body->child;
-        body->child = child;
-        ((struct ByteBit0 *)&child->flags)->bit0 = 1;
-        child->height = 0;
-        child->node = sprite_node_take();
-        child->node->sprite = child->sprite;
-        child->node->link = &child->parts;
-        child->unk6C = body->unk6C;
-        child->partner = body->partner;
-        child->baseX = child->x;
-        child->baseY = child->y;
-        child->vspeed = 2;
-        push_node_part(child);
-        push_node_part(child);
-        push_node_part(child);
-        child->state = orbit_parts_gentle;
+        orbit->child = body->child;
+        body->child = orbit;
+        ((struct ByteBit0 *)&orbit->flags)->bit0 = 1;
+        orbit->height = 0;
+        orbit->node = sprite_node_take();
+        orbit->node->sprite = orbit->sprite;
+        orbit->node->link = &orbit->parts;
+        orbit->unk6C = body->unk6C;
+        orbit->partner = body->partner;
+        orbit->baseX = orbit->x;
+        orbit->baseY = orbit->y;
+        orbit->vspeed = 2;
+        push_node_part(orbit);
+        push_node_part(orbit);
+        push_node_part(orbit);
+        orbit->state = orbit_parts_gentle;
         body->state = pose_update_a;
     }
 }
@@ -563,33 +586,37 @@ void pair_wait_then_spawn_part(struct ActorBody *body)
     }
 }
 
+/* Plays action 8 and starts a move to 0x38 px right of the partner, at the y of the hero
+ * standing on the field (halfway between both when both are), then plays slot 0x99 and
+ * goes on to step_then_effect. */
 void place_by_heroes(struct ActorBody *body)
 {
     struct ActorBody *heroA;
     struct ActorBody *heroB;
     struct ActorBody *partner;
     s32 y;
-    s32 sum;
+    s32 sumY;
 
-    heroA = (struct ActorBody *)(gWorld->partners[6] + 8);
-    heroB = (struct ActorBody *)(gWorld->partners[7] + 8);
+    heroA = (struct ActorBody *)(gWorld->partners[HERO_SLOT_A] + 8);
+    heroB = (struct ActorBody *)(gWorld->partners[HERO_SLOT_B] + 8);
     sprite_set_action(body, 8, 0, 0);
-    if ((6 & heroA->mode) != 2)
+    if (!HERO_ON_FIELD(heroA->mode))
     {
         y = heroB->targetY / 0x100;
     }
-    else if ((6 & heroB->mode) != 2)
+    else if (!HERO_ON_FIELD(heroB->mode))
     {
         y = heroA->targetY / 0x100;
     }
     else
     {
-        sum = heroA->targetY + heroB->targetY;
-        if (sum < 0)
+        /* the midpoint, in pixels */
+        sumY = heroA->targetY + heroB->targetY;
+        if (sumY < 0)
         {
-            sum += 0x1FF;
+            sumY += 0x1FF;
         }
-        y = sum >> 9;
+        y = sumY >> 9;
     }
     partner = body->partner;
     place_targets(body, partner->targetX / 0x100 + 0x38, y, 0, 0x100);
@@ -600,49 +627,55 @@ void place_by_heroes(struct ActorBody *body)
 
 ASM_FUNC("asm/code_0809D474/hero_helper_spawn.s", void hero_helper_spawn(struct ActorBody *body))
 
+/*
+ * Waits until the timer runs out, or until every on-field hero's attachment (spawned by
+ * hero_helper_spawn) has finished growing, then removes those attachments with a burst
+ * effect. A fully grown one (scale 0x100) also links to its hero via partner_link_update.
+ */
 void hero_pair_link(struct ActorBody *body)
 {
     struct ActorBody *heroA;
     struct ActorBody *heroB;
     struct ActorBody *hero;
-    struct ActorBody *child;
-    s32 wait;
-    s32 i;
+    struct ActorBody *attachment;
+    s32 timer;
+    s32 slot;
 
-    wait = body->wait;
-    wait--;
-    body->wait = wait;
-    if ((s16)wait > 0)
+    timer = body->wait;
+    timer--;
+    body->wait = timer;
+    if ((s16)timer > 0)
     {
-        heroA = (struct ActorBody *)(gWorld->partners[6] + 8);
-        heroB = (struct ActorBody *)(gWorld->partners[7] + 8);
-        if ((6 & heroA->mode) == 2 && heroA->child->state != 0)
+        heroA = (struct ActorBody *)(gWorld->partners[HERO_SLOT_A] + 8);
+        heroB = (struct ActorBody *)(gWorld->partners[HERO_SLOT_B] + 8);
+        /* keep waiting while an attachment is still growing */
+        if (HERO_ON_FIELD(heroA->mode) && heroA->child->state != 0)
         {
             return;
         }
-        if ((6 & heroB->mode) == 2 && heroB->child->state != 0)
+        if (HERO_ON_FIELD(heroB->mode) && heroB->child->state != 0)
         {
             return;
         }
     }
     sprite_set_action(body, 0xB, 0, 0);
-    for (i = 6; i <= 7; i++)
+    for (slot = HERO_SLOT_A; slot <= HERO_SLOT_B; slot++)
     {
-        hero = (struct ActorBody *)(gWorld->partners[i] + 8);
-        if ((6 & hero->mode) == 2)
+        hero = (struct ActorBody *)(gWorld->partners[slot] + 8);
+        if (HERO_ON_FIELD(hero->mode))
         {
             ((struct ModeBits *)&hero->mode)->mode = 0;
-            child = hero->child;
-            if (child != 0)
+            attachment = hero->child;
+            if (attachment != 0)
             {
-                if (child->sprite->unk6 == 0x100)
+                if (attachment->sprite->scale == 0x100)
                 {
-                    effect_spawn_at(0xE8, child->targetX / 0x100, child->targetY / 0x100, child->targetZ / 0x100, hero);
+                    effect_spawn_at(0xE8, attachment->targetX / 0x100, attachment->targetY / 0x100, attachment->targetZ / 0x100, hero);
                     partner_link_update(body, hero, 0xFF);
                 }
                 else
                 {
-                    effect_spawn_at(0xDF, child->targetX / 0x100, child->targetY / 0x100, child->targetZ / 0x100, hero);
+                    effect_spawn_at(0xDF, attachment->targetX / 0x100, attachment->targetY / 0x100, attachment->targetZ / 0x100, hero);
                 }
                 if (hero->child != 0)
                 {
@@ -654,45 +687,52 @@ void hero_pair_link(struct ActorBody *body)
     body->state = wait_for_index;
 }
 
+/*
+ * Attachment grow state: a hero's attachment (spawned by hero_helper_spawn) follows the hero and
+ * grows by 4 a frame until full size, then stops. Each press of that hero's button (while
+ * flags11E & 0x300 is clear) shrinks it by 0x18 with a puff effect and makes the hero hop;
+ * lower_height_then_slide lands the hero and comes back here.
+ */
 void slide_and_settle(struct ActorBody *body)
 {
-    struct ActorData *data;
-    u16 value;
-    s32 limit;
-    u32 flagMask;
+    struct ActorData *hero;
+    u16 scale;
+    s32 fullScale;
+    u32 button;
 
-    body->x = body->data->unk18;
-    body->y = body->data->unk1C;
-    body->z = body->data->unk20;
-    body->sprite->unk6 += 4;
-    value = body->sprite->unk6;
-    if ((s16)body->sprite->unk6 > (limit = 0x100))
+    body->x = body->data->x;
+    body->y = body->data->y;
+    body->z = body->data->z;
+    body->sprite->scale += 4;
+    scale = body->sprite->scale;
+    if ((s16)body->sprite->scale > (fullScale = 0x100))
     {
-        body->sprite->unk6 = limit;
+        body->sprite->scale = fullScale;
         body->state = 0;
         return;
     }
-    data = body->data;
-    flagMask = (data->poseOfs == -1) ? 1 : 2;
-    if ((((struct SysKeys3E *)gSys)->keys & flagMask) == 0)
+    hero = body->data;
+    button = HERO_BUTTON(hero);
+    if ((((struct SysKeys3E *)gSys)->keys & button) == 0)
     {
         return;
     }
-    if ((*(u16 *)((u8 *)data + 0x11E) & 0x300) != 0)
+    if ((hero->flags11E & 0x300) != 0)
     {
         return;
     }
-    body->sprite->unk6 = value - 0x18;
-    if ((s16)body->sprite->unk6 <= 0)
+    body->sprite->scale = scale - 0x18;
+    if ((s16)body->sprite->scale <= 0)
     {
-        body->sprite->unk6 = 2;
+        body->sprite->scale = 2;
     }
     effect_spawn_at(0xDF, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-    place_targets(body, body->x / 0x100, body->y / 0x100, body->z / 0x100, limit);
+    place_targets(body, body->x / 0x100, body->y / 0x100, body->z / 0x100, fullScale);
+    /* the hero hops: action 5, lifted by 2 pixels */
     ((struct ModeBits *)&body->data->mode7E)->mode = 0;
     sprite_set_action((struct ActorBody *)((u8 *)body->data + 8), 5, 0, 0);
     ((struct ModeBits *)&body->data->mode7E)->mode = 1;
-    body->data->unk20 = (body->z += 0x200);
+    body->data->z = (body->z += 0x200);
     body->state = lower_height_then_slide;
 }
 void lower_height_then_slide(struct ActorBody *body)
@@ -705,7 +745,7 @@ void lower_height_then_slide(struct ActorBody *body)
         h = 0;
     data = body->data;
     body->z = h;
-    data->unk20 = h;
+    data->z = h;
     if (h == 0)
     {
         ((struct ModeBits *)&data->mode7E)->mode = 0;
@@ -751,32 +791,36 @@ NONMATCH("asm/code_0809D474/reset_heroes_mode.s", void reset_heroes_mode(struct 
 END_NONMATCH
 
 
+/* Spawns a linked object 0x4147 above each hero standing on the field (at its target, height 0xA0,
+ * partnered to the hero, going on to pose_offset_place) and counts them in data->childCount, which
+ * each one counts down when it lands. Sets data->flag113, plays action 7 and waits in
+ * spawn_pending_child for them all. */
 void spawn_hero_children(struct ActorBody *body)
 {
-    struct ActorBody *heroBody;
+    struct ActorBody *hero;
     struct ActorBody *child;
-    u8 *fp;
+    u8 *flagsPtr;
     s32 flags;
     s32 i;
 
     body->data->childCount = 0;
-    for (i = 6; i <= 7; i++)
+    for (i = HERO_SLOT_A; i <= HERO_SLOT_B; i++)
     {
-        heroBody = (struct ActorBody *)(gWorld->partners[i] + 8);
-        if ((heroBody->mode & 6) == 2)
+        hero = (struct ActorBody *)(gWorld->partners[i] + 8);
+        if (HERO_ON_FIELD(hero->mode))
         {
             child = obj_spawn_linked(body, 0x4147, 0);
             sprite_set_action(child, 2, 0, 0);
             ((struct SpriteFlagBits *)&child->sprite->flags)->mode = 0;
-            fp = &child->flags;
-            flags = *fp;
+            flagsPtr = &child->flags;
+            flags = *flagsPtr;
             flags |= 1;
-            *fp = flags;
-            child->index = heroBody->index - 1;
-            child->x = heroBody->targetX;
-            child->y = heroBody->targetY;
+            *flagsPtr = flags;
+            child->index = hero->index - 1;
+            child->x = hero->targetX;
+            child->y = hero->targetY;
             child->z = 0xA000;
-            child->partner = heroBody;
+            child->partner = hero;
             child->state = pose_offset_place;
             body->data->childCount++;
         }
@@ -815,22 +859,26 @@ void spawn_pending_child(struct ActorBody *body)
     }
 }
 
+/* State after spawn_pending_child: spawns effect 0x227F at the target every 20 frames, and every
+ * 50 frames counts the child's shown number (its sprite's current action) down by one with sound
+ * 0x10A. Once it reaches 0 the child is detached, effect 0x2291 plays, this body plays action 9
+ * and goes on to spawn_twelve_parts. */
 void timed_child_effects(struct ActorBody *body)
 {
-    s32 wait;
+    s32 frames;
 
     if (body->tick > 0)
     {
         body->tick--;
         if (body->tick == 0)
         {
-            body->tick = 0x14;
+            body->tick = 20;
             effect_spawn_at(0x227F, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
         }
     }
-    wait = body->wait + 1;
-    body->wait = wait;
-    if ((s16)wait > 0x31)
+    frames = body->wait + 1;
+    body->wait = frames;
+    if ((s16)frames > 49)
     {
         body->wait = 0;
         if (body->child->sprite->kind != 0)
@@ -849,13 +897,18 @@ void timed_child_effects(struct ActorBody *body)
     }
 }
 
+/*
+ * Once the current animation ends (sprite flag 8): effect 0x229B, the child moves to this body's
+ * spot and starts pair motion (action 0, 0x4146), sound 0xD2, and a linked object 0x4145 is spawned
+ * from the child with a chain of 12 part nodes at its position; this body then plays action 0xA.
+ */
 void spawn_twelve_parts(struct ActorBody *body)
 {
     struct ActorBody *child;
     struct PartNode *prev;
     struct PartNode *node;
-    struct SpriteNode *taken;
-    u8 *fp;
+    struct SpriteNode *headNode;
+    u8 *flagsPtr;
     s32 flags;
     s32 i;
 
@@ -871,40 +924,23 @@ void spawn_twelve_parts(struct ActorBody *body)
         child->state = start_pair_motion;
         set_slot_value(0xD2, -1);
         child = obj_spawn_linked(child, 0x4145, 0);
-        fp = &child->flags;
-        flags = *fp;
+        flagsPtr = &child->flags;
+        flags = *flagsPtr;
         flags |= 1;
-        *fp = flags;
+        *flagsPtr = flags;
         sprite_set_action(child, 0, 0, 0);
         ((struct SpriteFlagBits *)&child->sprite->flags)->mode = 1;
         prev = (struct PartNode *)&child->parts;
-        taken = sprite_node_take();
-        child->node = taken;
-        taken->sprite = child->sprite;
-        taken->link = &child->parts;
-        i = 0xB;
-        do
+        headNode = sprite_node_take();
+        child->node = headNode;
+        headNode->sprite = child->sprite;
+        headNode->link = &child->parts;
+        for (i = 0; i < 12; i++)
         {
             node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
             prev->next = node;
             prev = node;
-            node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
-            prev->next = node;
-            prev = node;
-            node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
-            prev->next = node;
-            prev = node;
-            node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
-            prev->next = node;
-            prev = node;
-            node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
-            prev->next = node;
-            prev = node;
-            node = (struct PartNode *)sprite_node_alloc(child->x, child->y, child->z);
-            prev->next = node;
-            prev = node;
-            i -= 6;
-        } while (i >= 0);
+        }
         prev->next = 0;
         sprite_set_action(body, 0xA, 0, 0);
         ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 0;
@@ -912,14 +948,18 @@ void spawn_twelve_parts(struct ActorBody *body)
     }
 }
 
+/* State of the 0x4147 child spawn_hero_children drops above each hero: it flies down to just over its
+ * hero's head (height 0x22 over the A-button hero, 0x26 over the other) with sound 0xA3, joins the
+ * active list so tick_timer_or_remove handles the hits it takes (vspeed counts them down from the
+ * value in height), and goes on to focus_follow_fall_step. */
 void pose_offset_place(struct ActorBody *body)
 {
     place_targets(body, body->targetX / 0x100, body->targetY / 0x100,
                   (body->partner->data->poseOfs == -1) ? 0x22 : 0x26, 0x100);
     set_motion_start(body, 0x300);
-    set_slot_value(0xA3, -1);
+    set_slot_value(0xA3, -1); /* plays sound 0xA3 */
     obj_list_push_default(body);
-    body->unk58 = (BodyFunc)tick_timer_or_remove;
+    body->onHit = tick_timer_or_remove;
     ((struct UnkFlagBits *)&body->unk77)->bit6 = 0;
     ((struct UnkFlagBits *)&body->unk77)->bit5 = 0;
     body->vspeed = body->height;
@@ -952,13 +992,16 @@ void focus_follow_fall_step(struct ActorBody *body)
     }
 }
 
+/* Falls under gravity (0xA0 per frame, 8.8) until the body reaches its floor height, then idles; stops the
+   partner's kind-8 animation; once the record's flag113 is clear, moves the body to height 0xA0 above its
+   target position with action 2 and continues in step_motion_or_remove. */
 void body_fall_and_land(struct ActorBody *body)
 {
     struct ActorBody *partner;
-    s16 *thr;
+    struct BodyGround *ground;
 
-    thr = (s16 *)((u8 *)body + 0x8C);
-    if (body->targetZ > ((s32)thr[1] << 8) || (s16)body->speed > 0)
+    ground = &body->ground;
+    if (body->targetZ > ((s32)ground->floorZ << 8) || (s16)body->speed > 0)
     {
         if (body->tick != 0)
         {
@@ -967,10 +1010,10 @@ void body_fall_and_land(struct ActorBody *body)
         }
         body->speed = body->speed - 0xA0;
         body->z += (s16)body->speed;
-        if (body->z <= ((s32)thr[1] << 8))
+        if (body->z <= ((s32)ground->floorZ << 8))
         {
             body->speed = 0;
-            body->z = (s32)thr[1] << 8;
+            body->z = (s32)ground->floorZ << 8;
             sprite_set_action(body, 0, 0, 0);
         }
     }
@@ -978,7 +1021,7 @@ void body_fall_and_land(struct ActorBody *body)
     if ((partner->mode & 6) == 2 && partner->sprite->kind == 8)
     {
         sprite_set_action(partner, 0, 0, 0);
-        partner->state = 0;
+        partner->state = NULL;
     }
     if (body->data->flag113 == 0)
     {
@@ -992,20 +1035,24 @@ void body_fall_and_land(struct ActorBody *body)
     }
 }
 
-s32 tick_timer_or_remove(struct ActorBody *body, struct ActorBody *other)
+/* onHit handler of the 0x4147 block pose_offset_place puts over a hero's head, when `hitter` hits
+ * it: stops the hitter's vertical speed and counts the hit off (vspeed holds the hits left). The
+ * last hit breaks it (effect 0x22AB where it stands, sound 0x55) and releases it: returns -2.
+ * Otherwise it bounces up (speed and tick 0x300) with action 1 and sound 0x47: returns 0. */
+s32 tick_timer_or_remove(struct ActorBody *body, struct ActorBody *hitter)
 {
-    u16 timer;
+    u16 hitsLeft;
 
-    other->speed = 0;
-    timer = body->vspeed;
+    hitter->speed = 0;
+    hitsLeft = body->vspeed;
     if ((s16)body->vspeed > 0)
     {
-        body->vspeed = timer - 1;
+        body->vspeed = hitsLeft - 1;
     }
     if ((s16)body->vspeed == 0)
     {
         effect_spawn_at(0x22AB, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, 0);
-        set_slot_value(0x55, -1);
+        set_slot_value(0x55, -1); /* plays sound 0x55 */
         obj_release(body);
         return -2;
     }
@@ -1013,7 +1060,7 @@ s32 tick_timer_or_remove(struct ActorBody *body, struct ActorBody *other)
     body->tick = 0x300;
     sprite_set_action(body, 1, 0, 0);
     ((struct SpriteFlagBits *)&body->sprite->flags)->mode = 0;
-    set_slot_value(0x47, -1);
+    set_slot_value(0x47, -1); /* plays sound 0x47 */
     return 0;
 }
 

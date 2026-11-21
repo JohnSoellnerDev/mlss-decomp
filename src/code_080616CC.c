@@ -152,17 +152,18 @@ void set_slot_value(u32 id, s32 value);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, struct ActorObj *owner);
 u8 poll_spline_path(u32 obj, s32 *outX, s32 *outY);
 void heap_free_b(void *p);
+/* gParamTable is indexed by ActorObj.param9C (the variant, 0 or 1). */
 struct ParamEntry
 {
-    s32 dx;
+    s32 dx;       /* move target: pixels from the owner part's target (obj_begin_table_move) */
     s32 dy;
     s32 dh;
-    s32 speed;
-    s32 unk10;
-    s32 unk14;
-    s32 unk18;
-    s32 unk1C;
-    s32 duration;
+    s32 speed;    /* motionSpeed of that move */
+    s32 unk10;    /* timer after the move (obj_tick_action4_timer) */
+    s32 unk14;    /* jump height in pixels above the owner part's target (obj_begin_table_jump) */
+    s32 unk18;    /* motionSpeed of the jump */
+    s32 unk1C;    /* timer after the jump (obj_tick_wait_table_timer) */
+    s32 duration; /* frames between the effects obj_tick_counter_place spawns (paramA4) */
 };
 extern struct ParamEntry gParamTable[];
 extern u32 gUnk_03000E18;
@@ -178,6 +179,10 @@ void obj_begin_hover_at_base(struct ActorObj *obj);
 void obj_update_jump_arc(struct ActorObj *obj);
 void obj_action0_then_spawn(struct ActorObj *obj);
 
+// Once the current pose is done (pose flag 8): plays sound 0xD9 and sends obj (speed 0x380, flags
+// bit 5) to the point two thirds of the way from its owner's part target to the stored params point,
+// 0x30 pixels above that point's height, with action 4, spawns effect 0x1071 at its base and moves
+// on to obj_begin_hover_at_base.
 void obj_pose_active_aim_at_owner_part(struct ActorObj *obj)
 {
     struct ActorObj *owner;
@@ -203,13 +208,17 @@ void obj_pose_active_aim_at_owner_part(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation has ended: restarts sound 0xD9 and flies (speed 0x380, action 4) to a
+ * point a third of the way from the owner's part to obj's home point (param9C, paramA0, saved in
+ * pixels by obj_store_base_as_params), 0x30 above the home height. Spawns effect 0x1071 at the
+ * base point and goes on to obj_begin_idle_at_base. */
 void obj_begin_approach(struct ActorObj *obj)
 {
     struct ActorObj *owner;
     struct ActorPart *part;
     u8 *flags;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & 8) /* animation over */
     {
         sound_stop_song(0xD9);
         set_slot_value(0xD9, -1);
@@ -257,13 +266,17 @@ void obj_begin_idle_at_base(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation has ended: restarts sound 0xD9 and flies (speed 0x380, action 4) to the
+ * owner's part, 0x30 pixels above obj's home height, or 0x48 if obj_count_timer_then_move saw the
+ * owner off the ground (paramA8). Spawns effect 0x1071 at the base point and goes on to
+ * obj_begin_drop_to_base. */
 void obj_begin_move_to_owner(struct ActorObj *obj)
 {
     struct ActorObj *owner;
     struct ActorPart *part;
     u8 *flags;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & 8) /* animation over */
     {
         sound_stop_song(0xD9);
         set_slot_value(0xD9, -1);
@@ -463,6 +476,9 @@ void obj_tick_counter_place(struct ActorObj *obj)
     }
 }
 
+/* State: once no other state is busy, plays action 2, spawns the variant's effect (0x1254 for
+ * variant 0, else 0x126C) at obj's base point in pixels, plays sound 0x88 (set_slot_value queues
+ * the song) and goes on to obj_begin_table_move. */
 void base_moves_obj_wait_ready_place_sprite(struct ActorObj *obj)
 {
     if (is_state_busy() == 0)
@@ -483,26 +499,30 @@ void base_moves_obj_wait_ready_place_sprite(struct ActorObj *obj)
 }
 
 void obj_tick_action4_timer(struct ActorObj *obj);
+/* State: once the pose's animation ends, moves to the owner part's target plus the variant's
+ * gParamTable offset at its speed, plays action 3, restarts the effect counter (one effect every
+ * `duration` frames, see obj_tick_counter_place), starts sound 0xD8 (variant 0) or 0xD9 and waits
+ * for the move in obj_tick_action4_timer. */
 void obj_begin_table_move(struct ActorObj *obj)
 {
-    s32 idx;
+    s32 variant;
     struct ActorPart *part;
     u8 *flags;
 
     if (obj->pose->flags & 8)
     {
-        idx = obj->param9C;
-        obj->targetX = (part = obj->owner->part)->targetX + (gParamTable[idx].dx << 8);
-        obj->targetY = part->targetY + (gParamTable[idx].dy << 8);
-        obj->targetH = part->targetH + (gParamTable[idx].dh << 8);
+        variant = obj->param9C;
+        obj->targetX = (part = obj->owner->part)->targetX + (gParamTable[variant].dx << 8);
+        obj->targetY = part->targetY + (gParamTable[variant].dy << 8);
+        obj->targetH = part->targetH + (gParamTable[variant].dh << 8);
         flags = &obj->flags;
         *flags |= 0x20;
-        obj->motionSpeed = gParamTable[idx].speed;
+        obj->motionSpeed = gParamTable[variant].speed;
         obj->motionStart = 0;
         start_motion(obj);
         sprite_set_action(obj, 3, 0, 0);
         obj->paramA0 = 0;
-        obj->paramA4 = gParamTable[idx].duration;
+        obj->paramA4 = gParamTable[variant].duration;
         if (obj->param9C == 0)
         {
             set_slot_value(0xD8, -1);
@@ -515,22 +535,26 @@ void obj_begin_table_move(struct ActorObj *obj)
     }
 }
 
+/* State (after obj_timer_down_action5): keeps spawning the variant's trail effects
+ * (obj_tick_counter_place); once the pose's animation ends, jumps up to the variant's gParamTable
+ * height (unk14 pixels) above the owner part's target at its speed (unk18), plays action 6 and waits
+ * for the jump in obj_tick_wait_table_timer. */
 void obj_begin_table_jump(struct ActorObj *obj)
 {
-    s32 idx;
+    s32 variant;
     struct ActorPart *part;
     u8 *flags;
 
     obj_tick_counter_place(obj);
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & 8) /* animation over */
     {
-        idx = obj->param9C;
+        variant = obj->param9C;
         obj->targetX = (part = obj->owner->part)->targetX;
         obj->targetY = part->targetY;
-        obj->targetH = part->targetH + (gParamTable[idx].unk14 << 8);
+        obj->targetH = part->targetH + (gParamTable[variant].unk14 << 8);
         flags = &obj->flags;
-        *flags |= 0x20;
-        obj->motionSpeed = gParamTable[idx].unk18;
+        *flags |= 0x20; /* start_motion: targetX/Y/H are a position, not an offset */
+        obj->motionSpeed = gParamTable[variant].unk18;
         obj->motionStart = 0;
         start_motion(obj);
         obj_list_push_default(obj);
@@ -652,9 +676,15 @@ void obj_slot_notify_action(struct ActorObj *obj)
 
 void obj_update_scroll_left(struct ActorObj *obj);
 void obj_action0_to_idle_b(struct ActorObj *obj);
+/* State: once the throw animation is done (pose flag 8), plays the throw effect, starts the
+   follow-up action (5, or 9 when param9C is set) and spawns a projectile (kind 0x40CB, or 0x40CE
+   when paramA0 is set) beside the actor. The projectile flies left in a straight line from where
+   it starts towards a target picked by param9C: 0/1 the owner's part's target, 2/3/other the
+   screen points (0x30, 0x30)/(0x30, 0x68)/(0x30, 0x98) (obj_update_scroll_left). The actor then
+   waits for its animation to end (obj_action0_to_idle_b); a sound marks the throw. */
 void obj_spawn_child_sprite(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *shot;
 
     if (obj->pose->flags & 8)
     {
@@ -668,50 +698,52 @@ void obj_spawn_child_sprite(struct ActorObj *obj)
         {
             sprite_set_action(obj, 9, 0, 0);
         }
+        /* spawned 0x11 px to the left and 0x13 px up, facing the way the actor faces */
         if (obj->paramA0 == 0)
         {
-            child = obj_spawn(obj->part, 0x40CB, obj->baseX / 0x100 - 0x11, obj->baseY / 0x100 + 2,
-                              obj->baseH / 0x100 + 0x13, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            shot = obj_spawn(obj->part, 0x40CB, obj->baseX / 0x100 - 0x11, obj->baseY / 0x100 + 2,
+                             obj->baseH / 0x100 + 0x13, ((u32)obj->pose->unk11 << 25) >> 31, 1);
         }
         else
         {
-            child = obj_spawn(obj->part, 0x40CE, obj->baseX / 0x100 - 0x11, obj->baseY / 0x100,
-                              obj->baseH / 0x100 + 0x13, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            shot = obj_spawn(obj->part, 0x40CE, obj->baseX / 0x100 - 0x11, obj->baseY / 0x100,
+                             obj->baseH / 0x100 + 0x13, ((u32)obj->pose->unk11 << 25) >> 31, 1);
         }
-        obj->child = child;
-        ((struct Flags78Bits *)&child->dir)->kind = 1;
-        obj_child_flags(obj, child);
-        child->handler68 = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->handler5C = 0;
-        child->handler60 = 0;
-        child->handler64 = 0;
-        child->byte74 = 3;
-        child->dx = child->baseX / 0x100;
-        child->dy = child->baseY / 0x100;
+        obj->child = shot;
+        ((struct Flags78Bits *)&shot->dir)->kind = 1;
+        obj_child_flags(obj, shot);
+        shot->handler68 = on_arrive;
+        shot->link = obj->link;
+        shot->owner = obj->owner;
+        obj_list_push_default(shot);
+        shot->handler5C = 0;
+        shot->handler60 = 0;
+        shot->handler64 = 0;
+        shot->byte74 = 3;
+        /* start point in pixels; targetX/Y become the flight vector (8.8 fixed point) */
+        shot->dx = shot->baseX / 0x100;
+        shot->dy = shot->baseY / 0x100;
         switch (obj->param9C)
         {
         case 0:
         case 1:
-            child->targetX = obj->owner->part->targetX + child->dx * -0x100;
-            child->targetY = obj->owner->part->targetY + child->dy * -0x100;
+            shot->targetX = obj->owner->part->targetX + shot->dx * -0x100;
+            shot->targetY = obj->owner->part->targetY + shot->dy * -0x100;
             break;
         case 2:
-            child->targetX = child->dx * -0x100 + 0x3000;
-            child->targetY = child->dy * -0x100 + 0x3000;
+            shot->targetX = shot->dx * -0x100 + 0x3000;
+            shot->targetY = shot->dy * -0x100 + 0x3000;
             break;
         case 3:
-            child->targetX = child->dx * -0x100 + 0x3000;
-            child->targetY = 0x6800 + child->dy * -0x100;
+            shot->targetX = shot->dx * -0x100 + 0x3000;
+            shot->targetY = 0x6800 + shot->dy * -0x100;
             break;
         default:
-            child->targetX = child->dx * -0x100 + 0x3000;
-            child->targetY = 0x9800 + child->dy * -0x100;
+            shot->targetX = shot->dx * -0x100 + 0x3000;
+            shot->targetY = 0x9800 + shot->dy * -0x100;
             break;
         }
-        child->state = obj_update_scroll_left;
+        shot->state = obj_update_scroll_left;
         obj->state = obj_action0_to_idle_b;
         if (obj->paramA0 == 0)
         {
@@ -724,16 +756,20 @@ void obj_spawn_child_sprite(struct ActorObj *obj)
     }
 }
 
+// Once the object's animation ends (pose flag 8): plays action 0xB and effect 0xC8E and
+// throws a child object 0x40CC from 0x18 units above itself to the point (param9C, paramA0).
+// The child flies along a parabola (obj_update_jump_arc): the flight lasts one frame per 0x80
+// units of distance (0x100 when it is 0x3000 or more), and the arc peaks 0x1E (0x50) units high.
 void obj_spawn_child_glide(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 dx8;
-    s32 dy7;
+    s32 dx;
+    s32 dy;
     s32 dist;
-    s32 pathLen;
-    s32 frames;
-    s32 biased;
-    s32 t;
+    s32 duration;
+    s32 curve;
+    s32 rounded;
+    s32 half;
 
     if (obj->pose->flags & 8)
     {
@@ -752,41 +788,45 @@ void obj_spawn_child_glide(struct ActorObj *obj)
         child->handler60 = 0;
         child->handler64 = 0;
         child->byte74 = 3;
+
+        // Start (dx, dy, dh, whole units) and target (8.8 fixed point) of the flight.
         child->targetX = obj->param9C << 8;
         child->targetY = obj->paramA0 << 8;
         child->dx = child->baseX / 0x100;
         child->dy = child->baseY / 0x100;
         child->dh = child->baseH / 0x100;
-        dx8 = child->targetX - child->baseX;
-        dy7 = child->targetY - child->baseY;
-        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx8 * dx8 + dy7 * dy7);
+        dx = child->targetX - child->baseX;
+        dy = child->targetY - child->baseY;
+        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+
+        // Height = peak - curve * (timer + 6 - duration / 2)^2, so curve = peak / half^2.
         if (dist <= 0x2FFF)
         {
-            pathLen = dist / 0x80;
-            t = pathLen / 2 - 5;
-            frames = 0x1E00 / (t * t);
+            duration = dist / 0x80;
+            half = duration / 2 - 5;
+            curve = 0x1E00 / (half * half);
             child->targetH = 0x1E;
         }
         else
         {
-            biased = dist;
-            if (biased < 0)
+            rounded = dist;
+            if (rounded < 0)
             {
-                biased += 0xFF;
+                rounded += 0xFF;
             }
-            pathLen = biased >> 8;
-            t = (((s32)(pathLen + ((u32)biased >> 31))) >> 1) - 5;
-            frames = 0x5000 / (t * t);
+            duration = rounded >> 8;
+            half = (((s32)(duration + ((u32)rounded >> 31))) >> 1) - 5;
+            curve = 0x5000 / (half * half);
             child->targetH = 0x50;
         }
-        if (frames == 1)
+        if (curve == 1)
         {
-            frames = 2;
+            curve = 2;
         }
-        child->param9C = -frames;
-        child->paramA0 = pathLen;
-        child->paramA4 = dx8;
-        child->paramA8 = dy7;
+        child->param9C = -curve;
+        child->paramA0 = duration;
+        child->paramA4 = dx;
+        child->paramA8 = dy;
         child->timer = 0;
         child->state = obj_update_jump_arc;
         obj->state = obj_action0_then_spawn;
@@ -794,44 +834,52 @@ void obj_spawn_child_glide(struct ActorObj *obj)
     }
 }
 
+// Waits until the object thrown by obj_spawn_child_glide is gone (obj->child is NULL again), then
+// plays sound 0xAE and effect 0xC95 and spawns object 0x4011 with action 0xC where it landed
+// (param9C, paramA0), facing the way obj's sprite does, as obj's new child. Goes on to wait_for_index.
 void obj_spawn_child_when_none(struct ActorObj *obj)
 {
-    struct ActorObj *child;
-    struct ActorObj *oldChild;
+    struct ActorObj *spawned;
+    struct ActorObj *thrown;
 
-    oldChild = obj->child;
-    if (oldChild == 0)
+    thrown = obj->child;
+    if (thrown == 0)
     {
         set_slot_value(0xAE, -1);
         effect_spawn_at(0xC95, obj->param9C, obj->paramA0 + 2, obj->baseH / 256, obj);
-        child = obj_spawn(obj->part, 0x4011, obj->param9C, obj->paramA0, obj->baseH,
-                          ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        sprite_set_action(child, 0xC, 0, 0);
-        obj->child = child;
-        ((struct Flags78Bits *)&child->dir)->kind = 1;
-        obj_child_flags(obj, child);
-        child->handler68 = on_arrive;
-        child->owner = obj->owner;
-        child->link = (s32)oldChild;
+        spawned = obj_spawn(obj->part, 0x4011, obj->param9C, obj->paramA0, obj->baseH,
+                            ((u32)obj->pose->unk11 << 25) >> 31 /* unk11 bit 6: mirrored */, 1);
+        sprite_set_action(spawned, 0xC, 0, 0);
+        obj->child = spawned;
+        ((struct Flags78Bits *)&spawned->dir)->kind = 1;
+        obj_child_flags(obj, spawned);
+        spawned->handler68 = on_arrive;
+        spawned->owner = obj->owner;
+        spawned->link = (s32)thrown; /* 0 */
         obj->timer = 1;
         obj->state = wait_for_index;
     }
 }
 
+/* One frame of the flight set up by obj_spawn_child_glide: x and y go linearly from the start
+ * (dx, dy) by the distance (paramA4, paramA8) over paramA0 frames, the height follows the parabola
+ * peak (targetH) + curve (param9C, negative) * (frame + 6 - paramA0 / 2)^2 above dh, and the pose's
+ * unkC turns by 0x800. Once the height drops below 4 units, the timer is set to -1 and the object
+ * is released. */
 void obj_update_jump_arc(struct ActorObj *obj)
 {
-    s32 t;
-    s32 sq;
+    s32 fromPeak;
+    s32 drop;
 
     obj->pose->unkC += 0x800;
     obj->posX = (obj->paramA4 * *(s16 *)&obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posY = (obj->paramA8 * *(s16 *)&obj->timer) / obj->paramA0 + (obj->dy << 8);
-    t = *(s16 *)&obj->timer;
-    t += 6;
-    t -= obj->paramA0 / 2;
-    sq = t * t;
-    sq = obj->param9C * sq;
-    obj->posH = sq + (obj->targetH << 8) + (obj->dh << 8);
+    fromPeak = *(s16 *)&obj->timer;
+    fromPeak += 6;
+    fromPeak -= obj->paramA0 / 2;
+    drop = fromPeak * fromPeak;
+    drop = obj->param9C * drop;
+    obj->posH = drop + (obj->targetH << 8) + (obj->dh << 8);
     obj->timer++;
     if (obj->posH <= 0x3FF)
     {
@@ -1027,9 +1075,14 @@ u32 obj_try_link_slot(struct ActorObj *obj, struct ActorObj *partner);
 u32 obj_release_link_idle(struct ActorObj *obj, struct ActorObj *partner);
 void obj_wait_timer_sprite_notify(struct ActorObj *obj);
 
+/* Once the current animation has finished (pose flag 8): joins the contact list, with
+ * obj_release_link_idle (handler58) and obj_try_link_slot (handler60) as its callbacks, starts
+ * moving to the owner's target point (its own height kept) at speed 0x199, plays action 9,
+ * spawns effect 0xED2 at its base and starts sound 0x81. obj_wait_timer_sprite_notify then
+ * repeats the effect until the move ends. */
 void obj_begin_linked_wait(struct ActorObj *obj)
 {
-    struct ActorPart *part;
+    struct ActorPart *ownerPart;
     u8 *flags;
 
     if (obj->pose->flags & 8)
@@ -1037,8 +1090,8 @@ void obj_begin_linked_wait(struct ActorObj *obj)
         obj_list_push_default(obj);
         obj->handler58 = (s32 (*)(struct ActorObj *, u32))obj_release_link_idle;
         obj->handler60 = (s32 (*)(struct ActorObj *))obj_try_link_slot;
-        obj->targetX = (part = obj->owner->part)->targetX;
-        obj->targetY = part->targetY;
+        obj->targetX = (ownerPart = obj->owner->part)->targetX;
+        obj->targetY = ownerPart->targetY;
         obj->targetH = obj->baseH;
         flags = &obj->flags;
         *flags |= 0x20;

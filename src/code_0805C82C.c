@@ -1,17 +1,18 @@
 #include "global.h"
+// A map tile animation (map_anim2_start_0805E018 starts one, map_anim_slots_update plays it).
 struct MapAnimSlot
 {
-    u8 state;
+    u8 state;      // 0: free; 0x10: waiting for frameTimer, 0x20: next frame due; low nibble: mode (0 loop, 1 ping-pong, 2 once)
     u8 filler01;
-    u16 animId;
-    u8 unk04;
-    u8 filler05;
-    u8 frame;
-    u8 timer;
-    u8 unk08;
+    u16 vramTile;  // first tile it overwrites, from 0x06004000
+    u8 tileCount;  // tiles per frame
+    u8 frameTimer; // frames left on the current frame
+    u8 frameCount;
+    u8 curFrame;
+    u8 animFlags;  // bit 0: ping-pong running backwards
     u8 filler09;
-    u16 x[16];
-    u16 y[16];
+    u16 frameTiles[16]; // gObjectTilesets index of each frame
+    u16 frameTimes[16]; // duration of each frame
     u16 filler4A;
 };
 struct MapLoaderObj
@@ -69,6 +70,16 @@ struct SysHeadPal
     u8 filler0[2];
     u16 palDirty;
 };
+struct MetatileMapObj
+{
+    u8 filler0[0x1E];
+    u16 selector;
+    u8 filler20[0x94 - 0x20];
+    u16 *bgBuf;
+    u16 *tilemap;
+    u8 filler9C[0xA8 - 0x9C];
+    u16 (*metatiles)[4];
+};
 
 
 void heap_free_b(void *p);
@@ -78,7 +89,8 @@ void heap_free_a(void *p);
 void set_0d80_slot(void (*fn)(void), u32 slot);
 void task_remove(void *node, u32 kind);
 void cpu_fast_set(const void *src, void *dst, u32 control);
-void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index);
+typedef u32 MetatileId;
+void blit_metatile(u8 *obj, u16 layer, s16 col, u16 row, MetatileId tileArg);
 extern u16 *gUnk_03000E04;
 extern void *gUnk_03000E00;
 extern void *gUnk_03000E08;
@@ -668,38 +680,52 @@ static inline const u8 *map_palette_set(void)
     return gMapPalettesA;
 }
 
-NONMATCH("asm/code_0805C82C/upload_map_palettes.s", void upload_map_palettes(u8 *obj))
+/* Loads the current map's BG palettes (from gMapPalettesB in link mode, else gMapPalettesA; the
+   set starts with a table of offsets, picked by gRomBlockTable[gUnk_03000DD0[5]]) into the BG
+   palette shadow gUnk_02000080. Each of palettes 0-14 is copied only if one of its colours 1-15
+   isn't black, so palettes the map leaves empty keep what's there. Then all 15 are marked dirty. */
+void upload_map_palettes(u8 *obj)
 {
-    const u8 *set = map_palette_set();
-    const u8 *palette;
-    u16 row;
-    u16 col;
-    u8 count;
-    u32 rowOff;
-    u32 next;
+  register const u8 *set asm("r2");
+  const u8 *palettes;
+  u16 pal;
+  u16 color;
+  u8 used;
 
-    palette = set + ((const u32 *)set)[gRomBlockTable[gUnk_03000DD0[5]]];
-    row = 0;
-    do
+  if ((gSys[0x888] & 6) != 2) /* not in link mode */
+  {
+    goto single_player;
+  }
+  set = gMapPalettesB;
+  goto have_set;
+single_player:
+  set = gMapPalettesA;
+
+have_set:
+  palettes = set + ((const u32 *)set)[gRomBlockTable[gUnk_03000DD0[5]]];
+
+  for (pal = 0; pal < 15; pal++)
+  {
+    /* 16 colours of 2 bytes per palette; colour 0 is transparent */
+    used = 0;
+    for (color = 1; color < 16; color++)
     {
-        next = row + 1;
+      if ((palettes[(pal * 32) + (color * 2)] != 0) || (palettes[((pal * 32) + (color * 2)) + 1] != 0))
+      {
+        used++;
+      }
+    }
 
-        count = 0;
-        rowOff = row << 5;
-        for (col = 1; col <= 0xF; col++)
-        {
-            const u8 *cell = palette + (col * 2 + rowOff);
+    if (used != 0)
+    {
+      const u8 *src = palettes + (pal * 32);
+      register u8 *shadow asm("r2") = gUnk_02000080;
+      cpu_fast_set(src, (u8 *)((pal * 32) + (u32)shadow), 32 / 4);
+    }
+  }
 
-            if (cell[0] != 0 || cell[1] != 0)
-                count++;
-        }
-        if (count != 0)
-            cpu_fast_set(palette + rowOff, gUnk_02000080 + rowOff, 8);
-        row = next;
-    } while ((u16)next <= 0xE);
-    ((struct SysHeadPal *)gSys)->palDirty = 0x7FFF;
+  ((struct SysHeadPal *)gSys)->palDirty = 0x7FFF;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805C82C/load_layer_columns.s", void load_layer_columns(void))
 
@@ -740,38 +766,42 @@ NONMATCH("asm/code_0805C82C/draw_layer_metatiles.s", void draw_layer_metatiles(u
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0805C82C/blit_metatile.s", void blit_metatile(u8 *obj, u16 a, s16 flags, u16 c, u16 index))
+/*
+ * Draws metatile `tileArg` (4 tilemap entries: top-left, top-right, bottom-left, bottom-right) at
+ * metatile column col, row row into BG layer `layer` of the map's tilemap buffer (obj is a
+ * struct MetatileMapObj); the same as draw_metatile_2x2. A layer is 64 x 32 tiles (0x800 entries):
+ * two 32 x 32 screen blocks side by side, so bit 4 of col picks the right one (+0x400) and the low
+ * 4 bits of col and row the place in it.
+ */
+void blit_metatile(u8 *obj, u16 layer, s16 col, u16 row, MetatileId tileArg)
 {
-    u8 *recTbl = *(u8 **)(obj + 0xA8);
+    register u32 y asm("r5") = row;
+    u16 tile = tileArg;
+    u16 (*metatiles)[4] = ((struct MetatileMapObj *)obj)->metatiles;
     u16 top;
     u16 bottom;
-    u16 *rec;
 
-    if ((flags & 0x10) == 0)
+    if ((col & 0x10) == 0)
     {
-        u32 base = a << 11;
-        u32 yl = c & 0xF;
-        u32 xl = (flags & 0xF) << 1;
-
-        top = base + (yl << 6) + xl;
-        bottom = base + (((yl << 1) + 1) << 5) + xl;
+        int mask = 0xF;
+        int base = layer << 11;
+        int ym = y & mask;
+        top = base + (ym << 6) + ((col & mask) << 1);
+        bottom = base + (((ym << 1) + 1) << 5) + ((col & mask) << 1);
     }
     else
     {
-        u32 base = a << 11;
-        u32 yl = c & 0xF;
-        u32 xl = (flags & 0xF) << 1;
-
-        top = base + (yl << 6) + xl + 0x400;
-        bottom = base + (((yl << 1) + 1) << 5) + xl + 0x400;
+        int mask = 0xF;
+        int base = layer << 11;
+        int ym = y & mask;
+        top = base + (ym << 6) + ((col & mask) << 1) + 0x400;
+        bottom = base + (((ym << 1) + 1) << 5) + ((col & mask) << 1) + 0x400;
     }
-    rec = (u16 *)(recTbl + (index << 3));
-    *(u16 *)(*(u8 **)(obj + 0x94) + (top << 1)) = rec[0];
-    *(u16 *)(*(u8 **)(obj + 0x94) + (top << 1) + 2) = rec[1];
-    *(u16 *)(*(u8 **)(obj + 0x94) + (bottom << 1)) = rec[2];
-    *(u16 *)(*(u8 **)(obj + 0x94) + (bottom << 1) + 2) = rec[3];
+    ((struct MetatileMapObj *)obj)->bgBuf[top] = metatiles[tile][0];
+    ((struct MetatileMapObj *)obj)->bgBuf[top + 1] = metatiles[tile][1];
+    ((struct MetatileMapObj *)obj)->bgBuf[bottom] = metatiles[tile][2];
+    ((struct MetatileMapObj *)obj)->bgBuf[bottom + 1] = metatiles[tile][3];
 }
-END_NONMATCH
 ASM_FUNC("asm/code_0805C82C/map_anim_slots_update.s", void map_anim_slots_update(u8 *obj))
 
 
@@ -783,16 +813,16 @@ void anim_slots_clear(struct MapLoaderObj *obj)
     for (i = 0; i < 0x20; i++)
     {
         obj->anim[i].state = 0;
-        obj->anim[i].animId = 0;
-        obj->anim[i].unk04 = 0;
-        obj->anim[i].filler05 = 0;
-        obj->anim[i].frame = 0;
-        obj->anim[i].timer = 0;
-        obj->anim[i].unk08 = 0;
+        obj->anim[i].vramTile = 0;
+        obj->anim[i].tileCount = 0;
+        obj->anim[i].frameTimer = 0;
+        obj->anim[i].frameCount = 0;
+        obj->anim[i].curFrame = 0;
+        obj->anim[i].animFlags = 0;
         for (j = 0; j < 0x10; j++)
         {
-            obj->anim[i].x[j] = 0;
-            obj->anim[i].y[j] = 0;
+            obj->anim[i].frameTiles[j] = 0;
+            obj->anim[i].frameTimes[j] = 0;
         }
     }
 }
@@ -801,11 +831,16 @@ ASM_FUNC("asm/code_0805C82C/anim_slots_load.s", void anim_slots_load(struct MapL
 
 
 extern const void *gAnimListTable[];
-void map_anim2_start_0805E018(struct MapLoaderObj *obj, u16 animId)
+// Starts map tile animation entryId of the current map's list (gAnimListTable[gUnk_03000DD0[7]])
+// in the first free one of the 16 slots: its VRAM tile, tile count, play mode and the frame list
+// (tileset index and duration per frame, the last one marked by bit 15). State 0x20 makes
+// map_anim_slots_update upload the first frame. The enable bit (0x40) is read from the entry at the
+// slot's index, not entryId's.
+void map_anim2_start_0805E018(struct MapLoaderObj *obj, u16 entryId)
 {
     u8 slot = 0;
-    u8 i;
-    u8 j;
+    u8 count;
+    u8 n;
 
     if (obj->anim[0].state != 0)
     {
@@ -819,34 +854,34 @@ void map_anim2_start_0805E018(struct MapLoaderObj *obj, u16 animId)
 
     if (slot <= 0xF)
     {
-        u8 variant = gUnk_03000DD0[7];
-        const struct MapAnimEntry *list = (const struct MapAnimEntry *)gAnimListTable[variant];
+        u8 mapAnims = gUnk_03000DD0[7];
+        const struct MapAnimEntry *list = (const struct MapAnimEntry *)gAnimListTable[mapAnims];
 
         if (list != NULL)
         {
-            u8 flag = list[slot].flag;
+            u8 enable = list[slot].flag;
 
-            if (flag & 0x40)
+            if (enable & 0x40)
             {
-                const struct MapAnimChunk *chunk;
+                const struct MapAnimChunk *frames;
 
-                obj->anim[slot].state = (((u32)list[animId].type << 30) >> 30) + 0x20;
-                obj->anim[slot].animId = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
-                obj->anim[slot].unk04 = ((u32)list[animId].unk2 << 23) >> 27;
+                obj->anim[slot].state = (((u32)list[entryId].type << 30) >> 30) + 0x20;
+                obj->anim[slot].vramTile = (*(const u32 *)&list[entryId] >> 10) & 0x3FF;
+                obj->anim[slot].tileCount = ((u32)list[entryId].unk2 << 23) >> 27;
 
-                chunk = (const struct MapAnimChunk *)list[animId].chunks;
-                i = 0;
+                frames = (const struct MapAnimChunk *)list[entryId].chunks;
+                count = 0;
                 do
                 {
-                    j = i;
-                    obj->anim[slot].x[j] = chunk[j].x;
-                    obj->anim[slot].y[j] = chunk[j].y & 0x7FFF;
-                    i = (u8)(i + 1);
-                } while (!(chunk[j].y & 0x8000));
+                    n = count;
+                    obj->anim[slot].frameTiles[n] = frames[n].x;
+                    obj->anim[slot].frameTimes[n] = frames[n].y & 0x7FFF;
+                    count = (u8)(count + 1);
+                } while (!(frames[n].y & 0x8000));
 
-                obj->anim[slot].frame = i;
-                obj->anim[slot].timer = 0;
-                obj->anim[slot].unk08 = 0;
+                obj->anim[slot].frameCount = count;
+                obj->anim[slot].curFrame = 0;
+                obj->anim[slot].animFlags = 0;
             }
         }
     }

@@ -121,34 +121,49 @@ struct TextChild
     const void *desc;
 };
 
+/* A box's open/close animation, drawn as window 0 (window_anim_step). */
 struct AnimWin
 {
-    u8 mode;
-    s8 count;
-    u8 base0;
-    u8 base1;
-    u8 speed0;
-    u8 speed1;
+    u8 flags; /* bit 0: closing */
+    s8 step;  /* 0: idle, else the step (1-8) of the animation */
+    u8 x;     /* the box's rectangle in pixels */
+    u8 y;
+    u8 width;
+    u8 height;
 };
 
+/* DISPCNT in the buffered I/O copy (gBgRequestPtr). */
 struct BgReqBits
 {
     u8 filler0;
     u8 lo5 : 5;
-    u8 bit5 : 1;
+    u8 win0On : 1; /* DISPCNT_WIN0_ON */
     u8 rest : 2;
 };
 
-struct Track
+/* Window bounds in the buffered I/O copy (WIN0H at 0x40, WIN0V at 0x44). */
+struct BgReqWin
+{
+    u8 filler0[0x40];
+    u8 win0Right;
+    u8 win0Left;
+    u8 filler42[2];
+    u8 win0Bottom;
+    u8 win0Top;
+};
+
+/* The text printer (struct TextPrinter in sound_0819A4F0.c; voice_setup_params sets it up,
+   voice_set_data_ptr starts a string, track_run draws its next glyph). */
+struct TextPrinter
 {
     u8 filler0[8];
-    u8 *cursor;
+    u8 *text; /* the next byte to read */
 };
 
 struct SysBusy
 {
     u8 filler0[0x888];
-    u8 busy;
+    u8 busy; /* bits 1-2: link mode (1: serial link, see serial_link_enable) */
 };
 
 struct WinObj
@@ -161,10 +176,10 @@ struct WinObj
     u16 unk22;
     u16 unk24;
     u16 unk26;
-    u8 *unk28;
+    u8 *unk28;                  /* menu screen: 32-byte aligned tile buffer the item text is drawn into */
     u8 filler2C[0xC];
-    struct Track *unk38;
-    u8 unk3C;
+    struct TextPrinter *unk38;  /* menu screen: its text printer */
+    u8 unk3C;                   /* menu screen: bits 1-3 language (struct BoxFlags) */
     u8 filler3D[3];
     u8 *unk40;
     u8 *unk44;
@@ -244,59 +259,58 @@ void *window_sub_block_init(void *obj, u8 kind, u32 data)
 
 ASM_FUNC("asm/code_08051AE0/window_place.s", void window_place(void *window, void *data, u32 x, u32 y, u32 w, u32 h, u32 flags))
 
-NONMATCH("asm/code_08051AE0/window_anim_step.s", void window_anim_step(struct AnimWin *win))
+/* One frame of a box opening or closing: sets window 0 to the box's rectangle scaled about its
+ * centre by step/8 (step 1-8). Opening counts up and turns window 0 off once the box is fully
+ * open; closing counts down and turns off window 0 and BG1 once it reaches 0. */
+void window_anim_step(struct AnimWin *win)
 {
-    s32 countdown;
-    s32 prod;
+    s32 step;
     s32 next;
-    u32 speedA;
-    u8 scaledA;
-    u8 scaledB;
-    u8 mode;
-    u8 count;
+    u32 width;
+    u8 halfWidth;
+    u8 halfHeight;
+    u8 closing;
+    u8 oldStep;
 
-    if (win->count == 0)
+    if (win->step == 0)
     {
         return;
     }
-    speedA = win->speed0;
-    countdown = win->count;
-    prod = speedA * countdown;
-    scaledA = prod / 0x10;
-    prod = win->speed1 * countdown;
-    scaledB = prod / 0x10;
+    width = win->width;
+    step = win->step;
+    halfWidth = (s32)(width * step) / 16;
+    halfHeight = (win->height * step) / 16;
 
-    gBgRequestPtr[0x40] = scaledA + ((speedA >> 1) + win->base0);
-    gBgRequestPtr[0x41] = ((win->speed0 >> 1) + win->base0) - scaledA;
-    gBgRequestPtr[0x44] = scaledB + ((win->speed1 >> 1) + win->base1);
-    gBgRequestPtr[0x45] = ((win->speed1 >> 1) + win->base1) - scaledB;
+    ((struct BgReqWin *)gBgRequestPtr)->win0Right = halfWidth + ((width >> 1) + win->x);
+    ((struct BgReqWin *)gBgRequestPtr)->win0Left = ((win->width >> 1) + win->x) - halfWidth;
+    ((struct BgReqWin *)gBgRequestPtr)->win0Bottom = halfHeight + ((win->height >> 1) + win->y);
+    ((struct BgReqWin *)gBgRequestPtr)->win0Top = ((win->height >> 1) + win->y) - halfHeight;
 
-    mode = win->mode & 1;
-    if (mode == 0)
+    closing = win->flags & 1;
+    if (closing == 0)
     {
-        count = win->count;
-        if (win->count == 8)
+        oldStep = win->step;
+        if (win->step == 8)
         {
-            ((struct BgReqBits *)gBgRequestPtr)->bit5 = 0;
-            win->count = mode;
+            ((struct BgReqBits *)gBgRequestPtr)->win0On = 0;
+            win->step = closing;
         }
         else
         {
-            win->count = count + 1;
+            win->step = oldStep + 1;
         }
     }
     else
     {
-        next = (u8)win->count - 1;
-        win->count = next;
+        next = (u8)win->step - 1;
+        win->step = next;
         if ((next << 24) == 0)
         {
-            ((struct BgReqBits *)gBgRequestPtr)->bit5 = 0;
-            *(u16 *)0x02000000 &= 0xFDFF;
+            ((struct BgReqBits *)gBgRequestPtr)->win0On = 0;
+            REG_BUF_DISPCNT &= ~DISPCNT_BG1_ON;
         }
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08051AE0/textbox_open.s", void textbox_open(struct TextBox *tb, u8 prio, u32 tag, u32 mode))
 {
@@ -1041,42 +1055,50 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08051AE0/apply_display_flags.s", u32 apply_display_flags(struct TextBox *tb))
 
-void load_tiles_and_voice(struct WinObj *obj, u32 flag)
+/* Draws the text of the menu's 4 items in the current language (obj->unk3C bits 1-3) into the tile
+   buffer obj->unk28 (0x2000 bytes: one 16-pixel row of 32 tiles per item) and copies it to VRAM
+   tile 0x80 (0x06001000): through the DMA queue when `queue` is set, at once otherwise. Item 2 is
+   drawn in colour 7 instead of 5 unless the link mode is 1. A FF 0B 01 control code at the cursor
+   is skipped. (voice_setup_params = text printer init, voice_set_data_ptr = start a string,
+   track_run = draw the next glyph, 0 at the end; gVoiceListTable = each item's string per language.) */
+void load_tiles_and_voice(struct WinObj *obj, u32 queue)
 {
-    s32 voice;
-    u32 last;
+    s32 item;
+    u32 ch;
 
     ((void (*)(u32, u8 *, u32))gMemRoutines)(0, obj->unk28, 0x2000);
-    voice = 0;
+    item = 0;
     do
     {
-        if ((((struct SysBusy *)gSys)->busy & 6) != 2 && voice == 2)
+        /* printer, tiles, line width 32 tiles, margins 4/0, spacing 0/1, space width 2, colour, font 0 */
+        if ((((struct SysBusy *)gSys)->busy & 6) != 2 && item == 2)
         {
-            voice_setup_params(obj->unk38, obj->unk28, 0x20, 4, 0, 0, 1, voice, 7, 0);
+            voice_setup_params(obj->unk38, obj->unk28, 0x20, 4, 0, 0, 1, item, 7, 0);
         }
         else
         {
             voice_setup_params(obj->unk38, obj->unk28, 0x20, 4, 0, 0, 1, 2, 5, 0);
         }
-        voice_set_data_ptr(obj->unk38, 0, (u8)((voice << 4) + 2),
-                           ((u32 *)gVoiceListTable[voice])[((u32)obj->unk3C << 28) >> 29] + 2);
-        voice++;
+        /* x 0, y = item * 16 + 2; the string's 2-byte header is skipped */
+        voice_set_data_ptr(obj->unk38, 0, (u8)((item << 4) + 2),
+                           ((u32 *)gVoiceListTable[item])[((u32)obj->unk3C << 28) >> 29] + 2);
+        item++;
         do
         {
-            struct Track *track = obj->unk38;
-            u8 *cursor = track->cursor;
+            struct TextPrinter *printer = obj->unk38;
+            u8 *text = printer->text;
 
-            if (cursor[0] == 0xFF && cursor[1] == 0xB && cursor[2] == 1)
+            if (text[0] == 0xFF && text[1] == 0xB && text[2] == 1)
             {
-                track->cursor = cursor + 3;
+                printer->text = text + 3;
             }
-            last = (u16)track_run(obj->unk38);
-        } while (last != 0);
-    } while (voice <= 3);
+            ch = (u16)track_run(obj->unk38);
+        } while (ch != 0);
+    } while (item <= 3);
 
-    if (flag != 0)
+    if (queue != 0)
     {
-        dma_copy_or_queue(obj->unk28, (void *)0x06001000, 0x2000, 0x20, last);
+        dma_copy_or_queue(obj->unk28, (void *)0x06001000, 0x2000, 0x20, ch);
     }
     else
     {

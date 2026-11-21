@@ -86,8 +86,8 @@ struct SceneObj
     s32 unk8C;
     u8 filler90[0x92 - 0x90];
     s16 unk92;
-    s32 unk94;
-    s32 orbitAngle;
+    s32 unk94;          /* orbit: added to orbitAngle each frame */
+    s32 orbitAngle;     /* orbit: bits 8-15 index the sine/cosine tables */
     s32 unk9C;
     s32 unkA0;
     u8 filler0A4[0xA8 - 0xA4];
@@ -214,9 +214,14 @@ void obj_timer_anim_6(struct SceneObj *obj);
 void obj_place_part_mode_anim7(struct SceneObj *obj);
 void obj_scene_move_or_stop(struct SceneObj *obj);
 
+/* Orbit step: moves obj along its orbit (obj_update_orbit_pos). Each full lap (orbitAngle past
+   +-0x10000) wraps the angle, counts the lap in timer (after two it moves on to
+   obj_start_scene_move) and stops the song gWaveSlotTable gives for unkB0. On the first frame it
+   sets the world's link callback to obj_anim1_for_slot. Every 6 frames it spawns effect 0x2677 on
+   the first half of the circle (angle 0-0x7F) or 0x2680 on the second. */
 void obj_wave_step_b(struct SceneObj *obj)
 {
-    u32 part;
+    u32 effect;
     s32 angle;
 
     obj_update_orbit_pos(obj);
@@ -241,34 +246,37 @@ void obj_wave_step_b(struct SceneObj *obj)
     if (obj->stepY == 0)
     {
         angle = (obj->orbitAngle / 0x100) & 0xFF;
-        part = 0x2680;
+        effect = 0x2680;
         if (angle <= 0x7F)
         {
-            part -= 9;
+            effect -= 9;
         }
-        effect_spawn_at(part, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
-        obj->stepY = 6;
+        effect_spawn_at(effect, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+        obj->stepY = 6; /* effect countdown */
     }
     obj->stepY--;
 }
 
 
+/* Places obj on its orbit for this frame and advances orbitAngle by unk94: an ellipse 0x30 px wide
+   and 0x24 px high around (centerX, 0x6C), its center X swinging by unkAE px between 0x19 and 0x30
+   as the angle goes round. */
 void obj_update_orbit_pos(struct SceneObj *obj)
 {
     s32 angle;
-    s32 k;
+    s32 centerX;
 
     angle = (obj->orbitAngle / 0x100) & 0xFF;
-    k = (angle - 0x40) & 0xFF;
-    if (k <= 0x7F)
+    centerX = (angle - 0x40) & 0xFF;
+    if (centerX <= 0x7F)
     {
-        k = (obj->unkAE * (k & 0xFF)) / 0x80 + 0x19;
+        centerX = (obj->unkAE * (centerX & 0xFF)) / 0x80 + 0x19;
     }
     else
     {
-        k = 0x30 - (obj->unkAE * ((k - 0x80) & 0xFF)) / 0x80;
+        centerX = 0x30 - (obj->unkAE * ((centerX - 0x80) & 0xFF)) / 0x80;
     }
-    obj->dispX = (gCosineTable[angle] / 0x40) * 0x30 + (k << 8);
+    obj->dispX = (gCosineTable[angle] / 0x40) * 0x30 + (centerX << 8);
     obj->dispY = (gSineTable[angle] / 0x40) * 0x24 + 0x6C00;
     obj->orbitAngle += obj->unk94;
 }
@@ -317,6 +325,13 @@ struct Flag79Low
     u8 rest : 7;
 };
 
+/*
+ * Once the sprite's current animation has ended: plays action 6 (mode 1), spawns effect 0x270E on
+ * the object and a linked child 0x4040 4 px left, 1 px down and 20 px up from where it appears. The
+ * child's level comes from gPhaseLevelTable[phase] (bits 5-7 of unk78 = level - 1; level 0 sets bit
+ * 0 of flags79 instead); it then goes to its spot by the owner (obj_place_by_owner_kind). Plays
+ * sound 0x85; the object waits in obj_anim_d_if_active.
+ */
 void obj_anim6_spawn_child(struct SceneObj *obj)
 {
     struct SceneObj *child;
@@ -324,12 +339,14 @@ void obj_anim6_spawn_child(struct SceneObj *obj)
     s32 y;
     s32 z;
 
+    /* bit 3 of flags12: the animation has ended */
     if (((struct SpriteActiveBits *)&obj->sprite->flags12)->active != 0)
     {
         sprite_set_action(obj, 6, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
         effect_spawn_at(0x270E, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
         child = obj_spawn_linked(obj, 0x4040, 0);
+        /* positions are in 1/256 pixels */
         x = child->posX - 0x400;
         child->posX = x;
         child->dispX = x;
@@ -356,25 +373,33 @@ void obj_anim6_spawn_child(struct SceneObj *obj)
 }
 
 
+/*
+ * Waits for the part obj holds to land: once the part has reached its X target and its motion
+ * progress (unk7E as an s16, 0 to 0x4000) is within four steps of the end, rolls 0-99 against
+ * gPhaseChanceTable[phase]. Below it, obj throws again (action 0xF, mode 1, next phase,
+ * obj_spawn_and_place_part); otherwise it misses (obj_link_owner_part). Holding nothing, obj goes
+ * back to obj_place_scene_target.
+ */
 void obj_random_chance_or_wait(struct SceneObj *obj)
 {
-    struct SceneObj *hold;
+    struct SceneObj *part;
 
-    hold = obj->hold;
-    if (hold == 0)
+    part = obj->hold;
+    if (part == NULL)
     {
         obj->state = obj_place_scene_target;
         return;
     }
-    if (hold->posX > hold->dispX)
+    if (part->posX > part->dispX)
     {
         return;
     }
-    if ((0x4000 - *(s16 *)&hold->unk7E) > ((hold->stepX * hold->stepY / 0x100) << 2))
+    /* still more than four steps of motion to go */
+    if ((0x4000 - *(s16 *)&part->unk7E) > ((part->stepX * part->stepY / 0x100) << 2))
     {
         return;
     }
-    if (rand_below(0x64, mt19937_next()) < gPhaseChanceTable[obj->phase])
+    if (rand_below(100, mt19937_next()) < gPhaseChanceTable[obj->phase])
     {
         sprite_set_action(obj, 0xF, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
@@ -388,6 +413,13 @@ void obj_random_chance_or_wait(struct SceneObj *obj)
 }
 
 
+/*
+ * Throws a part (chosen by obj_random_chance_or_wait): plays action 0x10 (mode 1) and takes the part
+ * the object holds, or spawns a linked 0x4040 part 4 px right, 1 px down and 40 px up from where it
+ * appears, its level from gPhaseLevelTable[phase] (bits 5-7 of unk78 = level - 1; level 0 sets bit 0
+ * of flags79 instead). The part is listed and goes to its spot by the owner (obj_place_by_owner_kind);
+ * spawns effect 0x2716 on the object, plays sound 0x6A, and the object waits in obj_anim_d_if_active.
+ */
 void obj_spawn_and_place_part(struct SceneObj *obj)
 {
     struct SceneObj *part;
@@ -401,6 +433,7 @@ void obj_spawn_and_place_part(struct SceneObj *obj)
     if (part == NULL)
     {
         part = obj_spawn_linked(obj, 0x4040, 0);
+        /* positions are in 1/256 pixels */
         x = part->posX + 0x400;
         part->posX = x;
         part->dispX = x;
@@ -429,75 +462,91 @@ void obj_spawn_and_place_part(struct SceneObj *obj)
 
 
 
-void obj_place_by_owner_kind(struct SceneObj *obj)
+/* A thrown part's first step: it flies to its owner's data target, 8 px left of it and 16 px
+   up, at the chain speed for its kind (data->unkB0) with an arc of 0x50. The kind's tables also
+   give data->unk124 and both sprite scales (unk4, unk6). Sets sprite bit 6 of unk11, then the
+   part counts down in obj_phase_countdown. */
+void obj_place_by_owner_kind(struct SceneObj *part)
 {
     struct SceneData *ownerData;
     struct SceneSprite *sprite;
     u32 kind;
 
-    ownerData = obj->owner->data;
-    kind = obj->data->unkB0;
-    place_targets(obj, ownerData->targetX / 0x100 - 8, ownerData->targetY / 0x100, ownerData->targetZ / 0x100 + 0x10, -1);
-    set_step_and_offsets(obj, gNodeChainStepTable[kind], 0x50);
-    obj->data->unk124 = gNodeChainSceneScale[kind];
-    sprite = obj->sprite;
+    ownerData = part->owner->data;
+    kind = part->data->unkB0;
+    /* positions are in 1/256 pixels */
+    place_targets(part, ownerData->targetX / 0x100 - 8, ownerData->targetY / 0x100, ownerData->targetZ / 0x100 + 0x10, -1);
+    set_step_and_offsets(part, gNodeChainStepTable[kind], 0x50);
+    part->data->unk124 = gNodeChainSceneScale[kind];
+    sprite = part->sprite;
     sprite->unk6 = gNodeChainSpriteScale[kind];
     sprite->unk4 = gNodeChainSpriteScale[kind];
-    ((struct SpriteUnk11Bits *)&obj->sprite->unk11)->bit6 = 1;
-    obj->phase = 0;
-    obj->state = obj_phase_countdown;
+    ((struct SpriteUnk11Bits *)&part->sprite->unk11)->bit6 = 1;
+    part->phase = 0;
+    part->state = obj_phase_countdown;
 }
 
 
-u32 obj_lookup_slot_or_place(struct SceneObj *obj, struct SceneObj *other)
+/* Hit callback (callback60) of a thrown part: when `hitter` strikes it from the front (lookup_slot
+   returns 0), the part flies back to its thrower's spot (4 px right, 1 px down and 40 px up from the
+   object embedded at data + 8) at the chain speed for its kind, effect 0x2661 appears on the hitter,
+   sprite bit 6 of unk11 is cleared and the part counts down in obj_phase_countdown. Returns
+   lookup_slot's result. */
+u32 obj_lookup_slot_or_place(struct SceneObj *part, struct SceneObj *hitter)
 {
-    u32 slot;
+    u32 result;
 
-    slot = lookup_slot(obj, other);
-    if (slot == 0)
+    result = lookup_slot(part, hitter);
+    if (result == 0)
     {
-        struct SceneData *data = obj->data;
-        struct SceneObj *target = (struct SceneObj *)((u8 *)data + 8);
+        struct SceneData *data = part->data;
+        struct SceneObj *thrower = (struct SceneObj *)((u8 *)data + 8);
 
-        place_targets(obj, target->posX / 0x100 + 4, target->posY / 0x100 + 1, target->posZ / 0x100 + 0x28, -1);
-        set_step_and_offsets(obj, gNodeChainStepTable[data->unkB0], 0x50);
-        effect_spawn_at(0x2661, other->posX / 0x100, other->posY / 0x100, other->posZ / 0x100, other);
-        ((struct SpriteUnk11Bits *)&obj->sprite->unk11)->bit6 = 0;
-        obj->phase = slot;
-        obj->state = obj_phase_countdown;
+        /* positions are in 1/256 pixels */
+        place_targets(part, thrower->posX / 0x100 + 4, thrower->posY / 0x100 + 1, thrower->posZ / 0x100 + 0x28, -1);
+        set_step_and_offsets(part, gNodeChainStepTable[data->unkB0], 0x50);
+        effect_spawn_at(0x2661, hitter->posX / 0x100, hitter->posY / 0x100, hitter->posZ / 0x100, hitter);
+        ((struct SpriteUnk11Bits *)&part->sprite->unk11)->bit6 = 0;
+        part->phase = result;
+        part->state = obj_phase_countdown;
     }
-    return slot;
+    return result;
 }
 
 
+/* Once obj's animation has finished (sprite flags bit 3), starts its action 0xC and throws a
+   linked pair (obj_spawn_two_linked) at each of the two objects at gWorld+0x80/+0x84 that is in
+   mode 2: with both active, one pair goes at the first (offset -8,-2, motion b) and one at the
+   second (8,2, motion a); with only one active, one pair goes at it. Then resets the timer, moves
+   on to obj_anim_d_if_timer and plays sound 0x10E (set_slot_value). */
 void obj_anim_c_link_pair(struct SceneObj *obj)
 {
-    struct SceneObj *a;
-    struct SceneObj *b;
-    u32 flagsA;
+    struct SceneObj *first;
+    struct SceneObj *second;
+    u32 firstMode;
 
     if (obj->sprite->flags12 & 8)
     {
         sprite_set_action(obj, 0xC, 0, 0);
         ((struct SceneSpriteBits *)&obj->sprite->flags12)->mode = 1;
-        a = gWorld->unk80;
-        b = gWorld->unk84;
-        flagsA = a->unk7E & 6;
-        if (flagsA == 2)
+        first = gWorld->unk80;
+        second = gWorld->unk84;
+        firstMode = first->unk7E & 6;
+        if (firstMode == 2)
         {
-            if ((b->unk7E & 6) == 2)
+            if ((second->unk7E & 6) == 2)
             {
-                obj_spawn_two_linked(obj, (u8 *)a + 8, -8, -2, 10, flagsA, obj_place_owner_target_b);
-                obj_spawn_two_linked(obj, (u8 *)b + 8, 8, 2, 10, flagsA, obj_place_owner_target_a);
+                obj_spawn_two_linked(obj, (u8 *)first + 8, -8, -2, 10, firstMode, obj_place_owner_target_b);
+                obj_spawn_two_linked(obj, (u8 *)second + 8, 8, 2, 10, firstMode, obj_place_owner_target_a);
             }
             else
             {
-                obj_spawn_two_linked(obj, (u8 *)a + 8, 8, 2, 10, flagsA, obj_place_owner_target_a);
+                obj_spawn_two_linked(obj, (u8 *)first + 8, 8, 2, 10, firstMode, obj_place_owner_target_a);
             }
         }
         else
         {
-            obj_spawn_two_linked(obj, (u8 *)b + 8, -8, -2, 10, 2, obj_place_owner_target_b);
+            obj_spawn_two_linked(obj, (u8 *)second + 8, -8, -2, 10, 2, obj_place_owner_target_b);
         }
         obj->timer = 0;
         obj->state = obj_anim_d_if_timer;
@@ -506,9 +555,9 @@ void obj_anim_c_link_pair(struct SceneObj *obj)
 }
 
 
-NONMATCH("asm/code_0811229C/obj_wait_blend_then_detach.s", void obj_wait_blend_then_detach(struct SceneObj *obj))
+void obj_wait_blend_then_detach(struct SceneObj *obj)
 {
-    s8 count;
+    s32 count;
     s32 level;
 
     if ((obj->sprite->flags12 & 0xE) == 0xA)
@@ -518,11 +567,10 @@ NONMATCH("asm/code_0811229C/obj_wait_blend_then_detach.s", void obj_wait_blend_t
         obj->callback5C = (void *)partner_link_update;
     }
     count = ((struct SceneSignedCount *)obj->owner)->count;
-    level = count + 2;
     if (obj->phase != 0)
-    {
         level = count - 2;
-    }
+    else
+        level = count + 2;
     obj->unk75 = level;
     if ((u8)obj_blend_position(obj) == 0)
     {
@@ -532,7 +580,6 @@ NONMATCH("asm/code_0811229C/obj_wait_blend_then_detach.s", void obj_wait_blend_t
         obj->state = obj_wait_scene_mode;
     }
 }
-END_NONMATCH
 
 
 void obj_wait_scene_b4_then_anim4(struct SceneObj *obj)
@@ -559,49 +606,55 @@ void obj_wait_scene_b4_then_anim4(struct SceneObj *obj)
 }
 
 
-void obj_spawn_two_linked(struct SceneObj *obj, void *other, s32 x, s32 y, s32 a, s32 b, void *cb)
+/* Spawns the two halves (0x4041 and 0x4042) of a linked pair at the first one's spawn point moved
+   by (dx, dy, dz) px, both owned by `owner` and running `state`. Half B draws one layer above
+   obj and half A one below (phase 0 and 1); obj's data counts both as alive. A nonzero level
+   is stored (minus 1) in half B's level bits. */
+void obj_spawn_two_linked(struct SceneObj *obj, void *owner, s32 dx, s32 dy, s32 dz, s32 level, void *state)
 {
     struct SceneObj *childA;
     struct SceneObj *childB;
     struct SceneSprite *spriteA;
     struct SceneSprite *spriteB;
-    u16 xh;
-    u16 yh;
-    u16 zh;
+    u16 ofsX;
+    u16 ofsY;
+    u16 ofsZ;
     u16 stage;
-    s32 px;
-    s32 py;
-    s32 pz;
+    s32 x;
+    s32 y;
+    s32 z;
 
-    xh = x;
-    yh = y;
-    zh = a;
-    stage = b;
+    ofsX = dx;
+    ofsY = dy;
+    ofsZ = dz;
+    stage = level;
     childA = obj_spawn_linked(obj, 0x4041, 0);
     childB = obj_spawn_linked(obj, 0x4042, 0);
-    px = childA->posX + ((s32)(xh << 16) >> 8);
-    childA->posX = px;
-    childB->posX = px;
-    childA->dispX = px;
-    childB->dispX = px;
-    py = childA->posY + ((s32)(yh << 16) >> 8);
-    childA->posY = py;
-    childB->posY = py;
-    childA->dispY = py;
-    childB->dispY = py;
-    pz = childA->posZ + ((s32)(zh << 16) >> 8);
-    childA->posZ = pz;
-    childB->posZ = pz;
-    childA->dispZ = pz;
-    childB->dispZ = pz;
-    childA->owner = other;
-    childB->owner = other;
+    /* (s16)ofs << 8: whole pixels to 8.8 */
+    x = childA->posX + ((s32)(ofsX << 16) >> 8);
+    childA->posX = x;
+    childB->posX = x;
+    childA->dispX = x;
+    childB->dispX = x;
+    y = childA->posY + ((s32)(ofsY << 16) >> 8);
+    childA->posY = y;
+    childB->posY = y;
+    childA->dispY = y;
+    childB->dispY = y;
+    z = childA->posZ + ((s32)(ofsZ << 16) >> 8);
+    childA->posZ = z;
+    childB->posZ = z;
+    childA->dispZ = z;
+    childB->dispZ = z;
+    childA->owner = owner;
+    childB->owner = owner;
     spriteB = childB->sprite;
     spriteA = childA->sprite;
     ((struct SceneSpriteBits *)&spriteA->flags12)->mode = 1;
     ((struct SceneSpriteBits *)&spriteB->flags12)->mode = 1;
-    childA->state = cb;
-    childB->state = cb;
+    childA->state = state;
+    childB->state = state;
+    /* draw layer */
     childB->unk75 = obj->unk75 + 1;
     childA->unk75 = obj->unk75 - 1;
     childB->phase = 0;

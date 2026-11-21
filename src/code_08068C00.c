@@ -196,6 +196,10 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
+/* State: once the child's timer is set, stops song 0x81, plays action 2 and parks the child off
+ * screen (x = 0x100 px). Remembers its base position (px) in dx/dy and moves, at speed 0x166 and
+ * at its base height, to 0x30-0x5F px (random) right of the owner's part target. Plays sound
+ * 0x11B and waits in actor_announce_then_act. Both variants (paramA8) do the same. */
 void obj_wait_child_then_place(struct ActorObj *obj)
 {
     if ((s16)obj->child->timer != 0)
@@ -209,9 +213,9 @@ void obj_wait_child_then_place(struct ActorObj *obj)
         obj->dx = obj->baseX / 0x100;
         obj->dy = obj->baseY / 0x100;
         {
-            u32 rnd = mt19937_next();
+            u32 random = mt19937_next();
 
-            obj->targetX = obj->owner->part->targetX + (((rnd % 0x30) + 0x30) << 8);
+            obj->targetX = obj->owner->part->targetX + (((random % 0x30) + 0x30) << 8);
             obj->targetY = obj->owner->part->targetY;
         }
         obj->targetH = obj->baseH;
@@ -227,50 +231,62 @@ void obj_wait_child_then_place(struct ActorObj *obj)
     }
 }
 
+/* State: counts frames in timer and plays sound 0x63 at frame 30 (variant 0) or 10 (variant 1,
+ * paramA8). Once the pose has finished (flag 8): stops song 0x11B, starts action 3 (variant 0, one
+ * pass) or action 6 (variant 1, 3 passes, counted down in timer), places the child 0x22 px right of
+ * the base and goes on with actor_timed_restart. */
 void obj_timer_wave_state(struct ActorObj *obj)
 {
-    s32 t = obj->timer + 1;
+    s32 frame = obj->timer + 1;
 
-    obj->timer = t;
+    obj->timer = frame;
 
     if (obj->paramA8 == 0)
     {
-        if ((s16)t == 0x1E)
+        if ((s16)frame == 30)
             set_slot_value(0x63, -1);
     }
     else
     {
-        if ((s16)t == 0xA)
+        if ((s16)frame == 10)
             set_slot_value(0x63, -1);
     }
     if (obj->pose->flags & 8)
     {
-        s32 mode;
+        s32 variant;
 
         if (obj->paramA8 == 0)
             sound_stop_song(0x11B);
         else
             sound_stop_song(0x11B);
-        mode = obj->paramA8;
-        if (mode == 0)
+        variant = obj->paramA8;
+        if (variant == 0)
         {
             sprite_set_action(obj, 3, 0, 0);
-            obj->timer = mode;
+            obj->timer = variant;
         }
         else
         {
             sprite_set_action(obj, 6, 0, 0);
             obj->timer = 3;
         }
-        obj->child->posX = obj->baseX + 0x2200;
+        obj->child->posX = obj->baseX + (0x22 << 8);
         obj->child->posY = obj->baseY;
         obj->state = actor_timed_restart;
     }
 }
 
+/*
+ * State: once the pose has finished (flag 8), play the attack for the
+ * actor's variant (paramA8): spawn its effect at the base and a projectile
+ * 0x17 px left, 1 px down and 0x10 up, linked after obj's child, that slides
+ * left (variant 0: action 5, effect 0x1C73, object 0x412C, slot 0x85) or
+ * drops left (variant 1: action 8, effect 0x1C7A, object 0x412D, slot 0x86).
+ * Then wait for the child before moving.
+ */
 void actor_start_pair(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *shot;
 
     if (obj->pose->flags & 8)
     {
@@ -278,34 +294,34 @@ void actor_start_pair(struct ActorObj *obj)
         {
             sprite_set_action(obj, 5, 0, 0);
             effect_spawn_at(0x1C73, obj->baseX / 256, obj->baseY / 256 + 2, obj->baseH / 256, obj);
-            child = obj_spawn(obj->part, 0x412C, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
-                              obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-            obj->child->child = child;
-            ((struct Flags78Bits *)&child->flags78)->kind = 1;
-            obj_child_flags(obj, child);
-            child->callback = on_arrive;
-            child->link = obj->link;
-            child->owner = obj->owner;
-            child->byte74 = obj->byte74;
-            obj_list_push_default(child);
-            child->state = sprite_slide_left;
+            shot = obj_spawn(obj->part, 0x412C, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
+                             obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child->child = shot;
+            ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+            obj_child_flags(obj, shot);
+            shot->callback = on_arrive;
+            shot->link = obj->link;
+            shot->owner = obj->owner;
+            shot->byte74 = obj->byte74;
+            obj_list_push_default(shot);
+            shot->state = sprite_slide_left;
             set_slot_value(0x85, -1);
         }
         else
         {
             sprite_set_action(obj, 8, 0, 0);
             effect_spawn_at(0x1C7A, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
-            child = obj_spawn(obj->part, 0x412D, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
-                              obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-            obj->child->child = child;
-            ((struct Flags78Bits *)&child->flags78)->kind = 1;
-            obj_child_flags(obj, child);
-            child->callback = on_arrive;
-            child->link = obj->link;
-            child->owner = obj->owner;
-            child->byte74 = obj->byte74;
-            obj_list_push_default(child);
-            child->state = sprite_drop_left;
+            shot = obj_spawn(obj->part, 0x412D, obj->baseX / 256 - 0x17, obj->baseY / 256 + 1,
+                             obj->baseH / 256 + 0x10, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child->child = shot;
+            ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+            obj_child_flags(obj, shot);
+            shot->callback = on_arrive;
+            shot->link = obj->link;
+            shot->owner = obj->owner;
+            shot->byte74 = obj->byte74;
+            obj_list_push_default(shot);
+            shot->state = sprite_drop_left;
             set_slot_value(0x86, -1);
         }
         obj->state = actor_wait_child_then_move;

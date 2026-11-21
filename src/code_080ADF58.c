@@ -107,8 +107,8 @@ struct HeroBody
     u8 filler94[0x9C - 0x94];
     u32 place;
     s32 counter;
-    u32 unkA4;
-    s32 unkA8;
+    u32 unkA4; /* partner roulette: cursor lit over a slot */
+    s32 unkA8; /* partner roulette: 8.8 frames until the cursor blinks */
     s16 step;
     u16 timer;
     u8 filler0B0[0xB2 - 0xB0];
@@ -210,17 +210,23 @@ static inline void copy_pose_offsets(struct HeroBody *src, struct HeroBody *dst)
 
 ASM_FUNC("asm/code_080ADF58/pair_regroup.s", void pair_regroup(void))
 
+/*
+ * First, slowest round of the partner roulette: the cursor blinks from slot to
+ * slot (30 frames dark, 20 lit). Letting go of A stops it (on the lit slot, or a
+ * miss when it's dark); after two laps both heroes take their next pose and the
+ * faster round, pair_action_a_hold, takes over.
+ */
 void pair_action_a_start(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    s32 timer;
-    s32 newt;
-    s32 *tp;
+    s32 remaining;
+    s32 next_remaining;
+    s32 *cursor_timer;
     s32 mode;
 
-    if (((gSys.held ^ 1) & 1) != 0)
+    if (((gSys.held ^ A_BUTTON) & A_BUTTON) != 0)
     {
         display_flush();
         obj_free_parts(body_a);
@@ -239,12 +245,14 @@ void pair_action_a_start(struct HeroBody *body)
         return;
     }
 
-    tp = &hero_b->body.unkA8;
-    timer = *tp;
-    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
-    *tp = newt;
+    cursor_timer = &hero_b->body.unkA8;
+    remaining = *cursor_timer;
+    next_remaining = (gWorld->flags & 8) ? remaining - 0xCC : remaining - 0x100;
+    *cursor_timer = next_remaining;
     if (body_b->unkA8 > 0)
         return;
+
+    /* blink off */
     if (body_b->unkA4 != 0)
     {
         body_b->unkA4 = 0;
@@ -252,6 +260,8 @@ void pair_action_a_start(struct HeroBody *body)
         sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
         return;
     }
+
+    /* blink on, over the next slot of the ring (-1 ends a lap) */
     body_b->unkA4 = 1;
     body_b->unkA8 = 0x1400;
     sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
@@ -266,6 +276,8 @@ void pair_action_a_start(struct HeroBody *body)
     body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
     if (body_b->counter > 0)
         return;
+
+    /* out of laps: next pose for both heroes, then the faster round */
     set_slot_value(0x116, -1);
     mode = body_a->mode & 6;
     if (mode == 2 || mode == 4)
@@ -361,19 +373,24 @@ NONMATCH("asm/code_080ADF58/pair_action_a_hold.s", void pair_action_a_hold(struc
 }
 END_NONMATCH
 
+/*
+ * Last, slowest round of the partner roulette: the cursor blinks from slot to
+ * slot. Letting go of A stops it (on the lit slot, or a miss when it's dark);
+ * if A is held through every lap, a random occupied slot becomes the partner.
+ */
 void pair_action_pick_partner(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    s32 timer;
-    s32 newt;
-    s32 *tp;
+    s32 remaining;
+    s32 next_remaining;
+    s32 *cursor_timer;
     s32 mode;
-    s32 count;
+    s32 occupied;
     s32 i;
 
-    if (((gSys.held ^ 1) & 1) != 0)
+    if (((gSys.held ^ A_BUTTON) & A_BUTTON) != 0)
     {
         display_flush();
         obj_free_parts(body_a);
@@ -392,12 +409,14 @@ void pair_action_pick_partner(struct HeroBody *body)
         return;
     }
 
-    tp = &hero_b->body.unkA8;
-    timer = *tp;
-    newt = (gWorld->flags & 8) ? timer - 0xCC : timer - 0x100;
-    *tp = newt;
+    cursor_timer = &hero_b->body.unkA8;
+    remaining = *cursor_timer;
+    next_remaining = (gWorld->flags & 8) ? remaining - 0xCC : remaining - 0x100;
+    *cursor_timer = next_remaining;
     if (body_b->unkA8 > 0)
         return;
+
+    /* blink off */
     if (body_b->unkA4 != 0)
     {
         body_b->unkA4 = 0;
@@ -405,6 +424,8 @@ void pair_action_pick_partner(struct HeroBody *body)
         sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 1 : 3, 0x2093, 0);
         return;
     }
+
+    /* blink on, over the next slot of the ring (-1 ends a lap) */
     body_b->unkA4 = 1;
     body_b->unkA8 = 0x700;
     sprite_set_action(body_a->next, (gWorld->flags & 0x10) ? 0 : 2, 0x2093, 0);
@@ -419,18 +440,20 @@ void pair_action_pick_partner(struct HeroBody *body)
     body_a->next->sprite->unkE = find_lowest_order_pose(body_a->next)->unkE - 2;
     if (body_b->counter > 0)
         return;
+
+    /* out of laps: pick an occupied slot at random (reservoir sampling) */
     obj_free_parts(body_a);
     display_flush();
     obj_release(body_a->next);
-    count = 0;
+    occupied = 0;
     for (i = 0; i < 6; i++)
     {
-        struct HeroBody *cand = &gWorld->slots[i]->body;
-        if (cand->place != -2)
+        struct HeroBody *slot = &gWorld->slots[i]->body;
+        if (slot->place != -2)
         {
-            count++;
-            if (rand_below(count, mt19937_next()) == 0)
-                body_a->partner = cand;
+            occupied++;
+            if (rand_below(occupied, mt19937_next()) == 0)
+                body_a->partner = slot;
         }
     }
     body->state = pair_action_b_follow_a;

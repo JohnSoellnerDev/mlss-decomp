@@ -4,54 +4,6 @@ extern const u32 gEffectArgTable[];
 extern const u32 gSceneObjDataPtrTable[];
 extern const u32 gRecordPtrTable[];
 
-struct GAt351_u8
-{
-    u8 pad[0x351];
-    u8 f;
-};
-
-struct GAt34F_u8
-{
-    u8 pad[0x34F];
-    u8 f;
-};
-
-struct GAt34D_u8
-{
-    u8 pad[0x34D];
-    u8 f;
-};
-
-struct GAt34B_u8
-{
-    u8 pad[0x34B];
-    u8 f;
-};
-
-struct GAt350_u8
-{
-    u8 pad[0x350];
-    u8 f;
-};
-
-struct GAt34E_u8
-{
-    u8 pad[0x34E];
-    u8 f;
-};
-
-struct GAt34C_u8
-{
-    u8 pad[0x34C];
-    u8 f;
-};
-
-struct GAt34A_u8
-{
-    u8 pad[0x34A];
-    u8 f;
-};
-
 struct SceneObj
 {
     s8 kind;
@@ -61,7 +13,7 @@ struct SceneObj
     s32 z;
     s32 dz;
     u8 filler1C[0x24 - 0x1C];
-    u8 unk24;
+    u8 unk24; // bits 0-2: facing direction (FACING_DIR), 0-7 in 45° steps like angle >> 13
     u8 filler25[0x1D6 - 0x25];
     u8 unk1D6;
     u8 filler1D7[0x20C - 0x1D7];
@@ -72,6 +24,9 @@ struct SceneObj
     u8 filler217[0x352 - 0x217];
     u8 unk352;
 };
+
+// The facing direction (0-7) in a SceneObj.unk24 byte.
+#define FACING_DIR(bits) (((u32)(bits) << 29) >> 29)
 
 struct SceneSlot
 {
@@ -112,7 +67,7 @@ extern u8 *gWorld;
 extern u8 *gMemRoutines;
 extern void (*gUnk_03000FE0)(void);
 void vcount_store(u8 *out);
-void run_task_list(u8 *list);
+void run_task_list(void *list);
 void refresh_sprite_display(u8 mode);
 void world_main_frame(void);
 void world_init(void);
@@ -136,7 +91,7 @@ void heap_free(void *p);
 void run_pending_obj_callbacks(void);
 void set_flags_2_3(void *p);
 void task_remove(void *node, u32 kind);
-extern u16 gUnk_02000010[];
+extern u16 gUnk_02000010[]; // shadow copies of the BG0-3 scroll registers (HOFS, VOFS each)
 struct FlagBit6
 {
     u8 lo6 : 6;
@@ -148,6 +103,118 @@ struct Lo2Bits
     u8 lo2 : 2;
     u8 hi6 : 6;
 };
+
+struct ObjListRoot
+{
+    u8 filler0[0x3C];
+    u32 head3C;
+};
+
+// The part of the system area (gSys) world_main_frame uses.
+struct WorldSys
+{
+    u8 filler0[0x2A];
+    u16 keysNew;
+    u8 filler2C[0x3E - 0x2C];
+    u16 unk3E;
+    u8 filler40[0x79 - 0x40];
+    u8 unk79_0 : 6;
+    u8 busy79 : 1;
+    u8 unk79_7 : 1;
+    u8 filler7A[0x880 - 0x7A];
+    u32 oamCur;
+    u32 palMask;
+    u8 unk888_0 : 4;
+    u8 oamHold : 1;
+    u8 unk888_5 : 3;
+};
+#define WORLD_SYS ((struct WorldSys *)gSys)
+
+// GBA key bits (REG_KEYINPUT).
+#define KEY_SELECT 0x0004
+#define KEY_START 0x0008
+
+// Sound played for a key the world doesn't take right now
+// (set_slot_value queues a song and sets its volume, -1: the current one).
+#define SE_KEY_BLOCKED 0x15F
+
+// The sprite a world object draws with.
+struct WorldPartGfx
+{
+    u8 filler0[0xA];
+    u16 scale; // 0x100 = 1.0
+};
+
+// One of the eight objects of the world (gWorld->parts).
+struct WorldPart
+{
+    u8 filler0[0x10];
+    struct WorldPartGfx *gfx;
+};
+
+struct WorldUnk7C
+{
+    u8 filler0[0xEC];
+    s16 unkEC;
+};
+
+// The record WorldState.unk2D8 points to.
+struct WorldUnk2D8
+{
+    u8 filler0[3];
+    s8 unk3;            // owner_wait_entry: > 0 a slot target level, -1 the default (0xA)
+    u8 filler4[0xA - 0x4];
+    u16 unkA;           // cleared by state_prepare_world
+};
+
+// The world state gWorld points to, as far as world_main_frame uses it.
+struct WorldState
+{
+    u8 filler0[7];
+    u8 unk7;
+    u8 filler8[0xA - 0x8];
+    u8 modeA : 2;       // set to 2 by state_prepare_world
+    u8 unkA_hi : 6;
+    u8 fillerB[0x10 - 0xB];
+    u8 holdTimer;       // frames left to wait while the system holds the display
+    u8 filler11[0x20 - 0x11];
+    u32 stateTask;      // the block the state functions get
+    void (*state)(u32 *task); // runs once a frame; NULL ends the world
+    u8 filler28[0x40 - 0x28];
+    void *taskLists[4]; // run at different points of the frame
+    u8 filler50[0x58 - 0x50];
+    struct WorldPart *parts[8];
+    u8 *objList;        // the world's objects, linked through their first word
+    struct WorldUnk7C *unk7C;
+    u8 filler80[0x244 - 0x80];
+    void *taskState;    // free_task_state
+    void *menuObj;      // menu_obj_free
+    void *mapObj;       // sync_obj_impulse, destroy_map_obj
+    void *slotBlocks;   // free_slot_blocks, restore_display
+    u8 filler254[0x25C - 0x254];
+    void *savedIrq2;    // IRQ 2 callback to put back when the world ends
+    u8 filler260[0x2B0 - 0x260];
+    u32 frameCount;
+    u16 buzzKeys;       // newly pressed keys that only play the "can't" sound
+    u8 filler2B6[0x2BE - 0x2B6];
+    u8 unk2BE_lo : 6;
+    u8 keyBit0 : 1;     // copies of gSys unk3E bits 0 and 1
+    u8 keyBit1 : 1;
+    u8 filler2BF[0x2C1 - 0x2BF];
+    u8 flags2C1;        // bit 3: START/SELECT allowed
+    u8 filler2C2[0x2D8 - 0x2C2];
+    struct WorldUnk2D8 *unk2D8;
+    u8 filler2DC[0x2F0 - 0x2DC];
+    void *objHook;      // reset_obj_hook
+    u8 filler2F4[0x2F8 - 0x2F4];
+    u8 paused;          // nonzero: the state and the objects don't run
+    u8 filler2F9[0x34A - 0x2F9];
+    u8 unk34A[2];       // four bytes per brother, reset by state_prepare_world
+    u8 unk34C[2];
+    u8 unk34E[2];
+    u8 unk350[2];
+};
+#define WORLD ((struct WorldState *)gWorld)
 struct Bit4Bits
 {
     u8 lo4 : 4;
@@ -319,13 +386,11 @@ u8 zone_hit_sub_offsets(u8 *owner, struct SceneSlot *slot)
     entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
     return boxes_overlap_oriented(bounds, obj, entry, bounds[4], bounds[5]) & 0xFF;
 }
-NONMATCH("asm/code_080FBF10/zone_hit_box_full.s", u8 zone_hit_box_full(u8 *owner, struct SceneSlot *slot))
+u8 zone_hit_box_full(u8 *owner, struct SceneSlot *slot)
 {
-    s32 heightOpen = 0x7FFF;
     s16 *bounds = slot->box;
     struct SceneObj *obj = slot->obj;
     u8 found;
-    s32 index;
     struct SceneObj *entry;
 
     if (((s8 *)bounds)[12] < 0)
@@ -343,20 +408,19 @@ NONMATCH("asm/code_080FBF10/zone_hit_box_full.s", u8 zone_hit_box_full(u8 *owner
 
             found = sel;
         }
-        index = found;
+        entry = *(struct SceneObj **)(owner + 0x28 + (found << 2));
     }
     else
     {
-        index = ((s8 *)bounds)[12];
+        entry = *(struct SceneObj **)(owner + 0x28 + (((s8 *)bounds)[12] << 2));
     }
-    entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
     if ((u8)point_in_box(bounds, entry, 0x7FFF, 0) == 0)
     {
         return 0;
     }
-    return boxes_overlap_oriented((s16 *)((u8 *)bounds + 0x10), obj, entry, heightOpen, 0x7FFF) & 0xFF;
+    bounds = (s16 *)((u8 *)bounds + 0x10);
+    return boxes_overlap_oriented(bounds, obj, entry, 0x7FFF, 0x7FFF) & 0xFF;
 }
-END_NONMATCH
 
 u8 zone_hit_box_offsets(u8 *owner, struct SceneSlot *slot)
 {
@@ -396,17 +460,20 @@ u8 zone_hit_box_offsets(u8 *owner, struct SceneSlot *slot)
     return boxes_overlap_oriented(bounds, obj, entry, bounds[4], bounds[5]) & 0xFF;
 }
 
+/* Returns 1 if the party member the zone is tied to (slot index, or the active one when it's
+ * negative) faces the zone's object: its facing direction is within one octant of the
+ * direction from it to the object. */
 u32 zone_facing_entry(u8 *owner, struct SceneSlot *slot)
 {
     s16 *bounds = slot->box;
     struct SceneObj *obj = slot->obj;
     u8 found;
     s32 index;
-    struct SceneObj *entry;
+    struct SceneObj *member;
     u16 angle;
-    u32 oct;
-    u32 v;
-    u8 flags;
+    u32 octant;
+    u32 dir;
+    u8 bits;
     s32 low;
 
     if (((s8 *)bounds)[12] < 0)
@@ -430,61 +497,61 @@ u32 zone_facing_entry(u8 *owner, struct SceneSlot *slot)
     {
         index = ((s8 *)bounds)[12];
     }
-    entry = *(struct SceneObj **)(owner + 0x28 + (index << 2));
-    angle = angle_of_vector16(obj->x - entry->x, obj->y - entry->y);
-    oct = ((u32)angle << 16) >> 29;
-    switch (oct)
+    member = *(struct SceneObj **)(owner + 0x28 + (index << 2));
+    angle = angle_of_vector16(obj->x - member->x, obj->y - member->y);
+    octant = ((u32)angle << 16) >> 29;
+    switch (octant)
     {
-    case 0:
-        v = (((u32)entry->unk24 << 29) >> 29) - 2;
+    case 0: /* facing 7, 0 or 1 */
+        dir = FACING_DIR(member->unk24) - 2;
         goto above4;
-    case 1:
-        v = ((u32)entry->unk24 << 29) >> 29;
+    case 1: /* facing 0-2 */
+        dir = FACING_DIR(member->unk24);
         goto atmost2;
-    case 2:
-        flags = entry->unk24;
+    case 2: /* facing 1-3 */
+        bits = member->unk24;
         low = 7;
-        low &= flags;
+        low &= bits;
         if (low == 0)
         {
             goto fail;
         }
-        if ((((u32)flags << 29) >> 29) > 3)
+        if (FACING_DIR(bits) > 3)
         {
             goto fail;
         }
     ok:
         return 1;
-    case 3:
-        v = (((u32)entry->unk24 << 29) >> 29) - 2;
+    case 3: /* facing 2-4 */
+        dir = FACING_DIR(member->unk24) - 2;
         goto atmost2;
-    case 4:
-        v = (((u32)entry->unk24 << 29) >> 29) - 3;
+    case 4: /* facing 3-5 */
+        dir = FACING_DIR(member->unk24) - 3;
         goto atmost2;
-    case 5:
-        v = (((u32)entry->unk24 << 29) >> 29) - 4;
+    case 5: /* facing 4-6 */
+        dir = FACING_DIR(member->unk24) - 4;
     atmost2:
-        if (v > 2)
+        if (dir > 2)
         {
             goto fail;
         }
         goto ok;
-    case 6:
-        v = ((u32)entry->unk24 << 29) >> 29;
+    case 6: /* facing 5-7 */
+        dir = FACING_DIR(member->unk24);
     above4:
-        if (v <= 4)
+        if (dir <= 4)
         {
             goto fail;
         }
         goto ok;
-    case 7:
-        flags = entry->unk24;
-        if ((((u32)flags << 29) >> 29) > 5)
+    case 7: /* facing 6, 7 or 0 */
+        bits = member->unk24;
+        if (FACING_DIR(bits) > 5)
         {
             goto ok;
         }
         low = 7;
-        low &= flags;
+        low &= bits;
         if (low == 0)
         {
             goto ok;
@@ -880,17 +947,22 @@ void store_save_slot(void)
     cpu_set((u8 *)gUnk_03000FC0 + 0x394, base + 0x548, 0xD4);
 }
 
-struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *handle)
+/* Starts the battle task (start_battle_block passes its battle parameters): inserts the task,
+ * keeps the parameters in gWorkBuf, reseeds the random generator, resets the system's display
+ * flags and makes world_init the next frame function. When the parameters' byte 2 isn't set
+ * (<= 0), it comes from byte 3 of the battle's 32-byte gTaskPickTable entry, or from
+ * gEffectIndexTable when that is unset too. */
+struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 tag, u8 *params)
 {
     u8 *sys;
     u8 *flags;
     u8 value;
 
-    task_insert(owner, kind, (void *)arg);
+    task_insert(owner, kind, (void *)tag);
     owner->type = (void *)gTypeB;
-    gWorkBuf = handle;
+    gWorkBuf = params;
     sys = gSys;
-    mt19937_seed(*(u32 *)(sys + 0x8D0), *(u32 *)(sys + 0x1C));
+    mt19937_seed(*(u32 *)(sys + 0x8D0), *(u32 *)(sys + 0x1C)); /* the generator's state buffer */
     *(u16 *)(sys + 0x78) |= 0x3FF;
     flags = sys + 0x79;
     ((struct Flags79Bits *)flags)->mid2 = 0;
@@ -899,29 +971,34 @@ struct TaskOwner *effect_start(struct TaskOwner *owner, u32 kind, u32 arg, u8 *h
     sys[0x44] = 10;
     sys[0x45] = 8;
     gUnk_03000FE0 = world_init;
-    if ((s8)handle[2] <= 0)
+    if ((s8)params[2] <= 0)
     {
         {
             const u8 *table = gTaskPickTable;
 
-            value = (table + (*(u16 *)handle << 5))[3];
+            /* entry of the battle id params[0..1] */
+            value = (table + (*(u16 *)params << 5))[3];
         }
-        handle[2] = value;
+        params[2] = value;
         if ((s8)value <= 0)
         {
             value = gEffectIndexTable[*(u16 *)(owner->list + 0x124)];
-            handle[2] = value;
+            params[2] = value;
         }
     }
     return owner;
 }
 
+// Ends the world task owner: puts back IRQ 2's callback, releases the world's objects and frees
+// what the world holds (task state, map object, menu, display slots, object hook), clears the BG
+// scroll shadows, frees the world and the work buffer, resumes the task that started it and
+// removes the owner's own task.
 void owner_release(u8 *owner, u32 mode)
 {
     u8 *sys;
-    u16 *p;
-    u8 *list;
-    u8 *world;
+    u16 *scroll;
+    u8 *obj;
+    struct WorldState *world;
 
     ((struct TaskOwner *)owner)->type = (void *)gTypeB;
     gSys[0x44] = 10;
@@ -929,37 +1006,37 @@ void owner_release(u8 *owner, u32 mode)
     if (gWorld != NULL)
     {
         release_timer_tiles();
-        world = gWorld;
-        set_irq_callback(2, *(void **)(world + 0x25C));
-        world = gWorld;
-        list = *(u8 **)(world + 0x78);
-        if (list != NULL)
+        world = WORLD;
+        set_irq_callback(2, world->savedIrq2);
+        world = WORLD;
+        obj = world->objList;
+        if (obj != NULL)
         {
             do
             {
-                obj_release(list);
-                list = *(u8 **)list;
-            } while (list != NULL);
+                obj_release(obj);
+                obj = *(u8 **)obj;
+            } while (obj != NULL);
         }
-        if (*(void **)(gWorld + 0x244) != NULL)
-            free_task_state(*(void **)(gWorld + 0x244), 3);
-        if (*(void **)(gWorld + 0x24C) != NULL)
-            destroy_map_obj(*(void **)(gWorld + 0x24C), 3);
-        if (*(void **)(gWorld + 0x248) != NULL)
-            menu_obj_free(*(void **)(gWorld + 0x248), 3);
-        if (*(void **)(gWorld + 0x250) != NULL)
-            restore_display(*(void **)(gWorld + 0x250), 3);
-        if (*(void **)(gWorld + 0x2F0) != NULL)
-            reset_obj_hook(*(void **)(gWorld + 0x2F0), 3);
-        p = gUnk_02000010;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
-        *p++ = 0;
+        if (WORLD->taskState != NULL)
+            free_task_state(WORLD->taskState, 3);
+        if (WORLD->mapObj != NULL)
+            destroy_map_obj(WORLD->mapObj, 3);
+        if (WORLD->menuObj != NULL)
+            menu_obj_free(WORLD->menuObj, 3);
+        if (WORLD->slotBlocks != NULL)
+            restore_display(WORLD->slotBlocks, 3);
+        if (WORLD->objHook != NULL)
+            reset_obj_hook(WORLD->objHook, 3);
+        scroll = gUnk_02000010;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
+        *scroll++ = 0;
         heap_free(gWorld);
         gWorld = NULL;
         run_pending_obj_callbacks();
@@ -978,7 +1055,122 @@ void owner_release(u8 *owner, u32 mode)
 void world_tick(void);
 ASM_FUNC("asm/code_080FBF10/world_init.s", void world_init(void))
 
-ASM_FUNC("asm/code_080FBF10/world_main_frame.s", void world_main_frame(void))
+extern u8 *gModelCtx;
+extern u32 (*gUnk_03000D48)();
+extern u32 (*gUnk_03000D4C)();
+extern u8 gUnk_0203FFB8[];
+void poll_keys(void);
+void set_slot_value(u32 id, s32 value);
+void sync_obj_impulse(void *mapObj);
+void free_slot_blocks(void *slotBlocks);
+void sprite_frame_update(void);
+void update_sprite_list(void);
+void obj_list_pass_0a8c(void);
+void draw_sprite_nodes(void);
+void oam_link_slot_entries(void);
+void update_world_objects(void);
+u32 emit_active_parts_oam(u32 oam);
+void update_obj_list(void);
+void update_slot_sprites(void);
+void update_active_objs(void);
+// One frame of the running world: reads the keys (buzzing for blocked ones), waits out a display hold,
+// runs the task lists, draws the sprites and models into OAM and, unless paused, runs the world's
+// state function and objects. Once the state function is NULL the world ends and the frame
+// function is cleared.
+void world_main_frame(void)
+{
+    u8 vcount;
+    u8 *node;
+
+    vcount_store(&vcount);
+    poll_keys();
+    WORLD_SYS->busy79 = 1;
+    if (WORLD_SYS->keysNew & WORLD->buzzKeys)
+        set_slot_value(SE_KEY_BLOCKED, -1);
+    if ((WORLD->flags2C1 & 8) == 0 && (WORLD_SYS->keysNew & (KEY_START | KEY_SELECT)))
+        set_slot_value(SE_KEY_BLOCKED, -1);
+    gWorld[7] |= 0x1F; // WORLD->unk7, written as a byte so it matches
+    if (WORLD_SYS->palMask != 0 && WORLD->holdTimer != 0)
+    {
+        WORLD->holdTimer--;
+        if (WORLD->holdTimer == 0)
+            WORLD_SYS->oamHold = 0;
+        else if (WORLD_SYS->oamHold)
+            return;
+    }
+    if (WORLD->mapObj != NULL)
+        sync_obj_impulse(WORLD->mapObj);
+    if (WORLD->slotBlocks != NULL)
+        free_slot_blocks(WORLD->slotBlocks);
+    sprite_frame_update();
+    run_task_list(&WORLD->taskLists[0]);
+    update_sprite_list();
+    obj_list_pass_0a8c();
+    run_task_list(&WORLD->taskLists[1]);
+    run_task_list(&WORLD->taskLists[2]);
+    draw_sprite_nodes();
+    if (gModelCtx[2] != 0)
+        gUnk_03000D48(*(u32 *)(gModelCtx + 0x3C), *(u32 *)(gModelCtx + 0x38));
+    oam_link_slot_entries();
+    update_world_objects();
+    if (gModelCtx[2] != 0)
+    {
+        // Unlink the model while its parts are emitted, then link it back.
+        node = *(u8 **)(*(u8 **)(gModelCtx + 0x38) + 0xC);
+        *(u32 *)(node + 0x10) = 0;
+        WORLD_SYS->oamCur = gUnk_03000D4C(((struct ObjListRoot *)gUnk_0203FFB8)->head3C, WORLD_SYS->oamCur);
+        *(u32 *)(node + 0x10) = *(u32 *)(gModelCtx + 0x38);
+    }
+    WORLD_SYS->oamCur = emit_active_parts_oam(WORLD_SYS->oamCur);
+    update_obj_list();
+    update_slot_sprites();
+    if (WORLD->paused == 0)
+    {
+        struct WorldPart **parts;
+        u16 scale;
+        u32 bit;
+
+        bit = WORLD_SYS->unk3E & 1;
+        WORLD->keyBit0 = bit;
+        WORLD->keyBit1 = (WORLD_SYS->unk3E >> 1) & 1;
+        if (WORLD->unk7C->unkEC == -2)
+        {
+            u32 tmp = WORLD->keyBit0;
+
+            WORLD->keyBit0 = WORLD->keyBit1;
+            WORLD->keyBit1 = tmp;
+        }
+        // Every object's sprite back to full size.
+        parts = WORLD->parts;
+        scale = 0x100;
+        if (parts[0] != NULL && parts[0]->gfx != NULL)
+            parts[0]->gfx->scale = scale;
+        if (parts[1] != NULL && parts[1]->gfx != NULL)
+            parts[1]->gfx->scale = scale;
+        if (parts[2] != NULL && parts[2]->gfx != NULL)
+            parts[2]->gfx->scale = scale;
+        if (parts[3] != NULL && parts[3]->gfx != NULL)
+            parts[3]->gfx->scale = scale;
+        if (parts[4] != NULL && parts[4]->gfx != NULL)
+            parts[4]->gfx->scale = scale;
+        if (parts[5] != NULL && parts[5]->gfx != NULL)
+            parts[5]->gfx->scale = scale;
+        if (parts[6] != NULL && parts[6]->gfx != NULL)
+            parts[6]->gfx->scale = scale;
+        if (parts[7] != NULL && parts[7]->gfx != NULL)
+            parts[7]->gfx->scale = scale;
+        WORLD->state(&WORLD->stateTask);
+        update_active_objs();
+        WORLD->frameCount++;
+    }
+    run_task_list(&WORLD->taskLists[3]);
+    refresh_sprite_display(vcount);
+    if (WORLD->state == NULL)
+    {
+        set_irq_callback(3, 0);
+        gUnk_03000FE0 = 0;
+    }
+}
 
 void world_tick(void)
 {
@@ -1046,64 +1238,71 @@ void owner_wait_entry(u8 *owner)
 void state_prepare_world(u32 *slot);
 ASM_FUNC("asm/code_080FBF10/world_begin_scene.s", void world_begin_scene(void))
 
-NONMATCH("asm/code_080FBF10/state_prepare_world.s", void state_prepare_world(u32 *slot))
+/* State: once the world entry is ready, loads the VRAM tiles, clears the text pointers, resets both
+ * brothers' bytes at 0x34A, fills 0x200 bytes of sprite VRAM (0x06017600) with 0x33, sets world mode
+ * bits 2 and the current flags, and moves the task on to world_objects_tick. */
+void state_prepare_world(u32 *task)
 {
     u8 ready;
+    s32 bro;
 
     ready = world_entry_ready();
     if (ready == 0)
     {
-        load_vram_tiles(*(void **)(gWorld + 0x250));
+        load_vram_tiles(WORLD->slotBlocks);
         set_text_ptrs(0);
-        ((struct GAt34A_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt34C_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt34E_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt350_u8 *)gWorld)->f = 0x80;
-        ((struct GAt34B_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt34D_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt34F_u8 *)gWorld)->f = 0xFF;
-        ((struct GAt351_u8 *)gWorld)->f = 0x80;
+        for (bro = 0; bro < 2; bro++)
+        {
+            WORLD->unk34A[bro] = 0xFF;
+            WORLD->unk34C[bro] = 0xFF;
+            WORLD->unk34E[bro] = 0xFF;
+            WORLD->unk350[bro] = 0x80;
+        }
         ((void (*)(u32, void *, u32))gMemRoutines)(0x33333333, (void *)0x06017600, 0x200);
-        ((struct Lo2Bits *)(gWorld + 0xA))->lo2 = 2;
+        WORLD->modeA = 2;
         set_cur_flags_both(1);
-        *(u16 *)(*(u8 **)(gWorld + 0x2D8) + 0xA) = ready;
-        slot[1] = (u32)world_objects_tick;
+        WORLD->unk2D8->unkA = ready;
+        task[1] = (u32)world_objects_tick; /* the task's state */
     }
 }
-END_NONMATCH
 
+/* Ends the world's eight objects (WORLD->parts; each holds an actor at +8): runs each one's
+   callback once, and takes each one that still has a sprite off the object list, clearing its motion
+   (+0xB6..+0xBB), flag bits and callbacks. Then clears the list entries and goes on to
+   state_select_target, or to state_wait_free_slots while world byte 4 or 5 is 0. */
 void world_objects_tick(u32 *owner)
 {
     s32 i;
-    u8 *obj;
-    u8 *list;
+    u8 *part;
+    u8 *parts;
     s32 off;
     u32 zero;
     void (*next)(void);
-    void (*cb)(u8 *);
+    void (*callback)(u8 *);
 
     for (i = 0, zero = 0; i < 8; i++)
     {
-        list = gWorld;
+        parts = gWorld;
         off = i << 2;
-        list = list + 0x58;
-        obj = *(u8 **)(list + off);
-        cb = *(void (**)(u8 *))(obj + 0x70);
-        if (cb != 0)
+        parts = parts + 0x58; /* WORLD->parts */
+        part = *(u8 **)(parts + off);
+        callback = *(void (**)(u8 *))(part + 0x70);
+        if (callback != 0)
         {
-            cb(obj + 8);
+            callback(part + 8);
         }
-        if (*(void **)(obj + 0x10) != 0)
+        /* WorldPart.gfx: the actor has a sprite */
+        if (*(void **)(part + 0x10) != 0)
         {
-            obj_list_remove(obj + 8);
-            *(u16 *)(obj + 0xB6) = zero;
-            *(u16 *)(obj + 0xB8) = zero;
-            *(u16 *)(obj + 0xBA) = zero;
-            obj[0x7E] &= 0x7F;
-            ((struct Bit4Bits *)(obj + 0x80))->b4 = 0;
-            *(u32 *)(obj + 0x74) = zero;
-            *(u32 *)(obj + 0x70) = zero;
-            *(u32 *)(obj + 0x5C) = zero;
+            obj_list_remove(part + 8);
+            *(u16 *)(part + 0xB6) = zero;
+            *(u16 *)(part + 0xB8) = zero;
+            *(u16 *)(part + 0xBA) = zero;
+            part[0x7E] &= 0x7F;
+            ((struct Bit4Bits *)(part + 0x80))->b4 = 0;
+            *(u32 *)(part + 0x74) = zero;
+            *(u32 *)(part + 0x70) = zero;
+            *(u32 *)(part + 0x5C) = zero;
         }
     }
     clear_list_entries();
@@ -1115,7 +1314,7 @@ void world_objects_tick(u32 *owner)
     {
         next = state_select_target;
     }
-    owner[1] = (u32)next;
+    owner[1] = (u32)next; /* the owner task's state */
 }
 
 ASM_FUNC("asm/code_080FBF10/state_select_target.s", void state_select_target(void))

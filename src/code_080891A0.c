@@ -249,10 +249,16 @@ void approach_slot(struct Actor *obj);
 void on_arrive(struct Actor *obj);
 void on_arrive_if_posed(struct Actor *obj);
 
+// Spawns object 0x4004 32 px behind and 14 px above the actor's base position (mirrored like the
+// actor's pose), hands it the actor's link, owner, flags77 bits 5/6 and parameters, and lets it
+// slide 1 px left before slide_left_cull takes over. Plays effect 0xBDA at the actor, switches it
+// to action 3 and waits in on_arrive_if_posed.
 void spawn_pose_child(struct Actor *obj)
 {
     struct Actor *child;
 
+    /* positions are 24.8 fixed point; spawning works in whole pixels. The 6th argument is the
+       pose's mirror bit (flags11 bit 6). */
     child = obj_spawn(obj->data, 0x4004, obj->baseX / 0x100 - 0x20, obj->baseY / 0x100,
                       obj->baseH / 0x100 + 0xE, ((u32)obj->pose->flags11 << 25) >> 31, 1);
     obj->child = child;
@@ -266,7 +272,7 @@ void spawn_pose_child(struct Actor *obj)
     obj_list_push_default(child);
     child->handler5C = approach_contact;
     child->handler60 = approach_slot;
-    child->dx = 0xFF00;
+    child->dx = -0x100;
     child->timer = 0;
     child->unk9C = obj->unk9C;
     child->angleOfs = obj->angleOfs;
@@ -345,32 +351,36 @@ void start_jump(struct Actor *obj)
     }
 }
 
+// The jump started by start_jump: each frame gravity (0x5E) is taken off the vertical speed dh
+// and the height follows it, not going below the floor (data->targetH). Once the jump's move has
+// ended (index 0), the actor lands, heads back to its owner's spot at angleOfs px per frame with
+// action 4 and sound 0x81, and goes on with timed_move_3800.
 void state_stack_fall_step(struct Actor *obj)
 {
     struct Rec *data = obj->data;
-    u16 *dh = (u16 *)&obj->dh;
-    u32 index;
+    u16 *vspeed = (u16 *)&obj->dh;
+    u32 moving;
 
-    *dh = *dh - 0x5E;
+    *vspeed = *vspeed - 0x5E;
     obj->h += obj->dh;
     if (obj->h < data->targetH)
         obj->h = data->targetH;
-    index = obj->index;
-    if (index == 0)
+    moving = obj->index;
+    if (moving == 0)
     {
         struct Actor *owner = obj->owner;
 
-        *dh = index;
+        *vspeed = moving; // 0
         obj->h = obj->data->targetH;
         obj->targetX = owner->data->targetX;
         obj->targetY = owner->data->targetY;
         obj->targetH = obj->baseH;
         ((struct FlagsBits *)&obj->flags)->rebuild = 1;
         obj->motionSpeed = obj->angleOfs << 8;
-        obj->motionStart = index;
+        obj->motionStart = moving; // 0
         start_motion(obj);
         sprite_set_action(obj, 4, 0, 0);
-        set_slot_value(0x81, -1);
+        set_slot_value(0x81, -1); // plays sound 0x81
         obj->state = timed_move_3800;
     }
 }

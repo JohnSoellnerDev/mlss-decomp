@@ -27,7 +27,7 @@ struct ActorPart
     s16 cursorBX;
     s16 cursorBY;
     u8 filler100[0x113 - 0x100];
-    u8 unk113;
+    u8 heldItem; /* 0x80 | id of the item stolen by obj_random_slot_link_then_next, 0xFF none */
     u8 filler114[0x130 - 0x114];
 };
 
@@ -45,6 +45,23 @@ struct ActorModeBits
     u8 bit6 : 1;
     u8 high : 1;
 };
+
+struct ItemEntry
+{
+    u8 unk0;
+    u8 unk1;
+    u8 unk2;
+    u8 filler3[0x10 - 0x3];
+};
+
+/* The item counts in gParty, indexed by item id. */
+struct ItemCounts
+{
+    u8 filler0[0x8A];
+    u8 count[1];
+};
+
+#define ITEM_COUNT_UNUSABLE 0xFF /* the count of an item that can't be used */
 
 struct Flags78Bits
 {
@@ -80,7 +97,7 @@ struct ActorObj
     s32 baseY;
     s32 baseH;
     u8 filler44[0x47 - 0x44];
-    s8 unk47;
+    s8 unk47; /* frame box height, set by find_frame_entry */
     u8 filler48[0x4C - 0x48];
     void (*state)(struct ActorObj *);
     u8 filler50[0x54 - 0x50];
@@ -105,7 +122,7 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x92 - 0x90];
-    s16 unk92;
+    s16 unk92; /* height of a jump arc set up by place_targets / set_motion_offsets */
     s32 dhStep;
     s32 ground;
     s32 param9C;
@@ -117,7 +134,7 @@ struct ActorObj
     s16 dy;
     s16 dh;
     u8 filler0B4[0xC3 - 0xB4];
-    s8 unkC3;
+    s8 unkC3; /* offset (pixels) of the point others aim at: X, Y, height */
     s8 unkC4;
     s8 unkC5;
 };
@@ -250,7 +267,7 @@ void obj_active_spawn_then_e1fc(struct ActorObj *obj);
 void obj_active_spawn_then_e278(struct ActorObj *obj);
 void obj_slot_spawn_child_anim9(struct ActorObj *obj);
 void ensure_code_entry(u32 code);
-extern u8 gItemTable[];
+extern struct ItemEntry gItemTable[];
 extern const u16 gEffectCodeTable[];
 void step_motion(struct ActorObj *obj);
 s32 menu_cursor_pos(s32 x, s32 y, u32 n);
@@ -272,6 +289,12 @@ static inline u16 entry_value_at(s32 k)
     return *(u16 *)(*(u8 **)(gWorld + k) + 8);
 }
 
+static inline struct ActorObj *obj_spawn_entry_child(struct ActorObj *obj, u8 *entry, u32 base)
+{
+    base += entry[2];
+    return obj_spawn_linked(obj, base, 0);
+}
+
 static inline void pose_set_mode_one(struct ActorObj *obj)
 {
     ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -282,22 +305,13 @@ static inline void obj_base_effect(struct ActorObj *obj)
     effect_spawn_at(0xCAC, obj->baseX / 0x100 - 0x14, obj->baseY / 0x100 + 1, obj->baseH / 0x100 + 0x10, obj->owner);
 }
 
-void obj_wait_free_then_df7c(struct ActorObj *obj);
-void obj_wait_free_then_dfa8(struct ActorObj *obj);
-void obj_wait_free_then_dfd4(struct ActorObj *obj);
-void obj_wait_free_then_e000(struct ActorObj *obj);
-void obj_action_d_pose_mode1_then_e02c(struct ActorObj *obj);
-void obj_action_d_pose_mode1_then_e0b4(struct ActorObj *obj);
-void obj_action_9_pose_mode1_then_e104(struct ActorObj *obj);
-void obj_action_9_pose_mode1_then_e180(struct ActorObj *obj);
-void obj_rebuild_after_motion(struct ActorObj *obj);
-
-NONMATCH("asm/code_080DE320/obj_pair_midpoint_move_then_f3b4.s", void obj_pair_midpoint_move_then_f3b4(struct ActorObj *obj))
+static inline void obj_set_pair_target(struct ActorObj *obj)
 {
-    struct ActorPart *data = obj->owner->data;
-    struct ActorPart *a;
     struct ActorPart *b;
+    struct ActorPart *a;
+    struct ActorPart *data;
 
+    data = obj->owner->data;
     if (data->partner == -1)
     {
         a = data;
@@ -329,6 +343,76 @@ NONMATCH("asm/code_080DE320/obj_pair_midpoint_move_then_f3b4.s", void obj_pair_m
     obj->targetH = obj->owner->data->targetH;
     obj->targetX += 0x4000;
     ((struct ObjFlags79 *)obj)->bit5 = 1;
+}
+
+void obj_wait_free_then_df7c(struct ActorObj *obj);
+void obj_wait_free_then_dfa8(struct ActorObj *obj);
+void obj_wait_free_then_dfd4(struct ActorObj *obj);
+void obj_wait_free_then_e000(struct ActorObj *obj);
+void obj_action_d_pose_mode1_then_e02c(struct ActorObj *obj);
+void obj_action_d_pose_mode1_then_e0b4(struct ActorObj *obj);
+void obj_action_9_pose_mode1_then_e104(struct ActorObj *obj);
+void obj_action_9_pose_mode1_then_e180(struct ActorObj *obj);
+void obj_rebuild_after_motion(struct ActorObj *obj);
+
+/*
+ * Moves the object to the two heroes: its target is the midpoint of both heroes' targets (or the one
+ * hero's whose partner field is set, when only one is), 0x40 px further along x, at the owner's
+ * height. Starts the move at paramA0 px per frame, plays slot 0x11C and action 2, then waits in
+ * obj_partner_action_timer.
+ */
+void obj_pair_midpoint_move_then_f3b4(struct ActorObj *obj)
+{
+    struct ActorPart *heroB;
+    struct ActorPart *heroA;
+    struct ActorPart *part;
+    /* register variables (and the dead `if` below) keep the original's register use */
+    register s32 *pTargetX asm("r3");
+    register s32 *pLast asm("r2");
+    register s32 *pTargetH asm("r1");
+
+    part = obj->owner->data;
+    /* the hero parts sit side by side; the first one's partner field is -1 */
+    if (part->partner == -1)
+    {
+        heroA = part;
+        heroB = part + 1;
+    }
+    else
+    {
+        heroA = part - 1;
+        heroB = part;
+    }
+    if (heroA->partner != 0)
+    {
+        if (heroB->partner != 0)
+        {
+            pTargetX = &obj->targetX;
+            *pTargetX = (heroA->targetX + heroB->targetX) / 2;
+            pLast = &obj->targetY;
+            *pLast = (heroA->targetY + heroB->targetY) / 2;
+        }
+        else
+        {
+            pLast = &obj->targetX;
+            *pLast = heroA->targetX;
+            obj->targetY = heroA->targetY;
+            pTargetX = pLast;
+        }
+    }
+    else
+    {
+        pLast = &obj->targetX;
+        *pLast = heroB->targetX;
+        obj->targetY = heroB->targetY;
+        pTargetX = pLast;
+    }
+    pTargetH = &obj->targetH;
+    *pTargetH = obj->owner->data->targetH;
+    *pTargetX += 0x4000;
+    if (pTargetH == pLast)
+        pTargetH = NULL;
+    ((struct ObjFlags79 *)obj)->bit5 = 1;
     obj->motionSpeed = obj->paramA0 << 8;
     obj->motionStart = 0;
     start_motion(obj);
@@ -336,22 +420,27 @@ NONMATCH("asm/code_080DE320/obj_pair_midpoint_move_then_f3b4.s", void obj_pair_m
     sprite_set_action(obj, 2, 0, 0);
     obj->state = obj_partner_action_timer;
 }
-END_NONMATCH
 
+/*
+ * Item thief, waiting to strike: counts the timer down, then joins the active object list with
+ * obj_random_slot_link_then_next (steal a mushroom) as its hit handler and link_slot_lookup_clear_11c
+ * (stop song 0x11C) as its slot lookup, dashes at its owner's target point (speed 0x199) playing
+ * action 7 and song 0x11C (set_slot_value), and waits for arrival in obj_action8_slot126_timer.
+ */
 void obj_timer_move_to_owner_then_f358(struct ActorObj *obj)
 {
-    struct ActorPart *data;
-    s32 t = obj->timer - 1;
+    struct ActorPart *victim;
+    s32 timer = obj->timer - 1;
 
-    obj->timer = t;
-    if ((s16)t < 0)
+    obj->timer = timer;
+    if ((s16)timer < 0)
     {
         obj_list_push_default(obj);
         obj->handler58 = (void (*)(struct ActorObj *))obj_random_slot_link_then_next;
         obj->handler60 = (void (*)(struct ActorObj *))link_slot_lookup_clear_11c;
-        obj->targetX = (data = obj->owner->data)->targetX;
-        obj->targetY = data->targetY;
-        obj->targetH = data->targetH;
+        obj->targetX = (victim = obj->owner->data)->targetX;
+        obj->targetY = victim->targetY;
+        obj->targetH = victim->targetH;
         ((struct ObjFlags79 *)obj)->bit5 = 1;
         obj->motionSpeed = 0x199;
         obj->motionStart = 0;
@@ -362,87 +451,111 @@ void obj_timer_move_to_owner_then_f358(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080DE320/obj_timer_pair_move_then_e640.s", void obj_timer_pair_move_then_e640(struct ActorObj *obj))
+/* Counts the timer down; when it runs out: stops song 0x126, clears the owner's state and moves to
+ * 0x40 px right of the owner's pair of parts (their midpoint, or the one that has a partner) at speed
+ * 0x200, playing action 2 with the pose mirrored, and goes on to obj_slot_spawn_child_anim9. If an item
+ * slot was taken (unk113 = 0x80 | slot), spawnLeft gets the object id for that item's kind. */
+void obj_timer_pair_move_then_e640(struct ActorObj *obj)
 {
+    struct ActorPart *partB;
+    struct ActorPart *partA;
     struct ActorPart *data;
-    struct ActorPart *a;
-    struct ActorPart *b;
     struct ActorPose *pose;
-    u8 *code;
-    u8 *entry;
-    s32 t = obj->timer - 1;
-    s32 flags;
-    s32 bit;
-    s32 mask;
+    u8 *itemCode;
+    s32 timer = obj->timer - 1;
+    s32 poseByte;
+    s32 mirror;
+    s32 value;
+    u32 code;
+    register s32 *targetX asm("r3");
+    register s32 *dst asm("r2");
+    register s32 *targetH asm("r1");
 
-    obj->timer = t;
-    if ((s16)t < 0)
+    obj->timer = timer;
+    if ((s16)timer < 0)
     {
         sound_stop_song(0x126);
         obj->owner->state = 0;
         data = obj->owner->data;
         if (data->partner == -1)
         {
-            a = data;
-            b = data + 1;
+            partA = data;
+            partB = data + 1;
         }
         else
         {
-            a = data - 1;
-            b = data;
+            partA = data - 1;
+            partB = data;
         }
-        if (a->partner != 0)
+        if (partA->partner != 0)
         {
-            if (b->partner != 0)
+            if (partB->partner != 0)
             {
-                obj->targetX = (a->targetX + b->targetX) / 2;
-                obj->targetY = (a->targetY + b->targetY) / 2;
+                targetX = &obj->targetX;
+                *targetX = (partA->targetX + partB->targetX) / 2;
+                dst = &obj->targetY;
+                *dst = (partA->targetY + partB->targetY) / 2;
             }
             else
             {
-                obj->targetX = a->targetX;
-                obj->targetY = a->targetY;
+                dst = &obj->targetX;
+                *dst = partA->targetX;
+                obj->targetY = partA->targetY;
+                targetX = dst;
             }
         }
         else
         {
-            obj->targetX = b->targetX;
-            obj->targetY = b->targetY;
+            dst = &obj->targetX;
+            *dst = partB->targetX;
+            obj->targetY = partB->targetY;
+            targetX = dst;
         }
-        obj->targetH = obj->owner->data->targetH;
-        obj->targetX += 0x4000;
+        targetH = &obj->targetH;
+        *targetH = obj->owner->data->targetH;
+        *targetX += 0x4000;
+        /* never true: keeps the register vars live as the original's */
+        if (targetH == dst)
+            targetH = 0;
         ((struct ObjFlags79 *)obj)->bit5 = 1;
         obj->motionSpeed = 0x200;
         obj->motionStart = 0;
         start_motion(obj);
         sprite_set_action(obj, 2, 0, 0);
+        /* flip the pose's mirror bit (byte11 bit 6) */
         pose = obj->pose;
-        flags = pose->byte11;
-        bit = ((u32)flags << 25) >> 31;
-        bit = bit ^ 1;
-        bit = bit << 6;
-        mask = -0x41;
-        mask &= flags;
-        mask |= bit;
-        pose->byte11 = mask;
+        poseByte = pose->byte11;
+        mirror = ((u32)poseByte << 25) >> 31;
+        mirror = mirror ^ 1;
+        mirror = mirror << 6;
+        value = -0x41;
+        value &= poseByte;
+        value |= mirror;
+        pose->byte11 = value;
         obj->state = obj_slot_spawn_child_anim9;
-        code = &obj->data->unk113;
-        if (*code & 0x80)
+        itemCode = &obj->data->heldItem;
+        code = *itemCode;
+        if ((code & 0x80) && code != 0xFF)
         {
-            if (*code != 0xFF)
-            {
-                entry = gItemTable + ((*code & 0x7F) << 4);
-                obj->spawnLeft = (entry[2] & 7) + 0x4188;
-                ensure_code_entry(obj->spawnLeft);
-            }
+            u32 slotMask = 0x7F;
+            s32 *spawnId = &obj->spawnLeft;
+            u8 *table = (u8 *)gItemTable;
+            s32 id = (table[(slotMask & *(volatile u8 *)itemCode) * 16 + 2] & 7) + 0x4188;
+
+            *spawnId = id;
+            ensure_code_entry(id);
         }
     }
 }
-END_NONMATCH
 
+/* Item thief, after running off with its loot (unless a message is up, and only for index 0):
+ * if obj_random_slot_link_then_next got nothing (heldItem 0xFF), clears heldItem and plays action
+ * 0x13; otherwise plays action 9 and sound 0xA3 (set_slot_value) and spawns the stolen item's sprite
+ * (spawnLeft, set by obj_timer_pair_move_then_e640) above its head, facing the same way. Then waits
+ * 0x30 frames in obj_timer_release_child_start_motion, which drops the sprite and walks back. */
 void obj_slot_spawn_child_anim9(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *itemSprite;
 
     if (is_state_busy())
     {
@@ -452,22 +565,23 @@ void obj_slot_spawn_child_anim9(struct ActorObj *obj)
     {
         return;
     }
-    if (obj->data->unk113 == 0xFF)
+    if (obj->data->heldItem == 0xFF)
     {
-        obj->data->unk113 = obj->index;
+        /* index is 0 here: nothing held any more */
+        obj->data->heldItem = obj->index;
         sprite_set_action(obj, 0x13, 0, 0);
     }
     else
     {
         sprite_set_action(obj, 9, 0, 0);
         set_slot_value(0xA3, -1);
-        child = obj_spawn(obj->data, *(u16 *)&obj->spawnLeft, obj->baseX / 0x100 + 2, obj->baseY / 0x100 + 1,
-                          obj->baseH / 0x100 + 0x27, (((u32)obj->pose->byte11 << 25) >> 31), 1);
-        obj->child = child;
-        ((struct ObjFlags79Bit0 *)child)->bit0 = 1;
-        child->owner = obj->owner;
-        child->byte74 = 0xFF;
-        sprite_set_action(child, 0, 0, 0);
+        itemSprite = obj_spawn(obj->data, *(u16 *)&obj->spawnLeft, obj->baseX / 0x100 + 2, obj->baseY / 0x100 + 1,
+                               obj->baseH / 0x100 + 0x27, (((u32)obj->pose->byte11 << 25) >> 31), 1);
+        obj->child = itemSprite;
+        ((struct ObjFlags79Bit0 *)itemSprite)->bit0 = 1;
+        itemSprite->owner = obj->owner;
+        itemSprite->byte74 = 0xFF;
+        sprite_set_action(itemSprite, 0, 0, 0);
     }
     obj->timer = 0x30;
     obj->state = obj_timer_release_child_start_motion;
@@ -498,97 +612,106 @@ void obj_timer_release_child_start_motion(struct ActorObj *obj)
     }
 }
 
-u32 obj_random_slot_link_then_next(struct ActorObj *obj, struct ActorObj *arg)
+/* Hit handler of an item thief: steals one of the party's mushrooms (item ids 0-2) and holds it
+ * in data->heldItem (0x80 | id, or 0xFF when the party has none). The pick is weighted: each
+ * owned kind replaces the earlier pick with odds weight / (sum of weights so far), weights 70, 25
+ * and 5. Then it runs the owner's handler68 and drops the hit object back to the ground. */
+u32 obj_random_slot_link_then_next(struct ActorObj *obj, struct ActorObj *hit)
 {
-    s32 slot = -1;
-    u32 base = 0;
-    u8 flag;
+    s32 item = -1;
+    u32 totalWeight = 0;
+    u8 count;
 
-    flag = gParty[0x8A];
-    if (flag != 0 && flag != 0xFF)
+    count = ((struct ItemCounts *)gParty)->count[0];
+    if (count != 0 && count != ITEM_COUNT_UNUSABLE)
     {
-        base = 0x46;
-        if (rand_below(base, mt19937_next()) <= 0x45)
+        totalWeight = 70;
+        if (rand_below(totalWeight, mt19937_next()) < 70)
         {
-            slot = 0;
+            item = 0;
         }
     }
-    flag = gParty[0x8B];
-    if (flag != 0 && flag != 0xFF)
+    count = ((struct ItemCounts *)gParty)->count[1];
+    if (count != 0 && count != ITEM_COUNT_UNUSABLE)
     {
-        base += 0x19;
-        if (rand_below(base, mt19937_next()) <= 0x18)
+        totalWeight += 25;
+        if (rand_below(totalWeight, mt19937_next()) < 25)
         {
-            slot = 1;
+            item = 1;
         }
     }
-    flag = gParty[0x8C];
-    if (flag != 0 && flag != 0xFF)
+    count = ((struct ItemCounts *)gParty)->count[2];
+    if (count != 0 && count != ITEM_COUNT_UNUSABLE)
     {
-        base += 5;
-        if (rand_below(base, mt19937_next()) <= 4)
+        totalWeight += 5;
+        if (rand_below(totalWeight, mt19937_next()) < 5)
         {
-            slot = 2;
+            item = 2;
         }
     }
-    if (slot != -1)
+    if (item != -1)
     {
-        change_item_count((u8)slot, -1);
-        obj->data->unk113 = slot | -0x80;
+        change_item_count((u8)item, -1);
+        obj->data->heldItem = item | 0x80;
     }
     else
     {
-        obj->data->unk113 = 0xFF;
+        obj->data->heldItem = 0xFF;
     }
     if (obj->owner->handler68 != 0)
     {
         obj->owner->handler68(obj->owner);
     }
-    arg->state = obj_lower_height_512;
+    hit->state = obj_lower_height_512;
     return 1;
 }
 
-NONMATCH("asm/code_080DE320/obj_spawn_linked_child_jump.s", void obj_spawn_linked_child_jump(struct ActorObj *obj))
+/* Spawns the sprite of the item in use (kind 0x4188 + the item's sprite index) at this obj,
+   raised by its aim height, for the same owner and speed. When the sprite's mode is 1 or 2 it
+   jumps to the owner's aim point, its arc height worked out from the owner's height (the Z offset
+   for a hero's own body, else its frame box height). On landing, obj_rebuild_after_motion applies
+   the item's effect to the owner. */
+void obj_spawn_linked_child_jump(struct ActorObj *obj)
 {
     u8 *world = gWorld;
-    struct ActorObj *partner = obj->owner;
-    struct ActorObj *child;
-    u8 *entry;
-    s32 ofs;
-    s32 prod;
+    struct ActorObj *receiver = obj->owner;
+    struct ActorObj *itemObj;
+    u8 *item;
+    s32 height;
+    s32 heightSq;
 
-    entry = *(u8 **)(world + 0x2DC);
-    child = obj_spawn_linked(obj, entry[2] + 0x4188, 0);
-    child->baseH += (s8)obj->unkC5 << 8;
-    child->posX = child->baseX;
-    child->posY = child->baseY;
-    child->posH = child->baseH;
-    ((struct Flags78Bits *)&child->dir)->kind = 1;
-    child->owner = obj->owner;
-    child->motionSpeed = obj->motionSpeed;
-    if (((struct ObjFlags76 *)child)->mode == 1 || ((struct ObjFlags76 *)child)->mode == 2)
+    item = *(u8 **)(world + 0x2DC); /* the item being used */
+    itemObj = obj_spawn_linked(obj, (u16)(0x4188 + item[2]), 0);
+    itemObj->baseH += (s8)obj->unkC5 << 8;
+    itemObj->posX = itemObj->baseX;
+    itemObj->posY = itemObj->baseY;
+    itemObj->posH = itemObj->baseH;
+    ((struct Flags78Bits *)&itemObj->dir)->kind = 1;
+    itemObj->owner = obj->owner;
+    itemObj->motionSpeed = obj->motionSpeed;
+    if (((struct ObjFlags76 *)itemObj)->mode == 1 || ((struct ObjFlags76 *)itemObj)->mode == 2)
     {
-        place_targets(child, partner->baseX / 0x100 + (s8)partner->unkC3,
-                      partner->baseY / 0x100 + (s8)partner->unkC4,
-                      partner->baseH / 0x100 + (s8)partner->unkC5, -1);
-        if (partner == (struct ActorObj *)((u8 *)partner->data + 8))
+        place_targets(itemObj, receiver->baseX / 0x100 + (s8)receiver->unkC3,
+                      receiver->baseY / 0x100 + (s8)receiver->unkC4,
+                      receiver->baseH / 0x100 + (s8)receiver->unkC5, -1);
+        /* a hero's own body (embedded at its data + 8) uses its Z offset */
+        if (receiver == (struct ActorObj *)((u8 *)receiver->data + 8))
         {
-            ofs = (s8)partner->unkC5;
+            height = (s8)receiver->unkC5;
         }
         else
         {
-            find_frame_entry(partner, 0);
-            ofs = (s8)partner->unk47;
+            find_frame_entry(receiver, 0);
+            height = (s8)receiver->unk47;
         }
-        ofs += partner->baseH / 0x100;
-        prod = ofs * ofs;
-        ofs += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, prod / 0x40 + 0x28);
-        child->unk92 = ofs;
-        set_motion_offsets(child, 0x480);
+        height += receiver->baseH / 0x100;
+        heightSq = height * height;
+        height += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, heightSq / 0x40 + 0x28);
+        itemObj->unk92 = height;
+        set_motion_offsets(itemObj, 0x480);
     }
-    child->state = obj_rebuild_after_motion;
+    itemObj->state = obj_rebuild_after_motion;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_080DE320/obj_rebuild_after_motion.s", void obj_rebuild_after_motion(struct ActorObj *obj))
 {

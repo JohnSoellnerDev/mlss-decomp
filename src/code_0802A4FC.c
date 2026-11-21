@@ -1,8 +1,198 @@
 #include "global.h"
 
-ASM_FUNC("asm/code_0802A4FC/sync_mode_353.s", void sync_mode_353(void))
+struct SyncSub
+{
+    u8 filler0[2];
+    u8 modeBits;
+    u8 filler3;
+    s16 unk4;
+    u8 filler6[0x26 - 6];
+    u8 poseBits;
+    u8 filler27[0x54 - 0x27];
+    u8 group;
+    u8 filler55[0x25C - 0x55];
+    s32 unk25C;
+    u8 filler260[0x353 - 0x260];
+    u8 selBits;
+    u8 filler354[0x358 - 0x354];
+    u8 flags358;
+    u8 filler359;
+    u8 flags35A;
+    u8 flags35B;
+};
 
-ASM_FUNC("asm/code_0802A4FC/update_sub_objects.s", void update_sub_objects(void))
+struct SysKeys78
+{
+    u8 filler0[0x78];
+    u16 keyEnable : 10;
+};
+
+struct PartyMember
+{
+    u8 filler0[0xE];
+    u16 unkE;
+    u8 filler10[0x3C - 0x10];
+};
+
+struct Party
+{
+    struct PartyMember members[2];
+};
+
+extern u8 gSys[];
+extern u8 *gParty;
+void obj_update_stage3_id(struct SyncSub *sub);
+void obj_start_state_4(struct SyncSub *sub);
+
+struct SyncPair
+{
+    u8 filler0[0x200];
+    struct SyncSub *subs[2];
+};
+
+struct SyncMode
+{
+    u8 lo5 : 5;
+    u8 mode : 3;
+} __attribute__((packed));
+
+struct SyncPose
+{
+    u8 lo2 : 2;
+    u8 pose : 2;
+    u8 hi4 : 4;
+} __attribute__((packed));
+
+struct SyncSel
+{
+    u8 lo4 : 4;
+    u8 sel : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+struct SyncSubSel
+{
+    u8 filler0[0x353];
+    u8 lo4 : 4;
+    u8 sel : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+/* Sets the second sub-object's sel (+0x353 bits 4-5) from the first one's. A first with sel 1-3
+ * that isn't in pose 3 (+0x26 bits 2-3) passes its sel on unchanged. Otherwise, if the second is
+ * in pose 3, it gets a base (0 for sel 0, or sel 1 with unk25C == -1; 1 for the rest) plus 1
+ * unless it faces direction 2 or 6 (+2 bits 5-7, 8-way); if not, it gets 0 for sel 0-1 and 1
+ * for sel 2-3. */
+void sync_mode_353(struct SyncPair *pair)
+{
+    struct SyncSub *second;
+    struct SyncSub *first;
+    u16 sel;
+    u8 facing;
+
+    second = pair->subs[1];
+    facing = ((struct SyncMode *)&second->modeBits)->mode;
+    first = pair->subs[0];
+    if (((struct SyncSel *)&first->selBits)->sel != 0)
+    {
+        if (((struct SyncPose *)&first->poseBits)->pose == 3)
+        {
+            if (((struct SyncSel *)&first->selBits)->sel == 1)
+            {
+                if (((struct SyncPose *)&second->poseBits)->pose == 3)
+                {
+                    if (first->unk25C == -1)
+                    {
+                        if (facing == 6 || facing == 2)
+                            ((struct SyncSel *)&second->selBits)->sel = 0;
+                        else
+                            ((struct SyncSel *)&second->selBits)->sel = 1;
+                    }
+                    else
+                    {
+                        if (facing == 6 || facing == 2)
+                        {
+                            sel = ((struct SyncSel *)&first->selBits)->sel;
+                            ((struct SyncSel *)&second->selBits)->sel = sel;
+                        }
+                        else
+                            ((struct SyncSubSel *)second)->sel = ((struct SyncSel *)&first->selBits)->sel + 1;
+                    }
+                }
+                else
+                {
+                    ((struct SyncSel *)&second->selBits)->sel = 0;
+                }
+            }
+            else
+            {
+                if (((struct SyncPose *)&second->poseBits)->pose == 3)
+                {
+                    if (facing == 6 || facing == 2)
+                        ((struct SyncSel *)&second->selBits)->sel = 1;
+                    else
+                        ((struct SyncSel *)&second->selBits)->sel = 2;
+                }
+                else
+                {
+                    ((struct SyncSel *)&second->selBits)->sel = 1;
+                }
+            }
+        }
+        else
+        {
+            sel = ((struct SyncSel *)&first->selBits)->sel;
+            ((struct SyncSel *)&second->selBits)->sel = sel;
+        }
+    }
+    else
+    {
+        if (((struct SyncPose *)&second->poseBits)->pose == 3)
+        {
+            if (facing == 6 || facing == 2)
+            {
+                sel = ((struct SyncSel *)&first->selBits)->sel;
+                ((struct SyncSel *)&second->selBits)->sel = sel;
+            }
+            else
+                ((struct SyncSubSel *)second)->sel = ((struct SyncSel *)&first->selBits)->sel + 1;
+        }
+        else
+        {
+            ((struct SyncSel *)&second->selBits)->sel = 0;
+        }
+    }
+}
+
+// Per-frame step for the pair's two sub-objects. While flags358 bit 3 is clear and the A, B and
+// D-pad keys are all enabled in gSys, a sub-object that is idle (flags35B bits 3-6 clear, unk4 0,
+// party member unkE <= 1) is put into state 4. Any other sub-object with flags35A bit 2 set gets
+// its stage-3 id update instead.
+void update_sub_objects(struct SyncPair *pair)
+{
+    if ((pair->subs[0]->flags358 & 8)
+        || (((struct SysKeys78 *)gSys)->keyEnable & (A_BUTTON | B_BUTTON | DPAD_RIGHT | DPAD_LEFT | DPAD_UP | DPAD_DOWN))
+               != (A_BUTTON | B_BUTTON | DPAD_RIGHT | DPAD_LEFT | DPAD_UP | DPAD_DOWN))
+    {
+        if (pair->subs[0]->flags35A & 4)
+            obj_update_stage3_id(pair->subs[0]);
+        if (pair->subs[1]->flags35A & 4)
+            obj_update_stage3_id(pair->subs[1]);
+    }
+    else
+    {
+        if ((pair->subs[0]->flags35B & 0x78) == 0 && pair->subs[0]->unk4 == 0
+            && ((struct Party *)gParty)->members[pair->subs[0]->group].unkE <= 1)
+            obj_start_state_4(pair->subs[0]);
+        else if (pair->subs[0]->flags35A & 4)
+            obj_update_stage3_id(pair->subs[0]);
+        if ((pair->subs[1]->flags35B & 0x78) == 0 && pair->subs[1]->unk4 == 0
+            && ((struct Party *)gParty)->members[pair->subs[1]->group].unkE <= 1)
+            obj_start_state_4(pair->subs[1]);
+        else if (pair->subs[1]->flags35A & 4)
+            obj_update_stage3_id(pair->subs[1]);
+    }
+}
 
 ASM_FUNC("asm/code_0802A4FC/pair_frame_update.s", void pair_frame_update(void))
 
@@ -14,11 +204,27 @@ void obj_set_slot_value(void *obj, s32 value);
 void obj_shift_state_slots(void *sub);
 void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
 
+// CtObj.link: which of the room's entities the object touches (obj_push_out records it).
 struct CtLink
 {
-    s8 idx : 7;
-    u8 contact : 1;
+    s8 idx : 7;     // the entity's index in CtPair.entries, CT_NO_CONTACT for none
+    u8 contact : 1; // 1: it is that entity's partner that is touched
 } __attribute__((packed));
+
+#define CT_NO_CONTACT -1
+
+// CtObj.flags20C
+#define CT_ACTIVE         0x01 // takes part in collisions
+#define CT_BUMPS_PARTNER  0x40 // collides with the other brother (CtPair.entries[group ^ 1])
+#define CT_SOLID          0x80 // others are stopped by it (obj_push_out)
+
+// CtObj.type20E & CT_TYPE_MASK: which brothers' moves an entity reacts to (CtObj.mode352 & 1, & 2)
+#define CT_TYPE_MASK      0x38
+#define CT_TYPE_A         0x08
+#define CT_TYPE_B         0x10
+
+// CtObj.flags216
+#define CT_DISABLED       0x20
 
 struct CtKind
 {
@@ -122,124 +328,130 @@ struct CtPair
     u8 state246;
 };
 
-void obj_update_contacts(struct CtPair *ctx, struct CtObj *obj, u8 flag)
+/* One brother's collisions in the room, each frame: sets his collision box, bumps him against
+   the other brother, then looks for the first entity he touches in list C (or an entity's
+   partner), in the entity list (where an entity of a CtKind > 1 he walks into head-on, or
+   faces, becomes his state) and in list D. Then moves his state history on and advances his
+   animation for the new state. */
+void obj_update_contacts(struct CtPair *room, struct CtObj *bro, u8 skipEntities)
 {
     struct CtObj **slot;
-    struct CtObj *entry;
+    struct CtObj *entity;
     struct CtObj *partner;
-    struct CtObj *other;
+    struct CtObj *touched;
     u32 left;
-    s32 start;
-    s32 objX, objY, otherX, otherY, half;
-    u32 type, mode, state;
-    s32 hit;
+    s32 first;
+    s32 broX, broY, touchedX, touchedY, halfWidths;
+    u32 type, sides, state;
+    s32 against;
 
-    if (obj == NULL)
-        goto part2;
-    if (((struct CtLink *)&obj->link)->idx != -1)
-        goto part2;
-    if (!(obj->flags20C & 1))
-        goto part2;
-    if (obj->flags216 & 0x20)
-        goto part2;
-    if (!(obj->flags20F & 1))
-        goto part2;
+    if (bro == NULL)
+        goto update_state;
+    if (((struct CtLink *)&bro->link)->idx != CT_NO_CONTACT)
+        goto update_state;
+    if (!(bro->flags20C & CT_ACTIVE))
+        goto update_state;
+    if (bro->flags216 & CT_DISABLED)
+        goto update_state;
+    if (!(bro->flags20F & 1))
+        goto update_state;
 
-    obj->boxX = obj->x - (obj->width >> 1);
-    obj->boxY = obj->y + obj->offsetY;
-    obj->boxZ = (obj->zStep > 0 || (obj->zStep < 0 && obj->zVel < 0)) ? obj->z + obj->zStep : obj->z;
+    bro->boxX = bro->x - (bro->width >> 1);
+    bro->boxY = bro->y + bro->offsetY;
+    bro->boxZ = (bro->zStep > 0 || (bro->zStep < 0 && bro->zVel < 0)) ? bro->z + bro->zStep : bro->z;
 
-    if (!(ctx->flags208 & 0x10) && (obj->flags20C & 0x40))
-        obj_push_out(obj, ctx->entries[obj->group ^ 1]);
+    if (!(room->flags208 & 0x10) && (bro->flags20C & CT_BUMPS_PARTNER))
+        obj_push_out(bro, room->entries[bro->group ^ 1]);
 
-    if (!(obj->flags20D & 1))
-        goto part2;
-    if (obj->flags35B & 0x10)
-        goto part2;
+    if (!(bro->flags20D & 1))
+        goto update_state;
+    if (bro->flags35B & 0x10)
+        goto update_state;
 
-    // list C: an entry or the partner of an entry pushes the object
-    if (((struct CtLink *)&obj->link)->idx == -1 && ctx->cStart != 0)
+    // list C: an entity, or its partner
+    if (((struct CtLink *)&bro->link)->idx == CT_NO_CONTACT && room->cStart != 0)
     {
-        slot = &ctx->entries[ctx->cStart];
-        for (left = ctx->cCount; left != 0; left--, slot++)
+        slot = &room->entries[room->cStart];
+        for (left = room->cCount; left != 0; left--, slot++)
         {
-            entry = *slot;
-            if (obj_push_out(obj, entry))
+            entity = *slot;
+            if (obj_push_out(bro, entity))
             {
-                ((struct CtLink *)&obj->link)->contact = 0;
+                ((struct CtLink *)&bro->link)->contact = 0;
                 break;
             }
-            partner = entry->partner;
-            if (partner != NULL && (partner->flags20C & 1) && obj_push_out(obj, partner))
+            partner = entity->partner;
+            if (partner != NULL && (partner->flags20C & CT_ACTIVE) && obj_push_out(bro, partner))
             {
-                ((struct CtLink *)&obj->link)->contact = 1;
+                ((struct CtLink *)&bro->link)->contact = 1;
                 break;
             }
         }
     }
 
-    if (flag != 0)
-        goto part2;
-    if (((struct CtLink *)&obj->link)->idx != -1)
-        goto part2;
+    if (skipEntities != 0)
+        goto update_state;
+    if (((struct CtLink *)&bro->link)->idx != CT_NO_CONTACT)
+        goto update_state;
 
-    // the entity list the scan starts with
-    if ((!(ctx->flags208 & 0x10) || (obj->mode352 & 0x80)
-         || ((struct CtMid *)&ctx->state246)->mid == 3 || ((struct CtMid *)&ctx->state246)->mid == 6)
-        && ctx->pStart != 0)
-        start = ctx->pStart;
-    else if (ctx->aStart != 0)
-        start = ctx->aStart;
+    // the entity list: from list P on, or only list A
+    if ((!(room->flags208 & 0x10) || (bro->mode352 & 0x80)
+         || ((struct CtMid *)&room->state246)->mid == 3 || ((struct CtMid *)&room->state246)->mid == 6)
+        && room->pStart != 0)
+        first = room->pStart;
+    else if (room->aStart != 0)
+        first = room->aStart;
     else
-        start = 0;
+        first = 0;
 
-    if (start > 0)
+    if (first > 0)
     {
-        slot = &ctx->entries[start];
-        for (left = ctx->pCount + ctx->aCount - start + 2; left != 0; left--, slot++)
+        slot = &room->entries[first];
+        for (left = room->pCount + room->aCount - first + 2; left != 0; left--, slot++)
         {
-            if (obj_push_out(obj, *slot) && !(obj->flags358 & 8))
+            if (obj_push_out(bro, *slot) && !(bro->flags358 & 8))
             {
-                other = ctx->entries[((struct CtLink *)&obj->link)->idx];
-                type = other->type20E & 0x38;
-                if ((type == 8 && (obj->mode352 & 1)) || (type == 0x10 && (obj->mode352 & 2)))
+                touched = room->entries[((struct CtLink *)&bro->link)->idx];
+                type = touched->type20E & CT_TYPE_MASK;
+                if ((type == CT_TYPE_A && (bro->mode352 & 1)) || (type == CT_TYPE_B && (bro->mode352 & 2)))
                 {
-                    if ((other->type20E & 0x38) == 8 && ((struct CtKind *)&other->flags20C)->kind > 1
-                        && obj->zStep == 0)
+                    if ((touched->type20E & CT_TYPE_MASK) == CT_TYPE_A
+                        && ((struct CtKind *)&touched->flags20C)->kind > 1 && bro->zStep == 0)
                     {
-                        objX = obj->x;
-                        objY = obj->y + obj->offsetY;
-                        otherX = other->x;
-                        otherY = other->y + other->offsetY;
-                        half = (obj->width + other->width) >> 1;
-                        hit = 0;
-                        if (objX - half < otherX && objX + half > otherX
-                            && objY - obj->height < otherY && objY + other->height > otherY)
+                        broX = bro->x;
+                        broY = bro->y + bro->offsetY;
+                        touchedX = touched->x;
+                        touchedY = touched->y + touched->offsetY;
+                        halfWidths = (bro->width + touched->width) >> 1;
+                        against = 0;
+                        if (broX - halfWidths < touchedX && broX + halfWidths > touchedX
+                            && broY - bro->height < touchedY && broY + touched->height > touchedY)
                         {
-                            hit = 1;
+                            against = 1;
                         }
                         else
                         {
-                            if (gDirMask[((struct CtDir *)&obj->unk2)->dir] & (mode = ((struct CtLo4 *)&obj->mask350)->lo4))
+                            // touched on the side he faces: does he overlap it along that side?
+                            if (gDirMask[((struct CtDir *)&bro->unk2)->dir] & (sides = ((struct CtLo4 *)&bro->mask350)->lo4))
                             {
-                                switch (mode)
+                                switch (sides)
                                 {
                                 case 1:
                                 case 4:
-                                    if (objX + (obj->width >> 1) > otherX - (other->width >> 1)
-                                        && objX - (obj->width >> 1) < otherX + (other->width >> 1))
-                                        hit = 1;
+                                    if (broX + (bro->width >> 1) > touchedX - (touched->width >> 1)
+                                        && broX - (bro->width >> 1) < touchedX + (touched->width >> 1))
+                                        against = 1;
                                     break;
                                 case 2:
                                 case 8:
-                                    if (objY > otherY - other->height && objY - obj->height < otherY)
-                                        hit = 1;
+                                    if (broY > touchedY - touched->height && broY - bro->height < touchedY)
+                                        against = 1;
                                     break;
                                 }
                             }
                         }
-                        if (hit)
-                            obj->state = ((struct CtKind *)&other->flags20C)->kind;
+                        if (against)
+                            bro->state = ((struct CtKind *)&touched->flags20C)->kind;
                     }
                     break;
                 }
@@ -247,42 +459,42 @@ void obj_update_contacts(struct CtPair *ctx, struct CtObj *obj, u8 flag)
         }
     }
 
-    // list D: pushed out of the entries until one reports a push
-    if (((struct CtLink *)&obj->link)->idx == -1 && ctx->dStart != 0)
+    // list D: the first entity touched
+    if (((struct CtLink *)&bro->link)->idx == CT_NO_CONTACT && room->dStart != 0)
     {
-        struct CtObj **dSlot = &ctx->entries[ctx->dStart];
+        struct CtObj **dSlot = &room->entries[room->dStart];
         u32 dLeft;
 
-        for (dLeft = ctx->dCount; dLeft != 0; dLeft--, dSlot++)
+        for (dLeft = room->dCount; dLeft != 0; dLeft--, dSlot++)
         {
-            if (obj_push_out(obj, *dSlot))
+            if (obj_push_out(bro, *dSlot))
                 break;
         }
     }
 
-part2:
-    if (!(ctx->flags209 & 1) && ctx->action != 0 && ctx->action <= 2
-        && ((ctx->flags208 & 0x10) || (obj->mode352 & 0x80)))
+update_state:
+    if (!(room->flags209 & 1) && room->action != 0 && room->action <= 2
+        && ((room->flags208 & 0x10) || (bro->mode352 & 0x80)))
     {
-        state = obj->state;
+        state = bro->state;
         if (state == 2)
         {
-            obj_set_slot_value(obj, 1);
-            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+            obj_set_slot_value(bro, 1);
+            advance_anim_frame(room, bro, (bro->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&room->flags208)->bit4, 0);
         }
-        else if ((obj->mode352 & 0x80) && state == 3)
+        else if ((bro->mode352 & 0x80) && state == 3)
         {
-            obj_set_slot_value(obj, 2);
-            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+            obj_set_slot_value(bro, 2);
+            advance_anim_frame(room, bro, (bro->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&room->flags208)->bit4, 0);
         }
         else
         {
-            if (obj->prevState == obj->state)
+            if (bro->prevState == bro->state)
                 return;
-            obj_shift_state_slots(obj);
-            advance_anim_frame(ctx, obj, (obj->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&ctx->flags208)->bit4, 0);
+            obj_shift_state_slots(bro);
+            advance_anim_frame(room, bro, (bro->mode352 & 0x80) ? 0 : ((struct CtBit4 *)&room->flags208)->bit4, 0);
         }
         return;
     }
-    obj_shift_state_slots(obj);
+    obj_shift_state_slots(bro);
 }

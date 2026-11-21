@@ -95,7 +95,10 @@ struct HitEntry
 extern struct SysRam gSys;
 extern const u16 gInputSequenceKeys[];
 u8 *bank_data_5bit(u16 bank, u8 *out);
-void find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, u32 *out, s32 slot);
+// Finds or allocates OBJ palette slots for palette `palId` (bank in its top nibble, else `bank`)
+// and copies it into the palette buffer unless `noCopy`; `slot` -1 takes any free slot.
+// Writes the mask of the slots used to *slotMask.
+void find_or_alloc_obj_slots(u32 bank, u32 palId, u32 skipMatch, u32 noCopy, u32 flag, u32 *slotMask, s32 slot);
 
 typedef void (*EntCb)(void *view, void *sel, u32 a, u32 b);
 
@@ -106,10 +109,26 @@ struct EntDesc
     EntCb cb;
 };
 
+struct EntDesc1
+{
+    s16 viewOff;
+    u16 filler2;
+    void (*cb)(void *view);
+};
+
+struct EntDesc3
+{
+    s16 viewOff;
+    u16 filler2;
+    void (*cb)(void *view, void *entries, u32 a);
+};
+
 struct EntClass
 {
     u8 filler0[0x60];
     struct EntDesc desc;
+    struct EntDesc1 desc68;
+    struct EntDesc3 desc70;
 };
 
 struct EntRecord
@@ -147,7 +166,11 @@ struct EntObj
     u8 listB1Count;
     u8 listB2Start;
     u8 listB2Count;
-    u8 filler118[0x208 - 0x118];
+    u8 listDStart;
+    u8 listDCount;
+    u8 listEStart;
+    u8 listECount;
+    u8 filler11C[0x208 - 0x11C];
     u8 flags208;
     u8 flags209;
     u8 filler20A[0x246 - 0x20A];
@@ -497,7 +520,56 @@ NONMATCH("asm/code_08025650/obj_update_entities.s", void obj_update_entities(str
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_08025650/process_obj_entries.s", void process_obj_entries(void))
+void obj_advance_motion(void *sub);
+void obj_update_state(void *obj);
+// Updates every entity from the first one of the first non-empty group (P, A, C, B1, B2, E; group D
+// is not checked) to the end of obj->entries: advances its motion, calls its class's two update
+// methods (+0x68, then +0x70 with the entity list) and updates its state.
+void process_obj_entries(struct EntObj *obj)
+{
+    s32 first;
+    u32 remaining;
+    struct EntEntity **slot;
+
+    if (obj->listPStart != 0)
+        first = obj->listPStart;
+    else if (obj->listAStart != 0)
+        first = obj->listAStart;
+    else if (obj->listCStart != 0)
+        first = obj->listCStart;
+    else if (obj->listB1Start != 0)
+        first = obj->listB1Start;
+    else if (obj->listB2Start != 0)
+        first = obj->listB2Start;
+    else if (obj->listEStart != 0)
+        first = obj->listEStart;
+    else
+        first = 0;
+
+    if (first > 0)
+    {
+        slot = &obj->entries[first];
+        remaining = obj->entryCount - first;
+        while (remaining != 0)
+        {
+            obj_advance_motion(*slot);
+            {
+                /* virtual call: the method gets the entity adjusted by viewOff */
+                struct EntEntity *ent = *slot;
+                struct EntDesc1 *method = &ent->info->desc68;
+                method->cb((u8 *)ent + method->viewOff);
+            }
+            {
+                struct EntEntity *ent = *slot;
+                struct EntDesc3 *method = &ent->info->desc70;
+                method->cb((u8 *)ent + method->viewOff, obj->entries, 0);
+            }
+            obj_update_state(*slot);
+            remaining--;
+            slot++;
+        }
+    }
+}
 
 NONMATCH("asm/code_08025650/obj_collision_mask.s", u32 obj_collision_mask(struct Obj *owner, u32 idx))
 {
@@ -561,21 +633,28 @@ NONMATCH("asm/code_08025650/obj_collision_mask.s", u32 obj_collision_mask(struct
 }
 END_NONMATCH
 
-struct TestRec
-{
-    u16 h0;
-    u16 h2;
-};
-
-struct TestTab
-{
-    u8 filler0[4];
-    u16 h4;
-    u16 h6;
-};
-
 extern u8 gUnk_02000100[];
 
+/* obj->record as read by obj_test_mode: the keys of the frame */
+struct KeyState
+{
+    u16 held;
+    u16 pressed; /* newly pressed this frame */
+};
+
+/* A bro's key table (SubObj.table) */
+struct BroKeyTable
+{
+    u8 filler0[4];
+    u16 actionKeys; /* the bro's own action button */
+    u16 unk6;
+};
+
+/* Tests one key condition for a controllable obj (testLevel 2 and up), returns 1 when it holds:
+ * 0/1: bro 0x200's / 0x204's action button pressed with neither L nor R held;
+ * 2/3: bro 0x200's / 0x204's unk6 key pressed while the other bro's isn't held;
+ * 4: Start pressed; 5: only Select pressed, without L or R held;
+ * 6: L held and R pressed, or R held and L pressed; 7: L and R both held (gSys keys). */
 u32 obj_test_mode(struct Obj *obj, u32 mode)
 {
     if (obj->testLevel <= 1)
@@ -586,64 +665,67 @@ u32 obj_test_mode(struct Obj *obj, u32 mode)
     {
     case 0:
     {
-        struct TestRec *rec = (struct TestRec *)obj->record;
-        if ((rec->h0 & 0x300) == 0)
+        struct KeyState *keys = (struct KeyState *)obj->record;
+        if ((keys->held & (L_BUTTON | R_BUTTON)) == 0)
         {
-            struct TestTab *tab = (struct TestTab *)obj->sub200->table;
-            if (rec->h2 & tab->h4)
+            struct BroKeyTable *bro = (struct BroKeyTable *)obj->sub200->table;
+            if (keys->pressed & bro->actionKeys)
                 return 1;
         }
         break;
     }
     case 1:
     {
-        struct TestRec *rec = (struct TestRec *)obj->record;
-        if ((rec->h0 & 0x300) == 0)
+        struct KeyState *keys = (struct KeyState *)obj->record;
+        if ((keys->held & (L_BUTTON | R_BUTTON)) == 0)
         {
-            struct TestTab *tab = (struct TestTab *)obj->sub204->table;
-            if (rec->h2 & tab->h4)
+            struct BroKeyTable *bro = (struct BroKeyTable *)obj->sub204->table;
+            if (keys->pressed & bro->actionKeys)
                 return 1;
         }
         break;
     }
     case 2:
     {
-        struct TestRec *rec = (struct TestRec *)obj->record;
-        struct TestTab *tab = (struct TestTab *)obj->sub204->table;
-        if (rec->h0 & tab->h6)
+        struct KeyState *keys = (struct KeyState *)obj->record;
+        struct BroKeyTable *bro = (struct BroKeyTable *)obj->sub204->table;
+        if (keys->held & bro->unk6)
             break;
-        tab = (struct TestTab *)obj->sub200->table;
-        if (rec->h2 & tab->h6)
+        bro = (struct BroKeyTable *)obj->sub200->table;
+        if (keys->pressed & bro->unk6)
             return 1;
         break;
     }
     case 3:
     {
-        struct TestRec *rec = (struct TestRec *)obj->record;
-        struct TestTab *tab = (struct TestTab *)obj->sub200->table;
-        if (rec->h0 & tab->h6)
+        struct KeyState *keys = (struct KeyState *)obj->record;
+        struct BroKeyTable *bro = (struct BroKeyTable *)obj->sub200->table;
+        if (keys->held & bro->unk6)
             break;
-        tab = (struct TestTab *)obj->sub204->table;
-        if (rec->h2 & tab->h6)
+        bro = (struct BroKeyTable *)obj->sub204->table;
+        if (keys->pressed & bro->unk6)
             return 1;
         break;
     }
     case 4:
-        if (((struct TestRec *)obj->record)->h2 & 8)
+        if (((struct KeyState *)obj->record)->pressed & START_BUTTON)
             return 1;
         break;
     case 5:
+        /* held & (L | R) == 0 and pressed == Select, read as one word */
         if ((*(u32 *)obj->record & 0xFFFF0300) == 0x40000)
             return 1;
         break;
     case 6:
+        /* pressed R with L held */
         if ((*(u32 *)obj->record & 0x01000200) == 0x01000200)
             return 1;
+        /* pressed L with R held: the mask 0x02000100 comes through a symbol at that address */
         if ((*(u32 *)obj->record & (u32)gUnk_02000100) == (u32)gUnk_02000100)
             return 1;
         break;
     case 7:
-        if ((gSys.keys28 & 0x300) == 0x300)
+        if ((gSys.keys28 & (L_BUTTON | R_BUTTON)) == (L_BUTTON | R_BUTTON))
             return 1;
         break;
     }
@@ -758,19 +840,25 @@ struct FcBits
     u8 rest : 6;
 };
 
-void obj_build_message(struct Obj *obj, u32 unused, u32 kind, u32 index, u32 flag)
+// Writes the "got an item" message for a block's drop into the text buffer (obj->unk1C + 0x27C):
+// the prefix string, then the drop's name in the current language (kinds 4-11: the item's name
+// from gItemTable; kinds 12 and up: an entry of gStringTable12; kinds 0-3 have no message), then
+// the control codes FF 0C 1E FF 0A. The name's first string is skipped; its second is copied.
+// Sets unkFC bit 1 to flag and starts the message timer (unk10A) at 20.
+void obj_build_message(struct Obj *obj, u32 unused, u32 kind, u32 id, u32 flag)
 {
-    u8 *text = 0;
+    u8 *name = 0;
     u8 *entry;
     u32 offset;
     u32 table;
     u8 *dst;
-    u8 *src;
+    u8 *prefix;
     u8 ch;
 
     if ((u32)(kind - 4) <= 7)
     {
-        offset = index << 4;
+        // gItemTable: 16 bytes per item, its name table at +0xC.
+        offset = id << 4;
         table = (u32)gItemTable;
         table += 0xC;
     }
@@ -778,42 +866,43 @@ void obj_build_message(struct Obj *obj, u32 unused, u32 kind, u32 index, u32 fla
     {
         if ((s32)kind <= 11)
             goto check;
-        offset = index << 1;
-        offset += index;
+        // gStringTable12: 12 bytes per entry, its name table first.
+        offset = id << 1;
+        offset += id;
         offset <<= 2;
         table = (u32)gStringTable12;
     }
     entry = (u8 *)(offset + table);
     {
         u32 lang = gSys.lang8C0;
-        u32 *langs = *(u32 **)entry;
-        text = *(u8 **)langs[lang];
+        u32 *names = *(u32 **)entry;
+        name = *(u8 **)names[lang];
     }
 check:
-    if (text != 0)
+    if (name != 0)
     {
         refresh_bg_layer(obj->unk31C);
         dst = obj->unk1C + 0x27C;
-        src = gPrefixPtr;
-        ch = *src;
+        prefix = gPrefixPtr;
+        ch = *prefix;
         if (ch != 0)
         {
             do
             {
                 *dst = ch;
-                src++;
+                prefix++;
                 dst++;
-                ch = *src;
+                ch = *prefix;
             } while (ch != 0);
         }
-        while (*text != 0)
+        while (*name != 0)
         {
-            text++;
+            name++;
         }
-        text++;
-        while (*text != 0)
+        name++;
+        while (*name != 0)
         {
-            *dst++ = *text++;
+            *dst++ = *name++;
         }
         *dst++ = 0xFF;
         *dst++ = 0xC;
@@ -826,41 +915,49 @@ check:
     }
 }
 
+// Loads the object's palettes into OBJ palette slots: every palette id in the bank's list
+// (any free slot), then a variant palette for unk246 kinds 0x10 and 4 into slot 12, and the
+// shared palettes 0x8003, 0x8000 and 0x8001 into slots 13-15.
 void obj_load_resources(struct Obj *obj, u16 id)
 {
-    u32 slot;
-    u8 *list;
+    u32 slotMask;
+    u8 *palId;
     s32 i;
-    u32 state;
+    u32 kind;
 
-    list = obj->resList = bank_data_5bit(id, &obj->resCount);
-    for (i = 0; i < obj->resCount; i++, list += 2)
+    palId = obj->resList = bank_data_5bit(id, &obj->resCount);
+    for (i = 0; i < obj->resCount; i++, palId += 2)
     {
-        find_or_alloc_obj_slots(0, *(u16 *)list, 0, 0, 0, &slot, -1);
+        find_or_alloc_obj_slots(0, *(u16 *)palId, 0, 0, 0, &slotMask, -1);
     }
-    state = obj->unk246 & 0x1C;
-    if (state == 0x10)
+    kind = obj->unk246 & 0x1C;
+    if (kind == 0x10)
     {
-        find_or_alloc_obj_slots(0, 0x1003, 0, 0, 0, &slot, 0xC);
+        find_or_alloc_obj_slots(0, 0x1003, 0, 0, 0, &slotMask, 0xC);
     }
-    else if (state == 4)
+    else if (kind == 4)
     {
-        find_or_alloc_obj_slots(0, 0x1004, 0, 0, 0, &slot, 0xC);
+        find_or_alloc_obj_slots(0, 0x1004, 0, 0, 0, &slotMask, 0xC);
     }
-    find_or_alloc_obj_slots(0, 0x8003, 0, 0, 0, &slot, 0xD);
-    find_or_alloc_obj_slots(0, 0x8000, 0, 0, 0, &slot, 0xE);
-    find_or_alloc_obj_slots(0, 0x8001, 0, 0, 0, &slot, 0xF);
+    find_or_alloc_obj_slots(0, 0x8003, 0, 0, 0, &slotMask, 0xD);
+    find_or_alloc_obj_slots(0, 0x8000, 0, 0, 0, &slotMask, 0xE);
+    find_or_alloc_obj_slots(0, 0x8001, 0, 0, 0, &slotMask, 0xF);
 }
 
 ASM_FUNC("asm/code_08025650/sprites_obj_setup_sprites.s", void sprites_obj_setup_sprites(void))
 
+// Creates the scene's entries from object definition `def`. Kind 0 are the bros (entries
+// 0 and 1, each with its slot in slots20C); kinds 1-7 are allocated by kind, and since
+// the definition lists each kind together, first<k>/count<k> record where each kind's
+// run starts and how long it is. Then marks the leading bro (flags208 bit 2), notes the
+// first entry of kinds 1-3 and their total, and allocates the 8 slot objects.
 void build_scene_children(struct SceneObj *obj, u32 def)
 {
-    s32 i;
-    s32 j;
+    s32 index;
+    s32 slot;
     u8 kind;
-    u32 hint;
-    struct SceneItem *item;
+    u32 firstTarget;
+    struct SceneItem *entry;
 
     bank_byte1_high(def, &obj->entryCount);
     obj->first1 = 0;
@@ -878,93 +975,94 @@ void build_scene_children(struct SceneObj *obj, u32 def)
     obj->first2 = 0;
     obj->count2 = 0;
 
-    for (i = 0; i < obj->entryCount; i++)
+    for (index = 0; index < obj->entryCount; index++)
     {
-        kind = object_def_mode(def, i);
+        kind = object_def_mode(def, index);
         switch (kind)
         {
         case 0:
-            item = obj_init_defaults(heap_alloc2(0x38C, 1, gHeapTagItemKind0, 1), def, i);
+            entry = obj_init_defaults(heap_alloc2(0x38C, 1, gHeapTagItemKind0, 1), def, index);
             if (obj->flagsFB & 4)
-                obj_set_motion_params(item, 0x100, 0x100, 0xD2, 0xD);
+                obj_set_motion_params(entry, 0x100, 0x100, 0xD2, 0xD);
             else
-                obj_set_motion_params(item, 0x200, 0x200, 0x52C, 0x75);
-            item->ptr368 = (u32)&obj->slots20C[i];
-            obj->entries[i] = item;
+                obj_set_motion_params(entry, 0x200, 0x200, 0x52C, 0x75);
+            entry->ptr368 = (u32)&obj->slots20C[index];
+            obj->entries[index] = entry;
             break;
         case 1:
-            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind1, 1), def, i);
+            obj->entries[index] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind1, 1), def, index);
             if (obj->first1 == 0)
-                obj->first1 = i;
+                obj->first1 = index;
             obj->count1++;
             break;
         case 2:
-            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind2, 1), def, i);
+            obj->entries[index] = obj_init(heap_alloc2(0x33C, 1, gHeapTagItemKind2, 1), def, index);
             if (obj->first2 == 0)
-                obj->first2 = i;
+                obj->first2 = index;
             obj->count2++;
             break;
         case 3:
-            obj->entries[i] = obj_init_with_child(heap_alloc2(0x348, 1, gSceneObjKind3Tag, 1), def, i);
-            if (obj->entries[i]->child != 0)
-                obj->entries[i]->child->index54 = i;
+            obj->entries[index] = obj_init_with_child(heap_alloc2(0x348, 1, gSceneObjKind3Tag, 1), def, index);
+            if (obj->entries[index]->child != 0)
+                obj->entries[index]->child->index54 = index;
             if (obj->first3 == 0)
-                obj->first3 = i;
+                obj->first3 = index;
             obj->count3++;
             break;
         case 4:
-            obj->entries[i] = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind4Tag, 1), def, i);
+            obj->entries[index] = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind4Tag, 1), def, index);
             if (obj->first4 == 0)
-                obj->first4 = i;
+                obj->first4 = index;
             obj->count4++;
             break;
         case 5:
-            item = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind5Tag, 1), def, i);
-            if (test_flag(gUnk_03000FC0 + 0x38C, 0, item->bits22C.id + 0x1160) == 1)
+            entry = obj_init(heap_alloc2(0x33C, 1, gSceneObjKind5Tag, 1), def, index);
+            // Its story flag (0x1160 + id) set: start with these bits cleared.
+            if (test_flag(gUnk_03000FC0 + 0x38C, 0, entry->bits22C.id + 0x1160) == 1)
             {
-                item->bits20C.b0 = 0;
-                item->bits20F.b1 = 0;
+                entry->bits20C.b0 = 0;
+                entry->bits20F.b1 = 0;
             }
-            item->bits210.b5 = 1;
-            obj->entries[i] = item;
+            entry->bits210.b5 = 1;
+            obj->entries[index] = entry;
             if (obj->first5 == 0)
-                obj->first5 = i;
+                obj->first5 = index;
             obj->count5++;
             break;
         case 6:
-            obj->entries[i] = obj_init_flags(heap_alloc2(0x33C, 1, gSceneObjKind6Tag, 1), def, i);
+            obj->entries[index] = obj_init_flags(heap_alloc2(0x33C, 1, gSceneObjKind6Tag, 1), def, index);
             if (obj->first6 == 0)
-                obj->first6 = i;
+                obj->first6 = index;
             obj->count6++;
             break;
         case 7:
-            obj->entries[i] = obj_init_state(heap_alloc2(0x350, 1, gSceneObjKind7Tag, 1), def, i);
+            obj->entries[index] = obj_init_state(heap_alloc2(0x350, 1, gSceneObjKind7Tag, 1), def, index);
             if (obj->first7 == 0)
-                obj->first7 = i;
+                obj->first7 = index;
             obj->count7++;
             break;
         default:
-            obj->entries[i] = 0;
+            obj->entries[index] = 0;
             break;
         }
-        obj->entries[i]->bits210.b4 = obj->entries[i]->bits20C.b5;
-        obj->entries[i]->mode239 = 0x10 >> ((struct Bits8 *)&obj->flagsFB)->b2;
-        obj->entries[i]->index54 = i;
+        obj->entries[index]->bits210.b4 = obj->entries[index]->bits20C.b5;
+        obj->entries[index]->mode239 = 0x10 >> ((struct Bits8 *)&obj->flagsFB)->b2;
+        obj->entries[index]->index54 = index;
     }
 
     obj->entries[((struct Bits8 *)&obj->flags208)->b2]->bits352.b7 = 1;
-    hint = obj->first1;
-    if (hint == 0)
+    firstTarget = obj->first1;
+    if (firstTarget == 0)
     {
-        hint = obj->first2;
-        if (hint == 0)
-            hint = obj->first3;
+        firstTarget = obj->first2;
+        if (firstTarget == 0)
+            firstTarget = obj->first3;
     }
-    obj->hint11C = hint;
+    obj->hint11C = firstTarget;
     obj->sum11D = obj->count1 + obj->count2 + obj->count3;
 
-    for (j = 0; j < 8; j++)
-        obj->slotsA8[j] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), j);
+    for (slot = 0; slot < 8; slot++)
+        obj->slotsA8[slot] = set_low3_bits(heap_alloc2(0x4C, 1, gSceneObjItemTag, 1), slot);
 }
 
 

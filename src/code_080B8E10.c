@@ -88,7 +88,7 @@ struct HeroBody
     u16 frame;
     u16 progress;
     u8 filler80[0x84 - 0x80];
-    s16 spanA;
+    s16 spanA; /* the current jump's start and end X in pixels (step_motion_checked) */
     s16 spanB;
     u8 filler88[0x92 - 0x88];
     s16 height;
@@ -103,6 +103,12 @@ struct HeroBody
     u16 scale;
     u8 cc;
 };
+
+/* HeroSprite.flags: its animation has finished. */
+#define HERO_SPRITE_ANIM_DONE 8
+
+/* HeroBody.mode bits 1-2 say where it is: 2 or 4 = on the field. */
+#define HERO_ON_FIELD(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
 
 struct Hero
 {
@@ -156,191 +162,209 @@ u32 mt19937_next(void);
 s32 rand_below(s32 range, u32 seed);
 u32 find_frame_entry(struct HeroBody *obj, u32 index);
 
+/* State: once hero B's animation has finished, and if it is on the field, gives it action 0xB with
+   animation 0x204D and sets up its jump home: targets its data's position (in pixels), with an arc
+   32 pixels above the target's height (motion offsets 0x700). Continues in hero_b_step_slot_anim. */
 void hero_b_place_at_target(struct HeroBody *body)
 {
     struct Hero *hero = gWorld->heroB;
-    struct HeroBody *b = &hero->body;
+    struct HeroBody *heroB = &hero->body;
     struct HeroData *data;
-    s32 x;
-    s32 y;
-    s32 z;
+    s32 homeX;
+    s32 homeY;
+    s32 homeZ;
     s32 t;
 
-    if ((b->sprite->flags & 8) != 0)
+    if ((heroB->sprite->flags & HERO_SPRITE_ANIM_DONE) != 0)
     {
-        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+        if (HERO_ON_FIELD(hero->body.mode))
         {
-            sprite_set_action(b, 0xB, 0x204D, 0);
-            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 1;
+            sprite_set_action(heroB, 0xB, 0x204D, 0);
+            ((struct HeroSpriteBits *)&heroB->sprite->flags)->mode = 1;
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_ON_FIELD(heroB->mode))
         {
-            data = b->data;
+            data = heroB->data;
             t = data->targetX;
             if (t < 0)
                 t += 0xFF;
-            x = t >> 8;
+            homeX = t >> 8;
             t = data->targetY;
             if (t < 0)
                 t += 0xFF;
-            y = t >> 8;
+            homeY = t >> 8;
             t = data->targetH;
             if (t < 0)
                 t += 0xFF;
-            z = t >> 8;
-            place_targets(b, x, y, z, -1);
-            t = b->targetZ;
+            homeZ = t >> 8;
+            place_targets(heroB, homeX, homeY, homeZ, -1);
+            t = heroB->targetZ;
             if (t < 0)
                 t += 0xFF;
-            b->height = (t >> 8) + 0x20;
-            set_motion_offsets(b, 0x700);
+            heroB->height = (t >> 8) + 0x20;
+            set_motion_offsets(heroB, 0x700);
         }
         body->state = hero_b_step_slot_anim;
     }
 }
 
+/*
+ * Steps hero B's jump. When it lands (flag 0x20, set by step_motion_checked) it plays sound 0x53
+ * and, if hero B is on the field (mode 2 or 4), jumps back to its home position (its data's target)
+ * at speed 0x400, with action 0 and animation 0x2002 (0x204F when its data has a pose), facing the
+ * way it jumps; then it clears its state and rebuilds.
+ */
 void hero_b_pair_finish(void)
 {
     struct Hero *hero = gWorld->heroB;
-    struct HeroBody *b = &hero->body;
+    struct HeroBody *body = &hero->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     u8 *mode;
-    s16 *span;
+    s16 *jumpX;
     s32 mirror;
-    s32 x;
-    s32 y;
-    s32 z;
+    s32 homeX;
+    s32 homeY;
+    s32 homeZ;
     s32 t;
 
-    step_motion_checked(b);
+    step_motion_checked(body);
     if ((hero->body.flags & 0x20) != 0)
     {
         set_slot_value(0x53, -1);
         if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
         {
-            data = b->data;
+            data = body->data;
             t = data->targetX;
             if (t < 0)
                 t += 0xFF;
-            x = t >> 8;
+            homeX = t >> 8;
             t = data->targetY;
             if (t < 0)
                 t += 0xFF;
-            y = t >> 8;
+            homeY = t >> 8;
             t = data->targetH;
             if (t < 0)
                 t += 0xFF;
-            z = t >> 8;
-            place_targets(b, x, y, z, -1);
-            set_motion_start(b, 0x400);
+            homeZ = t >> 8;
+            place_targets(body, homeX, homeY, homeZ, -1);
+            set_motion_start(body, 0x400);
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
         {
-            if (b->data->pose == -1)
-                sprite_set_action(b, 0, 0x2002, 0);
+            if (body->data->pose == -1)
+                sprite_set_action(body, 0, 0x2002, 0);
             else
-                sprite_set_action(b, 0, 0x204F, 0);
-            sprite = b->sprite;
+                sprite_set_action(body, 0, 0x204F, 0);
+            sprite = body->sprite;
+            /* face left unless the jump goes right */
             mirror = 0;
-            span = &b->spanA;
-            if (!(span[0] < span[1]))
+            jumpX = &body->spanA;
+            if (!(jumpX[0] < jumpX[1]))
                 mirror = 1;
             ((struct HeroMirrorBits *)&sprite->mirrorFlags)->mirror = mirror;
-            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+            ((struct HeroSpriteBits *)&body->sprite->flags)->mode = 0;
         }
-        mode = &b->mode;
+        mode = &body->mode;
         if ((*mode & 6) == 2 || (*mode & 6) == 4)
         {
-            b->state = 0;
-            enter_finish_rebuild(b);
+            body->state = 0;
+            enter_finish_rebuild(body);
         }
     }
 }
 
+/*
+ * Picks a new target for hero A: one of the six enemy slots, chosen uniformly at random
+ * (reservoir sampling) among those on the field (mode 4), not flagged 0x20 and not the
+ * current target's owner. Plays sound 0x2B (set_slot_value queues the song), then starts
+ * hero A's jump onto the target: lands on its position plus its offsets, and the arc's
+ * height grows with the target's height. Continues in hero_a_approach_91e0.
+ */
 void hero_a_pick_partner(struct HeroBody *body)
 {
-    struct HeroBody *a = &gWorld->heroA->body;
-    struct HeroBody *partner = body->partner;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *target = body->partner;
     struct World *world;
-    struct Hero *entry;
+    struct Hero *enemy;
     u8 *mode;
-    s8 *ofsZ;
-    u32 count = 0;
+    s8 *ofs_z;
+    u32 candidates = 0;
     s32 index;
     s32 next;
     s32 x;
     s32 y;
     s32 z;
-    s32 h;
+    s32 height;
     s32 t;
 
     for (index = 0; index < 6; index += 2)
     {
-        entry = gWorld->list[index];
-        if ((entry->body.mode & 6) == 4 && (entry->flags110 & 0x20) == 0
-            && entry != (struct Hero *)body->partner->data)
+        enemy = gWorld->list[index];
+        if ((enemy->body.mode & 6) == 4 && (enemy->flags110 & 0x20) == 0
+            && enemy != (struct Hero *)body->partner->data)
         {
-            count++;
-            if (rand_below(count, mt19937_next()) == 0)
-                partner = &entry->body;
+            candidates++;
+            if (rand_below(candidates, mt19937_next()) == 0)
+                target = &enemy->body;
         }
         next = index + 1;
-        entry = gWorld->list[next];
-        if ((entry->body.mode & 6) == 4 && (entry->flags110 & 0x20) == 0
-            && entry != (struct Hero *)body->partner->data)
+        enemy = gWorld->list[next];
+        if ((enemy->body.mode & 6) == 4 && (enemy->flags110 & 0x20) == 0
+            && enemy != (struct Hero *)body->partner->data)
         {
-            count++;
-            if (rand_below(count, mt19937_next()) == 0)
-                partner = &entry->body;
+            candidates++;
+            if (rand_below(candidates, mt19937_next()) == 0)
+                target = &enemy->body;
         }
     }
-    body->partner = partner;
+    body->partner = target;
     set_slot_value(0x2B, -1);
-    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    if ((hero_a->mode & 6) == 2 || (hero_a->mode & 6) == 4)
     {
-        sprite_set_action(a, 0xC, 0x2000, 0);
-        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+        sprite_set_action(hero_a, 0xC, 0x2000, 0);
+        ((struct HeroSpriteBits *)&hero_a->sprite->flags)->mode = 0;
     }
-    mode = &a->mode;
+    mode = &hero_a->mode;
     if ((*mode & 6) == 2 || (*mode & 6) == 4)
     {
         {
-            s32 tx = partner->targetX;
+            s32 tx = target->targetX;
             if (tx < 0)
                 tx += 0xFF;
-            x = (tx >> 8) + partner->ofsX;
+            x = (tx >> 8) + target->ofsX;
         }
-        t = partner->targetY;
+        t = target->targetY;
         if (t < 0)
             t += 0xFF;
-        y = (t >> 8) + partner->ofsY;
-        z = partner->targetZ;
+        y = (t >> 8) + target->ofsY;
+        z = target->targetZ;
         if (z < 0)
             z += 0xFF;
         z >>= 8;
-        ofsZ = &partner->ofsZ;
-        z += *ofsZ;
-        place_targets(a, x, y, z, -1);
-        if (partner == (struct HeroBody *)((u8 *)partner->data + 8))
+        ofs_z = &target->ofsZ;
+        z += *ofs_z;
+        place_targets(hero_a, x, y, z, -1);
+        /* the target's own height: its Z offset if it is its owner's main body, else its frame's */
+        if (target == (struct HeroBody *)((u8 *)target->data + 8))
         {
-            h = *ofsZ;
+            height = *ofs_z;
         }
         else
         {
-            find_frame_entry(partner, 0);
-            h = partner->unk47;
+            find_frame_entry(target, 0);
+            height = target->unk47;
         }
-        t = partner->targetZ;
+        t = target->targetZ;
         if (t < 0)
             t += 0xFF;
-        h += t >> 8;
-        t = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x6E4, (h * h) / 64 + 0x2A);
-        h += t;
-        a->height = h;
-        set_motion_offsets(a, 0x500);
+        height += t >> 8;
+        t = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x6E4, (height * height) / 64 + 0x2A);
+        height += t;
+        hero_a->height = height;
+        set_motion_offsets(hero_a, 0x500);
     }
-    a->timer &= 0xFFF;
+    hero_a->timer &= 0xFFF;
     body->state = hero_a_approach_91e0;
 }
 

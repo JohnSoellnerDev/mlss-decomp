@@ -1,13 +1,15 @@
 #include "global.h"
 
+/* The object's main sprite */
 struct FieldSub
 {
-    u16 unk00;
-    u16 unk02;
+    u16 x;     /* screen px */
+    u16 y;
     u8 filler04[0x8];
     u16 unk0C;
-    u16 unk0E;
-    u8 filler10[0x2];
+    u16 depth; /* sort key: (layer << 12) | (0x800 - y px), or 0xFFFF */
+    u8 filler10[0x1];
+    u8 unk11;
     u8 unk12;
     u8 filler13[0x1];
     u16 mask14;
@@ -36,11 +38,11 @@ struct FieldObj
     u8 unk02;
     u8 filler3[0x1];
     s16 unk04;
-    u16 unk06;
-    u16 unk08;
+    u16 screenX;  /* px, from x and the camera */
+    u16 screenY;  /* px, from y and unk14 and the camera */
     u16 unk0A;
-    s32 unk0C;
-    s32 unk10;
+    s32 unk0C;    /* x, 1/256 px */
+    s32 unk10;    /* y, 1/256 px */
     s32 unk14;
     s32 unk18;
     s32 unk1C;
@@ -83,8 +85,8 @@ struct FieldObj
     u8 filler223[0x15];
     s8 linkIndex;
     u8 mode;
-    s8 unk23A;
-    s8 unk23B;
+    s8 spriteOfsX; /* px added to the main sprite's position (obj_update_mode wobbles it) */
+    s8 spriteOfsY;
     u8 unk23C;
     u8 filler23D[0x1];
     s16 unk23E;
@@ -95,7 +97,7 @@ struct FieldObj
     s32 unk24C;
     s32 unk250;
     s32 unk254;
-    u8 filler258[0x4];
+    s32 unk258;
     s32 counter25C;
     u16 unk260;
     u16 unk262;
@@ -118,13 +120,14 @@ struct FieldObj
     u8 flags2B5;
     u8 flags2B6;
     u8 filler2B7[0x6B];
-    u16 unk322;
-    u16 unk324;
+    /* rotation tween (axis E of code_08045F18.c's tweens, mode in flags2B6 bits 4-5) */
+    u16 unk322;   /* base: sub->unk0C (rotation) when it started */
+    u16 unk324;   /* step per frame (TWEEN_STEP) */
     u8 filler326[0x2];
-    u32 unk328;
-    u32 unk32C;
-    u16 unk330;
-    u16 unk332;
+    u32 unk328;   /* target offset from the base, 8.8 */
+    u32 unk32C;   /* current offset */
+    u16 unk330;   /* frames run */
+    u16 unk332;   /* frames to take (TWEEN_TIMED) */
     void * entryTable;
     struct FieldData * data;
     u8 unk33C;
@@ -155,21 +158,22 @@ struct FieldObj
     u8 filler366[0x2];
     struct FieldSpr16 * unk368;
     struct FieldAttrEntry * attr;
-          u16 unk370;
-    u8 unk372;
-    u8 unk373;
-    u8 unk374;
+    u16 attrSpriteId;
+    u8 attrOfsX;     /* s8: attr sprite's x, y and depth relative to the main sprite */
+    u8 attrOfsY;
+    u8 attrOfsDepth;
     u8 filler375[0x3];
-    u8 unk378;
-    u8 unk379;
+    /* attr sprite state kept while the sprite is gone (obj_copy_sprite_attrs saves it) */
+    u8 savedAttrFlags;  /* bit 0 valid, 1 attr 0x11 bit 6, 2-3/4-5 attr 0x1F bits 0-1/2-3, 6-7 attr 0x12 bits 1-2 */
+    u8 savedAttrFlags2; /* bits 0-1: attr 0x12 bits 3-4 */
     u8 filler37A[0x1];
-    u8 unk37B;
-    u8 unk37C;
+    u8 savedAnim;
+    u8 savedFrame;
     u8 filler37D[0x1];
-    u16 unk37E;
-    u16 unk380;
-    u16 unk382;
-    u16 unk384;
+    u16 savedAttr2A;
+    u16 savedAttr2C;
+    u16 savedAttr04;
+    u16 savedAttr06;
 };
 
 struct FieldBits213
@@ -228,14 +232,15 @@ struct FieldTail
     void (*callback)(u8 *, u32);
 };
 
+/* The object's second sprite, which can follow the main one */
 struct FieldAttrEntry
 {
-    u16 unk00;
-    u16 unk02;
+    u16 x;
+    u16 y;
     u16 unk04;
     u16 unk06;
     u8 filler08[0x6];
-    u16 unk0E;
+    u16 depth;
     u8 filler10;
     u8 unk11;
     u8 unk12;
@@ -496,20 +501,23 @@ s32 obj_flags_2b5_30_set(struct FieldObj *obj)
     return r;
 }
 
-u32 obj_set_move_params(struct FieldObj *obj, u32 mode, u16 value, s32 dir, u16 extra)
+/* Starts obj's rotation tween: turns `angle` (whole units, the sign of `dir` gives the way) from the
+ * sprite's current rotation, by `stepOrFrames` per frame (mode 1, TWEEN_STEP) or over `stepOrFrames`
+ * frames (mode 2, TWEEN_TIMED). A timed tween of angle 0 isn't started: returns 0, else 1. */
+u32 obj_set_move_params(struct FieldObj *obj, u32 mode, u16 angle, s32 dir, u16 stepOrFrames)
 {
-    if (mode == 2 && value == 0)
+    if (mode == 2 && angle == 0)
         return 0;
     obj->unk322 = obj->sub->unk0C;
     if (dir >= 0)
         dir = 1;
     else
         dir = -1;
-    obj->unk328 = value * (dir << 8);
+    obj->unk328 = angle * (dir << 8);
     if (mode == 1)
-        obj->unk324 = extra * dir;
+        obj->unk324 = stepOrFrames * dir;
     else
-        obj->unk332 = extra;
+        obj->unk332 = stepOrFrames;
     obj->unk32C = 0;
     obj->unk330 = 0;
     ((struct FlagPairs *)&obj->flags2B6)->b45 = mode & 3;
@@ -768,15 +776,21 @@ struct FieldBits352
 };
 
 extern const u8 gObjDefaultClass[];
-void obj_init(struct FieldObj *obj);
+struct FieldObj *obj_init(struct FieldObj *obj, s32 def, u32 index);
 
-struct FieldObj *obj_init_defaults(struct FieldObj *obj)
+/*
+ * Constructor of the default field object class: builds the base object (obj_init, which loads
+ * object definition `def` when it isn't -1), switches the class table to gObjDefaultClass and
+ * resets the class's own fields: the 7-bit values at 0x33C/0x33D to 0x7F, 0x33E to 0xFF, the
+ * sprite flags in 0x352 and the attr sprite (none yet).
+ */
+struct FieldObj *obj_init_defaults(struct FieldObj *obj, s32 def, u32 index)
 {
-    obj_init(obj);
+    obj_init(obj, def, index);
     obj->data = (struct FieldData *)gObjDefaultClass;
     obj->unk355 = 0;
-    set_u8_bits(&obj->unk33C, 0x7F);
-    set_u8_bits(&obj->unk33D, 0x7F);
+    ((struct FieldBit7 *)&obj->unk33C)->low = 0x7F;
+    ((struct FieldBit7 *)&obj->unk33D)->low = 0x7F;
     obj->unk33E = 0xFF;
     obj->unk346 = 0xE;
     obj->unk347 = 7;
@@ -794,12 +808,18 @@ struct FieldObj *obj_init_defaults(struct FieldObj *obj)
     set_u8_bits(&obj->unk211, 1);
     ((struct FieldBit7 *)&obj->unk210)->b7 = 1;
     set_u8_bits(&obj->unk353, 8);
-    obj->attr = 0;
+    obj->attr = NULL;
     return obj;
 }
 
 extern u8 *gSelectStateCodePtrTable[];
 
+/* Picks the object's state code (unk344) for `mode`. The base code comes from its character's
+   table (gSelectStateCodePtrTable[unk54], 0 or 1) at its action unk04. For actions 0-4 and 0xD,
+   modes 0-4 override it for one character or the other (flags213 bit 5 picks between pairs);
+   in mode 2 character 0 also turns 7 into 0xC and 9 into 0xE. Last, codes 7 and 0xC become
+   their variants 8 and 0xD when last frame's code (unk345) was that variant, unk343 is set, or
+   unk2C is 6 or 7. */
 void obj_select_state_code(struct FieldObj *obj, u32 mode)
 {
     s32 code = *(s8 *)(gSelectStateCodePtrTable[obj->unk54] + obj->unk04);
@@ -934,75 +954,76 @@ NONMATCH("asm/code_08047780/obj_store_attrs.s", void obj_store_attrs(struct Fiel
 }
 END_NONMATCH
 
-void obj_update_screen_pos(struct FieldObj *obj, s32 a, s32 b);
+void obj_update_screen_pos(struct FieldObj *obj, s32 a, s32 b, void *table);
 
-NONMATCH("asm/code_08047780/obj_place_sprite.s", void obj_place_sprite(struct FieldObj *obj, u16 a, u16 b))
+/* Places the object's sprites for a camera at (camX, camY). Objects flagged for simple placement
+ * (unk352 bit 6) get their screen position straight from x, y and unk14, and their main sprite is
+ * put there in front (depth 0xFFFF), unless they have no sprite yet or are culled; the rest go
+ * through obj_update_screen_pos. Then the attr sprite, if shown and set to follow (unk353 bit 0),
+ * is moved to the main sprite plus its offsets and takes the main sprite's priority bits. */
+void obj_place_sprite(struct FieldObj *obj, u16 camX, u16 camY, void *objs)
 {
-    u8 flags216;
-    s32 dx;
-    s32 dy;
-    struct FieldAttrEntry **ap;
+    u8 culled;
+    s32 sx;
+    s32 sy;
 
     if ((obj->unk352 & 0x40) != 0)
     {
         if ((obj->flags20F & 2) != 0)
         {
-            flags216 = obj->flags216 & 0x20;
-            if (flags216 == 0)
+            culled = obj->flags216 & 0x20;
+            if (culled == 0)
             {
-                dx = obj->unk0C;
-                if (dx < 0)
-                    dx += 0xFF;
-                dx = (dx >> 8) - (s16)a;
-                obj->unk06 = dx;
-                dy = (obj->unk10 - obj->unk14) / 0x100 - (s16)b - 3;
-                obj->unk08 = dy;
-                obj->sub->unk00 = dx + (s8)obj->unk23A;
-                obj->sub->unk02 = obj->unk08 - obj->unk18 / 0x100 + (s8)obj->unk23B + 4;
-                obj->sub->unk0E = 0xFFFF;
-                obj->unk0A = flags216;
+                obj->screenX = sx = obj->unk0C / 0x100 - (s16)camX;
+                sy = (obj->unk10 - obj->unk14) / 0x100 - (s16)camY - 3;
+                obj->screenY = sy;
+                obj->sub->x = obj->screenX + (s8)obj->spriteOfsX;
+                obj->sub->y = obj->screenY - obj->unk18 / 0x100 + ((s8)obj->spriteOfsY + 4);
+                obj->sub->depth = 0xFFFF;
+                obj->unk0A = 0;
             }
         }
     }
     else
     {
-        obj_update_screen_pos(obj, (s16)a, (s16)b);
+        obj_update_screen_pos(obj, (s16)camX, (s16)camY, objs);
     }
 
-    ap = &obj->attr;
-    if (((*ap)->unk12 & 0x20) == 0)
+    if ((obj->attr->unk12 & 0x20) == 0)
     {
         if ((obj->unk353 & 1) != 0)
         {
-            (*ap)->unk00 = (s8)obj->unk372 + obj->sub->unk00;
-            (*ap)->unk02 = (s8)obj->unk373 + obj->sub->unk02;
-            (*ap)->unk0E = (s8)obj->unk374 + obj->sub->unk0E;
-            ((struct FieldBits1F *)&(*ap)->unk1F)->lo = (((u32)obj->sub->unk1F << 30) >> 30);
+            obj->attr->x = obj->sub->x + (s8)obj->attrOfsX;
+            obj->attr->y = obj->sub->y + (s8)obj->attrOfsY;
+            obj->attr->depth = obj->sub->depth + (s8)obj->attrOfsDepth;
+            ((struct FieldBits1F *)&obj->attr->unk1F)->lo = (((u32)obj->sub->unk1F << 30) >> 30);
         }
     }
 }
-END_NONMATCH
 
+/* Creates the object's sub sprite and its attr sprite. If obj_copy_sprite_attrs saved the attr sprite's
+ * state earlier, the sprite is rebuilt from it (animation, frame, flags, timers) and the save is used up;
+ * otherwise an empty attr sprite is made. */
 void init_pos_obj_refresh_sprite(struct FieldObj *obj)
 {
     obj_create_sub(obj);
-    if ((obj->unk378 & 1) != 0)
+    if ((obj->savedAttrFlags & 1) != 0)
     {
-        obj->attr = create_obj_de4(0, obj->unk370, 1, -1, -1, -1, -1);
-        obj_load_record(obj->attr, obj->unk37B, -1, 0, 0);
-        obj_load_record(obj->attr, obj->unk37B, obj->unk37C, 0, 0);
+        obj->attr = create_obj_de4(0, obj->attrSpriteId, 1, -1, -1, -1, -1);
+        obj_load_record(obj->attr, obj->savedAnim, -1, 0, 0);
+        obj_load_record(obj->attr, obj->savedAnim, obj->savedFrame, 0, 0);
         obj_queue_update(obj->attr);
-        ((struct FieldBit6 *)&obj->attr->unk11)->bit6 = (((u32)obj->unk378 << 30) >> 31);
-        ((struct FieldBits1F *)&obj->attr->unk1F)->lo = (((u32)obj->unk378 << 28) >> 30);
-        ((struct FieldBits1F *)&obj->attr->unk1F)->hi = (((u32)obj->unk378 << 26) >> 30);
-        ((struct FieldBits12 *)&obj->attr->unk12)->mid2 = obj->unk378 >> 6;
-        ((struct FieldBit3 *)&obj->attr->unk12)->bit3 = (((u32)obj->unk379 << 31) >> 31);
-        ((struct FieldBit4 *)&obj->attr->unk12)->bit4 = (((u32)obj->unk379 << 30) >> 31);
-        obj->attr->unk2A = obj->unk37E;
-        obj->attr->unk2C = obj->unk380;
-        obj->attr->unk04 = obj->unk382;
-        obj->attr->unk06 = obj->unk384;
-        ((struct FieldBit0 *)&obj->unk378)->active = 0;
+        ((struct FieldBit6 *)&obj->attr->unk11)->bit6 = (((u32)obj->savedAttrFlags << 30) >> 31);
+        ((struct FieldBits1F *)&obj->attr->unk1F)->lo = (((u32)obj->savedAttrFlags << 28) >> 30);
+        ((struct FieldBits1F *)&obj->attr->unk1F)->hi = (((u32)obj->savedAttrFlags << 26) >> 30);
+        ((struct FieldBits12 *)&obj->attr->unk12)->mid2 = obj->savedAttrFlags >> 6;
+        ((struct FieldBit3 *)&obj->attr->unk12)->bit3 = (((u32)obj->savedAttrFlags2 << 31) >> 31);
+        ((struct FieldBit4 *)&obj->attr->unk12)->bit4 = (((u32)obj->savedAttrFlags2 << 30) >> 31);
+        obj->attr->unk2A = obj->savedAttr2A;
+        obj->attr->unk2C = obj->savedAttr2C;
+        obj->attr->unk04 = obj->savedAttr04;
+        obj->attr->unk06 = obj->savedAttr06;
+        ((struct FieldBit0 *)&obj->savedAttrFlags)->active = 0;
     }
     else
     {
@@ -1022,25 +1043,278 @@ static inline void set_flags379_b0(u8 *p, u32 v)
     ((struct FieldBits379 *)p)->b0 = v;
 }
 
+/* Saves the object's sprites so init_pos_obj_refresh_sprite can rebuild them later: the main
+ * sprite through obj_copy_sub_fields, then (unless the attr sprite's unk12 bit 5 is set) the attr
+ * sprite's flag bits, animation, frame and timers, and marks that save valid. */
 void obj_copy_sprite_attrs(struct FieldObj *obj)
 {
     obj_copy_sub_fields(obj);
     if ((obj->attr->unk12 & 0x20) == 0)
     {
-        set_flags378_b1(&obj->unk378, ((u32)obj->attr->unk11 << 25) >> 31);
-        ((struct FieldBits378 *)&obj->unk378)->b23 = ((u32)obj->attr->unk1F << 30) >> 30;
-        ((struct FieldBits378 *)&obj->unk378)->b45 = ((u32)obj->attr->unk1F << 28) >> 30;
-        ((struct FieldBits378 *)&obj->unk378)->b67 = ((u32)obj->attr->unk12 << 29) >> 30;
-        set_flags379_b0(&obj->unk379, ((u32)obj->attr->unk12 << 28) >> 31);
-        ((struct FieldBits379 *)&obj->unk379)->b1 = ((u32)obj->attr->unk12 << 27) >> 31;
-        obj->unk37B = obj->attr->unk21;
-        obj->unk37C = obj->attr->unk23;
-        obj->unk37E = obj->attr->unk2A;
-        obj->unk380 = obj->attr->unk2C;
-        obj->unk382 = obj->attr->unk04;
-        obj->unk384 = obj->attr->unk06;
-        set_u8_bits(&obj->unk378, 1);
+        set_flags378_b1(&obj->savedAttrFlags, ((u32)obj->attr->unk11 << 25) >> 31);                     // unk11 bit 6
+        ((struct FieldBits378 *)&obj->savedAttrFlags)->b23 = ((u32)obj->attr->unk1F << 30) >> 30;      // unk1F bits 0-1
+        ((struct FieldBits378 *)&obj->savedAttrFlags)->b45 = ((u32)obj->attr->unk1F << 28) >> 30;      // unk1F bits 2-3
+        ((struct FieldBits378 *)&obj->savedAttrFlags)->b67 = ((u32)obj->attr->unk12 << 29) >> 30;      // unk12 bits 1-2
+        set_flags379_b0(&obj->savedAttrFlags2, ((u32)obj->attr->unk12 << 28) >> 31);                   // unk12 bit 3
+        ((struct FieldBits379 *)&obj->savedAttrFlags2)->b1 = ((u32)obj->attr->unk12 << 27) >> 31;      // unk12 bit 4
+        obj->savedAnim = obj->attr->unk21;
+        obj->savedFrame = obj->attr->unk23;
+        obj->savedAttr2A = obj->attr->unk2A;
+        obj->savedAttr2C = obj->attr->unk2C;
+        obj->savedAttr04 = obj->attr->unk04;
+        obj->savedAttr06 = obj->attr->unk06;
+        set_u8_bits(&obj->savedAttrFlags, 1); // the save is valid
     }
 }
 
-ASM_FUNC("asm/code_08047780/obj_sub_frame_update.s", void obj_sub_frame_update(void))
+void obj_sub_frame_update(struct FieldObj *obj, u8 force)
+{
+    u8 want;
+    u32 dir;
+    s32 extra;
+
+    if (obj->unk04 >= 0 && obj->unk04 <= 3)
+    {
+        u32 b;
+        u32 hi;
+
+        extra = 0;
+        b = obj->flags216;
+        if (!(b & 0xC))
+        {
+            want = obj->sub->unk21;
+            dir = 0;
+        }
+        else
+        {
+            u8 t = gFrameAttrTable[(((b << 28) >> 30) << 4) + (((b << 27) >> 31) << 3) + (((u32)obj->stage << 29) >> 29)];
+            want = t & 0x7F;
+            dir = t >> 7;
+            hi = 0x80;
+            hi &= b;
+            if (hi
+                && (((struct FieldBit3 *)&obj->state)->low3 == 2 || ((struct FieldBit3 *)&obj->state)->low3 == 3)
+                && (obj->unk04 == 2 || obj->unk04 == 3))
+                want += (obj->unk04 - 1) * 5;
+        }
+        if (obj->unk04 == 1 && obj->unk2C == 0
+            && (((struct FieldBit3 *)&obj->state)->low3 == 2 || ((struct FieldBit3 *)&obj->state)->low3 == 3))
+            extra = 1;
+        if (obj->sub->unk21 != want || (((u32)obj->sub->unk11 << 25) >> 31) != dir || force != 0)
+        {
+            obj_load_record(obj->sub, want, extra, 0, 0);
+            ((struct FieldBit6 *)&obj->sub->unk11)->bit6 = dir;
+        }
+    }
+    else
+    {
+        u8 t = gFrameAttrTable[((((u32)obj->flags216 << 28) >> 30) << 4) + ((((u32)obj->flags216 << 27) >> 31) << 3) + (((u32)obj->stage << 29) >> 29)];
+        want = t & 0x7F;
+        dir = t >> 7;
+        if (obj->unk352 & 0x80)
+        {
+            switch (obj->unk04)
+            {
+            case 6:
+            case 8:
+                want += 10;
+                break;
+            case 7:
+            case 9:
+                want += 5;
+                break;
+            case 11:
+            case 12:
+                want += 5;
+                break;
+            case 20:
+                want += 20;
+                break;
+            case 25:
+            case 26:
+                want += 15;
+                break;
+            case 33:
+            case 34:
+            case 35:
+            case 36:
+            case 39:
+            case 40:
+            case 41:
+            case 42:
+            case 43:
+            case 44:
+                want += 15;
+                break;
+            case 63:
+            case 133:
+            case 141:
+            case 149:
+            case 157:
+                want += 5;
+                break;
+            case 116:
+            case 124:
+                want += 10;
+                break;
+            case 72:
+            case 88:
+            case 101:
+                if ((obj->flags216 & 0x80) && obj->counter25C >= 0)
+                {
+                    if (obj->unk258 > 0)
+                        want += 5;
+                    else if (obj->unk258 < 0)
+                        want += 10;
+                }
+                break;
+            case 115:
+                want += 5;
+                break;
+            case 161:
+                want += 2;
+                break;
+            case 172:
+            case 173:
+                want += 5;
+                break;
+            case 165:
+            case 166:
+                want += 10;
+                break;
+            case 167:
+                want += 15;
+                break;
+            case 169:
+                want += 30;
+                break;
+            case 171:
+                want += 30;
+                break;
+            case 174:
+                want += 20;
+                break;
+            case 176:
+                want += 25;
+                break;
+            }
+        }
+        else
+        {
+            switch (obj->unk04)
+            {
+            case 11:
+            case 12:
+            case 78:
+            case 98:
+            case 109:
+            case 110:
+            case 120:
+            case 121:
+            case 145:
+            case 146:
+            case 153:
+            case 154:
+                want += 5;
+                break;
+            case 16:
+            case 18:
+            case 23:
+            case 27:
+            case 29:
+            case 31:
+            case 37:
+            case 46:
+            case 48:
+            case 53:
+            case 63:
+            case 64:
+            case 66:
+            case 68:
+            case 81:
+            case 83:
+            case 86:
+            case 102:
+            case 105:
+            case 172:
+                want += 5;
+                break;
+            case 17:
+            case 19:
+            case 24:
+            case 28:
+            case 30:
+            case 32:
+            case 38:
+            case 47:
+            case 49:
+            case 54:
+            case 65:
+            case 67:
+            case 69:
+            case 82:
+            case 84:
+            case 87:
+            case 103:
+            case 106:
+            case 116:
+            case 124:
+            case 173:
+                want += 10;
+                break;
+            case 101:
+            case 160:
+                if ((obj->flags216 & 0x80) && obj->counter25C >= 0)
+                {
+                    if (obj->unk258 > 0)
+                        want += 5;
+                    else if (obj->unk258 < 0)
+                        want += 10;
+                }
+                break;
+            case 20:
+            case 25:
+            case 26:
+                want += 20;
+                break;
+            case 161:
+                want += 1;
+                break;
+            case 162:
+                want += 2;
+                break;
+            case 163:
+                want += 3;
+                break;
+            case 165:
+            case 166:
+                want += 10;
+                break;
+            case 167:
+                want += 15;
+                break;
+            case 175:
+                want += 20;
+                break;
+            case 33:
+            case 34:
+            case 35:
+            case 36:
+            case 39:
+            case 40:
+            case 41:
+            case 42:
+            case 43:
+            case 44:
+            case 176:
+                want += 25;
+                break;
+            }
+        }
+        if (obj->sub->unk21 != want || (((u32)obj->sub->unk11 << 25) >> 31) != dir || force != 0)
+        {
+            obj_load_record(obj->sub, want, 0, 0, 0);
+            ((struct FieldBit6 *)&obj->sub->unk11)->bit6 = dir;
+        }
+    }
+}

@@ -520,36 +520,7 @@ u32 cgb_env_level(u32 idx)
 
 ASM_FUNC("asm/sound_0819B3C4/cgb_sequencer.s", void cgb_sequencer(u32 ch))
 
-NONMATCH("asm/sound_0819B3C4/cgb_wave_step.s", void cgb_wave_step(void))
-{
-    u8 *rec = (u8 *)sound_info() + 0x4E0;
-    u32 next;
-
-    switch (rec[7])
-    {
-    case 0:
-        return;
-    case 1:
-        *(vu16 *)0x04000074 = *(u16 *)(rec + 8) | 0x8000;
-        *(vu16 *)0x04000072 = gWaveVolumeCodes[rec[4] >> 2] << 8;
-        next = rec[7] + 1;
-        break;
-    case 2:
-        *(vu16 *)0x04000074 = *(u16 *)(rec + 8);
-        return;
-    case 5:
-        {
-            u32 z = 0;
-            *(vu8 *)0x04000073 = z;
-            next = 0;
-        }
-        break;
-    default:
-        return;
-    }
-    rec[7] = next;
-}
-END_NONMATCH
+void cgb_wave_step(void){u8 *rec=(u8*)sound_info()+0x4e0; u32 next; switch(rec[7]){case 0:return;case 1:*(vu16*)0x4000074=*(u16*)(rec+8)|0x8000; *(vu16*)0x4000072=gWaveVolumeCodes[rec[4]>>2]<<8;next=rec[7]+1;break;case 2:*(vu16*)0x4000074=*(u16*)(rec+8);return;case 5:{register vu8 *reg asm("r0")=(vu8*)0x4000073; *reg=0;next=0;break;}default:return;}rec[7]=next;}
 
 void cgb_update_all(void)
 {
@@ -563,35 +534,7 @@ void noop_callback_0819C078(void)
 {
 }
 
-NONMATCH("asm/sound_0819B3C4/m4a_sound_init.s", void m4a_sound_init(struct SoundInfo *info))
-{
-    s32 p;
-    s32 t;
-    u32 off;
-
-    *(struct SoundInfo **)0x03007FF0 = info;
-    sound_hw_init();
-    sound_info()->cmdWrite = 0;
-    sound_info()->cmdRead = 0;
-    sound_info()->playerFlags[0] = 1;
-    sound_info()->playerFlags[1] = 0;
-    sound_info()->playerFlags[2] = 0;
-    sound_info()->playerWord[0] = 0x4B;
-    for (p = 0; p <= 2; p++)
-    {
-        sound_info()->volTable[p] = 0xFFFF;
-        off = (p * 3) << 7;
-        for (t = 0; t <= 11; t++)
-        {
-            struct SndTrack *tr = (struct SndTrack *)((u8 *)sound_info() + off);
-            tr->status = 0;
-            tr->voice = t;
-            tr->span = p;
-            off += 0x20;
-        }
-    }
-}
-END_NONMATCH
+void m4a_sound_init(struct SoundInfo *info){struct SoundInfo *volatile *pp=(void*)0x03007ff0; struct SoundInfo *s; s32 p,t,n;u32 off; *pp=info;sound_hw_init();s=*pp;s->cmdWrite=0;s->cmdRead=0;(*pp)->playerFlags[0]=1;(*pp)->playerFlags[1]=0;(*pp)->playerFlags[2]=0;(*pp)->playerWord[0]=0x4b;for(p=0;p<=2;p=n){(*pp)->volTable[p]=0xffff;t=0;n=p+1;off=(p*3)<<7;for(;t<=11;t++){((struct SndTrack*)((u8*)*pp+off))->status=0;((struct SndTrack*)((u8*)*pp+off))->voice=t;((struct SndTrack*)((u8*)*pp+off))->span=p;off+=32;}}}
 
 void track_init(struct SndTrack *ch, u32 cmdTable)
 {
@@ -684,32 +627,25 @@ void player_enable(u32 player)
     sound_info()->playerFlags[player] |= 1;
 }
 
-NONMATCH("asm/sound_0819B3C4/player_set_volume.s", void player_set_volume(u32 player, u32 vol))
+void player_set_volume(u32 player, u32 vol)
 {
-    struct SoundInfo **pp = (struct SoundInfo **)0x03007FF0;
-    u32 player2;
-    u32 block;
     s32 t;
     struct SndTrack *tr;
+    struct SoundInfo **pp;
 
-    (*pp)->volTable[player] = (vol << 8) + vol;
-    player2 = player << 1;
-    if ((*pp)->playerFlags[player] & 1)
+    sound_info()->volTable[player] = (vol << 8) + vol;
+    if (sound_info()->playerFlags[player] & 1)
     {
         t = 0;
-        block = (player2 + player) << 7;
+        pp = (struct SoundInfo **)0x03007FF0;
         for (; t <= 11; t++)
         {
-            tr = (struct SndTrack *)((u8 *)(*pp) + block + (t << 5));
-            if (tr->status & 1)
-            {
-                if (!(tr->status & 2))
-                    ((struct VolEntry *)gReleaseTable[t])->callback(tr);
-            }
+            tr = &(*pp)->players[player].tracks[t];
+            if ((tr->status & 1) && !(tr->status & 2))
+                ((struct VolEntry *)gReleaseTable[t])->callback(tr);
         }
     }
 }
-END_NONMATCH
 
 void song_play(u32 id)
 {
@@ -848,14 +784,15 @@ u32 queue_player_enable(u32 player)
     return cmd_queue_push((player << 8) | 0x2000);
 }
 
-NONMATCH("asm/sound_0819B3C4/queue_player_volume.s", u32 queue_player_volume(u32 player, u32 vol))
+u32 queue_player_volume(u32 player, u32 vol)
 {
-    u32 cmd = player << 8;
-    cmd |= 0xFFFF9000;
-    cmd |= vol;
-    return cmd_queue_push(cmd);
+    u32 cmd;
+    register s16 op asm("r2");
+
+    cmd = player << 8;
+    op = 0x9000;
+    return cmd_queue_push(cmd | op | vol);
 }
-END_NONMATCH
 
 u32 queue_song_play(u32 id)
 {
@@ -872,14 +809,18 @@ u32 queue_stop_all(void)
     return cmd_queue_push(0x7000);
 }
 
-NONMATCH("asm/sound_0819B3C4/queue_player_word.s", u32 queue_player_word(u32 player, u32 value))
+u32 queue_player_word(u32 player, u32 value)
 {
     u32 cmd = player << 8;
-    cmd |= 0xFFFF8000;
+
+    {
+        register s16 op asm("r2") = 0x8000;
+
+        cmd |= op;
+    }
     cmd |= value;
     return cmd_queue_push(cmd);
 }
-END_NONMATCH
 
 NONMATCH("asm/sound_0819B3C4/active_player_mask.s", u32 active_player_mask(void))
 {
@@ -912,33 +853,23 @@ NONMATCH("asm/sound_0819B3C4/active_player_mask.s", u32 active_player_mask(void)
 }
 END_NONMATCH
 
-NONMATCH("asm/sound_0819B3C4/sub_0819CB90.s", u32 sub_0819CB90(u32 song))
+u32 sub_0819CB90(u32 song)
 {
     u32 mask = 0;
-    s32 track;
-    struct SoundInfo *si;
-
-    si = sound_info();
-    if ((si->playerFlags[0] & 1) == 0)
-        return mask;
-    if (si->players[0].tracks[0].status & 1)
+    struct SoundInfo *si = sound_info();
+    if (si->playerFlags[0] & 1)
     {
-        if (si->trackSong[0] != song)
-            return mask;
-        mask |= 1;
+        s32 track = 0;
+        do
+        {
+            si = sound_info();
+            if (si->players[0].tracks[track].status & 1)
+            {
+                if (si->trackSong[track] != song)
+                    break;
+                mask |= 1 << track;
+            }
+        } while (++track < 12);
     }
-    track = 0;
-    while (1)
-    {
-        track++;
-        if (track > 11)
-            return mask;
-        si = sound_info();
-        if ((si->players[0].tracks[track].status & 1) == 0)
-            continue;
-        if (si->trackSong[track] != song)
-            return mask;
-        mask |= 1 << track;
-    }
+    return mask;
 }
-END_NONMATCH

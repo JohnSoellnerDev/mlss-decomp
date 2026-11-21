@@ -190,10 +190,14 @@ static inline void pose_set_mode_2(struct ActorObj *obj)
     ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
 }
 
+// One frame of a falling bounce: adds the vertical speed to dh and places the object at its base
+// plus (dx, dy, dh). When it reaches the ground it lands there and jumps again (jump_velocity)
+// toward its owner's part target, whose height becomes the new ground; obj_place_finish then
+// lands it for good.
 void obj_retarget_c(struct ActorObj *obj)
 {
-    struct ActorPart *part;
-    s32 h;
+    struct ActorPart *target;
+    s32 targetH;
 
     *(u16 *)&obj->dh += obj->dhStep;
     obj->posX = obj->baseX + obj->dx;
@@ -202,10 +206,10 @@ void obj_retarget_c(struct ActorObj *obj)
     if (obj->posH <= obj->ground)
     {
         obj->posH = obj->ground;
-        part = obj->owner->data;
-        obj->ground = (h = part->targetH);
-        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, part->targetX - obj->baseX,
-                                    part->targetY - obj->baseY, h - obj->baseH, 0x1400, 0x4CC, 0xFD, 0);
+        target = obj->owner->data;
+        obj->ground = (targetH = target->targetH);
+        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, target->targetX - obj->baseX,
+                                    target->targetY - obj->baseY, targetH - obj->baseH, 0x1400, 0x4CC, 0xFD, 0);
         obj->state = obj_place_finish;
     }
 }

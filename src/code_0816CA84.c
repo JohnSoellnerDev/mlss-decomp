@@ -34,9 +34,9 @@ struct ChildPart
     s32 y;
     u8 filler20[0x6C - 0x20];
     s32 unk6C;
-    s32 unk70;
+    s32 unk70; /* obj_step_bounce: vertical speed, added to unk78 each frame */
     s32 unk74;
-    s32 unk78;
+    s32 unk78; /* obj_step_bounce: height, bounces (speed halved) between 0x5800 and 0x7800 */
     u8 filler7C[0x84 - 0x7C];
     s32 unk84;
     s32 unk88;
@@ -132,7 +132,25 @@ struct StageObj
     u16 flags6E;
 };
 
-extern u16 gUnk_02000050[];
+/* StageObj.stage: the stack minigame's top-level states */
+enum StackGameStage
+{
+    STACK_STAGE_INIT,     /* reload palettes, start the music */
+    STACK_STAGE_FADE_IN,  /* wait for timer4C */
+    STACK_STAGE_INTRO,    /* obj_step_stage2: stacks close up, instructions text */
+    STACK_STAGE_PLAY,     /* obj_spawn_phase: spawn falling pieces until time runs out */
+    STACK_STAGE_RESULTS,  /* obj_step_stage4: count the last pieces, show the score */
+    STACK_STAGE_PAUSE,    /* obj_tween_state: pause panel, Start returns to nextStage */
+    STACK_STAGE_FADE_OUT, /* wait for timer4C */
+    STACK_STAGE_EXIT,     /* clear the screen, stop the music, destroy the object */
+};
+
+/* gSys + 0x884: mask of palette banks to reload this frame, -1 = all */
+#define SYS_PALETTE_RELOAD_OFS 0x884
+/* the minigame's music track, played on song slot 0 */
+#define STACK_GAME_SONG 5
+
+extern u16 gUnk_02000050[]; /* REG_BLDCNT shadow; [2] is the REG_BLDY shadow */
 
 struct PlacedObj
 {
@@ -152,8 +170,8 @@ struct ChildObj
     u32 classC;
     u8 *sprite;
     u8 filler14[0x18 - 0x14];
-    s32 unk18;
-    s32 unk1C;
+    s32 unk18;                  /* stack: x (8.8 fixed point) */
+    s32 unk1C;                  /* stack: y, bounces between 0x4000 and 0x8000 */
     u8 filler20[0x2C - 0x20];
     s32 unk2C;
     struct ChildPart *part30;
@@ -165,16 +183,20 @@ struct ChildObj
     s32 unk60;
     s32 unk64;
     u8 filler68[0x6C - 0x68];
-    struct ChildPart *part6C;
-    struct ChildPart *part70;
-    struct ChildPart *part74;
-    s32 unk78;
+    struct ChildPart *part6C;   /* stack: upper part (frame 3) */
+    struct ChildPart *part70;   /* stack: lower part (frame 4) */
+    struct ChildPart *part74;   /* stack: side part (frame 9, or 0xC when mirrored) */
+    s32 unk78;                  /* stack: 1 idle, 2 spreading apart, 3 closing */
     s32 unk7C;
-    s32 unk80;
-    s32 unk84;
-    s32 unk88;
-    s32 unk8C;
+    s32 unk80;                  /* stack: y step per frame */
+    s32 unk84;                  /* stack: how far the upper part sits above y */
+    s32 unk88;                  /* stack: how far the lower part sits below y */
+    s32 unk8C;                  /* stack: side part wobble phase, 0 = still */
 };
+/* sprite byte 0x11 (its mirror bits) bit 6: drawn flipped horizontally */
+#define SPRITE_MIRROR_OFS 0x11
+#define SPRITE_MIRROR_FLIP 0x40
+
 void obj_sync_children_pos(struct ChildObj *obj);
 void obj_step_bounce(struct ChildPart *part);
 void obj_set_flag88_slot97(struct ChildObj *obj);
@@ -220,50 +242,54 @@ static inline u32 sys_lang(void)
 
 ASM_FUNC("asm/code_0816CA84/obj_create_pair_children.s", void obj_create_pair_children(void))
 
+/* Stack minigame, each frame: holding B lifts the upper part and holding A the lower one
+ * (speed +0x20 per frame up to 0x100), a released part falls back (-0x20 down to -0x200);
+ * both then take a bounce step. Sets slot 97's flag while either button is held, then re-aims
+ * the children. */
 void obj_step_child_speeds(struct ChildObj *obj)
 {
     struct ChildPart *part;
-    s32 v;
+    s32 speed;
 
-    if (gSys.keys & 2)
+    if (gSys.keys & B_BUTTON)
     {
         part = obj->part6C;
-        v = part->unk70 + 0x20;
-        part->unk70 = v;
-        if (v > 0x100)
+        speed = part->unk70 + 0x20;
+        part->unk70 = speed;
+        if (speed > 0x100)
             part->unk70 = 0x100;
         obj_step_bounce(part);
     }
     else
     {
         part = obj->part6C;
-        v = part->unk70 - 0x20;
-        part->unk70 = v;
-        if (v < -0x200)
+        speed = part->unk70 - 0x20;
+        part->unk70 = speed;
+        if (speed < -0x200)
             part->unk70 = -0x200;
         obj_step_bounce(part);
     }
 
-    if (gSys.keys & 1)
+    if (gSys.keys & A_BUTTON)
     {
         part = obj->part70;
-        v = part->unk70 + 0x20;
-        part->unk70 = v;
-        if (v > 0x100)
+        speed = part->unk70 + 0x20;
+        part->unk70 = speed;
+        if (speed > 0x100)
             part->unk70 = 0x100;
         obj_step_bounce(part);
     }
     else
     {
         part = obj->part70;
-        v = part->unk70 - 0x20;
-        part->unk70 = v;
-        if (v < -0x200)
+        speed = part->unk70 - 0x20;
+        part->unk70 = speed;
+        if (speed < -0x200)
             part->unk70 = -0x200;
         obj_step_bounce(part);
     }
 
-    if (gSys.keys & 3)
+    if (gSys.keys & (A_BUTTON | B_BUTTON))
         obj_set_flag88_slot97(obj);
     else
         obj_clear_flag88_slot97(obj);
@@ -272,10 +298,16 @@ void obj_step_child_speeds(struct ChildObj *obj)
 
 ASM_FUNC("asm/code_0816CA84/obj_aim_children.s", void obj_aim_children(struct ChildObj *obj))
 
-struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y, s32 z)
+/*
+ * Builds a stack object at (x, y) (8.8 fixed point) from three parts of sprite 0x5007, each put
+ * in `list`: the upper part (frame 3), the lower part (frame 4) and the side part (frame 9).
+ * Right of the screen centre (x > 120 px) the upper and lower parts are mirrored and the side
+ * part uses frame 0xC. It starts idle, closed, still, bouncing by `yStep` per frame.
+ */
+struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y, s32 yStep)
 {
-    u8 *sprA;
-    u8 *sprB;
+    u8 *upperSprite;
+    u8 *lowerSprite;
 
     obj_init_big(obj, 2);
     obj->classC = (u32)gStackClass;
@@ -289,10 +321,10 @@ struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y
     list_insert(list, obj->part74);
     if (x > 0x7800)
     {
-        sprA = obj->part6C->sprite;
-        sprB = obj->part70->sprite;
-        sprB[0x11] |= 0x40;
-        sprA[0x11] |= 0x40;
+        upperSprite = obj->part6C->sprite;
+        lowerSprite = obj->part70->sprite;
+        lowerSprite[SPRITE_MIRROR_OFS] |= SPRITE_MIRROR_FLIP;
+        upperSprite[SPRITE_MIRROR_OFS] |= SPRITE_MIRROR_FLIP;
         obj_create_sprite_10(obj->part74, 4, 0x5007, 0, 0xC, 2);
     }
     else
@@ -302,7 +334,7 @@ struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y
     obj->unk18 = x;
     obj->unk1C = y;
     obj->unk7C = 0;
-    obj->unk80 = z;
+    obj->unk80 = yStep;
     obj->unk84 = 0;
     obj->unk88 = 0;
     obj->unk78 = 1;
@@ -311,35 +343,24 @@ struct ChildObj *obj_create_stack(struct ChildObj *obj, void *list, s32 x, s32 y
     return obj;
 }
 
-NONMATCH("asm/code_0816CA84/obj_move_child_step.s", void obj_move_child_step(struct ChildObj *obj))
+void obj_move_child_step(struct ChildObj *obj)
 {
-    s32 pos;
-    s32 limit;
-    s32 *step;
-    s32 cur;
+    s32 *step = &obj->unk80;
     s32 v;
     s32 next;
 
-    step = &obj->unk80;
-    cur = obj->unk1C;
-    pos = *step;
-    pos += cur;
-    obj->unk1C = pos;
-    if (pos <= 0x3FFF)
+    obj->unk1C += *step;
+    if (obj->unk1C < 0x4000)
     {
-        limit = 0x3FFF;
-        limit++;
+        obj->unk1C = 0x4000;
+        *step = -*step;
     }
-    else
+    else if (obj->unk1C > 0x8000)
     {
-        limit = 0x8000;
-        if (pos <= 0x8000)
-            goto state;
+        obj->unk1C = 0x8000;
+        *step = -*step;
     }
-    obj->unk1C = limit;
-    *step = -*step;
 
-state:
     if (obj->unk78 == 2)
         goto grow;
     if (obj->unk78 <= 2)
@@ -375,121 +396,140 @@ store:
 sync:
     obj_sync_children_pos(obj);
 }
-END_NONMATCH
 
-void obj_sync_children_pos(struct ChildObj *obj)
+/*
+ * Stack minigame: places the parts around the stack at (unk18, unk1C). The upper part sits
+ * unk84 above it and the lower part unk88 below it. The side part sits 0x2800 (40 px) to the
+ * left (to the right when the stack is mirrored), nudged in by half a sine wave while the
+ * wobble phase unk8C runs from 3 up to 0x80 (it stops at 0 again).
+ */
+void obj_sync_children_pos(struct ChildObj *stack)
 {
-    s32 counter;
-    s32 sin;
-    s32 pos;
-    u8 *spr;
-    struct ChildPart *target;
+    s32 phase;
+    s32 offset;
+    s32 sideX;
+    u8 *upperSprite;
+    struct ChildPart *side;
 
-    obj->part6C->x = obj->unk18;
-    obj->part6C->y = obj->unk1C - obj->unk84;
-    obj->part70->x = obj->unk18;
-    obj->part70->y = obj->unk1C + obj->unk88;
+    stack->part6C->x = stack->unk18;
+    stack->part6C->y = stack->unk1C - stack->unk84;
+    stack->part70->x = stack->unk18;
+    stack->part70->y = stack->unk1C + stack->unk88;
 
-    counter = obj->unk8C;
-    if (counter != 0)
+    phase = stack->unk8C;
+    if (phase != 0)
     {
-        counter += 3;
-        obj->unk8C = counter;
-        if (counter > 0x80)
-            obj->unk8C = 0;
+        phase += 3;
+        stack->unk8C = phase;
+        if (phase > 0x80)
+            stack->unk8C = 0;
     }
 
-    spr = obj->part6C->sprite;
-    if (spr[0x11] & 0x40)
+    upperSprite = stack->part6C->sprite;
+    if (upperSprite[SPRITE_MIRROR_OFS] & SPRITE_MIRROR_FLIP)
     {
-        sin = gSineTable[*(u8 *)&obj->unk8C];
-        target = obj->part74;
-        if (sin < 0)
-            sin += 0x3F;
-        sin >>= 6;
-        sin <<= 5;
-        sin += -0x2800;
-        pos = obj->unk18 - sin;
+        offset = gSineTable[*(u8 *)&stack->unk8C];
+        side = stack->part74;
+        if (offset < 0)
+            offset += 0x3F;
+        offset >>= 6; /* offset / 64 */
+        offset <<= 5;
+        offset += -0x2800;
+        sideX = stack->unk18 - offset;
     }
     else
     {
-        sin = gSineTable[*(u8 *)&obj->unk8C];
-        target = obj->part74;
-        if (sin < 0)
-            sin += 0x3F;
-        sin >>= 6;
-        sin <<= 5;
-        sin += -0x2800;
-        pos = obj->unk18 + sin;
+        offset = gSineTable[*(u8 *)&stack->unk8C];
+        side = stack->part74;
+        if (offset < 0)
+            offset += 0x3F;
+        offset >>= 6; /* offset / 64 */
+        offset <<= 5;
+        offset += -0x2800;
+        sideX = stack->unk18 + offset;
     }
-    target->x = pos;
-    target->y = obj->unk1C;
+    side->x = sideX;
+    side->y = stack->unk1C;
 }
 
 ASM_FUNC("asm/code_0816CA84/obj_chase_step.s", s32 obj_chase_step(struct ChildObj *node, s32 a1, s32 a2, void *a3, void *a4))
 
 ASM_FUNC("asm/code_0816CA84/obj_scene_init.s", void obj_scene_init(void))
 
-void obj_step_stages(struct StageObj *obj)
+/*
+ * Per-frame update of the stack minigame: runs the current stage (see enum StackGameStage), then
+ * copies the background scroll to the BG offset shadows. The exit stage instead clears the
+ * palettes, stops the music, turns blending off and destroys the object (vtable call, mode 3).
+ * set_slot_target(slot, song, -1) plays a song, slot_reset(slot) stops it.
+ */
+void obj_step_stages(struct StageObj *game)
 {
-    u16 *ram;
+    u16 *blend;
 
-    rand_scaled(0, 2);
-    switch (obj->stage)
+    rand_scaled(0, 2); /* only advances the RNG */
+    switch (game->stage)
     {
-    case 0:
+    case STACK_STAGE_INIT:
         {
-            s32 off = 0x884;
+            s32 off = SYS_PALETTE_RELOAD_OFS;
             *(s32 *)((u8 *)&gSys + off) = -1;
         }
-        set_slot_target(0, 5, -1);
-        obj->stage = 1;
+        set_slot_target(0, STACK_GAME_SONG, -1);
+        game->stage = STACK_STAGE_FADE_IN;
         break;
-    case 1:
-        if ((u8)timer_tick((u8 *)obj + 0x4C))
-            obj->stage = 2;
+    case STACK_STAGE_FADE_IN:
+        if ((u8)timer_tick(&game->timer4C))
+            game->stage = STACK_STAGE_INTRO;
         break;
-    case 2:
-        obj_step_stage2(obj);
+    case STACK_STAGE_INTRO:
+        obj_step_stage2(game);
         break;
-    case 3:
-        obj_spawn_phase(obj);
+    case STACK_STAGE_PLAY:
+        obj_spawn_phase(game);
         break;
-    case 4:
-        obj_step_stage4(obj);
+    case STACK_STAGE_RESULTS:
+        obj_step_stage4(game);
         break;
-    case 5:
-        obj_tween_state(obj);
+    case STACK_STAGE_PAUSE:
+        obj_tween_state(game);
         break;
-    case 6:
-        if ((u8)timer_tick((u8 *)obj + 0x4C))
-            obj->stage = 7;
+    case STACK_STAGE_FADE_OUT:
+        if ((u8)timer_tick(&game->timer4C))
+            game->stage = STACK_STAGE_EXIT;
         break;
-    case 7:
+    case STACK_STAGE_EXIT:
         palette_fill(0);
         slot_reset(0);
-        ram = (u16 *)gUnk_02000050;
-        *ram = 0;
-        ram += 2;
-        *ram = 0;
-        if (obj != 0)
-            obj->cls->behavior((u8 *)obj + obj->cls->thisOffset, 3);
+        blend = (u16 *)gUnk_02000050;
+        *blend = 0;     /* BLDCNT */
+        blend += 2;
+        *blend = 0;     /* BLDY */
+        if (game != 0)
+            game->cls->behavior((u8 *)game + game->cls->thisOffset, 3);
         return;
     default:
         break;
     }
-    obj_copy_pos_to_shadow(obj->shadowSrc);
+    obj_copy_pos_to_shadow(game->shadowSrc);
 }
 
+/*
+ * Steps every child in obj's list by its kind (0: speeds, 2: bouncing move, 6: chaser). A chaser
+ * step returns the points it scored: their absolute value goes on the score counter (placed38:
+ * +0x18 score, clamped to 0..999; +0x34 best score; +0x50 set on a new best), with sound 0x2E for a
+ * positive result. A negative result also knocks back part30 (or part34 when +0x60 is set): it starts
+ * shrinking (state 3) and shakes, sound 0x40. The table's special result adds 60 to the timer at
+ * +0x64 and shows part48 (clears bit 4 of its sprite's +0x12). Then the counter is drawn.
+ */
 void obj_step_children(struct ChildObj *obj)
 {
     struct ChildObj *node;
     struct ChildObj *next;
-    s32 r;
-    struct ChildPart *p;
-    struct PlacedObj *placed;
-    u8 *spr;
-    s32 b;
+    s32 points;
+    struct ChildPart *part;
+    struct PlacedObj *counter;
+    u8 *sprite;
+    s32 bits;
 
     node = *(struct ChildObj **)obj->unk1C;
     if (node == 0)
@@ -497,88 +537,77 @@ void obj_step_children(struct ChildObj *obj)
     do
     {
         next = node->next;
-        if (node->kind == 2)
-            goto move;
-        if (node->kind > 2)
-            goto upper;
-        if (node->kind == 0)
-            goto speeds;
-        goto after;
-
-    upper:
-        if (node->kind == 6)
-            goto chase;
-        goto after;
-
-    speeds:
-        obj_step_child_speeds(node);
-        goto after;
-
-    move:
-        obj_move_child_step(node);
-        goto after;
-
-    chase:
-        r = obj_chase_step(node, obj->unk1C, obj->unk2C, obj->part30, obj->part34);
-        if (r == (s8)gChaseReturnTable[2])
+        switch (node->kind)
         {
-            obj->unk64 += 0x3C;
-            spr = obj->part48->sprite;
-            b = spr[0x12];
-            spr[0x12] = b & -0x11;
-        }
-        if (r < 0)
-            goto negative;
-        if (r <= 0)
-            goto after;
-        set_slot_value(0x2E, -1);
-        placed = obj->placed38;
-        placed->unk18 += r;
-        if (placed->unk18 < 0)
-            placed->unk18 = 0;
-        if (placed->unk18 > 0x3E7)
-            placed->unk18 = 0x3E7;
-        if (placed->unk34 < placed->unk18)
-        {
-            placed->unk34 = placed->unk18;
-            placed->unk50 = 1;
-        }
-        goto after;
-
-    negative:
-        placed = obj->placed38;
-        placed->unk18 -= r;
-        if (placed->unk18 < 0)
-            placed->unk18 = 0;
-        if (placed->unk18 > 0x3E7)
-            placed->unk18 = 0x3E7;
-        if (placed->unk34 < placed->unk18)
-        {
-            placed->unk34 = placed->unk18;
-            placed->unk50 = 1;
-        }
-        if (obj->unk60 == 0)
-        {
-            p = obj->part30;
-            if (p->unk78 == 0)
+        case 0:
+            obj_step_child_speeds(node);
+            break;
+        case 2:
+            obj_move_child_step(node);
+            break;
+        case 6:
+            points = obj_chase_step(node, obj->unk1C, obj->unk2C, obj->part30, obj->part34);
+            if (points == (s8)gChaseReturnTable[2])
             {
-                p->unk78 = 3;
-                p->unk8C += 0x10;
-                set_slot_value(0x40, -1);
+                obj->unk64 += 60;
+                sprite = obj->part48->sprite;
+                bits = sprite[0x12];
+                sprite[0x12] = bits & ~0x10;
             }
-        }
-        else
-        {
-            p = obj->part34;
-            if (p->unk78 == 0)
+            if (points >= 0)
             {
-                p->unk78 = 3;
-                p->unk8C += 0x10;
-                set_slot_value(0x40, -1);
+                if (points > 0)
+                {
+                    set_slot_value(0x2E, -1);
+                    counter = obj->placed38;
+                    counter->unk18 += points;
+                    if (counter->unk18 < 0)
+                        counter->unk18 = 0;
+                    if (counter->unk18 > 999)
+                        counter->unk18 = 999;
+                    if (counter->unk34 < counter->unk18)
+                    {
+                        counter->unk34 = counter->unk18;
+                        counter->unk50 = 1;
+                    }
+                }
             }
+            else
+            {
+                counter = obj->placed38;
+                counter->unk18 -= points;
+                if (counter->unk18 < 0)
+                    counter->unk18 = 0;
+                if (counter->unk18 > 999)
+                    counter->unk18 = 999;
+                if (counter->unk34 < counter->unk18)
+                {
+                    counter->unk34 = counter->unk18;
+                    counter->unk50 = 1;
+                }
+                if (obj->unk60 == 0)
+                {
+                    part = obj->part30;
+                    if (part->unk78 == 0)
+                    {
+                        part->unk78 = 3;
+                        part->unk8C += 0x10;
+                        set_slot_value(0x40, -1);
+                    }
+                }
+                else
+                {
+                    part = obj->part34;
+                    if (part->unk78 == 0)
+                    {
+                        part->unk78 = 3;
+                        part->unk8C += 0x10;
+                        set_slot_value(0x40, -1);
+                    }
+                }
+            }
+            break;
         }
-
-    after:
         node = next;
     } while (node != 0);
 

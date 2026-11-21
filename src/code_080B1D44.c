@@ -139,6 +139,18 @@ struct KeyState
     u16 pressed;
 };
 
+/* During the pair moves 0x84 and 0x88 hold the point hero A heads for (s32, 24.8 fixed
+   point), and 0xAE / 0xB0 hold the body's last X / Y offset from its target. */
+#define BODY_DEST_X(body) (*(s32 *)&(body)->spanA)
+#define BODY_DEST_Y(body) (*(s32 *)&(body)->filler88)
+#define BODY_DELTA_X(body) (*(s16 *)&(body)->timer)
+
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroSprite.flags bit: the current animation has finished. */
+#define SPRITE_FLAG_ANIM_DONE 0x08
+
 extern struct World *gWorld;
 extern struct KeyState gSys;
 
@@ -160,13 +172,17 @@ void set_motion_start(struct HeroBody *body, u32 speed);
 void enter_finish_rebuild(struct HeroBody *body);
 void hero_pair_finish(struct HeroBody *body);
 
+/* Pair-move state: steps both heroes until hero A has caught up with hero B (A's X at or past
+   B's). Then both heroes still on the field take their jump actions, hero A's destination is
+   set 0x30 units above the partner (its position plus its offsets), the low 12 bits of timer2
+   (the effect-pending count) are set to 1 and hero_a_walk_toward_partner takes over. */
 void hero_a_copy_partner_pos(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
-    u32 mask;
+    u32 high_bits;
     u32 timer2;
 
     step_motion(body_a);
@@ -174,103 +190,116 @@ void hero_a_copy_partner_pos(struct HeroBody *body)
     if (body_a->posX >= body_b->posX)
     {
         set_slot_value(0xAE, -1);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             sprite_set_action(body_a, 0xB, 0x2032, 0);
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 0xF, 0x2061, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        *(s32 *)&body_a->spanA = partner->posX + (partner->ofsX << 8);
-        *(s32 *)&body_a->filler88 = partner->posY + (partner->ofsY << 8);
+        BODY_DEST_X(body_a) = partner->posX + (partner->ofsX << 8);
+        BODY_DEST_Y(body_a) = partner->posY + (partner->ofsY << 8);
         body_a->spanZ = partner->posZ + (partner->ofsZ << 8) + 0x3000;
         timer2 = body_a->timer2;
-        mask = 0xFFFFF000;
-        mask &= timer2;
-        body_a->timer2 = mask | 1;
+        high_bits = 0xFFFFF000;
+        high_bits &= timer2;
+        body_a->timer2 = high_bits | 1;
         body->state = hero_a_walk_toward_partner;
     }
 }
 
+/* Pair-move state: eases hero A toward the destination hero_a_copy_partner_pos set
+   (9/10 of its position plus 1/10 of the destination, averaged with its last offset),
+   lifts it one unit a frame and carries hero B along. When the offset from its target
+   gets short it spawns effect 0x2FBA once; when it is under 9 both heroes take their
+   landing actions and hero A drops onto the partner (hero_a_drop_and_land_with_b). */
 void hero_a_walk_toward_partner(struct HeroBody *body)
 {
-    struct Hero *heroA = gWorld->heroA;
-    struct HeroBody *a = &heroA->body;
-    struct HeroBody *b = &gWorld->heroB->body;
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
     struct HeroBody *partner = body->partner;
-    s32 x;
-    s32 y;
+    s32 eased_x;
+    s32 eased_y;
     s32 dist;
 
-    x = (a->posX * 0xE6 + *(s32 *)&a->spanA * 0x1A) / 0x100;
-    y = (a->posY * 0xE6 + *(s32 *)&a->filler88 * 0x1A) / 0x100;
+    eased_x = (body_a->posX * 0xE6 + BODY_DEST_X(body_a) * 0x1A) / 0x100;
+    eased_y = (body_a->posY * 0xE6 + BODY_DEST_Y(body_a) * 0x1A) / 0x100;
 
-    a->posX += (x - a->targetX + *(s16 *)&a->timer) / 2;
-    a->posY += (y - a->targetY + a->deltaY) / 2;
-    a->posZ += 0x100;
-    b->posX = a->posX;
-    b->posY = a->posY;
-    b->posZ = a->posZ;
-    *(s16 *)&a->timer = a->posX - a->targetX;
-    a->deltaY = a->posY - a->targetY;
+    body_a->posX += (eased_x - body_a->targetX + BODY_DELTA_X(body_a)) / 2;
+    body_a->posY += (eased_y - body_a->targetY + body_a->deltaY) / 2;
+    body_a->posZ += 0x100;
+    body_b->posX = body_a->posX;
+    body_b->posY = body_a->posY;
+    body_b->posZ = body_a->posZ;
+    BODY_DELTA_X(body_a) = body_a->posX - body_a->targetX;
+    body_a->deltaY = body_a->posY - body_a->targetY;
 
-    dist = ((s32 (*)(s32))gMathRoutines)(*(s16 *)&a->timer * *(s16 *)&a->timer + a->deltaY * a->deltaY);
-    if (dist < 0x10 && (a->timer2 & 0xFFF))
+    dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(BODY_DELTA_X(body_a) * BODY_DELTA_X(body_a)
+                                                  + body_a->deltaY * body_a->deltaY);
+    if (dist < 0x10 && (body_a->timer2 & 0xFFF))
     {
-        u32 keep = 0xFFFFF000;
+        /* the low 12 bits are the "effect pending" count hero_a_copy_partner_pos set */
+        u32 high_bits = 0xFFFFF000;
 
-        a->timer2 &= keep;
-        effect_spawn_at(0x2FBA, a->posX / 0x100, a->posY / 0x100, a->posZ / 0x100 - 14, a);
+        body_a->timer2 &= high_bits;
+        effect_spawn_at(0x2FBA, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100 - 14, body_a);
     }
     if (dist < 9)
     {
         set_slot_value(0x8E, -1);
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
-            sprite_set_action(a, 0xA, 0x2032, 0);
-            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+            sprite_set_action(body_a, 0xA, 0x2032, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            sprite_set_action(b, 0xE, 0x2061, 0);
-            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+            sprite_set_action(body_b, 0xE, 0x2061, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        a->vel = a->posZ - a->targetZ;
-        a->spanZ = partner->posZ + (partner->ofsZ << 8);
-        a->link = 1;
+        body_a->vel = body_a->posZ - body_a->targetZ;
+        body_a->spanZ = partner->posZ + (partner->ofsZ << 8);
+        body_a->link = 1;
         body->state = hero_a_drop_and_land_with_b;
     }
 }
 
+/* Pair-move state after hero_a_walk_toward_partner: hero A (carrying hero B along) falls onto
+   the partner. Its vertical speed is damped to 217/256 and pulled down by gravity (0x4CCC/256)
+   each frame. While the button window (link) is open, pressing A or B gives hero B pose 0x16
+   once. When A reaches the height set on the partner it lands: hero B, if on the field, gets a
+   new rate (0x4000 / 11) and its progress reset, A's speed is halved and hero_a_fall_settle_211c
+   takes over. */
 void hero_a_drop_and_land_with_b(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
-    s32 damped;
+    s32 vel;
 
     if (body_a->link != 0)
     {
-        if ((gSys.pressed & 3) != 0)
+        if ((gSys.pressed & (A_BUTTON | B_BUTTON)) != 0)
         {
             body_set_pose(6, body_b, 0x16, 0);
             body_a->link = 0;
         }
     }
-    damped = body_a->vel * 217 - 0x4CCC;
-    if (damped < 0)
-        damped += 0xFF;
-    body_a->vel = damped >> 8;
+    vel = body_a->vel * 217 - 0x4CCC;
+    if (vel < 0)
+        vel += 0xFF;
+    body_a->vel = vel >> 8;
     body_a->posZ += body_a->vel;
     body_b->posZ = body_a->posZ;
     if (body_a->spanZ >= body_a->posZ)
     {
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xB);
+            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 11);
             body_b->progress = 0;
             ((struct HeroFlagBits *)&body_b->flags)->active = 0;
         }
@@ -284,6 +313,11 @@ void hero_a_drop_and_land_with_b(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080B1D44/hero_a_fall_settle_211c.s", void hero_a_fall_settle_211c(struct HeroBody *body))
 
+// Pair-action state: waits for hero B's sprite animation to finish (sprite flag 8), then
+// ends the bind on the partner: runs contact script 0x040308A8 between B and the partner,
+// spawns effect 0x70B on the partner if it is still showing or flagged, puts both heroes that
+// stand on the field (mode 2 or 4) into action 5, mirrors B and sends it 0x28 units right and
+// up, then hands over to hero_pair_scale_and_settle.
 void hero_b_bind_partner_fx(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -291,9 +325,9 @@ void hero_b_bind_partner_fx(struct HeroBody *body)
     struct Hero *hero_b = world->heroB;
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
-    s32 x;
-    s32 y;
-    s32 z;
+    s32 fx_x;
+    s32 fx_y;
+    s32 fx_z;
 
     if ((body_b->sprite->flags & 8) != 0)
     {
@@ -303,13 +337,17 @@ void hero_b_bind_partner_fx(struct HeroBody *body)
         body_b->scale = 0x100;
         resolve_contact_action(body_b, partner, 0, 0, 0x040308A8);
         body_b->count++;
+
+        // Effect at the partner's position (8.8 fixed point plus its sprite offset).
         if (partner->data->flagsF6 > 0 || (partner->data->flags111 & 2) != 0)
         {
-            x = partner->targetX / 0x100 + partner->ofsX;
-            y = partner->targetY / 0x100 + partner->ofsY;
-            z = partner->targetZ / 0x100 + partner->ofsZ;
-            effect_spawn_at(0x70B, x, y, z, partner);
+            fx_x = partner->targetX / 0x100 + partner->ofsX;
+            fx_y = partner->targetY / 0x100 + partner->ofsY;
+            fx_z = partner->targetZ / 0x100 + partner->ofsZ;
+            effect_spawn_at(0x70B, fx_x, fx_y, fx_z, partner);
         }
+
+        // Action 5 for each hero on the field: animation 0x2000 without a pose, else 0x204D.
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             if (body_a->data->pose == -1)
@@ -327,6 +365,8 @@ void hero_b_bind_partner_fx(struct HeroBody *body)
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
         ((struct HeroMirrorBits *)&body_b->sprite->mirrorFlags)->mirror = 1;
+
+        // Hero B moves 0x28 units right of where it stands and 0x28 up.
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             place_targets(body_b, body_b->targetX / 0x100 + body_b->ofsX + 0x28,
@@ -415,6 +455,9 @@ NONMATCH("asm/code_080B1D44/hero_pair_scale_and_settle.s", void hero_pair_scale_
 }
 END_NONMATCH
 
+/* Waits for hero B's animation to end, then sends hero B and then hero A back
+   to their home targets, puts them in their idle pose facing along their span
+   and hands each one over to the finish-rebuild state. */
 void pair_end_place_both_b(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -426,33 +469,34 @@ void pair_end_place_both_b(struct HeroBody *body)
     u8 *mode;
     s16 *span;
     s32 mirror;
-    s32 x;
-    s32 y;
-    s32 z;
-    s32 t;
+    s32 home_x;
+    s32 home_y;
+    s32 home_z;
+    s32 fixed;
 
-    if ((body_b->sprite->flags & 8) != 0)
+    if ((body_b->sprite->flags & SPRITE_FLAG_ANIM_DONE) != 0)
     {
         set_slot_value(0x53, -1);
-        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_b->body.mode))
         {
+            /* home position, 24.8 fixed point to whole units (rounding toward zero) */
             data = body_b->data;
-            t = data->targetX;
-            if (t < 0)
-                t += 0xFF;
-            x = t >> 8;
-            t = data->targetY;
-            if (t < 0)
-                t += 0xFF;
-            y = t >> 8;
-            t = data->targetH;
-            if (t < 0)
-                t += 0xFF;
-            z = t >> 8;
-            place_targets(body_b, x, y, z, -1);
+            fixed = data->targetX;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_x = fixed >> 8;
+            fixed = data->targetY;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_y = fixed >> 8;
+            fixed = data->targetH;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_z = fixed >> 8;
+            place_targets(body_b, home_x, home_y, home_z, -1);
             set_motion_start(body_b, 0x400);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             if (body_b->data->pose == -1)
                 sprite_set_action(body_b, 0, 0x2002, 0);
@@ -467,30 +511,30 @@ void pair_end_place_both_b(struct HeroBody *body)
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
         mode = &body_b->mode;
-        if ((*mode & 6) == 2 || (*mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(*mode))
         {
-            body_b->state = 0;
+            body_b->state = NULL;
             enter_finish_rebuild(body_b);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             data = body_a->data;
-            t = data->targetX;
-            if (t < 0)
-                t += 0xFF;
-            x = t >> 8;
-            t = data->targetY;
-            if (t < 0)
-                t += 0xFF;
-            y = t >> 8;
-            t = data->targetH;
-            if (t < 0)
-                t += 0xFF;
-            z = t >> 8;
-            place_targets(body_a, x, y, z, -1);
+            fixed = data->targetX;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_x = fixed >> 8;
+            fixed = data->targetY;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_y = fixed >> 8;
+            fixed = data->targetH;
+            if (fixed < 0)
+                fixed += 0xFF;
+            home_z = fixed >> 8;
+            place_targets(body_a, home_x, home_y, home_z, -1);
             set_motion_start(body_a, 0x400);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             if (body_a->data->pose == -1)
                 sprite_set_action(body_a, 0, 0x2002, 0);
@@ -505,14 +549,18 @@ void pair_end_place_both_b(struct HeroBody *body)
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
         mode = &body_a->mode;
-        if ((*mode & 6) == 2 || (*mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(*mode))
         {
-            body_a->state = 0;
+            body_a->state = NULL;
             enter_finish_rebuild(body_a);
         }
     }
 }
 
+/* Pair-move state: counts the button presses made in alternation (A, then B, then A...:
+   pressMask flips between A_BUTTON and B_BUTTON) while hero A's animation plays. When the
+   animation ends, hero A, if on the field, gets a new rate (0x4000 / 0x50) and its progress
+   reset, and hero_pair_attach_2dac takes over. */
 void hero_a_key_toggle_step(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -523,11 +571,11 @@ void hero_a_key_toggle_step(struct HeroBody *body)
     if ((gSys.pressed & body_a->pressMask) != 0)
     {
         body_a->pressCount++;
-        body_a->pressMask ^= 3;
+        body_a->pressMask ^= A_BUTTON | B_BUTTON;
     }
-    if ((body_a->sprite->flags & 8) != 0)
+    if ((body_a->sprite->flags & SPRITE_FLAG_ANIM_DONE) != 0)
     {
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x50);
             body_a->rate = rate;

@@ -68,24 +68,33 @@ struct BigObj
     u32 unk30;
     u32 unk34;
     u32 unk38;
-    u32 unk3C;
+    u32 unk3C;      /* jump height offset (1/256 px, negative is up) */
     u32 unk40;
     u32 unk44;
     u16 unk48;
-    u16 unk4A;
-    u16 unk4C;
+    u16 jumpLength; /* frames the jump lasts */
+    u16 jumpFrame;  /* frames into the jump */
     u16 unk4E;
     u16 unk50;
     u16 unk52;
     u16 unk54;
-    u16 unk56;
+    u16 unk56;      /* animation mode (BIGOBJ_ANIM_*), indexes the frame table at unk64 */
     u16 unk58;
-    u16 unk5A;
-    u32 unk5C;
-    u32 unk60;
+    u16 jumpFlags;  /* BIGOBJ_JUMP_* */
+    u32 jumpPeak;   /* height offset at the top of the arc (1/256 px) */
+    u32 jumpCurve;  /* (half the arc's length)^2 * 256 / its height: unk3C = peak -/+ t^2 * 65536 / jumpCurve */
     u32 unk64;
     u32 unk68;
 };
+
+/* BigObj.unk56 while jumping */
+#define BIGOBJ_ANIM_JUMP_UP 2
+#define BIGOBJ_ANIM_JUMP_DOWN 3
+
+/* BigObj.jumpFlags */
+#define BIGOBJ_JUMP_ACTIVE 2  /* a jump is in progress */
+#define BIGOBJ_JUMP_RISING 4  /* still before the top of the arc */
+#define BIGOBJ_JUMP_ONE_WAY 8 /* only half an arc: a rise that stays up, or a drop to the ground */
 
 extern u8 *gUnk_03000FC0;
 extern u8 gClassEac8[];
@@ -203,14 +212,14 @@ struct BigObj *obj_init_big(struct BigObj *obj, u32 first)
     half[0] = 0;
     half += 2;
     half[0] = 0;
-    obj->unk60 = 0;
-    obj->unk5C = 0;
+    obj->jumpCurve = 0;
+    obj->jumpPeak = 0;
     obj->unk64 = 0;
     obj->unk68 = (u32)gBigObjTag;
     return obj;
 }
 
-NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos(struct BigObj *obj, u32 camX, u32 camY))
+void update_obj_sprite_pos(struct BigObj *obj, u32 camX, u32 camY)
 {
     struct SpritePos *spriteA;
     struct SpritePos *spriteB;
@@ -219,6 +228,7 @@ NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos
     struct SpritePos *spriteA3;
     s32 x;
     s32 y;
+    s32 h;
 
     spriteA = (struct SpritePos *)obj->unk10;
     if (spriteA != 0)
@@ -251,10 +261,10 @@ NONMATCH("asm/code_08162C68/update_obj_sprite_pos.s", void update_obj_sprite_pos
         {
             spriteA3->x = 0x178;
         }
-        *(u16 *)((u8 *)obj->unk10 + 0xE) = obj->unk50 - (((s32)obj->unk20 >> 8) - 0x400);
+        h = obj->unk20;
+        *(u16 *)((u8 *)obj->unk10 + 0xE) = obj->unk50 - ((h >> 8) - 0x400);
     }
 }
-END_NONMATCH
 
 void obj_set_anim_from_offset(struct BigObj *obj)
 {
@@ -300,12 +310,11 @@ void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 
 void obj_set_anim_from_offset(struct BigObj *obj);
 
-NONMATCH("asm/code_08162C68/obj_update_frame_flags.s", void obj_update_frame_flags(struct BigObj *obj))
+void obj_update_frame_flags(struct BigObj *obj)
 {
     u8 *frameTable;
     u8 *animBase;
     s32 mode;
-    u8 frame;
     u32 mirror;
     s32 mask;
 
@@ -322,10 +331,12 @@ NONMATCH("asm/code_08162C68/obj_update_frame_flags.s", void obj_update_frame_fla
         goto done;
     if (mode > 3 && mode != 5)
         goto done;
-    frame = animBase[obj->unk52];
-    mirror = frame >> 7;
-    mask = 0x7F;
-    obj_load_record((void *)obj->unk10, (mask & frame) + frameTable[mode], 0, 0, 0);
+    {
+        register u32 frame asm("r3") = animBase[obj->unk52];
+        mask = 0x7F;
+        mirror = frame >> 7;
+        obj_load_record((void *)obj->unk10, (mask & frame) + frameTable[mode], 0, 0, 0);
+    }
     ((struct SpriteBits11 *)((u8 *)obj->unk10 + 0x11))->bit6 = mirror;
     if (obj->unk56 != 0)
         goto done;
@@ -335,90 +346,93 @@ done:
     if (obj->unk14 != 0)
         obj_set_anim_from_offset(obj);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08162C68/obj_script_step.s", void obj_script_step(struct BigObj *obj))
 
-NONMATCH("asm/code_08162C68/tween_groups_obj_start_move.s", void tween_groups_obj_start_move(struct BigObj *obj, s32 dist, s32 target, u8 useRam))
+/* Starts a parabolic jump of `height` (pixels, negative is up) lasting `length` frames, stepped by
+ * tween_groups_obj_step_move. oneWay makes it half an arc: with height < 0 a rise that stays up,
+ * otherwise a drop of `height` pixels (the ground moves down and the offset starts that far up). */
+void tween_groups_obj_start_move(struct BigObj *obj, s32 height, s32 length, u8 oneWay)
 {
-    s16 *tgt;
-    s32 speed;
+    s16 *jumpLength;
     s32 half;
-    s32 zero;
-    u16 flags;
+    u16 *flags;
+    register s32 zero asm("r6");
 
+    jumpLength = &obj->jumpLength;
     zero = 0;
-    tgt = &obj->unk4A;
-    *tgt = target;
-    if (useRam)
+    *jumpLength = length | zero;
+    zero = 0;
+    if (oneWay)
     {
-        speed = tgt[0];
-        obj->unk60 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((speed * speed) << 8, dist);
-        if (dist >= 0)
+        obj->jumpCurve = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((*jumpLength * *jumpLength) << 8, height);
+        if (height < 0)
         {
-            obj->unk5C = -dist << 8;
-            obj->unk1C -= obj->unk5C;
-            obj->unk3C = obj->unk5C;
-            obj->unk56 = 3;
-            obj->unk5A &= 0xFFFB;
+            obj->jumpPeak = height << 8;
+            obj->unk56 = BIGOBJ_ANIM_JUMP_UP;
+            flags = &obj->jumpFlags;
+            *flags |= BIGOBJ_JUMP_RISING;
         }
         else
         {
-            obj->unk5C = dist << 8;
-            obj->unk56 = 2;
-            obj->unk5A |= 4;
+            obj->jumpPeak = -height << 8;
+            obj->unk1C -= obj->jumpPeak;
+            obj->unk3C = obj->jumpPeak;
+            obj->unk56 = BIGOBJ_ANIM_JUMP_DOWN;
+            obj->jumpFlags &= (u16)~BIGOBJ_JUMP_RISING;
         }
-        obj->unk5A |= 0xA;
+        obj->jumpFlags |= BIGOBJ_JUMP_ONE_WAY | BIGOBJ_JUMP_ACTIVE;
     }
     else
     {
-        half = target / 2;
-        obj->unk60 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((half * half) << 8, dist);
-        obj->unk5C = dist << 8;
-        obj->unk56 = 2;
-        flags = ((obj->unk5A | 6)) & 0xFFF7;
-        obj->unk5A = flags;
+        half = length / 2;
+        obj->jumpCurve = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((half * half) << 8, height);
+        obj->jumpPeak = height << 8;
+        obj->unk56 = BIGOBJ_ANIM_JUMP_UP;
+        flags = &obj->jumpFlags;
+        *flags |= BIGOBJ_JUMP_RISING | BIGOBJ_JUMP_ACTIVE;
+        *flags |= zero;
+        *flags &= (u16)~BIGOBJ_JUMP_ONE_WAY;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08162C68/tween_groups_obj_step_move.s", void tween_groups_obj_step_move(struct BigObj *obj))
+/* One frame of the jump tween_groups_obj_start_move started: sets the height offset unk3C on the
+ * parabola peak -/+ t^2 * 65536 / jumpCurve, t being the frames from the top of the arc. A full arc
+ * passes its top halfway (and switches to the falling animation there); a one-way rise has its top
+ * at the end, a one-way drop at the start. */
+void tween_groups_obj_step_move(struct BigObj *obj)
 {
-    u32 flags;
-    s32 diff;
-    s32 half;
+    s32 fromTop;
+    s32 halfLength;
 
-    flags = obj->unk5A;
-    if (flags & 8)
+    if (obj->jumpFlags & BIGOBJ_JUMP_ONE_WAY)
     {
-        if (flags & 4)
+        if (obj->jumpFlags & BIGOBJ_JUMP_RISING)
         {
-            diff = (s16)obj->unk4C - (s16)obj->unk4A;
+            fromTop = (s16)obj->jumpFrame - (s16)obj->jumpLength;
         }
         else
         {
-            diff = (s16)obj->unk4C;
-            obj->unk3C = obj->unk5C + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((diff * diff) << 16, obj->unk60);
+            fromTop = (s16)obj->jumpFrame;
+            obj->unk3C = obj->jumpPeak + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((fromTop * fromTop) << 16, obj->jumpCurve);
             return;
         }
     }
     else
     {
-        half = (s16)obj->unk4A / 2;
-        if (flags & 4)
+        halfLength = (s16)obj->jumpLength / 2;
+        if (obj->jumpFlags & BIGOBJ_JUMP_RISING)
         {
-            if (half < (s16)obj->unk4C)
+            if (halfLength < (s16)obj->jumpFrame)
             {
-                flags &= 0xFFFB;
-                obj->unk5A = flags;
-                obj->unk56 = 3;
+                obj->jumpFlags &= (u16)~BIGOBJ_JUMP_RISING;
+                obj->unk56 = BIGOBJ_ANIM_JUMP_DOWN;
             }
         }
-        diff = (s16)obj->unk4C - half;
+        fromTop = (s16)obj->jumpFrame - halfLength;
     }
-    obj->unk3C = obj->unk5C - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((diff * diff) << 16, obj->unk60);
+    obj->unk3C = obj->jumpPeak - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((fromTop * fromTop) << 16, obj->jumpCurve);
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08162C68/create_obj_group_5005.s", u32 *create_obj_group_5005(u32 *table))
 {
@@ -486,17 +500,21 @@ static inline void load_pair_record(void *sprite, s16 *table)
     obj_load_record(sprite, *(s16 *)((u8 *)table + (gSys[0x8C0] << 1)), 0, 0, 0);
 }
 
-void obj_init_pair(struct PairObj *obj, u32 kind)
+/* Shows the rope-jump level banner for `level` (1..ROPE_JUMP_LEVELS): its first part gets the
+   current language's record from gAnimLangPairChildA (gSys[0x8C0] is the language). For levels
+   1-4 the second part gets the language's record from gAnimLangPairChildB and the third the
+   level's digit (record level + 0x44). Each shown part starts its script from the beginning. */
+void obj_init_pair(struct PairObj *banner, u32 level)
 {
-    obj->unk0 = 1;
-    load_pair_record(obj->unk4->unk10, gAnimLangPairChildA);
-    set_pair_child_table(obj->unk4, gObjScript08213904);
-    if (kind - 1 <= 3)
+    banner->unk0 = 1;
+    load_pair_record(banner->unk4->unk10, gAnimLangPairChildA);
+    set_pair_child_table(banner->unk4, gObjScript08213904);
+    if (level - 1 <= 3)
     {
-        load_pair_record(obj->unk8->unk10, gAnimLangPairChildB);
-        set_pair_child_table(obj->unk8, gObjScript08213964);
-        obj_load_record(obj->unkC->unk10, kind + 0x44, 0, 0, 0);
-        set_pair_child_table(obj->unkC, gObjScript08213964);
+        load_pair_record(banner->unk8->unk10, gAnimLangPairChildB);
+        set_pair_child_table(banner->unk8, gObjScript08213964);
+        obj_load_record(banner->unkC->unk10, level + 0x44, 0, 0, 0);
+        set_pair_child_table(banner->unkC, gObjScript08213964);
     }
 }
 

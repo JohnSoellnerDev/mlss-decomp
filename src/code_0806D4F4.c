@@ -147,6 +147,13 @@ struct ActorCands
 
 extern struct ActorCands *gWorld;
 
+/*
+ * Once the pose's flags bit 3 is set, counts timer down; at 0 plays action 5 and sound 0xD2,
+ * sets handler68 to on_arrive and handler58 to obj_lookup_part_to_drift, clears mode bits 5-6,
+ * pushes the object on the default list and starts the swing of obj_wave_drift: the x radius
+ * (targetX) is the distance from baseX to the centre (80 px when dx is set, else 48 px), the
+ * y radius (targetY) 18, phase 0, first effect in 10 frames.
+ */
 void obj_timer_exit_left(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
@@ -173,7 +180,7 @@ void obj_timer_exit_left(struct ActorObj *obj)
             {
                 obj->targetX = (obj->baseX - 0x3000) / 0x100;
             }
-            obj->targetY = 0x12;
+            obj->targetY = 18;
             obj->phase = 0;
             *timer = 10;
             obj->state = obj_wave_drift;
@@ -181,14 +188,22 @@ void obj_timer_exit_left(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_0806D4F4/obj_wave_drift.s", void obj_wave_drift(struct ActorObj *obj))
+/*
+ * Swings the object around a centre on an ellipse: x = centre + cos * targetX,
+ * y = 108 px + sin * targetY (sine table 1.0 = 0x1000, positions 8.8 fixed point),
+ * the low byte of phase being the angle; the centre is x 80 px when dx is set, else
+ * 48 px. Every 10 frames spawns effect 0x20F5 (phase past 0x80) or 0x20EC at the base.
+ * phase grows by paramA4 per frame; once |phase| passes paramA0 * 256 the object
+ * stops at x 120 px (dx set) or 88 px, y 108 px, and waits 45 frames in
+ * obj_timer_clear_slot_action6_alt.
+ */
+void obj_wave_drift(struct ActorObj *obj)
 {
-    s32 left;
-    s32 x;
+    s32 remaining;
     s32 limit;
 
-    left = --obj->timer << 16;
-    if (left <= 0)
+    remaining = --obj->timer << 16;
+    if (remaining <= 0)
     {
         if (obj->phase > 0x80)
         {
@@ -203,30 +218,28 @@ NONMATCH("asm/code_0806D4F4/obj_wave_drift.s", void obj_wave_drift(struct ActorO
 
     if (obj->dx != 0)
     {
-        x = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x5000;
+        obj->posX = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x5000;
     }
     else
     {
-        x = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x3000;
+        obj->posX = (gCosineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetX + 0x3000;
     }
-    obj->posX = x;
     obj->posY = (gSineTable[*(u8 *)&obj->phase] / 0x40) * obj->targetY + 0x6C00;
+
     obj->phase += obj->paramA4;
     limit = obj->paramA0 << 8;
     if (obj->phase > limit || obj->phase < -limit)
     {
         if (obj->dx != 0)
         {
-            x = 0x7800;
+            obj->posX = 0x7800;
         }
         else
         {
-            x = 0x5800;
+            obj->posX = 0x5800;
         }
-        obj->posX = x;
         obj->posY = 0x6C00;
         obj->timer = 0x2D;
         obj->state = obj_timer_clear_slot_action6_alt;
     }
 }
-END_NONMATCH

@@ -37,8 +37,8 @@ struct Pic
 {
     s16 posX;
     s16 posY;
-    s16 a4;
-    s16 a6;
+    s16 scaleX; /* 0x100 = 1.0 */
+    s16 scaleY;
     u8 filler8[0x11 - 0x8];
     u8 flags11;
     u8 filler12[0x21 - 0x12];
@@ -82,11 +82,12 @@ struct Obj
 struct SpriteBox
 {
     u8 filler0[0x18];
-    s32 x18;
+    s32 z;      /* height above the ground, 8.8 fixed point */
     u8 filler1C[0x28 - 0x1C];
-    void *part;
+    void *body; /* the figure: signed_byte_e4 gives its head height in pixels */
 };
 
+/* The bro whose turn it is in battle */
 struct ActiveObj
 {
     u8 filler0[0x8];
@@ -94,8 +95,16 @@ struct ActiveObj
     u8 filler34[0x48 - 0x34];
     void *action48;
     u8 filler4C[0xBA - 0x4C];
-    s16 speed;
+    s16 speed; /* vertical speed, positive going up */
 };
+
+/* gWorld->lock bits that freeze the battle's command blocks */
+#define WORLD_LOCK_INPUT 0xE0
+
+/* Obj.state of a command block (set by status_slots_update) */
+#define CMD_BLOCK_STATE_DISABLED 1     /* greyed out: a jump bounces off it but can't pick it */
+#define CMD_BLOCK_STATE_PASS_THROUGH 2 /* a jump goes through it */
+#define CMD_BLOCK_TOP_Z 0x3000    /* height (8.8) a bro's head reaches when it hits a command block */
 
 struct StatusObj
 {
@@ -183,6 +192,8 @@ extern struct World *gWorld;
 extern u8 *gWorkBuf;
 extern struct OamList *gModelCtx;
 extern u8 gOamTileTable[];
+/* Per list-window kind (WorldEffect.kind & 0xF): the box's tile column, tile row, width and
+   height in tiles. */
 extern u8 gSlotTableX[];
 extern u8 gSlotTableZ[];
 extern u8 gGaugeTableC[];
@@ -584,14 +595,14 @@ NONMATCH("asm/code_0810A2FC/status_slots_update.s", void status_slots_update(str
         if (state == 2)
         {
             slot->pic->flags11 = (slot->pic->flags11 & -13) | 4;
-            slot->pic->a4 = 0x80;
-            slot->pic->a6 = 0x80;
+            slot->pic->scaleX = 0x80;
+            slot->pic->scaleY = 0x80;
         }
         else
         {
             slot->pic->flags11 &= -13;
-            slot->pic->a4 = radius / 0x10;
-            slot->pic->a6 = radius / 0x10;
+            slot->pic->scaleX = radius / 0x10;
+            slot->pic->scaleY = radius / 0x10;
         }
         if (i != statusSlot)
         {
@@ -703,7 +714,7 @@ NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(
     obj->y0 = y;
     obj->h = height;
     obj->unk98 = kind;
-    obj->unk94 = obj->pic->a4;
+    obj->unk94 = obj->pic->scaleX;
     t = obj->unk38;
     if (t < 0)
     {
@@ -721,98 +732,108 @@ NONMATCH("asm/code_0810A2FC/obj_motion_start.s", struct Owner *obj_motion_start(
 }
 END_NONMATCH
 
-void state_motion_step(struct Owner *owner)
+/* Task step of an object's jump (started by obj_motion_start): adds the object's speed to the
+ * progress (0x4000 = landed). Until then the object moves in a straight line from the task's start
+ * spot (in pixels; startY holds the x) to (x0, y0), at the height parabola_height gives, and its
+ * sprite scales from the start scale (unk94) to 1.0. At the end it is put on (x0, y0) at height h
+ * with scale 1.0, and the task ends. */
+void state_motion_step(struct Owner *task)
 {
     struct Obj *obj;
     struct Pic *pic;
-    s32 sum;
+    s32 progress;
     s32 t;
+    s32 rounded;
     s32 frac;
-    s32 ease;
-    s32 dx;
-    s32 sy;
-    s32 sx;
-    s32 x0;
-    s32 y0;
-    s32 v;
+    s32 delta;
+    s32 fromX;
+    s32 fromY;
+    s32 toX;
+    s32 toY;
+    s32 startScale;
 
-    obj = owner->obj;
-    sum = obj->speed + owner->progress;
-    owner->progress = sum;
-    if ((s32)(sum << 16) > 0x40000000)
+    obj = task->obj;
+    progress = obj->speed + task->progress;
+    task->progress = progress;
+    if ((s32)(progress << 16) > 0x40000000)
     {
         obj->x = obj->x0;
         obj->y = obj->y0;
         obj->z = obj->h;
-        obj->pic->a4 = 0x100;
-        obj->pic->a6 = 0x100;
-        owner->state = 0;
+        obj->pic->scaleX = 0x100;
+        obj->pic->scaleY = 0x100;
+        task->state = 0;
         obj->owner = 0;
     }
     else
     {
-        t = (s16)owner->progress;
-        sy = owner->startY << 8;
-        sx = owner->startX << 8;
-        x0 = obj->x0;
-        y0 = obj->y0;
-        frac = t;
-        if (frac < 0)
+        t = (s16)task->progress;
+        fromX = task->startY << 8;
+        fromY = task->startX << 8;
+        toX = obj->x0;
+        toY = obj->y0;
+        /* the part of the way done, 0x100 = all */
+        rounded = t;
+        if (rounded < 0)
         {
-            frac += 0x3F;
+            rounded += 0x3F;
         }
-        ease = frac >> 6;
-        dx = ease * (x0 - sy);
-        if (dx < 0)
+        frac = rounded >> 6;
+        delta = frac * (toX - fromX);
+        if (delta < 0)
         {
-            dx += 0xFF;
+            delta += 0xFF;
         }
-        obj->x = sy + (dx >> 8);
-        dx = ease * (y0 - sx);
-        if (dx < 0)
+        obj->x = fromX + (delta >> 8);
+        delta = frac * (toY - fromY);
+        if (delta < 0)
         {
-            dx += 0xFF;
+            delta += 0xFF;
         }
-        obj->y = sx + (dx >> 8);
+        obj->y = fromY + (delta >> 8);
         obj->z = parabola_height(t, obj->unkA4, obj->unkA8, obj->unk98);
-        v = obj->unk94;
+        startScale = obj->unk94;
         pic = obj->pic;
-        dx = ease * (0x100 - v);
-        if (dx < 0)
+        delta = frac * (0x100 - startScale);
+        if (delta < 0)
         {
-            dx += 0xFF;
+            delta += 0xFF;
         }
-        pic->a6 = pic->a4 = v + (dx >> 8);
+        pic->scaleY = pic->scaleX = startScale + (delta >> 8);
     }
 }
 
+/* Moves the status screen's cursor (low 7 bits of `cursor`) one place left or right among `count`
+   entries, wrapping at both ends, while input isn't locked, the selected slot has no owner and the
+   active object isn't busy. Each step scrolls the view by one and plays sound 0x78. The result is
+   stored in the status object and returned. */
 s32 status_cursor_step(u32 cursor, u32 count)
 {
     s32 sel;
-    s32 back;
+    s32 next;
 
     sel = cursor & 0x7F;
     if ((gWorld->lock & 0xE0) == 0)
     {
-        if (gWorld->slots[sel] == 0 || gWorld->slots[sel]->owner == 0)
+        if (gWorld->slots[sel] == NULL || gWorld->slots[sel]->owner == 0)
         {
             if (gWorld->active->action48 == 0)
             {
-                if ((((struct PadState *)gSys)->held & 0x20) != 0 && count != 1)
+                if ((((struct PadState *)gSys)->held & DPAD_LEFT) != 0 && count != 1)
                 {
-                    back = count - 1;
+                    next = count - 1;
                     if (sel > 0)
                     {
-                        back = sel - 1;
+                        next = sel - 1;
                     }
-                    sel = back;
+                    sel = next;
                     gWorld->scroll316 -= 1;
                     set_slot_value(0x78, -1);
                 }
-                if ((((struct PadState *)gSys)->held & 0x10) != 0 && count != 1)
+                if ((((struct PadState *)gSys)->held & DPAD_RIGHT) != 0 && count != 1)
                 {
-                    back = count - 1;
-                    sel = (sel < back) ? sel + 1 : 0;
+                    next = count - 1;
+                    sel = (sel < next) ? sel + 1 : 0;
                     gWorld->scroll316 += 1;
                     set_slot_value(0x78, -1);
                 }
@@ -823,64 +844,70 @@ s32 status_cursor_step(u32 cursor, u32 count)
     return sel;
 }
 
+/*
+ * Battle: checks whether the jumping bro's head hits the command block in `slot`. While input isn't
+ * locked and the block is solid, a rising bro that reaches the block's height is held there and
+ * bounces back down at half speed. Returns 1 when that picks the block (plays sound 0x77), -1 when
+ * it is a kind-4 or kind-5 block, and 0 when nothing is picked (no hit, or a disabled block).
+ */
 s32 slot_marker_step(u32 slot)
 {
     struct World *world;
-    struct Obj *marker;
-    struct ActiveObj *active;
+    struct Obj *block;
+    struct ActiveObj *bro;
     struct SpriteBox *sprite;
-    s16 *speedp;
-    u32 *state;
-    s32 scale;
-    s32 limit;
+    s16 *speedZ;
+    u32 *blockState;
+    s32 headHeight;
+    s32 topZ;
     s32 speed;
 
     world = gWorld;
-    marker = world->slots[slot];
-    if ((world->lock & 0xE0) != 0)
+    block = world->slots[slot];
+    if ((world->lock & WORLD_LOCK_INPUT) != 0)
     {
         return 0;
     }
-    if (marker == 0)
+    if (block == NULL)
     {
         return 0;
     }
-    if (marker->owner != 0)
+    if (block->owner != NULL)
     {
         return 0;
     }
-    state = &marker->state;
-    if (*state == 2)
+    blockState = &block->state;
+    if (*blockState == CMD_BLOCK_STATE_PASS_THROUGH)
     {
         return 0;
     }
-    active = world->active;
-    sprite = &active->sprite;
-    speedp = &active->speed;
-    if (*speedp < 0)
+    bro = world->active;
+    sprite = &bro->sprite;
+    speedZ = &bro->speed;
+    if (*speedZ < 0)
     {
         return 0;
     }
-    scale = signed_byte_e4(sprite->part);
-    limit = 0x3000 - (scale << 8);
-    if (sprite->x18 < limit)
+    headHeight = signed_byte_e4(sprite->body);
+    topZ = CMD_BLOCK_TOP_Z - (headHeight << 8);
+    if (sprite->z < topZ)
     {
         return 0;
     }
-    sprite->x18 = limit;
-    speed = -*speedp;
-    *speedp = (s32)(speed + ((u32)speed >> 31)) >> 1;
-    if (*state == 1)
+    sprite->z = topZ;
+    speed = -*speedZ;
+    *speedZ = (s32)(speed + ((u32)speed >> 31)) >> 1;
+    if (*blockState == CMD_BLOCK_STATE_DISABLED)
     {
         return 0;
     }
-    if (marker->kind == 4)
+    if (block->kind == 4)
     {
         return -1;
     }
-    if (marker->kind > 4)
+    if (block->kind > 4)
     {
-        if (marker->kind == 5)
+        if (block->kind == 5)
         {
             return -1;
         }
@@ -971,75 +998,79 @@ NONMATCH("asm/code_0810A2FC/place_world_object.s", void place_world_object(s32 x
 }
 END_NONMATCH
 
-void refresh_world_object(struct WorldObj *obj, s32 mode)
+/* Puts the target cursor (sprite 0x7001, see place_world_object) on a figure, playing action
+ * `action`. Actions above 16 put it 0x20 px right of the figure at height 4; otherwise it goes to
+ * the figure's cursor offset (offsets[4], offsets[5]), at height +0x10 for a side-3 figure (ctrl
+ * bits 1-2) and offsets[6] (signed_byte_e4) for the others. Coordinates are in pixels. */
+void refresh_world_object(struct WorldObj *fig, s32 action)
 {
     s32 x;
     s32 y;
     s32 z;
-    s32 t;
-    s32 u;
+    s32 v;
+    s32 w;
     s32 base;
 
-    if (mode > 16)
+    if (action > 16)
     {
-        t = obj->srcX;
-        if (t < 0)
+        v = fig->srcX;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        x = (t >> 8) + 0x20;
-        t = obj->srcY;
-        if (t < 0)
+        x = (v >> 8) + 0x20;
+        v = fig->srcY;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        y = t >> 8;
+        y = v >> 8;
         z = 4;
     }
-    else if ((obj->ctrl & 6) == 6)
+    else if ((fig->ctrl & 6) == 6)
     {
-        t = obj->srcX;
-        if (t < 0)
+        v = fig->srcX;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        x = (t >> 8) + obj->offsets[4];
-        u = obj->srcY;
-        if (u < 0)
+        x = (v >> 8) + fig->offsets[4];
+        w = fig->srcY;
+        if (w < 0)
         {
-            u += 0xFF;
+            w += 0xFF;
         }
-        y = (u >> 8) + obj->offsets[5];
-        t = obj->srcZ;
-        if (t < 0)
+        y = (w >> 8) + fig->offsets[5];
+        v = fig->srcZ;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        z = (t >> 8) + 0x10;
+        z = (v >> 8) + 0x10;
     }
     else
     {
-        t = obj->srcX;
-        if (t < 0)
+        v = fig->srcX;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        x = (t >> 8) + obj->offsets[4];
-        u = obj->srcY;
-        if (u < 0)
+        x = (v >> 8) + fig->offsets[4];
+        w = fig->srcY;
+        if (w < 0)
         {
-            u += 0xFF;
+            w += 0xFF;
         }
-        y = (u >> 8) + obj->offsets[5];
-        u = signed_byte_e4(obj);
-        t = obj->srcZ;
-        if (t < 0)
+        y = (w >> 8) + fig->offsets[5];
+        w = signed_byte_e4(fig);
+        v = fig->srcZ;
+        if (v < 0)
         {
-            t += 0xFF;
+            v += 0xFF;
         }
-        z = (t >> 8) + u;
+        z = (v >> 8) + w;
     }
-    place_world_object(x, y, z, mode, 0x7001);
+    place_world_object(x, y, z, action, 0x7001);
 }
 
 NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 value, s32 slot, s32 flag, s32 mode_base))
@@ -1101,56 +1132,72 @@ NONMATCH("asm/code_0810A2FC/update_slot_marker.s", void update_slot_marker(s32 v
 }
 END_NONMATCH
 
+/* A 2-frame OBJ tile animation: each frame is 8 tiles (0x100 bytes) of a 16-tile block in gWorkBuf,
+ * copied to the same OBJ VRAM tiles. gWorld->uploadState counts the frames down. */
+#define ANIM_TILES_SRC      0x4E70     /* gWorkBuf offset of the animation's tile blocks */
+#define ANIM_TILES_VRAM     0x060113A0 /* OBJ VRAM the current frame is copied to */
+#define ANIM_FRAME_BYTES    0x100      /* 8 tiles of 4bpp */
+#define ANIM_PERIOD         0x26       /* frames per animation cycle */
+#define ANIM_SECOND_HALF    0x13       /* countdown value that shows the second frame */
+
+/* One frame of the 2-frame OBJ tile animation of tile block `block`: when the countdown runs out it
+ * copies the block's first 8 tiles to OBJ VRAM and restarts at ANIM_PERIOD; halfway it copies the
+ * other 8 tiles. */
 void tile_upload_step(u16 block)
 {
     struct World *world;
-    u8 state;
+    u8 countdown;
 
     world = gWorld;
-    state = world->uploadState;
-    if (state == 0)
+    countdown = world->uploadState;
+    if (countdown == 0)
     {
-        dma_copy_or_queue(gWorkBuf + ((block << 9) + 0x4E70), (void *)0x060113A0, 0x100, 0x20, 0);
-        gWorld->uploadState = 0x26;
+        dma_copy_or_queue(gWorkBuf + ((block << 9) + ANIM_TILES_SRC), (void *)ANIM_TILES_VRAM, ANIM_FRAME_BYTES, 0x20, 0);
+        gWorld->uploadState = ANIM_PERIOD;
     }
-    else if (state == 0x13)
+    else if (countdown == ANIM_SECOND_HALF)
     {
-        dma_copy_or_queue(gWorkBuf + ((((block << 4) + 8) << 5) + 0x4E70), (void *)0x060113A0, 0x100, 0x20, 0);
+        dma_copy_or_queue(gWorkBuf + ((((block << 4) + 8) << 5) + ANIM_TILES_SRC), (void *)ANIM_TILES_VRAM, ANIM_FRAME_BYTES, 0x20, 0);
     }
     gWorld->uploadState = gWorld->uploadState - 1;
 }
 
+/* Opens the voice message window: sets up tile slot 4 as a framed 0x11x0x11 text box, clears its
+   tiles, points the world's voice at it with the next text, notes whether that text fits the window
+   (narrower than 0x68 px: no scrolling), renders the first line, clears world flag 0x40 and hands
+   over to scroll_text_step after a 90 frame wait. */
 void start_voice_message(struct Owner *owner)
 {
-    void *block;
+    void *tiles;
     struct Voice *voice;
     u32 text;
-    s16 sVar;
+    s16 more;
 
     owner->startY = 0x40;
     owner->timer = 0;
     set_tile_slot(gWorld->slot250, 4, 0, 0xf, 0x11, 0x11, 2);
     draw_slot_frame(gWorld->slot250, 5, 4, 4);
     fill_slot(gWorld->slot250, 4, 0x90);
-    block = slot_block_ptr(gWorld->slot250, 4);
+    tiles = slot_block_ptr(gWorld->slot250, 4);
     voice = &gWorld->voice29C;
-    voice_setup_params(voice, block, 0x11, 0, 0, 0, 1, 2, 1, 3);
+    voice_setup_params(voice, tiles, 0x11, 0, 0, 0, 1, 2, 1, 3);
     text = next_text_id();
     owner->flag18 = measure_text(3, (void *)text, 0) < 0x68;
-    ((void (*)(u32, void *, u32))gMemRoutines)(0, block, 0x440);
+    /* gMemRoutines + 0: the IWRAM fill routine (value, dst, bytes) */
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, tiles, 0x440);
     voice->textId = text;
     voice->unkC = 0;
     voice->unkD = 0xd;
-    *((u8 *)voice + 0x12) |= 0x20;
+    *((u8 *)voice + 0x12) |= 0x20; /* flags12 */
     do
     {
         if (voice->unkC < 0)
             break;
-        sVar = track_run(voice);
-    } while (sVar != 0);
-    *(s8 *)&gWorld->flags0B &= -0x41;
+        more = track_run(voice);
+    } while (more != 0);
+    *(s8 *)&gWorld->flags0B &= ~0x40;
     owner->state = scroll_text_step;
-    owner->timer = 0x5a;
+    owner->timer = 90;
 }
 
 NONMATCH("asm/code_0810A2FC/update_voice_message.s", void update_voice_message(struct Owner *owner))
@@ -1245,33 +1292,36 @@ void set_world_effect(s32 kind)
     }
 }
 
+/* Sets up the display for the world effect's list window: scrolls BG2 vertically by the effect's
+   unk14 in pixels (8.8 fixed point; values below 0x40 count as 8), shows every layer inside the
+   windows but hides BG2 outside them, and puts window 1 on the inside of the list box of the
+   effect's kind (gSlotTableX/Z: the box's tile column and row, gGaugeTableC/D: its width and
+   height in tiles, one tile of frame on each side). */
 void update_world_effect_windows(void)
 {
     struct WorldEffect *effect;
     vu16 *win;
     u32 kind;
-    s32 scale;
-    s32 t;
-    u32 x;
-    u32 y;
+    s32 scrollY;
+    s32 offset;
 
     effect = gWorld->effect;
     kind = effect->kind & 0xF;
     if (effect->unk14 <= 0x3F)
     {
-        scale = 8;
+        scrollY = 8;
     }
     else
     {
-        t = effect->unk14;
-        if (t < 0)
+        offset = effect->unk14;
+        if (offset < 0)
         {
-            t += 0xFF;
+            offset += 0xFF;
         }
-        scale = t >> 8;
+        scrollY = offset >> 8;
     }
     REG_BG2HOFS = 0;
-    REG_BG2VOFS = scale - 3;
+    REG_BG2VOFS = scrollY - 3;
     REG_WININ = 0x3F3F;
     REG_WINOUT = 0x3F3B;
     win = (vu16 *)REG_ADDR_WIN1H;

@@ -39,7 +39,7 @@ struct WorldRef
     u8 filler24C[4];
     void *unk250;
     u8 filler254[0x260 - 0x254];
-    void *unk260;
+    void *unk260; // VBlank callback saved while the HBlank scroll effect runs
     u8 filler264[0x2D8 - 0x264];
     struct ObjA *obj2D8;
 };
@@ -47,7 +47,7 @@ struct WorldRef
 struct PendingCtx
 {
     u8 filler0[0xC];
-    u16 pending[16];
+    u16 pending[16]; /* owner of each OBJ palette: 0xFFFF free, 0x1FFF lent to place_layer_tile */
 };
 
 struct SysBlock
@@ -63,6 +63,7 @@ extern u8 gSys[];
 extern u8 *gMemRoutines;
 extern u8 gShadowShapes083a16c8[];
 extern u8 *gWorkBuf;
+// RAM copies of REG_BG0HOFS..REG_BG3VOFS (HOFS, VOFS per BG)
 extern u16 gUnk_02000010;
 extern u16 gUnk_02000012;
 extern u16 gUnk_02000014;
@@ -114,38 +115,51 @@ struct SpinTask *sub_080E3870(s32 n)
     return task;
 }
 
+// gWorkBuf + SCANLINE_SCROLL_TABLE: per-scanline BG0HOFS..BG3VOFS values (16 bytes a line, 160 lines),
+// double buffered; flagsB bit 5 picks the half the HBlank DMA reads.
+#define SCANLINE_SCROLL_TABLE 0x3EF0
+#define SCROLL_LINE_SIZE 0x10
+
+// Byte offset of the half of the scanline scroll table that flagsB bit 5 selects (0 or 0xA00).
 static inline u32 scroll_bank_offset(void)
 {
     u32 bank = ((u32)gWorld->flagsB << 26) >> 31;
     return ((bank << 2) + bank) << 9;
 }
 
+/* IRQ callback of the per-scanline scroll effect: runs the callback it replaced, copies line 0 of
+ * the current scanline scroll table half into BG0HOFS..BG3VOFS and restarts DMA0 so that on every
+ * HBlank it copies the next line's 16 bytes into the scroll registers. */
 void copy_scroll_and_start_dma(void)
 {
     void (*copy)(u8 *, u8 *, u32);
-    u8 **bufp;
-    u8 *dmaBase;
+    u8 **workBuf;
+    u8 *dma0;
     if (gWorld->unk260 != 0)
         ((void (*)(void))gWorld->unk260)();
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
-    bufp = &gWorkBuf;
-    copy(*bufp + (scroll_bank_offset() + 0x3EF0), (u8 *)REG_ADDR_BG0HOFS, 0x10);
-    dmaBase = (u8 *)REG_ADDR_DMA0SAD;
-    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0xC5FF;
-    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0x7FFF;
-    (void)*(vu16 *)(dmaBase + 0xA);
-    *(vu32 *)dmaBase = (u32)(gWorkBuf + (scroll_bank_offset() + 0x3EF0));
-    *(vu32 *)(dmaBase + 4) = REG_ADDR_BG0HOFS;
-    *(vu32 *)(dmaBase + 8) = 0xA6600004;
-    (void)*(vu32 *)(dmaBase + 8);
+    workBuf = &gWorkBuf;
+    copy(*workBuf + (scroll_bank_offset() + SCANLINE_SCROLL_TABLE), (u8 *)REG_ADDR_BG0HOFS, SCROLL_LINE_SIZE);
+    dma0 = (u8 *)REG_ADDR_DMA0SAD;
+    *(vu16 *)(dma0 + 0xA) = *(vu16 *)(dma0 + 0xA) & DMA_STOP_MASK;
+    *(vu16 *)(dma0 + 0xA) = *(vu16 *)(dma0 + 0xA) & (u16)~DMA_ENABLE;
+    (void)*(vu16 *)(dma0 + 0xA);
+    *(vu32 *)dma0 = (u32)(gWorkBuf + (scroll_bank_offset() + SCANLINE_SCROLL_TABLE));
+    *(vu32 *)(dma0 + 4) = REG_ADDR_BG0HOFS;
+    *(vu32 *)(dma0 + 8) = ((u32)(DMA_ENABLE | DMA_START_HBLANK | DMA_32BIT | DMA_REPEAT | DMA_DEST_RELOAD) << 16)
+                        | (SCROLL_LINE_SIZE / 4);
+    (void)*(vu32 *)(dma0 + 8);
 }
 
+/* Ends the per-scanline scroll effect started by sub_080E3870: stops the HBlank
+ * DMA0 into the scroll registers, restores the saved VBlank callback, reloads the
+ * BG tiles and puts the RAM scroll copies (BG2 VOFS reset to 0) back in the registers. */
 void apply_bg_scroll_shadows(void)
 {
-    u8 *dmaBase = (u8 *)REG_ADDR_DMA0SAD;
-    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0xC5FF;
-    *(vu16 *)(dmaBase + 0xA) = *(vu16 *)(dmaBase + 0xA) & 0x7FFF;
-    (void)*(vu16 *)(dmaBase + 0xA);
+    u8 *dma0 = (u8 *)REG_ADDR_DMA0SAD;
+    *(vu16 *)(dma0 + 0xA) = *(vu16 *)(dma0 + 0xA) & DMA_STOP_MASK;
+    *(vu16 *)(dma0 + 0xA) = *(vu16 *)(dma0 + 0xA) & (u16)~DMA_ENABLE;
+    (void)*(vu16 *)(dma0 + 0xA);
     set_irq_callback(2, gWorld->unk260);
     gUnk_0200001A = 0;
     load_vram_tiles(gWorld->unk250);
@@ -179,24 +193,29 @@ void sub_080E40FC(void)
 
 ASM_FUNC("asm/code_080E3870/place_layer_tile.s", void place_layer_tile(void))
 
-NONMATCH("asm/code_080E3870/refresh_slot_flags.s", void refresh_slot_flags(void))
+/* Marks each of the 16 OBJ palettes in gUnk_03000F78: 0xFF (-1) if its owner is 0xFFFF (free) or
+ * 0x1FFF (lent to place_layer_tile), 0xFE (-2) if something else uses it. */
+void refresh_slot_flags(void)
 {
-    s32 i = 0;
-    s32 key1 = 0xFFFF;
-    s32 key2 = 0x1FFF;
-    for (; i < 16; i++)
+    s32 palette = 0;
+    u16 freeOwner = 0xFFFF;
+    u16 lentOwner = 0x1FFF;
+
+    for (; palette < 16; palette++)
     {
-        u8 *slot = gUnk_03000F78 + i;
-        u16 e = ((struct PendingCtx *)gModelCtx)->pending[i];
-        s32 v;
-        if (e == key1 || e == key2)
-            v = -1;
+        u8 *mark = gUnk_03000F78 + palette;
+        u16 owner = ((struct PendingCtx *)gModelCtx)->pending[palette];
+        register s32 value asm("r1");
+        register s32 out asm("r0");
+
+        if (owner == freeOwner || owner == lentOwner)
+            value = -1;
         else
-            v = -2;
-        *slot = v;
+            value = -2;
+        out = value;
+        *mark = (u8)out;
     }
 }
-END_NONMATCH
 
 u32 world_entry_ready(void)
 {
@@ -276,11 +295,13 @@ u8 *set_text_buffer(u8 *buf)
     return aligned + size;
 }
 
-NONMATCH("asm/code_080E3870/unknown_thumb_080e4860.s", u8 *unknown_thumb_080e4860(u8 *buf))
+u8 *unknown_thumb_080e4860(u8 *buf)
 {
     u8 *aligned;
     u8 *src;
     u32 size;
+    u32 off;
+
     if (buf == 0)
     {
         gUnk_03000F88 = gUnk_08000AF0 + 0x80;
@@ -291,10 +312,9 @@ NONMATCH("asm/code_080E3870/unknown_thumb_080e4860.s", u8 *unknown_thumb_080e486
     size = (u32)var_block_routine - (u32)src;
     cpu_set(src, aligned, (size << 10) >> 11);
     gUnk_03000F88 = aligned;
-    gUnk_03000F8C = aligned + ((u32)rect_fill_routine - (u32)src);
+    gUnk_03000F8C = aligned + (off = (u32)rect_fill_routine - (u32)src);
     return aligned + size;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E3870/sub_080E48C0.s", void sub_080E48C0(void))
 

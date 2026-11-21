@@ -9,6 +9,26 @@ struct SubObj
     u8 bits12;
 };
 
+struct SubBits12
+{
+    u8 b0 : 1;
+    u8 mode : 2;
+    u8 rest : 5;
+};
+
+/* The u16 at LedgeObj.seqLo212: dir is the link sequence's state (0 off, 1 backward, else forward). */
+struct SeqBits
+{
+    u16 lo : 7;
+    u16 dir : 2;
+    u16 rest : 7;
+};
+
+#define SEQ_DIR_MASK 0x180     /* SeqBits.dir as a mask of the u16 */
+#define SEQ_DIR_BACKWARD 0x080 /* SeqBits.dir == 1 */
+#define OBJ_FLAG20F_LINKED 0x02 /* obj_set_sprite_link's current state */
+#define SEQ_END 0xFF           /* seqTimer value that ends the sequence */
+
 struct LedgeObj
 {
     u8 filler0[0x0C];
@@ -762,93 +782,103 @@ NONMATCH("asm/code_08044644/obj_probe_ledge.s", s32 obj_probe_ledge(struct Ledge
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08044644/obj_step_sequence.s", void obj_step_sequence(struct LedgeObj *obj))
+/* Steps the obj's timed link sequence while SeqBits.dir is set: seqPtr points at
+ * {unlinked frames, linked frames} pairs. When the timer runs out it toggles obj_set_sprite_link,
+ * taking the next pair's first byte (stepping backward or forward) after unlinking, or the pair's
+ * second byte after linking. A timer of 0xFF ends the sequence: the link is left on for a
+ * backward sequence, dir is cleared and the sub's mode is restored from change213's top bits. */
+void obj_step_sequence(struct LedgeObj *obj)
 {
-    s32 active;
     u16 *seqFlags;
-    u16 fl;
     u8 *timer;
-    s32 dir;
-    struct SubObj *sub;
-    u8 *ptr;
-    u8 next;
-    s32 v;
+    s32 link;
+    u8 *cur;
+    u8 *next;
 
     seqFlags = (u16 *)&obj->seqLo212;
-    fl = *seqFlags;
-    active = 0x180;
-    if ((active & fl) != 0)
+    if (*seqFlags & SEQ_DIR_MASK)
     {
         timer = &obj->seqTimer;
         *timer = *timer - 1;
         if (*timer == 0)
         {
-            if ((obj->flags20F & 2) != 0)
+            if (obj->flags20F & OBJ_FLAG20F_LINKED)
             {
                 obj_set_sprite_link(obj, 0);
-                ptr = obj->seqPtr + 2;
-                if ((*seqFlags & active) == 0x80)
-                    ptr = obj->seqPtr - 2;
-                obj->seqPtr = ptr;
-                next = *ptr;
+                cur = obj->seqPtr;
+                if ((*seqFlags & SEQ_DIR_MASK) == SEQ_DIR_BACKWARD)
+                    next = cur - 2;
+                else
+                    next = cur + 2;
+                obj->seqPtr = next;
+                *timer = *next;
             }
             else
             {
                 obj_set_sprite_link(obj, 1);
-                next = obj->seqPtr[1];
+                *timer = obj->seqPtr[1];
             }
-            *timer = next;
         }
-        if (*(s8 *)&obj->seqTimer == -1)
+        if (*(s8 *)&obj->seqTimer == (s8)SEQ_END)
         {
-            dir = 0;
-            if ((*(u16 *)&obj->seqLo212 & 0x180) == 0x80)
-                dir = 1;
-            obj_set_sprite_link(obj, dir);
-            { s32 f = ~0x180 & *(u16 *)&obj->seqLo212; *(u16 *)&obj->seqLo212 = f; }
-            sub = obj->sub;
-            v = (obj->change213 >> 6) << 1;
-            sub->bits12 = (-7 & sub->bits12) | v;
+            link = 0;
+            if (((struct SeqBits *)&obj->seqLo212)->dir == 1)
+                link = 1;
+            obj_set_sprite_link(obj, link);
+            ((struct SeqBits *)&obj->seqLo212)->dir = 0;
+            ((struct SubBits12 *)&obj->sub->bits12)->mode = obj->change213 >> 6;
         }
     }
 }
-END_NONMATCH
 
+/* An object moved in a straight line by contacts_obj_start_move. Positions are 24.8 fixed point. */
 struct MoveObj
 {
     u8 filler0[0x02];
-    u8 angle;
-    u8 angleZ;
+    u8 heading;         /* direction in the ground plane, 0-255 */
+    u8 pitch;           /* climb angle, 0-255 */
     u8 filler4[0x0C - 0x04];
     s32 posX;
     s32 posY;
     s32 posZ;
-    s32 posZB;
+    s32 posZB;          /* height on top of posZ */
     u8 filler1C[0x20D - 0x1C];
-    u8 flags20D;
+    u8 flags20D;        /* MOVEOBJ_FLAT, ... */
     u8 filler20E[0x23E - 0x20E];
-    u16 speed23E;
+    u16 moveSpeed;      /* default step length of a MOVE_BY_SPEED move */
     u8 filler240[0x242 - 0x240];
-    s16 moveX;
-    s16 moveY;
+    s16 stepX;          /* per-frame step in the ground plane */
+    s16 stepY;
     u8 filler246[0x2B5 - 0x246];
-    u8 moveFlags;
+    u8 moveFlags;       /* low 3 bits: enum MoveKind of the current move */
     u8 filler2B6;
-    u8 stepFlags;
+    u8 stepFlags;       /* low 3 bits: 4 = flat move, 0 = 3D move */
     u8 filler2B8[0x2BC - 0x2B8];
-    s32 savedX;
-    s32 savedY;
-    s32 savedZ;
+    s32 startX;         /* where the move started */
+    s32 startY;
+    s32 startZ;
     u8 filler2C8[0x2CC - 0x2C8];
-    s32 snapX;
-    s32 snapY;
-    s32 snapZ;
-    s16 dirX;
-    s16 dirY;
-    s16 dirZ;
-    u16 modeCount;
-    u16 modeLimit;
+    s32 targetX;        /* where the move ends */
+    s32 targetY;
+    s32 targetZ;
+    s16 velX;           /* per-frame step in 3D (MOVE_BY_SPEED) */
+    s16 velY;
+    s16 velZ;
+    u16 moveTimer;      /* frames since the move started */
+    u16 moveFrames;     /* length of a MOVE_BY_FRAMES move */
 };
+
+/* flags20D: the object moves on the ground plane only, its height is left alone */
+#define MOVEOBJ_FLAT 0x40
+
+enum MoveKind
+{
+    MOVE_BY_SPEED = 1,  /* a fixed step every frame */
+    MOVE_BY_FRAMES = 2, /* arrive after a fixed number of frames */
+};
+
+/* v / d rounded to nearest (d a power of two) */
+#define DIV_ROUND(v, d) ((v) / (d) + (((v) / ((d) / 2)) & 1))
 
 struct Lo3
 {
@@ -856,24 +886,28 @@ struct Lo3
     u8 rest : 5;
 };
 
-u32 arc_tan2(s32 x, s32 y);
+u32 arc_tan2(s32 y, s32 x);
 
-u32 contacts_obj_start_move(struct MoveObj *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, u16 speed)
+/*
+ * Starts moving obj in a straight line to pixel (x, y, z), or by (x, y, z) when relative == 1.
+ * MOVE_BY_SPEED steps speedOrFrames (obj->moveSpeed when 0) every frame; MOVE_BY_FRAMES arrives
+ * after speedOrFrames frames. Returns 0 when obj is already there, 1 when the move has started.
+ */
+u32 contacts_obj_start_move(struct MoveObj *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, u16 speedOrFrames)
 {
     s32 dx;
     s32 dy;
     s32 dz;
-    s32 dxp;
-    s32 dyp;
-    s32 dzp;
-    s32 r;
-    u16 s;
-    s32 p;
-    s32 q;
+    s32 dxPixels;
+    s32 dyPixels;
+    s32 dzPixels;
+    s32 angle;
+    u16 speed;
+    s32 flatX;
+    s32 flatY;
     s32 tmp;
-    s32 scale;
+    s32 stepLen;
 
-    /* target in 8-bit fixed point, optionally relative to the current position */
     x <<= 8;
     y <<= 8;
     z <<= 8;
@@ -883,91 +917,91 @@ u32 contacts_obj_start_move(struct MoveObj *obj, s32 kind, s32 relative, s32 x, 
         y += obj->posY;
         z += obj->posZ + obj->posZB;
     }
-    obj->savedX = obj->posX;
-    obj->savedY = obj->posY;
-    obj->savedZ = obj->posZ + obj->posZB;
-    obj->snapX = x;
-    obj->snapY = y;
-    obj->snapZ = z;
+    obj->startX = obj->posX;
+    obj->startY = obj->posY;
+    obj->startZ = obj->posZ + obj->posZB;
+    obj->targetX = x;
+    obj->targetY = y;
+    obj->targetZ = z;
     /* already there in whole pixels: nothing to do */
-    if (obj->savedX >> 8 == obj->snapX >> 8 && obj->savedY >> 8 == obj->snapY >> 8)
+    if (obj->startX >> 8 == obj->targetX >> 8 && obj->startY >> 8 == obj->targetY >> 8)
     {
-        if ((obj->flags20D & 0x40) != 0 || (obj->savedZ >> 8) == (z >> 8))
+        if ((obj->flags20D & MOVEOBJ_FLAT) != 0 || (obj->startZ >> 8) == (z >> 8))
             return 0;
     }
 
-    dx = obj->snapX - obj->savedX;
-    dy = obj->savedY - obj->snapY;
-    if ((obj->flags20D & 0x40) == 0)
-        dz = obj->snapZ - obj->savedZ;
+    dx = obj->targetX - obj->startX;
+    dy = obj->startY - obj->targetY;
+    if ((obj->flags20D & MOVEOBJ_FLAT) == 0)
+        dz = obj->targetZ - obj->startZ;
     else
         dz = 0;
 
-    dxp = dx / 0x100;
-    dyp = dy / 0x100;
-    dzp = dz / 0x100;
+    dxPixels = dx / 0x100;
+    dyPixels = dy / 0x100;
+    dzPixels = dz / 0x100;
 
-    /* large distances: work in whole pixels */
+    /* beyond 16 pixels the squares would overflow: work in whole pixels */
     if ((u32)(dx + 0x1000) > 0x2000 || dy < -0x1000 || dy > 0x1000 || dz < -0x1000 || dz > 0x1000)
     {
-        dx = dxp;
-        dy = dyp;
-        dz = dzp;
+        dx = dxPixels;
+        dy = dyPixels;
+        dz = dzPixels;
     }
 
-    r = (u16)arc_tan2((s16)dy, (s16)dx);
-    obj->angle = r / 0x100 + ((r / 0x80) & 1);
+    angle = (u16)arc_tan2((s16)dy, (s16)dx);
+    obj->heading = DIV_ROUND(angle, 0x100);
 
-    if ((obj->flags20D & 0x40) == 0)
+    if ((obj->flags20D & MOVEOBJ_FLAT) == 0)
     {
         tmp = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-        r = (u16)arc_tan2((s16)tmp, (s16)dz);
-        obj->angleZ = r / 0x100 + ((r / 0x80) & 1);
+        angle = (u16)arc_tan2((s16)tmp, (s16)dz);
+        obj->pitch = DIV_ROUND(angle, 0x100);
     }
 
-    if (kind == 1)
+    if (kind == MOVE_BY_SPEED)
     {
-        /* fixed step per frame: speed argument or the object's speed */
-        if (speed == 0)
-            s = obj->speed23E;
+        if (speedOrFrames == 0)
+            speed = obj->moveSpeed;
         else
-            s = speed;
+            speed = speedOrFrames;
 
-        if ((obj->flags20D & 0x40) != 0)
+        if ((obj->flags20D & MOVEOBJ_FLAT) != 0)
         {
-            s32 sv = (s16)s;
-            obj->dirX = (gSineTable[obj->angle] * sv) / 0x4000 + (((gSineTable[obj->angle] * sv) / 0x2000) & 1);
-            obj->dirY = -((gCosineTable[obj->angle] * sv) / 0x4000 + (((gCosineTable[obj->angle] * sv) / 0x2000) & 1));
-            obj->dirZ = 0;
+            s32 sv = (s16)speed;
+            obj->velX = DIV_ROUND(gSineTable[obj->heading] * sv, 0x4000);
+            obj->velY = -DIV_ROUND(gCosineTable[obj->heading] * sv, 0x4000);
+            obj->velZ = 0;
             ((struct Lo3 *)&obj->stepFlags)->lo3 = 4;
         }
         else
         {
-            s32 sv = (s16)s;
-            tmp = gSineTable[obj->angle] * sv;
-            p = tmp / 0x4000 + ((tmp / 0x2000) & 1);
-            obj->dirX = (gCosineTable[obj->angleZ] * p) / 0x4000 + (((gCosineTable[obj->angleZ] * p) / 0x2000) & 1);
-            tmp = gCosineTable[obj->angle] * sv;
-            q = tmp / 0x4000 + ((tmp / 0x2000) & 1);
-            obj->dirY = -((gCosineTable[obj->angleZ] * q) / 0x4000 + (((gCosineTable[obj->angleZ] * q) / 0x2000) & 1));
-            obj->dirZ = (gSineTable[obj->angleZ] * sv) / 0x4000 + (((gSineTable[obj->angleZ] * sv) / 0x2000) & 1);
+            /* split the speed into ground and height parts by the pitch */
+            s32 sv = (s16)speed;
+            tmp = gSineTable[obj->heading] * sv;
+            flatX = DIV_ROUND(tmp, 0x4000);
+            obj->velX = DIV_ROUND(gCosineTable[obj->pitch] * flatX, 0x4000);
+            tmp = gCosineTable[obj->heading] * sv;
+            flatY = DIV_ROUND(tmp, 0x4000);
+            obj->velY = -DIV_ROUND(gCosineTable[obj->pitch] * flatY, 0x4000);
+            obj->velZ = DIV_ROUND(gSineTable[obj->pitch] * sv, 0x4000);
             ((struct Lo3 *)&obj->stepFlags)->lo3 = 0;
         }
-        obj->moveX = obj->dirX;
-        obj->moveY = obj->dirY;
+        obj->stepX = obj->velX;
+        obj->stepY = obj->velY;
     }
     else
     {
-        /* fixed number of frames: step = length / frames */
-        obj->modeLimit = speed;
-        tmp = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dxp * dxp + dyp * dyp + dzp * dzp);
-        tmp = (tmp << 8) / obj->modeLimit;
-        scale = (s16)tmp;
-        obj->moveX = (scale * gSineTable[obj->angle]) / 0x4000;
-        obj->moveY = -((scale * gCosineTable[obj->angle]) / 0x4000);
+        /* step = distance / frames */
+        obj->moveFrames = speedOrFrames;
+        tmp = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dxPixels * dxPixels + dyPixels * dyPixels + dzPixels * dzPixels);
+        tmp = (tmp << 8) / obj->moveFrames;
+        stepLen = (s16)tmp;
+        obj->stepX = (stepLen * gSineTable[obj->heading]) / 0x4000;
+        obj->stepY = -((stepLen * gCosineTable[obj->heading]) / 0x4000);
     }
 
-    obj->modeCount = 0;
+    obj->moveTimer = 0;
     ((struct Lo3 *)&obj->moveFlags)->lo3 = kind;
     return 1;
 }

@@ -21,7 +21,7 @@ struct ActorPart
     u8 filler1[0xEC - 0xE4];
     s16 slot;
     u8 filler2[0xF6 - 0xEE];
-    s16 unkF6;
+    s16 hp;
 };
 
 struct ActorObj
@@ -179,6 +179,10 @@ void link_actor_pair_start(struct ActorObj *obj);
 void countdown_phase_then_wait(struct ActorObj *obj);
 void countdown_spawn_pair_link(struct ActorObj *obj);
 
+/* Actor state after set_anim_06_place_part: once the pose has finished (flag 8) it takes action 7,
+   spawns effect 0x2503 5 px below its base and an object 0x4046 72 px left of (and 2 px below) its
+   part's target, facing the way the actor faces (pose +0x11 bit 6). The new object goes first in the
+   actor's child list with flags bit 0 set; sound 0x9D plays and step_start_child_anim takes over. */
 void spawn_child_4046(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -187,7 +191,7 @@ void spawn_child_4046(struct ActorObj *obj)
     {
         sprite_set_action(obj, 7, 0, 0);
         effect_spawn_at(0x2503, obj->baseX / 0x100, obj->baseY / 0x100 + 5, obj->baseH / 0x100, obj);
-        child = obj_spawn(obj->part, 0x4046, obj->part->targetX / 0x100 - 0x48,
+        child = obj_spawn(obj->part, 0x4046, obj->part->targetX / 0x100 - 72,
                           obj->part->targetY / 0x100 + 2, obj->part->targetH / 0x100,
                           ((u32)obj->pose->unk11 << 25) >> 31, 1);
         child->child = obj->child;
@@ -198,25 +202,29 @@ void spawn_child_4046(struct ActorObj *obj)
     }
 }
 
+/* Actor state after step_start_child_anim: for `wait` frames, hits each of the two heroes once
+   (partner_link_update deals the damage) while it is alive and standing on the ground (height <= 0);
+   phase and linkB remember which hero was already hit. When the time is up, the child takes action 2
+   and step_remove_child_then_place takes over. */
 void link_actors_when_ready(struct ActorObj *obj)
 {
-    struct ActorObj *partner;
+    struct ActorObj *hero;
 
-    partner = &gWorld->heroA->body;
-    if (partner->part->unkF6 != 0 && partner->posH <= 0)
+    hero = &gWorld->heroA->body;
+    if (hero->part->hp != 0 && hero->posH <= 0)
     {
         if (obj->phase == 0)
         {
-            partner_link_update(obj, (u32)partner, 0xFF);
+            partner_link_update(obj, (u32)hero, 0xFF);
             obj->phase = 1;
         }
     }
-    partner = &gWorld->heroB->body;
-    if (partner->part->unkF6 != 0 && partner->posH <= 0)
+    hero = &gWorld->heroB->body;
+    if (hero->part->hp != 0 && hero->posH <= 0)
     {
         if (obj->linkB == 0)
         {
-            partner_link_update(obj, (u32)partner, 0xFF);
+            partner_link_update(obj, (u32)hero, 0xFF);
             obj->linkB = 1;
         }
     }
@@ -228,11 +236,15 @@ void link_actors_when_ready(struct ActorObj *obj)
     }
 }
 
+// Once the object's animation ends (pose flag 8): plays action 0xB with effect 0x2539, spawns child
+// object 0x4048 just left of and above the object's part and sends it (speed 0x400, height 0x800) to
+// aim spot param9C: the owner's target for spots 3 and 4, else gAimTargetX/Y. The child's sprite is
+// turned towards that spot (paramA0, applied by update_pose_index) and it inherits param9C.
 void spawn_child_4048_aim(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 dx;
-    s32 dy;
+    s32 aimDx;
+    s32 aimDy;
 
     if (obj->pose->flags & 8)
     {
@@ -252,6 +264,8 @@ void spawn_child_4048_aim(struct ActorObj *obj)
         child->owner = obj->owner;
         obj_list_push_default(child);
         child->state = update_pose_index;
+
+        /* spots 3 and 4: wherever the owner is headed */
         if ((u32)(obj->param9C - 3) <= 1)
         {
             child->targetX = obj->owner->part->targetX;
@@ -269,24 +283,30 @@ void spawn_child_4048_aim(struct ActorObj *obj)
         start_motion(child);
         child->param9C = obj->param9C;
         child->paramA0 = 0;
-        dx = gAimTargetX[obj->param9C] + 0x10;
-        dx -= obj->part->targetX / 0x100;
-        dy = -8 - obj->part->targetH / 0x100;
-        child->paramA0 = (((u32)arc_tan2((s16)dx, (s16)dy) << 16) >> 24) + 0xFFFFC000;
+
+        /* sprite rotation: the angle from the spawn point to the aim spot */
+        aimDx = gAimTargetX[obj->param9C] + 0x10;
+        aimDx -= obj->part->targetX / 0x100;
+        aimDy = -8 - obj->part->targetH / 0x100;
+        child->paramA0 = (((u32)arc_tan2((s16)aimDx, (s16)aimDy) << 16) >> 24) + 0xFFFFC000;
         set_slot_value(0x86, -1);
         obj->state = reset_anim_if_active_c;
     }
 }
 
+// State of the 0x4048 object thrown by spawn_child_4048_aim: keeps its sprite turned by paramA0 while
+// the move runs. Once it has arrived (index, the frames left, is 0) the sprite turns back and sound
+// 0x8B plays: at aim spots 3 and up it bursts (effect 0x254E) and is freed, else it lands on the
+// ground (effect 0x2541, action 0) and stays there without a state.
 void update_pose_index(struct ActorObj *obj)
 {
-    s32 index;
+    s32 framesLeft;
 
     obj->pose->unkC = obj->paramA0;
-    index = obj->index;
-    if (index == 0)
+    framesLeft = obj->index;
+    if (framesLeft == 0)
     {
-        obj->pose->unkC = index;
+        obj->pose->unkC = framesLeft;
         if (obj->param9C > 2)
         {
             place_effect_at_base(obj, 0x254E);
@@ -304,20 +324,24 @@ void update_pose_index(struct ActorObj *obj)
     }
 }
 
-u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 excludeArg)
+// Throws a random projectile from above the actor's home position: kind 0 (35%, type 0x404A),
+// kind 1 (35%, type 0x404B) or kinds 2-7 (30%, type 0x404C), never kind 0 or 1 twice in a row.
+// It flies to the kind's spot in gSpawnTargetX/Y and remembers the home position to be sent
+// back to. Returns the kind thrown, for the next call's lastKindArg.
+u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 lastKindArg)
 {
     u8 kind;
     u8 roll;
-    u16 exclude;
+    u16 lastKind;
     struct ActorObj *child;
 
-    exclude = excludeArg;
+    lastKind = lastKindArg;
     roll = mt19937_next() % 100;
-    if (roll <= 0x22)
+    if (roll <= 34)
     {
         kind = 0;
     }
-    else if (roll <= 0x45)
+    else if (roll <= 69)
     {
         kind = 1;
     }
@@ -325,10 +349,12 @@ u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 excludeArg)
     {
         kind = mt19937_next() % 6 + 2;
     }
-    if (kind == (s16)exclude && kind <= 1)
+    if (kind == (s16)lastKind && kind <= 1)
     {
         kind += 2;
     }
+
+    /* Spawned 0x40 to the side of and 0xA0 above the home position, facing as the actor does. */
     switch (kind)
     {
     case 0:
@@ -349,6 +375,7 @@ u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 excludeArg)
     }
     child->child = obj->child;
     obj->child = child;
+
     child->targetX = gSpawnTargetX[kind] << 8;
     child->targetY = gSpawnTargetY[kind] << 8;
     child->targetH = 0x1000;
@@ -362,6 +389,8 @@ u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 excludeArg)
     child->link6C = obj->link6C;
     child->owner = obj->owner;
     obj_list_push_default(child);
+
+    /* Hitting a hero links and removes it; hit back, it flies to the home position. */
     child->handler58 = link_place_and_remove;
     child->handler60 = move_to_target_if_found;
     child->phase = obj->part->targetX / 0x100;
@@ -370,21 +399,27 @@ u32 anim_sets_spawn_random_child(struct ActorObj *obj, u32 excludeArg)
     return kind;
 }
 
+// handler60 of the thrown projectiles: once lookup_slot reports the hit (0), plays effect 0x25D5 and
+// sends the projectile back to the home position saved in phase/linkB along a parabola. It flies at
+// 4 px per frame (paramA0 frames, paramA4/paramA8 the whole move) and peaks 0x38 px above its start
+// halfway there; param9C is the parabola's (negative) curvature. step_move_and_finish flies it.
 u32 move_to_target_if_found(struct ActorObj *obj)
 {
-    u32 slot;
-    s32 dist;
+    u32 result;
+    s32 frames;
     s32 dx;
     s32 dy;
-    s32 speed;
+    s32 curve;
 
-    slot = lookup_slot(obj);
-    if (slot != 0)
+    result = lookup_slot(obj);
+    if (result != 0)
     {
-        return slot;
+        return result;
     }
     place_effect_at_base(obj, 0x25D5);
     sprite_set_action(obj, 1, 0, 0);
+
+    /* phase/linkB/linkH change from the home position to the start of the flight */
     obj->targetX = obj->phase << 8;
     obj->targetY = obj->linkB << 8;
     obj->phase = obj->posX / 0x100;
@@ -392,36 +427,42 @@ u32 move_to_target_if_found(struct ActorObj *obj)
     obj->linkH = obj->posH / 0x100;
     dx = obj->targetX - (obj->phase << 8);
     dy = obj->targetY - (obj->linkB << 8);
-    dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy) / 0x400;
-    speed = 0x3800 / ((dist / 2) * (dist / 2));
-    if (speed == 1)
+
+    /* gMathRoutines starts with the integer square root */
+    frames = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy) / 0x400;
+    curve = 0x3800 / ((frames / 2) * (frames / 2));
+    if (curve == 1)
     {
-        speed = 2;
+        curve = 2;
     }
-    obj->param9C = -speed;
-    obj->paramA0 = dist;
+    obj->param9C = -curve;
+    obj->paramA0 = frames;
     obj->paramA4 = dx;
     obj->paramA8 = dy;
-    obj->wait = slot;
+    obj->wait = result;
     obj->state = step_move_and_finish;
-    obj->targetH = slot;
+    obj->targetH = result;
     return 0;
 }
 
+// One frame of a projectile's flight home (set up by move_to_target_if_found): frame `wait` of
+// paramA0 moves it on a straight line in x/y from (phase, linkB) px by paramA4/paramA8, and on a
+// parabola in height that peaks 0x38 px above linkH halfway; it spins (pose unkC, 0x800 a frame).
+// At the end: effect 0x25C7, the projectile is released, part->unkB0 = 1 and sound 0xCC plays.
 void step_move_and_finish(struct ActorObj *obj)
 {
-    s32 t;
-    s32 prod;
-    s32 k;
+    s32 fromMiddle;
+    s32 drop;
+    s32 peak;
 
     obj->targetH -= 0x800;
     obj->pose->unkC = obj->targetH;
     obj->posX = (obj->paramA4 * obj->wait) / obj->paramA0 + (obj->phase << 8);
     obj->posY = (obj->paramA8 * obj->wait) / obj->paramA0 + (obj->linkB << 8);
-    t = obj->wait - obj->paramA0 / 2;
-    prod = (t * t) * obj->param9C;
-    k = (obj->linkH << 8) + 0x3800;
-    obj->posH = prod + k;
+    fromMiddle = obj->wait - obj->paramA0 / 2;
+    drop = (fromMiddle * fromMiddle) * obj->param9C; // param9C < 0
+    peak = (obj->linkH << 8) + 0x3800;
+    obj->posH = drop + peak;
     obj->wait++;
     if (obj->wait >= obj->paramA0)
     {
@@ -432,6 +473,11 @@ void step_move_and_finish(struct ActorObj *obj)
     }
 }
 
+// Throwing state (set up by set_anim_0e_save_timer): every 0x32 frames throws a random projectile
+// (param9C counts down, linkH is the last kind thrown) until `wait` throws are done, then moves on
+// to step_link_or_wait_b; every 0x14 frames (paramA0) plays effect 0x25A3. Once hit (paramA8 set),
+// reacts to the contact and pauses 0x1E frames in step_countdown_then_select, which comes back here
+// (paramA8 = 0x10).
 void step_link_or_countdown_a(struct ActorObj *obj)
 {
     if (obj->paramA8 != 0)
@@ -484,21 +530,26 @@ void step_link_or_wait_b(struct ActorObj *obj)
     }
 }
 
+// Once the object's animation ends (pose flag 8): spawns child object 0x4049 at the object's
+// part and throws it at its owner's target. The child bounces along repeated parabolas
+// (step_arc_move) until it leaves the screen on the left. Without param9C (action 4) each hop
+// covers the whole distance and peaks a third of it high; with it (action 6) a hop covers 2/3
+// of the distance and peaks half of that high, at least 0x30. A hop lasts distance / 0x1B3 frames.
 void spawn_child_4049_move(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 cx;
-    s32 cy;
-    s32 px;
-    s32 py;
-    s32 *tx;
-    s32 *ty;
+    s32 startX;
+    s32 startY;
+    s32 aimX;
+    s32 aimY;
+    s32 *hopX;
+    s32 *hopY;
     s32 dx;
     s32 dy;
-    s32 raw;
-    s32 speed;
+    s32 dist;
+    s32 duration;
     s32 half;
-    s32 scale;
+    s32 curve;
 
     if (obj->pose->flags & 8)
     {
@@ -513,21 +564,23 @@ void spawn_child_4049_move(struct ActorObj *obj)
         child->link6C = obj->link6C;
         child->owner = obj->owner;
         obj_list_push_default(child);
-        cx = child->posX;
-        cy = child->posY;
-        px = obj->owner->part->targetX;
-        py = obj->owner->part->targetY;
-        tx = &child->targetX;
-        dx = px - cx;
-        *tx = dx;
-        ty = &child->targetY;
-        dy = py - cy;
-        *ty = dy;
+
+        // One hop's displacement (8.8 fixed point) and its peak height (whole units).
+        startX = child->posX;
+        startY = child->posY;
+        aimX = obj->owner->part->targetX;
+        aimY = obj->owner->part->targetY;
+        hopX = &child->targetX;
+        dx = aimX - startX;
+        *hopX = dx;
+        hopY = &child->targetY;
+        dy = aimY - startY;
+        *hopY = dy;
         if (obj->param9C == 0)
         {
             sprite_set_action(obj, 4, 0, 0);
-            raw = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
-            child->targetH = raw / 0x300;
+            dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
+            child->targetH = dist / 0x300;
         }
         else
         {
@@ -536,25 +589,27 @@ void spawn_child_4049_move(struct ActorObj *obj)
             child->targetY = dy * 2 / 3;
             dx = child->targetX;
             dy = child->targetY;
-            raw = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
-            child->targetH = raw / 0x200;
+            dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
+            child->targetH = dist / 0x200;
             if (child->targetH <= 0x2F)
             {
                 child->targetH = 0x30;
             }
         }
-        child->phase = cx / 0x100;
-        child->linkB = cy / 0x100;
+
+        // Start of the first hop (whole units); height = peak - curve * (wait - duration / 2)^2.
+        child->phase = startX / 0x100;
+        child->linkB = startY / 0x100;
         child->linkH = 0;
-        speed = raw / 0x1B3;
-        half = speed / 2;
-        scale = (child->targetH << 8) / (half * half);
-        if (scale == 1)
+        duration = dist / 0x1B3;
+        half = duration / 2;
+        curve = (child->targetH << 8) / (half * half);
+        if (curve == 1)
         {
-            scale = 2;
+            curve = 2;
         }
-        child->param9C = -scale;
-        child->paramA0 = speed;
+        child->param9C = -curve;
+        child->paramA0 = duration;
         child->paramA4 = dx;
         child->paramA8 = dy;
         child->wait = 0;
@@ -564,9 +619,14 @@ void spawn_child_4049_move(struct ActorObj *obj)
     }
 }
 
+// State of the bouncing child that spawn_child_4049_move throws: spins its sprite, and flies the
+// current hop from (phase, linkB) by (paramA4, paramA8) over paramA0 frames on the parabola
+// height = peak (targetH) + curvature (param9C, negative) * (wait - paramA0 / 2)^2. Past the top,
+// once it is down to 7 units it starts the next hop from where it is. It is released once it is
+// 0x20 px off the left edge of the screen.
 void step_arc_move(struct ActorObj *obj)
 {
-    s32 t;
+    s32 fromTop;
 
     if (obj->posX / 0x100 < -0x20)
     {
@@ -577,13 +637,14 @@ void step_arc_move(struct ActorObj *obj)
         obj->pose->unkC += 0x600;
         obj->posX = (obj->paramA4 * obj->wait) / obj->paramA0 + (obj->phase << 8);
         obj->posY = (obj->paramA8 * obj->wait) / obj->paramA0 + (obj->linkB << 8);
-        t = obj->wait - obj->paramA0 / 2;
-        obj->posH = (t * t) * obj->param9C + (obj->targetH << 8) + (obj->linkH << 8);
+        fromTop = obj->wait - obj->paramA0 / 2;
+        obj->posH = (fromTop * fromTop) * obj->param9C + (obj->targetH << 8) + (obj->linkH << 8);
         obj->wait++;
         if (obj->wait > obj->paramA0 / 2)
         {
             if (obj->posH / 0x100 <= 7)
             {
+                /* landed: bounce from here */
                 obj->posH = 0x800;
                 obj->phase = obj->posX / 0x100;
                 obj->linkB = obj->posY / 0x100;
@@ -607,7 +668,7 @@ void step_countdown_then_select(struct ActorObj *obj)
     obj->phase--;
     if (obj->phase <= 0)
     {
-        if (obj->part->unkF6 == 0)
+        if (obj->part->hp == 0)
         {
             obj_stop(obj);
         }

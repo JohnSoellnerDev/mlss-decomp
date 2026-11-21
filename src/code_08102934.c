@@ -98,8 +98,35 @@ struct World
     struct ListNode *entry380[6];
 };
 
+struct OamAffineParams
+{
+    u8 filler0[0x6];
+    vu16 pa : 16;
+    u8 filler8[0x6];
+    vu16 pb : 16;
+    u8 filler10[0x6];
+    vu16 pc : 16;
+    u8 filler18[0x6];
+    vu16 pd : 16;
+};
+
+struct WorldDigitBits
+{
+    u8 filler0[0x7];
+    u8 digitCtr : 5;
+    u8 digitHi : 3;
+};
+
 extern struct World *gWorld;
 extern u8 gSys[];
+
+/* gSys offsets: two 1 KiB OAM buffers, the bit picking the one being filled, and the write
+ * cursor of the OAM queue (a u8 * to the next free entry). */
+#define SYS_OAM_BUFFER 0x80
+#define SYS_OAM_BANK 0x888
+#define SYS_OAM_CURSOR 0x880
+/* gSys[SYS_LANGUAGE]: the game's language, 0-4 */
+#define SYS_LANGUAGE 0x8C0
 void sprite_set_action(void *obj, u32 action, u32 a2, u32 a3);
 struct DisplayEntry *list_add_task(void *list, void (*state)(struct DisplayEntry *));
 struct DisplaySub *sprite_node_alloc_default(void);
@@ -315,49 +342,60 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08102934/state_create_display_entries.s", void state_create_display_entries(void))
 
-NONMATCH("asm/code_08102934/obj_apply_world_mode.s", void obj_apply_world_mode(struct Figure *fig))
+static inline void fig_world_action(struct Figure *fig, u32 mode)
 {
-    u32 mode;
-    u32 bits;
-    s32 kA;
-    s32 kB;
-    kA = 0x2003;
-    kB = 0x2050;
-
-    if (fig == 0)
-    {
-        return;
-    }
-    if ((fig->ctrl & 6) != 2)
-    {
-        return;
-    }
-    bits = (u32)gWorld->spriteMode << 28;
-    mode = (bits >> 28) & 3;
-    if (mode == 0)
-    {
-        mode = (bits >> 30) & 3;
-        if (mode == 0)
-        {
-            mode = 1;
-        }
-    }
     if (fig != 0 && (fig->ctrl & 6) == 2)
     {
         if (fig->anim == -1)
-        {
-            sprite_set_action(fig->sprite, mode, kA, 0);
-        }
+            sprite_set_action(fig->sprite, mode, 0x2003, 0);
         else
-        {
-            sprite_set_action(fig->sprite, mode, kB, 0);
-        }
+            sprite_set_action(fig->sprite, mode, 0x2050, 0);
         ((struct SpriteFlags *)fig->link)->bit4 = 0;
         ((struct SpriteFlags *)fig->link)->mode = 0;
     }
     ((struct SpriteFlags *)fig->link)->mode = 1;
 }
-END_NONMATCH
+
+/* For a figure in play (ctrl bits 1-2 == 2), plays art 0x2003 (party member 0, anim -1) or 0x2050
+   (member 1) as the action that World.spriteMode picks: its bits 0-1, else bits 2-3, else 1.
+   The figure's sprite is then shown in mode 1 (bit 4 cleared). */
+void obj_apply_world_mode(struct Figure *fig)
+{
+    u32 modeBits;
+    u32 action;
+    u32 lowNibble;
+    u32 fieldMask;
+    s32 artMember0;
+    s32 artMember1;
+
+    artMember0 = 0x2003;
+    artMember1 = 0x2050;
+    if (fig == 0)
+        return;
+    if ((fig->ctrl & 6) != 2)
+        return;
+    modeBits = ((u32)gWorld->spriteMode) << 28;
+    lowNibble = modeBits >> 28;
+    action = 3;
+    action &= lowNibble;
+    fieldMask = 3;
+    if (action == 0)
+    {
+        action = (modeBits >> 30) & fieldMask;
+        if (action == 0)
+            action = 1;
+    }
+    if (fig != 0 && (fig->ctrl & 6) == 2)
+    {
+        if (fig->anim == -1)
+            sprite_set_action(fig->sprite, action, artMember0, 0);
+        else
+            sprite_set_action(fig->sprite, action, artMember1, 0);
+        ((struct SpriteFlags *)fig->link)->bit4 = 0;
+        ((struct SpriteFlags *)fig->link)->mode = 0;
+    }
+    ((struct SpriteFlags *)fig->link)->mode = 1;
+}
 
 static inline u32 lang_text(u32 base)
 {
@@ -384,50 +422,58 @@ static inline u32 lang_text(u32 base)
     return gMapTable[*(u16 *)((u8 *)gGlyphIndexTable + row)] + (u32)gMapTable + base;
 }
 
+struct PartyMember
+{
+    u8 filler0[0x4];
+    u32 exp : 24;
+    u32 hi : 8;
+    u8 filler8[0x3C - 0x8];
+};
+
+struct SysKeys
+{
+    u8 filler0[0x3E];
+    u16 pressed;
+};
+
 static inline void party_add_score(struct Figure *fig)
 {
-    u32 *slot;
-    u32 v;
+    struct PartyMember *m;
 
-    slot = (u32 *)(gParty + (~(s32)fig->anim) * 0x3C + 4);
-    v = (*slot & 0xFF000000) | ((((*slot << 8) >> 8) + *(u16 *)((u8 *)gWorld + 0x16)) & 0xFFFFFF);
-    *slot = v;
-    if (((v << 8) >> 8) > 999999)
+    m = &((struct PartyMember *)gParty)[~fig->anim];
+    m->exp += *(u16 *)((u8 *)gWorld + 0x16);
+    if (m->exp > 999999U)
     {
-        *slot = (v & 0xFF000000) | 999999;
+        m->exp = 999999;
     }
 }
 
-NONMATCH("asm/code_08102934/state_result_wait_confirm.s", void state_result_wait_confirm(struct Owner *owner))
+void state_result_wait_confirm(struct Owner *owner)
 {
-    u16 t3;
-    s16 timer;
-    u16 keys;
     void *text;
-    s32 six;
-
-    six = 6;
+    u16 *coins;
+    struct Figure *fig;
+    s32 i;
 
     if (gWorld->fig[1] != 0)
     {
+        if ((gWorld->fig[0]->ctrl & 6) == 2 && (s16)owner->timer == 0x5A)
         {
-            if ((gWorld->fig[0]->ctrl & six) == 2 && (s16)owner->timer == 0x5A)
-            {
-                set_slot_value(0x79, -1);
-                obj_apply_world_mode(gWorld->fig[0]);
-                copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, (void *)lang_text(0), 0x8000);
-            }
+            set_slot_value(0x79, -1);
+            obj_apply_world_mode(gWorld->fig[0]);
+            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, 6,
+                (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
         }
+        if ((gWorld->fig[1]->ctrl & 6) == 2 && (s16)owner->timer == 0x5A)
         {
-            if ((gWorld->fig[1]->ctrl & six) == 2 && (s16)owner->timer == 0x5A)
-            {
-                obj_apply_world_mode(gWorld->fig[1]);
-                copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, six, (void *)lang_text(0x180), 0x8000);
-            }
+            obj_apply_world_mode(gWorld->fig[1]);
+            copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, 6,
+                (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable) + 0x180, 0x8000);
         }
         if ((s16)owner->timer == 0x5A)
         {
-            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4,
+                ({ u32 gi = (u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2; register u32 m asm("r1") = (u32)gMapTable; (u8 *)(m + *(u32 *)(gi + m)); }) + 0x21C, 0x8000);
         }
     }
     else
@@ -437,135 +483,132 @@ NONMATCH("asm/code_08102934/state_result_wait_confirm.s", void state_result_wait
             set_slot_value(0x79, -1);
             obj_apply_world_mode(gWorld->fig[0]);
             if (gWorld->fig[0]->anim == -1)
-            {
-                text = (void *)lang_text(0);
-            }
+                text = (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable);
             else
-            {
-                text = (void *)lang_text(0x180);
-            }
-            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, text, 0x8000);
+                text = (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable) + 0x180;
+            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, 6, text, 0x8000);
         }
         if ((s16)owner->timer == 0x3C)
         {
-            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4,
+                ({ u32 gi = (u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2; register u32 m asm("r1") = (u32)gMapTable; (u8 *)(m + *(u32 *)(gi + m)); }) + 0x21C, 0x8000);
         }
     }
 
-    t3 = owner->timer;
-    timer = (s16)owner->timer;
-    if (timer > 0x6D)
+    if ((s16)owner->timer <= 0x6D)
     {
-        sound_stop_song(0x79);
-        if (*(u16 *)(gSys + 0x3E) & 1)
+        if (((struct SysKeys *)gSys)->pressed & 1)
         {
-            *(u16 *)(gParty + 0x88) += *(u16 *)((u8 *)gWorld + 0x18);
-            if (*(u16 *)(gParty + 0x88) > 9999)
+            if (gWorld->fig[1] != 0)
             {
-                *(u16 *)(gParty + 0x88) = 9999;
+                if ((gWorld->fig[0]->ctrl & 6) == 2 && (s16)owner->timer <= 0x59)
+                {
+                    obj_apply_world_mode(gWorld->fig[0]);
+                    copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, 6,
+                        (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
+                }
+                if ((gWorld->fig[1]->ctrl & 6) == 2 && (s16)owner->timer <= 0x59)
+                {
+                    obj_apply_world_mode(gWorld->fig[1]);
+                    copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, 6,
+                        (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable) + 0x180, 0x8000);
+                }
+                if ((s16)owner->timer <= 0x59)
+                {
+                    copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4,
+                        ({ u32 gi = (u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2; register u32 m asm("r1") = (u32)gMapTable; (u8 *)(m + *(u32 *)(gi + m)); }) + 0x21C, 0x8000);
+                }
             }
-            if (gWorld->fig[0] != 0 && (gWorld->fig[0]->ctrl & six) == 2)
+            else
             {
-                party_add_score(gWorld->fig[0]);
+                if ((s16)owner->timer <= 0x27)
+                {
+                    obj_apply_world_mode(gWorld->fig[0]);
+                    if (gWorld->fig[0]->anim == -1)
+                        text = (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable);
+                    else
+                        text = (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2) + (u32)gMapTable) + (u32)gMapTable) + 0x180;
+                    copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, 6, text, 0x8000);
+                }
+                if ((s16)owner->timer <= 0x3B)
+                {
+                    copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4,
+                        ({ u32 gi = (u32)gGlyphIndexTable[gSys[0x8C0] == 2 ? 0x21 : gSys[0x8C0] == 3 ? 0x22 : gSys[0x8C0] == 4 ? 0x23 : 0x20] << 2; register u32 m asm("r1") = (u32)gMapTable; (u8 *)(m + *(u32 *)(gi + m)); }) + 0x21C, 0x8000);
+                }
             }
-            if (gWorld->fig[1] != 0 && (gWorld->fig[1]->ctrl & six) == 2)
-            {
-                party_add_score(gWorld->fig[1]);
-            }
-            owner->timer = 0;
-            owner->state = state_assign_figure;
+            owner->timer = 0x6E;
         }
-        return;
-    }
-    keys = *(u16 *)(gSys + 0x3E);
-    if (!(keys & 1))
-    {
-        owner->timer = t3 + 1;
-        return;
-    }
-    if (gWorld->fig[1] != 0)
-    {
+        else
         {
-            if ((gWorld->fig[0]->ctrl & six) == 2 && timer <= 0x59)
-            {
-                obj_apply_world_mode(gWorld->fig[0]);
-                copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, (void *)lang_text(0), 0x8000);
-            }
-        }
-        {
-            if ((gWorld->fig[1]->ctrl & six) == 2 && timer <= 0x59)
-            {
-                obj_apply_world_mode(gWorld->fig[1]);
-                copy_map_rect_add(gWorld->slot4, 1, 7, 0xB, 7, six, (void *)lang_text(0x180), 0x8000);
-            }
-        }
-        if (timer <= 0x59)
-        {
-            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+            owner->timer++;
         }
     }
     else
     {
-        if (timer <= 0x27)
+        sound_stop_song(0x79);
+        if (((((struct SysKeys *)gSys)->pressed ^ 1) & 1) == 0)
         {
-            obj_apply_world_mode(gWorld->fig[0]);
-            if (gWorld->fig[0]->anim == -1)
+            coins = (u16 *)(gParty + 0x88);
+            *coins += *(u16 *)((u8 *)gWorld + 0x18);
+            if (*coins > 9999)
+                *coins = 9999;
+            for (i = 0; i < 2; i++)
             {
-                text = (void *)lang_text(0);
+                fig = gWorld->fig[i];
+                if (fig != 0 && (fig->ctrl & 6) == 2)
+                    party_add_score(fig);
             }
-            else
-            {
-                text = (void *)lang_text(0x180);
-            }
-            copy_map_rect_add(gWorld->slot4, 1, 7, 5, 7, six, text, 0x8000);
-        }
-        if (timer <= 0x3B)
-        {
-            copy_map_rect_add(gWorld->slot4, 1, 0x15, 0xD, 7, 4, (void *)lang_text(0x21C), 0x8000);
+            owner->timer = 0;
+            owner->state = state_assign_figure;
         }
     }
-    owner->timer = 0x6E;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08102934/state_assign_figure.s", void state_assign_figure(struct Owner *owner))
 
+/* Loads this screen's graphics: sprite set 0x7003 plus the one for the current language
+ * (0x7004-0x7008), and queues two compressed BG tile uploads to VRAM: archive entry 1 (0x920
+ * bytes at 0x06008000) and the language's entry 2-6 right after it. Then sets phase 3 and moves
+ * on to state_spawn_list_entry. */
 void state_show_hero_label(struct Owner *owner)
 {
-    u32 msg;
-    u16 *glyphs;
-    u32 *maps;
-    u32 idx;
+    u32 langSpriteSet;
+    u16 *archiveIndex;
+    u32 *archive;
+    u32 entry;
 
     ensure_code_entry(0x7003);
     alloc_code_entry(0x7003);
-    switch (gSys[0x8C0])
+    switch (gSys[SYS_LANGUAGE])
     {
     case 0:
-        msg = 0x7004;
+        langSpriteSet = 0x7004;
         break;
     case 1:
-        msg = 0x7005;
+        langSpriteSet = 0x7005;
         break;
     case 2:
-        msg = 0x7006;
+        langSpriteSet = 0x7006;
         break;
     case 3:
-        msg = 0x7007;
+        langSpriteSet = 0x7007;
         break;
     case 4:
-        msg = 0x7008;
+        langSpriteSet = 0x7008;
         break;
     }
-    ensure_code_entry(msg);
-    alloc_code_entry(msg);
-    glyphs = gGlyphIndexTable;
-    idx = glyphs[1] << 2;
-    maps = gMapTable;
-    queue_display_entry(2, (u8 *)maps + *(u32 *)((u8 *)maps + idx), (void *)0x06008000, 0x920, 0, 0);
-    idx = gSys[0x8C0];
-    idx += 2;
-    queue_display_entry(2, (u8 *)maps + maps[glyphs[idx]], (void *)0x06008920, 0x520, 0, 0);
+    ensure_code_entry(langSpriteSet);
+    alloc_code_entry(langSpriteSet);
+
+    /* gMapTable holds offsets (from its own start) to compressed data blocks */
+    archiveIndex = gGlyphIndexTable;
+    entry = archiveIndex[1] << 2;
+    archive = gMapTable;
+    queue_display_entry(2, (u8 *)archive + *(u32 *)((u8 *)archive + entry), (void *)0x06008000, 0x920, 0, 0);
+    entry = gSys[SYS_LANGUAGE];
+    entry += 2;
+    queue_display_entry(2, (u8 *)archive + archive[archiveIndex[entry]], (void *)0x06008920, 0x520, 0, 0);
+
     owner->timer = 0;
     owner->phase18 = 3;
     owner->state = state_spawn_list_entry;
@@ -573,27 +616,87 @@ void state_show_hero_label(struct Owner *owner)
 
 ASM_FUNC("asm/code_08102934/state_figure_jump_start.s", void state_figure_jump_start(void))
 
-ASM_FUNC("asm/code_08102934/task_countdown_digits.s", void task_countdown_digits(void))
-
-NONMATCH("asm/code_08102934/state_digits_slide.s", void state_digits_slide(struct Owner *obj))
+void state_digits_slide(struct Owner *obj);
+/* While obj->timer runs down, shows the digit sprite at 4x size at the centre of the screen
+ * ((0x68 or 0x78, 0x44), two affine 32x32 objects) beside the plain digits; when it runs out it
+ * restarts the timer at 0xC0 and hands over to state_digits_slide. With the timer already at 0
+ * it only draws the digits. */
+void task_countdown_digits(struct Owner *obj)
 {
-    struct World *world;
-    u32 ctrByte;
-    u32 ctrShift;
-    u32 counter;
-    u32 keep;
-    u32 oam;
-    vu16 *row;
-    s32 acc;
+    s32 affineIndex;
+    u32 bank;
+    u32 off;
+    struct OamAffineParams *affine;
+    u8 *queue;
+    u8 *sys;
+
+    if ((s16)obj->timer == 0)
+    {
+        draw_digits_49_p11((s16)obj->unk16, (s16)obj->index + 8, (s16)obj->posY - 8, 0);
+    }
+    else
+    {
+        obj->timer--;
+        if ((s16)obj->timer != 0)
+        {
+            affineIndex = ((struct WorldDigitBits *)gWorld)->digitCtr--;
+            bank = ((u32)gSys[SYS_OAM_BANK] << 28) >> 31;
+            bank <<= 10;
+            off = (affineIndex << 5) + (u32)(gSys + SYS_OAM_BUFFER);
+            affine = (struct OamAffineParams *)(bank + off);
+            /* 4x zoom */
+            affine->pa = 0x40;
+            affine->pb = 0;
+            affine->pc = 0;
+            affine->pd = 0x40;
+
+            /* two affine, double-size 32x32 objects sharing the affine slot */
+            sys = gSys;
+            queue = *(u8 **)(sys + SYS_OAM_CURSOR);
+            *(u16 *)(queue + 8) = (0x44 - 0x20) | 0x300;
+            *(u16 *)queue = (0x44 - 0x20) | 0x300;
+            if ((s16)obj->unk16 <= 8)
+            {
+                *(u16 *)(queue + 0xA) = (affineIndex << 9) | (0x8000 | (0x68 - 0x20));
+                *(u16 *)(queue + 2) = (affineIndex << 9) | (0x8000 | (0x68 - 0x20));
+            }
+            else
+            {
+                *(u16 *)(queue + 0xA) = (affineIndex << 9) | (0x8000 | (0x78 - 0x20));
+                *(u16 *)(queue + 2) = (affineIndex << 9) | (0x8000 | (0x78 - 0x20));
+            }
+            *(u16 *)(queue + 4) = 0xB390;
+            *(u16 *)(queue + 0xC) = 0xB3A0;
+            *(u8 **)(sys + SYS_OAM_CURSOR) = queue + 0x10;
+            draw_digits_49_p11((s16)obj->unk16, (s16)obj->index + 8, (s16)obj->posY - 8, 0);
+        }
+        else
+        {
+            obj->timer = 0xC0;
+            obj->state = state_digits_slide;
+            obj->state(obj);
+        }
+    }
+}
+
+/* Shrinks the digit sprite from 4x to normal size while sliding it toward its final spot;
+ * when the timer runs out it shows the new value (obj->unk8) and switches to plain drawing. */
+void state_digits_slide(struct Owner *obj)
+{
+    s32 affineIndex;
+    u32 bank;
+    u32 off;
+    struct OamAffineParams *affine;
+    s32 x;
     s32 y;
     u8 *queue;
-    u8 *sysb;
+    u8 *sys;
 
     obj->timer -= 0x13;
     if ((s16)obj->timer <= 0)
     {
         obj->unk16 = obj->unk8;
-        if ((s16)obj->unk8 == 0x10)
+        if ((s16)obj->unk16 == 0x10)
         {
             obj->index += 4;
         }
@@ -603,48 +706,39 @@ NONMATCH("asm/code_08102934/state_digits_slide.s", void state_digits_slide(struc
     }
     else
     {
-        world = gWorld;
-        ctrByte = world->digitCtr;
-        ctrShift = ctrByte << 27;
-        keep = ctrByte;
-        keep &= 0xFFFFFFE0;
-        world->digitCtr = (((ctrShift >> 27) - 1) & 0x1F) | keep;
-        counter = ctrShift >> 27;
-        row = (vu16 *)(((((u32)gSys[0x888] << 28) >> 31) << 10) + ((counter << 5) + (u32)(gSys + 0x80)));
-        (void)row[3];
-        row[3] = 0x100 - obj->timer;
-        (void)row[7];
-        row[7] = 0;
-        (void)row[11];
-        row[11] = 0;
-        (void)row[15];
-        row[15] = 0x100 - obj->timer;
+        affineIndex = ((struct WorldDigitBits *)gWorld)->digitCtr--;
+        bank = ((u32)gSys[SYS_OAM_BANK] << 28) >> 31;
+        bank <<= 10;
+        off = (affineIndex << 5) + (u32)(gSys + SYS_OAM_BUFFER);
+        affine = (struct OamAffineParams *)(bank + off);
+        affine->pa = 0x100 - obj->timer;
+        affine->pb = 0;
+        affine->pc = 0;
+        affine->pd = 0x100 - obj->timer;
 
-        acc = (s16)obj->index;
+        x = (s16)obj->index;
         if ((s16)obj->unk16 <= 8)
         {
-            acc += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x68 - acc) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
+            x += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x68 - x) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
         }
         else
         {
-            acc += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x78 - acc) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
+            x += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x78 - x) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
             if ((s16)obj->unk16 == 9)
             {
-                acc += 4;
+                x += 4;
             }
         }
         y = (s16)obj->posY + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((0x44 - (s16)obj->posY) * (s16)obj->timer) << 8, ((0x100 - (s16)obj->timer) * 3) << 8);
 
-        sysb = gSys;
-        queue = *(u8 **)(sysb + 0x880);
-        *(u16 *)(queue + 8) = ((y - 0x20) & 0xFF) | 0x300;
-        *(u16 *)queue = ((y - 0x20) & 0xFF) | 0x300;
-        *(u16 *)(queue + 0xA) = ((acc - 0x20) & 0x1FF) | (counter << 9) | 0xFFFF8000;
-        *(u16 *)(queue + 2) = ((acc - 0x20) & 0x1FF) | (counter << 9) | 0xFFFF8000;
+        /* two affine, double-size 32x32 objects sharing the affine slot */
+        sys = gSys;
+        queue = *(u8 **)(sys + SYS_OAM_CURSOR);
+        *(u16 *)queue = *(u16 *)(queue + 8) = ((y - 0x20) & 0xFF) | 0x300;
+        *(u16 *)(queue + 2) = *(u16 *)(queue + 0xA) = ((x - 0x20) & 0x1FF) | (affineIndex << 9) | 0x8000;
         *(u16 *)(queue + 4) = 0xB390;
         *(u16 *)(queue + 0xC) = 0xB3A0;
-        *(u8 **)(sysb + 0x880) = queue + 0x10;
+        *(u8 **)(sys + SYS_OAM_CURSOR) = queue + 0x10;
         draw_digits_49_p11((s16)obj->unk16, (s16)obj->index + 8, (s16)obj->posY - 8, 0);
     }
 }
-END_NONMATCH

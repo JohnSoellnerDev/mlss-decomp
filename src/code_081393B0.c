@@ -21,6 +21,12 @@ struct Partner
     s32 posY;
     s32 posZ;
     s32 unk18;
+    u8 filler1C[0x20C - 0x1C];
+    u8 unk20C;
+    u8 filler20D[0x278 - 0x20D];
+    u16 width;  /* 8.8 fixed point */
+    u8 filler27A[0x27C - 0x27A];
+    u16 height; /* 8.8 fixed point */
 };
 
 struct OwnerFlags
@@ -38,6 +44,8 @@ struct Owner
     u8 unk10B;
     u8 filler10C[0x208 - 0x10C];
     u8 flags208;
+    u8 filler209[0x246 - 0x209];
+    u8 unk246;
 };
 
 struct Sprite
@@ -87,13 +95,27 @@ struct HitBox
     s16 hitRight;
 };
 
+/* Box edge from a record: in tiles (16 px, centred) when bit 0 of the record's flags is set. */
+static inline s32 hit_box_edge(s32 v, s16 *entry)
+{
+    s32 tiles = *(u8 *)entry & 1;
+    s32 edge;
+
+    if (tiles)
+        v <<= 4;
+    edge = v;
+    if (tiles)
+        edge += 8;
+    return edge;
+}
+
 struct Enemy
 {
     u8 filler0[0xC];
     s32 posX;
     s32 posY;
     s32 posZ;
-    s32 unk18;
+    s32 unk18; /* height above posZ (8.8 fixed point): hops, bobbing */
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
           u8 unk25;
@@ -105,8 +127,10 @@ struct Enemy
       u8 fillerFA[0x100 - 0xFA];
     u16 wanderDist[4];
     u16 unk108[4];
-    u8 filler110[0x128 - 0x110];
-    u16 unk128[4];
+    u16 unk110[4];
+    u16 unk118[4];
+    u8 filler120[0x128 - 0x120];
+    u16 unk128[4]; /* wait times, one picked at random */
     u16 wanderSteps[2];
     u16 linkIndex;
     u8 filler136[0x138 - 0x136];
@@ -165,7 +189,11 @@ struct Enemy
     u32 hopSpeed0;
     s32 jumpVz;
     s32 jumpFrames;
-    u8 filler260[0x294 - 0x260];
+    u8 filler260[0x278 - 0x260];
+    u16 width;  /* 8.8 fixed point */
+    u8 filler27A[0x27C - 0x27A];
+    u16 height; /* 8.8 fixed point */
+    u8 filler27E[0x294 - 0x27E];
     struct Sprite *sprite;
     u8 filler298[0x2B5 - 0x298];
     u8 unk2B5;
@@ -183,8 +211,8 @@ struct Enemy
       u8 filler2DC[0x2DE - 0x2DC];
       u16 unk2DE;
       u8 filler2E0[0x2F4 - 0x2E0];
-    u32 unk2F4;
-    s16 unk2F8;
+    u32 unk2F4; /* phase angle (0-0xFF) of the orbit / bobbing (gSineTable index) */
+    s16 unk2F8; /* phase step: how far unk2F4 turns per frame */
     u8 filler2FA[0x33D - 0x2FA];
     u8 unk33D;
     u8 filler33E[0x344 - 0x33E];
@@ -288,11 +316,34 @@ struct Nibble33D
     u8 hi4 : 4;
 };
 
+static inline void decrement_body_timer(struct Enemy *body)
+{
+    body->unk1D2--;
+}
+
+static inline s32 clear_timer_flag(s32 flags)
+{
+    return flags & ~2;
+}
+
 struct PathFlags130
 {
-    u8 lo2 : 2;
-    u8 bit2 : 1;
-    u8 bit3 : 1;
+    u8 lo2 : 2;  /* the path record's byte 0 */
+    u8 bit2 : 1; /* the path record's byte 1 */
+    u8 bit3 : 1; /* cleared when a path is loaded */
+};
+
+/* The path an enemy walks, over its bytes from 0x130 (load_path_points). */
+struct EnemyPath
+{
+    u8 filler0[0x130];
+    u8 flags; /* struct PathFlags130 */
+    u8 count; /* number of points */
+    u16 x[16];
+    u16 y[16];
+    u8 filler172[0x192 - 0x172];
+    u8 unk192; /* cleared when a path is loaded */
+    u8 unk193; /* cleared when a path is loaded */
 };
 
 void obj_hop_landing_step(struct Enemy *obj)
@@ -310,24 +361,28 @@ void obj_hop_landing_step(struct Enemy *obj)
     }
 }
 
+/* One frame of circling round (orbitCenX, orbitCenY) (whole pixels) on an ellipse with radii
+   orbitRadX/Y (quarter pixels: radius * sine / 64 is 8.8 fixed point): sets the position, the height
+   that puts it at orbitCenZ, turns the phase angle unk2F4 by unk2F8 and keeps the frame's motion in
+   vx/vy. */
 void obj_orbit_circle_step(struct Enemy *obj)
 {
-    s32 prod;
-    s32 *radius = &obj->orbitRadX;
+    s32 offset;
+    s32 *radiusX = &obj->orbitRadX;
 
-    prod = *radius * gCosineTable[obj->unk2F4 & 0xFF];
-    if (prod < 0)
+    offset = *radiusX * gCosineTable[obj->unk2F4 & 0xFF];
+    if (offset < 0)
     {
-        prod += 0x3F;
+        offset += 0x3F;
     }
-    obj->posX = (prod >> 6) + (obj->orbitCenX << 8);
+    obj->posX = (offset >> 6) + (obj->orbitCenX << 8);
 
-    prod = obj->orbitRadY * gSineTable[obj->unk2F4 & 0xFF];
-    if (prod < 0)
+    offset = obj->orbitRadY * gSineTable[obj->unk2F4 & 0xFF];
+    if (offset < 0)
     {
-        prod += 0x3F;
+        offset += 0x3F;
     }
-    obj->posY = (prod >> 6) + (obj->orbitCenY << 8);
+    obj->posY = (offset >> 6) + (obj->orbitCenY << 8);
 
     obj->unk18 = (obj->orbitCenZ << 8) - obj->posZ;
     obj->unk2F4 = (obj->unk2F4 + obj->unk2F8) & 0xFF;
@@ -412,43 +467,83 @@ ASM_FUNC("asm/code_081393B0/load_record_fields.s", void load_record_fields(struc
 
 ASM_FUNC("asm/code_081393B0/load_record_fields_scaled.s", void load_record_fields_scaled(struct Enemy *obj, s16 index))
 
-ASM_FUNC("asm/code_081393B0/load_hit_box.s", void load_hit_box(struct Enemy *obj, s16 index))
-
-NONMATCH("asm/code_081393B0/load_path_points.s", void load_path_points(struct Enemy *obj, s16 index))
+/* Loads obj's box from the s16 record at obj->box[index]: flags, then left, bottom, right, top.
+ * Flag bit 0: the edges are in tiles (16 px, centred); bit 1: they are relative to obj's position. */
+void load_hit_box(struct Enemy *obj, s16 index)
 {
-    u8 *rec = (u8 *)(obj->box + index);
-    u16 *ptr = (u16 *)(rec + 2);
-    struct PathFlags130 *fl = (struct PathFlags130 *)((u8 *)obj + 0x130);
+    struct HitBox *hit = (struct HitBox *)((u8 *)obj + 0x100);
+    s16 *box = obj->box + index;
+    s16 *entry = box;
+    register s16 *edge asm("r3") = box + 2;
+    s32 v;
+
+    box = 0;
+    hit->hitLeft = hit_box_edge(entry[1], entry);
+    {
+        register s32 bottom asm("r0") = *edge++;
+        hit->hitBottom = hit_box_edge(bottom, entry);
+    }
+    {
+        register s32 right asm("r0") = *edge++;
+        hit->hitRight = hit_box_edge(right, entry);
+    }
+    hit->hitTop = hit_box_edge(*edge, entry);
+
+    v = hit->hitLeft;
+    if (*(u8 *)entry & 2)
+        v += obj->posX / 0x100;
+    hit->hitLeft = v;
+    v = hit->hitBottom;
+    if (*(u8 *)entry & 2)
+        v += obj->posY / 0x100;
+    hit->hitBottom = v;
+    v = hit->hitRight;
+    if (*(u8 *)entry & 2)
+        v += obj->posX / 0x100;
+    hit->hitRight = v;
+    v = hit->hitTop;
+    if (*(u8 *)entry & 2)
+        v += obj->posY / 0x100;
+    hit->hitTop = v;
+    box = 0;
+}
+
+/* Loads obj's path from the record at obj->box[index]: byte 0 the mode, byte 1 a flag, then a u16
+ * point count and that many (x, y) u16 pairs. */
+void load_path_points(struct Enemy *obj, s16 index)
+{
+    register u8 *rec asm("r2") = (u8 *)(obj->box + index);
+    register u16 *src asm("r5") = (u16 *)(rec + 2);
+    register s32 mode asm("r0") = rec[0];
+    struct PathFlags130 *flags = (struct PathFlags130 *)&((struct EnemyPath *)obj)->flags;
     u16 *xs;
-    u16 *ys;
-    u16 count;
-    u16 left;
+    register u16 *ys asm("r3");
+    register u16 count asm("r2");
+    register u8 *countp asm("r1");
     s32 zero;
 
-    fl->lo2 = rec[0] & 3;
-    fl->bit2 = rec[1] & 1;
-    xs = (u16 *)((u8 *)obj + 0x132);
-    ys = (u16 *)((u8 *)obj + 0x152);
-    count = *ptr;
+    flags->lo2 = mode;
+    flags->bit2 = rec[1];
+    xs = ((struct EnemyPath *)obj)->x;
+    ys = ((struct EnemyPath *)obj)->y;
+    count = *src;
+    countp = &((struct EnemyPath *)obj)->count;
     zero = 0;
-    *((u8 *)obj + 0x131) = count;
-    ptr++;
-    *((u8 *)obj + 0x193) = zero;
-    *((u8 *)obj + 0x192) = zero;
-    fl->bit3 = 0;
-    left = count;
-    do
-    {
-        *xs = *ptr;
-        xs++;
-        ptr++;
-        *ys = *ptr;
-        ys++;
-        ptr++;
-        left--;
-    } while ((s16)left > 0);
+    *countp = count;
+    src++;
+    ((struct EnemyPath *)obj)->unk193 = zero;
+    ((struct EnemyPath *)obj)->unk192 = zero;
+    flags->bit3 = 0;
+    do {
+        u32 shifted;
+        register u32 step asm("r1");
+        *xs = *src; src++; xs++;
+        *ys = *src; src++; ys++;
+        shifted = (u32)count << 16;
+        step = 0xffff0000u;
+        count = (shifted + step) >> 16;
+    } while ((s16)count > 0);
 }
-END_NONMATCH
 
 void load_part_offsets(struct Enemy *obj, s16 index)
 {
@@ -466,15 +561,93 @@ void load_part_offsets(struct Enemy *obj, s16 index)
     }
 }
 
-ASM_FUNC("asm/code_081393B0/advance_move_step.s", u32 advance_move_step(void *ctx, struct Enemy *obj))
+void obj_finish_move_step(struct Enemy *obj);
+/* One step of a move started by obj_start_move_* (unkF8 bit 0x800 set): returns 0 when no move is
+ * running or when obj has reached the target (orbitRadX/Y hold it during a move; the move is then
+ * finished), else 1. A move blocked on X (unk24 bits 3-6) or Y (unk25 bits 3-6) stops obj; if
+ * unk2B6 bit 6 (X) or 7 (Y) says so, the move gives up (returns 0) there. While blocked the wait
+ * count unk2DE runs down first; otherwise obj takes the move's velocity (unk2D8, unk2DA) again. */
+u32 advance_move_step(void *ctx, struct Enemy *obj)
+{
+    u8 *state = (u8 *)obj + 0x58;
+    s32 blocked = 0;
 
+    if (!(obj->unkF8 & 0x800))
+        return 0;
+    if (obj->posX == obj->orbitRadX && obj->posY == obj->orbitRadY)
+    {
+        obj_finish_move_step(obj);
+        obj->unkF8 ^= 0x800;
+        return 0;
+    }
+    // clear bits 2-5 of unk1D6
+    ((struct Flags8 *)(state + 0x17E))->bit2 = 0;
+    ((struct Flags8 *)(state + 0x17E))->bit3 = 0;
+    ((struct Flags8 *)(state + 0x17E))->bit4 = 0;
+    ((struct Flags8 *)(state + 0x17E))->bit5 = 0;
+    if (obj->unk24 & 0x78)
+    {
+        // ctx holds 0x38C-byte entries, indexed by obj's first byte
+        if ((obj->unk20E & 0x38) != 0x18 || (*(s8 *)obj & 0xFE) != 0
+            || !(*((u8 *)ctx + *(s8 *)obj * 0x38C + 0x37A) & 8))
+        {
+            if (!(obj->unk213 & 0x1E))
+            {
+                obj->vy = 0;
+                obj->vx = 0;
+                if (obj->unk2B6 & 0x40)
+                {
+                    if (obj->unk2DE != 0)
+                        obj->unk2DE--;
+                    obj->jumpFrames = -1;
+                    ((struct Flags8 *)&obj->unk2B5)->bit3 = 0;
+                    return 0;
+                }
+            }
+            blocked |= 1;
+        }
+    }
+    if (obj->unk25 & 0x78)
+    {
+        // bits 3-4 of unk213
+        if (!((((u32)obj->unk213 << 27) >> 28) & 0xC))
+        {
+            obj->vy = 0;
+            obj->vx = 0;
+            if (obj->unk2B6 & 0x80)
+            {
+                if (obj->unk2DE != 0)
+                    obj->unk2DE--;
+                obj->jumpFrames = -1;
+                ((struct Flags8 *)&obj->unk2B5)->bit3 = 0;
+                return 0;
+            }
+        }
+        blocked |= 1;
+    }
+    if (blocked && obj->unk2DE != 0)
+    {
+        obj->unk2DE--;
+    }
+    else
+    {
+        obj->vx = obj->unk2D8;
+        obj->vy = obj->unk2DA;
+    }
+    return 1;
+}
+
+/* Returns 1 when obj, standing at (x, y, z) (8.8 fixed point), overlaps the box of the owner's
+ * second party member: only while the owner's mode (bits 2-4 of unk246) is 3, the partner's
+ * unk20C bit 0 is set and both are on the same height. The boxes get 2 px of slack; obj's
+ * height is compared unscaled. */
 u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z)
 {
     struct Partner *partner;
     s32 t;
     s32 partnerX, partnerY, partnerZ;
     s32 px = x, py = y, pz = z;
-    s32 partnerW, partnerH, halfW, myHalfW, lo;
+    s32 partnerW, partnerH, halfW, myHalfW, left;
 
     partner = owner->party[1];
     t = partner->posX;
@@ -495,8 +668,8 @@ u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z
         t += 0xFF;
     }
     partnerZ = t >> 8;
-    partnerW = *(u16 *)((u8 *)partner + 0x278) >> 8;
-    partnerH = *(u16 *)((u8 *)partner + 0x27C) >> 8;
+    partnerW = partner->width >> 8;
+    partnerH = partner->height >> 8;
     t = px;
     if (t < 0)
     {
@@ -516,11 +689,11 @@ u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z
     }
     pz = t >> 8;
 
-    if ((*((u8 *)owner + 0x246) & 0x1C) != 0xC)
+    if ((owner->unk246 & 0x1C) != 0xC)
     {
         return 0;
     }
-    if ((*((u8 *)partner + 0x20C) & 1) == 0)
+    if ((partner->unk20C & 1) == 0)
     {
         return 0;
     }
@@ -529,9 +702,9 @@ u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z
         return 0;
     }
     halfW = (u16)partnerW >> 1;
-    lo = partnerX - halfW - 2;
-    myHalfW = *(u16 *)((u8 *)obj + 0x278) >> 9;
-    if (lo > px + myHalfW)
+    left = partnerX - halfW - 2;
+    myHalfW = obj->width >> 9;
+    if (left > px + myHalfW)
     {
         return 0;
     }
@@ -543,7 +716,7 @@ u32 position_blocked(struct Owner *owner, struct Enemy *obj, u32 x, u32 y, u32 z
     {
         return 0;
     }
-    if (partnerY + 2 < py - *(u16 *)((u8 *)obj + 0x27C))
+    if (partnerY + 2 < py - obj->height)
     {
         return 0;
     }
@@ -653,23 +826,19 @@ void sub_08139F08(void)
 {
 }
 
-NONMATCH("asm/code_081393B0/body_timer_tick.s", void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out))
+void body_timer_tick(void *ctx, struct Enemy *ent, EnemyFn *out)
 {
     struct Enemy *body = ent->body;
-    struct Flags8 *fl = (struct Flags8 *)&ent->unk1D6;
-    EnemyFn handler;
 
-    body->unk1D2--;
+    decrement_body_timer(body);
     if (ent->unk1D2 == 0)
     {
-        fl->bit0 = 1;
-        fl->bit1 = 0;
-        handler = body->unk1AC;
-        *out = handler;
-        handler(ctx, ent, out);
+        ((struct Flags8 *)&ent->unk1D6)->bit0 = 1;
+        ((struct Flags8 *)&ent->unk1D6)->bit1 = 0;
+        *out = body->unk1AC;
+        (*out)(ctx, ent, out);
     }
 }
-END_NONMATCH
 
 void tick_body_timer(void *ctx, struct Enemy *ent, EnemyFn *out)
 {
@@ -1114,34 +1283,39 @@ void enter_idle_hop_a689(void *ctx, struct Enemy *ent)
     fn(ctx, ent);
 }
 
+/* Loads the enemy's movement parameters from its record: a u16 mask, then one block per set bit.
+ * Bit 0: 4 u16 wait times (unk128), bit 1: 4 u16 wander distances, bit 2: 4 s8 values (unk108),
+ * bit 3: 4 u16 (unk110), bit 4: 4 u16 (unk118), bit 5: 2 s8 wander steps, bit 6: the two chances
+ * (percent) of stepping toward the owner along x and y; bits 12-15 go to unk33D's high nibble.
+ * u16 blocks are 8 bytes. Bit 6 reads from where the last s8 block ended, as the game does. */
 void reset_record_fields(struct Enemy *obj)
 {
-    s32 high;
+    s32 highBits;
     u8 *fields = (u8 *)obj + 0x100;
-    u8 *ptr;
+    u8 *src;
     u8 *cursor;
-    u32 hi;
-    u32 flags;
+    u32 maskWord;
+    u32 mask;
 
-    ptr = (u8 *)obj->rec;
-    hi = *(u16 *)ptr;
-    ptr += 2;
-    hi <<= 16;
-    flags = (s32)hi >> 16;
-    if ((flags & 1) != 0)
+    src = (u8 *)obj->rec;
+    maskWord = *(u16 *)src;
+    src += 2;
+    maskWord <<= 16;
+    mask = (s32)maskWord >> 16;
+    if ((mask & 1) != 0)
     {
-        cpu_set(ptr, (u8 *)obj + 0x128, 4);
-        ptr += 8;
+        cpu_set(src, (u8 *)obj + 0x128, 4); /* unk128 */
+        src += 8;
     }
-    if ((flags & 2) != 0)
+    if ((mask & 2) != 0)
     {
-        cpu_set(ptr, fields, 4);
-        ptr += 8;
+        cpu_set(src, fields, 4); /* wanderDist */
+        src += 8;
     }
-    if ((flags & 4) != 0)
+    if ((mask & 4) != 0)
     {
-        cursor = ptr;
-        ((s16 *)fields)[4] = *(s8 *)cursor;
+        cursor = src;
+        ((s16 *)fields)[4] = *(s8 *)cursor; /* unk108[0..3] */
         cursor++;
         ((s16 *)fields)[5] = *(s8 *)cursor;
         cursor++;
@@ -1149,75 +1323,77 @@ void reset_record_fields(struct Enemy *obj)
         cursor++;
         ((s16 *)fields)[7] = *(s8 *)cursor;
         cursor++;
-        ptr = cursor;
+        src = cursor;
     }
-    if ((flags & 8) != 0)
+    if ((mask & 8) != 0)
     {
-        cpu_set(ptr, (u8 *)obj + 0x110, 4);
-        ptr += 8;
+        cpu_set(src, (u8 *)obj + 0x110, 4); /* unk110 */
+        src += 8;
     }
-    if ((flags & 0x10) != 0)
+    if ((mask & 0x10) != 0)
     {
-        cpu_set(ptr, (u8 *)obj + 0x118, 4);
-        ptr += 8;
+        cpu_set(src, (u8 *)obj + 0x118, 4); /* unk118 */
+        src += 8;
     }
-    if ((flags & 0x20) != 0)
+    if ((mask & 0x20) != 0)
     {
-        cursor = ptr;
-        ((s16 *)fields)[0x18] = *(s8 *)cursor;
+        cursor = src;
+        ((s16 *)fields)[0x18] = *(s8 *)cursor; /* wanderSteps[0..1] */
         cursor++;
         ((s16 *)fields)[0x19] = *(s8 *)cursor;
         cursor++;
     }
-    if ((flags & 0x40) != 0)
+    if ((mask & 0x40) != 0)
     {
-        *((u8 *)obj + 0x140) = cursor[0];
+        *((u8 *)obj + 0x140) = cursor[0]; /* unk140, unk141 */
         *((u8 *)obj + 0x141) = cursor[1];
     }
-    high = 0xF000;
-    high &= flags;
-    if (high != 0)
+    highBits = 0xF000;
+    highBits &= mask;
+    if (highBits != 0)
     {
-        ((struct Nibble33D *)obj)->hi4 = hi >> 28;
+        ((struct Nibble33D *)obj)->hi4 = maskWord >> 28;
     }
 }
 
 ASM_FUNC("asm/code_081393B0/obj_box_to_stack.s", void obj_box_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
 
-NONMATCH("asm/code_081393B0/obj_box_mirror_to_stack.s", void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index))
+void obj_box_mirror_to_stack(s16 *out, struct Enemy *obj, u16 flags, u16 index)
 {
-    u32 sel = 1 & ~(flags >> 4);
-    u8 *tab = (u8 *)obj + 0x1B0;
-    s32 last;
-
-    if (flags & 4)
-    {
-        s8 *s = (s8 *)((u8 *)((void **)tab)[sel] + index);
-
-        out[0] = (-s[0]) << 4;
-        out[3] = (-s[1]) << 4;
-        out[1] = s[2] << 4;
-        last = s[3];
-    }
-    else if (flags & 8)
-    {
-        s16 *w = (s16 *)((u8 *)((void **)tab)[sel] + index);
-        s32 v;
-
-        v = w[0];
-        out[0] = (-v) << 4;
-        v = w[1];
-        out[3] = (-v) << 4;
-        v = w[2];
-        out[1] = v << 4;
-        last = w[3];
-    }
-    else
-    {
-        return;
-    }
-    out[2] = last << 4;
+  register u32 sel asm("r2");
+  u32 high = flags >> 4;
+  u32 one = 1;
+  s32 val;
+  one &= ~high;
+  sel = one;
+  if (flags & 4)
+  {
+    register u32 off asm("r1") = one * (sizeof(void *));
+    register u8 *base asm("r0") = ((u8 *) obj) + 0x1B0;
+    s8 *p = (*((s8 **) (base + off))) + index;
+    out[0] = (-(*(p++))) << 4;
+    out[3] = (-(*(p++))) << 4;
+    out[1] = p[0] << 4;
+    out[2] = p[1] << 4;
+  }
+  else
+    if (flags & 8)
+  {
+    register u32 off asm("r1") = sel * (sizeof(void *));
+    register u8 *base asm("r0") = ((u8 *) obj) + 0x1B0;
+    s16 *p = (s16 *) ((*((u8 **) (base + off))) + index);
+    val = *p;
+    out[0] = (-val) << 4;
+    p++;
+    val = *p;
+    out[3] = (-val) << 4;
+    p++;
+    val = p[0];
+    out[1] = val << 4;
+    val = p[1];
+    out[2] = val << 4;
+    off = off;
+  }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081393B0/load_box_oriented.s", void load_box_oriented(s16 *out, struct Enemy *obj, u32 flags, u32 offset))

@@ -331,30 +331,33 @@ void obj_wait_ready_action2_external(struct ActorObj *obj)
     }
 }
 
+// Actor state: once the pose's flag 8 is set, moves towards a spot next to the owner's part chosen by the
+// mode in param9C (0: 0x18 px ahead, 1: 0x40 px ahead, 2: at its x one row further), plays sound 0x5C and
+// continues with the state for that mode.
 void obj_pose_active_choose_motion(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
     {
-        struct ActorPart *part;
+        struct ActorPart *ownerPart;
         s32 mode;
-        void (*next)(struct ActorObj *);
+        void (*nextState)(struct ActorObj *);
 
         switch (obj->param9C)
         {
         case 0:
-            obj->targetX = (part = obj->owner->part)->targetX + 0x1800;
-            obj->targetY = part->targetY - 2;
-            obj->targetH = part->targetH;
+            obj->targetX = (ownerPart = obj->owner->part)->targetX + 0x1800;
+            obj->targetY = ownerPart->targetY - 2;
+            obj->targetH = ownerPart->targetH;
             break;
         case 1:
-            obj->targetX = (part = obj->owner->part)->targetX + 0x4000;
-            obj->targetY = part->targetY - 2;
-            obj->targetH = part->targetH;
+            obj->targetX = (ownerPart = obj->owner->part)->targetX + 0x4000;
+            obj->targetY = ownerPart->targetY - 2;
+            obj->targetH = ownerPart->targetH;
             break;
         case 2:
-            obj->targetX = (part = obj->owner->part)->targetX;
-            obj->targetY = part->targetY + 2;
-            obj->targetH = part->targetH;
+            obj->targetX = (ownerPart = obj->owner->part)->targetX;
+            obj->targetY = ownerPart->targetY + 2;
+            obj->targetH = ownerPart->targetH;
             break;
         }
         ((struct Flags79Bit5 *)&obj->flags)->bit5 = 1;
@@ -366,42 +369,47 @@ void obj_pose_active_choose_motion(struct ActorObj *obj)
         if (mode == 0)
         {
             set_slot_value(0x5C, -1);
-            next = obj_index_zero_setup_action4;
+            nextState = obj_index_zero_setup_action4;
         }
         else if (mode == 1)
         {
             set_slot_value(0x5C, -1);
-            next = obj_index_zero_slot_action4_b;
+            nextState = obj_index_zero_slot_action4_b;
         }
         else
         {
             set_slot_value(0x5C, -1);
-            next = obj_index_zero_slot_action4;
+            nextState = obj_index_zero_slot_action4;
         }
-        obj->state = next;
+        obj->state = nextState;
     }
 }
 
+// Actor state: once the pose's flag 8 (animation done) is set, plays action 0xB and fires a projectile
+// (type 0x410E) 16 px left of and 8 px above its base. The projectile flies left from
+// obj_pose_active_action1_timer8, shares the actor's link, owner and byte74, and bursts with effect
+// 0x1118 on a hit or 0x110F when it finds no contact. Plays sound 0x114, then aims with
+// obj_pose_active_aim_part_action3.
 void obj_pose_active_spawn_child_b(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *shot;
 
     if (obj->pose->flags & 8)
     {
         sprite_set_action(obj, 0xB, 0, 0);
-        child = obj_spawn(obj->part, 0x410E, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100,
-                          obj->baseH / 0x100 + 8, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-        obj->child = child;
-        ((struct Flags79Bit0 *)&child->flags)->bit0 = 1;
-        copy_flags77_bits(obj, child);
-        child->state = obj_pose_active_action1_timer8;
-        child->handler68 = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->handler58 = obj_place_sprite_1118_and_finish;
-        child->handler5C = obj_query_part_place_and_finish;
-        child->byte74 = obj->byte74;
+        shot = obj_spawn(obj->part, 0x410E, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100,
+                         obj->baseH / 0x100 + 8, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = shot;
+        ((struct Flags79Bit0 *)&shot->flags)->bit0 = 1;
+        copy_flags77_bits(obj, shot);
+        shot->state = obj_pose_active_action1_timer8;
+        shot->handler68 = on_arrive;
+        shot->link = obj->link;
+        shot->owner = obj->owner;
+        obj_list_push_default(shot);
+        shot->handler58 = obj_place_sprite_1118_and_finish;
+        shot->handler5C = obj_query_part_place_and_finish;
+        shot->byte74 = obj->byte74;
         set_slot_value(0x114, -1);
         obj->state = obj_pose_active_aim_part_action3;
     }

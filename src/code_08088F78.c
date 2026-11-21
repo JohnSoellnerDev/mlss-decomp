@@ -189,10 +189,16 @@ void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
 void on_arrive(struct Actor *obj);
 void snap_to_target(struct Actor *obj);
 
+/*
+ * Places the object at its base plus its offset (dx, dy, dh) and compares the squared distances (in 1/16
+ * units, so they don't overflow) from there and from the base to the owner's target. Unless the offset
+ * position is the closer one, it sets a new offset heading from the base to its own record's target at
+ * speed 0x500 and goes on to snap_to_target.
+ */
 void approach_target(struct Actor *obj)
 {
     struct Actor *owner;
-    struct Rec *target;
+    struct Rec *ownerRec;
     s16 *dxPtr;
     s16 *dyPtr;
     s16 *dhPtr;
@@ -202,15 +208,15 @@ void approach_target(struct Actor *obj)
     s32 x;
     s32 y;
     s32 h;
-    s32 xTile;
-    s32 yTile;
-    s32 hTile;
-    s32 bxTile;
-    s32 byTile;
-    s32 bhTile;
-    s32 distPos;
-    s32 distBase;
-    s32 near;
+    s32 posDX;
+    s32 posDY;
+    s32 posDH;
+    s32 baseDX;
+    s32 baseDY;
+    s32 baseDH;
+    s32 posDistSq;
+    s32 baseDistSq;
+    s32 closer;
 
     owner = obj->owner;
     dxPtr = &obj->dx;
@@ -223,23 +229,23 @@ void approach_target(struct Actor *obj)
     h = obj->baseH + *dhPtr;
     obj->h = h;
 
-    target = owner->data;
-    targetX = target->targetX;
-    xTile = (x - targetX) / 0x10;
-    targetY = target->targetY;
-    yTile = (y - targetY) / 0x10;
-    targetH = target->targetH;
-    hTile = (h - targetH) / 0x10;
-    bxTile = (obj->baseX - targetX) / 0x10;
-    byTile = (obj->baseY - targetY) / 0x10;
-    bhTile = (obj->baseH - targetH) / 0x10;
+    ownerRec = owner->data;
+    targetX = ownerRec->targetX;
+    posDX = (x - targetX) / 0x10;
+    targetY = ownerRec->targetY;
+    posDY = (y - targetY) / 0x10;
+    targetH = ownerRec->targetH;
+    posDH = (h - targetH) / 0x10;
+    baseDX = (obj->baseX - targetX) / 0x10;
+    baseDY = (obj->baseY - targetY) / 0x10;
+    baseDH = (obj->baseH - targetH) / 0x10;
 
-    near = 0;
-    distPos = xTile * xTile + yTile * yTile + hTile * hTile;
-    distBase = bxTile * bxTile + byTile * byTile + bhTile * bhTile;
-    if (distPos < distBase)
-        near = 1;
-    if (!near)
+    closer = 0;
+    posDistSq = posDX * posDX + posDY * posDY + posDH * posDH;
+    baseDistSq = baseDX * baseDX + baseDY * baseDY + baseDH * baseDH;
+    if (posDistSq < baseDistSq)
+        closer = 1;
+    if (!closer)
     {
         struct Rec *rec = obj->data;
 
@@ -248,47 +254,53 @@ void approach_target(struct Actor *obj)
     }
 }
 
+/*
+ * State after approach_target: places the object at its base plus its offset (dx, dy, dh), then
+ * compares the squared distances (in 1/16 units, so they don't overflow) from its record's position
+ * and from the record's base to the record's target. Once the position is no longer the closer one
+ * (the target is reached or overshot), the object is put on the target and on_arrive runs.
+ */
 void snap_to_target(struct Actor *obj)
 {
     struct Rec *rec;
     s32 targetX;
-    s32 *targetYPtr;
-    s32 *targetHPtr;
-    s32 dxTile;
-    s32 dyTile;
-    s32 dhTile;
-    s32 bxTile;
-    s32 byTile;
-    s32 bhTile;
-    s32 distPos;
-    s32 distBase;
-    s32 near;
+    s32 *targetY;
+    s32 *targetH;
+    s32 posDX;
+    s32 posDY;
+    s32 posDH;
+    s32 baseDX;
+    s32 baseDY;
+    s32 baseDH;
+    s32 posDistSq;
+    s32 baseDistSq;
+    s32 closer;
 
     rec = obj->data;
     obj->x = obj->baseX + obj->dx;
     obj->y = obj->baseY + obj->dy;
     obj->h = obj->baseH + obj->dh;
 
-    dxTile = (rec->x - rec->targetX) / 0x10;
+    posDX = (rec->x - rec->targetX) / 0x10;
     targetX = rec->targetX;
-    targetYPtr = &rec->targetY;
-    dyTile = (rec->y - *targetYPtr) / 0x10;
-    targetHPtr = &rec->targetH;
-    dhTile = (rec->h - *targetHPtr) / 0x10;
-    bxTile = (rec->baseX - targetX) / 0x10;
-    byTile = (rec->baseY - *targetYPtr) / 0x10;
-    bhTile = (rec->baseH - *targetHPtr) / 0x10;
+    targetY = &rec->targetY;
+    posDY = (rec->y - *targetY) / 0x10;
+    targetH = &rec->targetH;
+    posDH = (rec->h - *targetH) / 0x10;
+    baseDX = (rec->baseX - targetX) / 0x10;
+    baseDY = (rec->baseY - *targetY) / 0x10;
+    baseDH = (rec->baseH - *targetH) / 0x10;
 
-    near = 0;
-    distPos = dxTile * dxTile + dyTile * dyTile + dhTile * dhTile;
-    distBase = bxTile * bxTile + byTile * byTile + bhTile * bhTile;
-    if (distPos < distBase)
-        near = 1;
-    if (!near)
+    closer = 0;
+    posDistSq = posDX * posDX + posDY * posDY + posDH * posDH;
+    baseDistSq = baseDX * baseDX + baseDY * baseDY + baseDH * baseDH;
+    if (posDistSq < baseDistSq)
+        closer = 1;
+    if (!closer)
     {
         obj->x = targetX;
-        obj->y = *targetYPtr;
-        obj->h = *targetHPtr;
+        obj->y = *targetY;
+        obj->h = *targetH;
         on_arrive(obj);
     }
 }

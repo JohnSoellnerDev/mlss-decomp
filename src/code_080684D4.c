@@ -177,33 +177,37 @@ void obj_wait_free_action2_arc(struct Actor *obj);
 void obj_pose_then_spawn_arc(struct Actor *obj);
 void obj_spawn_child_412b(struct Actor *obj);
 
+// Flight of a child thrown by obj_spawn_arc_child: over paramA0 frames it moves in a straight line
+// from (dx, dy) by (paramA4, paramA8) and along a parabola that peaks 0x30 units above dh, spinning
+// its pose by targetH each frame. Once it is down to 8 units it lands next to its owner's target
+// with effect 0x10A5 and action 1, and drifts left faster the faster it spun.
 void obj_child_arc_land(struct Actor *obj)
 {
-    s32 off;
-    s32 curve;
-    s32 dhk;
-    u32 id;
-    s32 x;
-    s32 y;
-    s32 h;
+    s32 fromMid;
+    s32 drop;
+    s32 peakH;
+    u32 effect;
+    s32 px;
+    s32 py;
+    s32 ph;
 
     obj->pose->unkC += obj->targetH;
     obj->x = obj->paramA4 * (s16)obj->timer / obj->paramA0 + ((s16)obj->dx << 8);
     obj->y = obj->paramA8 * (s16)obj->timer / obj->paramA0 + ((s16)obj->dy << 8);
-    off = (s16)obj->timer - obj->paramA0 / 2;
-    curve = (off * off) * obj->param9C;
-    dhk = ((s16)obj->dh << 8) + 0x3000;
-    obj->h = curve + dhk;
+    fromMid = (s16)obj->timer - obj->paramA0 / 2;
+    drop = (fromMid * fromMid) * obj->param9C;
+    peakH = ((s16)obj->dh << 8) + 0x3000;
+    obj->h = drop + peakH;
     obj->timer++;
     if (base_to_px(obj->h) <= 8)
     {
         obj->h = 8;
         obj->y = obj->owner->data->targetY + 2;
-        id = 0x10A5;
-        x = base_to_px(obj->baseX);
-        y = base_to_px(obj->baseY);
-        h = base_to_px(obj->baseH);
-        effect_spawn_at(id, x, y, h, obj);
+        effect = 0x10A5;
+        px = base_to_px(obj->baseX);
+        py = base_to_px(obj->baseY);
+        ph = base_to_px(obj->baseH);
+        effect_spawn_at(effect, px, py, ph, obj);
         sprite_set_action(obj, 1, 0, 0);
         ((struct ObjFlags79Bit0 *)obj)->bit0 = 1;
         switch (obj->targetH)
@@ -508,6 +512,10 @@ void obj_pose_then_spawn_arc(struct Actor *obj)
     }
 }
 
+// Once the state isn't busy: spawns a 0x412B child at x = 0x100 px, 2 px below and above the
+// object, that slides left (actor_slide_left_to_target) until it is 0x22 px right of the object,
+// then sets slot 0x81 (both paramA8 branches do the same) and waits for the child
+// (obj_wait_child_then_place).
 void obj_spawn_child_412b(struct Actor *obj)
 {
     struct Actor *child;
@@ -528,7 +536,7 @@ void obj_spawn_child_412b(struct Actor *obj)
         child->owner = obj->owner;
         child->tag = obj->tag;
         child->targetX = obj->baseX + 0x2200;
-        child->timer = busy;
+        child->timer = 0;
         child->state = actor_slide_left_to_target;
         if (obj->paramA8 == 0)
         {

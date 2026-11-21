@@ -36,7 +36,7 @@ struct Enemy
     u16 unk110[4];
     u16 unk118[4];
     u16 unk120[4];
-    u16 unk128[4];
+    u16 unk128[4];      /* the waits (frames) to pick from at random after a move; 0: no wait */
     u8 unk130;
     u8 unk131;
     u8 filler132[0x134 - 0x132];
@@ -49,7 +49,7 @@ struct Enemy
     u8 filler140[0x198 - 0x140];
     void *unk198;
     u8 filler19C[0x1AC - 0x19C];
-    u32 unk1AC;
+    u32 unk1AC;         /* the handler to go on to once the wait (unk1D2) is over */
     u8 filler1B0[0x1B8 - 0x1B0];
     s16 unk1B8;
     s16 unk1BA;
@@ -62,7 +62,7 @@ struct Enemy
     u8 filler1CA[0x1CC - 0x1CA];
     s32 unk1CC;
     u16 unk1D0;
-    u16 unk1D2;
+    u16 unk1D2;         /* wait timer: tick_store counts it down, then goes on to unk1AC */
     u8 filler1D4[0x1D6 - 0x1D4];
     u8 unk1D6;
     u8 filler1D7[0x20C - 0x1D7];
@@ -134,6 +134,13 @@ struct Bit6Byte
     u8 bit7 : 1;
 };
 
+struct Bit01Byte
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 rest : 6;
+};
+
 struct T3dF;
 
 struct T3dNode
@@ -169,11 +176,11 @@ struct Fade
     u8 unk1C;
     u8 filler1D[7];
     struct TaskObj *unk24;
-    u8 unk28;
+    u8 unk28;  /* the cursor of the two-choice prompt: 0 or 1 (fade_tick) */
     u8 filler29;
-    u16 unk2A;
-    u16 unk2C;
-    u16 unk2E;
+    u16 unk2A; /* the BLDY shadow (gUnk_02000054) before fade_start, put back by fade_end */
+    u16 unk2C; /* the BLDCNT shadow (gUnk_02000050) before fade_start, put back by fade_end */
+    u16 unk2E; /* brightness, 8.8 fixed point: starts at 0x1000 (16) and drops 1/16 a frame */
 };
 
 struct T3dF
@@ -258,56 +265,60 @@ struct SysKeys2A
     u16 keys;
 };
 
+/* One frame of the fade prompt: fades the screen in from black (unk2E, written to the BLDY shadow),
+ * moves the two-choice cursor (unk28) with Up and Down, wrapping round, and ends the fade
+ * (fade_end) on A with the cursor on choice 1, or on Select. */
 void fade_tick(struct Fade *obj)
 {
     s32 down;
-    u16 keys;
-    u16 key40;
-    s32 count;
-    s8 kind;
+    u16 newKeys;
+    u16 up;
+    s32 cursor;
+    s8 choice;
 
     if (obj->unk2E != 0)
     {
         obj->unk2E -= 0x10;
         gUnk_02000054 = *(vu16 *)&obj->unk2E >> 8;
     }
-    keys = ((struct SysKeys2A *)gSys)->keys;
-    key40 = keys & 0x40;
-    if (key40 != 0)
+    newKeys = ((struct SysKeys2A *)gSys)->keys;
+    up = newKeys & DPAD_UP;
+    if (up != 0)
     {
-        count = obj->unk28 - 1;
-        obj->unk28 = count;
-        if ((count << 24) < 0)
+        cursor = obj->unk28 - 1;
+        obj->unk28 = cursor;
+        if ((cursor << 24) < 0)
         {
             obj->unk28 = 1;
         }
     }
     else
     {
-        down = 0x80;
-        down &= keys;
+        down = DPAD_DOWN;
+        down &= newKeys;
         if (down)
         {
-            count = obj->unk28 + 1;
-            obj->unk28 = count;
-            if ((s8)count > 1)
+            cursor = obj->unk28 + 1;
+            obj->unk28 = cursor;
+            if ((s8)cursor > 1)
             {
-                obj->unk28 = key40;
+                // up is 0 here: wrap round to the first choice
+                obj->unk28 = up;
             }
         }
     }
-    if ((((struct SysKeys2A *)gSys)->keys & 1) != 0)
+    if ((((struct SysKeys2A *)gSys)->keys & A_BUTTON) != 0)
     {
-        kind = obj->unk28;
-        if (kind != 0)
+        choice = obj->unk28;
+        if (choice != 0)
         {
-            if (kind == 1)
+            if (choice == 1)
             {
                 fade_end(obj);
             }
         }
     }
-    if ((((struct SysKeys2A *)gSys)->keys & 4) != 0)
+    if ((((struct SysKeys2A *)gSys)->keys & SELECT_BUTTON) != 0)
     {
         fade_end(obj);
     }
@@ -387,26 +398,32 @@ s8 get_s8_28(u8 *obj)
 
 ASM_FUNC("asm/code_08137510/obj_random_pose.s", void obj_random_pose(void))
 
-void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *out)
+/*
+ * Enemy state step: moves the enemy on (advance_move_step, and the hop landing while unk2B5 bit 3
+ * is set). Once the move is over it picks one of its 4 waits (unk128) at random: a wait takes
+ * pose unk137 & 7 and counts down in tick_store; no wait goes straight on to handlers[1].
+ * handlers[0] is the enemy's next state handler.
+ */
+void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *handlers)
 {
-    u8 flag;
+    u8 done;
     u32 seed;
     u32 pick;
     u32 next;
 
-    flag = 0;
+    done = 0;
     if (advance_move_step(ctx, obj) == 1)
     {
         obj_step_toward_target_08138FDC(obj);
     }
     else
     {
-        u8 ready = 0;
+        u8 stopped = 0;
         if (obj->unk1BE == 0)
         {
-            ready = 1;
+            stopped = 1;
         }
-        flag = ready;
+        done = stopped;
     }
     if (obj->unk2B5 & 8)
     {
@@ -414,9 +431,9 @@ void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *out)
     }
     else
     {
-        flag = (flag | *(u8 *)((u8 *)obj + 0x1BE)) & 0xFF;
+        done = (done | *(u8 *)((u8 *)obj + 0x1BE)) & 0xFF;
     }
-    if (flag != 0)
+    if (done != 0)
     {
         seed = mt19937_next();
         pick = rand_below(4, seed);
@@ -428,82 +445,78 @@ void obj_pick_next_state(void *ctx, struct Enemy *obj, u32 *out)
         }
         else
         {
-            next = out[1];
+            next = handlers[1];
         }
-        out[0] = next;
+        handlers[0] = next;
     }
 }
 
-NONMATCH("asm/code_08137510/obj_find_active_state.s", void obj_find_active_state(void *ctx, struct Enemy *obj, u32 *out))
+/*
+ * Enemy state step: lines the enemy up with the active member of ctx's pair
+ * (find_active_entry, else ctx byte 0x208 bit 2). Along the axis its frame
+ * attribute picks (kinds 0, 2: x; others: y) it starts moving toward that
+ * member and sets the next state to obj_move_to_target (unk1D6 bit 1 = moving).
+ * Already level with it: unk1D6 bit 0 = lined up, and the state goes on to
+ * out[1].
+ */
+void obj_find_active_state(void *ctx, struct Enemy *obj, u32 *out)
 {
-    u8 idx;
-    struct Enemy *entry;
-    u8 *bahn;
-    u8 *flagp;
-    u8 kind;
-    s32 bound;
-    s32 flags;
+    u8 member;
+    struct Enemy *target;
+    u8 *base58; /* obj + 0x58; base58 + 0x17E is obj->unk1D6 */
+    u8 axis;
 
-    bahn = (u8 *)obj + 0x58;
-    if (find_active_entry(ctx, &idx) == 0)
+    base58 = (u8 *)obj + 0x58;
+    if (find_active_entry(ctx, &member) == 0)
     {
-        idx = ((u32)((u8 *)ctx)[0x208] << 29) >> 31;
+        member = ((u32)((u8 *)ctx)[0x208] << 29) >> 31;
     }
-    entry = (struct Enemy *)((u32 *)((u8 *)ctx + 0x28))[idx];
-    kind = gFrameAttrTable[(((u32)obj->unk216 << 28) >> 30 << 4) + (((u32)obj->unk24 << 29) >> 29) + 8];
-    switch (kind)
+    target = (struct Enemy *)((u32 *)((u8 *)ctx + 0x28))[member];
+    axis = gFrameAttrTable[(((u32)obj->unk216 << 28) >> 30 << 4) + (((u32)obj->unk24 << 29) >> 29) + 8];
+    switch (axis)
     {
     case 0:
     case 2:
-        if (obj->posX > entry->posX)
+        if (obj->posX > target->posX)
         {
-            bound = 0x80000000;
+            obj_start_move_to_target(obj, 1, 0x80000000, 0); /* left */
         }
-        else if (obj->posX < entry->posX)
+        else if (obj->posX < target->posX)
         {
-            bound = 0xFFFFF;
+            obj_start_move_to_target(obj, 1, 0xFFFFF, 0); /* right */
         }
         else
         {
-            goto x_equal;
+            ((struct Bit01Byte *)(base58 + 0x17E))->bit1 = 0;
+            ((struct Bit01Byte *)(base58 + 0x17E))->bit0 = 1;
+            out[0] = out[1];
+            return;
         }
-        obj_start_move_to_target(obj, 1, bound, 0);
-        goto moving;
-    x_equal:
-        flagp = bahn + 0x17E;
-        goto arrived;
+        break;
     case 1:
     default:
-        if (obj->posY > entry->posY)
+        if (obj->posY > target->posY)
         {
-            obj_start_move_to_target(obj, 1, 0, 0x80000000);
-            goto moving;
+            obj_start_move_to_target(obj, 1, 0, 0x80000000); /* up */
         }
-        if (obj->posY < entry->posY)
+        else if (obj->posY >= target->posY)
         {
-            goto high_y;
+            ((struct Bit01Byte *)(base58 + 0x17E))->bit1 = 0;
+            ((struct Bit01Byte *)(base58 + 0x17E))->bit0 = 1;
+            out[0] = out[1];
+            return;
         }
-        flagp = bahn + 0x17E;
+        else
+        {
+            obj_start_move_to_target(obj, 1, 0, 0xFFFFF); /* down */
+        }
         break;
     }
-
-arrived:
-    flags = *flagp;
-    flags = (flags & -3) | 1;
-    *flagp = flags;
-    out[0] = out[1];
-    return;
-
-high_y:
-    obj_start_move_to_target(obj, 1, 0, 0xFFFFF);
-
-moving:
     obj_step_toward_target_08138FDC(obj);
     out[0] = (u32)obj_move_to_target;
-    flagp = bahn + 0x17E;
-    *flagp = (*flagp | 2) & -2;
+    ((struct Bit01Byte *)(base58 + 0x17E))->bit1 = 1;
+    ((struct Bit01Byte *)(base58 + 0x17E))->bit0 = 0;
 }
-END_NONMATCH
 
 static inline void set_bit6_flag(struct Sprite *spr, u32 v)
 {

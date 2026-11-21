@@ -1,18 +1,19 @@
 #include "global.h"
 #include "ram_routines.h"
 
+/* The enemy's animated sprite, stepped by sprite_step_e6a0. */
 struct Cell
 {
     u8 filler0[0x11];
-    u8 unk11;
-    u8 unk12;
+    u8 flip;            /* bit 6: mirrored horizontally, bit 7: vertically */
+    u8 unk12;           /* bits 1-2: at the end, 0 loop, 1 hold the last frame, 2 stop; bit 3: end reached */
     u8 filler13[0x20 - 0x13];
-    s8 unk20;
+    s8 unk20;           /* animation speed per step (sign: direction) */
     u8 filler21[0x23 - 0x21];
-    u8 unk23;
+    u8 unk23;           /* current frame of the animation */
     u8 filler24[0x2A - 0x24];
-    s16 unk2A;
-    s16 unk2C;
+    s16 unk2A;          /* time left on the current frame */
+    s16 unk2C;          /* time since the animation started */
 };
 
 struct Sensor
@@ -23,7 +24,9 @@ struct Sensor
 
 struct Obj
 {
-    u8 filler0[0xC];
+    u8 filler0[0x2];
+    u8 heading;         /* facing, 0-255 */
+    u8 filler3[0xC - 0x3];
     s32 x;
     s32 y;
     s32 z;
@@ -51,7 +54,7 @@ struct Obj
     s32 homeDZ;
     u8 filler1EC[0x200 - 0x1EC];
     u32 tgtA;
-    u8 filler204[0x208 - 0x204];
+    u32 tgtB;
     u8 flags208;
     u8 filler209[0x20C - 0x209];
     u8 flags20C;
@@ -67,12 +70,16 @@ struct Obj
     u16 vy;
     u8 filler246[0x248 - 0x246];
     u32 stepLen;
-    u8 filler24C[0x294 - 0x24C];
+    u8 filler24C[0x278 - 0x24C];
+    u16 width;          /* body size, 8.8 fixed point */
+    u8 filler27A[0x27C - 0x27A];
+    u16 height;
+    u8 filler27E[0x294 - 0x27E];
     struct Cell *cell;
     u8 filler298[0x2C4 - 0x298];
     s32 zNext;
     u8 filler2C8[0x2CC - 0x2C8];
-    s32 unk2CC;
+    s32 moveTargetX;    /* where the current straight-line move ends */
     u8 filler2D0[0x2D4 - 0x2D0];
     s32 zNextAdj;
     u8 filler2D8[0x2DC - 0x2D8];
@@ -241,76 +248,90 @@ NONMATCH("asm/code_0814AEAC/enemy_pose_move.s", void enemy_pose_move(struct Obj 
 }
 END_NONMATCH
 void start_vertical_move(struct Obj *parent, struct Obj *obj, u32 *slot);
+/*
+ * Steps the enemy along its move back home (enemy_pose_move started it). Once its
+ * body (width x height, x centred, y at its feet) overlaps a 50 x 38 px box around the
+ * home position, the state after the move becomes start_vertical_move (back to the
+ * home height). When the move ends, the slot goes on to that next state.
+ */
 void enemy_axis_limit_step(struct Obj *parent, struct Obj *obj, u32 *slot)
 {
-    s16 box[8];
-    s16 sVar1;
-    s16 sVar2;
-    u8 cVar5;
-    s16 sVar6;
-    s16 sVar7;
-    u16 uVar9;
-    s32 iVar8;
+    s16 homeBox[8]; /* [0] left, [1] right, [2] bottom, [3] top, in pixels */
+    s16 homeY;
+    s16 homeX;
+    u8 moving;
+    s16 x;
+    s16 y;
+    u16 halfWidth;
+    s32 pos;
 
-    iVar8 = obj->homeX;
-    if (iVar8 < 0)
+    pos = obj->homeX;
+    if (pos < 0)
     {
-        iVar8 += 0xff;
+        pos += 0xff;
     }
-    sVar2 = (u32)iVar8 >> 8;
-    iVar8 = obj->homeY;
-    if (iVar8 < 0)
+    homeX = (u32)pos >> 8;
+    pos = obj->homeY;
+    if (pos < 0)
     {
-        iVar8 += 0xff;
+        pos += 0xff;
     }
-    sVar1 = (u32)iVar8 >> 8;
-    sVar6 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->x, 0x100);
-    sVar7 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->y, 0x100);
-    uVar9 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*(u16 *)((u8 *)obj + 0x278), 0x200);
+    homeY = (u32)pos >> 8;
+    x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->x, 0x100);
+    y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->y, 0x100);
+    halfWidth = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->width, 0x200);
     if (obj->cell->unk23 == 2)
     {
+        /* mode bits 0-2 = 5 */
         *(s8 *)&obj->mode = (*(s8 *)&obj->mode & -8) | 5;
     }
-    cVar5 = step_pos_xyz(obj);
-    box[0] = sVar2 - 0x19;
-    box[3] = sVar1 - 0x13;
-    box[1] = sVar2 + 0x19;
-    box[2] = sVar1 + 0x13;
+    moving = step_pos_xyz(obj);
+    homeBox[0] = homeX - 0x19;
+    homeBox[3] = homeY - 0x13;
+    homeBox[1] = homeX + 0x19;
+    homeBox[2] = homeY + 0x13;
     if (slot[1] != (u32)start_vertical_move
-        && sVar6 + uVar9 >= box[0]
-        && sVar6 - uVar9 <= box[1]
-        && sVar7 >= box[3]
-        && sVar7 - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(*(u16 *)((u8 *)obj + 0x27C), 0x100) <= box[2])
+        && x + halfWidth >= homeBox[0]
+        && x - halfWidth <= homeBox[1]
+        && y >= homeBox[3]
+        && y - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->height, 0x100) <= homeBox[2])
     {
         slot[1] = (u32)start_vertical_move;
     }
-    if (cVar5 == 0)
+    if (moving == 0)
     {
         slot[0] = slot[1];
     }
 }
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void sprite_step_e6a0(void *spr);
+/*
+ * Phase 1 (from start_vertical_move): sinks the enemy by zspeed each frame until it is back at
+ * its home height, then plays the landing animation (record 2, hold the last frame) and goes to
+ * phase 0. Phase 0: once the landing animation has run long enough, waits (set_idle_slot) and
+ * then puts the enemy back home (reset_to_home).
+ */
 void enemy_hop_phase(struct Obj *parent, struct Obj *obj, u32 *slot)
 {
-    u8 *tab;
-    struct Cell *cell;
-    StateFn fn;
+    u8 *rec;
+    struct Cell *sprite;
+    StateFn next;
     s32 dz;
 
-    tab = obj->boxTab;
+    rec = obj->boxTab;
     if (obj->phase != 0)
     {
         dz = obj->dz - (s16)obj->zspeed;
         obj->dz = dz;
         if (obj->z + dz <= obj->zNextAdj)
         {
+            /* mode bits 0-2 = 1, animation end mode = 1 (hold the last frame) */
             *(s8 *)&obj->mode = (*(s8 *)&obj->mode & -8) | 1;
-            cell = obj->cell;
-            *(s8 *)&cell->unk12 = (*(s8 *)&cell->unk12 & -7) | 2;
+            sprite = obj->cell;
+            *(s8 *)&sprite->unk12 = (*(s8 *)&sprite->unk12 & -7) | 2;
             obj_load_record(obj->cell, 2, -1, 0, 0);
             sprite_step_e6a0(obj->cell);
-            obj->cell->unk20 = tab[obj->index + 0x4C];
+            obj->cell->unk20 = rec[obj->index + 0x4C];
             ((struct Flags8 *)&obj->flags20C)->bit7 = 0;
             ((struct Flags8 *)&obj->flags20C)->bit6 = 0;
             ((struct Flags8 *)&obj->flags20C)->bit5 = 0;
@@ -322,10 +343,10 @@ void enemy_hop_phase(struct Obj *parent, struct Obj *obj, u32 *slot)
         if (obj->cell->unk2C > 0x84F)
         {
             *(s8 *)&obj->mode &= -8;
-            fn = set_idle_slot;
-            slot[0] = (u32)fn;
+            next = set_idle_slot;
+            slot[0] = (u32)next;
             slot[1] = (u32)reset_to_home;
-            fn(parent, obj, slot);
+            next(parent, obj, slot);
         }
     }
 }
@@ -333,74 +354,84 @@ void enemy_hop_phase(struct Obj *parent, struct Obj *obj, u32 *slot)
 u32 angle_of_vector16(s32 x, s32 y);
 s32 zone_point_code(void *parent, struct Obj *obj, s32 zero);
 void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
+/*
+ * Walks the enemy toward the active brother. Gives up (state 0) when there is no
+ * active brother or neither brother is in the enemy's zone; goes to state 2 when the
+ * zone is armed, the target is in reach and either target is in state 2.
+ */
 void enemy_approach_target_step(struct Obj *parent, struct Obj *obj)
 {
-    u8 idx;
-    struct Obj *partner;
+    u8 activeIdx;
+    struct Obj *bro;
     u16 speed;
     s32 dx;
     s32 dy;
     u8 *ai;
     u8 *tab;
-    u16 timerIdx;
-    u32 v;
+    u16 index;
+    u32 heading;
     u8 zero;
 
     ai = (u8 *)obj + 0x58;
-    if (find_active_entry(parent, &idx) == 0 || (s8)zone_point_code(parent, obj, 0) == -1)
+    if (find_active_entry(parent, &activeIdx) == 0 || (s8)zone_point_code(parent, obj, 0) == -1)
     {
         set_state(parent, obj, 0);
         return;
     }
     if ((s16)obj->sensor->unk8 != 0 && (u8)target_in_box(parent, obj) != 0)
     {
-        if (((s16 *)parent->tgtA)[2] == 2 || ((s16 *)*(u32 *)((u8 *)parent + 0x204))[2] == 2)
+        if (((s16 *)parent->tgtA)[2] == 2 || ((s16 *)parent->tgtB)[2] == 2)
         {
             set_state(parent, obj, 2);
             return;
         }
     }
-    partner = *(struct Obj **)((u8 *)parent + idx * 4 + 0x28);
-    timerIdx = *(u16 *)(ai + 0x178);
-    tab = *(u8 **)(ai + 0x158);
-    speed = *(u16 *)(tab + timerIdx * 2 + 0x28);
-    dx = partner->x - obj->x;
-    dy = partner->y - obj->y;
+    bro = *(struct Obj **)((u8 *)parent + activeIdx * 4 + 0x28);
+    index = *(u16 *)(ai + 0x178);   /* obj->index */
+    tab = *(u8 **)(ai + 0x158);     /* obj->boxTab */
+    speed = *(u16 *)(tab + index * 2 + 0x28);
+    dx = bro->x - obj->x;
+    dy = bro->y - obj->y;
     if ((dx | dy) != 0)
     {
-        v = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
+        heading = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
     }
     else
     {
-        v = 0xFF;
+        heading = 0xFF;
     }
     zero = 0;
-    *((u8 *)obj + 2) = v;
-    start_move_to(obj, partner->x, partner->y, speed, zero);
+    obj->heading = heading;
+    start_move_to(obj, bro->x, bro->y, speed, zero);
     step_pos_xy_plain(obj);
 }
 
+/* State 2, the wind-up before the hop: plays out the sprite's animation. In phase 1 the flags20C
+ * bits 5-7 are cleared from animation frame 9 on, and when frame 14 or later ends they are set
+ * again, state hook 3 fires and phase 0 starts. In phase 0, once frame 2 or later ends, the object
+ * goes to state 4 (the hop toward tgtA). */
 void enemy_land_wait_sprite(struct Obj *parent, struct Obj *obj)
 {
     struct Cell *cell = obj->cell;
-    s8 *flags;
-    u8 *p;
+    s8 *clearFlags;
+    u8 *setFlags;
 
     if (obj->phase != 0)
     {
         if (cell->unk23 > 8)
         {
-            flags = (s8 *)&obj->flags20C;
-            *flags &= -0x21;
-            *flags &= 0x7F;
-            *flags &= -0x41;
+            clearFlags = (s8 *)&obj->flags20C;
+            *clearFlags &= ~0x20;
+            *clearFlags &= 0x7F;
+            *clearFlags &= ~0x40;
         }
-        if (cell->unk23 > 0xD && cell->unk2A - cell->unk20 <= 0)
+        /* the frame ends this step */
+        if (cell->unk23 > 13 && cell->unk2A - cell->unk20 <= 0)
         {
-            p = &obj->flags20C;
-            *p |= 0x20;
-            *p |= 0x80;
-            *p |= 0x40;
+            setFlags = &obj->flags20C;
+            *setFlags |= 0x20;
+            *setFlags |= 0x80;
+            *setFlags |= 0x40;
             state_change_hook(parent, obj, 3);
             obj->phase = 0;
         }
@@ -414,23 +445,28 @@ void enemy_land_wait_sprite(struct Obj *parent, struct Obj *obj)
     }
 }
 
+// Hop toward the target, one frame: the height (dz) moves by zspeed toward zNextAdj and zspeed
+// drops by stepLen. Once falling: fire state hook 6 (once, flags1D6 bit 4), and on landing
+// (dz <= 4 px) go to state 0xC when the spot is blocked, else state 7. Meanwhile x/y move by the
+// object's own velocity plus a quarter of the target's, so it leads a moving target.
 void aim_ahead_step(struct Obj *parent, struct Obj *obj)
 {
-    s32 q;
-    s32 rootOut;
-    s32 scaled;
-    s32 tgt;
+    s32 dir;
+    s32 absDir;
+    s32 rise;
+    s32 target;
     s32 vx;
-    s32 tvx;
+    s32 targetVx;
     s32 vy;
-    s32 tvy;
+    s32 targetVy;
 
-    q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
-    if (q != 0)
+    dir = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
+    if (dir != 0)
     {
-        rootOut = ((s32 (*)(s32))gMathRoutines)(q * q);
-        scaled = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(q * (s16)obj->zspeed, rootOut);
-        obj->dz += scaled;
+        /* zspeed, signed toward zNextAdj */
+        absDir = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dir * dir);
+        rise = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dir * (s16)obj->zspeed, absDir);
+        obj->dz += rise;
     }
     obj->zspeed -= obj->stepLen;
     if ((s16)obj->zspeed < 0)
@@ -438,12 +474,13 @@ void aim_ahead_step(struct Obj *parent, struct Obj *obj)
         if (obj->flags1D6 & 0x10)
         {
             state_change_hook(parent, obj, 6);
-            *(s8 *)&obj->flags1D6 &= -0x11;
+            *(s8 *)&obj->flags1D6 &= ~0x10;
         }
         if (obj->dz <= 0x400)
         {
+            /* landed */
             obj->dz = 0;
-            *(s8 *)&obj->flags20F &= -5;
+            *(s8 *)&obj->flags20F &= ~4;
             if ((u8)position_blocked(parent, obj, obj->x, obj->y, obj->z + obj->dz) != 0)
             {
                 set_state(parent, obj, 0xC);
@@ -456,23 +493,28 @@ void aim_ahead_step(struct Obj *parent, struct Obj *obj)
         }
     }
     vx = *(s16 *)((u8 *)obj + 0x242);
-    tgt = parent->tgtA;
-    tvx = *(s16 *)((u8 *)tgt + 0x242);
-    if (tvx < 0)
+    target = parent->tgtA;
+    targetVx = *(s16 *)((u8 *)target + 0x242);
+    if (targetVx < 0)
     {
-        tvx += 3;
+        targetVx += 3;
     }
-    obj->x += vx + (tvx >> 2);
+    obj->x += vx + (targetVx >> 2);
     vy = *(s16 *)((u8 *)obj + 0x244);
-    tvy = *(s16 *)((u8 *)tgt + 0x244);
-    if (tvy < 0)
+    targetVy = *(s16 *)((u8 *)target + 0x244);
+    if (targetVy < 0)
     {
-        tvy += 3;
+        targetVy += 3;
     }
-    obj->y += vy + (tvy >> 2);
+    obj->y += vy + (targetVy >> 2);
 }
 
 
+/* State 7, after a hop lands: plays out the landing animation. In phase 1 the flags20C bits 5-7
+ * are cleared from animation frame 3 on, and when frame 4 or later ends the sprite is set up for
+ * state 8 and phase 0 starts. In phase 0 the bits are set again from frame 1 on; when frame 3 or
+ * later ends, the mode's low 3 bits are cleared and the object goes to state 0 (idle) if
+ * point_in_box finds it in its 0x22 box, else to state 9 (walk back home). */
 void wait_then_box_check(struct Obj *parent, struct Obj *obj)
 {
     s16 box[8];
@@ -485,10 +527,11 @@ void wait_then_box_check(struct Obj *parent, struct Obj *obj)
         if (cell->unk23 > 2)
         {
             flags = (s8 *)&obj->flags20C;
-            *flags &= -0x21;
+            *flags &= ~0x20;
             *flags &= 0x7F;
-            *flags &= -0x41;
+            *flags &= ~0x40;
         }
+        /* the frame ends this step */
         if (cell->unk23 > 3 && cell->unk2A - cell->unk20 <= 0)
         {
             state_change_hook(parent, obj, 8);
@@ -499,15 +542,15 @@ void wait_then_box_check(struct Obj *parent, struct Obj *obj)
     {
         if (cell->unk23 != 0)
         {
-            u8 *p = &obj->flags20C;
-            *p |= 0x20;
-            *p |= 0x80;
-            *p |= 0x40;
+            u8 *setFlags = &obj->flags20C;
+            *setFlags |= 0x20;
+            *setFlags |= 0x80;
+            *setFlags |= 0x40;
         }
         if (cell->unk23 > 2 && cell->unk2A - cell->unk20 <= 0)
         {
             mode = (s8 *)&obj->mode;
-            *mode &= -8;
+            *mode &= ~7;
             obj_box_to_stack(box, obj, 0x22, 0);
             if ((u8)point_in_box(box, obj, 0x7FFF, 0))
             {
@@ -547,22 +590,27 @@ void idle_wander(struct Obj *parent, struct Obj *obj)
     }
 }
 
+/* Chase state: while the object stays inside its territory (the box sensor record 0 gives, in
+   pixels) it heads for the active hero at its record's speed for obj->index, going to state 2 when
+   the hero is in its sensor box (sensor->unk8 set, not while the owner's byte 0x246 mode is 3) and
+   to state 0 when the next step is blocked. Outside the territory it goes to state 9; with no
+   active hero, to state 0 inside it. */
 void chase_active_entry(struct Obj *parent, struct Obj *obj)
 {
     s16 box[8];
-    u8 idx;
+    u8 heroSlot;
     u8 *ai;
-    u8 *tab;
-    u16 timerIdx;
-    struct Obj *partner;
+    u8 *rec;
+    u16 speedIdx;
+    struct Obj *hero;
     u16 speed;
     s32 dx;
     s32 dy;
-    u32 v;
+    u32 heading;
     u8 zero;
 
     ai = (u8 *)obj + 0x58;
-    if (find_active_entry(parent, &idx) != 0)
+    if (find_active_entry(parent, &heroSlot) != 0)
     {
         goto found;
     }
@@ -590,23 +638,23 @@ chase:
             return;
         }
     }
-    partner = *(struct Obj **)((u8 *)parent + idx * 4 + 0x28);
-    timerIdx = *(u16 *)(ai + 0x178);
-    tab = *(u8 **)(ai + 0x158);
-    speed = *(u16 *)(tab + timerIdx * 2 + 0x28);
-    dx = partner->x - obj->x;
-    dy = partner->y - obj->y;
+    hero = *(struct Obj **)((u8 *)parent + heroSlot * 4 + 0x28);
+    speedIdx = *(u16 *)(ai + 0x178); /* obj->index */
+    rec = *(u8 **)(ai + 0x158);      /* obj->boxTab */
+    speed = *(u16 *)(rec + speedIdx * 2 + 0x28);
+    dx = hero->x - obj->x;
+    dy = hero->y - obj->y;
     if ((dx | dy) != 0)
     {
-        v = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
+        heading = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
     }
     else
     {
-        v = 0xFF;
+        heading = 0xFF;
     }
     zero = 0;
-    *((u8 *)obj + 2) = v;
-    start_move_to(obj, partner->x, partner->y, speed, zero);
+    *((u8 *)obj + 2) = heading;
+    start_move_to(obj, hero->x, hero->y, speed, zero);
     if ((u8)position_blocked(parent, obj, obj->x + *(s16 *)((u8 *)obj + 0x242),
                              obj->y + *(s16 *)((u8 *)obj + 0x244), obj->z + obj->dz) != 0)
     {
@@ -619,15 +667,17 @@ to_idle:
     }
 }
 u32 position_blocked(struct Obj *parent, struct Obj *obj, u32 x, u32 y, u32 z);
-NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *parent, struct Obj *obj))
+/*
+ * Shakes the object sideways: every 4th frame it jumps 4 pixels right or left (bit 2 of flags1D6,
+ * flipped each time) and counts the shake in phase. After 30 shakes it switches to state 0xD as soon
+ * as its position isn't blocked.
+ */
+void sidestep_drift(struct Obj *parent, struct Obj *obj)
 {
-    u8 *beh;
+    u8 *behavior;
     s32 frames;
-    s32 nextX;
-    u32 f;
-    u32 t;
 
-    beh = (u8 *)obj + 0x58;
+    behavior = (u8 *)obj + 0x58;
     frames = obj->counter2DE + 1;
     obj->counter2DE = frames;
     if ((u16)frames > 3)
@@ -640,19 +690,17 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
         {
             obj->x -= 0x400;
         }
-        nextX = obj->x;
         obj->vx = obj->x - obj->unk34;
         obj->counter2DE = 0;
-        if (*(u16 *)(beh + 0x17C) <= 0xFFFE)
+        /* behavior + 0x17C is obj->phase: the shake count, saturating */
+        if (*(u16 *)(behavior + 0x17C) <= 0xFFFE)
         {
-            (*(u16 *)(beh + 0x17C))++;
+            (*(u16 *)(behavior + 0x17C))++;
         }
-        f = *(beh + 0x17E);
-        t = f >> 2;
-        t = (t ^ 1) & 1;
-        ((struct Bit2Byte *)(beh + 0x17E))->bit2 = t;
+        /* behavior + 0x17E is obj->flags1D6: flip the shake direction */
+        ((struct Flags8 *)(behavior + 0x17E))->bit2 = (behavior[0x17E] >> 2) ^ 1;
     }
-    if (*(u16 *)(beh + 0x17C) > 0x1D)
+    if (*(u16 *)(behavior + 0x17C) > 0x1D)
     {
         if ((u8)position_blocked(parent, obj, obj->x, obj->y, obj->z + obj->dz) == 0)
         {
@@ -660,7 +708,6 @@ NONMATCH("asm/code_0814AEAC/sidestep_drift.s", void sidestep_drift(struct Obj *p
         }
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0814AEAC/hop_fall.s", void hop_fall(struct Obj *parent, struct Obj *obj))
 {
@@ -830,26 +877,28 @@ NONMATCH("asm/code_0814AEAC/behavior_set_obj_state.s", void behavior_set_obj_sta
 END_NONMATCH
 
 void sprite_step_e6a0(void *obj);
+/* Sets up obj's sprite (animation, facing, flip) for the state it has just entered; see set_state. */
 void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
 {
-    u8 *ai = (u8 *)obj + 0x58;
-    s32 cellDir;
+    u8 *base58 = (u8 *)obj + 0x58; /* homeX/homeY are read through this in state 9 */
+    s32 facing4;
     s32 angle;
     s32 dx;
     s32 dy;
-    u32 dir;
+    u32 facing8;
 
     if (state == 0)
     {
-        u16 *tab = (u16 *)((u8 *)obj + 0x100);
+        u16 *choices = (u16 *)((u8 *)obj + 0x100);
         s32 pick = rand_below(4, mt19937_next());
 
-        obj->cell->unk20 = tab[pick + 4];
+        obj->cell->unk20 = choices[pick + 4];
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
         ((struct ModeBits *)&obj->mode)->low3 = 4;
     }
     else if (state == 1)
     {
+        /* face the parent's target */
         struct Obj *target;
         s32 targetDx;
         s32 targetDy;
@@ -863,13 +912,13 @@ void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
         if ((targetDx | targetDy) != 0)
         {
             angle = (u16)angle_of_vector16(targetDx, targetDy) + 0x1000;
-            cellDir = ((angle >> 13) & 7) >> 1;
+            facing4 = ((angle >> 13) & 7) >> 1;
         }
         else
         {
-            cellDir = 0;
+            facing4 = 0;
         }
-        obj_set_cell_coord(obj, cellDir, 0);
+        obj_set_cell_coord(obj, facing4, 0);
     }
     else if (state == 2)
     {
@@ -883,13 +932,13 @@ void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
     {
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
         ((struct ModeBits *)&obj->mode)->low3 = 1;
-        if (obj->unk2CC >= obj->x)
+        if (obj->moveTargetX >= obj->x)
         {
-            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
+            ((struct Flags8 *)&obj->cell->flip)->bit6 = 0;
         }
         else
         {
-            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 1;
+            ((struct Flags8 *)&obj->cell->flip)->bit6 = 1;
         }
         obj_load_record(obj->cell, 4, 0, 0, 0);
         sprite_step_e6a0(obj->cell);
@@ -899,13 +948,13 @@ void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 1;
         ((struct ModeBits *)&obj->mode)->low3 = 0;
         obj_load_record(obj->cell, 5, 0, 0, 0);
-        if (obj->unk2CC >= obj->x)
+        if (obj->moveTargetX >= obj->x)
         {
-            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 0;
+            ((struct Flags8 *)&obj->cell->flip)->bit6 = 0;
         }
         else
         {
-            ((struct Flags8 *)&obj->cell->unk11)->bit6 = 1;
+            ((struct Flags8 *)&obj->cell->flip)->bit6 = 1;
         }
         sprite_step_e6a0(obj->cell);
     }
@@ -935,48 +984,50 @@ void state_change_hook(struct Obj *parent, struct Obj *obj, u8 state)
     }
     else if (state == 9)
     {
-        s32 dhx = obj->homeX - obj->x;
-        s32 dhy = obj->homeY - obj->y;
-        u32 dirByte;
+        /* head and face back towards home */
+        s32 homeDx = obj->homeX - obj->x;
+        s32 homeDy = obj->homeY - obj->y;
+        u32 heading;
 
-        if ((dhx | dhy) != 0)
+        if ((homeDx | homeDy) != 0)
         {
-            dirByte = ((u32)(u16)angle_of_vector16(dhx, dhy) + 0x10) >> 8;
+            heading = ((u32)(u16)angle_of_vector16(homeDx, homeDy) + 0x10) >> 8;
         }
         else
         {
-            dirByte = 0xFF;
+            heading = 0xFF;
         }
-        *((u8 *)obj + 2) = dirByte;
+        obj->heading = heading;
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
         ((struct ModeBits *)&obj->mode)->low3 = 4;
-        dx = *(s32 *)(ai + 0x184) - obj->x;
-        dy = *(s32 *)(ai + 0x188) - obj->y;
+        dx = *(s32 *)(base58 + 0x184) - obj->x;
+        dy = *(s32 *)(base58 + 0x188) - obj->y;
         if ((dx | dy) != 0)
         {
             angle = (u16)angle_of_vector16(dx, dy) + 0x1000;
-            cellDir = ((angle >> 13) & 7) >> 1;
+            facing4 = ((angle >> 13) & 7) >> 1;
         }
         else
         {
-            cellDir = 0;
+            facing4 = 0;
         }
-        obj_set_cell_coord(obj, cellDir, 0);
+        obj_set_cell_coord(obj, facing4, 0);
     }
     else if (state == 0xA)
     {
+        /* walk animation in the direction of the velocity */
         ((struct CellBits12 *)&obj->cell->unk12)->mode = 0;
         ((struct ModeBits *)&obj->mode)->low3 = 1;
         if ((s16)obj->vx | (s16)obj->vy)
         {
             angle = (u16)angle_of_vector16((s16)obj->vx, (s16)obj->vy) + 0x1000;
-            dir = (angle >> 13) & 7;
+            facing8 = (angle >> 13) & 7;
         }
         else
         {
-            dir = -1;
+            facing8 = -1;
         }
-        obj_load_record(obj->cell, dir, -1, 0, 0);
+        obj_load_record(obj->cell, facing8, -1, 0, 0);
         sprite_step_e6a0(obj->cell);
     }
     else if (state == 0xB)
@@ -1068,20 +1119,25 @@ u32 target_in_box(struct Obj *obj, struct Obj *other)
     return hit;
 }
 
+/* Hop straight up and down, one frame (behavior states 4 and 0xB; aim_ahead_step is the hop that also
+ * moves x/y): the height (dz) moves by zspeed toward zNextAdj and zspeed drops by stepLen. Once it is
+ * falling and back down on the ground (dz <= 0) it lands and goes to state 0xC. */
 void vertical_step(struct Obj *parent, struct Obj *obj)
 {
-    s32 scale;
-    s32 dzPart;
+    s32 dir;
+    s32 absDir;
 
-    scale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
-    if (scale != 0)
+    dir = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zNextAdj - obj->zNext, 4);
+    if (dir != 0)
     {
-        dzPart = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(scale * scale);
-        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale * (s16)obj->zspeed, dzPart);
+        /* zspeed, signed toward zNextAdj */
+        absDir = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dir * dir);
+        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dir * (s16)obj->zspeed, absDir);
     }
     obj->zspeed -= obj->stepLen;
     if ((s16)obj->zspeed < 0 && obj->dz <= 0)
     {
+        /* landed */
         obj->dz = 0;
         set_state(parent, obj, 0xC);
     }

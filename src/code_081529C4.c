@@ -39,7 +39,7 @@ struct CharObj
     s32 x;
     s32 y;
     u8 filler0C[0x36 - 0xC];
-    u16 unk36;
+    u16 flags; /* CHAR_FLAG_* */
 };
 
 struct CamTarget
@@ -50,13 +50,15 @@ struct CamTarget
 
 struct GameState
 {
-    u8 filler0[0x1898];
-    void *list1898[0x100];
+    u8 filler0[0x1C];
+    u8 tileBufs[3][0x824]; /* each freed with obj_free_tile_bufs */
+    u8 filler1888[0x1898 - 0x1888];
+    void *objects[0x100]; /* struct ReleaseObj: the scene's objects, NULL where free */
     struct CharObj *charA;
     struct CharObj *charB;
     void *unk1CA0;
     void *unk1CA4;
-    void *unk1CA8;
+    void *window;
     u8 filler1CAC[0x1CB0 - 0x1CAC];
     void *mainObj;
     struct CamTarget *camTarget;
@@ -75,10 +77,11 @@ struct SceneStateRow
     u8 filler1A[6];
 };
 
-struct Pair
+/* a position in 24.8 fixed point */
+struct Vec2
 {
-    s32 unk00;
-    s32 unk04;
+    s32 x;
+    s32 y;
 };
 
 struct ModeTable
@@ -147,60 +150,81 @@ struct StepSub
     u8 hi2 : 2;
 };
 
-struct StepObj
+/* A field object that drops when a hero comes near and lands on the ground
+   (obj_mode_step). Positions are 24.8 fixed point; the u16 speeds are read as s16. */
+struct DropObj
 {
     u8 filler0[4];
-    s32 unk04;
-    s32 unk08;
+    s32 x;
+    s32 y;
     u8 filler0C[0x14 - 0x0C];
-    u16 unk14;
+    u16 vx;
     u8 filler16[0x18 - 0x16];
-    u16 unk18;
+    u16 vy;
     u8 filler1A[0x1C - 0x1A];
-    u16 unk1C;
+    u16 accelX;
     u8 filler1E[0x20 - 0x1E];
-    u16 unk20;
+    u16 accelY;
     u8 filler22[0x24 - 0x22];
-    u8 unk24;
+    u8 state; /* DROP_STATE_* */
     u8 filler25[0x2D - 0x25];
-    u8 unk2D;
+    u8 landedBits; /* goes into the sprite's three 2-bit fields at 0x1F on landing */
     u8 filler2E[0x30 - 0x2E];
     struct ModeTable *table;
     u8 filler34[0x36 - 0x34];
-    u16 unk36;
-    s32 unk38;
+    u16 timer;
+    s32 groundY; /* ground height under x, refreshed every frame */
     u8 filler3C[0x40 - 0x3C];
     struct StepSub *sub;
 };
 
-struct ModeObj
+enum
+{
+    DROP_STATE_IDLE,    /* not armed */
+    DROP_STATE_ARMED,   /* waits for hero A to come within 0x82 px */
+    DROP_STATE_SHAKING, /* shakes for 15 frames, then falls */
+    DROP_STATE_LANDED,  /* landed: 20 frames before it settles */
+    DROP_STATE_DONE,
+};
+
+struct HalfBit0
+{
+    u16 b0 : 1;
+    u16 rest : 15;
+};
+
+/* A hero of the scene (gGamePtr->charA / charB) as its message handler sees it. */
+struct HeroObj
 {
     u8 filler0[0x18];
-    u16 unk18;
+    u16 vy;
     u8 filler1A[0x24 - 0x1A];
-    u8 unk24;
-    u8 unk25;
+    u8 state;
+    u8 heroId; /* 0 or 1: picks the hurt sprite kind */
     u8 filler26[0x30 - 0x26];
     struct ModeTable *table;
     u8 filler34[0x36 - 0x34];
-    u16 unk36;
-    u16 unk38;
+    u16 flags; /* CHAR_FLAG_* */
+    u16 hurtTimer;
     u8 filler3A[0x42 - 0x3A];
-    u8 unk42;
+    u8 savedSpriteByte21;
 };
 
+#define CHAR_FLAG_HURT 1
+
+/* A C++ (GCC 2) vtable: entry 1 is the destructor; off8 is the `this` adjustment it needs. */
 struct ReleaseTable
 {
     u8 filler0[8];
     s16 off8;
     u8 filler0A[0xC - 0xA];
-    void (*release)(void *obj, u32 mode);
+    void (*release)(void *obj, u32 mode); /* mode 3: destroy and free */
 };
 
 struct ReleaseObj
 {
     u8 filler0[0x30];
-    struct ReleaseTable *table;
+    struct ReleaseTable *table; /* vtable */
 };
 
 extern const struct SceneStateRow gSceneStateTable_083CCAC0[];
@@ -210,21 +234,24 @@ void *obj_get_sprite(void *obj);
 void obj_add_value(void *obj, s32 value);
 u32 obj_tick_state(void *obj, void *ctx, s16 speed, u32 arg3);
 
+// Destroys and frees everything the scene holds: its 256 objects (through each one's virtual
+// destructor), the main object, the objects at 0x1CA0/0x1CA4, the window, and the three tile buffers.
+// Mode 3 asks each destructor to free the memory as well.
 void scene_release_objects(struct GameState *state)
 {
     s32 i;
     struct ReleaseObj *obj;
-    struct ReleaseTable *table;
+    struct ReleaseTable *vtable;
 
     for (i = 0; i < 0x100; i++)
     {
-        obj = state->list1898[i];
+        obj = state->objects[i];
         if (obj != 0)
         {
-            table = obj->table;
-            table->release((u8 *)obj + table->off8, 3);
+            vtable = obj->table;
+            vtable->release((u8 *)obj + vtable->off8, 3);
         }
-        state->list1898[i] = 0;
+        state->objects[i] = 0;
     }
     if (state->mainObj != 0)
     {
@@ -241,39 +268,43 @@ void scene_release_objects(struct GameState *state)
         obj_release_two_children(state->unk1CA4, 3);
         state->unk1CA4 = 0;
     }
-    if (state->unk1CA8 != 0)
+    if (state->window != 0)
     {
-        window_destroy(state->unk1CA8, 3);
-        state->unk1CA8 = 0;
+        window_destroy(state->window, 3);
+        state->window = 0;
     }
-    obj_free_tile_bufs((u8 *)state + 0x1C);
-    obj_free_tile_bufs((u8 *)state + 0x840);
-    obj_free_tile_bufs((u8 *)state + 0x1064);
+    obj_free_tile_bufs(state->tileBufs[0]);
+    obj_free_tile_bufs(state->tileBufs[1]);
+    obj_free_tile_bufs(state->tileBufs[2]);
 }
 
 ASM_FUNC("asm/code_081529C4/transition_scene_update.s", void transition_scene_update(void))
 
+/* While the scene's flag 8 is set, lets the player steer the spotlight (camTarget, an iris
+ * window) with the d-pad, and while hero A isn't hurt turns the hero towards it: sprite kind 0
+ * when the light is more than 10 px to the right, 4 above 4 px, 5 down to -4 px, else 6.
+ * Then draws the light around hero A's position on screen (relative to the camera). */
 void game_update_camera(struct GameState *game)
 {
-    struct Pair pos;
-    s32 *p;
-    s32 ofsX;
+    struct Vec2 heroPos;
+    s32 *screenPos;
+    s32 lightX;
 
     if (game->flags & 8)
     {
         cam_update(game->camTarget, 1);
-        if (((game->charA->unk36 ^ 1) & 1) != 0)
+        if (((game->charA->flags ^ CHAR_FLAG_HURT) & CHAR_FLAG_HURT) != 0)
         {
-            ofsX = game->camTarget->ofsX >> 8;
-            if (ofsX > 10)
+            lightX = game->camTarget->ofsX >> 8;
+            if (lightX > 10)
             {
                 obj_set_sprite_kind(game->charA, 0);
             }
-            else if (ofsX > 4)
+            else if (lightX > 4)
             {
                 obj_set_sprite_kind(game->charA, 4);
             }
-            else if (ofsX > -5)
+            else if (lightX > -5)
             {
                 obj_set_sprite_kind(game->charA, 5);
             }
@@ -284,11 +315,11 @@ void game_update_camera(struct GameState *game)
         }
     }
 
-    pos = *(struct Pair *)&game->charA->x;
-    p = &pos.unk00;
-    p[0] -= game->camX;
-    p[1] -= game->camY;
-    obj_place_on_screen(game->camTarget, p);
+    heroPos = *(struct Vec2 *)&game->charA->x;
+    screenPos = &heroPos.x;
+    screenPos[0] -= game->camX;
+    screenPos[1] -= game->camY;
+    obj_place_on_screen(game->camTarget, screenPos);
 }
 
 void game_clamp_camera(struct GameState *game)
@@ -329,23 +360,27 @@ void game_clamp_camera(struct GameState *game)
     }
 }
 
+/* Creates the field object a placement record describes: allocates an object of the size its
+   kind needs (record->kind picks the class and the heap tag) and runs that class's constructor
+   on it. Kinds 0 and 1 share one class and also get their class's slot-0x10 message right away;
+   kind 4 sets up its sprites. Kinds 3, 10 and unknown kinds create nothing and return NULL. */
 void *obj_create(void *unused, struct ObjRecord *record)
 {
     void *obj;
-    const void *tag;
-    struct CreateTable *table;
+    const void *heapTag;
+    struct CreateTable *klass;
 
     switch (record->kind)
     {
     case 0:
-        tag = gHeapTagObjKind0;
+        heapTag = gHeapTagObjKind0;
         goto generic;
     case 1:
-        tag = gHeapTagObjKind1;
+        heapTag = gHeapTagObjKind1;
     generic:
-        obj = obj_create_e3c0(heap_alloc2(0x48, 1, tag, 0), record, 0);
-        table = ((struct CreateObj *)obj)->table;
-        table->fn14((u8 *)obj + table->off10, 0, 0, 0, 1);
+        obj = obj_create_e3c0(heap_alloc2(0x48, 1, heapTag, 0), record, 0);
+        klass = ((struct CreateObj *)obj)->table;
+        klass->fn14((u8 *)obj + klass->off10, 0, 0, 0, 1);
         return obj;
     case 2:
         obj = obj_init_e380(heap_alloc2(0x44, 1, gHeapTagObjKind2, 0), record, 0);
@@ -370,6 +405,7 @@ void *obj_create(void *unused, struct ObjRecord *record)
         obj = set_class_e1c0_ex(heap_alloc2(0x38, 1, gHeapTagObjKind8, 0), record, 0);
         return obj;
     case 16:
+        /* shares kind 8's heap tag */
         obj = set_class_e180_ex(heap_alloc2(0x38, 1, gHeapTagObjKind8, 0), record, 0);
         return obj;
     case 11:
@@ -399,7 +435,7 @@ void *obj_create(void *unused, struct ObjRecord *record)
     case 3:
     case 10:
     default:
-        return 0;
+        return NULL;
     }
 }
 
@@ -423,63 +459,82 @@ void game_set_chars_active(struct GameState *game, u32 on)
 
 ASM_FUNC("asm/code_081529C4/scene_update_screen.s", void scene_update_screen(void))
 
-NONMATCH("asm/code_081529C4/obj_mode_switch.s", u32 obj_mode_switch(struct ModeObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode))
+// Message handler of a scene hero. Message 1 calls the class's slot-0x34 method, 2 is ignored.
+// Message 5 hurts the hero unless it is already hurt: it sets the hurt flag for 100 frames,
+// keeps sprite byte 0x21, shows the hurt sprite (kind 0x28 or 0x29 by hero) and takes 3 off
+// the scene's counter (obj_add_value). 12 starts a jump (vy = -1000, state 2), 13 sets state 8.
+// Anything else goes to the base handler, obj_tick_state.
+u32 obj_mode_switch(struct HeroObj *hero, void *ctx, u16 speed, u32 arg3, u8 msg)
 {
-    switch (mode)
-    {
+  int notHurt;
+  switch (msg)
+  {
     case 1:
     {
-        struct ModeTable *table = obj->table;
-
-        table->fn34((u8 *)obj + table->off30);
-        break;
+      struct ModeTable *table = hero->table;
+      table->fn34(((u8 *) hero) + table->off30);
+      break;
     }
+
     case 2:
-        break;
+      break;
+
     case 5:
     {
-        void *sprite;
-
-        if (((obj->unk36 ^ 1) & 1) != 0)
+      void *sprite;
+      u16 hurtFlag;
+      notHurt = hero->flags ^ CHAR_FLAG_HURT;
+      if ((((long) ((u16) notHurt)) & CHAR_FLAG_HURT) != 0)
+      {
+        hurtFlag = CHAR_FLAG_HURT;
+        hero->flags = hero->flags | hurtFlag;
+        hero->hurtTimer = 100;
+        sprite = obj_get_sprite(hero);
+        hero->savedSpriteByte21 = ((u8 *) sprite)[0x21];
+        if (hero->heroId == 0)
         {
-            obj->unk36 = obj->unk36 | 1;
-            obj->unk38 = 0x64;
-            sprite = obj_get_sprite(obj);
-            obj->unk42 = ((u8 *)sprite)[0x21];
-            if (obj->unk25 == 0)
-            {
-                obj_set_sprite_kind(obj, 0x28);
-            }
-            else
-            {
-                obj_set_sprite_kind(obj, 0x29);
-            }
-            obj_add_value(gGamePtr->mainObj, -3);
+          obj_set_sprite_kind(hero, 0x28);
         }
-        break;
+        else
+        {
+          obj_set_sprite_kind(hero, 0x29);
+        }
+        obj_add_value(gGamePtr->mainObj, -3);
+      }
+      break;
     }
+
     case 13:
-        obj->unk24 = 8;
-        break;
+      hero->state = 8;
+      break;
+
     case 12:
-        obj->unk18 = 0xFC18;
-        obj->unk24 = 2;
-        break;
+      hero->vy = -1000;
+      hero->state = 2;
+      break;
+
     default:
-        return obj_tick_state(obj, ctx, speed, arg3);
-    }
-    return 0;
+      return obj_tick_state(hero, ctx, speed, arg3);
+
+  }
+
+  return 0;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081529C4/obj_tick_state.s", u32 obj_tick_state(void *obj, void *ctx, s16 speed, u32 arg3))
 
-u32 obj_mode_step(struct StepObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode)
+/* Handler of a dropping object. Message 3 arms it (table slot 0x34), message 4 disarms it
+   (slot 0x3C) and sets sub->bit5; anything else but 1 and 2 is a frame update: armed, it
+   waits until it is at most 0x81 px right of hero A, shakes for 15 frames (sprite kind 0x19),
+   then falls (kind 0x1A) with its own acceleration plus `gravity` until it is below the ground
+   height under it (view_coord). Landing plays sound 0x38, knocks the camera target with the
+   fall speed and clears sub->bit5 for 20 frames. */
+u32 obj_mode_step(struct DropObj *obj, void *ctx, u16 gravity, u32 arg3, u8 mode)
 {
     struct ModeTable *table;
-    s32 t;
-    s32 diff;
-    s32 view;
+    s32 timer;
+    s32 dist_x;
+    s32 ground;
     s32 accel;
 
     switch (mode)
@@ -490,68 +545,68 @@ u32 obj_mode_step(struct StepObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode)
     case 3:
         table = obj->table;
         table->fn34((u8 *)obj + table->off30);
-        obj->unk24 = 1;
+        obj->state = DROP_STATE_ARMED;
         break;
     case 4:
         table = obj->table;
         table->fn3C((u8 *)obj + table->off38);
         obj->sub->bit5 = 1;
-        obj->unk24 = 0;
+        obj->state = DROP_STATE_IDLE;
         break;
     default:
-        view = view_coord(ctx, obj->unk04);
-        obj->unk38 = (s32)((u32)view << 16) >> 8;
-        switch (obj->unk24)
+        ground = view_coord(ctx, obj->x);
+        obj->groundY = (s32)((u32)ground << 16) >> 8;
+        switch (obj->state)
         {
-        case 0:
-        case 4:
+        case DROP_STATE_IDLE:
+        case DROP_STATE_DONE:
             break;
-        case 1:
-            diff = obj->unk04 - gGamePtr->charA->x;
-            if (diff <= 0x81FF)
+        case DROP_STATE_ARMED:
+            dist_x = obj->x - gGamePtr->charA->x;
+            if (dist_x <= 0x81FF)
             {
-                obj->unk36 = 0xF;
+                obj->timer = 15;
                 obj_set_sprite_kind(obj, 0x19);
-                obj->unk24 = 2;
+                obj->state = DROP_STATE_SHAKING;
             }
             break;
-        case 2:
-            t = obj->unk36;
-            t--;
-            obj->unk36 = t;
-            if ((s16)t > 0)
+        case DROP_STATE_SHAKING:
+            timer = obj->timer;
+            timer--;
+            obj->timer = timer;
+            if ((s16)timer > 0)
             {
                 break;
             }
             obj_set_sprite_kind(obj, 0x1A);
-            obj->unk14 += obj->unk1C;
-            accel = (s16)speed;
-            accel += obj->unk20;
-            obj->unk18 += accel;
-            obj->unk04 += (s16)obj->unk14;
-            obj->unk08 += (s16)obj->unk18;
-            if (obj->unk08 > obj->unk38)
+            obj->vx += obj->accelX;
+            accel = (s16)gravity;
+            accel += obj->accelY;
+            obj->vy += accel;
+            obj->x += (s16)obj->vx;
+            obj->y += (s16)obj->vy;
+            if (obj->y > obj->groundY)
             {
                 set_slot_value(0x38, -1);
-                ((struct SpriteBits1F *)obj_get_sprite(obj))->lo2 = obj->unk2D;
-                ((struct SpriteBits1F *)obj_get_sprite(obj))->b2 = obj->unk2D;
-                ((struct SpriteBits1F *)obj_get_sprite(obj))->b4 = obj->unk2D;
+                ((struct SpriteBits1F *)obj_get_sprite(obj))->lo2 = obj->landedBits;
+                ((struct SpriteBits1F *)obj_get_sprite(obj))->b2 = obj->landedBits;
+                ((struct SpriteBits1F *)obj_get_sprite(obj))->b4 = obj->landedBits;
                 obj->sub->bit5 = 0;
-                obj_set_vy_if_free(gGamePtr->camTarget, (s16)obj->unk18);
-                obj->unk36 = 0x14;
-                obj->unk24 = 3;
+                obj_set_vy_if_free(gGamePtr->camTarget, (s16)obj->vy);
+                obj->timer = 20;
+                obj->state = DROP_STATE_LANDED;
             }
             break;
-        case 3:
-            t = obj->unk36;
-            t--;
-            obj->unk36 = t;
-            if ((s16)t > 0)
+        case DROP_STATE_LANDED:
+            timer = obj->timer;
+            timer--;
+            obj->timer = timer;
+            if ((s16)timer > 0)
             {
                 break;
             }
             obj->sub->bit5 = 1;
-            obj->unk24 = 4;
+            obj->state = DROP_STATE_DONE;
             break;
         default:
             break;
@@ -561,12 +616,18 @@ u32 obj_mode_step(struct StepObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode)
     return 0;
 }
 
-u32 obj_mode_step_alt(struct StepObj *obj, void *ctx, u16 speed, u32 arg3, u8 mode)
+/* Handler of a dropping object that watches hero B (obj_mode_step watches hero A). Message 3 arms
+   it (table slot 0x34), message 4 disarms it (slot 0x3C) and sets sub->bit5; anything else but 1
+   and 2 is a frame update: armed, it waits until it is at most 0x81 px right of hero B, shakes for
+   15 frames (sprite kind 0x19), then falls (kind 0x1A) with its own acceleration plus `gravity`
+   until it is below the ground height under it (view_coord). Landing plays sound 0x38 and clears
+   sub->bit5 for 20 frames. */
+u32 obj_mode_step_alt(struct DropObj *obj, void *ctx, u16 gravity, u32 arg3, u8 mode)
 {
     struct ModeTable *table;
-    s32 t;
-    s32 diff;
-    s32 view;
+    s32 timer;
+    s32 dist_x;
+    s32 ground;
     s32 accel;
 
     switch (mode)
@@ -577,64 +638,64 @@ u32 obj_mode_step_alt(struct StepObj *obj, void *ctx, u16 speed, u32 arg3, u8 mo
     case 3:
         table = obj->table;
         table->fn34((u8 *)obj + table->off30);
-        obj->unk24 = 1;
+        obj->state = DROP_STATE_ARMED;
         break;
     case 4:
         table = obj->table;
         table->fn3C((u8 *)obj + table->off38);
         obj->sub->bit5 = 1;
-        obj->unk24 = 0;
+        obj->state = DROP_STATE_IDLE;
         break;
     default:
-        view = view_coord(ctx, obj->unk04);
-        obj->unk38 = (s32)((u32)view << 16) >> 8;
-        switch (obj->unk24)
+        ground = view_coord(ctx, obj->x);
+        obj->groundY = (s32)((u32)ground << 16) >> 8;
+        switch (obj->state)
         {
-        case 0:
-        case 4:
+        case DROP_STATE_IDLE:
+        case DROP_STATE_DONE:
             break;
-        case 1:
-            diff = obj->unk04 - gGamePtr->charB->x;
-            if (diff <= 0x81FF)
+        case DROP_STATE_ARMED:
+            dist_x = obj->x - gGamePtr->charB->x;
+            if (dist_x <= 0x81FF)
             {
-                obj->unk36 = 0xF;
+                obj->timer = 15;
                 obj_set_sprite_kind(obj, 0x19);
-                obj->unk24 = 2;
+                obj->state = DROP_STATE_SHAKING;
             }
             break;
-        case 2:
-            t = obj->unk36;
-            t--;
-            obj->unk36 = t;
-            if ((s16)t > 0)
+        case DROP_STATE_SHAKING:
+            timer = obj->timer;
+            timer--;
+            obj->timer = timer;
+            if ((s16)timer > 0)
             {
                 break;
             }
             obj_set_sprite_kind(obj, 0x1A);
-            obj->unk14 += obj->unk1C;
-            accel = (s16)speed;
-            accel += obj->unk20;
-            obj->unk18 += accel;
-            obj->unk04 += (s16)obj->unk14;
-            obj->unk08 += (s16)obj->unk18;
-            if (obj->unk08 > obj->unk38)
+            obj->vx += obj->accelX;
+            accel = (s16)gravity;
+            accel += obj->accelY;
+            obj->vy += accel;
+            obj->x += (s16)obj->vx;
+            obj->y += (s16)obj->vy;
+            if (obj->y > obj->groundY)
             {
                 set_slot_value(0x38, -1);
                 obj->sub->bit5 = 0;
-                obj->unk36 = 0x14;
-                obj->unk24 = 3;
+                obj->timer = 20;
+                obj->state = DROP_STATE_LANDED;
             }
             break;
-        case 3:
-            t = obj->unk36;
-            t--;
-            obj->unk36 = t;
-            if ((s16)t > 0)
+        case DROP_STATE_LANDED:
+            timer = obj->timer;
+            timer--;
+            obj->timer = timer;
+            if ((s16)timer > 0)
             {
                 break;
             }
             obj->sub->bit5 = 1;
-            obj->unk24 = 4;
+            obj->state = DROP_STATE_DONE;
             break;
         default:
             break;

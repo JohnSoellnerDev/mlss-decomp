@@ -6,12 +6,26 @@ struct AnimPose
     u8 filler0[0x12];
     u8 flags;
     u8 filler13[0x16 - 0x13];
-    u16 unk16;
+    u16 unk16;   /* animation index within its bank */
     u8 filler18[0x1E - 0x18];
-    u8 unk1E;
+    u8 unk1E;    /* low nibble: animation bank (see POSE_ANIM_ID) */
     u8 filler1F[0x21 - 0x1F];
     u8 kind21;
 };
+
+/* the sprite id a pose's animation was loaded from, like the 0x2xxx ids sprite_set_action takes */
+#define POSE_ANIM_ID(pose) ((pose)->unk16 | ((((u32)(pose)->unk1E << 28) >> 16) + 0x1000))
+
+/* AnimObj.index of the two heroes: the bitwise NOT of their gParty index */
+#define HERO_INDEX_MARIO -1
+#define HERO_INDEX_LUIGI -2
+
+/* AnimObj.stepB2 (a figure jump's vertical speed, added to its height unk18) drops by this each frame */
+#define FIGURE_JUMP_GRAVITY 0xB3
+
+/* each hero's first animation id; a jump only starts from it */
+#define MARIO_ANIM_BASE 0x2000
+#define LUIGI_ANIM_BASE 0x204D
 
 struct AnimPic
 {
@@ -130,6 +144,32 @@ struct AnimFlags
     u8 bit7 : 1;
 };
 
+/* AnimObj.bits: the battle statuses a figure has (see code_08108AC8.c). */
+enum AnimStatusBits
+{
+    ANIM_STATUS_BIT1 = 0x0001,     /* bits 0-1: one of two exclusive statuses (anim_bit1_chance) */
+    ANIM_STATUS_BIT2 = 0x0002,     /* (anim_bit2_chance) */
+    ANIM_STATUS_MOTION_A = 0x000C, /* 4: raised, 8: lowered, by factor10A (anim_set_motion_a) */
+    ANIM_STATUS_MOTION_B = 0x0030, /* 0x10: raised, 0x20: lowered, by factor10C (anim_set_motion_b) */
+    ANIM_STATUS_MOTION_C = 0x00C0, /* 0x40: raised, 0x80: lowered, by factor11C (anim_set_motion_c) */
+    ANIM_STATUS_BIT100 = 0x0100,   /* 0x100 and 0x200 exclude each other */
+    ANIM_STATUS_BIT200 = 0x0200,
+    ANIM_STATUS_BIT400 = 0x0400,   /* 0x400 and 0x800 cancel each other out (anim_bit400_step) */
+    ANIM_STATUS_BIT800 = 0x0800,   /* (anim_chance_start) */
+    ANIM_STATUS_BIT1000 = 0x1000,  /* bits 12-15: rolled by anim_roll_bit* */
+    ANIM_STATUS_BIT2000 = 0x2000,
+    ANIM_STATUS_BIT4000 = 0x4000,
+    ANIM_STATUS_BIT8000 = 0x8000
+};
+
+/* Bits 15-17 of the word at AnimObj+0x120: the turns status 0x400 / 0x800 has left. */
+#define ANIM_STATUS_400_800_TURNS 0x38000
+
+/* AnimObj.unk12C of a hero with status 0x800 / 0x400 of its own, which it keeps
+   (anim_end_mode gives it back when the timed one ends). */
+#define FIGURE_KIND_OWN_BIT800 0x13
+#define FIGURE_KIND_OWN_BIT400 0x14
+
 struct AnimTask
 {
     u8 filler0[4];
@@ -173,28 +213,31 @@ s32 anim_roll_bit2000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit4000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance);
 
+/* Called when the turns of status 0x400 / 0x800 run out: clears both statuses, gives a hero whose
+   unk12C says it has one of them of its own (0x13: 0x800, 0x14: 0x400) that status back and
+   refreshes its pose, then clears the turn counter. */
 void anim_end_mode(struct AnimObj *obj)
 {
-    if (*(u32 *)((u8 *)obj + 0x120) & 0x38000)
+    if (*(u32 *)((u8 *)obj + 0x120) & ANIM_STATUS_400_800_TURNS)
     {
-        obj->bits &= 0xF3FF;
+        obj->bits &= ~(ANIM_STATUS_BIT400 | ANIM_STATUS_BIT800) & 0xFFFF;
         if (obj->index < 0)
         {
-            u32 fig = obj->unk12C;
+            u32 kind = obj->unk12C;
             u32 bits = obj->bits;
             u32 next;
 
-            if (fig != 0x13)
+            if (kind != FIGURE_KIND_OWN_BIT800)
             {
                 next = bits;
-                if (fig == 0x14)
+                if (kind == FIGURE_KIND_OWN_BIT400)
                 {
-                    next |= 0x400;
+                    next |= ANIM_STATUS_BIT400;
                 }
             }
             else
             {
-                next = 0x800 | bits;
+                next = ANIM_STATUS_BIT800 | bits;
             }
             obj->bits = next;
             obj->unk128 = 0xFF;
@@ -202,7 +245,7 @@ void anim_end_mode(struct AnimObj *obj)
             obj->unk12A = 1;
             ((struct AnimFlags *)&obj->flags)->bit6 = 1;
         }
-        *(u32 *)((u8 *)obj + 0x120) &= 0xFFFC7FFF;
+        *(u32 *)((u8 *)obj + 0x120) &= ~ANIM_STATUS_400_800_TURNS;
     }
 }
 
@@ -494,14 +537,75 @@ void anim_clear_flag_bits(struct AnimObj *obj, u32 mask)
 }
 
 void state_figure_wait(struct AnimTask *owner);
-ASM_FUNC("asm/code_08109714/figure_select_action.s", void figure_select_action(void))
+struct AnimTask *task_create_list_4c(void (*fn)(struct AnimTask *), void *obj);
+/* A or B pressed: makes hero figure gWorld->fig80[slot] jump. Plays the buzzer (0x15F, unless
+ * flags2C1 bit 3 mutes it) when that figure is missing or not under player control. The jump
+ * only starts while the hero is in pose kind 0, 1 or 0xE showing his base animation (Mario 0x2000,
+ * Luigi 0x204D): it sets flags0B bit 2 and starts the jump task (state_figure_wait) on his body. */
+void figure_select_action(s32 slot)
+{
+    struct AnimObj *hero = gWorld->fig80[slot];
+    struct AnimPose *pose;
+    u8 kind;
+    s16 heroIndex;
 
-ASM_FUNC("asm/code_08109714/state_figure_wait.s", void state_figure_wait(struct AnimTask *owner))
+    if (hero == NULL)
+    {
+        if ((gWorld->flags2C1 & 8) == 0)
+            set_slot_value(0x15F, -1);
+        return;
+    }
+    /* control mode (bits 1-2) must be 1 */
+    if ((hero->ctrl & 6) != 2)
+    {
+        if ((gWorld->flags2C1 & 8) == 0)
+            set_slot_value(0x15F, -1);
+        return;
+    }
+    pose = hero->pic.pose;
+    kind = pose->kind21;
+    if ((kind == 0 || kind == 0xE || kind == 1)
+        && ((heroIndex = hero->index) != HERO_INDEX_MARIO || POSE_ANIM_ID(pose) == MARIO_ANIM_BASE)
+        && (heroIndex != HERO_INDEX_LUIGI || POSE_ANIM_ID(pose) == LUIGI_ANIM_BASE))
+    {
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
+        task_create_list_4c(state_figure_wait, (u8 *)hero + 8);
+    }
+}
 
+void state_figure_wait(struct AnimTask *owner)
+{
+    struct AnimObj *obj = owner->obj;
+    struct AnimPose *sprite;
+    u8 kind;
+    s16 index;
+
+    ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
+    sprite = obj->pic.sprite;
+    kind = sprite->kind21;
+    if (!((kind == 0 || kind == 0xE || kind == 1)
+          && ((index = *(s16 *)(obj->anim + 0xEC)) != -1
+              || (sprite->unk16 | ((((u32)sprite->unk1E << 28) >> 16) + 0x1000)) == 0x2000)
+          && (index != -2 || (sprite->unk16 | ((((u32)sprite->unk1E << 28) >> 16) + 0x1000)) == 0x204D)))
+    {
+        owner->state = 0;
+        ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 0;
+    }
+    else
+    {
+        owner->state = state_figure_begin;
+        owner->state(owner);
+    }
+}
+
+/* Starts a figure's jump (task state after state_figure_wait): ends the task if the object is
+ * busy with a state of its own; otherwise plays sound 0x2B, sets the jump's starting speed and
+ * plays the jump action (5; the active hero uses 0xA unless bit 3 of its flags77 is set), then
+ * moves on to state_figure_move. World.flags0B bit 2 stays set while the jump runs. */
 void state_figure_begin(struct AnimTask *owner)
 {
     struct AnimObj *obj = owner->obj;
-    u32 (*math)(u32);
+    u32 (*isqrt)(u32);
 
     ((struct WorldFlags *)&gWorld->flags0B)->bit2 = 1;
     if (obj->unk4C != 0)
@@ -511,8 +615,8 @@ void state_figure_begin(struct AnimTask *owner)
         return;
     }
     set_slot_value(0x2B, -1);
-    math = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt);
-    obj->stepB2 = ((s32)math(0xB37D29) - 0xB3) / 2;
+    isqrt = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt);
+    obj->stepB2 = ((s32)isqrt(0xB37D29) - FIGURE_JUMP_GRAVITY) / 2;
     if (obj == (struct AnimObj *)(gWorld->active + 8))
     {
         sprite_set_action(obj, (*(gWorld->active + 0x7F) & 8) ? 5 : 0xA, 0, 0);

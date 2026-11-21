@@ -1,4 +1,5 @@
 #include "global.h"
+#include "pair_shot.h"
 
 struct ByteBit4
 {
@@ -145,15 +146,16 @@ extern const s32 gAimTargetX[];
 extern const s32 gAimTargetY[];
 extern const s32 gSpawnTargetX[];
 extern const s32 gSpawnTargetY[];
+// While link_actor_pair_start holds both heroes (until unlink_actor_pair): the states of hero
+// A and hero B, the states of their child chains (16 each), and how many of those are saved.
 extern void (*gUnk_03000ED4)(struct ActorObj *);
 extern void (*gUnk_03000ED8)(struct ActorObj *);
 extern u32 gUnk_03000EDC[];
 extern u32 gUnk_03000F1C[];
 extern u8 gUnk_03000F5C;
 extern u8 gUnk_03000F5D;
-extern s32 gUnk_03000EB0[];
-extern s32 gUnk_03000EB8[];
-extern s32 gUnk_03000EC0[];
+// Per shot: OAM affine PA/PD and PB/-PC bases of its impact sprite
+// (see ramp_values_then_remove).
 extern u16 gUnk_03000EC8[];
 extern u16 gUnk_03000ECC[];
 
@@ -235,12 +237,17 @@ void link_actor_pair_start(struct ActorObj *obj);
 void countdown_phase_then_wait(struct ActorObj *obj);
 void countdown_spawn_pair_link(struct ActorObj *obj);
 
+// Plays action 0xC once the pose allows it; when the 0x20-frame wait runs out it holds both
+// heroes and every object in their child chains: saves each one's state, sets the hold bit in
+// its pose flags and parks it in the empty actor_link_anim_steps state (unlink_actor_pair puts
+// them back). Then plays sound 0x54, marks the hold in the tracked object (+0x770) and moves on
+// to countdown_phase_then_wait.
 void link_actor_pair_start(struct ActorObj *obj)
 {
-    struct Hero *linkA;
-    struct Hero *linkB;
-    struct ActorObj *actorA;
-    struct ActorObj *actorB;
+    struct Hero *heroA;
+    struct Hero *heroB;
+    struct ActorObj *bodyA;
+    struct ActorObj *bodyB;
     struct ActorObj *child;
 
     if (obj->pose->flags & 8)
@@ -251,22 +258,22 @@ void link_actor_pair_start(struct ActorObj *obj)
     if (obj->wait <= 0)
     {
         obj->wait = 0x20;
-        linkA = gWorld->heroA;
-        actorA = &linkA->body;
-        linkB = gWorld->heroB;
-        actorB = &linkB->body;
-        ((struct ByteBit7 *)&((struct LinkBlock *)linkA)->flags)->bit7 = 0;
-        ((struct ByteBit7 *)&((struct LinkBlock *)linkB)->flags)->bit7 = 0;
-        gUnk_03000ED4 = actorA->state;
-        gUnk_03000ED8 = actorB->state;
-        ((struct ByteBit4 *)&actorA->pose->flags)->bit4 = 1;
-        ((struct ByteBit4 *)&actorB->pose->flags)->bit4 = 1;
-        actorA->state = actor_link_anim_steps;
-        actorB->state = actor_link_anim_steps;
+        heroA = gWorld->heroA;
+        bodyA = &heroA->body;
+        heroB = gWorld->heroB;
+        bodyB = &heroB->body;
+        ((struct ByteBit7 *)&((struct LinkBlock *)heroA)->flags)->bit7 = 0;
+        ((struct ByteBit7 *)&((struct LinkBlock *)heroB)->flags)->bit7 = 0;
+        gUnk_03000ED4 = bodyA->state;
+        gUnk_03000ED8 = bodyB->state;
+        ((struct ByteBit4 *)&bodyA->pose->flags)->bit4 = 1;
+        ((struct ByteBit4 *)&bodyB->pose->flags)->bit4 = 1;
+        bodyA->state = actor_link_anim_steps;
+        bodyB->state = actor_link_anim_steps;
         gUnk_03000F5C = 0;
         gUnk_03000F5D = 0;
 
-        child = actorA->child;
+        child = bodyA->child;
         if (child != NULL)
         {
             do
@@ -278,7 +285,7 @@ void link_actor_pair_start(struct ActorObj *obj)
             } while (child != NULL);
         }
 
-        child = actorB->child;
+        child = bodyB->child;
         if (child != NULL)
         {
             do
@@ -346,27 +353,31 @@ static inline void attach_sprite(struct ActorObj *child, struct SpriteNode **lis
     sprite->lo5 = ((struct WorldPool *)gWorld)->lo5--;
 }
 
+// Counts down to the attack (sound 0x54 every 10 frames). Then fires two linked shots,
+// one at each hero: two 0x4026 muzzle parts, and two 0x4025 shots with an 11-node
+// trail each, whose targets go into gUnk_03000EB0/EB8/EC0; param9C (PairShotPattern)
+// picks which shots fly past their hero instead of hitting.
 void countdown_spawn_pair_link(struct ActorObj *obj)
 {
-    struct ActorObj *childA;
-    struct ActorObj *childB;
-    struct ActorObj *childC;
-    struct ActorObj *childD;
-    struct ActorObj *actorA;
-    struct ActorObj *actorB;
+    struct ActorObj *muzzleA;
+    struct ActorObj *muzzleB;
+    struct ActorObj *shotA;
+    struct ActorObj *shotB;
+    struct ActorObj *heroA;
+    struct ActorObj *heroB;
     struct SpriteNode *node;
     struct SpriteNode *prev;
-    s32 x0;
-    s32 y0;
-    s32 edgeA;
-    s32 edgeB;
+    s32 originX;
+    s32 originY;
+    s32 edgeYA;
+    s32 edgeYB;
     s32 i;
 
     obj->phase--;
     if (obj->phase <= 0)
     {
         set_slot_value(0x54, -1);
-        obj->phase = 0xA;
+        obj->phase = 10;
     }
     obj->wait--;
     if (obj->wait <= 0)
@@ -375,110 +386,110 @@ void countdown_spawn_pair_link(struct ActorObj *obj)
         set_slot_value(0x10B, -1);
         place_effect_at_base(obj, 0x29CA);
 
-        childA = obj_spawn(obj->part, 0x4026, obj->posX / 0x100 - 0x1A, obj->posY / 0x100 + 4,
-                           obj->posH / 0x100 + 0x57, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        childB = obj_spawn(obj->part, 0x4026, obj->posX / 0x100 - 0xE, obj->posY / 0x100 + 5,
-                           obj->posH / 0x100 + 0x5A, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        obj->child = childA;
-        childA->child = childB;
-        ((struct Bf8_0_1 *)&childA->flags)->f = 1;
-        childA->unk74 = 0;
-        ((struct Bf8_0_1 *)&childB->flags)->f = 1;
-        childB->unk74 = 0;
-        childA->state = remove_if_no_child;
-        childB->state = remove_if_no_child;
+        muzzleA = obj_spawn(obj->part, 0x4026, obj->posX / 0x100 - 0x1A, obj->posY / 0x100 + 4,
+                            obj->posH / 0x100 + 0x57, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        muzzleB = obj_spawn(obj->part, 0x4026, obj->posX / 0x100 - 0xE, obj->posY / 0x100 + 5,
+                            obj->posH / 0x100 + 0x5A, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = muzzleA;
+        muzzleA->child = muzzleB;
+        ((struct Bf8_0_1 *)&muzzleA->flags)->f = 1;
+        muzzleA->unk74 = 0;
+        ((struct Bf8_0_1 *)&muzzleB->flags)->f = 1;
+        muzzleB->unk74 = 0;
+        muzzleA->state = remove_if_no_child;
+        muzzleB->state = remove_if_no_child;
 
-        actorA = &gWorld->heroA->body;
-        actorB = &gWorld->heroB->body;
-        // Where the lines from (x0, y0) to both heroes' parts cross the left edge x = -0x1000.
-        x0 = obj->posX - 0x1A00;
-        y0 = obj->posY + 0x500;
-        edgeA = (actorA->part->targetY - y0) * (-0x1000 - x0) / (actorA->part->targetX - x0) + y0;
-        edgeB = (actorB->part->targetY - y0) * (-0x1000 - x0) / (actorB->part->targetX - x0) + y0;
+        heroA = &gWorld->heroA->body;
+        heroB = &gWorld->heroB->body;
+        // Where the lines from the muzzle to each hero cross the left edge x = -0x1000.
+        originX = obj->posX - 0x1A00;
+        originY = obj->posY + 0x500;
+        edgeYA = (heroA->part->targetY - originY) * (-0x1000 - originX) / (heroA->part->targetX - originX) + originY;
+        edgeYB = (heroB->part->targetY - originY) * (-0x1000 - originX) / (heroB->part->targetX - originX) + originY;
 
         switch (obj->param9C)
         {
-        case 0:
+        case PAIR_SHOT_PAST_A:
             gUnk_03000EB0[0] = -0x1000;
-            gUnk_03000EB8[0] = edgeA;
+            gUnk_03000EB8[0] = edgeYA;
             gUnk_03000EC0[0] = 0x800;
-            gUnk_03000EB0[1] = actorB->part->targetX;
-            gUnk_03000EB8[1] = actorB->part->targetY;
-            gUnk_03000EC0[1] = actorB->part->targetH;
+            gUnk_03000EB0[1] = heroB->part->targetX;
+            gUnk_03000EB8[1] = heroB->part->targetY;
+            gUnk_03000EC0[1] = heroB->part->targetH;
             break;
-        case 1:
-            gUnk_03000EB0[0] = actorA->part->targetX;
-            gUnk_03000EB8[0] = actorA->part->targetY;
-            gUnk_03000EC0[0] = actorA->part->targetH;
+        case PAIR_SHOT_PAST_B:
+            gUnk_03000EB0[0] = heroA->part->targetX;
+            gUnk_03000EB8[0] = heroA->part->targetY;
+            gUnk_03000EC0[0] = heroA->part->targetH;
             gUnk_03000EB0[1] = -0x1000;
-            gUnk_03000EB8[1] = edgeB;
+            gUnk_03000EB8[1] = edgeYB;
             gUnk_03000EC0[1] = 0x1000;
             break;
-        case 2:
+        case PAIR_SHOT_PAST_BOTH:
             gUnk_03000EB0[0] = -0x1000;
-            gUnk_03000EB8[0] = edgeA;
+            gUnk_03000EB8[0] = edgeYA;
             gUnk_03000EC0[0] = 0x800;
             gUnk_03000EB0[1] = -0x1000;
-            gUnk_03000EB8[1] = edgeB;
+            gUnk_03000EB8[1] = edgeYB;
             gUnk_03000EC0[1] = 0x1000;
             break;
         default:
-            gUnk_03000EB0[0] = actorA->part->targetX;
-            gUnk_03000EB8[0] = actorA->part->targetY;
-            gUnk_03000EC0[0] = actorA->part->targetH;
-            gUnk_03000EB0[1] = actorB->part->targetX;
-            gUnk_03000EB8[1] = actorB->part->targetY;
-            gUnk_03000EC0[1] = actorB->part->targetH;
+            gUnk_03000EB0[0] = heroA->part->targetX;
+            gUnk_03000EB8[0] = heroA->part->targetY;
+            gUnk_03000EC0[0] = heroA->part->targetH;
+            gUnk_03000EB0[1] = heroB->part->targetX;
+            gUnk_03000EB8[1] = heroB->part->targetY;
+            gUnk_03000EC0[1] = heroB->part->targetH;
             break;
         }
 
-        childC = obj_spawn(obj->part, 0x4025, obj->posX / 0x100 - 0x1A, obj->posY / 0x100 + 5,
-                           obj->posH / 0x100 + 0x57, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        childB->child = childC;
-        childC->phase = 0;
-        ((struct Bf8_0_1 *)&childC->flags)->f = 1;
-        childC->targetX = childC->baseX;
-        childC->targetY = childC->baseY;
-        childC->targetH = childC->baseH;
-        childC->unk74 = 0;
-        ((struct Bf8_1_2 *)&childC->unk76)->f = 3;
-        childC->owner = obj->owner;
-        attach_sprite(childC, &childC->nodes);
-        prev = (struct SpriteNode *)&childC->nodes;
+        shotA = obj_spawn(obj->part, 0x4025, obj->posX / 0x100 - 0x1A, obj->posY / 0x100 + 5,
+                          obj->posH / 0x100 + 0x57, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        muzzleB->child = shotA;
+        shotA->phase = 0;
+        ((struct Bf8_0_1 *)&shotA->flags)->f = 1;
+        shotA->targetX = shotA->baseX;
+        shotA->targetY = shotA->baseY;
+        shotA->targetH = shotA->baseH;
+        shotA->unk74 = 0;
+        ((struct Bf8_1_2 *)&shotA->unk76)->f = 3;
+        shotA->owner = obj->owner;
+        attach_sprite(shotA, &shotA->nodes);
+        prev = (struct SpriteNode *)&shotA->nodes;
         for (i = 0; i < 11; i++)
         {
-            node = alloc_node_at(childC);
+            node = alloc_node_at(shotA);
             prev->next = node;
             prev = node;
         }
         prev->next = NULL;
-        childC->param9C = 0;
-        childC->paramA0 = obj->param9C;
-        childC->state = spawn_child_4025_adopt;
+        shotA->param9C = 0;
+        shotA->paramA0 = obj->param9C;
+        shotA->state = spawn_child_4025_adopt;
 
-        childD = obj_spawn(obj->part, 0x4025, obj->posX / 0x100 - 0xE, obj->posY / 0x100 + 6,
-                           obj->posH / 0x100 + 0x5A, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        childC->child = childD;
-        childD->phase = 0;
-        ((struct Bf8_0_1 *)&childD->flags)->f = 1;
-        childD->targetX = childD->baseX;
-        childD->targetY = childD->baseY;
-        childD->targetH = childD->baseH;
-        childD->unk74 = 0;
-        ((struct Bf8_1_2 *)&childD->unk76)->f = 3;
-        childD->owner = obj->owner;
-        attach_sprite(childD, &childD->nodes);
-        prev = (struct SpriteNode *)&childD->nodes;
+        shotB = obj_spawn(obj->part, 0x4025, obj->posX / 0x100 - 0xE, obj->posY / 0x100 + 6,
+                          obj->posH / 0x100 + 0x5A, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        shotA->child = shotB;
+        shotB->phase = 0;
+        ((struct Bf8_0_1 *)&shotB->flags)->f = 1;
+        shotB->targetX = shotB->baseX;
+        shotB->targetY = shotB->baseY;
+        shotB->targetH = shotB->baseH;
+        shotB->unk74 = 0;
+        ((struct Bf8_1_2 *)&shotB->unk76)->f = 3;
+        shotB->owner = obj->owner;
+        attach_sprite(shotB, &shotB->nodes);
+        prev = (struct SpriteNode *)&shotB->nodes;
         for (i = 0; i < 11; i++)
         {
-            node = alloc_node_at(childD);
+            node = alloc_node_at(shotB);
             prev->next = node;
             prev = node;
         }
         prev->next = NULL;
-        childD->param9C = 1;
-        childD->paramA0 = obj->param9C;
-        childD->state = spawn_child_4025_adopt;
+        shotB->param9C = 1;
+        shotB->paramA0 = obj->param9C;
+        shotB->state = spawn_child_4025_adopt;
 
         gUnk_03000EC8[1] = 0;
         gUnk_03000EC8[0] = 0;

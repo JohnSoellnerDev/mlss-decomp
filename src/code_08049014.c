@@ -24,6 +24,18 @@ struct StageBits
     u8 rest : 5;
 };
 
+// UnitObj.state4: what the unit is doing; picks its animation.
+enum UnitState
+{
+    UNIT_STATE_STAND = 0,
+    UNIT_STATE_WALK = 1, // velocity unk242/unk244 not zero
+    UNIT_STATE_AIR_UP = 2, // in the air (counter25C >= 0), unk14 + unk18 >= unk3C + unk40
+    UNIT_STATE_AIR_DOWN = 3, // in the air, below that
+    UNIT_STATE_4 = 4, // stage 4 (obj_enter_stage4), sprite 0x103B/0x103C/0x1052
+    UNIT_STATE_5 = 5, // obj_enter_stage4_slot
+    UNIT_STATE_A = 0xA, // obj_enter_stage4_aux
+};
+
 struct Bit2Byte
 {
     u8 lo2 : 2;
@@ -142,9 +154,9 @@ struct UnitObj
     u8 filler213;
     u8 bits214;
     u8 filler215;
-    u8 flags216;
+    u8 flags216;        /* bit 7: id218 is one of the default sprites (0x1001, 0x1002, 0x1028) */
     u8 filler217;
-    u16 id218;
+    u16 id218;          /* body sprite id, loaded into sub by obj_set_id */
     u8 filler21A[0x21E - 0x21A];
     u16 pos21E;
     u8 filler220[0x242 - 0x220];
@@ -156,8 +168,8 @@ struct UnitObj
     s16 unk264;
     s16 unk266;
     u8 filler268[0x26C - 0x268];
-    u16 entryKey;
-    u8 entry26E;
+    u16 entryKey;       /* 0xFFFF while entry26E is free */
+    u8 entry26E;        /* palette slot in entryTable the sprite holds (0xFF: none) */
     u8 filler26F[0x278 - 0x26F];
     u16 unk278;
     u8 filler27A[2];
@@ -179,7 +191,7 @@ struct UnitObj
     u8 filler343[0x350 - 0x343];
     u8 flags350;
     u8 flags351;
-    u8 flags352;
+    u8 flags352;        /* bits 0-5: the state's code from gAttachedSpriteCodePtrTable; bit 7: which of the pair */
     u8 flags353;
     u8 filler354;
     u8 flags355;
@@ -212,30 +224,37 @@ void obj_queue_update(void *sprite);
 void obj_setup_aux_sprite(struct UnitObj *obj, u32 aux);
 void sound_stop_song(u32 song);
 
-void obj_set_id(struct UnitObj *obj, u16 id)
+/* Switches the unit's body sprite to `spriteId` (nothing to do when it already has it): gives back
+   the palette slot the old sprite held, flags the default sprites (0x1001, 0x1002, 0x1028) in
+   flags216 bit 7, loads the sprite into obj->sub, packs its unk1E/unk1C into pos21E and refreshes
+   the animation state. */
+void obj_set_id(struct UnitObj *obj, u16 spriteId)
 {
-    u32 special;
+    u32 isDefault;
 
-    if (obj->id218 != id)
+    if (obj->id218 != spriteId)
     {
-        obj->id218 = id;
+        obj->id218 = spriteId;
         if (obj->entry26E != 0xFF)
         {
             menu_entry_refresh(obj->entryTable, obj->entry26E, 0);
             obj->entryKey = 0xFFFF;
             obj->entry26E = 0xFF;
         }
-        special = (u16)(obj->id218 - 0x1001) <= 1 || obj->id218 == 0x1028;
-        ((struct Flag7Byte *)&obj->flags216)->bit7 = special;
+        isDefault = (u16)(obj->id218 - 0x1001) <= 1 || obj->id218 == 0x1028;
+        ((struct Flag7Byte *)&obj->flags216)->bit7 = isDefault;
         setup_obj_10bc(obj->sub, 0, obj->id218, 1, -1, -1, -1, -1);
         obj->pos21E = ((obj->sub->unk1E >> 4) + 1) << 12 | obj->sub->unk1C;
         obj_refresh_anim_state(obj, 1, -1, -1);
     }
 }
 
-void flags_obj_update_stage(struct UnitObj *obj, u8 flag)
+// Picks the unit's state from its motion: standing or walking on the ground, rising or coming down
+// in the air. With switchStage set (and flags2B5's low nibble clear) a unit in the air goes to
+// state 4 and stage 5 instead, and one with unk2C == 4 gets its default sprite set and stage 3.
+void flags_obj_update_stage(struct UnitObj *obj, u8 switchStage)
 {
-    u32 id;
+    u32 spriteId;
 
     if (!(obj->flags20C & 1))
         return;
@@ -243,63 +262,67 @@ void flags_obj_update_stage(struct UnitObj *obj, u8 flag)
         return;
     if (obj->counter25C >= 0)
     {
-        if (flag != 0 && (obj->flags2B5 & 0xF) == 0)
+        if (switchStage != 0 && (obj->flags2B5 & 0xF) == 0)
         {
-            obj->state4 = 4;
+            obj->state4 = UNIT_STATE_4;
             if (obj->variant54 == 0)
-                id = (obj->flags35B & 8) ? 0x103C : 0x103B;
+                spriteId = (obj->flags35B & 8) ? 0x103C : 0x103B;
             else
-                id = 0x1052;
-            obj_set_id(obj, id);
+                spriteId = 0x1052;
+            obj_set_id(obj, spriteId);
             if (((struct StageBits *)&obj->bits214)->stage != 4)
                 ((struct StageBits *)&obj->bits214)->stage = 5;
         }
         else
         {
             if (obj->unk14 + obj->unk18 >= obj->unk3C + obj->unk40)
-                obj->state4 = 2;
+                obj->state4 = UNIT_STATE_AIR_UP;
             else
-                obj->state4 = 3;
+                obj->state4 = UNIT_STATE_AIR_DOWN;
         }
     }
     else
     {
         if (obj->unk242 != 0)
-            obj->state4 = 1;
+            obj->state4 = UNIT_STATE_WALK;
         else if (obj->unk244 != 0)
-            obj->state4 = 1;
+            obj->state4 = UNIT_STATE_WALK;
         else
-            obj->state4 = 0;
+            obj->state4 = UNIT_STATE_STAND;
     }
-    if (flag == 0)
+    if (switchStage == 0)
         return;
     if (obj->flags2B5 & 0xF)
         return;
     if (obj->unk2C != 4)
         return;
-    if (obj->state4 == 4)
+    if (obj->state4 == UNIT_STATE_4)
         return;
     if (obj->variant54 == 0)
-        id = (obj->flags35B & 8) ? 0x1028 : 0x1001;
+        spriteId = (obj->flags35B & 8) ? 0x1028 : 0x1001;
     else
-        id = 0x1002;
-    obj_set_id(obj, id);
+        spriteId = 0x1002;
+    obj_set_id(obj, spriteId);
     ((struct StageBits *)&obj->bits214)->stage = 3;
 }
 
 
+// Puts the bro in stage 4 and state UNIT_STATE_4: on entering it, body sprite 0x103B for Mario
+// (variant54 0; 0x103C with flags35B bit 3) or 0x1052 for Luigi; already in it, the animation
+// state is refreshed if the sprite's flags12 bit 4 is set. Then starts the motion toward
+// (unk264, unk266), sets flags355 and queues sound 0xD7 (set_slot_value).
 void obj_enter_stage4(struct UnitObj *obj)
 {
-    u32 id;
+    u32 spriteId;
 
     ((struct StageBits *)&obj->bits214)->stage = 4;
-    if (obj->state4 != 4)
+    if (obj->state4 != UNIT_STATE_4)
     {
         if (obj->variant54 == 0)
-            id = (obj->flags35B & 8) ? 0x103C : 0x103B;
+            spriteId = (obj->flags35B & 8) ? 0x103C : 0x103B;
         else
-            id = 0x1052;
-        obj_set_id(obj, id);
+            spriteId = 0x1052;
+        obj_set_id(obj, spriteId);
     }
     else
     {
@@ -308,7 +331,7 @@ void obj_enter_stage4(struct UnitObj *obj)
     }
     obj_init_motion(obj, obj->unk264, obj->unk266, -1);
     obj->flags355 = 1;
-    obj->state4 = 4;
+    obj->state4 = UNIT_STATE_4;
     set_slot_value(0xD7, -1);
 }
 
@@ -336,54 +359,62 @@ tail:
     ((struct Bit2Byte *)&obj->flags35A)->bit2 = 0;
 }
 
+// Puts the bro in stage 4 and state 5 (UNIT_STATE_5): body sprite 0x1025 for Mario (variant54 0;
+// 0x1029 with flags35B bit 3) or 0x103F for Luigi, sprite mode 1, sound 0x3C (set_slot_value
+// queues the song; both branches of `flag` play the same one), then sets flags212 bit 6 and
+// clears flags359 bit 4 and flags353 bit 2.
 void obj_enter_stage4_slot(struct UnitObj *obj, u8 flag)
 {
-    u32 id;
+    u32 spriteId;
     struct SpriteObj *sub;
 
     ((struct StageBits *)&obj->bits214)->stage = 4;
     if (obj->variant54 == 0)
-        id = (obj->flags35B & 8) ? 0x1029 : 0x1025;
+        spriteId = (obj->flags35B & 8) ? 0x1029 : 0x1025;
     else
-        id = 0x103F;
-    obj_set_id(obj, id);
+        spriteId = 0x103F;
+    obj_set_id(obj, spriteId);
     sub = obj->sub;
     ((struct Mode12Byte *)&sub->flags12)->mode = 1;
     if (flag == 0)
         set_slot_value(0x3C, -1);
     else
         set_slot_value(0x3C, -1);
-    obj->state4 = 5;
+    obj->state4 = UNIT_STATE_5;
     ((struct Bit6Byte *)&obj->flags212)->bit6 = 1;
     ((struct Bit4Byte *)&obj->flags359)->bit4 = 0;
     ((struct Bit2Byte *)&obj->flags353)->bit2 = 0;
 }
 
+// Puts the bro in stage 4 and state UNIT_STATE_A: body sprite 0x1026 for Mario (variant54 0;
+// 0x102A with flags35B bit 3) or 0x1040 for Luigi, and shows the attached sprite (0x1059 / 0x105A,
+// offset set 1 when the unit's slot value is 0xB, else 0). Queues the looping sound 0x157 for
+// Mario or 0x87 for Luigi (obj_enter_stage3_unlink stops it), clears flags355 and flags359 bit 4.
 void obj_enter_stage4_aux(struct UnitObj *obj)
 {
-    u32 id;
-    u32 aux;
-    u32 slot;
-    u8 *p54;
-    u32 v;
+    u32 spriteId;
+    u32 offsetSet;
+    u32 song;
+    u8 *variant;
+    u32 isLuigi;
 
     ((struct StageBits *)&obj->bits214)->stage = 4;
     if (obj->variant54 == 0)
-        id = (obj->flags35B & 8) ? 0x102A : 0x1026;
+        spriteId = (obj->flags35B & 8) ? 0x102A : 0x1026;
     else
-        id = 0x1040;
-    obj_set_id(obj, id);
-    aux = 0;
-    if (*(u8 *)obj->slots == 0xB)
-        aux = 1;
-    obj_setup_aux_sprite(obj, aux);
-    p54 = &obj->variant54;
-    v = *p54;
-    slot = 0x87;
-    if (v == 0)
-        slot += 0xD0;
-    set_slot_value(slot, -1);
-    obj->state4 = 0xA;
+        spriteId = 0x1040;
+    obj_set_id(obj, spriteId);
+    offsetSet = 0;
+    if (obj->slots->value == 0xB)
+        offsetSet = 1;
+    obj_setup_aux_sprite(obj, offsetSet);
+    variant = &obj->variant54;
+    isLuigi = *variant;
+    song = 0x87;
+    if (isLuigi == 0)
+        song += 0xD0;
+    set_slot_value(song, -1);
+    obj->state4 = UNIT_STATE_A;
     obj->flags355 = 0;
     ((struct Bit4Byte *)&obj->flags359)->bit4 = 0;
 }
@@ -445,11 +476,14 @@ NONMATCH("asm/code_08049014/obj_setup_aux_sprite.s", void obj_setup_aux_sprite(s
 END_NONMATCH
 
 
+/* Shows sprite 0x1045 (animation 1) as the unit's attached sprite (aux36C): it takes bits 0-3 of the
+ * unit's sprite's flags1F and sits at the unit sprite's position, offset by (0, 0, -4), animation
+ * mode 2 (stop at the end). */
 void obj_setup_aux_1045(struct UnitObj *obj)
 {
     struct SpriteObj *aux;
-    u32 low;
-    u32 high;
+    u32 bits01;
+    u32 bits23;
 
     obj->auxId370 = 0x1045;
     setup_obj_10bc(obj->aux36C, 0, 0x1045, 1, -1, -1, -1, -1);
@@ -458,26 +492,29 @@ void obj_setup_aux_1045(struct UnitObj *obj)
     ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
     obj->auxOfs372 = 0;
     obj->auxOfs373 = 0;
-    obj->auxOfs374 = 0xFC;
+    obj->auxOfs374 = -4;
     ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
     aux = obj->aux36C;
-    low = ((u32)obj->sub->flags1F << 30) >> 30;
-    aux->flags1F = (aux->flags1F & 0xFC) | low;
+    bits01 = ((u32)obj->sub->flags1F << 30) >> 30;
+    aux->flags1F = (aux->flags1F & ~3) | bits01;
     aux = obj->aux36C;
-    high = obj->sub->flags1F & 0xC;
-    ((struct Bits1F *)&aux->flags1F)->b23 = high >> 2;
+    bits23 = obj->sub->flags1F & 0xC;
+    ((struct Bits1F *)&aux->flags1F)->b23 = bits23 >> 2;
+    /* the offsets aren't added here: the sprite starts right on the unit's sprite */
     obj->aux36C->posX = obj->sub->posX;
     obj->aux36C->posY = obj->sub->posY;
     obj->aux36C->unkE = obj->sub->unkE;
     ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 2;
 }
 
+/* Shows sprite 0x1054 as the unit's attached sprite (aux36C): it takes bits 0-3 of the unit's sprite's
+ * flags1F and sits at the unit sprite's position, offset by (0, -16, -4). */
 void obj_setup_aux_1054(struct UnitObj *obj)
 {
     struct SpriteObj *aux;
-    u32 low;
-    u32 high;
-    u32 v;
+    u32 bits01;
+    u32 bits23;
+    u32 flags;
 
     obj->auxId370 = 0x1054;
     setup_obj_10bc(obj->aux36C, 0, 0x1054, 1, -1, -1, -1, -1);
@@ -485,29 +522,31 @@ void obj_setup_aux_1054(struct UnitObj *obj)
     obj_queue_update(obj->aux36C);
     ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
     obj->auxOfs372 = 0;
-    obj->auxOfs373 = 0xF0;
-    obj->auxOfs374 = 0xFC;
+    obj->auxOfs373 = -16;
+    obj->auxOfs374 = -4;
     ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
     aux = obj->aux36C;
-    low = ((u32)obj->sub->flags1F << 30) >> 30;
-    aux->flags1F = (aux->flags1F & 0xFC) | low;
+    bits01 = ((u32)obj->sub->flags1F << 30) >> 30;
+    aux->flags1F = (aux->flags1F & ~3) | bits01;
     aux = obj->aux36C;
-    high = obj->sub->flags1F & 0xC;
-    v = aux->flags1F;
-    v = (v & -0xD) | high;
-    aux->flags1F = v;
+    bits23 = obj->sub->flags1F & 0xC;
+    flags = aux->flags1F;
+    flags = (flags & ~0xC) | bits23;
+    aux->flags1F = flags;
     obj->aux36C->posX = obj->auxOfs372 + obj->sub->posX;
     obj->aux36C->posY = obj->auxOfs373 + obj->sub->posY;
     obj->aux36C->unkE = obj->auxOfs374 + obj->sub->unkE;
     ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 0;
 }
 
+/* Shows sprite 0x8004 as the unit's attached sprite (aux36C): it takes bits 0-3 of the unit's sprite's
+ * flags1F and sits at the unit sprite's position, offset by (0, -32, -4). */
 void obj_setup_aux_8004(struct UnitObj *obj)
 {
     struct SpriteObj *aux;
-    u32 low;
-    u32 high;
-    u32 v;
+    u32 bits01;
+    u32 bits23;
+    u32 flags;
 
     obj->auxId370 = 0x8004;
     setup_obj_10bc(obj->aux36C, 0, 0x8004, 1, -1, -1, -1, -1);
@@ -515,28 +554,31 @@ void obj_setup_aux_8004(struct UnitObj *obj)
     obj_queue_update(obj->aux36C);
     ((struct Bit0Byte *)&obj->flags353)->bit0 = 1;
     obj->auxOfs372 = 0;
-    obj->auxOfs373 = 0xE0;
-    obj->auxOfs374 = 0xFC;
+    obj->auxOfs373 = -32;
+    obj->auxOfs374 = -4;
     ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
     aux = obj->aux36C;
-    low = ((u32)obj->sub->flags1F << 30) >> 30;
-    aux->flags1F = (aux->flags1F & 0xFC) | low;
+    bits01 = ((u32)obj->sub->flags1F << 30) >> 30;
+    aux->flags1F = (aux->flags1F & ~3) | bits01;
     aux = obj->aux36C;
-    high = obj->sub->flags1F & 0xC;
-    v = aux->flags1F;
-    v = (v & -0xD) | high;
-    aux->flags1F = v;
+    bits23 = obj->sub->flags1F & 0xC;
+    flags = aux->flags1F;
+    flags = (flags & ~0xC) | bits23;
+    aux->flags1F = flags;
     obj->aux36C->posX = obj->auxOfs372 + obj->sub->posX;
     obj->aux36C->posY = obj->auxOfs373 + obj->sub->posY;
     obj->aux36C->unkE = obj->auxOfs374 + obj->sub->unkE;
     ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 0;
 }
 
+/* Shows sprite 0x800B (bank 2, animation 2) as the unit's attached sprite (aux36C), unlinked from the
+ * body (flags353 bit 0 clear) and with no offset: it takes bits 0-3 of the unit's sprite's flags1F and
+ * sits at the unit sprite's position, animation mode 2 (stop at the end). */
 void attach_sprite_setup(struct UnitObj *obj)
 {
     struct SpriteObj *aux;
-    u32 low;
-    u32 high;
+    u32 bits01;
+    u32 bits23;
 
     obj->auxId370 = 0x800B;
     setup_obj_10bc(obj->aux36C, 2, 0x800B, 1, -1, -1, -1, -1);
@@ -548,23 +590,28 @@ void attach_sprite_setup(struct UnitObj *obj)
     obj->auxOfs374 = 0;
     ((struct Bit6Byte *)&obj->aux36C->flags11)->bit6 = 0;
     aux = obj->aux36C;
-    low = ((u32)obj->sub->flags1F << 30) >> 30;
-    ((struct Bits1F *)&aux->flags1F)->b01 = low;
+    bits01 = ((u32)obj->sub->flags1F << 30) >> 30;
+    ((struct Bits1F *)&aux->flags1F)->b01 = bits01;
     aux = obj->aux36C;
-    high = obj->sub->flags1F & 0xC;
-    ((struct Bits1F *)&aux->flags1F)->b23 = high >> 2;
+    bits23 = obj->sub->flags1F & 0xC;
+    ((struct Bits1F *)&aux->flags1F)->b23 = bits23 >> 2;
     obj->aux36C->posX = obj->sub->posX;
     obj->aux36C->posY = obj->sub->posY;
     obj->aux36C->unkE = obj->sub->unkE;
     ((struct Mode12Byte *)&obj->aux36C->flags12)->mode = 2;
 }
 
+/* Mode 0: shows the attached sprite 0x800B (bank 2) with animation `anim`, unlinked from the body
+   (flags353 bit 0 clear), copying the body sprite's flags1F bits 0-3 and unkE. Mode 1: copies the
+   body sprite's fields back (obj_copy_sub_fields), restores unk356 from id218 and the facing from
+   flags24, and sets the unit's own sprite id (0x104B for variant units, else 0x103D or 0x1032 by
+   flags35B bit 3). */
 void attach_sprite_mode(struct UnitObj *obj, u32 mode, u32 anim)
 {
     struct SpriteObj *aux;
-    u32 high;
-    u32 low;
-    u32 id;
+    u32 bits23;
+    u32 facing;
+    u32 spriteId;
 
     switch (mode)
     {
@@ -578,21 +625,21 @@ void attach_sprite_mode(struct UnitObj *obj, u32 mode, u32 anim)
         aux = obj->aux36C;
         ((struct Bits1F *)&aux->flags1F)->b01 = ((u32)obj->sub->flags1F << 30) >> 30;
         aux = obj->aux36C;
-        high = obj->sub->flags1F & 0xC;
-        ((struct Bits1F *)&aux->flags1F)->b23 = high >> 2;
+        bits23 = obj->sub->flags1F & 0xC;
+        ((struct Bits1F *)&aux->flags1F)->b23 = bits23 >> 2;
         obj->aux36C->unkE = obj->sub->unkE;
         break;
     case 1:
     {
         obj_copy_sub_fields(obj);
         obj->unk356 = obj->id218;
-        low = ((u32)obj->flags24 << 29) >> 29;
-        ((struct Lo3Byte *)&obj->flags358)->lo3 = low;
+        facing = ((u32)obj->flags24 << 29) >> 29;
+        ((struct Lo3Byte *)&obj->flags358)->lo3 = facing;
         if (obj->variant54 == 0)
-            id = (obj->flags35B & 8) ? 0x103D : 0x1032;
+            spriteId = (obj->flags35B & 8) ? 0x103D : 0x1032;
         else
-            id = 0x104B;
-        obj_set_id(obj, id);
+            spriteId = 0x104B;
+        obj_set_id(obj, spriteId);
     }
         break;
     }
@@ -690,37 +737,43 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08049014/find_zone_offset.s", void find_zone_offset(void))
 
-void obj_reset_anim_code(struct UnitObj *obj)
+/*
+ * Resets the unit's link and animation fields, then looks up the 6-bit code
+ * for its current state (unit->state4) in the table of its side of the pair
+ * (bit 7 of flags352), or uses 2 when flags351 bit 7 is set, and stores the
+ * code's bits one by one in flags352 bits 0-5.
+ */
+void obj_reset_anim_code(struct UnitObj *unit)
 {
     u8 code;
     s32 one;
 
-    obj_reset_link_fields(obj);
-    ((struct Flag7Byte *)&obj->unk33C)->lo7 = 0x7F;
-    ((struct Bit6Byte *)&obj->flags350)->bit6 = 0;
-    ((struct Flag7Byte *)&obj->unk33C)->bit7 = 0;
-    ((struct Lo4Hi2Byte *)&obj->flags350)->lo4 = 0;
-    ((struct Lo4Hi2Byte *)&obj->flags350)->hi2 = 0;
-    obj->unk33E = 0xFF;
-    obj->unk340 = 0;
-    obj->unk342 = 0xFF;
-    ((struct Bit6Byte *)&obj->flags353)->bit6 = 0;
-    if (obj->flags351 & 0x80)
+    obj_reset_link_fields(unit);
+    ((struct Flag7Byte *)&unit->unk33C)->lo7 = 0x7F;
+    ((struct Bit6Byte *)&unit->flags350)->bit6 = 0;
+    ((struct Flag7Byte *)&unit->unk33C)->bit7 = 0;
+    ((struct Lo4Hi2Byte *)&unit->flags350)->lo4 = 0;
+    ((struct Lo4Hi2Byte *)&unit->flags350)->hi2 = 0;
+    unit->unk33E = 0xFF;
+    unit->unk340 = 0;
+    unit->unk342 = 0xFF;
+    ((struct Bit6Byte *)&unit->flags353)->bit6 = 0;
+    if (unit->flags351 & 0x80)
         code = 2;
     else
-        code = gAttachedSpriteCodePtrTable[(obj->flags352 >> 7) ^ 1][obj->state4];
+        code = gAttachedSpriteCodePtrTable[(unit->flags352 >> 7) ^ 1][unit->state4];
     one = 1;
-    ((struct Bits6Low *)&obj->flags352)->b0 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b0 = code & one;
     code >>= 1;
-    ((struct Bits6Low *)&obj->flags352)->b1 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b1 = code & one;
     code >>= 1;
-    ((struct Bits6Low *)&obj->flags352)->b2 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b2 = code & one;
     code >>= 1;
-    ((struct Bits6Low *)&obj->flags352)->b3 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b3 = code & one;
     code >>= 1;
-    ((struct Bits6Low *)&obj->flags352)->b4 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b4 = code & one;
     code >>= 1;
-    ((struct Bits6Low *)&obj->flags352)->b5 = code & one;
+    ((struct Bits6Low *)&unit->flags352)->b5 = code & one;
 }
 
 

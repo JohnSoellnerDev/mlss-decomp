@@ -1,19 +1,20 @@
 #include "global.h"
 #include "ram_routines.h"
 
+/* The actor's animated sprite, stepped by sprite_step_e6a0. */
 struct Pose
 {
     u8 filler0[0x11];
     u8 turn;
     u8 unk12_0 : 1;
-    u8 mode : 2;
-    u8 visible : 1;
-    u8 hold : 1;
+    u8 mode : 2;        /* at the animation's end: 0 loop, 1 hold the last frame, 2 stop */
+    u8 visible : 1;     /* set when the animation has reached its end */
+    u8 hold : 1;        /* freezes the animation on its current frame */
     u8 unk12_5 : 3;
     u8 filler13[0x20 - 0x13];
-    u8 result;
+    u8 result;          /* animation speed per step */
     u8 filler21[0x23 - 0x21];
-    u8 count;
+    u8 count;           /* current frame of the animation */
 };
 
 struct Actor
@@ -75,6 +76,26 @@ extern const u8 gAnim374[];
 extern u8 *gParty;
 extern u8 gSys[];
 extern u8 *gWorld;
+
+#define SYS_HELD_KEYS 0x3C      /* gSys: u16, the keys held this frame */
+#define ACTOR_ACTION_MASK 0x38  /* Actor.flags76 bits 3-5: set when the action must end */
+#define ANIM_ORBIT_CHARGE 0x2025 /* sprite_set_action arg: the orbit's charge animation (frames 0-3) */
+#define MARIO_ANIM_BASE 0x2000   /* sprite_set_action arg: Mario's battle animation set */
+#define LUIGI_ANIM_BASE 0x204D   /* sprite_set_action arg: Luigi's battle animation set */
+#define PARTY_HERO_SIZE 0x3C     /* one hero's record in gParty: Mario's at 0, Luigi's at 0x3C */
+#define HERO_SLOT_MARIO -1       /* ActorData + 0xEC: which hero the actor is */
+#define HERO_SLOT_LUIGI -2
+
+/* sprite_set_action actions of a hero's jump */
+#define HERO_ACTION_STAND 0
+#define HERO_ACTION_WIND_UP 4    /* crouch before the jump */
+#define HERO_ACTION_JUMP 5
+#define HERO_ACTION_FALL 6
+#define HERO_ACTION_LAND 8
+
+/* Pose.mode */
+#define POSE_MODE_LOOP 0
+#define POSE_MODE_HOLD_LAST 1
 
 void set_slot_value(u32 id, s32 value);
 void sprite_set_action(struct Actor *obj, u32 action, u32 arg, u32 extra);
@@ -461,73 +482,94 @@ void random_jump_finish_if_pose_visible_d(struct Actor *obj)
     }
 }
 
+/*
+ * Mario's jump after a random wait (slot HERO_SLOT_MARIO of random_jump_dispatch_slot_random_jump):
+ * switches to Mario's animation table (gAnim278), copies the u16 at 0x2A of his gParty record into
+ * his ActorData + 0x114, then crouches in a loop for 4-9 frames (random_jump_timer_arc_e) before
+ * random_jump_start_jump_arc_e takes off. The arc starts (isqrt(0x689E40) - 0x58) / 2 above its base.
+ * Returns 1 (handled).
+ */
 u32 random_jump_a(struct Actor *obj)
 {
-    s32 timer;
-    s32 start;
-    s32 (*fn)(u32);
-    u8 *entry;
+    s32 waitFrames;
+    s32 root;
+    s32 (*isqrt)(u32);
+    u8 *hero;
 
     obj->anim = gAnim278;
-    entry = gParty;
+    hero = gParty;
     obj->switch6 = 0;
     obj->switch5 = 0;
-    *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
-    timer = rand_below(6, mt19937_next()) + 4;
-    if (timer != 0)
+    *(u32 *)(obj->data + 0x114) = *(u16 *)(hero + 0x2A);
+    waitFrames = rand_below(6, mt19937_next()) + 4;
+    if (waitFrames != 0)
     {
-        sprite_set_action(obj, 4, 0x2000, 0);
-        obj->pose->mode = 0;
-        obj->timer = timer;
+        sprite_set_action(obj, HERO_ACTION_WIND_UP, MARIO_ANIM_BASE, 0);
+        obj->pose->mode = POSE_MODE_LOOP;
+        obj->timer = waitFrames;
         obj->state = random_jump_timer_arc_e;
     }
     else
     {
         obj->state = random_jump_start_jump_arc_e;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    start = fn(0x00689E40);
-    obj->dh = (start - 0x58) / 2;
+    isqrt = (s32 (*)(u32))gMathRoutines; /* gMathRoutines starts with the integer square root */
+    root = isqrt(0x00689E40);
+    obj->dh = (root - 0x58) / 2;
     return 1;
 }
 
+/*
+ * Luigi's jump after a random wait (slot HERO_SLOT_LUIGI of random_jump_dispatch_slot_random_jump):
+ * switches to Luigi's animation table (gAnim374), copies the u16 at 0x2A of his gParty record into
+ * his ActorData + 0x114, then crouches in a loop for 10-31 frames (random_jump_timer_arc_f) before
+ * random_jump_start_jump_arc_f takes off. The arc starts (isqrt(0x559440) - 0x48) / 2 above its base.
+ * Returns 1 (handled).
+ */
 u32 random_jump_b(struct Actor *obj)
 {
-    s32 timer;
-    s32 start;
-    s32 (*fn)(u32);
-    u8 *entry;
+    s32 waitFrames;
+    s32 root;
+    s32 (*isqrt)(u32);
+    u8 *hero;
 
     obj->anim = gAnim374;
-    entry = gParty + 0x3C;
+    hero = gParty + PARTY_HERO_SIZE;
     obj->switch6 = 0;
     obj->switch5 = 0;
-    *(u32 *)(obj->data + 0x114) = *(u16 *)(entry + 0x2A);
-    timer = rand_below(0x16, mt19937_next()) + 10;
-    if (timer != 0)
+    *(u32 *)(obj->data + 0x114) = *(u16 *)(hero + 0x2A);
+    waitFrames = rand_below(22, mt19937_next()) + 10;
+    if (waitFrames != 0)
     {
-        sprite_set_action(obj, 4, 0x204D, 0);
-        obj->pose->mode = 0;
-        obj->timer = timer;
+        sprite_set_action(obj, HERO_ACTION_WIND_UP, LUIGI_ANIM_BASE, 0);
+        obj->pose->mode = POSE_MODE_LOOP;
+        obj->timer = waitFrames;
         obj->state = random_jump_timer_arc_f;
     }
     else
     {
         obj->state = random_jump_start_jump_arc_f;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    start = fn(0x00559440);
-    obj->dh = (start - 0x48) / 2;
+    isqrt = (s32 (*)(u32))gMathRoutines; /* gMathRoutines starts with the integer square root */
+    root = isqrt(0x00559440);
+    obj->dh = (root - 0x48) / 2;
     return 1;
 }
 
+// Starts the random-jump orbit move: spawns the orbiting child at obj's base point (in whole
+// pixels), in action mode 3 with its box bytes (unk44-unk49: -10, 8, -10, 10, -12, 4), phase 2,
+// aiming at obj's base X and its own base height, with animation gAnim284, on_arrive as its
+// callback and visible. Then resets the step, clears slot value 0x7C and runs the first wind-up
+// frame (random_jump_orbit_step_a).
 void random_jump_spawn_orbit_child_a(struct Actor *obj)
 {
     struct Actor *child;
+    u8 *act;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
     obj->child = child;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 6; }
+    act = (u8 *)&child->flags76;
+    *act = *act | 6; // action mode 3
     child->unk44 = 0xF6;
     child->unk45 = 8;
     child->unk46 = 0xF6;
@@ -538,7 +580,8 @@ void random_jump_spawn_orbit_child_a(struct Actor *obj)
     child->targetX = obj->baseX;
     child->targetH = child->baseH;
     child->anim = gAnim284;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 0x40; }
+    act = (u8 *)&child->flags76;
+    *act = *act | 0x40;
     child->callback = on_arrive;
     child->visible79 = 1;
     obj->step = 0;
@@ -546,30 +589,34 @@ void random_jump_spawn_orbit_child_a(struct Actor *obj)
     random_jump_orbit_step_a(obj);
 }
 
+/* Orbit a, charging: while the actor's buttons stay held, step counts up and the charge animation
+ * moves on a frame every 3 steps; at step 12 action 1 plays and random_jump_orbit_hold_a takes
+ * over. Letting go earlier hands step * 2 to random_jump_orbit_step_b, which rewinds the charge.
+ * Any action bits end the action. */
 void random_jump_orbit_step_a(struct Actor *obj)
 {
     u32 action;
-    u8 *input;
+    u8 *sys;
 
     obj->state = random_jump_orbit_step_a;
-    action = obj->flags76 & 0x38;
+    action = obj->flags76 & ACTOR_ACTION_MASK;
     if (action != 0)
     {
         end_action(obj);
         return;
     }
     if (obj->step == 0)
-        sprite_set_action(obj, 0, 0x2025, 0);
+        sprite_set_action(obj, 0, ANIM_ORBIT_CHARGE, 0);
     if (obj->step == 3)
-        sprite_set_action(obj, 0, 0x2025, 1);
+        sprite_set_action(obj, 0, ANIM_ORBIT_CHARGE, 1);
     if (obj->step == 6)
-        sprite_set_action(obj, 0, 0x2025, 2);
+        sprite_set_action(obj, 0, ANIM_ORBIT_CHARGE, 2);
     if (obj->step == 9)
-        sprite_set_action(obj, 0, 0x2025, 3);
+        sprite_set_action(obj, 0, ANIM_ORBIT_CHARGE, 3);
     if (obj->step != 12)
     {
-        input = gSys;
-        if ((*(u16 *)(input + 0x3C) & obj->buttons) == 0)
+        sys = gSys;
+        if ((*(u16 *)(sys + SYS_HELD_KEYS) & obj->buttons) == 0)
         {
             obj->step *= 2;
             obj->state = random_jump_orbit_step_b;
@@ -580,16 +627,22 @@ void random_jump_orbit_step_a(struct Actor *obj)
     {
         sprite_set_action(obj, 1, 0, 0);
         obj->pose->mode = 0;
-        obj->step = action;
+        obj->step = action; /* 0 */
         obj->state = random_jump_orbit_hold_a;
     }
     obj->pose->hold = 1;
     obj->step++;
 }
 
+/*
+ * The button was let go before the charge finished (random_jump_orbit_step_a doubled step):
+ * counts step down by 3 a frame, rewinding the charge animation through frames 2, 1, 0. Once
+ * step drops below 0, plays action 4 once (held on its last frame) and ends the action when it
+ * is done (random_jump_end_action_if_pose_visible).
+ */
 void random_jump_orbit_step_b(struct Actor *obj)
 {
-    u8 *p;
+    u8 *poseFlags;
 
     obj->state = random_jump_orbit_step_b;
     if (obj->flags76 & 0x38)
@@ -628,24 +681,30 @@ void random_jump_orbit_step_b(struct Actor *obj)
                 sprite_set_action(obj, 0, 0x2025, 2);
             }
         }
-        p = (u8 *)obj->pose + 0x12;
-        *p = *p | 0x10;
+        /* pose->hold = 1 */
+        poseFlags = (u8 *)obj->pose + 0x12;
+        *poseFlags = *poseFlags | 0x10;
         obj->step = obj->step - 3;
     }
 }
 
+// Charge state after random_jump_orbit_step_a: while the attack's button (obj->buttons, matched against
+// the held keys at gSys + 0x3C) stays down, step counts up and the pose's hold flag goes off after 24
+// frames. Letting go waits a random 10..31 frames (orbit_timer_a) before the orbit starts. Held past 49
+// frames the charge fails (action 5); data kind 0x1E instead waits there until gWorld[9]'s high nibble
+// is 1, then cancels with action 4.
 void random_jump_orbit_hold_a(struct Actor *obj)
 {
     u32 held;
-    u8 *input;
+    u8 *sys;
 
     if (obj->flags76 & 0x38)
     {
         end_action(obj);
         return;
     }
-    input = gSys;
-    held = *(u16 *)(input + 0x3C) & obj->buttons;
+    sys = gSys;
+    held = *(u16 *)(sys + 0x3C) & obj->buttons;
     if (held == 0)
     {
         obj->timer = rand_below(0x16, mt19937_next()) + 10;
@@ -655,7 +714,7 @@ void random_jump_orbit_hold_a(struct Actor *obj)
         obj->step = 0;
         return;
     }
-    if (obj->step > 0x31)
+    if (obj->step > 49)
     {
         if (*(u8 *)(obj->data + 0x12D) == 0x1E)
         {
@@ -663,11 +722,11 @@ void random_jump_orbit_hold_a(struct Actor *obj)
             {
                 sprite_set_action(obj, 4, 0, 0);
                 obj->pose->mode = 1;
-                obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 0xA);
+                obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 10);
             }
             else
             {
-                obj->step = 0x32;
+                obj->step = 50;
                 return;
             }
         }
@@ -680,19 +739,22 @@ void random_jump_orbit_hold_a(struct Actor *obj)
         obj->state = random_jump_end_action_if_pose_visible;
         return;
     }
-    if (obj->step > 0x18)
+    if (obj->step > 24)
     {
         obj->pose->hold = 0;
     }
     obj->step = obj->step + 1;
 }
 
+/* One frame of orbit a: swings the child around a circle of radius 22 above obj's base point
+ * (angle += angleSpeed, speed bent towards obj's facing), steps obj's animation 0x2025 through
+ * frames 1-5, and at step 7 releases the child and goes on to random_jump_orbit_end_a. */
 void random_jump_orbit_circle_a(struct Actor *obj)
 {
     struct Actor *child;
-    u32 idx;
-    s32 h;
-    const s16 *table;
+    u32 tableIdx;
+    s32 centerH;
+    const s16 *cosTable;
 
     if (obj->flags76 & 0x38)
     {
@@ -702,11 +764,11 @@ void random_jump_orbit_circle_a(struct Actor *obj)
     child = obj->child;
     ((struct ActionBits *)&child->flags76)->mode = 1;
     child->angle += child->angleSpeed;
-    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
-    table = gCosineTable;
-    child->posX = obj->baseX + (table[idx & 0xFF] / 64) * 22;
-    h = obj->baseH + 0x1600;
-    child->h = h + (gSineTable[idx & 0xFF] / 64) * 22;
+    tableIdx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    cosTable = gCosineTable;
+    child->posX = obj->baseX + (cosTable[tableIdx & 0xFF] / 64) * 22;
+    centerH = obj->baseH + 0x1600;
+    child->h = centerH + (gSineTable[tableIdx & 0xFF] / 64) * 22;
     if (obj->pose->turn & 0x40)
         child->angleSpeed += 0xC00;
     else
@@ -739,13 +801,20 @@ void random_jump_orbit_circle_a(struct Actor *obj)
     }
 }
 
+// Starts the second random-jump orbit move: spawns the orbiting child at obj's base point (in whole
+// pixels), in action mode 3 with its box bytes (unk44-unk49: -10, 8, -10, 10, -12, 4), phase 2,
+// aiming at obj's base X and its own base height, with animation gAnim284, on_arrive as its
+// callback and visible. Then resets the step, clears slot value 0x7C and runs the first wind-up
+// frame (random_jump_orbit_step_c).
 void random_jump_spawn_orbit_child_b(struct Actor *obj)
 {
     struct Actor *child;
+    u8 *act;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
     obj->child = child;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 6; }
+    act = (u8 *)&child->flags76;
+    *act = *act | 6; // action mode 3
     child->unk44 = 0xF6;
     child->unk45 = 8;
     child->unk46 = 0xF6;
@@ -756,7 +825,8 @@ void random_jump_spawn_orbit_child_b(struct Actor *obj)
     child->targetX = obj->baseX;
     child->targetH = child->baseH;
     child->anim = gAnim284;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 0x40; }
+    act = (u8 *)&child->flags76;
+    *act = *act | 0x40;
     child->callback = on_arrive;
     child->visible79 = 1;
     obj->step = 0;
@@ -764,10 +834,14 @@ void random_jump_spawn_orbit_child_b(struct Actor *obj)
     random_jump_orbit_step_c(obj);
 }
 
+/* Orbit b wind-up: while the actor's buttons (the held keys at gSys + 0x3C) stay down, step counts
+ * up and shows wind-up frames 0-3 of animation 0x2054 every 2 steps. At step 8 the wind-up is
+ * complete and random_jump_orbit_hold_b takes over; letting go earlier hands step * 3 to
+ * random_jump_orbit_step_d, which winds the animation back down. Any action bits end the action. */
 void random_jump_orbit_step_c(struct Actor *obj)
 {
     u32 action;
-    u8 *input;
+    u8 *sys;
 
     obj->state = random_jump_orbit_step_c;
     action = obj->flags76 & 0x38;
@@ -786,9 +860,10 @@ void random_jump_orbit_step_c(struct Actor *obj)
         sprite_set_action(obj, 0, 0x2054, 3);
     if (obj->step != 8)
     {
-        input = gSys;
-        if ((*(u16 *)(input + 0x3C) & obj->buttons) == 0)
+        sys = gSys;
+        if ((*(u16 *)(sys + 0x3C) & obj->buttons) == 0)
         {
+            /* let go early: wind back down */
             obj->step *= 3;
             obj->state = random_jump_orbit_step_d;
             return;
@@ -796,6 +871,7 @@ void random_jump_orbit_step_c(struct Actor *obj)
     }
     else
     {
+        /* fully wound up */
         sprite_set_action(obj, 1, 0, 0);
         obj->pose->mode = 0;
         obj->step = action;
@@ -805,9 +881,12 @@ void random_jump_orbit_step_c(struct Actor *obj)
     obj->step++;
 }
 
+/* Orbit b, button let go during the wind-up (random_jump_orbit_step_c multiplied step by 3): plays
+ * the wind-up frames of animation 0x2054 back to frame 0, two steps a frame, then cancels with
+ * action 4 (speed 0xC0 / 12) and ends once that pose has finished. */
 void random_jump_orbit_step_d(struct Actor *obj)
 {
-    u8 *p;
+    u8 *poseFlags;
 
     obj->state = random_jump_orbit_step_d;
     if (obj->flags76 & 0x38)
@@ -819,7 +898,7 @@ void random_jump_orbit_step_d(struct Actor *obj)
     {
         sprite_set_action(obj, 4, 0, 0);
         obj->pose->mode = 1;
-        obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 0xC);
+        obj->pose->result = MATH_ROUTINE(u8 (*)(u32, u32), iwram_div)(0xC0, 12);
         obj->pose->hold = 0;
         obj->state = random_jump_end_action_if_pose_visible;
     }
@@ -828,42 +907,41 @@ void random_jump_orbit_step_d(struct Actor *obj)
         if (obj->step <= 5)
         {
             if (obj->pose->count != 0)
-            {
                 sprite_set_action(obj, 0, 0x2054, 0);
-            }
         }
         else if (obj->step <= 11)
         {
             if (obj->pose->count > 1)
-            {
                 sprite_set_action(obj, 0, 0x2054, 1);
-            }
         }
         else if (obj->step <= 17)
         {
             if (obj->pose->count > 2)
-            {
                 sprite_set_action(obj, 0, 0x2054, 2);
-            }
         }
-        p = (u8 *)obj->pose + 0x12;
-        *p = *p | 0x10;
+        /* pose->hold = 1 */
+        poseFlags = (u8 *)obj->pose + 0x12;
+        *poseFlags = *poseFlags | 0x10;
         obj->step = obj->step - 2;
     }
 }
 
+/* Orbit b, holding: while the actor's buttons stay held, counts obj->step up (the pose stops
+ * holding after step 0x17). Letting go waits 8-13 frames in orbit_timer_b, then swings the child.
+ * Held past step 0x26 the jump ends instead: data kind 0x1E waits until gWorld[9]'s high nibble is
+ * 1 and then plays action 4 (result 0xC0 / 12), any other kind plays action 5. */
 void random_jump_orbit_hold_b(struct Actor *obj)
 {
     u32 held;
-    u8 *input;
+    u8 *sys;
 
     if (obj->flags76 & 0x38)
     {
         end_action(obj);
         return;
     }
-    input = gSys;
-    held = *(u16 *)(input + 0x3C) & obj->buttons;
+    sys = gSys;
+    held = *(u16 *)(sys + 0x3C) & obj->buttons;
     if (held == 0)
     {
         obj->timer = rand_below(6, mt19937_next()) + 8;
@@ -905,12 +983,15 @@ void random_jump_orbit_hold_b(struct Actor *obj)
     obj->step = obj->step + 1;
 }
 
+/* One frame of orbit b: swings the child around a circle of radius 24 above obj's base point
+ * (angle += angleSpeed, speed bent towards obj's facing), steps obj's animation 0x2054 through
+ * frames 1-5, and at step 9 releases the child and goes on to random_jump_orbit_end_b. */
 void random_jump_orbit_circle_b(struct Actor *obj)
 {
     struct Actor *child;
-    u32 idx;
-    s32 h;
-    const s16 *table;
+    u32 tableIdx;
+    s32 centerH;
+    const s16 *cosTable;
 
     if (obj->flags76 & 0x38)
     {
@@ -920,11 +1001,11 @@ void random_jump_orbit_circle_b(struct Actor *obj)
     child = obj->child;
     ((struct ActionBits *)&child->flags76)->mode = 1;
     child->angle += child->angleSpeed;
-    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
-    table = gCosineTable;
-    child->posX = obj->baseX + (table[idx & 0xFF] / 64) * 24;
-    h = obj->baseH + 0x1A00;
-    child->h = h + (gSineTable[idx & 0xFF] / 64) * 24;
+    tableIdx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    cosTable = gCosineTable;
+    child->posX = obj->baseX + (cosTable[tableIdx & 0xFF] / 64) * 24;
+    centerH = obj->baseH + 0x1A00;
+    child->h = centerH + (gSineTable[tableIdx & 0xFF] / 64) * 24;
     if (obj->pose->turn & 0x40)
         child->angleSpeed += 0x998;
     else

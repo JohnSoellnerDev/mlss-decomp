@@ -36,10 +36,13 @@ struct Obj
     u8 filler30[0x1B4 - 0x30];
     struct RomBox *romBox;
     u8 filler1B8[0x1C0 - 0x1B8];
-    s32 zSpan;
+    s32 zSpan; /* start_move_to*: length of the move (24.8); jumps: z distance */
     u8 filler1C4[0x1CC - 0x1C4];
     s32 moveFrames;
-    u8 filler1D0[0x200 - 0x1D0];
+    u8 filler1D0[0x1DC - 0x1D0];
+    s32 homeX; /* where it set out from */
+    s32 homeY;
+    u8 filler1E4[0x200 - 0x1E4];
     struct Obj *tgtA;
     struct Obj *tgtB;
     u8 filler208[0x214 - 0x208];
@@ -59,9 +62,9 @@ struct Obj
     u16 unk272;
     u16 unk274;
     u16 unk276;
-    u16 unk278;
-    u16 unk27A;
-    u16 unk27C;
+    u16 bodyWidth;  /* collision box: full width, centred on x */
+    u16 bodyHeight; /* collision box: height above its z */
+    u16 bodyDepth;  /* collision box: depth behind its y (towards -y) */
     u8 filler280[0x294 - 0x280];
     u8 *rec;
     u8 filler298[0x2BC - 0x298];
@@ -117,7 +120,28 @@ void step_move_set_state_8(void);
 s8 wander_to_edge(struct Obj *obj, u16 steps, s32 dist);
 s8 wander_diag(struct Obj *obj, s32 x, s32 y);
 u32 angle_of_vector16(s32 x, s32 y);
-u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 param5, u16 param6, u16 param7);
+/* Direction bits collide_boxes returns: the axes obj may step along (each rolled against its
+ * percent chance, with `margin` room left inside obj's box), or COLLIDE_DIR_NONE. */
+enum CollideDir
+{
+    COLLIDE_DIR_NEG_Y = 1,
+    COLLIDE_DIR_POS_X = 2,
+    COLLIDE_DIR_POS_Y = 4,
+    COLLIDE_DIR_NEG_X = 8,
+    COLLIDE_DIR_NONE = 0xFF
+};
+
+u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 margin, s8 chanceX, s8 chanceY, u16 boxFlags, u16 boxIndex);
+
+/* Which of the owner's two targets (tgtA, tgtB) box_hit_kind tests a hit box against. */
+enum BoxHitKind
+{
+    BOX_HIT_NONE = 0,   /* never hits */
+    BOX_HIT_A = 1,      /* tgtA */
+    BOX_HIT_B = 2,      /* tgtB */
+    BOX_HIT_EITHER = 3, /* tgtA or tgtB */
+    BOX_HIT_BOTH = 4    /* tgtA and tgtB */
+};
 void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
 void random_cell_setup(struct Obj *obj, u32 callback);
 u8 point_in_box(s16 *bounds, struct Obj *entry, s32 zMax, s32 zMin);
@@ -130,6 +154,16 @@ s32 rand_below(s32 range, u32 seed);
 u32 tile_blocks_move(struct Obj *obj, s32 x, s32 y, s32 pos, s32 span, u8 dir, u16 *flags);
 extern u8 gFrameAttrTable[];
 void obj_set_cell_coord(struct Obj *obj, u32 cell, u32 arg);
+
+/* What zone_point_code and zone_overlap_code return: which of obj's two entities (entA, entB)
+ * are inside the zone. */
+enum ZoneHit
+{
+    ZONE_HIT_NONE = -1,
+    ZONE_HIT_A = 0,
+    ZONE_HIT_B = 1,
+    ZONE_HIT_BOTH = 2
+};
 
 s8 zone_point_code(struct Obj *obj, struct Obj *zone, s32 margin)
 {
@@ -154,107 +188,116 @@ s8 zone_point_code(struct Obj *obj, struct Obj *zone, s32 margin)
     return result;
 }
 
+/* Which of obj's two entities stand in zone (enum ZoneHit): first the zone's ROM rectangle
+ * grown by margin (zone_point_code), at the zone's own height, then the zone's box
+ * (obj_box_to_stack) against each entity's box. */
 s8 zone_overlap_code(struct Obj *obj, struct Obj *zone, s32 margin)
 {
     s16 box[8];
-    s8 pt = zone_point_code(obj, zone, margin);
+    s8 inRect = zone_point_code(obj, zone, margin);
     s8 result;
 
-    if (pt == -1)
-        return -1;
-    if (pt == 0)
+    if (inRect == ZONE_HIT_NONE)
+        return ZONE_HIT_NONE;
+    if (inRect == ZONE_HIT_A)
     {
         if (zone->z != obj->entA->z)
-            return -1;
+            return ZONE_HIT_NONE;
     }
-    else if (pt == 1)
+    else if (inRect == ZONE_HIT_B)
     {
         if (zone->z != obj->entB->z)
-            return -1;
+            return ZONE_HIT_NONE;
     }
-    else if (pt == 2)
+    else if (inRect == ZONE_HIT_BOTH)
     {
         if (zone->z != obj->entA->z && zone->z != obj->entB->z)
-            return -1;
+            return ZONE_HIT_NONE;
     }
 
-    result = -1;
+    result = ZONE_HIT_NONE;
     obj_box_to_stack(box, zone, 0x28, 8);
     box[0] = -box[0];
     box[3] = -box[3];
     if ((u8)boxes_overlap(box, zone, obj->entA, 0, 0))
-        result = 0;
+        result = ZONE_HIT_A;
     if ((u8)boxes_overlap(box, zone, obj->entB, 0, 0))
     {
-        if (result == 0)
-            result = 2;
+        if (result == ZONE_HIT_A)
+            result = ZONE_HIT_BOTH;
         else
-            result = 1;
+            result = ZONE_HIT_B;
     }
     return result;
 }
 
-NONMATCH("asm/code_0813AC90/box_hit_kind.s", u32 box_hit_kind(struct Obj *owner, struct Obj *other, u16 fmt, u16 offset, u16 kind))
+/* Loads other's hit box (boxFmt/boxOffset, see load_box_oriented) and tests it against owner's
+ * targets as kind (enum BoxHitKind) says. Returns 1 on a hit, 0 otherwise; unknown kinds count as hits. */
+u32 box_hit_kind(struct Obj *owner, struct Obj *other, u16 boxFmt, u16 boxOffset, u16 kind)
 {
     s16 box[8];
-    u32 slot;
 
-    if (kind == 0)
+    if (kind == BOX_HIT_NONE)
         return 0;
-    load_box_oriented(box, other, fmt, offset);
+    load_box_oriented(box, other, boxFmt, boxOffset);
     switch (kind)
     {
-    case 1:
-        slot = 0x200;
-        break;
-    case 2:
-        slot = 0x204;
-        break;
-    case 3:
-        if ((u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + 0x200), box[4], box[5]))
+    case BOX_HIT_A:
+        if ((u8)boxes_overlap_oriented(box, other, owner->tgtA, box[4], box[5]))
             return 1;
-        slot = 0x204;
-        break;
-    case 4:
-        if (!(u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + 0x200), box[4], box[5]))
+        return 0;
+    case BOX_HIT_B:
+        if ((u8)boxes_overlap_oriented(box, other, owner->tgtB, box[4], box[5]))
+            return 1;
+        return 0;
+    case BOX_HIT_EITHER:
+        if ((u8)boxes_overlap_oriented(box, other, owner->tgtA, box[4], box[5]))
+            return 1;
+        if ((u8)boxes_overlap_oriented(box, other, owner->tgtB, box[4], box[5]))
+            return 1;
+        return 0;
+    case BOX_HIT_BOTH:
+        if (!(u8)boxes_overlap_oriented(box, other, owner->tgtA, box[4], box[5]))
             return 0;
-        slot = 0x204;
-        break;
-    default:
-        return 1;
+        if ((u8)boxes_overlap_oriented(box, other, owner->tgtB, box[4], box[5]))
+            return 1;
+        return 0;
     }
-    if ((u8)boxes_overlap_oriented(box, other, *(struct Obj **)((u8 *)owner + slot), box[4], box[5]))
-        return 1;
-    return 0;
+    return 1;
 }
-END_NONMATCH
 
-u8 probe_body_hit(struct Obj *ctx, struct Obj *obj, s32 x, s32 y, s32 mode, u8 flag, u16 *extra)
+/*
+ * Whether obj's collision box, standing at (x, y) with its feet at height z, runs into a blocking
+ * tile of ctx's map: tests the point itself, then the box's back-left, back-right, front-left and
+ * front-right corners (back = bodyDepth towards -y), each bodyHeight tall. Returns 1 on the first
+ * blocked point, else 0. dir and flags go to tile_blocks_move.
+ */
+u8 probe_body_hit(struct Obj *ctx, struct Obj *obj, s32 x, s32 y, s32 z, u8 dir, u16 *flags)
 {
-    s32 px;
+    s32 cornerX;
     u32 hit;
 
-    hit = tile_blocks_move(ctx, x, y, mode, obj->unk27A, flag, extra);
+    hit = tile_blocks_move(ctx, x, y, z, obj->bodyHeight, dir, flags);
     if ((u8)hit != 0)
         return 1;
-    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
-    px = x - px;
-    hit = tile_blocks_move(ctx, px, y - obj->unk27C, mode, obj->unk27A, flag, extra);
+    cornerX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->bodyWidth, 2);
+    cornerX = x - cornerX;
+    hit = tile_blocks_move(ctx, cornerX, y - obj->bodyDepth, z, obj->bodyHeight, dir, flags);
     if ((u8)hit != 0)
         return 1;
-    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
-    px = px + x;
-    hit = tile_blocks_move(ctx, px, y - obj->unk27C, mode, obj->unk27A, flag, extra);
+    cornerX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->bodyWidth, 2);
+    cornerX = cornerX + x;
+    hit = tile_blocks_move(ctx, cornerX, y - obj->bodyDepth, z, obj->bodyHeight, dir, flags);
     if ((u8)hit != 0)
         return 1;
-    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
-    px = x - px;
-    hit = tile_blocks_move(ctx, px, y, mode, obj->unk27A, flag, extra);
+    cornerX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->bodyWidth, 2);
+    cornerX = x - cornerX;
+    hit = tile_blocks_move(ctx, cornerX, y, z, obj->bodyHeight, dir, flags);
     if ((u8)hit != 0)
         return 1;
-    px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->unk278, 2);
-    px = px + x;
-    hit = tile_blocks_move(ctx, px, y, mode, obj->unk27A, flag, extra);
+    cornerX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->bodyWidth, 2);
+    cornerX = cornerX + x;
+    hit = tile_blocks_move(ctx, cornerX, y, z, obj->bodyHeight, dir, flags);
     return (u8)hit;
 }
 
@@ -297,14 +340,19 @@ NONMATCH("asm/code_0813AC90/start_move_to.s", void start_move_to(struct Obj *obj
 }
 END_NONMATCH
 
-void start_move_to_b(struct Obj *obj, s32 z, s32 speed, ByteArg rel)
+/* Starts a vertical move to height z (24.8; relative to the object's height z + dz if `relative`)
+   at `speed` per frame: records start and target, the move's length and frame count, and the
+   per-frame z speed (0 when the move takes no frames). The length is computed in 1/16 pixel like
+   start_move_to_3d's. */
+void start_move_to_b(struct Obj *obj, s32 z, s32 speed, ByteArg relative)
 {
     s32 frames;
 
-    if (rel.value != 0)
+    if (relative.value != 0)
         z += obj->z + obj->dz;
     obj->zStart = obj->z + obj->dz;
     obj->zTarget = z;
+    /* distance to go, in 1/16 pixel */
     z -= obj->zStart;
     z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(z, 0x10);
     obj->zSpan = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(z * z) << 4;
@@ -317,11 +365,15 @@ void start_move_to_b(struct Obj *obj, s32 z, s32 speed, ByteArg rel)
         obj->zSpeed = 0;
 }
 
-void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, s32 speed, ByteArg zero)
+/* Starts a straight move to (x, y, z) (24.8; relative to the object's position if `relative`) at
+   `speed` per frame: records start and target, the move's length and frame count, and the per-frame
+   velocity (all 0 when the move takes no frames). The length is computed in 1/16 pixel so the squares
+   don't overflow. */
+void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, s32 speed, ByteArg relative)
 {
     s32 frames;
 
-    if (zero.value != 0)
+    if (relative.value != 0)
     {
         x += obj->x;
         y += obj->y;
@@ -333,6 +385,7 @@ void start_move_to_3d(struct Obj *obj, s32 x, s32 y, s32 z, s32 speed, ByteArg z
     obj->targetX = x;
     obj->targetY = y;
     obj->zTarget = z;
+    /* distance to go, in 1/16 pixel */
     x -= obj->x;
     y -= obj->y;
     z -= obj->z + obj->dz;
@@ -363,81 +416,86 @@ ASM_FUNC("asm/code_0813AC90/wander_diag.s", s8 wander_diag(struct Obj *obj, s32 
 
 ASM_FUNC("asm/code_0813AC90/collide_react.s", void collide_react(void))
 
-s8 collide_wander_diag(u32 unused, struct Obj *obj, struct Obj *other, u16 size, u16 speed, s8 dirA, s8 dirB, u16 extA, u16 extB)
+/* Picks a diagonal step of `dist` away from a collision with `other` (collide_boxes) and
+ * returns its diagonal index (0: +x-y, 1: +x+y, 2: -x+y, 3: -x-y), else wanders diagonally
+ * (wander_diag); then points obj's 256-step facing and 8-way sector along its velocity.
+ * As written, a diagonal needs code to be both a single x bit and a single y bit, so the
+ * diagonal branch is never taken and it always wanders. */
+s8 collide_wander_diag(u32 unused, struct Obj *obj, struct Obj *other, u16 dist, u16 speed, s8 chanceX, s8 chanceY, u16 boxFlags, u16 boxIndex)
 {
     u8 code;
-    s32 keep;
+    s32 hasY;
     u32 facing;
-    u16 vel1;
-    u16 vel2;
+    u16 moving1;
+    u16 moving2;
     s32 sector;
 
-    keep = 1;
-    code = collide_boxes(obj, other, size, dirA, dirB, extA, extB);
-    if (code == 0xFF)
+    hasY = 1;
+    code = collide_boxes(obj, other, dist, chanceX, chanceY, boxFlags, boxIndex);
+    if (code == COLLIDE_DIR_NONE)
         goto wander;
-    if (code != 2)
+    if (code != COLLIDE_DIR_POS_X)
     {
-        if (code != 8)
+        if (code != COLLIDE_DIR_NEG_X)
             goto wander;
     }
-    if (code != 1)
+    if (code != COLLIDE_DIR_NEG_Y)
     {
-        if (code != 4)
-            keep = 0;
+        if (code != COLLIDE_DIR_POS_Y)
+            hasY = 0;
     }
-    if (keep == 0)
+    if (hasY == 0)
         goto wander;
-    if (code & 2)
+    if (code & COLLIDE_DIR_POS_X)
     {
-        if (code & 1)
+        if (code & COLLIDE_DIR_NEG_Y)
         {
-            start_move_to(obj, size, -size, speed, (u8)1);
+            start_move_to(obj, dist, -dist, speed, (u8)1);
             code = 0;
             goto done;
         }
-        if (code & 4)
+        if (code & COLLIDE_DIR_POS_Y)
         {
-            start_move_to(obj, size, size, speed, (u8)1);
+            start_move_to(obj, dist, dist, speed, (u8)1);
             code = 1;
         }
         goto done;
     }
-    if ((code & 8) == 0)
+    if ((code & COLLIDE_DIR_NEG_X) == 0)
         goto done;
-    if (code & 1)
+    if (code & COLLIDE_DIR_NEG_Y)
     {
-        start_move_to(obj, -size, -size, speed, (u8)1);
+        start_move_to(obj, -dist, -dist, speed, (u8)1);
         code = 3;
         goto done;
     }
-    if ((code & 4) == 0)
+    if ((code & COLLIDE_DIR_POS_Y) == 0)
         goto done;
-    start_move_to(obj, -size, size, speed, (u8)1);
+    start_move_to(obj, -dist, dist, speed, (u8)1);
     code = 2;
     goto done;
 
 wander:
-    code = wander_diag(obj, size, speed);
+    code = wander_diag(obj, dist, speed);
 done:
     {
-        u16 *px = (u16 *)&obj->vx;
-        u16 *py = (u16 *)&obj->vy;
-        vel1 = *px;
-        vel1 |= *py;
+        u16 *vx = (u16 *)&obj->vx;
+        u16 *vy = (u16 *)&obj->vy;
+        moving1 = *vx;
+        moving1 |= *vy;
     }
-    if (vel1 != 0)
+    if (moving1 != 0)
         facing = ((u32)(u16)angle_of_vector16(obj->vx, obj->vy) + 0x10) >> 8;
     else
         facing = 0xFF;
     obj->facing = facing;
     {
-        u16 *px = (u16 *)&obj->vx;
-        u16 *py = (u16 *)&obj->vy;
-        vel2 = *px;
-        vel2 |= *py;
+        u16 *vx = (u16 *)&obj->vx;
+        u16 *vy = (u16 *)&obj->vy;
+        moving2 = *vx;
+        moving2 |= *vy;
     }
-    if (vel2 != 0)
+    if (moving2 != 0)
         sector = (((u16)angle_of_vector16(obj->vx, obj->vy) + 0x1000) >> 13) & 7;
     else
         sector = -1;
@@ -445,47 +503,51 @@ done:
     return (s8)code;
 }
 
+/* Steps a z move set up by start_z_move: moves dz by zSpeed towards zTarget (sign(target - start)
+ * * zSpeed) and slows zSpeed by |zRest|. Once the speed has run out and dz has reached zLimit
+ * (falling to it when zRest > 0, rising to it otherwise), snaps dz to zLimit and returns 0;
+ * returns 1 while still moving. */
 u32 z_approach(struct Obj *obj)
 {
-    s32 *lim;
-    s32 part;
-    s32 root;
-    s32 rem;
-    u16 *rate;
-    s32 *rest;
+    s32 *limitp;
+    s32 dir;
+    s32 dist;
+    s32 speed;
+    u16 *speedp;
+    s32 *decelp;
     s32 dz;
     s32 limit;
 
-    part = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zTarget - obj->zStart, 4);
-    if (part != 0)
+    dir = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->zTarget - obj->zStart, 4);
+    if (dir != 0)
     {
-        root = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(part * part);
-        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(part * obj->zSpeed, root);
+        dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dir * dir);
+        obj->dz += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dir * obj->zSpeed, dist);
     }
-    rate = (u16 *)&obj->zSpeed;
-    rest = &obj->zRest;
-    rem = *rest;
-    if (rem < 0)
-        rem = -rem;
-    rem = *rate - rem;
-    *rate = rem;
-    if (*rest > 0)
+    speedp = (u16 *)&obj->zSpeed;
+    decelp = &obj->zRest;
+    speed = *decelp;
+    if (speed < 0)
+        speed = -speed;
+    speed = *speedp - speed;
+    *speedp = speed;
+    if (*decelp > 0)
     {
-        if ((s16)rem > 0)
+        if ((s16)speed > 0)
             goto moving;
-        lim = &obj->zLimit;
+        limitp = &obj->zLimit;
         dz = obj->dz;
-        limit = *lim;
+        limit = *limitp;
         if (dz > limit)
             goto moving;
     }
     else
     {
-        if ((s16)rem > 0)
+        if ((s16)speed > 0)
             goto moving;
-        lim = &obj->zLimit;
+        limitp = &obj->zLimit;
         dz = obj->dz;
-        limit = *lim;
+        limit = *limitp;
         if (dz < limit)
             goto moving;
     }
@@ -495,48 +557,51 @@ moving:
     return 1;
 }
 
-u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 param3, s8 param4, s8 param5, u16 param6, u16 param7)
+/* Picks the directions obj may step away from `other`: one roll (0-99) is checked against each
+ * axis' percent chance, and an axis counts only if a step of `margin` pixels away from other
+ * stays inside obj's box (obj_box_to_stack). Returns CollideDir bits, or COLLIDE_DIR_NONE. */
+u8 collide_boxes(struct Obj *obj, struct Obj *other, u16 margin, s8 chanceX, s8 chanceY, u16 boxFlags, u16 boxIndex)
 {
     s16 box[8];
     s32 xMin;
     s32 xMax;
     s32 yMin;
     s32 yMax;
-    s32 half;
-    u16 result;
+    s32 step;
+    u16 dirs;
     u8 roll;
 
-    half = param3 * 0x100;
+    step = margin * 0x100;
     roll = rand_below(100, mt19937_next());
-    obj_box_to_stack(box, obj, param6, param7);
+    obj_box_to_stack(box, obj, boxFlags, boxIndex);
     xMin = box[0] * 0x100;
     xMax = box[1] * 0x100;
     yMin = box[3] * 0x100;
     yMax = box[2] * 0x100;
-    result = 0;
-    if ((roll << 24) < (param4 << 24))
+    dirs = 0;
+    if ((roll << 24) < (chanceX << 24))
     {
         if (obj->x >= other->x)
         {
-            if (obj->x - half >= xMin)
-                result = 8;
+            if (obj->x - step >= xMin)
+                dirs = COLLIDE_DIR_NEG_X;
         }
-        else if (obj->x + half <= xMax)
-            result = 2;
+        else if (obj->x + step <= xMax)
+            dirs = COLLIDE_DIR_POS_X;
     }
-    if ((roll << 24) < (param5 << 24))
+    if ((roll << 24) < (chanceY << 24))
     {
         if (obj->y >= other->y)
         {
-            if (obj->y - half >= yMin)
-                result |= 1;
+            if (obj->y - step >= yMin)
+                dirs |= COLLIDE_DIR_NEG_Y;
         }
-        else if (obj->y + half <= yMax)
-            result |= 4;
+        else if (obj->y + step <= yMax)
+            dirs |= COLLIDE_DIR_POS_Y;
     }
-    if (result == 0)
-        return 0xff;
-    return result;
+    if (dirs == 0)
+        return COLLIDE_DIR_NONE;
+    return dirs;
 }
 
 NONMATCH("asm/code_0813AC90/random_cell_setup.s", void random_cell_setup(struct Obj *obj, u32 callback))
@@ -565,26 +630,29 @@ NONMATCH("asm/code_0813AC90/random_cell_setup.s", void random_cell_setup(struct 
 }
 END_NONMATCH
 
-u32 box_contains_fixed(struct Box6 *box, struct Obj *a, struct Obj *b)
+// Returns 1 when point's position lies inside box placed around center (both in 24.8 fixed
+// point, compared in whole units): box gives how far it reaches left/right in x, down/up in y
+// and below/above in z, edges included.
+u32 box_contains_fixed(struct Box6 *box, struct Obj *center, struct Obj *point)
 {
-    s32 ax = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a->x, 0x100);
-    s32 ay = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a->y, 0x100);
-    s32 az = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(a->z, 0x100);
-    s32 bx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(b->x, 0x100);
-    s32 by = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(b->y, 0x100);
-    s32 bz = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(b->z, 0x100);
+    s32 cx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(center->x, 0x100);
+    s32 cy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(center->y, 0x100);
+    s32 cz = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(center->z, 0x100);
+    s32 px = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(point->x, 0x100);
+    s32 py = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(point->y, 0x100);
+    s32 pz = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(point->z, 0x100);
 
-    if (ax - box->left > bx)
+    if (cx - box->left > px)
         return 0;
-    if (box->right + ax < bx)
+    if (box->right + cx < px)
         return 0;
-    if (ay - box->bottom > by)
+    if (cy - box->bottom > py)
         return 0;
-    if (ay + box->top < by)
+    if (cy + box->top < py)
         return 0;
-    if (az - box->zBottom > bz)
+    if (cz - box->zBottom > pz)
         return 0;
-    if (box->zTop + az < bz)
+    if (box->zTop + cz < pz)
         return 0;
     return 1;
 }
@@ -636,24 +704,26 @@ void tick_store(void *ctx, struct State *st, u32 *out)
 
 u32 angle_of_vector16(s32 x, s32 y);
 void start_move_to(struct Obj *obj, s32 x, s32 y, s32 speed, ByteArg zero);
-void box_contacts_aim_at_target(struct Obj *obj, struct Obj *state, u32 *out)
+/* Behaviour step: turns the actor towards its owner's target, starts it moving there at its own speed
+ * and remembers where it set out from; the move is then run by step_move_set_state_8 (mode 3). */
+void box_contacts_aim_at_target(struct Obj *owner, struct Obj *actor, u32 *next)
 {
-    u8 *behavior = (u8 *)state + 0x58;
-    struct Obj *target = obj->tgtA;
-    s32 dx = target->x - state->x;
-    s32 dy = target->y - state->y;
+    u8 *behavior = (u8 *)actor + 0x58;
+    struct Obj *target = owner->tgtA;
+    s32 dx = target->x - actor->x;
+    s32 dy = target->y - actor->y;
     u32 facing;
 
     if ((dx | dy) != 0)
         facing = ((u32)(u16)angle_of_vector16(dx, dy) + 0x10) >> 8;
     else
-        facing = 0xFF;
-    state->facing = facing;
-    start_move_to(state, target->x, target->y, state->speed, (u8)0);
-    *(s32 *)(behavior + 0x184) = state->x;
-    *(s32 *)(behavior + 0x188) = state->y;
-    ((struct Lo3 *)&state->mode)->lo3 = 3;
-    *out = (u32)step_move_set_state_8;
+        facing = 0xFF; /* already there: no direction */
+    actor->facing = facing;
+    start_move_to(actor, target->x, target->y, actor->speed, (u8)0);
+    ((struct Obj *)(behavior - 0x58))->homeX = actor->x;
+    ((struct Obj *)(behavior - 0x58))->homeY = actor->y;
+    ((struct Lo3 *)&actor->mode)->lo3 = 3;
+    *next = (u32)step_move_set_state_8;
 }
 
 void start_wander(u32 unused, struct Obj *obj, u32 *out)

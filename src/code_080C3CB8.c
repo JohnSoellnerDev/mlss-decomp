@@ -49,15 +49,15 @@ struct HeroSpan
 struct HeroData
 {
     u8 filler0[0xD8];
-    s32 targetX;
+    s32 targetX; /* home position (where place_part_in_slot put it), 1/256 pixels */
     s32 targetY;
     s32 targetH;
     u8 filler0E4[0xEC - 0xE4];
     s16 poseIndex;
     u8 filler0EE[0xF6 - 0xEE];
-    s16 displayTimer;
+    s16 displayTimer; /* HP */
     u8 filler0F8[0x111 - 0xF8];
-    u8 flags111;
+    u8 flags111; /* bit 1: busy, can't be stopped this frame */
     u8 filler112[0x114 - 0x112];
     u32 poseValue;
     u8 filler118[0x11E - 0x118];
@@ -449,60 +449,70 @@ after_zero:
     body->state = hero_a_active_link_place_finish_alt;
 }
 
+/* Hero A's jump has landed on the partner: resolve the hit (count it, spark effect 0x6F7 on the
+   partner if it is still standing or busy), then, if hero A is still in play, send it jumping back to
+   its home position (action 5) and go on to hero_a_active_fx_anim_ready_alt. */
 void hero_a_active_link_place_finish_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *heroA = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
 
-    step_motion(body_a);
-    if ((body_a->flags & 0x20) != 0)
+    step_motion(heroA);
+    if ((heroA->flags & 0x20) != 0)
     {
         set_slot_value(0x63, -1);
-        ((struct HeroCcBits *)&body_a->cc)->low = 0;
-        body_a->scale = 0x100;
-        resolve_contact_action(body_a, partner, 0, 0, (const u8 *)0x0403018B);
-        body_a->count++;
+        ((struct HeroCcBits *)&heroA->cc)->low = 0;
+        heroA->scale = 0x100;
+        resolve_contact_action(heroA, partner, 0, 0, (const u8 *)0x0403018B);
+        heroA->count++;
         if (partner->data->displayTimer > 0 || (partner->data->flags111 & 2) != 0)
         {
-            s32 x = partner->targetX / 0x100 + partner->ofsX + 6;
-            s32 y = partner->targetY / 0x100 + partner->ofsY;
+            s32 sparkX = partner->targetX / 0x100 + partner->ofsX + 6;
+            s32 sparkY = partner->targetY / 0x100 + partner->ofsY;
 
-            effect_spawn_at(0x6F7, x, y, 0x14, partner);
+            effect_spawn_at(0x6F7, sparkX, sparkY, 0x14, partner);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            place_targets(body_a, body_a->data->targetX / 0x100 + 9, body_a->data->targetY / 0x100 + 0x10,
-                          body_a->data->targetH / 0x100, -1);
-            body_a->height = body_a->targetZ / 0x100 + 0x20;
-            set_motion_offsets(body_a, 0x400);
+            place_targets(heroA, heroA->data->targetX / 0x100 + 9, heroA->data->targetY / 0x100 + 0x10,
+                          heroA->data->targetH / 0x100, -1);
+            heroA->height = heroA->targetZ / 0x100 + 0x20;
+            set_motion_offsets(heroA, 0x400);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(body_a, 5, 0x2034, 0);
-            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+            sprite_set_action(heroA, 5, 0x2034, 0);
+            ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 0;
         }
         body->state = hero_a_active_fx_anim_ready_alt;
     }
 }
 
+/* Hero A's jump back home: moves hero A until the motion is done (flags 0x20), then plays the landing
+   sound 0x2E and effect 0x1E at its feet, takes landing action 8 (images 0x2034) in play mode 1 if it is
+   still in play (mode 2 or 4), and goes on to hero_pair_place_and_finish_alt2. */
 void hero_a_active_fx_anim_ready_alt(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gWorld->heroA->body;
+    struct HeroBody *heroA = &gWorld->heroA->body;
 
-    step_motion(body_a);
-    if ((body_a->flags & 0x20) != 0)
+    step_motion(heroA);
+    if ((heroA->flags & 0x20) != 0)
     {
         set_slot_value(0x2E, -1);
-        effect_spawn_at(0x1E, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100, body_a);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        effect_spawn_at(0x1E, heroA->posX / 0x100, heroA->posY / 0x100, heroA->posZ / 0x100, heroA);
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(body_a, 8, 0x2034, 0);
-            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
+            sprite_set_action(heroA, 8, 0x2034, 0);
+            ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 1;
         }
         body->state = hero_pair_place_and_finish_alt2;
     }
 }
 
+// State callback (body is unused): once hero A's sprite has flag 8 set, both heroes (A first, each
+// only in body mode 2 or 4) are put at their data's target (8.8 fixed point), start moving at
+// speed 0x400, take the standing action (0x2002 unposed, 0x204F posed) facing along their span,
+// and hand over to finish_rebuild_checked.
 void hero_pair_place_and_finish_alt2(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
@@ -510,12 +520,14 @@ void hero_pair_place_and_finish_alt2(struct HeroBody *body)
 
     if ((body_a->sprite->flags & 8) != 0)
     {
+        // Hero A: place at the target and start moving.
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             place_targets(body_a, body_a->data->targetX / 0x100, body_a->data->targetY / 0x100,
                           body_a->data->targetH / 0x100, -1);
             set_motion_start(body_a, 0x400);
         }
+        // Standing action, mirrored when span.a >= span.b.
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             if (body_a->data->poseIndex == -1)
@@ -530,7 +542,7 @@ void hero_pair_place_and_finish_alt2(struct HeroBody *body)
                 sprite = body_a->sprite;
                 mirror = 0;
                 span = &body_a->span.a;
-                if (!(span[0] < span[1]))
+                if (span[0] >= span[1])
                     mirror = 1;
                 ((struct HeroMirrorBits *)&sprite->mirror)->flip = mirror;
             }
@@ -541,6 +553,8 @@ void hero_pair_place_and_finish_alt2(struct HeroBody *body)
             body_a->state = 0;
             enter_finish_rebuild(body_a);
         }
+
+        // Hero B: the same.
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             place_targets(body_b, body_b->data->targetX / 0x100, body_b->data->targetY / 0x100,
@@ -561,7 +575,7 @@ void hero_pair_place_and_finish_alt2(struct HeroBody *body)
                 sprite = body_b->sprite;
                 mirror = 0;
                 span = &body_b->span.a;
-                if (!(span[0] < span[1]))
+                if (span[0] >= span[1])
                     mirror = 1;
                 ((struct HeroMirrorBits *)&sprite->mirror)->flip = mirror;
             }

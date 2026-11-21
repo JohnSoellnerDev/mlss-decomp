@@ -14,7 +14,7 @@ struct PairPart
     u8 filler6[0x24 - 6];
     u8 cell24;
     u8 filler25[0x54 - 0x25];
-    u8 group54;
+    u8 broIndex; /* which bro this part is (0 or 1) */
     u8 filler55[0x20D - 0x55];
     u8 flags20D;
     u8 filler20E[0x210 - 0x20E];
@@ -113,6 +113,29 @@ void set_slot_value(u32 id, s32 value);
 static inline void set_bit1_26A(struct PairObj *obj, u32 v)
 {
     ((struct Bit1 *)&obj->flags26A)->bit1 = v;
+}
+
+/* Facing, slot shift and animation step for A at the start of a pair state. */
+static inline void pair_start_anim(struct PairObj *obj)
+{
+    update_pair_facing(obj, 1, 1);
+    obj_shift_state_slots(obj->subs[0]);
+    advance_anim_frame(obj, obj->subs[0], 0, 0);
+}
+
+/* Steps the state slots and the animation of A (bit 0) and/or B (bit 1). */
+static inline void pair_shift_advance(struct PairObj *obj, u32 which)
+{
+    if ((which & 1) != 0)
+    {
+        obj_shift_state_slots(obj->subs[0]);
+        advance_anim_frame(obj, obj->subs[0], 0, 0);
+    }
+    if ((which & 2) != 0)
+    {
+        obj_shift_state_slots(obj->subs[1]);
+        advance_anim_frame(obj, obj->subs[1], (((u32)obj->flags208 << 27) >> 31), 0);
+    }
 }
 
 NONMATCH("asm/code_08039A14/sub_08039A14.s", void sub_08039A14(struct PairObj *obj))
@@ -215,63 +238,58 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08039A14/pair_b_state_90_9f_step.s", void pair_b_state_90_9f_step(void))
 
-NONMATCH("asm/code_08039A14/init_sub_pair.s", void init_sub_pair(struct PairObj *obj))
+/* Starts the pair's state 0x61 (bro 0 leads) or 0x4D (bro 1 leads) for both bros: steps A's
+   animation, marks both parts busy, attaches B's aux sprite, copies B's low cell bits to A, then
+   gives B its animation id and plays the leading bro's sound (0x157 or 0x87). */
+void init_sub_pair(struct PairObj *obj)
 {
-    s32 bit3 = 0x08;
-    struct PairPart *a;
-    struct PairPart *b;
-    s32 anim;
-    s32 v;
-    s32 id;
-    s32 slot;
+    struct PairPart **partA;
+    struct PairPart **partB;
 
     update_pair_facing(obj, 1, 1);
-    obj_shift_state_slots(obj->subs[0]);
-    advance_anim_frame(obj, obj->subs[0], 0, 0);
+    pair_shift_advance(obj, 1);
 
-    a = obj->subs[0];
-    if (a->group54 == 0) {
-        b = obj->subs[1];
-        anim = 0x61;
-    } else {
-        b = obj->subs[1];
-        anim = 0x4D;
+    if (obj->subs[0]->broIndex == 0)
+    {
+        struct PairPart *b = obj->subs[1];
+        obj->subs[0]->state4 = 0x61;
+        b->state4 = 0x61;
     }
-    a->state4 = anim;
-    b->state4 = anim;
-
-    obj->subs[0]->flags351 |= 0x40;
-    obj->subs[1]->flags351 |= 0x40;
-    obj->subs[0]->flags358 |= 0x08;
-    obj->subs[1]->flags358 |= 0x08;
-    obj->subs[1]->flags20D |= 0x20;
-    obj->subs[1]->flags35A |= 0x02;
-    obj_setup_aux_sprite(obj->subs[1], 2);
-
-    obj->field26E = 0;
-    obj->flags20B |= 0x80;
-    obj->flags20A |= bit3;
-
-    ((struct Lo3Bits *)&obj->subs[0]->cell24)->lo3 = ((struct Lo3Bits *)&obj->subs[1]->cell24)->lo3;
-
-    v = obj->subs[1]->state214;
-    v &= -8;
-    v |= 4;
-    obj->subs[1]->state214 = v;
-
-    id = 0x1026;
-    if (obj->subs[0]->group54 == 0) {
-        id += 0x1A;
+    else
+    {
+        struct PairPart *b = obj->subs[1];
+        obj->subs[0]->state4 = 0x4D;
+        b->state4 = 0x4D;
     }
-    obj_set_id(obj->subs[1], id);
 
-    slot = 0x87;
-    if (obj->subs[1]->group54 == 0) {
-        slot += 0xD0;
+    partB = &obj->subs[1];
+    {
+        struct PairPart *b = *partB;
+        partA = &obj->subs[0];
+        (*partA)->flags351 |= 0x40;
+        b->flags351 |= 0x40;
     }
-    set_slot_value(slot, -1);
+    {
+        struct PairPart *b = *partB;
+        (*partA)->flags358 |= 0x08;
+        b->flags358 |= 0x08;
+    }
+    ((struct Bits8 *)&(*partB)->flags20D)->b5 = 1;
+    ((struct Bits8 *)&(*partB)->flags35A)->b1 = 1;
+    obj_setup_aux_sprite(*partB, 2);
+    {
+        register u16 zero asm("r0") = 0;
+        obj->field26E = zero;
+    }
+    ((struct Bits8 *)&obj->flags20B)->b7 = 1;
+    ((struct Bits8 *)&obj->flags20A)->b3 = 1;
+
+    ((struct Lo3Bits *)&(*partA)->cell24)->lo3 = ((u32)(*partB)->cell24 << 29) >> 29;
+    ((struct Lo3Bits *)&(*partB)->state214)->lo3 = 4;
+
+    obj_set_id(*partB, (*partA)->broIndex == 0 ? 0x1040 : 0x1026);
+    set_slot_value((*partB)->broIndex == 0 ? 0x157 : 0x87, -1); /* plays a sound */
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08039A14/pair_b_state_4d_64_step.s", void pair_b_state_4d_64_step(void))
 

@@ -140,6 +140,15 @@ struct World
     void *trackedObj;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroBody.flags bit step_motion sets when the body has reached its motion target. */
+#define HERO_FLAG_MOTION_DONE 0x20
+
+/* HeroBody.timer bits 0-11 count how often the current move has repeated; the upper bits are flags. */
+#define HERO_TIMER_COUNT_MASK 0xFFF
+
 extern struct World *gWorld;
 extern struct KeyState gSys;
 
@@ -171,78 +180,87 @@ void hero_pair_link_fx(struct HeroBody *body);
 void hero_pair_settle_b(struct HeroBody *body);
 void hero_pair_confirm_85ec(struct HeroBody *body);
 
+/* Once hero B's sprite has flag 8 set, each active hero jumps back to its home position
+   (an arc 0x28 above it, duration 0x7CC) and starts action 4; sound 0x2B plays in between.
+   (song_play_at_volume would fit set_slot_value: it queues a song and sets player 0's volume.) */
 void hero_pair_settle(void)
 {
-    struct HeroBody *a = &gWorld->heroA->body;
-    struct HeroBody *b = &gWorld->heroB->body;
+    struct HeroBody *hero_a = &gWorld->heroA->body;
+    struct HeroBody *hero_b = &gWorld->heroB->body;
 
-    if ((b->sprite->flags & 8) != 0)
+    if ((hero_b->sprite->flags & 8) != 0)
     {
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->mode))
         {
-            place_targets(a, a->data->targetX / 0x100, a->data->targetY / 0x100,
-                          a->data->targetH / 0x100, -1);
-            a->height = a->targetZ / 0x100 + 0x28;
-            set_motion_offsets(a, 0x7CC);
+            place_targets(hero_a, hero_a->data->targetX / 0x100, hero_a->data->targetY / 0x100,
+                          hero_a->data->targetH / 0x100, -1);
+            hero_a->height = hero_a->targetZ / 0x100 + 0x28;
+            set_motion_offsets(hero_a, 0x7CC);
         }
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->mode))
         {
-            a->state = 0;
-            start_action_4(a);
+            hero_a->state = 0;
+            start_action_4(hero_a);
         }
         set_slot_value(0x2B, -1);
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_b->mode))
         {
-            place_targets(b, b->data->targetX / 0x100, b->data->targetY / 0x100,
-                          b->data->targetH / 0x100, -1);
-            b->height = b->targetZ / 0x100 + 0x28;
-            set_motion_offsets(b, 0x7CC);
+            place_targets(hero_b, hero_b->data->targetX / 0x100, hero_b->data->targetY / 0x100,
+                          hero_b->data->targetH / 0x100, -1);
+            hero_b->height = hero_b->targetZ / 0x100 + 0x28;
+            set_motion_offsets(hero_b, 0x7CC);
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_b->mode))
         {
-            b->state = 0;
-            start_action_4(b);
+            hero_b->state = 0;
+            start_action_4(hero_b);
         }
     }
 }
 
+/* Starts hero A's move onto hero B: sets the top two bits of gWorld->modeByte, plays sound
+   0x2B and, if A is active, sends it to B's position plus B's offset (A's height offset
+   unk47 taken off) and starts its action 5 (0x2000, or 0x204D if A has a pose). Next state:
+   hero_a_join_b. */
 void hero_a_place_at_b(struct HeroBody *body)
 {
-    struct HeroBody *a;
-    struct HeroBody *b;
-    s32 neg;
+    struct HeroBody *hero_a;
+    struct HeroBody *hero_b;
+    s32 ofsZ;
     u8 mode;
 
     mode = gWorld->modeByte;
     gWorld->modeByte = mode | 0xC0;
-    a = &gWorld->heroA->body;
-    b = &gWorld->heroB->body;
-    find_frame_entry(a, 0);
+    hero_a = &gWorld->heroA->body;
+    hero_b = &gWorld->heroB->body;
+    find_frame_entry(hero_a, 0);
     set_slot_value(0x2B, -1);
-    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(hero_a->mode))
     {
-        neg = -a->unk47;
-        place_targets(a,
-                      (b->targetX / 0x100) + b->ofsX,
-                      (b->targetY / 0x100) + b->ofsY,
-                      (b->targetZ / 0x100) + neg, -1);
-        set_motion_start(a, 0x300);
+        ofsZ = -hero_a->unk47;
+        place_targets(hero_a,
+                      (hero_b->targetX / 0x100) + hero_b->ofsX,
+                      (hero_b->targetY / 0x100) + hero_b->ofsY,
+                      (hero_b->targetZ / 0x100) + ofsZ, -1);
+        set_motion_start(hero_a, 0x300);
     }
-    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(hero_a->mode))
     {
-        if (a->data->poseIndex == -1)
+        if (hero_a->data->poseIndex == -1)
         {
-            sprite_set_action(a, 5, 0x2000, 0);
+            sprite_set_action(hero_a, 5, 0x2000, 0);
         }
         else
         {
-            sprite_set_action(a, 5, 0x204D, 0);
+            sprite_set_action(hero_a, 5, 0x204D, 0);
         }
-        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
+        ((struct HeroSpriteBits *)&hero_a->sprite->flags)->mode = 1;
     }
     body->state = hero_a_join_b;
 }
 
+/* Hero A moves onto hero B; once it arrives, both switch to their next action,
+   B is sent towards its target, A takes B's position and the landing effect spawns. */
 void hero_a_join_b(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -253,19 +271,19 @@ void hero_a_join_b(struct HeroBody *body)
     s32 z;
 
     step_motion(a);
-    if ((hero_a->body.flags & 0x20) != 0)
+    if ((hero_a->body.flags & HERO_FLAG_MOTION_DONE) != 0)
     {
-        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->body.mode))
         {
             sprite_set_action(a, 2, 0x2031, 0);
             ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(b->mode))
         {
             sprite_set_action(b, 2, 0x2060, 0);
             ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 1;
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(b->mode))
         {
             place_targets(b,
                           (b->targetX / 0x100) + b->ofsX + 0x10,
@@ -281,7 +299,7 @@ void hero_a_join_b(struct HeroBody *body)
         z = b->posZ;
         a->posZ = z;
         effect_spawn_at(0x2F7D, x / 0x100, y / 0x100, z / 0x100, a);
-        b->timer &= 0xFFF;
+        b->timer &= HERO_TIMER_COUNT_MASK;
         body->state = hero_b_step_frames_7954;
     }
 }

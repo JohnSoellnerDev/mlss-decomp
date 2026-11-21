@@ -53,6 +53,26 @@ struct Bit6Byte
     u8 rest : 1;
 };
 
+struct Flags8
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct SubBits11
+{
+    u8 filler0[0x11];
+    u8 lo6 : 6;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
 typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
 void obj_reinit(void *list, u16 id, u32 flag, u8 b, s32 x, s32 y, s32 z, s32 zero, s32 w, s32 v, ByteArg f);
 
@@ -161,6 +181,23 @@ void set_flag_a0_2(void *a, void *b, u8 *p, u32 c);
 void *tile_ptr_at(void *table, s32 x, s32 y);
 void obj_set_or_add_pos(void *obj, s32 a, s32 b, s32 c, u32 d, u32 e);
 void camera_track_entity(void *list, u32 field, u32 zero);
+
+#define SCENE_CAMERA_FLAGS 0xF8  /* u8: bit 6 (SCENE_CAMERA_FOLLOW) makes the camera follow an entity */
+#define SCENE_CAMERA_FOLLOW 0x40
+#define SCENE_CAMERA_TARGET 0xFA /* u16: bits 5-9 are the index of the entity the camera follows */
+#define ENTITY_LIST_INDEX 0x54   /* u8: the entity's index in its owner's list */
+
+/* Arguments of place_object_scaled's script command. */
+struct PlaceArgs
+{
+    s32 inTiles;   /* nonzero: x/y/z are in 16-pixel tiles; low 4 bits clear: on the tile's centre */
+    s32 x;
+    s32 y;
+    s32 z;
+    s32 unk10;
+    s32 warp;      /* obj_set_or_add_pos's copy flag: the position becomes the object's base too */
+    s32 relative;  /* add to the object's position instead of setting it */
+};
 void swap_sub_pair(struct ObjList *list, s32 a);
 void start_sub_pair_step(struct ObjList *list, s32 a);
 void set_208_bit1_copy_100(struct ObjList *list);
@@ -333,7 +370,47 @@ u32 clear_effect_bit_54a(void *unused0, void *unused1, void *unused2, u32 *block
     return 1;
 }
 
-ASM_FUNC("asm/code_080F0C04/setup_effect_record.s", void setup_effect_record(void))
+u32 setup_effect_record(struct OwnerObj *owner, void *unused, s32 *args)
+{
+    register struct OwnerObj *self asm("r5") = owner;
+    register s32 *block asm("r3") = args;
+    register u8 **state asm("r2") = &gEffectState;
+    register s32 offset asm("r0") = *block++ * 44 + 800;
+    register u8 *baseState asm("r1") = *state;
+    register u8 *rec asm("r4") = baseState + offset;
+    u32 flags = *block++;
+    register u32 one asm("r2") = 1;
+    u8 *slot = rec + ((flags & one) * 16 + 12);
+
+    if (flags & 2)
+    {
+        register u8 *base asm("r0") = (u8 *)self->list;
+        register u32 limitOffset asm("r5") = 0x10B;
+        register u8 *limit asm("r1") = base + limitOffset;
+        register s32 id asm("r0") = *block;
+        if (id >= *limit)
+        {
+            register u32 bits asm("r2");
+            register u32 old asm("r1");
+            register u32 value asm("r0");
+            id &= one;
+            bits = id << 1;
+            old = rec[11];
+            value = -3;
+            value &= old;
+            value |= bits;
+            rec[11] = value;
+            id = 255;
+        }
+        slot[12] = id;
+    }
+    else
+    {
+        s32 index = *block;
+        *(void **)rec = ((struct ObjList *)((u8 *)self->list + index * 4))->entries[0];
+    }
+    return 1;
+}
 
 u32 set_var_from_halfwords(struct OwnerObj *owner, u8 *dst, s16 *args, u32 value)
 {
@@ -758,9 +835,79 @@ u32 start_move_to_target(struct OwnerObj *owner, u8 *obj, s32 *block)
     return 0;
 }
 
-ASM_FUNC("asm/code_080F0C04/write_packed_entry.s", void write_packed_entry(void))
+static inline u16 packed_top_bits(s32 b)
+{
+    return (b << 6) | 0xE000;
+}
 
-ASM_FUNC("asm/code_080F0C04/start_move_params.s", void start_move_params(void))
+static inline u16 packed_mid_bits(s32 a)
+{
+    return a << 8;
+}
+
+u32 write_packed_entry(struct OwnerObj *owner, void *unused, s32 *args)
+{
+    s32 a;
+    s32 b;
+    u8 *entry;
+
+    a = args[1];
+    if (a & 0x40)
+    {
+        a &= 0x3F;
+        a = (u32)a >> 2;
+    }
+    else
+    {
+        a = (a > 1) ? 3 : 0;
+    }
+    b = args[2];
+    if (b & 0x40)
+    {
+        b &= 0x3F;
+        b = (u32)b >> 2;
+    }
+    else
+    {
+        b = (b > 1) ? 3 : 0;
+    }
+    entry = *(u8 **)((u8 *)owner->list + 0xD4);
+    *(u16 *)(entry + 12) = (packed_mid_bits(a) | packed_top_bits(b)) | (args[0] << 3) | args[0];
+    return 0;
+}
+
+u32 start_move_params(struct OwnerObj *owner, u8 *rec, s32 *args)
+{
+    register s32 *block asm("r5") = args;
+    register s32 flags asm("r3");
+    register s32 bits asm("r0");
+    register u32 mode asm("r1");
+    if (block[0] != 0)
+    {
+        block[2] <<= 4;
+        block[3] <<= 4;
+    }
+    bits = block[1];
+    mode = (bits >> 1) & 3;
+    flags = bits;
+    if (mode == 1)
+    {
+        u32 z = block[4];
+        u32 value;
+        if (z & 0x40)
+            value = (z & 0xF) << 4;
+        else
+            value = z << 8;
+        block[4] = value;
+    }
+    sprites_obj_set_move_target(owner->list, (flags >> 1) & 3, flags & 1,
+        block[2], block[3], ((s16 *)block)[8]);
+    {
+        struct { u8 pad[0xA0]; u16 flags; } *fo = (void *)rec;
+        fo->flags |= 0x100;
+    }
+    return 0;
+}
 
 u32 reinit_object_block(struct OwnerObj *owner, void *unused, struct ReinitBlock *rec)
 {
@@ -790,38 +937,32 @@ u32 reinit_object_block_scaled(struct OwnerObj *owner, void *unused, struct Rein
 }
 
 
-NONMATCH("asm/code_080F0C04/store_param_block.s", u32 store_param_block(void *unused0, u8 *obj, void *unused2, u32 *block))
+u32 store_param_block(void *unused0, u8 *obj, void *unused2, u32 *block)
 {
-    s32 mode;
-    s32 v;
     if (*block++ != 0)
         obj = *(u8 **)(obj + 0x344);
-    mode = block[0];
-    if ((mode & 1) != 0)
+    if ((*block & 1) != 0)
     {
         block[1] <<= 4;
         block[2] <<= 4;
         block[3] <<= 4;
     }
-    v = mode;
-    block++;
-    if (v >= 0)
+    switch ((s32)*block++)
     {
-        if (v <= 1)
-        {
-            *(u32 *)(obj + 0x2BC) = *block++;
-            *(u32 *)(obj + 0x2C0) = *block++;
-            *(u32 *)(obj + 0x2C8) = *block;
-        }
-        else if (v <= 3)
-        {
-            *(u32 *)(obj + 0x2CC) = *block++;
-            *(u32 *)(obj + 0x2D0) = *block;
-        }
+    case 0:
+    case 1:
+        *(u32 *)(obj + 0x2BC) = *block++;
+        *(u32 *)(obj + 0x2C0) = *block++;
+        *(u32 *)(obj + 0x2C8) = *block;
+        break;
+    case 2:
+    case 3:
+        *(u32 *)(obj + 0x2CC) = *block++;
+        *(u32 *)(obj + 0x2D0) = *block;
+        break;
     }
     return 1;
 }
-END_NONMATCH
 
 void sprites_obj_set_move_target(void *list, u32 type, u32 one, s32 x, s32 y, s32 z);
 struct ScaledPair
@@ -831,27 +972,26 @@ struct ScaledPair
     u16 unk32;
 };
 
-NONMATCH("asm/code_080F0C04/store_scaled_pair.s", u32 store_scaled_pair(void *unused0, u8 *obj, void *unused2, u32 *block))
+u32 store_scaled_pair(void *unused0, u8 *obj, void *unused2, u32 *block)
 {
-    u32 flags;
-    u8 *base;
+    register u32 flags asm("r1") = block[0];
     u32 scale;
+    register u32 mult asm("r1");
     struct ScaledPair *rec;
 
-    flags = block[0];
-    base = obj;
     if ((flags & 2) != 0)
-        base = *(u8 **)(base + 0x344);
-    block++;
+        obj = *(u8 **)(obj + 0x344);
     scale = 1;
-    if ((flags & 1) != 0)
+    flags &= 1;
+    block++;
+    if (flags != 0)
         scale = 0x10;
-    rec = (struct ScaledPair *)(base + 0x100);
-    rec->unk30 = *block++ * scale;
-    rec->unk32 = *block * scale;
+    rec = (struct ScaledPair *)(obj + 0x100);
+    mult = scale;
+    rec->unk30 = *block++ * mult;
+    rec->unk32 = *block * mult;
     return 1;
 }
-END_NONMATCH
 
 NONMATCH("asm/code_080F0C04/obj_flags_command.s", u32 obj_flags_command(void *unused0, void *obj, u32 *dst, s32 *block))
 {
@@ -1153,112 +1293,76 @@ u32 obj_request_halfword(void *unused0, void *obj, void *unused2, u16 *block)
     return 1;
 }
 
-NONMATCH("asm/code_080F0C04/obj_state_entry.s", u32 obj_state_entry(struct OwnerObj *owner, void *unused, u32 *block))
+u32 obj_state_entry(struct OwnerObj *owner, void *unused, u32 *block)
 {
     struct Entity *obj;
-    u8 *addr;
-    s32 mask;
     obj = ((struct Entity **)((u8 *)owner->list + 0x28))[block[0]];
     obj_set_state(obj, 1);
     obj_sync_sub_slot(obj, block[3]);
     obj_set_cell_coord(obj, block[1], 0);
     if (block[3] != 0)
-    {
-        addr = &obj->unk215;
-        mask = -2;
-    }
+        ((struct Flags8 *)&obj->unk215)->bit0 = 0;
     else
+        ((struct Flags8 *)&obj->unk214)->bit7 = 0;
     {
-        addr = &obj->unk214;
-        mask = 0x7F;
+        struct { u8 pad[0xF8]; u16 flags; } *fo = (void *)obj;
+        fo->flags |= 0x200;
     }
-    *addr = mask & *addr;
-    *(u16 *)((u8 *)obj + 0xF8) |= 0x200;
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, (u8 *)obj + 0x58, obj->sub294, (u8)block[3], (u8)block[2]);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F0C04/obj_state_direct.s", u32 obj_state_direct(struct OwnerObj *owner, struct Entity *obj, u8 *dst, s32 *block))
+u32 obj_state_direct(struct OwnerObj *owner, struct Entity *obj, u8 *dst, s32 *block)
 {
-    u8 *flags;
-    s32 mask;
     obj_set_state(obj, 1);
     obj_sync_sub_slot(obj, block[2]);
     obj_set_cell_coord(obj, block[0], 0);
     if (block[2] != 0)
-    {
-        flags = (u8 *)obj + 0x215;
-        mask = -2;
-    }
+        ((struct Flags8 *)&obj->unk215)->bit0 = 0;
     else
-    {
-        flags = (u8 *)obj + 0x214;
-        mask = 0x7F;
-    }
-    *flags = mask & *flags;
+        ((struct Flags8 *)&obj->unk214)->bit7 = 0;
     {
         struct { u8 pad[0xA0]; u16 flags; } *fo = (void *)dst;
         fo->flags |= 0x200;
     }
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, obj->sub294, (u8)block[2], (u8)block[1]);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F0C04/obj_reset_command.s", u32 obj_reset_command(struct OwnerObj *owner, u32 unused, u32 *block))
+u32 obj_reset_command(struct OwnerObj *owner, u32 unused, u32 *block)
 {
-    u8 *obj;
-    struct SpriteHdr *sub;
-
+    struct Entity *obj;
     u32 index = block[0];
     u32 list = (u32)owner->list;
     u32 base = index * 4 + list;
-    obj = *(u8 **)(base + 0x28);
+    obj = *(struct Entity **)(base + 0x28);
     obj_set_state(obj, 0);
     obj_sync_sub_slot(obj, 0);
     obj_set_cell_coord(obj, block[1], block[2]);
-    obj[0x214] &= 0x7F;
-    sub = *(struct SpriteHdr **)(obj + 0x294);
+    ((struct Flags8 *)&obj->unk214)->bit7 = 0;
+    ((struct SpriteBits12 *)&obj->sub294->unk12)->field1 = 0;
     {
-        s32 mask = -7;
-        sub->unk12 &= mask;
-    }
-    sub = *(struct SpriteHdr **)(obj + 0x294);
-    {
-        u32 bit = ((u32)sub->unk11 << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ block[3];
+        u32 bit = ((struct SubBits11 *)obj->sub294)->bit6;
+        bit ^= block[3];
+        ((struct SubBits11 *)obj->sub294)->bit6 = bit;
     }
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F0C04/obj_state_entry_plain.s", u32 obj_state_entry_plain(struct OwnerObj *owner, void *unused, u32 *block))
+u32 obj_state_entry_plain(struct OwnerObj *owner, void *unused, u32 *block)
 {
-    u8 *flags;
-    u32 byte;
-    s32 mask;
-    struct Entity *obj = *(struct Entity **)((u8 *)owner->list + (block[0] << 2) + 0x28);
+    struct Entity *obj;
+    obj = ((struct Entity **)((u8 *)owner->list + 0x28))[block[0]];
     obj_set_state(obj, 1);
     obj_sync_sub_slot(obj, block[3]);
     obj_set_cell_coord(obj, block[1], 0);
     if (block[3] != 0)
-    {
-        flags = (u8 *)obj + 0x215;
-        byte = *flags;
-        mask = -2;
-    }
+        ((struct Flags8 *)&obj->unk215)->bit0 = 0;
     else
-    {
-        flags = (u8 *)obj + 0x214;
-        byte = *flags;
-        mask = 0x7F;
-    }
-    *flags = mask & byte;
+        ((struct Flags8 *)&obj->unk214)->bit7 = 0;
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, (u8 *)obj + 0x58, obj->sub294, (u8)block[3], (u8)block[2]);
 }
-END_NONMATCH
 
 u8 flags_vars_set_obj_state(void *root, void *dst, void *obj, u32 state, u32 zero);
-NONMATCH("asm/code_080F0C04/obj_routine_entry.s", u32 obj_routine_entry(struct OwnerObj *owner, void *unused, s32 *block))
+u32 obj_routine_entry(struct OwnerObj *owner, void *unused, s32 *block)
 {
     u32 index = block[0];
     u32 list = (u32)owner->list;
@@ -1270,19 +1374,14 @@ NONMATCH("asm/code_080F0C04/obj_routine_entry.s", u32 obj_routine_entry(struct O
     m = (struct MethodEntry *)(obj->unk338 + 0x90);
     m->fn((u8 *)obj + m->offset, (u8)block[1]);
     obj_set_cell_coord(obj, block[2], block[3]);
+    ((struct SpriteBits12 *)&obj->sub294->unk12)->field1 = 0;
     {
-        struct SubObj *sub = obj->sub294;
-        s32 mask = -7;
-        sub->unk12 &= mask;
-        sub = obj->sub294;
-        {
-            u32 bit = ((u32)sub->unk11 << 25) >> 31;
-            ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ block[4];
-        }
+        u32 bit = ((struct SubBits11 *)obj->sub294)->bit6;
+        bit ^= block[4];
+        ((struct SubBits11 *)obj->sub294)->bit6 = bit;
     }
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_place_list_entry(struct OwnerObj *owner, void *unused, struct ListEntryArgs *args)
 {
@@ -1361,50 +1460,35 @@ u32 obj_sub_pair_command(struct OwnerObj *owner, void *unused, u32 *block)
     return 0;
 }
 
-NONMATCH("asm/code_080F0C04/obj_state_read_command.s", u32 obj_state_read_command(void *unused0, struct Entity *obj, void *unused2, u32 *block))
+u32 obj_state_read_command(void *unused0, struct Entity *obj, void *unused2, u32 *block)
 {
     obj_set_state(obj, 0);
     if (block[0] == 0xFF)
         block[0] = obj->sub294->unk21;
     obj_sync_sub_slot(obj, 0);
     obj_set_cell_coord(obj, block[0], block[1]);
-    obj->unk214 &= 0x7F;
+    ((struct Flags8 *)&obj->unk214)->bit7 = 0;
     {
-        struct SubObj *sub = obj->sub294;
-        u8 byte = sub->unk11;
-        u32 bit = ((u32)byte << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = bit ^ block[2];
+        u32 bit = ((struct SubBits11 *)obj->sub294)->bit6;
+        bit ^= block[2];
+        ((struct SubBits11 *)obj->sub294)->bit6 = bit;
     }
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F0C04/cmd_set_obj_state.s", u32 cmd_set_obj_state(struct OwnerObj *owner, struct Entity *obj, u8 *dst, u32 *args))
+u32 cmd_set_obj_state(struct OwnerObj *owner, struct Entity *obj, u8 *dst, u32 *args)
 {
-    u8 *flags;
-    u8 byte;
-    s32 mask;
     obj_set_state(obj, 1);
     obj_sync_sub_slot(obj, args[2]);
     obj_set_cell_coord(obj, args[0], 0);
     if (args[2] != 0)
-    {
-        flags = (u8 *)obj + 0x215;
-        mask = -2;
-        byte = *flags;
-    }
+        ((struct Flags8 *)&obj->unk215)->bit0 = 0;
     else
-    {
-        flags = (u8 *)obj + 0x214;
-        mask = 0x7F;
-        byte = *flags;
-    }
-    *flags = mask & byte;
+        ((struct Flags8 *)&obj->unk214)->bit7 = 0;
     return (u8)flags_vars_set_obj_state((u8 *)owner + 0x1C, dst, obj->sub294, (u8)args[2], (u8)args[1]);
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F0C04/cmd_place_object_toggle.s", u32 cmd_place_object_toggle(void *unused0, struct Entity *obj, void *unused2, u32 *cmd))
+u32 cmd_place_object_toggle(void *unused0, struct Entity *obj, void *unused2, u32 *cmd)
 {
     struct MethodEntry *m;
     obj_set_state(obj, 0);
@@ -1413,13 +1497,12 @@ NONMATCH("asm/code_080F0C04/cmd_place_object_toggle.s", u32 cmd_place_object_tog
     m->fn((u8 *)obj + m->offset, *(u8 *)cmd);
     obj_set_cell_coord(obj, cmd[1], cmd[2]);
     {
-        struct SubObj *sub = obj->sub294;
-        u32 bit = ((u32)sub->unk11 << 25) >> 31;
-        ((struct Bit6Byte *)&sub->unk11)->bit6 = cmd[3] ^ bit;
+        u32 bit = ((struct SubBits11 *)obj->sub294)->bit6;
+        bit ^= cmd[3];
+        ((struct SubBits11 *)obj->sub294)->bit6 = bit;
     }
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_set_obj_state_b(u8 *owner, u8 *obj, u32 *dst, u32 *args)
 {
@@ -1455,33 +1538,33 @@ u32 cmd_commit_or_activate(void *unused0, void *obj, void *unused2, u32 *kind)
     return 1;
 }
 
-NONMATCH("asm/code_080F0C04/cmd_toggle_flag.s", u32 cmd_toggle_flag(struct OwnerObj *owner, struct Entity *obj, void *unused, u32 *block))
+u32 cmd_toggle_flag(struct OwnerObj *owner, struct Entity *obj, void *unused, volatile u32 *block)
 {
-    u32 index = block[0];
-    struct Bit6Byte *bits;
-    u8 byte;
+    u32 index = *block;
     if (index != 0x3F)
         obj = ((struct Entity **)((u8 *)owner->list + 0x28))[index];
-    block++;
-    bits = (struct Bit6Byte *)&obj->sub294->unk11;
-    byte = bits->bit6;
-    bits->bit6 = byte ^ block[0];
+    ++block;
+    {
+        u32 bit = ((struct SubBits11 *)obj->sub294)->bit6;
+        bit ^= *block;
+        ((struct SubBits11 *)obj->sub294)->bit6 = bit;
+    }
     return 1;
 }
-END_NONMATCH
 
 void entity_camera_offset(void *list, u32 mode, s32 *x, s32 *y);
 void object_setup_wipe(void *list, u32 mode, u32 a, s32 x, s32 y);
-NONMATCH("asm/code_080F0C04/cmd_set_sprite_slot.s", u32 cmd_set_sprite_slot(struct OwnerObj *owner, void *obj, void *unused, u32 *block))
+u32 cmd_set_sprite_slot(struct OwnerObj *owner, void *obj, void *unused, volatile u32 *block)
 {
-    u32 index = block[0];
+    register struct OwnerObj *self asm("r2") = owner;
+    register void *target asm("r4") = obj;
+    u32 index = *block;
     if (index != 0x3F)
-        obj = owner->list->entries[index];
-    block++;
-    obj_set_sprite_slot(obj, block[0]);
+        target = ((struct ObjList *)((u8 *)self->list + index * 4))->entries[0];
+    ++block;
+    obj_set_sprite_slot(target, *block);
     return 1;
 }
-END_NONMATCH
 
 void obj_clear_flags_2b5_30(void *obj);
 void obj_clear_flags_2b5_c0(void *obj);
@@ -1489,32 +1572,24 @@ void obj_clear_flags_2b6_30(void *obj);
 u8 obj_flags_2b5_30_set(void *obj);
 u8 obj_flags_2b5_c0_set(void *obj);
 u8 obj_flags_2b6_30_set(void *obj);
-NONMATCH("asm/code_080F0C04/cmd_set_obj_bit.s", u32 cmd_set_obj_bit(void *unused0, u8 *obj, void *unused2, u32 *block))
+u32 cmd_set_obj_bit(void *unused0, u8 *obj, void *unused2, u32 *block)
 {
-    u32 kind = *block++;
-    u8 *flags;
-    u32 old;
-    s32 mask;
-    u32 bits;
-    if (kind != 0)
+    if (*block++ != 0)
     {
-        bits = block[0] << 7;
-        flags = obj + 0x2B6;
-        old = *flags;
-        mask = 0x7F;
+        u32 value = *block;
+        struct Flags8 *flags = (struct Flags8 *)(obj + 0x2B6);
+
+        flags->bit7 = value;
     }
     else
     {
-        bits = block[0] & 1;
-        flags = obj + 0x2B6;
-        old = *flags;
-        mask = ~0x40;
-        bits <<= 6;
+        u32 value = *block;
+        struct Flags8 *flags = (struct Flags8 *)(obj + 0x2B6);
+
+        flags->bit6 = value;
     }
-    *flags = (mask & old) | bits;
     return 1;
 }
-END_NONMATCH
 
 u32 copy_word(void *unused, u32 *dst, u32 *src)
 {

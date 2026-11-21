@@ -265,6 +265,9 @@ void map_obj_action4_wait(struct ActorObj *obj)
     }
 }
 
+/* Once obj's animation has played out (pose flag 8): plays action 3 and sound 0x3A, and marks the
+ * target position of the owner's part with effect 0xDCE when obj's dy is 0 (the fast shot of
+ * map_obj_spawn_child), else 0xE1F (the slow one). Goes on to map_obj_spawn_child. */
 void map_obj_place_owner_sprite(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
@@ -285,50 +288,63 @@ void map_obj_place_owner_sprite(struct ActorObj *obj)
     }
 }
 
+/* Once obj's animation has played out (pose flag 8): plays action 4 with effect 0xE64 at obj's base
+ * point and launches a child (0x4132, kind 2, facing like obj) left of it. The child flies along
+ * the line from 0x20 px left of obj's base point (paramA4/A8) towards the target position of the
+ * owner's part, fast (obj_drift_fast) when obj's dy is 0, else slow (obj_drift_slow), and settles
+ * on contact (obj_query_part_settle). Sound 0x85 plays and obj goes on in
+ * obj_pose_active_action5_then_spawn. */
 void map_obj_spawn_child(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *shot;
 
     if (obj->pose->flags & 8)
     {
         sprite_set_action(obj, 4, 0, 0);
         effect_spawn_at(0xE64, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        child = obj_spawn(obj->part, 0x4132, obj->baseX / 0x100 - 0x20, obj->baseY / 0x100 + 2,
-                          obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-        obj->child = child;
-        obj_child_flags(obj, child, 0x40);
-        child->handler68 = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->handler5C = (s32 (*)(struct ActorObj *))obj_query_part_settle;
-        child->handler60 = (s32 (*)(struct ActorObj *))obj_query_part_settle;
-        child->byte74 = obj->byte74;
-        child->timer = 0;
-        child->param9C = obj->param9C;
-        child->paramA0 = obj->paramA0;
-        child->paramA4 = obj->baseX - 0x2000;
-        child->paramA8 = obj->baseY;
-        child->targetX = obj->owner->part->targetX;
-        child->targetY = obj->owner->part->targetY;
+        // PoseBits6.bit6: the pose is mirrored
+        shot = obj_spawn(obj->part, 0x4132, obj->baseX / 0x100 - 0x20, obj->baseY / 0x100 + 2,
+                         obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = shot;
+        obj_child_flags(obj, shot, 0x40);
+        shot->handler68 = on_arrive;
+        shot->link = obj->link;
+        shot->owner = obj->owner;
+        obj_list_push_default(shot);
+        shot->handler5C = (s32 (*)(struct ActorObj *))obj_query_part_settle;
+        shot->handler60 = (s32 (*)(struct ActorObj *))obj_query_part_settle;
+        shot->byte74 = obj->byte74;
+        shot->timer = 0;
+        shot->param9C = obj->param9C;
+        shot->paramA0 = obj->paramA0;
+        // the flight line: from (paramA4, paramA8) to (targetX, targetY)
+        shot->paramA4 = obj->baseX - 0x2000;
+        shot->paramA8 = obj->baseY;
+        shot->targetX = obj->owner->part->targetX;
+        shot->targetY = obj->owner->part->targetY;
         if (obj->dy == 0)
         {
-            child->state = obj_drift_fast;
-            child->dx = 0x40;
+            shot->state = obj_drift_fast;
+            shot->dx = 0x40;
         }
         else
         {
-            child->state = obj_drift_slow;
-            child->dx = 2;
+            shot->state = obj_drift_slow;
+            shot->dx = 2;
         }
         set_slot_value(0x85, -1);
         obj->state = obj_pose_active_action5_then_spawn;
     }
 }
 
+/* Once obj's animation has played out (pose flag 8): obj starts a charge. It plays action 6, joins the
+ * active list with obj_query_part_start_motion as its contact handlers (on a hit it flies back to
+ * (param9C, paramA0)) and spawns sprite 0x4131 at its base point, facing like obj. That sprite gets
+ * obj's flags bits 5-6, link, owner and byte74, and is released once the part's valueBA is 0
+ * (obj_part_ba_zero_finish). Sound 0x86 plays and obj slides left in obj_slide_step_then_wrap. */
 void pose_steps_obj_pose_active_spawn_child(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *effect;
 
     if (obj->pose->flags & 8)
     {
@@ -338,25 +354,30 @@ void pose_steps_obj_pose_active_spawn_child(struct ActorObj *obj)
         obj->handler5C = (s32 (*)(struct ActorObj *))obj_query_part_start_motion;
         obj->handler60 = (s32 (*)(struct ActorObj *))obj_query_part_start_motion;
         ((struct ObjFlags77 *)obj)->bit5 = 1;
-        child = obj_spawn(obj->part, 0x4131, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100,
-                          ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-        ((struct Flags79Bit0 *)&child->flags)->bit0 = 1;
-        copy_flags77_bits(obj, child);
-        child->handler68 = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        child->byte74 = obj->byte74;
-        child->state = obj_part_ba_zero_finish;
-        obj->timer = 0;
-        set_slot_value(0x86, -1);
+        // PoseBits6.bit6: the pose is mirrored
+        effect = obj_spawn(obj->part, 0x4131, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100,
+                           ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        ((struct Flags79Bit0 *)&effect->flags)->bit0 = 1;
+        copy_flags77_bits(obj, effect);
+        effect->handler68 = on_arrive;
+        effect->link = obj->link;
+        effect->owner = obj->owner;
+        effect->byte74 = obj->byte74;
+        effect->state = obj_part_ba_zero_finish;
+        obj->timer = 0; /* counts frames between the trail effects of the slide */
+        set_slot_value(0x86, -1); /* plays sound 0x86 */
         obj->state = obj_slide_step_then_wrap;
     }
 }
 
+/* The charge started by pose_steps_obj_pose_active_spawn_child: obj slides left, speeding up by
+ * 0x10 (dy set) or 0x13 a frame, along the line from (param9C, paramA0) toward (targetX, targetY),
+ * leaving trail effect 0xE72 every 8 frames. Once it is off the left edge it leaves the active list,
+ * reappears at the right (x = 272 px, y = paramA0) and slides back in obj_advance_x_until_param. */
 void obj_slide_step_then_wrap(struct ActorObj *obj)
 {
-    s32 dX = obj->param9C - obj->targetX;
-    s32 dY = obj->paramA0 - obj->targetY;
+    s32 lineDX = obj->param9C - obj->targetX;
+    s32 lineDY = obj->paramA0 - obj->targetY;
 
     if (obj->dy != 0)
     {
@@ -367,13 +388,13 @@ void obj_slide_step_then_wrap(struct ActorObj *obj)
         *(u16 *)&obj->dx += 0x13;
     }
     obj->posX -= obj->dx;
-    obj->posY = (obj->posX - obj->param9C) * dY / dX + obj->paramA0;
+    obj->posY = (obj->posX - obj->param9C) * lineDY / lineDX + obj->paramA0;
     {
-        s32 t = obj->timer;
+        s32 frames = obj->timer;
 
-        t++;
-        obj->timer = t;
-        if ((s16)t > 7)
+        frames++;
+        obj->timer = frames;
+        if ((s16)frames > 7)
         {
             obj->timer = 0;
             effect_spawn_at(0xE72, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
@@ -388,25 +409,29 @@ void obj_slide_step_then_wrap(struct ActorObj *obj)
     }
 }
 
+/* The fast shot launched by map_obj_spawn_child: it flies left, speeding up by 0xC a frame, along
+ * the line from (paramA4, paramA8) toward (targetX, targetY), leaving trail effect 0xE7A every 12
+ * frames. Once it is more than 0x20 px off the left edge of the screen it is released. */
 void obj_drift_fast(struct ActorObj *obj)
 {
     s32 screen[3];
-    s32 dX = obj->paramA4 - obj->targetX;
-    s32 dY = obj->paramA8 - obj->targetY;
+    s32 lineDX = obj->paramA4 - obj->targetX;
+    s32 lineDY = obj->paramA8 - obj->targetY;
 
     *(u16 *)&obj->dx += 0xC;
     obj->posX -= obj->dx;
-    obj->posY = (obj->posX - obj->paramA4) * dY / dX + obj->paramA8;
+    obj->posY = (obj->posX - obj->paramA4) * lineDY / lineDX + obj->paramA8;
+    /* position in pixels, made relative to the camera */
     screen[0] = obj->posX / 0x100;
     screen[1] = obj->posY / 0x100;
     screen[2] = obj->posH / 0x100;
     offset_three_words_camera(&screen[0], &screen[1], &screen[2], 0);
     {
-        s32 t = obj->timer;
+        s32 frames = obj->timer;
 
-        t++;
-        obj->timer = t;
-        if ((s16)t > 0xB)
+        frames++;
+        obj->timer = frames;
+        if ((s16)frames > 0xB)
         {
             obj->timer = 0;
             effect_spawn_at(0xE7A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
@@ -418,25 +443,30 @@ void obj_drift_fast(struct ActorObj *obj)
     }
 }
 
+/* The slow shot launched by map_obj_spawn_child: like obj_drift_fast, but it speeds up by only 4 a
+ * frame. It flies left along the line from (paramA4, paramA8) toward (targetX, targetY), leaving
+ * trail effect 0xE7A every 12 frames, and is released once it is more than 0x20 px off the left edge
+ * of the screen. */
 void obj_drift_slow(struct ActorObj *obj)
 {
     s32 screen[3];
-    s32 dX = obj->paramA4 - obj->targetX;
-    s32 dY = obj->paramA8 - obj->targetY;
+    s32 lineDX = obj->paramA4 - obj->targetX;
+    s32 lineDY = obj->paramA8 - obj->targetY;
 
     *(u16 *)&obj->dx += 4;
     obj->posX -= obj->dx;
-    obj->posY = (obj->posX - obj->paramA4) * dY / dX + obj->paramA8;
+    obj->posY = (obj->posX - obj->paramA4) * lineDY / lineDX + obj->paramA8;
+    /* position in pixels, made relative to the camera */
     screen[0] = obj->posX / 0x100;
     screen[1] = obj->posY / 0x100;
     screen[2] = obj->posH / 0x100;
     offset_three_words_camera(&screen[0], &screen[1], &screen[2], 0);
     {
-        s32 t = obj->timer;
+        s32 frames = obj->timer;
 
-        t++;
-        obj->timer = t;
-        if ((s16)t > 0xB)
+        frames++;
+        obj->timer = frames;
+        if ((s16)frames > 0xB)
         {
             obj->timer = 0;
             effect_spawn_at(0xE7A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);

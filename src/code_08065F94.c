@@ -69,12 +69,12 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
-    u16 timer;
-    s16 dx;
+    s32 param9C;  // arc moves (obj_lift_step_finish): height curve, < 0
+    s32 paramA0;  // arc length in frames
+    s32 paramA4;  // X distance to travel (8.8)
+    s32 paramA8;  // Y distance to travel (8.8)
+    u16 timer;    // frames into the arc
+    s16 dx;       // arc start, pixels
     s16 dy;
     s16 dh;
 };
@@ -169,18 +169,22 @@ void obj_stop(struct ActorObj *obj);
 void obj_lift_step_finish(struct ActorObj *obj);
 u32 obj_lookup_slot_or_finish(struct ActorObj *obj);
 
+/* Spawns object 0x40A4 just above this one and throws it in an arc to the owner's target X: the arc
+   lasts one frame per 2 pixels of distance and peaks 0x3000 (48 pixels) above its start. The child
+   shares the link and owner, and lands in obj_lift_step_finish. */
 void obj_spawn_linked_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
     struct ActorObj *walk;
-    s32 diff;
-    s32 t;
-    s32 q;
-    s32 half;
-    s32 speed;
+    s32 offsetX;
+    s32 rounded;
+    s32 frames;
+    s32 halfFrames;
+    s32 curve;
 
     child = obj_spawn(obj->part, 0x40A4, obj->baseX / 0x100, obj->baseY / 0x100 + 2,
                       obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+    /* walks to the end of the child list (the result is unused) */
     walk = obj->child;
     if (walk != NULL)
     {
@@ -199,22 +203,22 @@ void obj_spawn_linked_child(struct ActorObj *obj)
     child->targetX = obj->owner->part->targetX;
     child->dx = child->baseX / 0x100;
     child->dh = child->baseH / 0x100;
-    diff = ((s32)child->dx << 8) - child->targetX;
-    t = diff;
-    if (diff < 0)
+    offsetX = ((s32)child->dx << 8) - child->targetX;
+    rounded = offsetX;
+    if (offsetX < 0)
     {
-        t = diff + 0x1FF;
+        rounded = offsetX + 0x1FF;
     }
-    q = t >> 9;
-    half = (q + (s32)((u32)t >> 31)) >> 1;
-    speed = 0x3000 / (half * half);
-    if (speed == 1)
+    frames = rounded >> 9;
+    halfFrames = (frames + (s32)((u32)rounded >> 31)) >> 1;
+    curve = 0x3000 / (halfFrames * halfFrames);
+    if (curve == 1)
     {
-        speed = 2;
+        curve = 2;
     }
-    child->param9C = -speed;
-    child->paramA0 = q;
-    child->paramA4 = -diff;
+    child->param9C = -curve;
+    child->paramA0 = frames;
+    child->paramA4 = -offsetX;
     child->timer = 0;
     child->state = obj_lift_step_finish;
 }

@@ -152,12 +152,18 @@ ASM_FUNC("asm/code_080739F0/spawn_orbit_chain.s", void spawn_orbit_chain(void))
 
 ASM_FUNC("asm/code_080739F0/rotate_duo_step.s", void rotate_duo_step(void))
 
+/*
+ * State: once the pose has finished (flag 8), switch to action 5, spawn
+ * effect 0x22E8 at the part's target and build a linked chain of obj->scale
+ * orbiting children (type 0x414E) 10 pixels above the base, each one's
+ * phase spread evenly around the circle; then count 0x30 frames.
+ */
 void spawn_child_chain(struct ActorObj *obj)
 {
-    struct ActorObj *child;
-    struct ActorObj *made;
-    s32 *total;
-    s32 count;
+    struct ActorObj *link;
+    struct ActorObj *next;
+    s32 *chainLen;
+    s32 i;
 
     if (obj->pose->flags & 8) {
         sprite_set_action(obj, 5, 0, 0);
@@ -165,45 +171,49 @@ void spawn_child_chain(struct ActorObj *obj)
         set_slot_value(0xD5, -1);
         effect_spawn_at(0x22E8, obj->part->targetX / 0x100, obj->part->targetY / 0x100,
                         obj->part->targetH / 0x100, obj);
-        total = &obj->scale;
-        child = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
-                          obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        obj->child = child;
-        ((struct Flags78Bits *)&child->flags78)->kind = 1;
-        child->byte74 = obj->byte74;
-        child->owner = obj->owner;
-        ((struct ObjFlags77 *)child)->bit6 = 0;
-        ((struct ObjFlags77 *)child)->bit5 = 0;
-        child->callback68 = on_arrive;
-        child->copy6C = obj->copy6C;
-        child->scale = 0;
-        child->paramA4 = 0;
-        obj_list_push_default(child);
-        child->state = orbit_step_action1;
-        child->handler60 = lookup_then_finish;
-        child->targetX = obj->baseX;
-        child->targetY = obj->baseY - 0xA00;
-        for (count = 1; count < *total; count++) {
-            made = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
+        chainLen = &obj->scale;
+
+        /* first link: hangs off obj */
+        link = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
+                         obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = link;
+        ((struct Flags78Bits *)&link->flags78)->kind = 1;
+        link->byte74 = obj->byte74;
+        link->owner = obj->owner;
+        ((struct ObjFlags77 *)link)->bit6 = 0;
+        ((struct ObjFlags77 *)link)->bit5 = 0;
+        link->callback68 = on_arrive;
+        link->copy6C = obj->copy6C;
+        link->scale = 0;
+        link->paramA4 = 0;
+        obj_list_push_default(link);
+        link->state = orbit_step_action1;
+        link->handler60 = lookup_then_finish;
+        link->targetX = obj->baseX;
+        link->targetY = obj->baseY - 0xA00;
+
+        /* the rest: each hangs off the previous link */
+        for (i = 1; i < *chainLen; i++) {
+            next = obj_spawn(obj->part, 0x414E, obj->baseX / 0x100, obj->baseY / 0x100 - 0xA,
                              obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-            child->child = made;
-            child = made;
-            child->flags78 = (child->flags78 & 0x1F) | 0x20;
-            child->byte74 = obj->byte74;
-            child->owner = obj->owner;
-            ((struct ObjFlags77 *)child)->bit6 = 0;
-            ((struct ObjFlags77 *)child)->bit5 = 0;
-            child->callback68 = on_arrive;
-            child->copy6C = obj->copy6C;
-            child->scale = count;
-            child->paramA4 = ((count << 8) / *total) << 8;
-            obj_list_push_default(child);
-            child->state = orbit_step_action1;
-            child->handler60 = lookup_then_finish;
-            child->targetX = obj->baseX;
-            child->targetY = obj->baseY - 0xA00;
+            link->child = next;
+            link = next;
+            link->flags78 = (link->flags78 & 0x1F) | 0x20; /* kind = 1 */
+            link->byte74 = obj->byte74;
+            link->owner = obj->owner;
+            ((struct ObjFlags77 *)link)->bit6 = 0;
+            ((struct ObjFlags77 *)link)->bit5 = 0;
+            link->callback68 = on_arrive;
+            link->copy6C = obj->copy6C;
+            link->scale = i;
+            link->paramA4 = ((i << 8) / *chainLen) << 8;
+            obj_list_push_default(link);
+            link->state = orbit_step_action1;
+            link->handler60 = lookup_then_finish;
+            link->targetX = obj->baseX;
+            link->targetY = obj->baseY - 0xA00;
         }
-        child->child = 0;
+        link->child = 0;
         obj->paramA0 = 0;
         obj->count = 0x30;
         obj->state = count_frames_then_timer;
@@ -230,141 +240,159 @@ void wait_scene_objects_then_timer(struct ActorObj *obj)
     }
 }
 
+/*
+ * State of an orbiting chain link (spawn_child_chain): circles its centre (targetX/targetY) on a
+ * flattened ellipse, part->radiusB0 wide and a third of that high. paramA4 is the angle in 1/256
+ * steps of a 256-step turn; it goes on by one step a frame while part->countA8 is set, else by
+ * 0xE0. Once the pose has finished (flag 8) it takes action 1 and orbit_step_action2 takes over.
+ */
 void orbit_step_action1(struct ActorObj *obj)
 {
     struct ActorPart *part = obj->part;
     s32 radius = part->radiusB0;
-    s32 *tx = &obj->targetX;
-    s16 *tab = gCosineTable;
-    s32 *phase = &obj->paramA4;
-    s32 *ty;
-    s32 ph;
-    s32 s;
-    s32 sv;
-    s32 next;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    s32 *centerX = &obj->targetX;
+    s16 *table = gCosineTable;
+    s32 *angle = &obj->paramA4;
+    s32 *centerY;
+    s32 step;
+    s32 value;
+    s32 sine;
+    s32 nextAngle;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    obj->posX = *tx + (s >> 6) * radius;
-    ty = &obj->targetY;
-    tab = gSineTable;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    obj->posX = *centerX + (value >> 6) * radius;
+    centerY = &obj->targetY;
+    table = gSineTable;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    sv = s >> 6;
-    obj->posY = *ty - sv * (radius / 3);
+    sine = value >> 6;
+    obj->posY = *centerY - sine * (radius / 3);
     if (part->countA8 != 0) {
-        next = *phase + 0x100;
+        nextAngle = *angle + 0x100;
     } else {
-        next = *phase + 0xE0;
+        nextAngle = *angle + 0xE0;
     }
-    *phase = next;
+    *angle = nextAngle;
     if (obj->pose->flags & 8) {
         sprite_set_action(obj, 1, 0, 0);
         obj->state = orbit_step_action2;
     }
 }
 
+/*
+ * State of an orbiting chain link after orbit_step_action1: keeps circling its centre
+ * (targetX/targetY) on the same flattened ellipse, part->radiusB0 wide and a third of that high,
+ * the angle (paramA4) going on by 0x100 a frame while part->countA8 is set, else by 0xE0. Once
+ * the part's radius is down to 0 it takes action 2 and orbit_step_finish takes over.
+ */
 void orbit_step_action2(struct ActorObj *obj)
 {
     struct ActorPart *part = obj->part;
     s32 radius = part->radiusB0;
-    s32 *tx = &obj->targetX;
-    s16 *tab = gCosineTable;
-    s32 *phase = &obj->paramA4;
-    s32 *ty;
-    s32 ph;
-    s32 s;
-    s32 sv;
-    s32 next;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    s32 *centerX = &obj->targetX;
+    s16 *table = gCosineTable;
+    s32 *angle = &obj->paramA4;
+    s32 *centerY;
+    s32 step;
+    s32 value;
+    s32 sine;
+    s32 nextAngle;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    obj->posX = *tx + (s >> 6) * radius;
-    ty = &obj->targetY;
-    tab = gSineTable;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    obj->posX = *centerX + (value >> 6) * radius;
+    centerY = &obj->targetY;
+    table = gSineTable;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    sv = s >> 6;
-    obj->posY = *ty - sv * (radius / 3);
+    sine = value >> 6;
+    obj->posY = *centerY - sine * (radius / 3);
     if (part->countA8 != 0) {
-        next = *phase + 0x100;
+        nextAngle = *angle + 0x100;
     } else {
-        next = *phase + 0xE0;
+        nextAngle = *angle + 0xE0;
     }
-    *phase = next;
+    *angle = nextAngle;
     if (obj->part->radiusB0 == 0) {
         sprite_set_action(obj, 2, 0, 0);
         obj->state = orbit_step_finish;
     }
 }
 
+/*
+ * Last state of an orbiting chain link (after orbit_step_action2, action 2): circles its centre
+ * (targetX/targetY) on a fixed ellipse 0x90 wide and 0x30 high, the angle (paramA4) going on by
+ * 0x100 a frame while part->countA8 is set, else by 0xE0. Once the pose has finished (flag 8) the
+ * link is released.
+ */
 void orbit_step_finish(struct ActorObj *obj)
 {
-    s32 *tx = &obj->targetX;
-    s16 *tab = gCosineTable;
-    s32 *phase = &obj->paramA4;
-    s32 *ty;
-    s32 ph;
-    s32 s;
-    s32 k;
-    s32 k2;
-    s32 next;
-    k = 0x90;
-    k2 = 0x30;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    s32 *centerX = &obj->targetX;
+    s16 *table = gCosineTable;
+    s32 *angle = &obj->paramA4;
+    s32 *centerY;
+    s32 step;
+    s32 value;
+    s32 radiusX;
+    s32 radiusY;
+    s32 nextAngle;
+    radiusX = 0x90;
+    radiusY = 0x30;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    obj->posX = *tx + (s >> 6) * k;
-    ty = &obj->targetY;
-    tab = gSineTable;
-    ph = *phase;
-    if (ph < 0) {
-        ph += 0xFF;
+    obj->posX = *centerX + (value >> 6) * radiusX;
+    centerY = &obj->targetY;
+    table = gSineTable;
+    step = *angle;
+    if (step < 0) {
+        step += 0xFF;
     }
-    ph >>= 8;
-    s = tab[ph & 0xFF];
-    if (s < 0) {
-        s += 0x3F;
+    step >>= 8;
+    value = table[step & 0xFF];
+    if (value < 0) {
+        value += 0x3F;
     }
-    obj->posY = *ty - (s >> 6) * k2;
+    obj->posY = *centerY - (value >> 6) * radiusY;
     if (obj->part->countA8 != 0) {
-        next = *phase + 0x100;
+        nextAngle = *angle + 0x100;
     } else {
-        next = *phase + 0xE0;
+        nextAngle = *angle + 0xE0;
     }
-    *phase = next;
+    *angle = nextAngle;
     if (obj->pose->flags & 8) {
         obj_release(obj);
     }
@@ -685,16 +713,20 @@ void wait_child_then_count(struct ActorObj *obj)
     }
 }
 
+/* State: every 8 frames spawns the phase's effect at the base (phase 0: 0x242B, phase 1: 0x2434,
+   phase 2: both). Once the pose's animation has finished, counts targetX down; at 0 stops song
+   0x6C, plays the phase's action (4, 8 or 0xC) and goes on to spawn_phase_child. */
 void place_parts_by_phase_then_wait(struct ActorObj *obj)
 {
-    s32 t;
+    s32 timer;
     s32 wait;
-    t = obj->timer - 1;
-    obj->timer = t;
-    if ((s16)t <= 0) {
+    timer = obj->timer - 1;
+    obj->timer = timer;
+    if ((s16)timer <= 0) {
         if (obj->phase == 0 || obj->phase == 2) {
             effect_spawn_at(0x242B, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
+        /* phase 1 or 2 */
         if ((u16)(obj->phase - 1) <= 1) {
             effect_spawn_at(0x2434, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }

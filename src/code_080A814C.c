@@ -101,11 +101,11 @@ struct HeroBody
     struct HeroSpan span;
     u8 filler88[0x92 - 0x88];
     u16 height;
-    u32 distLo;
-    u32 distHi;
+    u32 arcSpeed; /* how fast the jump arc is crossed (set by set_motion_offsets) */
+    u32 arcPeak;  /* the arc peaks at progress arcPeak * 0x4000 / arcSpeed */
     u32 unk9C;
     u8 filler0A0[0xAC - 0xA0];
-    s16 step;
+    s16 step; /* progress before the last step_motion */
     u16 timer;
     u8 filler0B0[0xC3 - 0xB0];
     s8 ofsX;
@@ -133,6 +133,11 @@ struct World
 
 extern struct World *gWorld;
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+/* HeroBody.flags: set by state_stack_advance_progress once progress passes 0x3FFF */
+#define HERO_MOTION_DONE 0x20
+
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 void set_slot_value(u32 id, s32 value);
@@ -153,6 +158,10 @@ void hero_a_step_reach_input(struct HeroBody *body);
 void hero_a_timing_window_9804(struct HeroBody *body);
 void hero_b_move_to_partner_pose(struct HeroBody *body);
 
+/* Grows hero B's sprite back to full size (0x10 a frame). Once it is full: if A's unk9C is 1, A goes
+   on in hero_b_ready_a_place_anim; otherwise A takes jump frame 8, plays sound 0x2B and jumps in an
+   arc onto this body's partner (the higher the partner's top, the higher the arc), and this body goes
+   on in hero_a_step_end_82ec. */
 void hero_b_sprite_grow_a_place(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -161,7 +170,7 @@ void hero_b_sprite_grow_a_place(struct HeroBody *body)
     struct HeroBody *body_b = &hero_b->body;
     struct HeroBody *partner = body->partner;
     u16 scale;
-    s32 height;
+    s32 arcHeight;
     s32 sq;
     s32 tx;
     s32 ty;
@@ -181,7 +190,7 @@ void hero_b_sprite_grow_a_place(struct HeroBody *body)
     body_b->sprite->scale = 0x100;
     if (body_a->unk9C == 1)
     {
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
             body_a->state = hero_b_ready_a_place_anim;
         return;
     }
@@ -189,8 +198,9 @@ void hero_b_sprite_grow_a_place(struct HeroBody *body)
     body_a->sprite->frame = 8;
     ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
     set_slot_value(0x2B, -1);
-    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_a->mode))
     {
+        // Land on the partner's target position (8.8 fixed point, rounded toward 0).
         tx = partner->targetX;
         if (tx < 0)
             tx += 0xFF;
@@ -205,22 +215,23 @@ void hero_b_sprite_grow_a_place(struct HeroBody *body)
         z = z >> 8;
         z += partner->ofsZ;
         place_targets(body_a, x, y, z, -1);
+        // The partner's top: its own z offset if it is its object's main body, else its frame's.
         if (partner == (struct HeroBody *)((u8 *)partner->data + 8))
         {
-            height = partner->ofsZ;
+            arcHeight = partner->ofsZ;
         }
         else
         {
             find_frame_entry(partner, 0);
-            height = partner->ofsAlt;
+            arcHeight = partner->ofsAlt;
         }
         tz = partner->targetZ;
         if (tz < 0)
             tz += 0xFF;
-        height += tz >> 8;
-        sq = height * height;
-        height += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xE10, sq / 0x40 + 0x3C);
-        body_a->height = height;
+        arcHeight += tz >> 8;
+        sq = arcHeight * arcHeight;
+        arcHeight += MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xE10, sq / 0x40 + 0x3C);
+        body_a->height = arcHeight;
         set_motion_offsets(body_a, 0x566);
     }
     body_a->timer = body_a->timer & 0xFFF;
@@ -229,6 +240,10 @@ void hero_b_sprite_grow_a_place(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080A814C/hero_a_step_end_82ec.s", void hero_a_step_end_82ec(struct HeroBody *body))
 
+/* Once hero A's sprite sets flag bit 3: hero B (if active) walks back to its data's target position
+   (speed 0x300), with its move animation (0x2002 for slot -1, else 0x204F), facing along its span,
+   and goes on in enter_finish_rebuild. Sound 0x2B plays, and hero A (if active) jumps back to its
+   data's target position in an arc 0x28 above its target height and starts action 4. */
 void hero_pair_finish_b_place_a_action(void)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -247,8 +262,9 @@ void hero_pair_finish_b_place_a_action(void)
 
     if ((body_a->sprite->flags & 8) != 0)
     {
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
+            // B's target position (8.8 fixed point, rounded toward 0).
             data = body_b->data;
             tx = data->targetX;
             if (tx < 0)
@@ -265,7 +281,7 @@ void hero_pair_finish_b_place_a_action(void)
             place_targets(body_b, x, y, h, -1);
             set_motion_start(body_b, 0x300);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             if (body_b->data->poseIndex == -1)
                 sprite_set_action(body_b, 0, 0x2002, 0);
@@ -281,13 +297,13 @@ void hero_pair_finish_b_place_a_action(void)
             }
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             body_b->state = 0;
             enter_finish_rebuild(body_b);
         }
         set_slot_value(0x2B, -1);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             data = body_a->data;
             tx = data->targetX;
@@ -303,13 +319,14 @@ void hero_pair_finish_b_place_a_action(void)
                 th += 0xFF;
             h = th >> 8;
             place_targets(body_a, x, y, h, -1);
+            // The arc peaks 0x28 above the target height.
             th = body_a->targetZ;
             if (th < 0)
                 th += 0xFF;
             body_a->height = (th >> 8) + 0x28;
             set_motion_offsets(body_a, 0x7CC);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             body_a->state = 0;
             start_action_4(body_a);
@@ -317,6 +334,9 @@ void hero_pair_finish_b_place_a_action(void)
     }
 }
 
+/* Hero B (if active) goes on in hero_b_move_to_partner_pose. Sound 0x2B plays, and hero A (if active)
+   jumps from where it is to its own target X/Y plus its offsets, at height 0, in an arc 0x32 above
+   its target height, with action 3 (0x2030); this body goes on in hero_a_wait_reach_rate. */
 void hero_b_ready_a_place_anim(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -329,13 +349,14 @@ void hero_b_ready_a_place_anim(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(hero_b->body.mode))
     {
         body_b->state = hero_b_move_to_partner_pose;
     }
     set_slot_value(0x2B, -1);
-    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_a->mode))
     {
+        // A's own target position (8.8 fixed point, rounded toward 0) plus its offsets.
         tx = body_a->targetX;
         if (tx < 0)
             tx += 0xFF;
@@ -345,13 +366,14 @@ void hero_b_ready_a_place_anim(struct HeroBody *body)
             ty += 0xFF;
         y = (ty >> 8) + body_a->ofsY;
         place_targets(body_a, x, y, 0, -1);
+        // The arc peaks 0x32 above the target height.
         tz = body_a->targetZ;
         if (tz < 0)
             tz += 0xFF;
         body_a->height = (tz >> 8) + 0x32;
         set_motion_offsets(body_a, 0x800);
     }
-    if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_a->mode))
     {
         sprite_set_action(body_a, 3, 0x2030, 0);
         ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
@@ -359,34 +381,58 @@ void hero_b_ready_a_place_anim(struct HeroBody *body)
     body->state = hero_a_wait_reach_rate;
 }
 
-NONMATCH("asm/code_080A814C/hero_a_wait_reach_rate.s", void hero_a_wait_reach_rate(struct HeroBody *body))
+/* Step length within x and progress at least x. */
+static inline u32 step_reached(struct HeroBody *a, s32 x)
+{
+    u32 r;
+    s32 t;
+
+    if (a->step <= x)
+    {
+        t = a->progress;
+        r = 1;
+        if (t >= x)
+            goto done;
+    }
+    r = 0;
+done:
+    return r;
+}
+
+/* Hero A's jump: steps A along its arc and waits for the frame it passes the arc's peak. Then
+   sound 0x62 plays, A (if active) starts a new progress over 12 frames, and this body goes on in
+   hero_a_active_place_partner_z. */
+void hero_a_wait_reach_rate(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
-    s32 reach;
     u16 rate;
-    u32 distLo;
-    u32 distHi;
-    s32 reached;
+    u32 arcSpeed;
+    u32 arcPeak;
+    register s32 peak asm("r2");
+    u32 passedPeak;
+    s32 progress;
 
     step_motion(body_a);
-    distLo = hero_a->body.distLo;
-    distHi = hero_a->body.distHi;
-    reach = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(distHi << 14, distLo);
-    if (body_a->step > reach)
-        reached = 0;
-    else
+    arcSpeed = hero_a->body.arcSpeed;
+    arcPeak = hero_a->body.arcPeak;
+    peak = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(arcPeak << 14, arcSpeed);
+    // The peak lies between the progress before this step and the progress after it.
+    if (body_a->step <= peak)
     {
-        reached = 1;
-        if (body_a->progress < reach)
-            reached = 0;
+        progress = body_a->progress;
+        passedPeak = 1;
+        if (progress >= peak)
+            goto done;
     }
-    if (reached != 0)
+    passedPeak = 0;
+done:
+    if (passedPeak != 0)
     {
-        set_slot_value(0x62, -1);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        set_slot_value(0x62, -1); /* plays sound 0x62 */
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
-            rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xC);
+            rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 12);
             body_a->rate = rate;
             body_a->progress = 0;
             ((struct HeroFlagBits *)&body_a->flags)->active = 0;
@@ -394,8 +440,10 @@ NONMATCH("asm/code_080A814C/hero_a_wait_reach_rate.s", void hero_a_wait_reach_ra
         body->state = hero_a_active_place_partner_z;
     }
 }
-END_NONMATCH
 
+/* Advances hero A's current motion. Once it is done: if A is active on the field, A jumps onto this
+   body's partner (the partner's target X/Y plus its offsets, keeping A's own height, in pixels rounded
+   toward 0) in an arc 0x28 high; then this body goes on in hero_a_step_reach_input. */
 void hero_a_active_place_partner_z(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -409,9 +457,9 @@ void hero_a_active_place_partner_z(struct HeroBody *body)
     s32 z;
 
     state_stack_advance_progress(body_a);
-    if ((hero_a->body.flags & 0x20) != 0)
+    if ((hero_a->body.flags & HERO_MOTION_DONE) != 0)
     {
-        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->body.mode))
         {
             tz = body_a->posZ;
             if (tz < 0)
@@ -427,8 +475,8 @@ void hero_a_active_place_partner_z(struct HeroBody *body)
             y = (ty >> 8) + partner->ofsY;
             place_targets(body_a, x, y, z, -1);
             {
-                u16 h = 0x28;
-                body_a->height = h;
+                u16 arcHeight = 0x28;
+                body_a->height = arcHeight;
             }
             set_motion_offsets(body_a, 0x533);
         }
@@ -439,10 +487,13 @@ void hero_a_active_place_partner_z(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080A814C/hero_a_step_reach_input.s", void hero_a_step_reach_input(struct HeroBody *body))
 
+/* Advances hero A's current motion. Once it is done: if A is active on the field, A starts a
+ * move onto this body's partner (its target plus its x/y/z offsets, in pixels rounded toward 0)
+ * with aux speed 0xC0; then this body goes on in hero_a_timing_window_9804. */
 void hero_a_active_place_partner_aux(struct HeroBody *body)
 {
-    struct Hero *hero = gWorld->heroA;
-    struct HeroBody *body_a = &hero->body;
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
     struct HeroBody *partner = body->partner;
     s32 tx;
     s32 ty;
@@ -452,9 +503,9 @@ void hero_a_active_place_partner_aux(struct HeroBody *body)
     s32 z;
 
     state_stack_advance_progress(body_a);
-    if ((hero->body.flags & 0x20) != 0)
+    if ((hero_a->body.flags & HERO_MOTION_DONE) != 0)
     {
-        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->body.mode))
         {
             tx = partner->targetX;
             if (tx < 0)

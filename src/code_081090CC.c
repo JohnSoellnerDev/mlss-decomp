@@ -138,6 +138,24 @@ struct AnimTask
     u16 timer;
 };
 
+/* AnimObj.bits: the battle statuses a figure has (see code_08108AC8.c). */
+enum AnimStatusBits
+{
+    ANIM_STATUS_BIT1 = 0x0001,     /* bits 0-1: one of two exclusive statuses (anim_bit1_chance) */
+    ANIM_STATUS_BIT2 = 0x0002,     /* (anim_bit2_chance) */
+    ANIM_STATUS_MOTION_A = 0x000C, /* 4: raised, 8: lowered, by factor10A (anim_set_motion_a) */
+    ANIM_STATUS_MOTION_B = 0x0030, /* 0x10: raised, 0x20: lowered, by factor10C (anim_set_motion_b) */
+    ANIM_STATUS_MOTION_C = 0x00C0, /* 0x40: raised, 0x80: lowered, by factor11C (anim_set_motion_c) */
+    ANIM_STATUS_BIT100 = 0x0100,   /* 0x100 and 0x200 exclude each other */
+    ANIM_STATUS_BIT200 = 0x0200,
+    ANIM_STATUS_BIT400 = 0x0400,   /* 0x400 and 0x800 cancel each other out (anim_bit400_step) */
+    ANIM_STATUS_BIT800 = 0x0800,   /* (anim_chance_start) */
+    ANIM_STATUS_BIT1000 = 0x1000,  /* bits 12-15: rolled by anim_roll_bit* */
+    ANIM_STATUS_BIT2000 = 0x2000,
+    ANIM_STATUS_BIT4000 = 0x4000,
+    ANIM_STATUS_BIT8000 = 0x8000
+};
+
 void set_slot_value(u32 id, s32 value);
 void *find_lowest_order_pose(u8 *pic);
 void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
@@ -208,21 +226,26 @@ s32 anim_bit200_step(struct AnimObj *obj, s32 value)
     return 1;
 }
 
-s32 anim_bit400_step(struct AnimObj *obj, s32 value)
+/* Tries to inflict status 0x400 with a chance in percent; returns 1 when the roll succeeds. A
+ * figure that already has it is skipped (0). On one with the opposite status 0x800 the two cancel
+ * out, unless it is a hero whose unk12C is 0x13 or 0x14 (anim_end_mode gives those their status
+ * back); otherwise it gets 0x400. Both of those last cases also set the timed mode (4) in the
+ * 3-bit field at bits 15-17 of the word at 0x120, which anim_end_mode ends. */
+s32 anim_bit400_step(struct AnimObj *obj, s32 chance)
 {
-    u16 flags;
+    u16 oldBits;
 
-    if (obj->bits & 0x400)
+    if (obj->bits & ANIM_STATUS_BIT400)
     {
         return 0;
     }
-    if (value < rand_below(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
-    flags = obj->bits;
-    obj->bits = flags & 0xF3FF;
-    if ((flags & 0x800) == 0)
+    oldBits = obj->bits;
+    obj->bits = oldBits & ~(ANIM_STATUS_BIT400 | ANIM_STATUS_BIT800) & 0xFFFF;
+    if ((oldBits & ANIM_STATUS_BIT800) == 0)
     {
         if ((obj->flags & 0x40) == 0)
         {
@@ -232,7 +255,7 @@ s32 anim_bit400_step(struct AnimObj *obj, s32 value)
         obj->unk128 = 0xFF;
         obj->unk126 = 1;
         obj->unk12A = 1;
-        obj->bits |= 0x400;
+        obj->bits |= ANIM_STATUS_BIT400;
     }
     else if ((u8)(obj->unk12C - 0x13) > 1)
     {
@@ -242,21 +265,26 @@ s32 anim_bit400_step(struct AnimObj *obj, s32 value)
     return 1;
 }
 
-s32 anim_chance_start(struct AnimObj *obj, s32 value)
+/* Tries to inflict status 0x800 with a chance in percent; returns 1 when the roll succeeds. A
+ * figure that already has it is skipped (0). On one with the opposite status 0x400 the two cancel
+ * out, unless it is a hero whose unk12C is 0x13 or 0x14 (anim_end_mode gives those their status
+ * back); otherwise it gets 0x800. Both of those last cases also set the timed mode (4) in the
+ * 3-bit field at bits 15-17 of the word at 0x120, which anim_end_mode ends. */
+s32 anim_chance_start(struct AnimObj *obj, s32 chance)
 {
-    u16 flags;
+    u16 oldBits;
 
-    if (obj->bits & 0x800)
+    if (obj->bits & ANIM_STATUS_BIT800)
     {
         return 0;
     }
-    if (value < rand_below(100, mt19937_next()))
+    if (chance < rand_below(100, mt19937_next()))
     {
         return 0;
     }
-    flags = obj->bits;
-    obj->bits = flags & 0xF3FF;
-    if ((flags & 0x400) == 0)
+    oldBits = obj->bits;
+    obj->bits = oldBits & ~(ANIM_STATUS_BIT400 | ANIM_STATUS_BIT800) & 0xFFFF;
+    if ((oldBits & ANIM_STATUS_BIT400) == 0)
     {
         if ((obj->flags & 0x40) == 0)
         {
@@ -266,7 +294,7 @@ s32 anim_chance_start(struct AnimObj *obj, s32 value)
         obj->unk128 = 0xFF;
         obj->unk126 = 1;
         obj->unk12A = 1;
-        obj->bits |= 0x800;
+        obj->bits |= ANIM_STATUS_BIT800;
     }
     else if ((u8)(obj->unk12C - 0x13) > 1)
     {
@@ -286,47 +314,53 @@ static inline void motion_prepare(struct AnimObj *obj)
     obj->unk129 = 0xFF;
 }
 
-s32 anim_set_motion_a(struct AnimObj *obj, u16 value, s32 extra)
+/* Applies stat change A (the first of anim_set_motion_a/b/c) to a battler for 5 turns: `factor`
+ * becomes factor10A (8.8, 0x100 = unchanged). A factor of 0x100 or more raises the stat (bits bit
+ * 2) and always works; a lower one lowers it (bits bit 3) and has to pass a roll: a party member
+ * (index < 0) resists unless rand(100) <= chance, an enemy uses its susceptibility from
+ * gPoseKindPct (by part[0x1C] bits 0-1): 0% never works, 100% always does, anything else needs
+ * rand(100) <= chance - (100 - susceptibility) / 3. Returns 1 if the change was applied. */
+s32 anim_set_motion_a(struct AnimObj *obj, u16 factor, s32 chance)
 {
-    s32 left;
+    s32 resist;
     s32 roll;
 
-    if (value <= 0xFF)
+    if (factor <= 0xFF)
     {
         if (obj->index < 0)
         {
             roll = rand_below(100, mt19937_next());
-            if (extra < roll)
+            if (chance < roll)
             {
                 return 0;
             }
         }
         else
         {
-            left = 100 - gPoseKindPct[obj->part[0x1C] & 3];
-            if (left == 100)
+            resist = 100 - gPoseKindPct[obj->part[0x1C] & 3];
+            if (resist == 100)
             {
                 return 0;
             }
-            if (left != 0)
+            if (resist != 0)
             {
-                s32 margin = extra - left / 3;
-                s32 ok;
+                s32 odds = chance - resist / 3;
+                s32 hit;
 
                 roll = rand_below(100, mt19937_next());
-                ok = 1;
-                if (margin < roll)
+                hit = 1;
+                if (odds < roll)
                 {
-                    ok = 0;
+                    hit = 0;
                 }
-                if (ok == 0)
+                if (hit == 0)
                 {
                     return 0;
                 }
             }
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFFF3) | 8;
+        obj->bits = (obj->bits & 0xFFF3) | 8; /* lowered */
     }
     else
     {
@@ -334,54 +368,60 @@ s32 anim_set_motion_a(struct AnimObj *obj, u16 value, s32 extra)
         {
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFFF3) | 4;
+        obj->bits = (obj->bits & 0xFFF3) | 4; /* raised */
     }
-    obj->factor10A = value;
-    ((struct AnimMode120 *)&obj->unk120)->mode = 5;
+    obj->factor10A = factor;
+    ((struct AnimMode120 *)&obj->unk120)->mode = 5; /* turns left */
     return 1;
 }
 
-s32 anim_set_motion_b(struct AnimObj *obj, u16 value, s32 extra)
+/* Applies stat change B (the second of anim_set_motion_a/b/c) to a battler for 5 turns: `factor`
+ * becomes factor10C (8.8, 0x100 = unchanged). A factor of 0x100 or more raises the stat (bits bit
+ * 4) and always works; a lower one lowers it (bits bit 5) and has to pass a roll: a party member
+ * (index < 0) resists unless rand(100) <= chance, an enemy uses its susceptibility from
+ * gPoseKindPct (by part[0x1C] bits 0-1): 0% never works, 100% always does, anything else needs
+ * rand(100) <= chance - (100 - susceptibility) / 3. Returns 1 if the change was applied. */
+s32 anim_set_motion_b(struct AnimObj *obj, u16 factor, s32 chance)
 {
-    s32 left;
+    s32 resist;
     s32 roll;
 
-    if (value <= 0xFF)
+    if (factor <= 0xFF)
     {
         if (obj->index < 0)
         {
             roll = rand_below(100, mt19937_next());
-            if (extra < roll)
+            if (chance < roll)
             {
                 return 0;
             }
         }
         else
         {
-            left = 100 - gPoseKindPct[obj->part[0x1C] & 3];
-            if (left == 100)
+            resist = 100 - gPoseKindPct[obj->part[0x1C] & 3];
+            if (resist == 100)
             {
                 return 0;
             }
-            if (left != 0)
+            if (resist != 0)
             {
-                s32 margin = extra - left / 3;
-                s32 ok;
+                s32 odds = chance - resist / 3;
+                s32 hit;
 
                 roll = rand_below(100, mt19937_next());
-                ok = 1;
-                if (margin < roll)
+                hit = 1;
+                if (odds < roll)
                 {
-                    ok = 0;
+                    hit = 0;
                 }
-                if (ok == 0)
+                if (hit == 0)
                 {
                     return 0;
                 }
             }
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFFCF) | 0x20;
+        obj->bits = (obj->bits & 0xFFCF) | 0x20; /* lowered */
     }
     else
     {
@@ -389,55 +429,61 @@ s32 anim_set_motion_b(struct AnimObj *obj, u16 value, s32 extra)
         {
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFFCF) | 0x10;
+        obj->bits = (obj->bits & 0xFFCF) | 0x10; /* raised */
     }
-    obj->factor10C = value;
-    ((struct AnimMode120Wide *)((u8 *)obj + 0x120))->mode = 5;
+    obj->factor10C = factor;
+    ((struct AnimMode120Wide *)((u8 *)obj + 0x120))->mode = 5; /* turns left */
     return 1;
 }
 
 
-s32 anim_set_motion_c(struct AnimObj *obj, u16 value, s32 extra)
+/* Applies stat change C (the third of anim_set_motion_a/b/c) to a battler for 5 turns: `factor`
+ * becomes factor11C (8.8, 0x100 = unchanged). A factor of 0x100 or more raises the stat (bits bit
+ * 6) and always works; a lower one lowers it (bits bit 7) and has to pass a roll: a party member
+ * (index < 0) resists unless rand(100) <= chance, an enemy uses its susceptibility from
+ * gPoseKindPct (by part[0x1C] bits 0-1): 0% never works, 100% always does, anything else needs
+ * rand(100) <= chance - (100 - susceptibility) / 3. Returns 1 if the change was applied. */
+s32 anim_set_motion_c(struct AnimObj *obj, u16 factor, s32 chance)
 {
-    s32 left;
+    s32 resist;
     s32 roll;
 
-    if (value <= 0xFF)
+    if (factor <= 0xFF)
     {
         if (obj->index < 0)
         {
             roll = rand_below(100, mt19937_next());
-            if (extra < roll)
+            if (chance < roll)
             {
                 return 0;
             }
         }
         else
         {
-            left = 100 - gPoseKindPct[obj->part[0x1C] & 3];
-            if (left == 100)
+            resist = 100 - gPoseKindPct[obj->part[0x1C] & 3];
+            if (resist == 100)
             {
                 return 0;
             }
-            if (left != 0)
+            if (resist != 0)
             {
-                s32 margin = extra - left / 3;
-                s32 ok;
+                s32 odds = chance - resist / 3;
+                s32 hit;
 
                 roll = rand_below(100, mt19937_next());
-                ok = 1;
-                if (margin < roll)
+                hit = 1;
+                if (odds < roll)
                 {
-                    ok = 0;
+                    hit = 0;
                 }
-                if (ok == 0)
+                if (hit == 0)
                 {
                     return 0;
                 }
             }
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFF3F) | 0x80;
+        obj->bits = (obj->bits & 0xFF3F) | 0x80; /* lowered */
     }
     else
     {
@@ -445,10 +491,10 @@ s32 anim_set_motion_c(struct AnimObj *obj, u16 value, s32 extra)
         {
             motion_prepare(obj);
         }
-        obj->bits = (obj->bits & 0xFF3F) | 0x40;
+        obj->bits = (obj->bits & 0xFF3F) | 0x40; /* raised */
     }
-    obj->factor11C = value;
-    ((struct AnimMode121Low *)&obj->unk121)->mode = 5;
+    obj->factor11C = factor;
+    ((struct AnimMode121Low *)&obj->unk121)->mode = 5; /* turns left */
     return 1;
 }
 

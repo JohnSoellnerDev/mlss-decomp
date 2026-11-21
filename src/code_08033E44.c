@@ -159,8 +159,21 @@ struct Bits1
     u8 rest : 6;
 };
 
-void motion_obj_set_move_target(void *obj, s32 target, s32 dir, s32 speed);
-void contacts_obj_start_move(void *obj, s32 a, s32 b, s32 x, s32 y, s32 zero, s32 mode);
+/* Starts a jump: the launch speed that reaches `height` pixels under `gravity` (-1: the object's defaults). */
+void motion_obj_set_move_target(void *obj, s32 height, s32 gravity, s32 speed);
+/* Moves obj in a straight line to pixel (x, y, z) (by it when relative == 1); kind: enum MoveKind. */
+void contacts_obj_start_move(void *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, s32 speedOrFrames);
+
+enum MoveKind
+{
+    MOVE_BY_SPEED = 1,  /* a fixed step every frame */
+    MOVE_BY_FRAMES = 2, /* arrive after a fixed number of frames */
+};
+
+/* PairObj.flagsFB bit 2: half gravity, slower jumps */
+#define PAIR_SLOW_JUMP 4
+/* the gravity of a pair jump, halved by PAIR_SLOW_JUMP */
+#define PAIR_JUMP_GRAVITY 0xEE
 void set_slot_value(u32 id, s32 value);
 void update_pair_facing(void *obj, u32 reset, u32 enable);
 void obj_set_id(void *sub, u32 id);
@@ -171,44 +184,49 @@ void obj_set_active(void *entry, u32 zero);
 void obj_set_sprite_link(void *entry, u32 zero);
 void pair_turn_and_sample(void *obj, u32 zero);
 
+/*
+ * A and B start state 0x40 (B jumps onto A): the pair keeps B's pixel spot, and B jumps
+ * 20 pixels plus the height A stands above it, landing on A's spot in MOVE_BY_FRAMES
+ * (12 frames, 18 when slow).
+ */
 void sub_08033E44(struct PairObj *obj)
 {
-    u32 bit = 8;
+    u32 bit3 = 8;
     struct PairPart **slotA;
     struct PairPart **slotB;
-    struct PairPart *pa;
-    struct PairPart *pb;
-    struct PairPart *qa;
-    struct PairPart *qb;
-    struct PairPart *ra;
-    struct PairPart *rb;
-    struct PairPart *b;
-    s32 target;
-    u32 dir;
+    struct PairPart *subA;
+    struct PairPart *subB;
+    struct PairPart *subA2;
+    struct PairPart *subB2;
+    struct PairPart *subA3;
+    struct PairPart *subB3;
+    struct PairPart *jumper;
+    s32 jumpHeight;
+    u32 gravity;
 
     update_pair_facing(obj, 1, 1);
     slotB = &obj->subB;
     obj->pixX = (*slotB)->posX / 0x100;
     obj->pixY = (*slotB)->posY / 0x100;
-    pb = *slotB;
+    subB = *slotB;
     slotA = &obj->subA;
-    pa = *slotA;
-    pa->state4 = 0x40;
-    pb->state4 = 0x40;
-    qb = *slotB;
-    qa = *slotA;
-    ((struct HalfBit6 *)&qa->flags351)->bit6 = 1;
-    ((struct HalfBit6 *)&qb->flags351)->bit6 = 1;
-    rb = *slotB;
-    ra = *slotA;
-    ra->flags358 |= bit;
-    ((struct HalfBit3 *)&rb->flags358)->bit3 = 1;
-    b = *slotB;
-    target = ((*slotA)->posZ - b->posZ) / 0x100 + 0x14;
-    dir = 0xEE >> (((u32)obj->flagsFB << 29) >> 31);
-    motion_obj_set_move_target(b, target, dir, obj->move100);
-    contacts_obj_start_move(*slotB, 2, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
-        (obj->flagsFB & 4) ? 0x12 : 0xC);
+    subA = *slotA;
+    subA->state4 = 0x40;
+    subB->state4 = 0x40;
+    subB2 = *slotB;
+    subA2 = *slotA;
+    ((struct HalfBit6 *)&subA2->flags351)->bit6 = 1;
+    ((struct HalfBit6 *)&subB2->flags351)->bit6 = 1;
+    subB3 = *slotB;
+    subA3 = *slotA;
+    subA3->flags358 |= bit3;
+    ((struct HalfBit3 *)&subB3->flags358)->bit3 = 1;
+    jumper = *slotB;
+    jumpHeight = ((*slotA)->posZ - jumper->posZ) / 0x100 + 20;
+    gravity = PAIR_JUMP_GRAVITY >> (((u32)obj->flagsFB << 29) >> 31);
+    motion_obj_set_move_target(jumper, jumpHeight, gravity, obj->move100);
+    contacts_obj_start_move(*slotB, MOVE_BY_FRAMES, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
+        (obj->flagsFB & PAIR_SLOW_JUMP) ? 18 : 12);
     ((struct HalfBit7 *)&((u8 *)obj)[0x20B])->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
@@ -274,34 +292,39 @@ NONMATCH("asm/code_08033E44/sub_08034884.s", void sub_08034884(struct PairObj *o
 }
 END_NONMATCH
 
+/*
+ * A and B start state 0x49: both get flags351 bit 6 and flags358 bit 3; B takes object id 0x1025
+ * (state214 = 4, sprite mode 1) and its sprite's unk20 becomes flagsFB >> 3, doubled when bit 1 of
+ * the pair's byte 0x20A is set. Plays sound 0x3C.
+ */
 void set_sub_pair_state_49(struct PairObj *obj)
 {
     struct PairPart **slotA;
     struct PairPart **slotB;
-    struct PairPart *pa;
-    struct PairPart *pb;
-    struct PairPart *qa;
-    struct PairPart *qb;
-    struct PairPart *ra;
-    struct PairPart *rb;
+    struct PairPart *subA;
+    struct PairPart *subB;
+    struct PairPart *subA2;
+    struct PairPart *subB2;
+    struct PairPart *subA3;
+    struct PairPart *subB3;
     struct Bit3Byte { u8 lo3 : 3; u8 bit3 : 1; u8 rest : 4; };
-    u32 flag = 0x40;
+    u32 bit6 = 0x40;
 
     update_pair_facing(obj, 1, 1);
     slotB = &obj->subB;
-    pb = *slotB;
+    subB = *slotB;
     slotA = &obj->subA;
-    pa = *slotA;
-    pa->state4 = 0x49;
-    pb->state4 = 0x49;
-    qb = *slotB;
-    qa = *slotA;
-    qa->flags351 |= flag;
-    qb->flags351 |= flag;
-    rb = *slotB;
-    ra = *slotA;
-    ((struct Bit3Byte *)&ra->flags358)->bit3 = 1;
-    ((struct Bit3Byte *)&rb->flags358)->bit3 = 1;
+    subA = *slotA;
+    subA->state4 = 0x49;
+    subB->state4 = 0x49;
+    subB2 = *slotB;
+    subA2 = *slotA;
+    subA2->flags351 |= bit6;
+    subB2->flags351 |= bit6;
+    subB3 = *slotB;
+    subA3 = *slotA;
+    ((struct Bit3Byte *)&subA3->flags358)->bit3 = 1;
+    ((struct Bit3Byte *)&subB3->flags358)->bit3 = 1;
     ((struct BitsLo5 *)&(*slotB)->flags20D)->bit5 = 1;
     ((struct Lo3Bits *)&(*slotB)->state214)->lo3 = 4;
     obj_set_id(*slotB, 0x1025);
@@ -312,21 +335,26 @@ void set_sub_pair_state_49(struct PairObj *obj)
     set_slot_value(0x3C, -1);
 }
 
+/*
+ * A and B start state 0x51 (B jumps onto A): A takes object id 0x1045, the pair keeps B's pixel
+ * spot and B's offset from A, and B jumps 26 pixels plus the height A stands above it, landing on
+ * A's spot in MOVE_BY_FRAMES (10 frames, 16 when slow).
+ */
 void sub_08034A70(struct PairObj *obj)
 {
     struct PairPart **slotA;
     struct PairPart **slotB;
-    struct PairPart *pa;
-    struct PairPart *pb;
-    struct PairPart *qa;
-    struct PairPart *qb;
-    struct PairPart *ra;
-    struct PairPart *rb;
-    struct PairPart *b;
-    struct PairFrames *frA;
-    struct PairFrames *frB;
-    s32 target;
-    u32 dir;
+    struct PairPart *subA;
+    struct PairPart *subB;
+    struct PairPart *subA2;
+    struct PairPart *subB2;
+    struct PairPart *subA3;
+    struct PairPart *subB3;
+    struct PairPart *jumper;
+    struct PairFrames *framesA;
+    struct PairFrames *framesB;
+    s32 jumpHeight;
+    u32 gravity;
 
     update_pair_facing(obj, 1, 1);
     slotA = &obj->subA;
@@ -337,28 +365,28 @@ void sub_08034A70(struct PairObj *obj)
     obj->pixY = (*slotB)->posY / 0x100;
     obj->relX = obj->pixX - (*slotA)->posX / 0x100;
     obj->relY = obj->pixY - (*slotA)->posY / 0x100;
-    frB = (*slotB)->frames368;
-    frA = (*slotA)->frames368;
-    frA->byte0 = 0xA;
-    frB->byte0 = 0xA;
-    pb = *slotB;
-    pa = *slotA;
-    pa->state4 = 0x51;
-    pb->state4 = 0x51;
-    qb = *slotB;
-    qa = *slotA;
-    ((struct HalfBit6 *)&qa->flags351)->bit6 = 1;
-    ((struct HalfBit6 *)&qb->flags351)->bit6 = 1;
-    rb = *slotB;
-    ra = *slotA;
-    ((struct HalfBit3 *)&ra->flags358)->bit3 = 1;
-    ((struct HalfBit3 *)&rb->flags358)->bit3 = 1;
-    b = *slotB;
-    target = ((*slotA)->posZ - b->posZ) / 0x100 + 0x1A;
-    dir = 0xEE >> (((u32)obj->flagsFB << 29) >> 31);
-    motion_obj_set_move_target(b, target, dir, obj->move100);
-    contacts_obj_start_move(*slotB, 2, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
-        (obj->flagsFB & 4) ? 0x10 : 0xA);
+    framesB = (*slotB)->frames368;
+    framesA = (*slotA)->frames368;
+    framesA->byte0 = 10;
+    framesB->byte0 = 10;
+    subB = *slotB;
+    subA = *slotA;
+    subA->state4 = 0x51;
+    subB->state4 = 0x51;
+    subB2 = *slotB;
+    subA2 = *slotA;
+    ((struct HalfBit6 *)&subA2->flags351)->bit6 = 1;
+    ((struct HalfBit6 *)&subB2->flags351)->bit6 = 1;
+    subB3 = *slotB;
+    subA3 = *slotA;
+    ((struct HalfBit3 *)&subA3->flags358)->bit3 = 1;
+    ((struct HalfBit3 *)&subB3->flags358)->bit3 = 1;
+    jumper = *slotB;
+    jumpHeight = ((*slotA)->posZ - jumper->posZ) / 0x100 + 26;
+    gravity = PAIR_JUMP_GRAVITY >> (((u32)obj->flagsFB << 29) >> 31);
+    motion_obj_set_move_target(jumper, jumpHeight, gravity, obj->move100);
+    contacts_obj_start_move(*slotB, MOVE_BY_FRAMES, 0, (*slotA)->posX / 0x100, (*slotA)->posY / 0x100, 0,
+        (obj->flagsFB & PAIR_SLOW_JUMP) ? 16 : 10);
     ((struct HalfBit7 *)&((u8 *)obj)[0x20B])->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
@@ -366,28 +394,33 @@ void sub_08034A70(struct PairObj *obj)
 
 ASM_FUNC("asm/code_08033E44/pair_state_a_49_4c.s", void pair_state_a_49_4c(void))
 
+/*
+ * A and B start state 0x56 (B hops back off A, undoing sub_08034A70): B jumps 4 pixels and moves
+ * by the offset the pair saved (relX, relY) in MOVE_BY_FRAMES (10 frames, 16 when slow). A's
+ * unk23B is cleared, B gets flags20F bit 2, the pair clears flags208 bits 15-16. Plays sound 0x2B.
+ */
 void sub_08034FFC(struct PairObj *obj)
 {
     struct PairPart **slotA;
     struct PairPart **slotB;
-    struct PairPart *b = obj->subB;
+    struct PairPart *jumper = obj->subB;
     u32 flags;
-    struct PairPart *pa;
-    struct PairPart *pb;
-    u32 dir = 0xEE >> (((u32)obj->flagsFB << 29) >> 31);
-    motion_obj_set_move_target(b, 4, dir, obj->move100);
-    contacts_obj_start_move(obj->subB, 2, 1, obj->relX, obj->relY, 0,
-        (obj->flagsFB & 4) ? 0x10 : 0xA);
+    struct PairPart *subA;
+    struct PairPart *subB;
+    u32 gravity = PAIR_JUMP_GRAVITY >> (((u32)obj->flagsFB << 29) >> 31);
+    motion_obj_set_move_target(jumper, 4, gravity, obj->move100);
+    contacts_obj_start_move(obj->subB, MOVE_BY_FRAMES, 1, obj->relX, obj->relY, 0,
+        (obj->flagsFB & PAIR_SLOW_JUMP) ? 16 : 10);
     slotA = &obj->subA;
     (*slotA)->unk23B = 0;
     slotB = &obj->subB;
     flags = (*slotB)->flags20F;
     flags |= 4;
     (*slotB)->flags20F = flags;
-    pb = *slotB;
-    pa = *slotA;
-    pa->state4 = 0x56;
-    pb->state4 = 0x56;
+    subB = *slotB;
+    subA = *slotA;
+    subA->state4 = 0x56;
+    subB->state4 = 0x56;
     obj->flags208 &= 0xFFFE7FFF;
     ((u8 *)obj)[0x20B] |= 0x80;
     set_slot_value(0x2B, -1);

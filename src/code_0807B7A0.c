@@ -125,17 +125,17 @@ struct RecFlags29
 
 struct PoolObj
 {
-    struct PoolObj *next;
-    void *unk4;
+    struct PoolObj *next; /* in gWorld->list78, the live objects */
+    void *unk4;           /* partner object pointing back here; both links are cleared on release */
     struct PoolRecord *record;
-    void *buffer;
+    void *buffer;         /* chain of struct SpriteNode, given back on release */
     s32 unk10;
     s32 unk14;
     s32 unk18;
     u8 filler1C[0x28 - 0x1C];
-    struct PoolObj *ring;
+    struct PoolObj *ring;    /* owner (obj_spawn's tmpl); the owner's own object sits at ring + 8 */
     u32 unk2C;
-    struct PoolObj *sibling;
+    struct PoolObj *sibling; /* next object of the same owner, chained from the owner's object */
     u32 oamStart;
     s32 posX;
     s32 posY;
@@ -145,13 +145,13 @@ struct PoolObj
     u8 filler50[0x54 - 0x50];
     u32 unk54;
     u8 filler58[0x68 - 0x58];
-    u32 link68;
+    u32 link68; /* callback run with the object when it is released (0: none) */
     u32 unk6C;
     u8 filler70[0x76 - 0x70];
     u8 flags76;
     u8 filler77;
     u8 frame78;
-    u8 flags79;
+    u8 flags79; /* 8: released together with its owner's object */
     u8 filler7A[0x7C - 0x7A];
     u16 unk7C;
     u8 filler7E[0x90 - 0x7E];
@@ -162,7 +162,7 @@ struct PoolObj
     u32 unkA4;
     u32 unkA8;
     u8 fillerAC[0xC5 - 0xAC];
-    u8 unkC5;
+    u8 unkC5; /* height of its top above posZ (s8): number popups and markers are raised by it */
     u8 fillerC6;
     s8 biasX;
     u8 fillerC8[0xD0 - 0xC8];
@@ -170,6 +170,24 @@ struct PoolObj
 
 extern u8 *gWorkBuf;
 extern u8 *gMemRoutines;
+
+/* gWorkBuf + OBJ_POOL_OFFSET: the pool of OBJ_POOL_COUNT struct PoolObj slots obj_spawn takes from */
+#define OBJ_POOL_OFFSET 0x1000
+#define OBJ_POOL_COUNT 16
+
+/* gWorkBuf + OBJ_FIXED_OFFSET: the 8 struct PoolObj slots scripts take by number (OBJ_FIXED_FIRST to
+   OBJ_FIXED_LAST), right before the spawn pool */
+#define OBJ_FIXED_OFFSET 0x980
+#define OBJ_FIXED_FIRST 8
+#define OBJ_FIXED_LAST 15
+
+/* struct PoolFlags.mode of a pool object */
+#define OBJ_MODE_FREE 0
+#define OBJ_MODE_SPAWNED 2 /* taken by obj_spawn */
+#define OBJ_MODE_FIXED 3   /* a fixed slot taken by pool_slot_init */
+
+/* pool_slot_init's height that leaves the object's height at 0 */
+#define OBJ_HEIGHT_NONE 0xFFFFFF00
 
 struct SpriteEnt
 {
@@ -838,7 +856,14 @@ NONMATCH("asm/code_0807B7A0/refresh_slots_for_mask.s", void refresh_slots_for_ma
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(struct SpriteEnt *ent))
+/* Refreshes a shown sprite entry (flags12 bit 5) and puts it on the active list. An entry with
+   half1C 0 and byte1E high nibble 6 has nothing to draw: when it has ptr54 it is just reset
+   (mask14 0x7800). Otherwise a changed mask14 is added to gWorld->unk12, an entry of bank 1 with
+   half1C 0 or 1 goes into gWorld->slot220 (or slot224 when that one is taken), and any other
+   entry whose graphic (bank = byte1E low nibble, id unk16) find_entry_code knows gets an
+   alloc_slot_for_node task on gWorld->list4C, unless another hidden entry with the same mask14
+   already holds a slot (flags13 low 2 bits). */
+void sprite_entry_update(struct SpriteEnt *ent)
 {
     if (ent == NULL)
     {
@@ -852,33 +877,31 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
     if ((*(u32 *)&ent->half1C & 0x00F0FFFF) != 0x600000)
     {
         u16 oldMask = ent->mask14;
-        u32 link = ((u32)ent->flags13 << 30) >> 30;
-        u32 shifted;
-        u16 size;
-        u16 key;
+        u32 slotBits = ((u32)ent->flags13 << 30) >> 30;
+        u32 bankBits;
+        u16 code;
         u32 found;
         u16 newMask;
-        u16 w12;
-        struct SpriteEnt *node;
-        struct SpriteNode *n;
+        u16 dirtyMask;
+        struct SpriteEnt *other;
+        struct SpriteNode *task;
         struct SpriteWorld *world;
-        struct SlotTable *tbl;
-        void (*cb)(void *);
+        void (*taskFn)(void *);
 
         sprite_update_cd0(ent);
-        if (link != 0)
+        if (slotBits != 0)
         {
-            ((struct SpriteFlags13 *)&ent->flags13)->lo2 = link;
+            ((struct SpriteFlags13 *)&ent->flags13)->lo2 = slotBits;
         }
         newMask = ent->mask14;
         if (oldMask != newMask)
         {
-            w12 = gWorld->unk12;
-            gWorld->unk12 = w12 | newMask;
+            dirtyMask = gWorld->unk12;
+            gWorld->unk12 = dirtyMask | newMask;
         }
-        size = ent->half1C;
-        shifted = (u32)ent->byte1E << 28;
-        if (((size | ((shifted >> 16) + 0x1000)) - 0x2000) <= 1)
+        code = ent->half1C;
+        bankBits = (u32)ent->byte1E << 28;
+        if (((code | ((bankBits >> 16) + 0x1000)) - 0x2000) <= 1)
         {
             if (gWorld->slot220 == NULL)
             {
@@ -891,33 +914,33 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
         }
         else
         {
-            found = find_entry_code(gWorld->table248, (u16)(((shifted >> 16) + 0x1000) | ent->unk16));
+            found = find_entry_code(gWorld->table248, (u16)((((bankBits >> 28) + 1) << 12) | ent->unk16));
             if ((found << 16) == 0xFFFF0000)
             {
                 return;
             }
-            node = gModelCtx->list30;
-            if (node != NULL)
+            other = gModelCtx->list30;
+            if (other != NULL)
             {
                 do
                 {
-                    if (!(node->flags12 & 0x20) && node != ent && node->mask14 == ent->mask14
-                        && ((struct SpriteFlags13 *)&node->flags13)->lo2 != 0)
+                    if (!(other->flags12 & 0x20) && other != ent && other->mask14 == ent->mask14
+                        && ((struct SpriteFlags13 *)&other->flags13)->lo2 != 0)
                     {
                         return;
                     }
-                    node = node->next68;
-                } while (node != NULL);
+                    other = other->next68;
+                } while (other != NULL);
             }
-            cb = (void (*)(void *))alloc_slot_for_node;
+            taskFn = (void (*)(void *))alloc_slot_for_node;
             world = gWorld;
-            n = world->freeNodes;
-            world->freeNodes = n->next;
-            n->next = world->list4C;
-            n->callback = cb;
-            n->timer = 0;
-            world->list4C = n;
-            n->entry = (struct SpriteEntry *)ent;
+            task = world->freeNodes;
+            world->freeNodes = task->next;
+            task->next = world->list4C;
+            task->callback = taskFn;
+            task->timer = 0;
+            world->list4C = task;
+            task->entry = (struct SpriteEntry *)ent;
         }
     }
     else
@@ -932,16 +955,19 @@ NONMATCH("asm/code_0807B7A0/sprite_entry_update.s", void sprite_entry_update(str
         ((struct SpriteFlags13 *)&ent->flags13)->lo2 = 0;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0807B7A0/obj_bind_slots.s", void obj_bind_slots(struct PoolRecord *rec))
+// Lets go of the slots a sprite record holds (mask14) before it is reloaded; nothing happens
+// when it is already free (flags12 bit 5) or holds none. A record with flags29 bit 4 owns its
+// slots alone: they are freed in gModelCtx->slotTab and mask14 cleared (it hangs if another
+// live record shares the first one). A record of kind 0x600000 (half1C 0, byte1E high nibble 6)
+// is only marked free. Otherwise the table248 entry loaded into its first slot is refreshed
+// when no other live record uses that slot, and obj_release_slots releases the record.
+void obj_bind_slots(struct PoolRecord *rec)
 {
-    u16 slots;
-    s32 first;
-    struct SpriteEnt *obj;
-    u32 idx;
-    u32 partIdx;
-    u32 partOff;
+    u16 mask;
+    s32 firstSlot;
+    struct SpriteEnt *other;
+    s32 i;
 
     if (rec == NULL)
     {
@@ -951,80 +977,71 @@ NONMATCH("asm/code_0807B7A0/obj_bind_slots.s", void obj_bind_slots(struct PoolRe
     {
         return;
     }
-    slots = rec->mask14;
-    if (slots == 0)
+    mask = rec->mask14;
+    if (mask == 0)
     {
         return;
     }
-    first = 0;
-    while (((slots ^ 1) & 1) != 0)
+    firstSlot = 0;
+    while (((mask ^ 1) & 1) != 0)
     {
-        slots >>= 1;
-        first++;
+        mask >>= 1;
+        firstSlot++;
     }
 
     if (rec->flags29 & 0x10)
     {
-        obj = gModelCtx->list30;
-        if (obj != NULL)
+        for (other = gModelCtx->list30; other != NULL; other = other->next68)
         {
-            do
+            if (!(other->flags12 & 0x20) && other != (struct SpriteEnt *)rec && ((other->mask14 >> firstSlot) & 1))
             {
-                if (!(obj->flags12 & 0x20) && obj != (struct SpriteEnt *)rec && ((obj->mask14 >> first) & 1))
+                // an exclusive slot is shared: stop here
+                for (;;)
                 {
-                    for (;;)
-                    {
-                    }
                 }
-                obj = obj->next68;
-            } while (obj != NULL);
+            }
         }
-        idx = first;
-        if (slots != 0)
+        for (i = firstSlot; mask != 0; mask >>= 1, i++)
         {
-            do
+            if (((mask ^ 1) & 1) == 0)
             {
-                if (slots & 1)
-                {
-                    gModelCtx->slotTab[idx] |= 0xFFFF;
-                }
-                slots >>= 1;
-                idx++;
-            } while (slots != 0);
+                gModelCtx->slotTab[i] |= 0xFFFF;
+            }
         }
         rec->mask14 = 0;
     }
 
     if ((*(u32 *)&rec->half1C & 0x00F0FFFF) == 0x600000)
     {
-        rec->flags12 |= 0x20;
+        ((struct SpriteFlags12 *)&rec->flags12)->bit5 = 1;
         return;
     }
 
-    partOff = 0;
-    for (partIdx = 0; partIdx <= 7; partIdx++)
+    for (i = 0; i <= 7; i++)
     {
-        u8 *part = gWorld->table248->records + partOff;
+        u8 *entry = (u8 *)(i * 0x1C + (u32)gWorld->table248->records);
 
-        if (((((u32)part[1]) << 28) >> 28) == first && (part[0] & 3) != 0)
+        // entry: byte 0 bits 0-1 in use, byte 1 bits 0-3 the slot it is loaded into
+        if (((((u32)entry[1]) << 28) >> 28) == firstSlot && (entry[0] & 3) != 0)
         {
-            for (obj = gModelCtx->list30; obj != NULL; obj = obj->next68)
+            for (other = gModelCtx->list30;; other = other->next68)
             {
-                if (!(obj->flags12 & 0x20) && obj != (struct SpriteEnt *)rec && ((obj->mask14 >> first) & 1))
+                if (other == NULL)
                 {
-                    goto release;
+                    menu_entry_refresh(gWorld->table248, (u8)i, 0);
+                    break;
+                }
+                if (!(other->flags12 & 0x20) && other != (struct SpriteEnt *)rec && ((other->mask14 >> firstSlot) & 1))
+                {
+                    break;
                 }
             }
-            menu_entry_refresh(gWorld->table248, partIdx & 0xFF, 0);
             break;
         }
-        partOff += 0x1C;
     }
 
-release:
     obj_release_slots(rec);
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolObj *tmpl, u32 flags, s32 x, s32 y, s32 z, u32 vis, u32 extra))
 {
@@ -1088,23 +1105,27 @@ NONMATCH("asm/code_0807B7A0/obj_spawn.s", struct PoolObj *obj_spawn(struct PoolO
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0807B7A0/obj_spawn_linked.s", struct PoolObj *obj_spawn_linked(struct PoolObj *src, u32 flags, struct PoolObj *base))
+/*
+ * Spawns an object of type `type` for src's owner at `at`'s position (src's own when NULL), facing
+ * as src's record does, and chains it into src's sibling list. The child copies src's busy mode
+ * and flag bits 5-6, unk6C, unk2C, unk7C and the four state parameters (unk9C-unkA8), and starts
+ * with no state (unk4C) and no release callback.
+ */
+struct PoolObj *obj_spawn_linked(struct PoolObj *src, u32 type, struct PoolObj *at)
 {
-    struct PoolObj *pos = base;
+    struct PoolObj *pos = at;
     struct PoolObj *child;
-    u16 group = flags;
-    u32 busy;
+    u16 kind = type;
 
     if (pos == NULL)
     {
         pos = src;
     }
-    child = obj_spawn(src->ring, group, pos->posX / 0x100, pos->posY / 0x100, pos->posZ / 0x100,
+    child = obj_spawn(src->ring, kind, pos->posX / 0x100, pos->posY / 0x100, pos->posZ / 0x100,
         ((u32)src->record->flags11 << 25) >> 31, 1);
     child->sibling = src->sibling;
     src->sibling = child;
-    busy = src->flags76 & 6;
-    child->flags76 = (child->flags76 & -7) | busy;
+    ((struct PoolBits76 *)child)->busy = ((struct PoolBits76 *)src)->busy;
     ((struct PoolBits77 *)child)->bit6 = ((struct PoolBits77 *)src)->bit6;
     ((struct PoolBits77 *)child)->bit5 = ((struct PoolBits77 *)src)->bit5;
     child->unk6C = src->unk6C;
@@ -1118,72 +1139,80 @@ NONMATCH("asm/code_0807B7A0/obj_spawn_linked.s", struct PoolObj *obj_spawn_linke
     child->unkA8 = src->unkA8;
     return child;
 }
-END_NONMATCH
 
-struct PoolObj *pool_slot_init(s32 slot, u32 value)
+/*
+ * Takes fixed object slot `slot` (OBJ_FIXED_FIRST..OBJ_FIXED_LAST) for a script: clears the object
+ * (keeping its sprite record), puts it on the live list as OBJ_MODE_FIXED and sets its record's
+ * four flags1F fields to 2, as obj_spawn does. Sets its height unless it is OBJ_HEIGHT_NONE. NULL for a bad or already taken slot.
+ */
+struct PoolObj *pool_slot_init(s32 slot, u32 height)
 {
     struct PoolObj *obj;
-    struct PoolRecord *child;
+    struct PoolRecord *rec;
 
-    if (slot <= 7)
+    if (slot <= OBJ_FIXED_FIRST - 1)
     {
         goto none;
     }
-    if (slot > 0xF)
+    if (slot > OBJ_FIXED_LAST)
     {
         goto none;
     }
     {
-        u8 *base = gWorkBuf + (slot * 0xD0 + 0x980);
-        obj = (struct PoolObj *)(base + (s32)-0x680);
+        u8 *base = gWorkBuf + (slot * 0xD0 + OBJ_FIXED_OFFSET);
+        obj = (struct PoolObj *)(base + (s32)-(OBJ_FIXED_FIRST * 0xD0));
     }
-    if (((struct PoolFlags *)&obj->flags76)->mode == 3)
+    if (((struct PoolFlags *)&obj->flags76)->mode == OBJ_MODE_FIXED)
     {
 none:
         return NULL;
     }
-    child = obj->record;
-    ((void (*)(u32, void *, u32))gMemRoutines)(0, obj, 0xD0);
-    obj->record = child;
+    rec = obj->record;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, obj, sizeof(struct PoolObj));
+    obj->record = rec;
     obj->next = gWorld->list78;
     gWorld->list78 = obj;
-    ((struct PoolFlags *)&obj->flags76)->mode = 3;
+    ((struct PoolFlags *)&obj->flags76)->mode = OBJ_MODE_FIXED;
     obj->unk90 = 0x100;
-    child->unk20 = 0x10;
+    rec->unk20 = 0x10;
     {
-        struct ChildBits *bits = (struct ChildBits *)&child->flags1F;
+        struct ChildBits *bits = (struct ChildBits *)&rec->flags1F;
         bits->f0 = 2;
         bits->f2 = 2;
         bits->f4 = 2;
         bits->f6 = 2;
     }
-    if (value != 0xFFFFFF00)
+    if (height != OBJ_HEIGHT_NONE)
     {
-        obj->unkC5 = value;
+        obj->unkC5 = height;
     }
     return obj;
 }
 
-NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj))
+/* Releases a pooled object: runs its release callback, releases the objects that go with it when it
+   is its owner's own object (else unlinks it from the owner's chain), gives back its sprite nodes,
+   breaks the partner link, resets its sprite record, takes it off the live list and frees its pool
+   slot. */
+void obj_release(struct PoolObj *obj)
 {
     if (obj != NULL)
     {
-        u8 *flags;
-        u32 link;
+        u8 *stateFlags;
+        u32 onRelease;
 
         ((struct StateBits *)&obj->flags76)->kind = 0;
         obj_list_remove(obj);
-        link = obj->link68;
-        flags = &obj->flags76;
-        if (link != 0 && link != (u32)obj_release)
+        onRelease = obj->link68;
+        stateFlags = &obj->flags76;
+        if (onRelease != 0 && onRelease != (u32)obj_release)
         {
-            ((void (*)(void *))link)(obj);
+            ((void (*)(void *))onRelease)(obj);
         }
         if (obj->ring != NULL)
         {
-            struct PoolObj *ringHead = (struct PoolObj *)((u8 *)obj->ring + 8);
+            struct PoolObj *ownerObj = (struct PoolObj *)((u8 *)obj->ring + 8);
 
-            if (obj == ringHead)
+            if (obj == ownerObj)
             {
                 struct PoolObj *child = obj->sibling;
 
@@ -1203,7 +1232,7 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
             }
             else
             {
-                struct PoolObj *prev = ringHead;
+                struct PoolObj *prev = ownerObj;
 
                 while (prev->sibling != NULL)
                 {
@@ -1258,36 +1287,35 @@ NONMATCH("asm/code_0807B7A0/obj_release.s", void obj_release(struct PoolObj *obj
             struct PoolObj *prev = NULL;
             struct PoolObj *cur = gWorld->list78;
 
-            while (cur != NULL)
+            for (;;)
             {
-                if (cur == obj)
+                if (cur == NULL)
+                    goto unlinked;
+                if (cur != obj)
                 {
-                    if (prev == NULL)
-                    {
-                        gWorld->list78 = obj->next;
-                    }
-                    else
-                    {
-                        prev->next = obj->next;
-                    }
-                    break;
+                    prev = cur;
+                    cur = prev->next;
+                    continue;
                 }
-                prev = cur;
-                cur = cur->next;
+                if (prev != NULL)
+                    prev->next = obj->next;
+                else
+                    gWorld->list78 = obj->next;
+                goto unlinked;
             }
+        unlinked:;
         }
         {
-            u32 pos = (u32)obj - 0x1000;
+            u32 poolOfs = (u32)obj - OBJ_POOL_OFFSET;
 
-            if (pos - (u32)gWorkBuf <= 0xCFF)
+            if (poolOfs - (u32)gWorkBuf <= OBJ_POOL_COUNT * sizeof(struct PoolObj) - 1)
             {
-                ((struct PoolFlags *)flags)->mode = 0;
+                ((struct PoolFlags *)stateFlags)->mode = 0;
             }
         }
         obj->unk54 = 0;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0807B7A0/draw_sprite_nodes.s", void draw_sprite_nodes(void))
 

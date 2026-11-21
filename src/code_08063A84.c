@@ -384,14 +384,18 @@ void obj_motion_from_owner(struct ActorObj *obj)
     }
 }
 
+/* Waits for the pose's event flag (bit 3). With param9C == 0 the object hops 64 px to the left: it
+   spawns a stand-in child (type 0x40F8) that flies there on a parabola 48 px high, spinning a quarter
+   turn, hides itself off the map and waits for the child to land (obj_sync_target_place); sound 0x57.
+   Otherwise it shows effect 0x129B, plays action 8 and goes on with obj_action_a_timer; sound 0x38. */
 void chain_obj_spawn_child_launch(struct ActorObj *obj)
 {
     struct ActorObj *child;
     s32 deltaX;
     s32 deltaY;
-    s32 length;
-    s32 duration;
-    s32 speed;
+    s32 distance;
+    s32 frames;
+    s32 curve;
 
     if (obj->pose->flags & 8)
     {
@@ -410,6 +414,7 @@ void chain_obj_spawn_child_launch(struct ActorObj *obj)
             child->tag = obj->tag;
             child->posH = obj->posH + 0x800;
             child->baseH = child->posH;
+            /* fly 64 px to the left, starting from its whole-pixel position */
             child->targetX = child->baseX - 0x4000;
             child->targetY = child->baseY;
             child->targetH = child->baseH;
@@ -418,18 +423,22 @@ void chain_obj_spawn_child_launch(struct ActorObj *obj)
             child->dh = child->baseH / 0x100;
             deltaX = child->targetX - ((s16)child->dx << 8);
             deltaY = child->targetY - ((s16)child->dy << 8);
-            length = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY);
-            duration = length / 0x133;
-            speed = 0x3000 / ((duration / 2) * (duration / 2));
-            if (speed == 1)
-                speed = 2;
-            child->param9C = -speed;
-            child->paramA0 = duration;
+            /* gMathRoutines starts with the integer square root */
+            distance = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY);
+            frames = distance / 0x133;
+            /* height = 0x3000 - curve * (t - frames / 2)^2 (obj_arc_motion_step) */
+            curve = 0x3000 / ((frames / 2) * (frames / 2));
+            if (curve == 1)
+                curve = 2;
+            child->param9C = -curve;
+            child->paramA0 = frames;
             child->paramA4 = deltaX;
             child->paramA8 = deltaY;
             child->timer = 0;
             child->state = obj_arc_motion_step;
-            child->targetH = 0x4000 / duration;
+            /* spin speed: a quarter turn over the flight */
+            child->targetH = 0x4000 / frames;
+            /* hide off the map until the child has landed */
             obj->targetX = obj->posX - 0x4000;
             obj->targetY = obj->posY;
             obj->posX = 0x10000;
@@ -449,19 +458,23 @@ void chain_obj_spawn_child_launch(struct ActorObj *obj)
     }
 }
 
+/* One frame of the parabolic flight set up by chain_obj_spawn_child_launch: spins the pose by
+   targetH, moves linearly from the start pixel (dx, dy) by (paramA4, paramA8) over paramA0 frames,
+   and sets the height to dh + 0x3000 + param9C * (t - frames / 2)^2 (param9C < 0, so it peaks
+   mid-flight). On landing it plays sound 0x45 and removes and frees itself. */
 void obj_arc_motion_step(struct ActorObj *obj)
 {
-    s32 d;
-    s32 a;
-    s32 b;
+    s32 fromMid;
+    s32 drop;
+    s32 peakH;
 
     obj->pose->counter0C += obj->targetH;
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    a = (d * d) * obj->param9C;
-    b = ((s16)obj->dh << 8) + 0x3000;
-    obj->posH = a + b;
+    fromMid = (s16)obj->timer - obj->paramA0 / 2;
+    drop = (fromMid * fromMid) * obj->param9C;
+    peakH = ((s16)obj->dh << 8) + 0x3000;
+    obj->posH = drop + peakH;
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {

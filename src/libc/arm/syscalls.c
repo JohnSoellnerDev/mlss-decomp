@@ -32,7 +32,7 @@ poslog;
 #define MAX_OPEN_FILES 20
 static poslog openfiles [MAX_OPEN_FILES];
 
-static int
+int
 findslot (int fh)
 {
   int i;
@@ -58,7 +58,7 @@ do_AngelSWI (int reason, void * arg)
 #endif /* ARM_RDI_MONITOR */
 
 /* Function to convert std(in|out|err) handles to internal versions */
-static int
+int
 remap_handle (int fh)
 {
   if (fh == __sfileno (stdin))
@@ -116,7 +116,8 @@ initialise_monitor_handles (void)
   openfiles[1].pos = 0;
 }
 
-static int
+/* newlib has these helpers static; global here so their calls keep relocations like the ROM's split objects. */
+int
 get_errno ()
 {
 #ifdef ARM_RDI_MONITOR
@@ -126,14 +127,14 @@ get_errno ()
 #endif
 }
 
-static int
+int
 error (int result)
 {
   errno = get_errno ();
   return result;
 }
 
-static int
+int
 wrap (int result)
 {
   if (result == -1)

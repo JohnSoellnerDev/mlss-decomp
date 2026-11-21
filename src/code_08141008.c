@@ -28,10 +28,13 @@ struct EnemyRec
     u16 waitTimer;
     u8 filler1C[0x1E - 0x1C];
     u8 frames[4];
-    u8 amp22;
+    u8 bobAmp;        /* amplitude of the hover bob (times sin / 64) */
     u8 filler23;
-    u16 dist24;
-    u16 rate26;
+    u16 hoverHeight;  /* hover height above the ground, in 16 px units */
+    u16 hoverSpeed;   /* how fast the hover height is approached, per frame */
+    u8 aimFrame[4];   /* sprite frame while aiming, per variant */
+    u8 aimTime[4];    /* frames spent aiming before the leap, per variant */
+    u16 leapSpeed[4]; /* speed of the leap at the hero, per variant */
 };
 
 struct Bits3
@@ -54,11 +57,26 @@ struct Bits1
     u8 rest : 5;
 };
 
+/* View of an Actor from +0x58 (the enemy AI's base pointer): index is Actor.index, the
+ * variant (0-3) that picks entries of the EnemyRec's per-variant tables. */
 struct Behavior
 {
-    u8 filler0[0x17A];
+    u8 filler0[0x158];
+    struct EnemyRec *rec;   /* Actor.rec */
+    u8 filler15C[0x178 - 0x15C];
+    u16 index;
     u16 timerB;
+    u16 timer;              /* Actor.timer */
+    u8 flags;
+    u8 filler17F[0x184 - 0x17F];
+    s32 homeX;  /* where the leap started (Actor.homeX..homeDz) */
+    s32 homeY;
+    s32 homeZ;
+    s32 homeDz;
 };
+
+/* Behavior.flags / Actor.flags1D6: a move started by start_move_to is in progress */
+#define ENEMY_AI_MOVING 0x10
 
 struct Sprite
 {
@@ -214,32 +232,35 @@ void enemy_kick_after_probe(void);
 void enemy_start_return_home(void *owner, struct Actor *ent, void **out);
 u8 step_pos_xyz(struct Actor *ent);
 
+/* Enemy AI step: turn toward the active hero and walk to it at the variant's speed (or, if its
+ * sensor already sees the hero, wait a random time and kick); once the walk ends, wait the
+ * variant's time before kicking. */
 void enemy_approach_partner(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
     u16 *table = ent->table;
     struct EnemyRec *rec = ent->rec;
     u8 *sensor = ent->sensor;
-    u8 idx;
+    u8 activeIdx;
     u32 index;
     struct Actor *partner;
     s32 dx;
     s32 dy;
     u16 hit;
     s32 pick;
-    u16 timerVal;
+    u16 wait;
     u16 speed;
-    s32 flagsVal;
+    s32 flags;
 
-    if ((ent->flags1D6 & 0x10) == 0)
+    if ((ent->flags1D6 & ENEMY_AI_MOVING) == 0)
     {
         if (z_approach(ent) != 0)
         {
             return;
         }
-        if (find_active_entry(owner, &idx) != 0)
+        if (find_active_entry(owner, &activeIdx) != 0)
         {
-            index = idx;
+            index = activeIdx;
         }
         else
         {
@@ -261,37 +282,38 @@ void enemy_approach_partner(struct Owner *owner, struct Actor *ent, void **out)
         hit = *(u16 *)(sensor + 8);
         if (hit != 0)
         {
-            flagsVal = ent->flags20D;
-            flagsVal |= 0x40;
-            ent->flags20D = flagsVal;
+            flags = ent->flags20D;
+            flags |= 0x40;
+            ent->flags20D = flags;
             hit = enemy_sensor_hit(ent, partner);
             if (hit != 0)
             {
                 pick = rand_below(4, mt19937_next());
-                timerVal = table[pick + 0x14];
-                *(u16 *)(ai + 0x17A) = timerVal;
+                wait = table[pick + 0x14];
+                ai->timerB = wait;
                 out[0] = tick_store;
                 out[3] = enemy_kick_after_probe;
                 return;
             }
-            ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x32];
-            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1B];
+            ent->sprite->frame20 = ((u8 *)rec)[ai->index + 0x32];
+            speed = ((u16 *)((u8 *)rec + ai->index * 2))[0x1B];
             start_move_to(ent, partner->posX, partner->posY, speed, (u8)hit);
         }
         else
         {
-            ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x32];
-            speed = ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x1B];
+            ent->sprite->frame20 = ((u8 *)rec)[ai->index + 0x32];
+            speed = ((u16 *)((u8 *)rec + ai->index * 2))[0x1B];
             start_move_to(ent, partner->posX, partner->posY, speed, (u8)hit);
         }
-        *(u8 *)(ai + 0x17E) |= 0x10;
+        /* ai->flags, written as a plain byte for the match */
+        *((u8 *)ai + 0x17E) |= ENEMY_AI_MOVING;
     }
     else
     {
         if (step_pos_xy_plain(ent) == 0)
         {
-            timerVal = ((u8 *)rec)[ent->index + 0x3E];
-            *(u16 *)((u8 *)ent + 0x1D2) = timerVal;
+            wait = ((u8 *)rec)[ent->index + 0x3E];
+            ent->timerB = wait;
             out[0] = tick_store;
             out[3] = enemy_kick_after_probe;
         }
@@ -334,6 +356,10 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08141008/enemy_state_run_move.s", void enemy_state_run_move(struct Owner *owner, struct Actor *ent))
 
+/* Enemy AI step: counts timerB down. When it runs out the enemy goes to mode 4, its sprite plays
+ * once at the variant's rate (EnemyRec.frames, byte 0x1E + variant), it shows frame group 1
+ * facing its direction (the 8-way facing halved to four directions) and
+ * enemy_switch_to_free_partner takes over. */
 void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out)
 {
     struct EnemyRec *rec = ent->rec;
@@ -344,11 +370,11 @@ void enemy_timer_then_cell(u8 *owner, struct Actor *ent, void **out)
     if ((left << 16) == 0)
     {
         ((struct Bits3 *)&ent->mode)->field0 = 4;
-        ((struct Bits1 *)&ent->sprite->flags12)->field1 = 1;
+        ((struct Bits1 *)&ent->sprite->flags12)->field1 = 1; /* play the animation once */
         ent->sprite->frame20 = ((u8 *)rec)[ent->index + 0x1E];
         {
-            s32 cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2);
-            obj_set_cell_coord(ent, cell + 4, 0);
+            s32 dir4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2);
+            obj_set_cell_coord(ent, dir4 + 4, 0);
         }
         out[0] = enemy_switch_to_free_partner;
     }
@@ -602,35 +628,39 @@ NONMATCH("asm/code_08141008/enemy_switch_to_free_partner.s", void enemy_switch_t
 }
 END_NONMATCH
 
+/* Moves the bro the enemy bumped (owner's entry group + timer) by its velocity. While its push count (unk2DE)
+ * runs, a step that would carry it from outside into one of the enemy's sensor boxes is undone and the push
+ * ends. When the bro's height move is done (z_approach) its flags20D bit 6 is set, flags20E bit 2 cleared, its
+ * cell reset and the enemy picks a new move. */
 void enemy_step_or_bump_update(struct Owner *owner, struct Actor *ent)
 {
-    struct Actor *e = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[ent->timer];
+    struct Actor *bro = ((struct Actor **)((u8 *)owner + ent->group * 4 + 0x28))[ent->timer];
     u8 *sensor = ent->sensor;
     s16 box[8];
-    s32 nx = e->posX + e->vx;
-    s32 ny = e->posY + e->vy;
+    s32 nextX = bro->posX + bro->vx;
+    s32 nextY = bro->posY + bro->vy;
     u8 i;
 
-    if (e->unk2DE != 0)
+    if (bro->unk2DE != 0)
     {
         for (i = 0; i < sensor[1]; i++)
         {
             obj_box_to_stack(box, ent, 0x22, i * 8 + 2);
-            if ((e->posX < box[0] * 0x100 || e->posX > box[1] * 0x100 || e->posY < box[3] * 0x100 || e->posY > box[2] * 0x100)
-                && (nx >= box[0] * 0x100 && nx <= box[1] * 0x100 && ny >= box[3] * 0x100 && ny <= box[2] * 0x100))
+            if ((bro->posX < box[0] * 0x100 || bro->posX > box[1] * 0x100 || bro->posY < box[3] * 0x100 || bro->posY > box[2] * 0x100)
+                && (nextX >= box[0] * 0x100 && nextX <= box[1] * 0x100 && nextY >= box[3] * 0x100 && nextY <= box[2] * 0x100))
             {
-                e->posX -= e->vx;
-                e->posY -= e->vy;
-                e->unk2DE = 0;
+                bro->posX -= bro->vx;
+                bro->posY -= bro->vy;
+                bro->unk2DE = 0;
             }
         }
     }
-    step_pos_xy_plain(e);
-    if (z_approach(e) == 0)
+    step_pos_xy_plain(bro);
+    if (z_approach(bro) == 0)
     {
-        *(u8 *)&e->flags20D |= 0x40;
-        *(s8 *)&e->flags20E &= -5;
-        obj_set_cell_coord(e, 0, 0);
+        *(u8 *)&bro->flags20D |= 0x40;
+        *(s8 *)&bro->flags20E &= -5;
+        obj_set_cell_coord(bro, 0, 0);
         enemy_rand_setup(ent);
     }
 }
@@ -690,18 +720,24 @@ NONMATCH("asm/code_08141008/enemy_prepare_move_to_partner.s", void enemy_prepare
 }
 END_NONMATCH
 
-NONMATCH("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_run(struct Owner *owner, struct Actor *ent))
+/* Enemy state for a hovering enemy: runs its current AI handler, then (unless it is aiming at,
+ * moving to or returning from a hero) bobs it up and down on a sine wave above landZ and moves
+ * landZ towards the record's hover height above the ground (posZ) at the record's hover speed. */
+void enemy_state_wander_run(struct Owner *owner, struct Actor *ent)
 {
     struct EnemyRec *rec = ent->rec;
     void **handler = (void **)&ent->handler;
     void *next;
-    u8 amp;
-    s32 *landZ;
-    s32 dzBase;
-    s32 hop;
+    u8 bobAmp;
+    s32 *baseZ;
+    s32 height;
+    s32 bob;
     s32 phaseStep;
-    s32 hopStep;
+    s32 bobSpeed;
     s8 frame;
+    u16 hoverHeight;
+    u16 hoverSpeed;
+    s32 targetHeight;
 
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, ent, handler);
     next = *handler;
@@ -710,47 +746,32 @@ NONMATCH("asm/code_08141008/enemy_state_wander_run.s", void enemy_state_wander_r
     {
         return;
     }
-    amp = rec->amp22;
-    landZ = &ent->landZ;
-    dzBase = *landZ - ent->posZ;
-    hop = gSineTable[*(u8 *)&ent->phase] / 0x40;
-    ent->dz = dzBase + amp * hop;
-    hopStep = ent->hopStep;
+    bobAmp = rec->bobAmp;
+    baseZ = &ent->landZ;
+    height = *baseZ - ent->posZ;
+    bob = gSineTable[ent->phase & 0xFF] / 0x40;
+    ent->dz = height + bobAmp * bob;
+    /* the bob's phase advances with the sprite's frame */
+    bobSpeed = ent->hopStep;
     frame = ent->sprite->frame20;
-    phaseStep = frame * hopStep + 8;
+    phaseStep = frame * bobSpeed + 8;
     ent->phase = ((phaseStep / 0x10) + ent->phase) & 0xFF;
+    hoverHeight = rec->hoverHeight;
+    hoverSpeed = rec->hoverSpeed;
+    targetHeight = hoverHeight << 12;
+    if (*baseZ - ent->posZ > targetHeight)
     {
-        u16 dist = rec->dist24;
-        u16 rate = rec->rate26;
-        s32 snap = dist << 12;
-        s32 land = *landZ;
-        s32 gap = land - ent->posZ;
-        if (gap > snap)
-        {
-            land -= rate;
-            *landZ = land;
-            if (land - ent->posZ > snap)
-            {
-                return;
-            }
-        }
-        else
-        {
-            if (gap >= snap)
-            {
-                return;
-            }
-            land += rate;
-            *landZ = land;
-            if (land - ent->posZ < snap)
-            {
-                return;
-            }
-        }
-        *landZ = ent->posZ + snap;
+        *baseZ -= hoverSpeed;
+        if (*baseZ - ent->posZ <= targetHeight)
+            *baseZ = ent->posZ + targetHeight;
+    }
+    else if (*baseZ - ent->posZ < targetHeight)
+    {
+        *baseZ += hoverSpeed;
+        if (*baseZ - ent->posZ >= targetHeight)
+            *baseZ = ent->posZ + targetHeight;
     }
 }
-END_NONMATCH
 
 void enemy_wait_then_wander(u8 *owner, struct Actor *ent, void **out)
 {
@@ -788,37 +809,43 @@ void enemy_wait_then_wander(u8 *owner, struct Actor *ent, void **out)
     out[3] = enemy_wander_random_edge;
 }
 
+/* Enemy AI step: the hero has come into view. Picks a random variant (0-3), shows its aiming
+ * frame (EnemyRec.aimFrame), turns to face the hero in front (or the leading one) and aims
+ * for the variant's aim time (EnemyRec.aimTime) before enemy_move_to_partner_3d leaps. */
 void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
     struct EnemyRec *rec = ent->rec;
-    u8 idx;
+    u8 activeIdx;
     u32 index;
     struct Actor *partner;
-    s32 pick;
+    s32 variant;
     s32 dx;
     s32 dy;
     s32 dir;
-    u32 (*math)(u32, u32);
+    u32 (*divide)(u32, u32);
 
-    if (find_active_entry(owner, &idx) != 0)
+    /* the hero in front, or the leading one (flags208 bit 1) */
+    if (find_active_entry(owner, &activeIdx) != 0)
     {
-        index = idx;
+        index = activeIdx;
     }
     else
     {
         index = ((u32)owner->flags208 << 30) >> 31;
     }
     partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
-    pick = rand_below(4, mt19937_next());
-    *(u16 *)(ai + 0x178) = pick;
+    variant = rand_below(4, mt19937_next());
+    ai->index = variant;
     ((struct Bits3 *)&ent->mode)->field0 = 1;
-    ent->sprite->frame20 = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x28];
-    math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+    /* rec->aimFrame[ai->index] */
+    ent->sprite->frame20 = ((u8 *)rec)[ai->index + 0x28];
+    divide = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
     dx = partner->posX - ent->posX;
     dy = partner->posY - ent->posY;
     if ((dx | dy) != 0)
     {
+        /* one of 8 directions */
         u16 angle = angle_of_vector16(dx, dy);
         dir = (((s32)(angle + 0x1000)) >> 13) & 7;
     }
@@ -827,22 +854,26 @@ void enemy_aim_at_partner(struct Owner *owner, struct Actor *ent, void **out)
         dir = -1;
     }
     {
-        u8 facing = math(dir, 2);
+        u8 facing = divide(dir, 2);
         obj_set_cell_coord(ent, facing + 4, 0);
     }
-    ((struct Bits4 *)(ai + 0x17E))->bit4 = 0;
-    ((struct Behavior *)ai)->timerB = ((u8 *)rec)[*(u16 *)(ai + 0x178) + 0x2C];
+    ((struct Bits4 *)&ai->flags)->bit4 = 0; /* not ENEMY_AI_MOVING */
+    /* rec->aimTime[ai->index] */
+    ai->timerB = ((u8 *)rec)[ai->index + 0x2C];
     out[0] = enemy_move_to_partner_3d;
 }
 
+/* Enemy AI step: while aiming (timerB counts down), face the active hero; when it runs out, leap
+ * in 3D at where the hero will be in 16 frames, at the variant's leap speed (EnemyRec.leapSpeed),
+ * remembering the start spot. Once the leap is over, head back there (enemy_move_home_3d). */
 void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
     struct EnemyRec *rec = ent->rec;
-    u8 idx;
+    u8 activeIdx;
     u32 index;
     struct Actor *partner;
-    u32 (*math)(u32, u32);
+    u32 (*divide)(u32, u32);
     s32 dx;
     s32 dy;
     s32 dir;
@@ -850,16 +881,17 @@ void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out
 
     if (ent->timerB != 0)
     {
-        if (find_active_entry(owner, &idx) != 0)
+        /* the hero in front, or the leading one (flags208 bit 1) */
+        if (find_active_entry(owner, &activeIdx) != 0)
         {
-            index = idx;
+            index = activeIdx;
         }
         else
         {
             index = ((u32)owner->flags208 << 30) >> 31;
         }
         partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
-        math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+        divide = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
         dx = partner->posX - ent->posX;
         dy = partner->posY - ent->posY;
         if ((dx | dy) != 0)
@@ -871,29 +903,29 @@ void enemy_move_to_partner_3d(struct Owner *owner, struct Actor *ent, void **out
         {
             dir = -1;
         }
-        facing = math(dir, 2);
+        facing = divide(dir, 2);
         if (MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2) != facing)
         {
             obj_set_cell_coord(ent, facing + 4, 0);
         }
         {
-            s32 left = ((struct Behavior *)ai)->timerB - 1;
-            ((struct Behavior *)ai)->timerB = left;
+            s32 left = ai->timerB - 1;
+            ai->timerB = left;
             if ((u16)left == 0)
             {
                 start_move_to_3d(ent, partner->posX + (partner->vx << 4), partner->posY + (partner->vy << 4),
-                                 partner->posZ + partner->dz, ((u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2))[0x18], (u8)0);
-                *(s32 *)(ai + 0x184) = ent->posX;
-                *(s32 *)(ai + 0x188) = ent->posY;
-                *(s32 *)(ai + 0x18C) = ent->posZ;
-                *(s32 *)(ai + 0x190) = ent->dz;
-                *(u8 *)(ai + 0x17E) |= 0x10;
+                                 partner->posZ + partner->dz, ((u16 *)((u8 *)rec + ai->index * 2))[0x18], (u8)0);
+                ai->homeX = ent->posX;
+                ai->homeY = ent->posY;
+                ai->homeZ = ent->posZ;
+                ai->homeDz = ent->dz;
+                *(u8 *)&ai->flags |= ENEMY_AI_MOVING;
             }
         }
     }
     else
     {
-        if (ent->flags1D6 & 0x10)
+        if (ent->flags1D6 & ENEMY_AI_MOVING)
         {
             if (step_pos_xyz(ent) == 0)
             {
@@ -938,16 +970,20 @@ NONMATCH("asm/code_08141008/enemy_collide_random_kick.s", void enemy_collide_ran
 }
 END_NONMATCH
 
+/* Enemy AI step: when its timer has run out and a hero touches it inside its 0x22 box on its own
+ * height (or the other hero is on its height), turn to that hero (enemy_turn_to_partner); else the
+ * timer restarts at the record's wait time. Meanwhile it keeps walking; once the walk ends it waits
+ * a random variant's time (table[0x14..0x17]) and then kicks (enemy_collide_random_kick). */
 void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
     u16 *table = ent->table;
     u16 *timer = &ent->timer;
-    s32 t = *timer;
+    s32 left = *timer;
     struct Actor *partner;
     s16 box[8];
 
-    if (t == 0)
+    if (left == 0)
     {
         if (find_touching_partner(owner, ent, &partner))
         {
@@ -967,14 +1003,14 @@ void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **
             }
         }
         {
-            struct EnemyRec *rec = *(struct EnemyRec **)(ai + 0x158);
-            u16 reload = rec->waitTimer;
-            *(u16 *)(ai + 0x17C) = reload;
+            struct EnemyRec *rec = ai->rec;
+            u16 wait = rec->waitTimer;
+            ai->timer = wait;
         }
     }
     else
     {
-        *timer = t - 1;
+        *timer = left - 1;
     }
     if (step_pos_xy(ent))
     {
@@ -982,63 +1018,66 @@ void enemy_touch_partner_or_step(struct Owner *owner, struct Actor *ent, void **
     }
     {
         s32 pick = rand_below(4, mt19937_next());
-        ((struct Behavior *)ai)->timerB = table[pick + 0x14];
+        ai->timerB = table[pick + 0x14];
     }
     out[0] = tick_store;
     out[3] = enemy_collide_random_kick;
 }
 
+/* Enemy AI step: turn to face the active hero (the 8-way direction to it, halved to the
+ * sprite's 4-way facing), pick a random variant, show its frame and set its wait time, then
+ * play the sprite and hand over to enemy_wait_sprite_timer. */
 void enemy_turn_to_partner(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Behavior *ai = (struct Behavior *)((u8 *)ent + 0x58);
     struct EnemyRec *rec = ent->rec;
-    u8 idx;
+    u8 activeIdx;
     u32 index;
     struct Actor *partner;
-    u32 (*math)(u32, u32);
+    u32 (*divide)(u32, u32);
     s32 dx;
     s32 dy;
-    s32 dir;
+    s32 dir8;
     u8 facing;
     s32 pick;
     u32 zero;
-    u16 timerVal;
-    u16 *slot;
+    u16 wait;
+    u16 *variant;
 
-    if (find_active_entry(owner, &idx) != 0)
+    if (find_active_entry(owner, &activeIdx) != 0)
     {
-        index = idx;
+        index = activeIdx;
     }
     else
     {
         index = ((u32)owner->flags208 << 30) >> 31;
     }
     partner = ((struct Actor **)((u8 *)owner + 0x28))[index];
-    math = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
+    divide = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div);
     dx = partner->posX - ent->posX;
     dy = partner->posY - ent->posY;
     if ((dx | dy) != 0)
     {
         u16 angle = angle_of_vector16(dx, dy);
-        dir = (((s32)(angle + 0x1000)) >> 13) & 7;
+        dir8 = (((s32)(angle + 0x1000)) >> 13) & 7;
     }
     else
     {
-        dir = -1;
+        dir8 = -1;
     }
-    facing = math(dir, 2);
+    facing = divide(dir8, 2);
     if (MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((u32)ent->dir << 29) >> 29, 2) != facing)
     {
         obj_set_cell_coord(ent, facing, 0);
     }
     pick = rand_below(4, mt19937_next());
-    slot = (u16 *)(ai + 0x178);
+    variant = &ai->index;
     zero = 0;
-    *slot = pick;
-    timerVal = ((u8 *)rec)[*slot + 0x26];
-    *(u16 *)(ai + 0x17A) = timerVal;
+    *variant = pick;
+    wait = ((u8 *)rec)[*variant + 0x26];
+    ai->timerB = wait;
     ((struct Bits3 *)&ent->mode)->field0 = 1;
-    ent->sprite->frame20 = ((u8 *)rec)[*slot + 0x22];
+    ent->sprite->frame20 = ((u8 *)rec)[*variant + 0x22];
     obj_load_record(ent->sprite, 3, -1, 0, zero);
     sprite_step_e6a0(ent->sprite);
     *out = enemy_wait_sprite_timer;

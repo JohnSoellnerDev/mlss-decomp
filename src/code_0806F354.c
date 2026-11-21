@@ -19,13 +19,13 @@ struct ActorPart
     u8 filler1[0xEC - 0xE4];
     s16 slot;
     u8 filler2[0xF6 - 0xEE];
-    s16 cursorX;
-    s16 cursorY;
+    s16 hp;
+    s16 maxHp;
     u8 filler3[0x104 - 0xFA];
-    s16 unk104;
+    s16 defense;     /* subtracted in the damage formula */
     u8 filler4[0x10A - 0x106];
-    u16 unk10A;
-    u16 unk10C;
+    u16 powScale;    /* attack multiplier, 0x100 = 1.0 (status bits 2-3) */
+    u16 defScale;    /* defense multiplier, 0x100 = 1.0 (status bits 4-5) */
 };
 
 struct PoseBits
@@ -93,12 +93,14 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
+    /* per-state parameters; for obj_arc_step_clamped: the arc's curvature, its length in
+     * frames, and the whole X and Y distance (8.8 fixed point) */
     s32 param9C;
     s32 paramA0;
     s32 paramA4;
     s32 paramA8;
     u16 timer;
-    s16 dx;
+    s16 dx; /* obj_arc_step_clamped: the start position in pixels */
     s16 dy;
     s16 dh;
 };
@@ -176,25 +178,30 @@ void obj_pose_action_5(struct ActorObj *obj);
 void obj_timer_to_f870(struct ActorObj *obj);
 void obj_timer_then_table_step(struct ActorObj *obj);
 
+/*
+ * On the pose's event flag (8): play action 6 and effect 0x2041, spawn object 0x40E3 16 pixels left
+ * of the base (with this object's bytes 0x74-0x75 and facing), and throw it in a 44-frame arc that
+ * peaks 64 pixels up to the point (param9C, paramA0) this object holds; then idle.
+ */
 void obj_spawn_child_arc(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 dx;
-    s32 dy;
-    s32 top;
-    s32 k;
+    s32 distX;
+    s32 distY;
+    s32 facing;
+    s32 frames;
 
     if (obj->pose->flags & 8)
     {
         sprite_set_action(obj, 6, 0, 0);
         effect_spawn_at(0x2041, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        child = obj_spawn(obj->part, 0x40E3, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100,
+        child = obj_spawn(obj->part, 0x40E3, obj->baseX / 0x100 - 16, obj->baseY / 0x100,
                           obj->baseH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
         child->byte74 = obj->byte74;
         child->byte75 = obj->byte75;
-        top = obj->dir >> 5;
-        ((struct ObjBits78 *)&child->dir)->top3 = top;
+        facing = obj->dir >> 5;
+        ((struct ObjBits78 *)&child->dir)->top3 = facing;
         child->state = obj_arc_step_clamped;
         child->targetX = obj->param9C;
         child->targetY = obj->paramA0;
@@ -202,36 +209,43 @@ void obj_spawn_child_arc(struct ActorObj *obj)
         child->dx = arc_px(child->posX);
         child->dy = arc_px(child->posY);
         child->dh = arc_px(child->posH);
-        dx = child->targetX - ((s16)child->dx << 8);
-        dy = child->targetY - ((s16)child->dy << 8);
-        MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-        k = 0x2C;
-        child->param9C = -0x21;
-        child->paramA0 = k;
-        child->paramA4 = dx;
-        child->paramA8 = dy;
+        distX = child->targetX - ((s16)child->dx << 8);
+        distY = child->targetY - ((s16)child->dy << 8);
+        MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(distX * distX + distY * distY); /* result unused */
+        frames = 44;
+        child->param9C = -33;
+        child->paramA0 = frames;
+        child->paramA4 = distX;
+        child->paramA8 = distY;
         child->timer = 0;
         set_slot_value(0x13B, -1);
         obj->state = obj_pose_idle;
     }
 }
 
+/*
+ * One frame of a thrown object's flight (set up by obj_spawn_child_arc): X and Y move linearly from
+ * the start (dx, dy) by the distance (paramA4, paramA8) over paramA0 frames, and the height follows a
+ * parabola, curvature param9C, that peaks 64 pixels above dh halfway through. X and Y stop at the
+ * target. Once past the peak and back on the ground it plays effect 0x2049 and sound 0x65
+ * (set_slot_value queues a song at a volume) and waits 32 frames in obj_timer_finish.
+ */
 void obj_arc_step_clamped(struct ActorObj *obj)
 {
-    s32 x;
-    s32 d;
-    s32 h;
-    s32 bias;
+    s32 newX;
+    s32 fromPeak;
+    s32 height;
+    s32 peakHeight;
 
-    x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
-    obj->posX = x;
+    newX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+    obj->posX = newX;
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    h = d * d;
-    h = h * obj->param9C;
-    bias = ((s16)obj->dh << 8) + 0x4000;
-    obj->posH = h + bias;
-    if (x <= obj->targetX)
+    fromPeak = (s16)obj->timer - obj->paramA0 / 2;
+    height = fromPeak * fromPeak;
+    height = height * obj->param9C;
+    peakHeight = ((s16)obj->dh << 8) + 0x4000;
+    obj->posH = height + peakHeight;
+    if (newX <= obj->targetX)
     {
         obj->posX = obj->targetX;
     }
@@ -254,29 +268,36 @@ void obj_arc_step_clamped(struct ActorObj *obj)
             effect_spawn_at(0x2049, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
             set_slot_value(0x65, -1);
             obj->posH = 0;
-            obj->timer = 0x20;
+            obj->timer = 32;
             obj->state = obj_timer_finish;
         }
     }
 }
 
+/*
+ * HP drain: pushes the owner right each frame (unless its pose flag 0x20 is set) and spawns effect
+ * 0x202E every 10 frames. After the animation has ended `timer` times it plays action 4 and heals
+ * its part by 60% of the damage its attack (link power * 0.4 * powScale) does against the owner's
+ * defense (* 0.2 * defScale), at least 1, shows the HP gained and goes to obj_pose_action_5.
+ * menu_cursor_pos(points, max, amount) adds amount to points, at most max.
+ */
 void obj_countdown_place_and_setup(struct ActorObj *obj)
 {
     struct ActorObj *owner;
     struct ActorPart *part;
     struct ActorPart *ownerPart;
     s32 t;
-    s32 scaleA;
-    s32 scaleB;
-    s32 valueA;
-    s32 valueB;
-    s32 amount;
-    s32 step;
-    s32 v3;
-    s32 div;
-    s32 cursorX;
-    s32 signByte;
-    s32 setupX;
+    s32 power;
+    s32 powScale;
+    s32 defense;
+    s32 defScale;
+    s32 damage;
+    s32 defense51;
+    s32 defense3;
+    s32 heal;
+    s32 newHp;
+    s32 popupZ;
+    s32 gained;
 
     if (!(obj->owner->pose->flags & 0x20))
     {
@@ -286,7 +307,7 @@ void obj_countdown_place_and_setup(struct ActorObj *obj)
     if (obj->param9C <= 0)
     {
         effect_spawn_at(0x202E, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        obj->param9C = 0xA;
+        obj->param9C = 10;
     }
     if (obj->pose->flags & 8)
     {
@@ -298,52 +319,58 @@ void obj_countdown_place_and_setup(struct ActorObj *obj)
             sprite_set_action(obj, 4, 0, 0);
             effect_spawn_at(0x2059, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
             owner = obj->owner;
-            scaleA = obj->link->phase;
+            power = obj->link->phase;
             part = obj->part;
-            scaleB = part->unk10A;
+            powScale = part->powScale;
             ownerPart = owner->part;
-            valueA = ownerPart->unk104;
-            valueB = ownerPart->unk10C;
-            amount = scaleA * 0x66;
-            amount = arc_px(amount * scaleB);
-            v3 = (valueA << 1) + valueA;
-            step = v3 + (v3 << 4);
-            amount = amount - arc_px(valueB * step);
-            amount = arc_px(amount);
-            if (amount <= 0)
+            defense = ownerPart->defense;
+            defScale = ownerPart->defScale;
+            damage = power * 102;
+            damage = arc_px(damage * powScale);
+            defense3 = (defense << 1) + defense;
+            defense51 = defense3 + (defense3 << 4);
+            damage = damage - arc_px(defScale * defense51);
+            damage = arc_px(damage);
+            if (damage <= 0)
             {
-                amount = 1;
+                damage = 1;
             }
-            div = (((amount << 4) - amount) << 2) / 0x64;
-            cursorX = menu_cursor_pos(part->cursorX, part->cursorY, div);
-            signByte = signed_byte_e4(obj->part);
-            setupX = cursorX - obj->part->cursorX;
-            popup_digit_spawn(setupX, arc_px(obj->baseX), arc_px(obj->baseY), signByte, 1);
-            obj->part->cursorX = cursorX;
+            heal = (((damage << 4) - damage) << 2) / 100; /* 60% */
+            newHp = menu_cursor_pos(part->hp, part->maxHp, heal);
+            popupZ = signed_byte_e4(obj->part);
+            gained = newHp - obj->part->hp;
+            popup_digit_spawn(gained, arc_px(obj->baseX), arc_px(obj->baseY), popupZ, 1);
+            obj->part->hp = newHp;
             obj->state = obj_pose_action_5;
         }
     }
 }
 
+/*
+ * One step of the attack sequence: gStepSequenceTable row gUnk_03000E7C (6 bytes a row), step
+ * gUnk_03000E7D, names the target slot. Spawns object 0x40E8 at that target's position (4 pixels
+ * lower) with no state of its own, plays action 0xA on a target above y 0x68 (else action 8) and
+ * waits 18 frames in obj_timer_table_next, which moves on to the next step.
+ */
 void obj_spawn_child_from_table(struct ActorObj *obj)
 {
-    struct ActorObj *partner;
+    struct ActorObj *target;
     struct ActorObj *child;
     struct ActorPart *part;
-    s32 index;
+    s32 slot;
 
-    index = gStepSequenceTable[gUnk_03000E7D + gUnk_03000E7C * 6];
-    partner = (struct ActorObj *)(gWorld->partners[index + 6] + 8);
+    slot = gStepSequenceTable[gUnk_03000E7D + gUnk_03000E7C * 6];
+    target = (struct ActorObj *)(gWorld->partners[slot + 6] + 8);
     part = obj->part;
-    child = obj_spawn(part, 0x40E8, partner->part->targetX / 0x100,
-                      partner->part->targetY / 0x100 + 4, partner->part->targetH / 0x100,
+    child = obj_spawn(part, 0x40E8, target->part->targetX / 0x100,
+                      target->part->targetY / 0x100 + 4, target->part->targetH / 0x100,
                       ((u32)obj->pose->unk11 << 25) >> 31, 1);
     obj->child = child;
     child->byte74 = obj->byte74;
     child->byte75 = obj->byte75;
     *(u8 *)&child->flags |= 1;
-    child->state = 0;
-    if (partner->part->targetY <= 0x67FF)
+    child->state = NULL;
+    if (target->part->targetY < 0x6800)
     {
         sprite_set_action(obj, 0xA, 0, 0);
     }
@@ -351,7 +378,7 @@ void obj_spawn_child_from_table(struct ActorObj *obj)
     {
         sprite_set_action(obj, 8, 0, 0);
     }
-    obj->timer = 0x12;
+    obj->timer = 18;
     obj->state = obj_timer_table_next;
 }
 
@@ -472,23 +499,30 @@ NONMATCH("asm/code_0806F354/obj_spawn_child_seq.s", void obj_spawn_child_seq(str
 }
 END_NONMATCH
 
+/*
+ * Thrown-object state set up by obj_spawn_child_seq: spins the sprite (targetH is the spin angle, +0x400 a
+ * frame) and moves it along a parabola from its start (dx, dy, dh in pixels) by the distance
+ * (paramA4, paramA8) over paramA0 frames, param9C being the (negative) curvature and the peak 0x30 pixels up.
+ * Once past the peak and on the ground: sound 0x9C, effect 0x2069, action 0 with sprite 0x40E6,
+ * and obj_link_then_finish after 14 frames.
+ */
 void obj_arc_to_base_sprite(struct ActorObj *obj)
 {
-    s32 x;
-    s32 d;
-    s32 h;
-    s32 bias;
+    s32 newX;
+    s32 fromPeak;
+    s32 height;
+    s32 startHeight;
 
     obj->pose->phase = obj->targetH;
     obj->targetH += 0x400;
-    x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
-    obj->posX = x;
+    newX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
+    obj->posX = newX;
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    h = d * d;
-    h = h * obj->param9C;
-    bias = ((s16)obj->dh << 8) + 0x3000;
-    obj->posH = h + bias;
+    fromPeak = (s16)obj->timer - obj->paramA0 / 2;
+    height = fromPeak * fromPeak;
+    height = height * obj->param9C;
+    startHeight = ((s16)obj->dh << 8) + 0x3000;
+    obj->posH = height + startHeight;
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {

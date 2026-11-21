@@ -127,311 +127,351 @@ ASM_FUNC("asm/code_0817683C/obj_zoom_spin4_size180_6b24.s", void obj_zoom_spin4_
 
 ASM_FUNC("asm/code_0817683C/obj_zoom_spin5_6e14.s", void obj_zoom_spin5_6e14(void))
 
+/*
+ * Draws a spinning burst of 5 sprites. obj->data holds the burst's scale, scale velocity and
+ * spin angle, then 5 x/y/z points. Each point is scaled by scale/256, rotated about the
+ * vertical axis by the spin angle, tilted by a fixed angle (32/256 of a turn), raised by 8 px,
+ * mirrored when the object is flipped, offset by the object's position and placed on screen
+ * through the camera. Afterwards the burst grows by its velocity (which decays by 3/4) and spins on.
+ */
 void obj_zoom_spin5_7104(struct Point1Obj *obj)
 {
-    s16 *cs;
-    s16 *sn;
-    struct Point1Local l;
-    s32 vel;
-    s32 angle;
-    u32 h;
-    u32 saved;
+    s16 *cosEntry;
+    s16 *sinEntry;
+    struct Point1Local pt;
+    s32 scaleVel;
+    s32 spin;
+    u32 pieceCount;
+    u32 cursorSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 zoom;
-    u32 *words;
-    s32 vx;
-    s32 z1;
-    s32 x1;
-    s32 y1;
-    s32 x2;
-    s32 y2;
-    s32 z2;
-    s32 z3;
-    s32 t;
-    s32 pos;
+    s32 *py;
+    s32 *pz;
+    u32 *cursor;
+    s32 scale;
+    u32 *data;
+    s32 srcX;
+    s32 sz;
+    s32 sx;
+    s32 sy;
+    s32 rx;
+    s32 ry;
+    s32 rz;
+    s32 tz;
+    s32 tmp;
+    s32 offs;
 
-    words = obj->data;
-    zoom = *words++;
-    vel = *words++;
-    angle = *words++;
-    l.model = obj->rec->model;
-    h = block_flag_byte(obj->rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    data = obj->data;
+    scale = *data++;
+    scaleVel = *data++;
+    spin = *data++;
+    pt.model = obj->rec->model;
+    pieceCount = block_flag_byte(obj->rec);
+    cursorSaved = 0;
+    oam_list_rows_b(pt.model, pieceCount);
+    py = &pt.y;
+    pz = &pt.z;
+    cursor = &pt.model;
     for (i = 0; i < 5; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        y2 = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        y2 = y2 * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
-        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
-        l.y = y2;
-        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
-        l.z = z3;
-        l.y = y2 - 0x800;
+        srcX = *data++;
+        pt.x = srcX;
+        pt.y = *data++;
+        pt.z = *data++;
+
+        /* scale */
+        sx = (srcX * scale) / 0x100;
+        pt.x = sx;
+        sy = (pt.y * scale) / 0x100;
+        pt.y = sy;
+        sz = (pt.z * scale) / 0x100;
+        pt.z = sz;
+
+        /* spin about the vertical axis */
+        ry = sz;
+        cosEntry = &gCosineTable[spin & 0xFF];
+        ry = ry * (*cosEntry / 0x40);
+        sinEntry = &gSineTable[spin & 0xFF];
+        rz = (ry - (*sinEntry / 0x40) * sx) / 0x100;
+        pt.z = rz;
+        rx = (sx * (*cosEntry / 0x40) + (*sinEntry / 0x40) * sz) / 0x100;
+        pt.x = rx;
+
+        /* fixed tilt towards the camera */
+        tmp = sy;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        ry = (tmp - (gSineTable[32] / 0x40) * rz) / 0x100;
+        pt.y = ry;
+        tz = (rz * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * sy) / 0x100;
+        pt.z = tz;
+        pt.y = ry - 0x800;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            offs >>= 8;
+            pt.x = tmp - offs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            offs >>= 8;
+            pt.x = tmp + offs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(cursor, pieceCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!cursorSaved) {
+            pt.model = gModelCtx->model;
+            cursorSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (cursorSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += vel;
-    vel = (vel * 3) / 4;
-    angle += 2;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = vel;
-    *words = angle;
+    scale += scaleVel;
+    scaleVel = (scaleVel * 3) / 4;
+    spin += 2;
+    data = obj->data;
+    *data++ = scale;
+    *data++ = scaleVel;
+    *data = spin;
 }
 
 
+/*
+ * Draws a spinning burst of 5 sprites, the same way as obj_zoom_spin5_7104 (a second copy the
+ * game keeps for another effect). obj->data holds the burst's scale, scale velocity and spin
+ * angle, then 5 x/y/z points. Each point is scaled by scale/256, rotated about the vertical axis
+ * by the spin angle, tilted by a fixed angle (32/256 of a turn), raised by 8 px, mirrored when
+ * the object is flipped, offset by the object's position and placed on screen through the
+ * camera. Afterwards the burst grows by its velocity (which decays by 3/4) and spins on.
+ */
 void obj_zoom_spin5_736c(struct Point1Obj *obj)
 {
-    s16 *cs;
-    s16 *sn;
-    struct Point1Local l;
-    s32 vel;
-    s32 angle;
-    u32 h;
-    u32 saved;
+    s16 *cosEntry;
+    s16 *sinEntry;
+    struct Point1Local pt;
+    s32 scaleVel;
+    s32 spin;
+    u32 pieceCount;
+    u32 cursorSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 zoom;
-    u32 *words;
-    s32 vx;
-    s32 z1;
-    s32 x1;
-    s32 y1;
-    s32 x2;
-    s32 y2;
-    s32 z2;
-    s32 z3;
-    s32 t;
-    s32 pos;
+    s32 *py;
+    s32 *pz;
+    u32 *cursor;
+    s32 scale;
+    u32 *data;
+    s32 srcX;
+    s32 sz;
+    s32 sx;
+    s32 sy;
+    s32 rx;
+    s32 ry;
+    s32 rz;
+    s32 tz;
+    s32 tmp;
+    s32 offs;
 
-    words = obj->data;
-    zoom = *words++;
-    vel = *words++;
-    angle = *words++;
-    l.model = obj->rec->model;
-    h = block_flag_byte(obj->rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    data = obj->data;
+    scale = *data++;
+    scaleVel = *data++;
+    spin = *data++;
+    pt.model = obj->rec->model;
+    pieceCount = block_flag_byte(obj->rec);
+    cursorSaved = 0;
+    oam_list_rows_b(pt.model, pieceCount);
+    py = &pt.y;
+    pz = &pt.z;
+    cursor = &pt.model;
     for (i = 0; i < 5; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        y2 = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        y2 = y2 * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
-        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
-        l.y = y2;
-        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
-        l.z = z3;
-        l.y = y2 - 0x800;
+        srcX = *data++;
+        pt.x = srcX;
+        pt.y = *data++;
+        pt.z = *data++;
+
+        /* scale */
+        sx = (srcX * scale) / 0x100;
+        pt.x = sx;
+        sy = (pt.y * scale) / 0x100;
+        pt.y = sy;
+        sz = (pt.z * scale) / 0x100;
+        pt.z = sz;
+
+        /* spin about the vertical axis */
+        ry = sz;
+        cosEntry = &gCosineTable[spin & 0xFF];
+        ry = ry * (*cosEntry / 0x40);
+        sinEntry = &gSineTable[spin & 0xFF];
+        rz = (ry - (*sinEntry / 0x40) * sx) / 0x100;
+        pt.z = rz;
+        rx = (sx * (*cosEntry / 0x40) + (*sinEntry / 0x40) * sz) / 0x100;
+        pt.x = rx;
+
+        /* fixed tilt towards the camera */
+        tmp = sy;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        ry = (tmp - (gSineTable[32] / 0x40) * rz) / 0x100;
+        pt.y = ry;
+        tz = (rz * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * sy) / 0x100;
+        pt.z = tz;
+        pt.y = ry - 0x800;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            offs >>= 8;
+            pt.x = tmp - offs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            offs >>= 8;
+            pt.x = tmp + offs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(cursor, pieceCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!cursorSaved) {
+            pt.model = gModelCtx->model;
+            cursorSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (cursorSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += vel;
-    vel = (vel * 3) / 4;
-    angle += 2;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = vel;
-    *words = angle;
+    scale += scaleVel;
+    scaleVel = (scaleVel * 3) / 4;
+    spin += 2;
+    data = obj->data;
+    *data++ = scale;
+    *data++ = scaleVel;
+    *data = spin;
 }
 
+/*
+ * Draws a spinning burst of 6 sprites. obj->data holds the burst's scale, scale velocity and
+ * spin angle, then 6 x/y/z points. Each point is scaled by scale/256, rotated about the
+ * vertical axis by the spin angle, tilted by a fixed angle (32/256 of a turn), raised by 8 px,
+ * mirrored when the object is flipped, offset by the object's position and placed on screen
+ * through the camera. Afterwards the burst grows by its velocity (which decays by 3/4) and spins on.
+ */
 void obj_zoom_spin6_75d4(struct Point1Obj *obj)
 {
-    s16 *cs;
-    s16 *sn;
-    struct Point1Local l;
-    s32 vel;
-    s32 angle;
-    u32 h;
-    u32 saved;
+    s16 *cosEntry;
+    s16 *sinEntry;
+    struct Point1Local pt;
+    s32 scaleVel;
+    s32 spin;
+    u32 pieceCount;
+    u32 cursorSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 zoom;
-    u32 *words;
-    s32 vx;
-    s32 z1;
-    s32 x1;
-    s32 y1;
-    s32 x2;
-    s32 y2;
-    s32 z2;
-    s32 z3;
-    s32 t;
-    s32 pos;
+    s32 *py;
+    s32 *pz;
+    u32 *cursor;
+    s32 scale;
+    u32 *data;
+    s32 srcX;
+    s32 sz;
+    s32 sx;
+    s32 sy;
+    s32 rx;
+    s32 ry;
+    s32 rz;
+    s32 tz;
+    s32 tmp;
+    s32 offs;
 
-    words = obj->data;
-    zoom = *words++;
-    vel = *words++;
-    angle = *words++;
-    l.model = obj->rec->model;
-    h = block_flag_byte(obj->rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    data = obj->data;
+    scale = *data++;
+    scaleVel = *data++;
+    spin = *data++;
+    pt.model = obj->rec->model;
+    pieceCount = block_flag_byte(obj->rec);
+    cursorSaved = 0;
+    oam_list_rows_b(pt.model, pieceCount);
+    py = &pt.y;
+    pz = &pt.z;
+    cursor = &pt.model;
     for (i = 0; i < 6; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        y2 = z1;
-        cs = &gCosineTable[angle & 0xFF];
-        y2 = y2 * (*cs / 0x40);
-        sn = &gSineTable[angle & 0xFF];
-        z2 = (y2 - (*sn / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[32] / 0x40);
-        y2 = (t - (gSineTable[32] / 0x40) * z2) / 0x100;
-        l.y = y2;
-        z3 = (z2 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * y1) / 0x100;
-        l.z = z3;
-        l.y = y2 - 0x800;
+        srcX = *data++;
+        pt.x = srcX;
+        pt.y = *data++;
+        pt.z = *data++;
+
+        /* scale */
+        sx = (srcX * scale) / 0x100;
+        pt.x = sx;
+        sy = (pt.y * scale) / 0x100;
+        pt.y = sy;
+        sz = (pt.z * scale) / 0x100;
+        pt.z = sz;
+
+        /* spin about the vertical axis */
+        ry = sz;
+        cosEntry = &gCosineTable[spin & 0xFF];
+        ry = ry * (*cosEntry / 0x40);
+        sinEntry = &gSineTable[spin & 0xFF];
+        rz = (ry - (*sinEntry / 0x40) * sx) / 0x100;
+        pt.z = rz;
+        rx = (sx * (*cosEntry / 0x40) + (*sinEntry / 0x40) * sz) / 0x100;
+        pt.x = rx;
+
+        /* fixed tilt towards the camera */
+        tmp = sy;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        ry = (tmp - (gSineTable[32] / 0x40) * rz) / 0x100;
+        pt.y = ry;
+        tz = (rz * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * sy) / 0x100;
+        pt.z = tz;
+        pt.y = ry - 0x800;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            offs >>= 8;
+            pt.x = tmp - offs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            offs = rx;
+            if (offs < 0) {
+                offs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            offs >>= 8;
+            pt.x = tmp + offs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(cursor, pieceCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!cursorSaved) {
+            pt.model = gModelCtx->model;
+            cursorSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (cursorSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += vel;
-    vel = (vel * 3) / 4;
-    angle += 2;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = vel;
-    *words = angle;
+    scale += scaleVel;
+    scaleVel = (scaleVel * 3) / 4;
+    spin += 2;
+    data = obj->data;
+    *data++ = scale;
+    *data++ = scaleVel;
+    *data = spin;
 }
 
 void spawn_obj_zoom_spin6_75d4(u32 x, u32 y, u32 z, u32 flag)

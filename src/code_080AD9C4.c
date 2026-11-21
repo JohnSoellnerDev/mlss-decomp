@@ -59,10 +59,10 @@ struct HeroData
     u8 filler0EE[0xF4 - 0xEE];
     u8 count;
     u8 filler0F5[0xF6 - 0xF5];
-    s16 unkF6;
+    s16 hp;
     u8 filler0F8[0x110 - 0xF8];
     u8 unk110;
-    u8 unk111;
+    u8 flags111; /* bit 1: damage that would defeat it doesn't (see code_080F5884) */
     u8 filler112[0x114 - 0x112];
     u32 poseValue;
     u8 filler118[0x11E - 0x118];
@@ -110,9 +110,9 @@ struct HeroBody
     u32 unkA4;
     s32 unkA8;
     s16 step;
-    u16 timer;
+    u16 speedX; /* bounce off a target: x speed (8.8), see hero_b_fall_and_land */
     u8 filler0B0[0xB2 - 0xB0];
-    u16 vel;
+    u16 speedZ; /* bounce off a target: upward speed (8.8) */
     u8 filler0B4[0xC3 - 0xB4];
     s8 ofsX;
     s8 ofsY;
@@ -201,21 +201,27 @@ void obj_release(struct HeroBody *obj);
 void hero_b_to_partner_fast(struct HeroBody *body);
 void pair_finish_and_rebuild(struct HeroBody *body);
 
+/*
+ * Starts hero B's move at its target (body->partner). A target more than 45 px to B's left is out
+ * of reach: B only steps 30 px left of its own point (place = 1). Otherwise B moves to the target's
+ * point (place = 0). The motion (height 0x28, offsets 0x600) only starts when B stands on the field
+ * (mode 2 or 4). Then hero_b_join_partner waits for it.
+ */
 void hero_b_place_beside_partner(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    struct HeroBody *partner = body->partner;
+    struct HeroBody *target = body->partner;
 
-    if ((partner->x - body_b->x) / 0x10 < -0x2D0)
+    if ((target->x - body_b->x) / 0x10 < -0x2D0)
     {
         if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
         {
             place_targets(body_b, body_b->targetX / 0x100 + body_b->ofsX - 0x1E,
                           body_b->targetY / 0x100 + body_b->ofsY, 0, -1);
             {
-                u16 h = 0x28;
-                hero_b->body.height = h;
+                u16 height = 0x28;
+                hero_b->body.height = height;
             }
             set_motion_offsets(body_b, 0x600);
         }
@@ -225,12 +231,12 @@ void hero_b_place_beside_partner(struct HeroBody *body)
     {
         if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
         {
-            place_targets(body_b, partner->targetX / 0x100 + partner->ofsX,
-                          partner->targetY / 0x100 + partner->ofsY,
-                          partner->targetZ / 0x100 + partner->ofsZ, -1);
+            place_targets(body_b, target->targetX / 0x100 + target->ofsX,
+                          target->targetY / 0x100 + target->ofsY,
+                          target->targetZ / 0x100 + target->ofsZ, -1);
             {
-                u16 h = 0x28;
-                hero_b->body.height = h;
+                u16 height = 0x28;
+                hero_b->body.height = height;
             }
             set_motion_offsets(body_b, 0x600);
         }
@@ -239,13 +245,20 @@ void hero_b_place_beside_partner(struct HeroBody *body)
     body->state = hero_b_join_partner;
 }
 
+/*
+ * Hero B's state while it moves at its target (body->partner), set up by
+ * hero_b_place_beside_partner. Once B's motion is done (flag 0x20): if the target was out of reach
+ * (place != 0), effect 0x2FF9 and a retry (when this body stands on the field); otherwise B hits:
+ * resolve_contact_action applies the attack, a target that survives (hp left, or flags111 bit 1)
+ * gets effect 0x6E3, and B bounces off (action 0x2005, mirrored) into hero_b_set_fall_timers.
+ */
 void hero_b_join_partner(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    struct HeroBody *partner = body->partner;
-    struct HeroData *data;
-    u32 link;
+    struct HeroBody *target = body->partner;
+    struct HeroData *targetData;
+    u32 result;
 
     step_motion(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
@@ -264,21 +277,21 @@ void hero_b_join_partner(struct HeroBody *body)
             set_slot_value(0x63, -1);
             ((struct HeroCcBits *)&hero_b->body.cc)->low = 0;
             body_b->scale = 0x100;
-            link = resolve_contact_action(body_b, partner, 0, 0, 0x040210A8);
+            result = resolve_contact_action(body_b, target, 0, 0, 0x040210A8);
             body_b->count = body_b->count + 1;
-            if (link == 1)
+            if (result == 1)
             {
                 obj_slot_update(body_b);
             }
             else
             {
-                data = partner->data;
-                if (data->unkF6 > 0 || (data->unk111 & 2) != 0)
+                targetData = target->data;
+                if (targetData->hp > 0 || (targetData->flags111 & 2) != 0)
                 {
-                    s32 px = partner->targetX / 0x100 + partner->ofsX;
-                    s32 py = partner->targetY / 0x100 + partner->ofsY;
-                    s32 pz = partner->targetZ / 0x100 + partner->ofsZ;
-                    effect_spawn_at(0x6E3, px, py, pz, partner);
+                    s32 x = target->targetX / 0x100 + target->ofsX;
+                    s32 y = target->targetY / 0x100 + target->ofsY;
+                    s32 z = target->targetZ / 0x100 + target->ofsZ;
+                    effect_spawn_at(0x6E3, x, y, z, target);
                 }
                 if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
                 {
@@ -292,24 +305,29 @@ void hero_b_join_partner(struct HeroBody *body)
     }
 }
 
+/* Hero B bounces back off its target, set up by hero_b_set_fall_timers (both speeds 4 px):
+   each frame its x speed shrinks to 0xDE/0x100 of itself and gravity takes 0.5 px off its upward
+   speed. Once it has sunk 4 px below the ground it lands: sound 0x47, height and speeds cleared,
+   the motion rate reset (when B stands on the field, mode 2 or 4), and the pair action goes on to
+   pair_finish_and_rebuild. */
 void hero_b_fall_and_land(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    s32 scaled;
+    s32 slowed;
 
-    scaled = (s16)body_b->timer * 0xDE;
-    if (scaled < 0)
-        scaled += 0xFF;
-    body_b->timer = scaled >> 8;
-    body_b->vel -= 0x80;
-    body_b->x += (s16)body_b->timer;
-    body_b->z += (s16)body_b->vel;
-    if (body_b->z <= -1024)
+    slowed = (s16)body_b->speedX * 0xDE;
+    if (slowed < 0)
+        slowed += 0xFF;
+    body_b->speedX = slowed >> 8;
+    body_b->speedZ -= 0x80;
+    body_b->x += (s16)body_b->speedX;
+    body_b->z += (s16)body_b->speedZ;
+    if (body_b->z <= -0x400)
     {
         set_slot_value(0x47, -1);
-        body_b->timer = 0;
-        body_b->vel = 0;
+        body_b->speedX = 0;
+        body_b->speedZ = 0;
         body_b->z = 0;
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
@@ -321,6 +339,11 @@ void hero_b_fall_and_land(struct HeroBody *body)
     }
 }
 
+// Last state of the pair action, after hero B has fallen and landed: once B's motion is done
+// (flag 0x20), each hero that stands on the field (mode 2 or 4), B first, walks back to its own
+// target position, plays the standing action (animation 0x2002 without a pose, else 0x204F)
+// facing along its span (mirrored when span.a >= span.b), and leaves the pair action through
+// enter_finish_rebuild.
 void pair_finish_and_rebuild(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -335,6 +358,8 @@ void pair_finish_and_rebuild(struct HeroBody *body)
     {
         body_b->z = 0;
         set_slot_value(0x53, -1);
+
+        // Hero B.
         if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
         {
             place_targets(body_b, body_b->data->targetX / 0x100, body_b->data->targetY / 0x100,
@@ -362,6 +387,8 @@ void pair_finish_and_rebuild(struct HeroBody *body)
             body_b->state = 0;
             enter_finish_rebuild(body_b);
         }
+
+        // Hero A.
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             place_targets(body_a, body_a->data->targetX / 0x100, body_a->data->targetY / 0x100,

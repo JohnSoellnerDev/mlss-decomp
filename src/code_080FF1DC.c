@@ -121,6 +121,12 @@ struct World
     struct SpriteRef *marker368;
 };
 
+/* Fig.ctrl7E bits 1-2: the side a figure is on (hero_select_target picks from side 2). */
+#define FIG_SIDE(fig) (((u32)(fig)->ctrl7E << 29) >> 30)
+
+/* Fig.flags110 bit of a figure that can't be picked as a target. */
+#define FIG_UNTARGETABLE 0x20
+
 extern struct World *gWorld;
 extern u8 gSys[];
 extern const u8 gAnim278[];
@@ -251,63 +257,70 @@ ASM_FUNC("asm/code_080FF1DC/hero_select_frame.s", void hero_select_frame(struct 
 
 ASM_FUNC("asm/code_080FF1DC/hero_marker_sync.s", void hero_marker_sync(void))
 
+/* Builds the target markers once the hero has none (marker80): a marker sprite (0x7001, frame 0x16)
+   in gWorld->node364 with one sprite node per figure on side (mode2BD & 0x7F) that can be targeted,
+   or a single node in mode 3, which hero_marker_sync then places. With mode2BD bit 7 set it also
+   puts a second marker (frame, b23 and h2A + 1 taken from the hero's sprite) next to the active
+   figure's candidate (marker368), and the menu goes on in state_hero_menu_marker, else in
+   state_hero_menu_plain. */
 void hero_marker_create(struct MenuOwner *owner)
 {
     struct World *world;
     struct Panel *panel;
     struct HeroRef *hero;
     struct Node *node;
-    struct Fig **slot;
-    struct Fig *obj;
+    struct Fig **figSlot;
+    struct Fig *fig;
     struct Fig *cand;
     struct SpriteRef *sprite;
-    u32 prev;
-    u32 kind;
+    u32 marker;
+    u32 side;
     u32 mode;
     s32 i;
 
     hero = gWorld->hero278;
-    prev = hero->marker80;
-    if (prev != 0)
+    marker = hero->marker80;
+    if (marker != 0)
         return;
-    slot = gWorld->list;
+    figSlot = gWorld->list;
     gWorld->node364 = sprite_node_take();
     gWorld->node364->sprite = spawn_obj_by_id(0x7001, 0x16, 1, 1);
     sprite_entry_update(gWorld->node364->sprite);
     mode = gWorld->mode2BD;
     if (mode != 3)
     {
-        kind = mode & 0x7F;
-        gWorld->node364->next = (struct Node *)prev;
+        /* a node for each targetable figure on that side, two figures per pass */
+        side = mode & 0x7F;
+        gWorld->node364->next = (struct Node *)marker;
         for (i = 7; i >= 0; i -= 2)
         {
-            obj = slot[0];
-            if ((((u32)obj->ctrl7E << 29) >> 30) == kind)
+            fig = figSlot[0];
+            if (FIG_SIDE(fig) == side)
             {
-                if (!(obj->flags110 & 0x20))
+                if (!(fig->flags110 & FIG_UNTARGETABLE))
                 {
                     node = sprite_node_alloc(0x80000000, 0, 0);
                     node->unk0 = (u32)gWorld->node364->next;
                     gWorld->node364->next = node;
                 }
             }
-            obj = slot[1];
-            if ((((u32)obj->ctrl7E << 29) >> 30) == kind)
+            fig = figSlot[1];
+            if (FIG_SIDE(fig) == side)
             {
-                if (!(obj->flags110 & 0x20))
+                if (!(fig->flags110 & FIG_UNTARGETABLE))
                 {
                     node = sprite_node_alloc(0x80000000, 0, 0);
                     node->unk0 = (u32)gWorld->node364->next;
                     gWorld->node364->next = node;
                 }
             }
-            slot += 2;
+            figSlot += 2;
         }
     }
     else
     {
         node = sprite_node_alloc(0x80000000, 0, 0);
-        node->unk0 = prev;
+        node->unk0 = marker;
         gWorld->node364->next = node;
     }
     hero_marker_sync();

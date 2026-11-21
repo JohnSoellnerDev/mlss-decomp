@@ -31,20 +31,37 @@ struct SpriteObj
     u8 unk113;
 };
 
+/*
+ * A screen wipe (iris) task: iris_timer_step redraws the window shape each frame from
+ * framesLeft and duration, and the task ends (calling release) when framesLeft runs out.
+ */
 struct ShapeTask
 {
     u8 filler0[0x18];
     void *cls;
-    void *buffer;
+    void *buffer;           /* the shape's vertices (struct WipeVertex), or -1 when it failed */
     void (*release)(u32 arg);
-    u32 releaseArg;
+    u32 releaseArg;         /* also the shape's own data: (x, y, radius) or a vertex callback */
     u8 filler28[0x32 - 0x28];
-    u8 unk32;
-    u8 kind;
+    u8 vertexCount;
+    u8 kind;                /* the shape; each comes in a pair that runs in opposite directions */
     u8 filler34[0x40 - 0x34];
-    u16 unk40;
-    u16 unk42;
+    u16 framesLeft;
+    u16 duration;
 };
+
+/* A vertex of a wipe shape, in 8.8 fixed-point screen coordinates. */
+struct WipeVertex
+{
+    s32 x;
+    s32 y;
+};
+
+#define WIPE_VERTS(task) ((struct WipeVertex *)(task)->buffer)
+
+#define SCREEN_WIDTH  240
+#define SCREEN_HEIGHT 160
+#define FX8(n) ((n) << 8)
 
 extern u8 gUnk_03000ED0;
 extern u32 gUnk_03000F6C;
@@ -421,11 +438,19 @@ void phase_step(struct SpriteObj *obj)
     }
 }
 
-NONMATCH("asm/code_08079F40/spawn_kind_sprite.s", struct ShapeTask *spawn_kind_sprite(struct ShapeTask *obj, u8 flags, u32 taskArg, u8 kind, u16 half, u32 releaseArg, u32 window, u32 windowArg2, void (*release)(u32 arg)))
+/*
+ * Starts a screen wipe task of the given shape that runs for duration frames: opens the
+ * window buffer, allocates the shape's vertex buffer (filling in the vertices that never move:
+ * screen corners and edge midpoints) and draws the first frame. Kinds 0-1 are a 10-point
+ * shape, 2-3 a diamond, 4-5 a rectangle, 6-7 and 8-9 4-point shapes, 10-15 shapes drawn
+ * without vertices, and 16-17 a polygon from the callback in releaseArg (called with -1 for
+ * its vertex count). If the window buffer can't be had, the task is released at once.
+ */
+struct ShapeTask *spawn_kind_sprite(struct ShapeTask *obj, u8 taskKind, u32 taskData, u8 kind, u16 duration, u32 releaseArg, u32 window, u32 windowArg, void (*release)(u32 arg))
 {
-    task_insert(obj, flags, taskArg);
+    task_insert(obj, taskKind, taskData);
     obj->cls = (void *)gShapeTaskClass;
-    if ((u8)start_window_buffer(window, windowArg2) == 0)
+    if ((u8)start_window_buffer(window, windowArg) == 0)
     {
         obj->buffer = (void *)-1;
         if (obj != NULL)
@@ -436,89 +461,93 @@ NONMATCH("asm/code_08079F40/spawn_kind_sprite.s", struct ShapeTask *spawn_kind_s
     }
     obj->buffer = NULL;
     obj->kind = kind;
-    obj->unk42 = half;
+    obj->duration = duration;
     obj->release = release;
     obj->releaseArg = releaseArg;
     switch (kind)
     {
     case 0:
     case 1:
-        obj->unk32 = 0xA;
-        obj->buffer = heap_alloc_raw(1, 0x50, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
+        obj->vertexCount = 10;
+        obj->buffer = heap_alloc_raw(1, 10 * sizeof(struct WipeVertex), gHeapTagKindSpriteBuf);
+        obj->framesLeft = duration;
+        iris_timer_step((struct SpriteObj *)obj);
         break;
     case 2:
     case 3:
-        obj->unk32 = 8;
-        obj->buffer = heap_alloc_raw(1, 0x40, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
-        ((u32 *)obj->buffer)[2] = 0x7800;
-        ((u32 *)obj->buffer)[3] = 0;
-        ((u32 *)obj->buffer)[6] = 0xF000;
-        ((u32 *)obj->buffer)[7] = 0x5000;
-        ((u32 *)obj->buffer)[10] = 0x7800;
-        ((u32 *)obj->buffer)[11] = 0xA000;
-        ((u32 *)obj->buffer)[14] = 0;
-        ((u32 *)obj->buffer)[15] = 0x5000;
+        /* diamond: the edge midpoints, the others move */
+        obj->vertexCount = 8;
+        obj->buffer = heap_alloc_raw(1, 8 * sizeof(struct WipeVertex), gHeapTagKindSpriteBuf);
+        obj->framesLeft = duration;
+        WIPE_VERTS(obj)[1].x = FX8(SCREEN_WIDTH / 2);
+        WIPE_VERTS(obj)[1].y = 0;
+        WIPE_VERTS(obj)[3].x = FX8(SCREEN_WIDTH);
+        WIPE_VERTS(obj)[3].y = FX8(SCREEN_HEIGHT / 2);
+        WIPE_VERTS(obj)[5].x = FX8(SCREEN_WIDTH / 2);
+        WIPE_VERTS(obj)[5].y = FX8(SCREEN_HEIGHT);
+        WIPE_VERTS(obj)[7].x = 0;
+        WIPE_VERTS(obj)[7].y = FX8(SCREEN_HEIGHT / 2);
+        iris_timer_step((struct SpriteObj *)obj);
         break;
     case 4:
     case 5:
-        obj->unk32 = 8;
-        obj->buffer = heap_alloc_raw(1, 0x40, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
-        ((u32 *)obj->buffer)[0] = 0;
-        ((u32 *)obj->buffer)[1] = 0;
-        ((u32 *)obj->buffer)[2] = 0x7800;
-        ((u32 *)obj->buffer)[4] = 0xF000;
-        ((u32 *)obj->buffer)[5] = 0;
-        ((u32 *)obj->buffer)[7] = 0x5000;
-        ((u32 *)obj->buffer)[8] = 0xF000;
-        ((u32 *)obj->buffer)[9] = 0xA000;
-        ((u32 *)obj->buffer)[10] = 0x7800;
-        ((u32 *)obj->buffer)[12] = 0;
-        ((u32 *)obj->buffer)[13] = 0xA000;
-        ((u32 *)obj->buffer)[15] = 0x5000;
+        /* rectangle: the corners and one coordinate of each edge midpoint */
+        obj->vertexCount = 8;
+        obj->buffer = heap_alloc_raw(1, 8 * sizeof(struct WipeVertex), gHeapTagKindSpriteBuf);
+        obj->framesLeft = duration;
+        WIPE_VERTS(obj)[0].x = 0;
+        WIPE_VERTS(obj)[0].y = 0;
+        WIPE_VERTS(obj)[1].x = FX8(SCREEN_WIDTH / 2);
+        WIPE_VERTS(obj)[2].x = FX8(SCREEN_WIDTH);
+        WIPE_VERTS(obj)[2].y = 0;
+        WIPE_VERTS(obj)[3].y = FX8(SCREEN_HEIGHT / 2);
+        WIPE_VERTS(obj)[4].x = FX8(SCREEN_WIDTH);
+        WIPE_VERTS(obj)[4].y = FX8(SCREEN_HEIGHT);
+        WIPE_VERTS(obj)[5].x = FX8(SCREEN_WIDTH / 2);
+        WIPE_VERTS(obj)[6].x = 0;
+        WIPE_VERTS(obj)[6].y = FX8(SCREEN_HEIGHT);
+        WIPE_VERTS(obj)[7].y = FX8(SCREEN_HEIGHT / 2);
+        iris_timer_step((struct SpriteObj *)obj);
         break;
     case 6:
     case 7:
-        obj->unk32 = 4;
-        obj->buffer = heap_alloc_raw(1, 0x20, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
-        ((u32 *)obj->buffer)[0] = 0;
-        ((u32 *)obj->buffer)[1] = 0;
-        ((u32 *)obj->buffer)[4] = 0xF000;
-        ((u32 *)obj->buffer)[5] = 0xA000;
-        ((u32 *)obj->buffer)[6] = 0;
-        ((u32 *)obj->buffer)[7] = 0xA000;
+        /* three corners fixed, vertex 1 sweeps round */
+        obj->vertexCount = 4;
+        obj->buffer = heap_alloc_raw(1, 4 * sizeof(struct WipeVertex), gHeapTagKindSpriteBuf);
+        obj->framesLeft = duration;
+        WIPE_VERTS(obj)[0].x = 0;
+        WIPE_VERTS(obj)[0].y = 0;
+        WIPE_VERTS(obj)[2].x = FX8(SCREEN_WIDTH);
+        WIPE_VERTS(obj)[2].y = FX8(SCREEN_HEIGHT);
+        WIPE_VERTS(obj)[3].x = 0;
+        WIPE_VERTS(obj)[3].y = FX8(SCREEN_HEIGHT);
+        iris_timer_step((struct SpriteObj *)obj);
         break;
     case 8:
     case 9:
-        obj->unk32 = 4;
-        obj->buffer = heap_alloc_raw(1, 0x20, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
-        break;
+        obj->vertexCount = 4;
+        obj->buffer = heap_alloc_raw(1, 4 * sizeof(struct WipeVertex), gHeapTagKindSpriteBuf);
     case 10:
     case 11:
     case 12:
     case 13:
     case 14:
     case 15:
-        obj->unk40 = half;
+        obj->framesLeft = duration;
+        iris_timer_step((struct SpriteObj *)obj);
         break;
     case 16:
     case 17:
-        obj->unk32 = ((u8(*)(s32, u32))obj->releaseArg)(-1, obj->releaseArg);
-        obj->buffer = heap_alloc_raw(1, obj->unk32 << 3, gHeapTagKindSpriteBuf);
-        obj->unk40 = half;
-        iris_timer_step((struct SpriteObj *)obj);
+        obj->vertexCount = ((u8 (*)(s32))obj->releaseArg)(-1);
+        obj->buffer = heap_alloc_raw(1, obj->vertexCount << 3, gHeapTagKindSpriteBuf);
+        obj->framesLeft = duration;
+        ((u32 (*)(struct SpriteObj *))iris_timer_step)((struct SpriteObj *)obj);
         return obj;
     default:
         return obj;
     }
-    iris_timer_step((struct SpriteObj *)obj);
     return obj;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08079F40/iris_timer_step.s", void iris_timer_step(struct SpriteObj *obj))
 

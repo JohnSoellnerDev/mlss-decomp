@@ -16,18 +16,18 @@ struct TileObj
     u8 unk24;
     u8 unk25;
     u8 filler26[0x28 - 0x26];
-    u16 unk28;
-    s16 unk2A;
-    s16 unk2C;
-    u16 unk2E;
-    u16 unk30;
+    u16 unk28; /* projectile: distance moved per frame */
+    s16 unk2A; /* projectile: x velocity (added to unk8) */
+    s16 unk2C; /* projectile: y velocity (added to unkC) */
+    u16 unk2E; /* projectile: distance travelled so far */
+    u16 unk30; /* projectile: range; removed once unk2E passes it */
     u16 unk32;
     s32 unk34;
     s32 unk38;
     u8 filler3C[0x3E - 0x3C];
-    s8 unk3E;
+    s8 unk3E; /* first animation frame to show (wrapped to the animation's frame count) */
     u8 filler3F[0x44 - 0x3F];
-    u8 *unk44;
+    u8 *unk44; /* the object's sprite (see SPRITE_FRAME_COUNT / SPRITE_ANIM) */
     void *unk48;
     u8 unk4C;
     u8 filler4D[0x54 - 0x4D];
@@ -50,9 +50,9 @@ struct TileObj
     u16 unk276;
     u16 unk278;
     u16 unk27A;
-    u16 unk27C;
+    u16 unk27C;     /* depth of its box in y (8.8) */
     u8 filler27E[0x290 - 0x27E];
-    u8 *layer290;
+    u8 *layer290;   /* the map its tiles are read from (tile_ptr_at / tile_query) */
     u8 *unk294;
     u8 filler298[0x33C - 0x298];
     u8 unk33C;
@@ -72,6 +72,21 @@ struct TileObj
     u8 filler35C[0x368 - 0x35C];
     u8 *unk368;
 };
+
+/* TileObj.unk0: bit 6 set when the object has a real sprite; bits 3-5 its kind
+   (kind - 2 indexes gAttachedSpriteProtoTable). TileObj.unk1 bits 3-5: its facing. */
+#define TILE_OBJ_HAS_SPRITE 0x40
+
+/* Bits 3-6 of a map tile's first byte (tile_ptr_at): the tile's kind. */
+#define TILE_KIND_MASK 0x78
+
+/* Byte offsets in a sprite object (as set by obj_load_record). */
+#define SPRITE_ANIM 0x21        /* animation record loaded */
+#define SPRITE_FRAME_COUNT 0x25 /* frames in that animation */
+
+/* gFrameAttrTable row for eight directions with mirrored ones sharing frames
+   (see obj_set_cell_coord): frame in bits 0-6, drawn flipped in bit 7. */
+#define FRAME_ATTR_8DIR_MIRRORED 0x20
 
 struct SpriteFlags11
 {
@@ -110,9 +125,12 @@ u32 obj_snap_to_tile_walls(struct TileObj *obj);
 void sweep_obj_motion(struct TileObj *obj);
 void obj_release_oam(void *obj);
 
+/* Returns 1 when the object (with unk54 0 and flags35B bit 3 set) stands on a map tile of kind 0x18,
+   either the one at its spot (unk34, unk38) or the one at the far edge of its box (unk38 - unk27C).
+   Positions are 8.8 and tiles 16 px, so / 0x1000 gives tile coordinates. */
 s32 obj_on_tile_18(struct TileObj *obj)
 {
-    u8 **slot;
+    u8 **map;
     u8 *layer;
     u8 *tile;
 
@@ -120,13 +138,13 @@ s32 obj_on_tile_18(struct TileObj *obj)
         return 0;
     if ((obj->flags35B & 8) == 0)
         return 0;
-    slot = &obj->layer290;
-    layer = *slot;
+    map = &obj->layer290;
+    layer = *map;
     tile = (u8 *)tile_ptr_at(layer, (s16)(obj->unk34 / 0x1000), (s16)(obj->unk38 / 0x1000));
-    if ((*tile & 0x78) == 0x18)
+    if ((*tile & TILE_KIND_MASK) == 0x18)
         return 1;
-    tile = (u8 *)tile_ptr_at(*slot, (s16)(obj->unk34 / 0x1000), (s16)((obj->unk38 - obj->unk27C) / 0x1000));
-    if ((*tile & 0x78) != 0x18)
+    tile = (u8 *)tile_ptr_at(*map, (s16)(obj->unk34 / 0x1000), (s16)((obj->unk38 - obj->unk27C) / 0x1000));
+    if ((*tile & TILE_KIND_MASK) != 0x18)
         return 0;
     return 1;
 }
@@ -547,51 +565,60 @@ ASM_FUNC("asm/code_0804D100/probe_obj_cells.s", void probe_obj_cells(void))
 
 ASM_FUNC("asm/code_0804D100/obj_scan_contacts.s", void obj_scan_contacts(void))
 
+// Gives the object its sprite. Without TILE_OBJ_HAS_SPRITE it gets an empty one. Otherwise the sprite
+// for its kind (unk0 bits 3-5) is created with palette 0x1004 in slot 12, shows the frame for its
+// facing (unk1 bits 3-5, eight directions with mirrored ones shared), starts at frame unk3E
+// (wrapped to the animation's length) and is flipped when the frame table says so.
 void attached_sprite_obj_setup_sprite(struct TileObj *obj)
 {
-    u32 slot;
+    u32 paletteSlots;
     u8 *sprite;
-    u32 kind;
+    u32 spriteId;
     u32 anim;
-    s32 rest;
-    u32 flip;
-    u8 entry;
-    u32 b0;
+    s32 frame;
+    u32 flipped;
+    u8 attr;
+    u32 flags;
 
-    b0 = obj->unk0;
-    if ((b0 & 0x40) == 0)
+    flags = obj->unk0;
+    if ((flags & TILE_OBJ_HAS_SPRITE) == 0)
     {
         obj->unk44 = create_obj_de4(0, -1, 1, -1, -1, -1, -1);
         return;
     }
-    kind = gAttachedSpriteProtoTable[((b0 << 26) >> 29) - 2];
-    find_or_alloc_obj_slots(0, 0x1004, 0, 0, 0, &slot, 0xc);
-    sprite = create_obj_de4(0, kind, 1, -1, -1, -1, -1);
+    spriteId = gAttachedSpriteProtoTable[((flags << 26) >> 29) - 2];
+    find_or_alloc_obj_slots(0, 0x1004, 0, 0, 0, &paletteSlots, 0xc);
+    sprite = create_obj_de4(0, spriteId, 1, -1, -1, -1, -1);
     obj->unk44 = sprite;
-    entry = gFrameAttrTable[0x20 + ((((u32)obj->unk1) << 26) >> 29)];
-    anim = entry & 0x7F;
-    flip = entry >> 7;
+    attr = gFrameAttrTable[FRAME_ATTR_8DIR_MIRRORED + ((((u32)obj->unk1) << 26) >> 29)];
+    anim = attr & 0x7F;
+    flipped = attr >> 7;
     obj_load_record(sprite, anim, -1, 0, 0);
     obj_queue_update(obj->unk44);
     if (obj->unk3E != 0)
     {
-        rest = obj->unk3E;
-        while (rest >= obj->unk44[0x25])
+        frame = obj->unk3E;
+        while (frame >= obj->unk44[SPRITE_FRAME_COUNT])
         {
-            rest -= obj->unk44[0x25];
+            frame -= obj->unk44[SPRITE_FRAME_COUNT];
         }
-        obj_load_record(obj->unk44, anim, rest, 0, 0);
+        obj_load_record(obj->unk44, anim, frame, 0, 0);
     }
-    ((struct SpriteFlags11 *)obj->unk44)->bit6 = flip;
+    ((struct SpriteFlags11 *)obj->unk44)->bit6 = flipped;
 }
 
 ASM_FUNC("asm/code_0804D100/obj_init_from_table.s", void obj_init_from_table(void))
 
+// One frame of a flying projectile (active while flag 0x40 of unk0 is set). Its sprite plays
+// animation N while flying and N + 5 once it hits: when that impact animation is flagged done
+// (sprite byte 0x12, bit 0x20) the projectile turns itself off. Otherwise it moves by its velocity,
+// is removed once it has flown past its range, and switches to the impact animation when it hits
+// a wall or something it collides with (low bits of unk2).
 void obj_advance_step(struct TileObj *obj, void *list, u32 count)
 {
     u8 *sprite;
-    s32 rest;
-    u32 cnt;
+    s32 frame;
+    u32 travelled;
 
     if ((obj->unk0 & 0x40) != 0)
     {
@@ -610,10 +637,10 @@ void obj_advance_step(struct TileObj *obj, void *list, u32 count)
         {
             obj->unk8 += obj->unk2A;
             obj->unkC += obj->unk2C;
-            cnt = obj->unk28;
-            cnt += obj->unk2E;
-            obj->unk2E = cnt;
-            if ((u16)cnt > obj->unk30)
+            travelled = obj->unk28;
+            travelled += obj->unk2E;
+            obj->unk2E = travelled;
+            if ((u16)travelled > obj->unk30)
             {
                 obj_release_oam(obj);
             }
@@ -625,12 +652,13 @@ void obj_advance_step(struct TileObj *obj, void *list, u32 count)
                     obj_load_record(obj->unk44, obj->unk44[0x21] + 5, 0, 0, 0);
                     if (obj->unk3E != 0)
                     {
-                        rest = obj->unk3E;
-                        while (rest >= obj->unk44[0x25])
+                        /* start offset unk3E, wrapped to the animation's frame count */
+                        frame = obj->unk3E;
+                        while (frame >= obj->unk44[0x25])
                         {
-                            rest -= obj->unk44[0x25];
+                            frame -= obj->unk44[0x25];
                         }
-                        obj_load_record(obj->unk44, obj->unk44[0x21], rest, 0, 0);
+                        obj_load_record(obj->unk44, obj->unk44[0x21], frame, 0, 0);
                     }
                     ((struct SpriteFlags12 *)obj->unk44)->mode = 2;
                 }

@@ -4,7 +4,7 @@
 struct HeroSprite
 {
     u8 filler0[0x06];
-    u16 unk6;
+    u16 scale; /* 0x100 is normal size */
     u8 filler08[0x11 - 0x08];
     u8 mirror;
     u8 flags;
@@ -130,6 +130,18 @@ struct World
     struct Hero *heroB;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroSprite.flags bit: the current animation has finished. */
+#define SPRITE_FLAG_ANIM_DONE 0x08
+
+/* HeroBody.flags bit set by state_stack_advance_progress once progress passes 0x3FFF. */
+#define HERO_FLAG_PROGRESS_DONE 0x20
+
+/* HeroBody.rate that takes progress from 0 to 0x4000 in `frames` frames. */
+#define HERO_RATE_FRAMES(frames) MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, frames)
+
 extern struct World *gWorld;
 
 void state_stack_advance_progress(struct HeroBody *body);
@@ -154,6 +166,9 @@ void hero_pair_pose_a_anim(struct HeroBody *body);
 void hero_b_step_window_a568(struct HeroBody *body);
 void enter_finish_rebuild(struct HeroBody *body);
 
+/* Waits for hero A's animation to end, then sends hero B and then hero A back
+   to their home targets, puts them in their idle pose facing along their span
+   and hands each one over to the finish-rebuild state. */
 void hero_pair_finish_place_both(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -161,97 +176,92 @@ void hero_pair_finish_place_both(struct HeroBody *body)
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
-    if ((body_a->sprite->flags & 8) != 0)
+    if ((body_a->sprite->flags & SPRITE_FLAG_ANIM_DONE) != 0)
     {
         set_slot_value(0x53, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             place_targets(body_b, body_b->data->targetX / 0x100, body_b->data->targetY / 0x100,
                           body_b->data->targetH / 0x100, -1);
             set_motion_start(body_b, 0x400);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             if (body_b->data->poseIndex == -1)
-            {
                 sprite_set_action(body_b, 0, 0x2002, 0);
-            }
             else
-            {
                 sprite_set_action(body_b, 0, 0x204F, 0);
-            }
             {
                 struct HeroSprite *sprite = body_b->sprite;
                 s32 flip = 0;
                 struct HeroSpan *span = &body_b->span;
+
                 if (span->a >= span->b)
-                {
                     flip = 1;
-                }
                 ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
             }
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            body_b->state = 0;
+            body_b->state = NULL;
             enter_finish_rebuild(body_b);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             place_targets(body_a, body_a->data->targetX / 0x100, body_a->data->targetY / 0x100,
                           body_a->data->targetH / 0x100, -1);
             set_motion_start(body_a, 0x400);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             if (body_a->data->poseIndex == -1)
-            {
                 sprite_set_action(body_a, 0, 0x2002, 0);
-            }
             else
-            {
                 sprite_set_action(body_a, 0, 0x204F, 0);
-            }
             {
                 struct HeroSprite *sprite = body_a->sprite;
                 s32 flip = 0;
                 struct HeroSpan *span = &body_a->span;
+
                 if (span->a >= span->b)
-                {
                     flip = 1;
-                }
                 ((struct HeroMirrorBits *)&sprite->mirror)->flip = flip;
             }
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
-            body_a->state = 0;
+            body_a->state = NULL;
             enter_finish_rebuild(body_a);
         }
     }
 }
 
+/* Pair-move state: hero B, if on the field, takes action 2 (animation 0x2063, played once) and
+   starts a 2-frame progress timer; hero_b_active_fx_a_step_rate waits for it to run out. */
 void hero_b_anim_start_step2(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
 
-    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_b->mode))
     {
         sprite_set_action(body_b, 2, 0x2063, 0);
         ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
     }
-    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_b->mode))
     {
-        body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 2);
+        body_b->rate = HERO_RATE_FRAMES(2);
         body_b->progress = 0;
         ((struct HeroFlagBits *)&body_b->flags)->active = 0;
     }
     body->state = hero_b_active_fx_a_step_rate;
 }
 
+/* Waits for hero B's progress timer; once it has run out, spawns effect 0x2FE6 at hero A, sets
+   slot 0x7C, starts a 24-frame progress timer on hero A and goes on with
+   hero_a_active_place_b_anim_fx. */
 void hero_b_active_fx_a_step_rate(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -260,13 +270,13 @@ void hero_b_active_fx_a_step_rate(struct HeroBody *body)
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);
-    if ((body_b->flags & 0x20) != 0)
+    if ((body_b->flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         effect_spawn_at(0x2FE6, body_a->posX / 0x100, body_a->posY / 0x100, body_a->posZ / 0x100, body_a);
         set_slot_value(0x7C, -1);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
-            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x18);
+            body_a->rate = HERO_RATE_FRAMES(24);
             body_a->progress = 0;
             ((struct HeroFlagBits *)&body_a->flags)->active = 0;
         }
@@ -274,6 +284,9 @@ void hero_b_active_fx_a_step_rate(struct HeroBody *body)
     }
 }
 
+/* Grows hero A's sprite back to normal size while its progress runs; when it's
+   done, hero B jumps onto hero A's target, both heroes take their next pose, an
+   effect is spawned at hero A and hero B's state moves on to its step window. */
 void hero_a_active_place_b_anim_fx(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -282,26 +295,28 @@ void hero_a_active_place_b_anim_fx(struct HeroBody *body)
     struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_a);
-    body_a->sprite->unk6 = 0x110 - body_a->progress / 0x40;
+    /* 0x100 is normal size */
+    body_a->sprite->scale = 0x110 - body_a->progress / 0x40;
+    /* flags bit 5: the progress has run out */
     if ((body_a->flags & 0x20) != 0)
     {
         set_slot_value(0x2B, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             place_targets(body_b, body_a->targetX / 0x100 + body_a->ofsX, body_a->targetY / 0x100 + body_a->ofsY, 6, -1);
             {
-                u16 h = 0x3C;
-                body_b->height = h;
+                u16 height = 0x3C;
+                body_b->height = height;
             }
             set_motion_offsets(body_b, 0x399);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 6, 0x2053, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        body_a->sprite->unk6 = 0x100;
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        body_a->sprite->scale = 0x100;
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             sprite_set_action(body_a, 0, 0x2035, 0);
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;

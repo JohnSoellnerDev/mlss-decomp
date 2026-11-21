@@ -584,85 +584,91 @@ void spawn_obj_point_grow_814c(u32 x, u32 y, u32 z, u32 flag)
                  flag, gUnk_085062C8, 1);
 }
 
+/*
+ * Effect update: draws one sprite at its 8.8 fixed-point offset from the object (mirrored in X
+ * when flag 0x80 is set) and shrinks it: the scale (rec->unk4/unk6, 0x100 = 1.0) drops by a step
+ * that eases off to 31/32 of itself each frame. State in obj->data: scale, step, then the
+ * sprite's offset (x, y, z).
+ */
 void obj_point1_zoom_step31_ead4(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
+    struct Point1Local pt;
+    u32 *state;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
-    s32 zoom;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 base;
+    s32 ofs;
+    s32 scale;
     s32 step;
 
-    words = obj->data;
-    zoom = *words++;
-    step = *words++;
+    state = obj->data;
+    scale = *state++;
+    step = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            ofs >>= 8;
+            pt.x = base - ofs;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            base = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            ofs >>= 8;
+            pt.x = base + ofs;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        base = obj->posY;
+        ofs = pt.y;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        ofs >>= 8;
+        pt.y = base + ofs;
+        base = obj->posZ;
+        ofs = pt.z;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        ofs >>= 8;
+        pt.z = base + ofs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom -= step;
+    scale -= step;
     step = (step * 31) / 32;
-    rec->unk4 = zoom;
-    rec->unk6 = zoom;
-    words = obj->data;
-    *words++ = zoom;
-    *words = step;
+    rec->unk4 = scale;
+    rec->unk6 = scale;
+    state = obj->data;
+    *state++ = scale;
+    *state = step;
 }

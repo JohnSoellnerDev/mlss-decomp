@@ -113,8 +113,21 @@ void obj_init_from_table(void *table, u32 a, void *sub, u32 b);
 void set_slot_value(u32 id, s32 value);
 void obj_shift_state_slots(void *sub);
 void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
-void contacts_obj_start_move(void *obj, s32 a, s32 b, s32 x, s32 y, s32 zero, s32 mode);
-void motion_obj_set_move_target(void *obj, u32 a, s32 b, s32 c);
+/* Moves obj in a straight line to pixel (x, y, z) (by it when relative == 1); kind: enum MoveKind. */
+void contacts_obj_start_move(void *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, s32 speedOrFrames);
+/* Starts a jump: the launch speed that reaches `height` pixels under `gravity` (-1: the object's defaults). */
+void motion_obj_set_move_target(void *obj, u32 height, s32 gravity, s32 speed);
+
+enum MoveKind
+{
+    MOVE_BY_SPEED = 1,  /* a fixed step every frame */
+    MOVE_BY_FRAMES = 2, /* arrive after a fixed number of frames */
+};
+
+/* PairObj.flagsFB bit 2: half gravity, slower jumps */
+#define PAIR_SLOW_JUMP 4
+/* the gravity of a pair jump, halved by PAIR_SLOW_JUMP */
+#define PAIR_JUMP_GRAVITY 0xEE
 
 /* Facing, slot shift and animation step for A at the start of a pair state. */
 static inline void pair_start_anim(struct PairObj *obj)
@@ -135,6 +148,11 @@ static inline void pair_start_begin(struct PairObj *obj)
 
 ASM_FUNC("asm/code_080306B4/pair_b_state_10_1c.s", void pair_b_state_10_1c(void))
 
+/*
+ * A and B start state 0x2E (B jumps onto A): the pair keeps B's pixel spot, B jumps 32 pixels plus
+ * the height A stands above it, landing on A's spot in MOVE_BY_FRAMES (10 frames, 16 when slow),
+ * and both sprites' +0x20 (and the subs' +0x239) take flagsFB bits 3-7.
+ */
 void pair_start_state_2e(struct PairObj *obj)
 {
     pair_start_begin(obj);
@@ -155,10 +173,10 @@ void pair_start_state_2e(struct PairObj *obj)
         ((struct Bit3Set *)&obj->subA->flags358)->bit3 = 1;
         ((struct Bit3Set *)&b->flags358)->bit3 = 1;
     }
-    motion_obj_set_move_target(obj->subB, (obj->subA->posZ - obj->subB->posZ) / 0x100 + 0x20,
-        0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
-    contacts_obj_start_move(obj->subB, 2, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
-        (obj->flagsFB & 4) ? 0x10 : 0xA);
+    motion_obj_set_move_target(obj->subB, (obj->subA->posZ - obj->subB->posZ) / 0x100 + 32,
+        PAIR_JUMP_GRAVITY >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
+    contacts_obj_start_move(obj->subB, MOVE_BY_FRAMES, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
+        (obj->flagsFB & PAIR_SLOW_JUMP) ? 16 : 10);
     {
         struct PairSub *a;
         struct PairSpr *aSprite;
@@ -180,6 +198,11 @@ void pair_start_state_2e(struct PairObj *obj)
     set_slot_value(0x2B, -1);
 }
 
+/*
+ * A and B start state 0x37 (pair mode 4, B's entry 1): B gets object id 0x103F and jumps 16 pixels
+ * (PAIR_JUMP_GRAVITY, halved when PAIR_SLOW_JUMP is set), both sprites' +0x20 (and the subs' +0x239)
+ * take flagsFB bits 3-7, B's sprite mode becomes 1 and slot 0x3C is set.
+ */
 void pair_start_state_37(struct PairObj *obj)
 {
     pair_start_anim(obj);
@@ -203,7 +226,8 @@ void pair_start_state_37(struct PairObj *obj)
     ((struct Bit1Clear *)&obj->subB->flags35A)->b1 = 0;
     ((struct StateLo3 *)&obj->subB->stateBits214)->lo3 = 4;
     obj_set_id(obj->subB, 0x103F);
-    motion_obj_set_move_target(obj->subB, 0x10, 0xEE >> (((u32)obj->flagsFB << 29) >> 31), obj->move100);
+    motion_obj_set_move_target(obj->subB, 16, PAIR_JUMP_GRAVITY >> (((u32)obj->flagsFB << 29) >> 31),
+        obj->move100);
     {
         struct PairSub *a;
         struct PairSpr *aSprite;
@@ -226,6 +250,11 @@ void pair_start_state_37(struct PairObj *obj)
     set_slot_value(0x3C, -1);
 }
 
+/*
+ * A and B start state 0x3A: both get sprite mode 4, B object id 0x1041 and A 0x1030, both sprites'
+ * +0x20 (and the subs' +0x239) take flagsFB bits 3-7, A is set up from slot 0's table, +0x26E is set
+ * to 70 and slot 0x56 is set.
+ */
 void pair_start_state_3a(struct PairObj *obj)
 {
     pair_start_anim(obj);
@@ -266,29 +295,34 @@ void pair_start_state_3a(struct PairObj *obj)
         a->field239 = value;
     }
     obj_init_from_table(obj->slots[0], 4, obj->subA, 0);
-    obj->field26E = 0x46;
+    obj->field26E = 70;
     ((struct Bit7 *)&obj->select20B)->bit7 = 1;
     set_slot_value(0x56, -1);
 }
 
-void pair_sub_state_3a(struct PairObj *obj, struct PairSub *sub)
+/*
+ * One brother (sub) starts state 0x3A on his own, like pair_start_state_3a does for both: sprite
+ * mode 4 and object id 0x1030, his sprite's +0x20 (and his +0x239) take flagsFB bits 3-7, A is set
+ * up from slot 0's table, +0x355 is set to 70 and sound 0x56 plays (set_slot_value queues it).
+ */
+void pair_sub_state_3a(struct PairObj *pair, struct PairSub *sub)
 {
     struct PairSpr *sprite;
     u8 value;
 
-    update_pair_facing(obj, 1, 1);
+    update_pair_facing(pair, 1, 1);
     sub->state4 = 0x3A;
     ((struct Bits352 *)&sub->flags351)->bit6 = 1;
     sub->field23B = 0;
     ((struct StateLo3 *)&sub->stateBits214)->lo3 = 4;
     obj_set_id(sub, 0x1030);
     sprite = sub->sprite;
-    value = obj->flagsFB >> 3;
+    value = pair->flagsFB >> 3;
     sprite->value20 = value;
     sub->field239 = value;
-    obj_init_from_table(obj->slots[0], 4, obj->subA, 0);
-    sub->field355 = 0x46;
-    ((struct Bit7 *)&obj->select20B)->bit7 = 1;
+    obj_init_from_table(pair->slots[0], 4, pair->subA, 0);
+    sub->field355 = 70;
+    ((struct Bit7 *)&pair->select20B)->bit7 = 1;
     set_slot_value(0x56, -1);
 }
 

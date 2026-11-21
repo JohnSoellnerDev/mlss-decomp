@@ -414,75 +414,79 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_xslide_a770.s", void obj_model8_zoom
 }
 END_NONMATCH
 
+/* One-point object that doesn't move: draws its single piece at the 24.8 fixed-point offset in
+ * obj->data (3 words) from the object's position, mirrored in x when flags bit 7 is set, and sets
+ * the record's size (unk4, unk6) to 0x160. */
 void obj_point_static_oam_160_a99c(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     u32 *words;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 pos;
-    s32 t;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 tmp;
+    s32 ofs;
 
     words = obj->data;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        offX = *words++;
+        pt.x = offX;
+        pt.y = *words++;
+        pt.z = *words++;
+        /* flags bit 7: mirrored in x */
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            tmp = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            ofs >>= 8;
+            pt.x = tmp - ofs;
         } else {
-            pos = obj->posX;
-            t = vx;
-            if (t < 0) {
-                t += 0xFF;
+            tmp = obj->posX;
+            ofs = offX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            ofs >>= 8;
+            pt.x = tmp + ofs;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        tmp = obj->posY;
+        ofs = pt.y;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        ofs >>= 8;
+        pt.y = tmp + ofs;
+        tmp = obj->posZ;
+        ofs = pt.z;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        ofs >>= 8;
+        pt.z = tmp + ofs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
     rec->unk4 = 0x160;
     rec->unk6 = 0x160;
@@ -730,249 +734,270 @@ NONMATCH("asm/code_08179A7C/obj_model8_zoom_vel7_oam_130_acd8.s", void obj_model
 }
 END_NONMATCH
 
+/*
+ * Effect update: draws 5 pieces whose offsets are scaled by the zoom (8.8), tilted by a fixed
+ * 12/256 turn around the x axis (y/z plane) and shifted by a common offset. The zoom grows by 4.0
+ * every frame while the offset falls with gravity 0x60; state is 4 words in obj->data (zoom,
+ * offset x, offset y, offset y speed), then 3 words per piece.
+ */
 void obj_model5_zoom_drop_af10(struct Point1Obj *obj)
 {
-    struct Point1Local l;
-    u32 *words;
+    struct Point1Local pt;
+    u32 *state;
     s32 zoom;
-    s32 offset_x;
-    s32 offset_y;
-    s32 offset_y_speed;
+    s32 offsetX;
+    s32 offsetY;
+    s32 offsetYVel;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
-    s32 left;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 vy;
-    s32 vz;
-    s32 x0;
-    s32 y0;
-    s32 z0;
-    s32 y1;
-    s32 z1;
-    s32 x1;
-    s32 pos;
-    s32 t;
+    u32 rowCount;
+    u32 modelSaved;
+    s32 piecesLeft;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 offY;
+    s32 offZ;
+    s32 scaledX;
+    s32 scaledY;
+    s32 scaledZ;
+    s32 tiltY;
+    s32 tiltZ;
+    s32 shiftedX;
+    s32 tmp;
+    s32 ofs;
 
-    words = obj->data;
-    zoom = *words++;
-    offset_x = *words++;
-    offset_y = *words++;
-    offset_y_speed = *words++;
+    state = obj->data;
+    zoom = *state++;
+    offsetX = *state++;
+    offsetY = *state++;
+    offsetYVel = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    left = 4;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
+    piecesLeft = 4;
     for (;;) {
-        vx = *words++;
-        l.x = vx;
-        vy = *words++;
-        l.y = vy;
-        vz = *words++;
-        l.z = vz;
-        x0 = vx * zoom / 0x100;
-        l.x = x0;
-        y0 = vy * zoom / 0x100;
-        l.y = y0;
-        z0 = vz * zoom / 0x100;
-        l.z = z0;
-        pos = y0;
-        pos = pos * (gCosineTable[12] / 0x40);
-        y1 = (pos - (gSineTable[12] / 0x40) * z0) / 0x100;
-        l.y = y1;
-        z1 = (z0 * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * y0) / 0x100;
-        l.z = z1;
-        x1 = offset_x + x0;
-        l.x = x1;
-        l.y = y1 + offset_y;
+        offX = *state++;
+        pt.x = offX;
+        offY = *state++;
+        pt.y = offY;
+        offZ = *state++;
+        pt.z = offZ;
+
+        /* scale the offset by zoom / 256 */
+        scaledX = offX * zoom / 0x100;
+        pt.x = scaledX;
+        scaledY = offY * zoom / 0x100;
+        pt.y = scaledY;
+        scaledZ = offZ * zoom / 0x100;
+        pt.z = scaledZ;
+
+        /* tilt: rotate in the Y/Z plane */
+        tmp = scaledY;
+        tmp = tmp * (gCosineTable[12] / 0x40);
+        tiltY = (tmp - (gSineTable[12] / 0x40) * scaledZ) / 0x100;
+        pt.y = tiltY;
+        tiltZ = (scaledZ * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * scaledY) / 0x100;
+        pt.z = tiltZ;
+
+        shiftedX = offsetX + scaledX;
+        pt.x = shiftedX;
+        pt.y = tiltY + offsetY;
+
+        /* flags bit 7: mirrored in x */
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = x1;
-            if (t < 0) {
-                t += 0xFF;
+            tmp = obj->posX;
+            ofs = shiftedX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            ofs >>= 8;
+            pt.x = tmp - ofs;
         } else {
-            pos = obj->posX;
-            t = x1;
-            if (t < 0) {
-                t += 0xFF;
+            tmp = obj->posX;
+            ofs = shiftedX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            ofs >>= 8;
+            pt.x = tmp + ofs;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        tmp = obj->posY;
+        ofs = pt.y;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        ofs >>= 8;
+        pt.y = tmp + ofs;
+        tmp = obj->posZ;
+        ofs = pt.z;
+        if (ofs < 0) {
+            ofs += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        ofs >>= 8;
+        pt.z = tmp + ofs;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
-        left--;
-        if (left < 0) {
+        piecesLeft--;
+        if (piecesLeft < 0) {
             break;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
     zoom += 0x400;
-    offset_y += offset_y_speed;
-    offset_y_speed += 0x60;
-    words = obj->data;
-    *words++ = zoom;
-    *words++ = offset_x;
-    *words++ = offset_y;
-    *words = offset_y_speed;
+    offsetY += offsetYVel;
+    offsetYVel += 0x60;
+    state = obj->data;
+    *state++ = zoom;
+    *state++ = offsetX;
+    *state++ = offsetY;
+    *state = offsetYVel;
 }
 
+// Five-point object that grows and falls: each point is zoomed (8.8 fixed point), tilted by the
+// fixed table angle 12, shifted by the x offset and the fall height and drawn at the object
+// (mirrored when flags bit 7 is set). Every frame the zoom grows by 4.0, gravity speeds up the
+// fall, and the record's size (0xA0 - shrink) shrinks ever faster.
 void obj_model5_zoom_fall_oam_b0e0(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     u32 *words;
     s32 zoom;
-    s32 height;
-    s32 height_speed;
+    s32 shrink;
+    s32 shrink_speed;
     s32 offset_x;
-    s32 offset_y;
-    s32 offset_y_speed;
+    s32 fall_y;
+    s32 fall_speed;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
-    s32 left;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 vy;
-    s32 vz;
-    s32 x0;
-    s32 y0;
-    s32 z0;
-    s32 y1;
-    s32 z1;
-    s32 x1;
-    s32 height_new;
-    s32 pos;
+    u32 oam_flags;
+    u32 model_saved;
+    s32 points_left;
+    s32 *p_y;
+    s32 *p_z;
+    u32 *p_model;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s32 zx;
+    s32 zy;
+    s32 zz;
+    s32 tilt_y;
+    s32 tilt_z;
+    s32 shifted_x;
     s32 t;
+    s32 pos;
 
+    // State: six words in obj->data, followed by the points.
     words = obj->data;
     zoom = *words++;
-    height = *words++;
-    height_speed = *words++;
+    shrink = *words++;
+    shrink_speed = *words++;
     offset_x = *words++;
-    offset_y = *words++;
-    offset_y_speed = *words++;
+    fall_y = *words++;
+    fall_speed = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    left = 4;
+    pt.model = rec->model;
+    oam_flags = block_flag_byte(rec);
+    model_saved = 0;
+    oam_list_rows_b(pt.model, oam_flags);
+    p_y = &pt.y;
+    p_z = &pt.z;
+    p_model = &pt.model;
+    points_left = 4;
     for (;;) {
-        vx = *words++;
-        l.x = vx;
-        vy = *words++;
-        l.y = vy;
-        vz = *words++;
-        l.z = vz;
-        x0 = vx * zoom / 0x100;
-        l.x = x0;
-        y0 = vy * zoom / 0x100;
-        l.y = y0;
-        z0 = vz * zoom / 0x100;
-        l.z = z0;
-        pos = y0;
-        pos = pos * (gCosineTable[12] / 0x40);
-        y1 = (pos - (gSineTable[12] / 0x40) * z0) / 0x100;
-        l.y = y1;
-        z1 = (z0 * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * y0) / 0x100;
-        l.z = z1;
-        x1 = offset_x + x0;
-        l.x = x1;
-        l.y = y1 + offset_y;
+        // The point's offset from the object.
+        px = *words++;
+        pt.x = px;
+        py = *words++;
+        pt.y = py;
+        pz = *words++;
+        pt.z = pz;
+        // Zoom it.
+        zx = px * zoom / 0x100;
+        pt.x = zx;
+        zy = py * zoom / 0x100;
+        pt.y = zy;
+        zz = pz * zoom / 0x100;
+        pt.z = zz;
+        // Tilt it.
+        t = zy;
+        t = t * (gCosineTable[12] / 0x40);
+        tilt_y = (t - (gSineTable[12] / 0x40) * zz) / 0x100;
+        pt.y = tilt_y;
+        tilt_z = (zz * (gCosineTable[12] / 0x40) + (gSineTable[12] / 0x40) * zy) / 0x100;
+        pt.z = tilt_z;
+        // Shift it and let it fall.
+        shifted_x = offset_x + zx;
+        pt.x = shifted_x;
+        pt.y = tilt_y + fall_y;
         if (obj->flags & 0x80) {
-            pos = obj->posX;
-            t = x1;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = shifted_x;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos - t;
+            pos >>= 8;
+            pt.x = t - pos;
         } else {
-            pos = obj->posX;
-            t = x1;
-            if (t < 0) {
-                t += 0xFF;
+            t = obj->posX;
+            pos = shifted_x;
+            if (pos < 0) {
+                pos += 0xFF;
             }
-            t >>= 8;
-            l.x = pos + t;
+            pos >>= 8;
+            pt.x = t + pos;
         }
-        pos = obj->posY;
-        t = l.y;
-        if (t < 0) {
-            t += 0xFF;
+        t = obj->posY;
+        pos = pt.y;
+        if (pos < 0) {
+            pos += 0xFF;
         }
-        t >>= 8;
-        l.y = pos + t;
-        pos = obj->posZ;
-        t = l.z;
-        if (t < 0) {
-            t += 0xFF;
+        pos >>= 8;
+        pt.y = t + pos;
+        t = obj->posZ;
+        pos = pt.z;
+        if (pos < 0) {
+            pos += 0xFF;
         }
-        t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pos >>= 8;
+        pt.z = t + pos;
+        offset_words_camera(&pt.x, p_y, p_z, 0);
+        oam_place_points(p_model, oam_flags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!model_saved) {
+            pt.model = gModelCtx->model;
+            model_saved = 1;
         }
-        left--;
-        if (left < 0) {
+        points_left--;
+        if (points_left < 0) {
             break;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (model_saved) {
+        gModelCtx->model = pt.model;
     }
     zoom += 0x400;
-    offset_y += offset_y_speed;
-    offset_y_speed += 0x60;
-    height += height_speed;
-    height_speed += 1;
-    rec->unk4 = 0xA0 - height;
-    rec->unk6 = 0xA0 - height;
+    fall_y += fall_speed;
+    fall_speed += 0x60; // gravity
+    shrink += shrink_speed;
+    shrink_speed += 1;
+    rec->unk4 = 0xA0 - shrink;
+    rec->unk6 = 0xA0 - shrink;
     words = obj->data;
     *words++ = zoom;
-    *words++ = height;
-    *words++ = height_speed;
+    *words++ = shrink;
+    *words++ = shrink_speed;
     *words++ = offset_x;
-    *words++ = offset_y;
-    *words = offset_y_speed;
+    *words++ = fall_y;
+    *words = fall_speed;
 }

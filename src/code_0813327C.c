@@ -301,120 +301,145 @@ void motion_end(struct Part *obj)
     }
 }
 
+// When the current animation ends: takes action 7, plays sound 0x85 with effect 0x2177 and launches
+// a shot (object 0x4103) that flies in a straight line from in front of obj to its target's spot,
+// 6 px above the ground (part_flight_a); obj then rests (part_rest_idle_b).
 void part_launch_a(struct Part *obj)
 {
-    struct Part *child;
-    struct Part *link;
+    struct Part *shot;
+    struct Part *target;
 
     if (obj->sprite->flags12 & 8)
     {
         sprite_set_action(obj, 7, 0, 0);
         set_slot_value(0x85, -1);
         effect_spawn_at(0x2177, obj->baseA / 256, obj->baseB / 256 + 2, obj->baseH / 256, obj);
-        child = obj_spawn(obj->owner, 0x4103, obj->baseA / 256 - 0x11, obj->baseB / 256 + 5,
-                          obj->baseH / 256 + 0x17, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
-        obj->next = child;
-        ((struct Flags78Bits *)&child->flags78)->kind = 1;
-        part_child_flags(obj, child);
-        child->callback68 = on_arrive;
-        child->link6C = obj->link6C;
-        link = obj->link;
-        child->link = link;
-        ((struct Flags76Bits *)&link->flags76)->bit7 = 0;
-        obj_list_push_default(child);
-        child->handler5C = 0;
-        child->handler60 = 0;
-        child->handler64 = 0;
-        child->kind74 = 3;
-        child->velA = child->baseA / 256;
-        child->velB = child->baseB / 256;
-        child->velH = child->baseH / 256;
-        child->targetA = obj->link->owner->unkD8 - ((child->velA - 4) << 8);
-        child->targetB = obj->link->owner->unkDC - (child->velB << 8);
-        child->targetH = 0x600 - ((s16)child->velH << 8);
-        child->state = part_flight_a;
+        shot = obj_spawn(obj->owner, 0x4103, obj->baseA / 256 - 0x11, obj->baseB / 256 + 5,
+                         obj->baseH / 256 + 0x17, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = shot;
+        ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+        part_child_flags(obj, shot);
+        shot->callback68 = on_arrive;
+        shot->link6C = obj->link6C;
+        target = obj->link;
+        shot->link = target;
+        ((struct Flags76Bits *)&target->flags76)->bit7 = 0;
+        obj_list_push_default(shot);
+        shot->handler5C = 0;
+        shot->handler60 = 0;
+        shot->handler64 = 0;
+        shot->kind74 = 3;
+
+        // During the flight velA/velB/velH hold the start point in pixels and
+        // targetA/targetB/targetH the distance (1/256 px) from there to the target.
+        shot->velA = shot->baseA / 256;
+        shot->velB = shot->baseB / 256;
+        shot->velH = shot->baseH / 256;
+        shot->targetA = obj->link->owner->unkD8 - ((shot->velA - 4) << 8);
+        shot->targetB = obj->link->owner->unkDC - (shot->velB << 8);
+        shot->targetH = 0x600 - ((s16)shot->velH << 8);
+        shot->state = part_flight_a;
         obj->state = part_rest_idle_b;
     }
 }
 
+// When the current animation ends: takes action 0xB, plays sound 0x62 with effect 0x217F and launches
+// a shot (object 0x4104) that flies in a straight line from in front of obj towards its target's spot,
+// 6 px above the ground (part_flight_b); obj then stops (part_stop).
 void part_launch_b(struct Part *obj)
 {
-    struct Part *child;
+    struct Part *shot;
 
     if (obj->sprite->flags12 & 8)
     {
         sprite_set_action(obj, 0xB, 0, 0);
         set_slot_value(0x62, -1);
         effect_spawn_at(0x217F, obj->baseA / 256, obj->baseB / 256 + 2, obj->baseH / 256, obj);
-        child = obj_spawn(obj->owner, 0x4104, obj->baseA / 256 - 0x18, obj->baseB / 256 + 5,
-                          obj->baseH / 256 + 0x1D, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
-        obj->next = child;
-        ((struct Flags78Bits *)&child->flags78)->kind = 1;
-        part_child_flags(obj, child);
-        child->callback68 = on_arrive;
-        child->link6C = obj->link6C;
-        child->link = obj->link;
-        obj_list_push_default(child);
-        child->handler5C = 0;
-        child->handler60 = 0;
-        child->handler64 = 0;
-        child->kind74 = 3;
-        child->velA = child->baseA / 256;
-        child->velB = child->baseB / 256;
-        child->velH = child->baseH / 256;
-        child->targetA = obj->link->owner->unkD8 - (child->velA << 8);
-        child->targetB = obj->link->owner->unkDC - (child->velB << 8);
-        child->targetH = 0x600 - ((s16)child->velH << 8);
-        child->state = part_flight_b;
+        shot = obj_spawn(obj->owner, 0x4104, obj->baseA / 256 - 0x18, obj->baseB / 256 + 5,
+                         obj->baseH / 256 + 0x1D, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = shot;
+        ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+        part_child_flags(obj, shot);
+        shot->callback68 = on_arrive;
+        shot->link6C = obj->link6C;
+        shot->link = obj->link;
+        obj_list_push_default(shot);
+        shot->handler5C = 0;
+        shot->handler60 = 0;
+        shot->handler64 = 0;
+        shot->kind74 = 3;
+
+        // Start point in pixels, and the distance (1/256 px) from there to the target.
+        shot->velA = shot->baseA / 256;
+        shot->velB = shot->baseB / 256;
+        shot->velH = shot->baseH / 256;
+        shot->targetA = obj->link->owner->unkD8 - (shot->velA << 8);
+        shot->targetB = obj->link->owner->unkDC - (shot->velB << 8);
+        shot->targetH = 0x600 - ((s16)shot->velH << 8);
+        shot->state = part_flight_b;
         obj->state = part_stop;
     }
 }
 
-void part_flight_a(struct Part *obj)
+// Flight of the shot part_launch_a fires: spins its sprite, moves 4 px a frame along A (towards
+// lower A) and sets B and the height by linear interpolation from the start point (velA/velB/velH,
+// in pixels) over the distance to the target (targetA/targetB/targetH). Once it has passed the
+// target it plays sound 0xAD, bounces back up with a jump arc (gravity 0x400) and part_settle
+// takes over.
+void part_flight_a(struct Part *shot)
 {
-    obj->sprite->anim += 0x1200;
-    obj->posA -= 0x400;
-    obj->posB = ((obj->posA - (obj->velA << 8)) * obj->targetB) / obj->targetA + (obj->velB << 8);
-    obj->height = ((obj->posA - (obj->velA << 8)) * obj->targetH) / obj->targetA + ((s16)obj->velH << 8);
-    if (obj->posA < (obj->velA << 8) + obj->targetA)
+    shot->sprite->anim += 0x1200;
+    shot->posA -= 0x400;
+    shot->posB = ((shot->posA - (shot->velA << 8)) * shot->targetB) / shot->targetA + (shot->velB << 8);
+    shot->height = ((shot->posA - (shot->velA << 8)) * shot->targetH) / shot->targetA + ((s16)shot->velH << 8);
+    if (shot->posA < (shot->velA << 8) + shot->targetA)
     {
         set_slot_value(0xAD, -1);
-        obj->stepH = jump_velocity(&obj->velA, &obj->velB, &obj->velH, -0xC800,
-                                   -(obj->targetB * 0xC800) / obj->targetA, 0, 0x3000, 0x400, 0x100, 0);
-        obj->state = part_settle;
+        shot->stepH = jump_velocity(&shot->velA, &shot->velB, &shot->velH, -0xC800,
+                                    -(shot->targetB * 0xC800) / shot->targetA, 0, 0x3000, 0x400, 0x100, 0);
+        shot->state = part_settle;
     }
 }
 
-void part_flight_b(struct Part *obj)
+// Flight of the shot part_launch_b fires: spins its sprite, moves 2.5 px a frame along A (towards
+// lower A) and sets B and the height by linear interpolation from the start point (velA/velB/velH,
+// in pixels) over the distance to the target (targetA/targetB/targetH). Once it is down to 6 px
+// above the ground it bounces off with a jump arc (gravity 0x280) and part_fall takes over.
+void part_flight_b(struct Part *shot)
 {
-    obj->sprite->anim += 0x1000;
-    obj->posA -= 0x280;
-    obj->posB = ((obj->posA - (obj->velA << 8)) * obj->targetB) / obj->targetA + (obj->velB << 8);
-    obj->height = ((obj->posA - (obj->velA << 8)) * obj->targetH) / obj->targetA + ((s16)obj->velH << 8);
-    if (obj->height <= 0x5FF)
+    shot->sprite->anim += 0x1000;
+    shot->posA -= 0x280;
+    shot->posB = ((shot->posA - (shot->velA << 8)) * shot->targetB) / shot->targetA + (shot->velB << 8);
+    shot->height = ((shot->posA - (shot->velA << 8)) * shot->targetH) / shot->targetA + ((s16)shot->velH << 8);
+    if (shot->height <= 0x5FF)
     {
-        obj->stepH = jump_velocity(&obj->velA, &obj->velB, &obj->velH, -0xA000,
-                                   -(obj->targetB * 0xA000) / obj->targetA, 0, 0x3800, 0x280, 0x100, 0);
-        obj->state = part_fall;
+        shot->stepH = jump_velocity(&shot->velA, &shot->velB, &shot->velH, -0xA000,
+                                    -(shot->targetB * 0xA000) / shot->targetA, 0, 0x3800, 0x280, 0x100, 0);
+        shot->state = part_fall;
     }
 }
 
-void part_fall(struct Part *obj)
+// Flight of part_launch_b's shot after it bounces off (part_flight_b): spins its sprite and follows
+// its jump arc. Once it is off screen (A below -16 px) it plays sound 0x62 and comes back in at
+// A = 256 px, at its owner's B and height (the owner is a bro whose body is at +8, so its position
+// is at +0x40/+0x44/+0x48), on a jump arc (gravity 0x280) that ends 23 px in front of the owner.
+// It then leaves the object list and part_sink takes over.
+void part_fall(struct Part *shot)
 {
-    obj->sprite->anim += 0x1000;
-    obj->velH += obj->stepH;
-    obj->posA += obj->velA;
-    obj->posB += obj->velB;
-    obj->height += (s16)obj->velH;
-    if (obj->posA < -0x1000)
+    shot->sprite->anim += 0x1000;
+    shot->velH += shot->stepH;
+    shot->posA += shot->velA;
+    shot->posB += shot->velB;
+    shot->height += (s16)shot->velH;
+    if (shot->posA < -0x1000)
     {
         set_slot_value(0x62, -1);
-        obj->posA = 0x10000;
-        obj->posB = obj->owner->unk44;
-        obj->height = obj->owner->unk48;
-        obj->stepH = jump_velocity(&obj->velA, &obj->velB, &obj->velH, obj->owner->baseH - 0xE900,
-                                   0x500, 0x2300, 0x4000, 0x280, 0x100, 0);
-        obj_list_remove(obj);
-        obj->state = part_sink;
+        shot->posA = 0x10000;
+        shot->posB = shot->owner->unk44;
+        shot->height = shot->owner->unk48;
+        shot->stepH = jump_velocity(&shot->velA, &shot->velB, &shot->velH, shot->owner->baseH - 0xE900,
+                                    0x500, 0x2300, 0x4000, 0x280, 0x100, 0);
+        obj_list_remove(shot);
+        shot->state = part_sink;
     }
 }

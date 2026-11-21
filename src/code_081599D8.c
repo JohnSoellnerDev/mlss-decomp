@@ -95,6 +95,46 @@ struct GameVars
     u16 unk1F2A;
 };
 
+/* The transition scene (transition_scene_init builds it, transition_exit tears it down) and its
+   water effect (gUnk_03001020 points at the scene): below the water line the hblank handlers
+   swap in a darker palette and shift BG1 by a per-line wave offset. */
+struct HblankFxState
+{
+    u8 filler0[0x14];
+    u32 unk14;              /* the task paused while the scene runs (resumed on exit) */
+    const void *unk18;      /* class table */
+    u8 unk1C[3][0x824];     /* tile buffers (struct TileObj), freed with obj_free_tiles */
+    u8 filler1888[0x1CA4 - 0x1888];
+    s32 unk1CA4;            /* BG1 horizontal scroll, 24.8 fixed point */
+    u8 filler1CA8[0x1CB8 - 0x1CA8];
+    void *unk1CB8;          /* score sprite group (four child objects) */
+    u8 *unk1CBC;            /* the scene's camera (struct CamObj) */
+    u8 filler1CC0[2];
+    s16 unk1CC2;            /* water line (scanline); 0: no water effect */
+    u16 unk1CC4[0x40];      /* palette used below the water line (the scene palette halved) */
+    u16 unk1D44[0xA0];      /* wave offset added to BG1's horizontal scroll, per scanline */
+    u16 unk1E84;            /* wave phase, advanced by 2 each frame */
+    u8 filler1E86[0x1EA4 - 0x1E86];
+    void *unk1EA4;          /* the scene's child task (class gClassE430) */
+};
+
+#define IRQ_SLOT_HBLANK 4 /* set_irq_callback */
+
+struct HblankLine
+{
+    u16 unk0;
+    u16 unk2;
+    u16 unk4;
+    u16 unk6;
+};
+
+struct HblankTable
+{
+    s16 unk0;               /* first scanline of the water effect (water line plus its bob) */
+    u16 unk2;               /* height of the black bars at the top and bottom of the screen, scanlines */
+    struct HblankLine lines[0xA0]; /* per scanline: BG2HOFS, BG2VOFS, BLDALPHA */
+};
+
 struct SceneStateEntry
 {
     u8 filler0[0x1C];
@@ -115,22 +155,22 @@ struct ClassObj
 struct CamObj
 {
     u8 filler0[0x500];
-    s32 unk500;
-    s32 unk504;
-    s32 unk508;
-    s32 unk50C;
-    s16 unk510;
+    s32 unk500; /* scroll X: -(target X + offset X), 8.8 fixed point */
+    s32 unk504; /* scroll Y */
+    s32 unk508; /* offset X from the followed point, 8.8 (the keys pan it) */
+    s32 unk50C; /* offset Y */
+    s16 unk510; /* wobble: added to offset X every wobble frame */
     u8 filler512[2];
-    u16 unk514;
+    u16 unk514; /* wobble: offset Y step this frame (3/64 of the cosine) */
     u8 filler516[2];
-    u16 unk518;
+    u16 unk518; /* wobble phase, +12 a frame from 1 until it passes 0xFF; 0: no wobble */
     u8 filler51A[2];
-    s16 unk51C;
+    s16 unk51C; /* copy of the wobble step */
     u8 filler51E[2];
     u16 unk520;
     u8 filler522[2];
     void *unk524;
-    s16 unk528;
+    s16 unk528; /* bit 0: the hblank handlers take BG2's scroll (and the blend) per line from gUnk_0300101C */
     u8 filler52A[2];
     s32 unk52C;
     s32 unk530;
@@ -148,7 +188,7 @@ void task_insert(void *node, u8 kind);
 void heap_free_b(void *p);
 void slot_reset(u32 id);
 void set_irq_callback(u32 kind, void *cb);
-void scene_free_objects(struct SceneObj *obj);
+void scene_free_objects(void *scene);
 void obj_release_children_4(void *sub, u32 mode);
 void task_remove(void *node, u32 kind);
 void heap_free(void *p);
@@ -162,7 +202,7 @@ extern const u8 gClassE420[];
 void obj_reset_e400(void *obj);
 void cam_build_line_table(struct CamObj *cam, struct Pair *arg);
 void cam_pan_by_keys(struct CamObj *cam);
-void *obj_create(void *game);
+void *obj_create(void *game, void *record);
 void obj_place_on_screen(void *obj, s32 *pos);
 
 struct KeyState
@@ -547,12 +587,12 @@ void game_set_1f28(struct GameVars *game, s32 value)
     }
 }
 
-NONMATCH("asm/code_081599D8/set_win_blend_shadow.s", void set_win_blend_shadow(void *unused, s32 mode))
+void set_win_blend_shadow(void *unused, s32 mode)
 {
-    vu16 *p;
-
     if (mode != 0)
     {
+        register vu16 *p asm("r1");
+
         *(vu16 *)0x02000000 |= 0x400;
         *(vu16 *)0x02000000 |= 0x2000;
         p = (vu16 *)gUnk_02000048;
@@ -570,13 +610,15 @@ NONMATCH("asm/code_081599D8/set_win_blend_shadow.s", void set_win_blend_shadow(v
     }
     else
     {
+        vu16 *p;
+
         *(vu16 *)0x02000000 &= 0xFBFF;
         p = (vu16 *)gUnk_02000050;
-        p[0] = mode;
-        p[2] = mode;
+        *p = mode;
+        p += 2;
+        *p = mode;
     }
 }
-END_NONMATCH
 
 void store_at_1cac(struct GameVars *game, void *value)
 {
@@ -620,48 +662,23 @@ struct SceneObj *sub_08159F18(struct GameVars *game, s32 kind)
     return 0;
 }
 
-NONMATCH("asm/code_081599D8/sub_08159F78.s", void *sub_08159F78(struct GameVars *game))
+void *sub_08159F78(struct GameVars *game, void *record)
 {
-    void **p;
     s32 i;
     s32 slot;
 
-    for (i = 0, p = game->unk1898; i <= 0xFF; p += 8, i += 8)
+    for (i = 0; i < 0x100; i++)
     {
-        if (p[0] == 0)
-            goto store;
-        slot = i + 1;
-        if (p[1] == 0)
-            goto found;
-        slot = i + 2;
-        if (p[2] == 0)
-            goto found;
-        slot = i + 3;
-        if (p[3] == 0)
-            goto found;
-        slot = i + 4;
-        if (p[4] == 0)
-            goto found;
-        slot = i + 5;
-        if (p[5] == 0)
-            goto found;
-        slot = i + 6;
-        if (p[6] == 0)
-            goto found;
-        slot = i + 7;
-        if (p[7] == 0)
+        if (game->unk1898[i] == 0)
         {
-found:
-            i = slot;
-            goto store;
+            slot = i;
+            goto found;
         }
     }
     slot = -1;
-    i = slot;
-store:
-    return game->unk1898[i] = obj_create(game);
+found:
+    return game->unk1898[slot] = obj_create(game, record);
 }
-END_NONMATCH
 
 s32 pool_first_free_slot(struct GameVars *game)
 {
@@ -880,54 +897,57 @@ void cam_scroll_anim(struct CamObj *cam, u8 enable)
     }
 }
 
+/* Camera update for a followed point: clamps the camera offset so the point plus the offset stays on screen,
+   runs the vertical wobble (cam_start_wobble) along a cosine until its phase passes 0xFF, sets the
+   scroll to -(point + offset) and, during vblank, rebuilds the per-line table. */
 void cam_follow_target(struct CamObj *cam, struct Pair *target)
 {
     s32 x = cam->unk508 + target->unk00;
     s32 y = cam->unk50C + target->unk04;
-    u16 uVar1;
-    s32 sVar1;
-    s32 t;
-    s32 c;
+    u16 phase;
+    s32 step;
+    s32 nextPhase;
+    s32 cosine;
 
-    if (x > 0xF000)
+    if (x > SCREEN_WIDTH << 8)
     {
-        cam->unk508 = 0xF000 - target->unk00;
+        cam->unk508 = (SCREEN_WIDTH << 8) - target->unk00;
     }
     else if (x < 0)
     {
         cam->unk508 = -target->unk00;
     }
-    if (y > 0xA000)
+    if (y > SCREEN_HEIGHT << 8)
     {
-        cam->unk50C = 0xA000 - target->unk04;
+        cam->unk50C = (SCREEN_HEIGHT << 8) - target->unk04;
     }
     else if (y < 0)
     {
         cam->unk50C = -target->unk04;
     }
-    uVar1 = cam->unk518;
+    phase = cam->unk518;
     if ((s16)cam->unk518 > 0)
     {
-        t = uVar1 + 0xC;
-        cam->unk518 = t;
-        if ((s16)t > 0xFF)
+        nextPhase = phase + 0xC;
+        cam->unk518 = nextPhase;
+        if ((s16)nextPhase > 0xFF)
         {
             cam->unk518 = 0;
         }
-        c = gCosineTable[*(u8 *)&cam->unk518];
-        if (c < 0)
+        cosine = gCosineTable[*(u8 *)&cam->unk518];
+        if (cosine < 0)
         {
-            c += 0x3F;
+            cosine += 0x3F;
         }
-        sVar1 = (c >> 6) * 3;
-        cam->unk51C = sVar1;
-        cam->unk514 = sVar1;
+        step = (cosine >> 6) * 3;
+        cam->unk51C = step;
+        cam->unk514 = step;
         cam->unk508 += cam->unk510;
         cam->unk50C += (s16)cam->unk514;
     }
     cam->unk500 = -(target->unk00 + cam->unk508);
     cam->unk504 = -(target->unk04 + cam->unk50C);
-    if (REG_VCOUNT > 0x9F)
+    if (REG_VCOUNT >= SCREEN_HEIGHT)
     {
         cam_build_line_table(cam, target);
     }
@@ -972,41 +992,36 @@ void cam_start_wobble(struct CamObj *cam, s32 value)
     cam->unk514 = value;
 }
 
-NONMATCH("asm/code_081599D8/cam_target_within_range.s", s32 cam_target_within_range(struct CamObj *cam, struct Pair *target, struct Pair *origin))
+s32 cam_target_within_range(struct CamObj *cam, struct Pair *target, struct Pair *origin)
 {
     s32 ox;
     s32 oy;
     s32 dx;
     s32 dy;
-    s32 dist;
-    s32 acc;
     s32 limit;
-    s32 *fp;
+    s32 reach;
+    s32 dist;
+    s32 *scale;
 
     ox = origin->unk00 + cam->unk508;
     oy = origin->unk04 + cam->unk50C;
     dx = target->unk00 - ox;
     dy = target->unk04 - oy;
     dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-    fp = &cam->unk52C;
-    acc = cam->unk530;
-    if (acc < 0)
+    scale = &cam->unk52C;
+    limit = cam->unk530 / 0x100 * *scale;
+    reach = (limit << 1) + limit;
+    if (reach < 0)
     {
-        acc += 0xFF;
+        reach += 3;
     }
-    acc >>= 8;
-    limit = acc * *fp * 3;
-    if (limit < 0)
-    {
-        limit += 3;
-    }
-    if (dist < (limit >> 2))
+    limit = reach >> 2;
+    if (dist < limit)
     {
         return 1;
     }
     return 0;
 }
-END_NONMATCH
 
 void cam_setup_relative(struct CamObj *cam, struct Pair *a, struct Pair *b, s32 factor)
 {
@@ -1037,12 +1052,128 @@ void cam_free(struct CamObj *cam, u32 flags)
     }
 }
 
-ASM_FUNC("asm/code_081599D8/bg_update_wave.s", void bg_update_wave(void))
+/* Per-frame update of the scene's water effect: copies the three BG tilemap buffers to VRAM,
+   resets BG2's scroll, and while there is a water line, bobs it with the wave phase and fills
+   the per-scanline wave offsets from the water line down to the bottom of the screen. */
+void bg_update_wave(void)
+{
+    struct HblankFxState *fx;
+    struct HblankTable *table;
+    u16 phase;
+    s32 line;
+
+    dma3_copy_tilemap(gUnk_03001020 + 0x1C);
+    dma3_copy_tilemap(gUnk_03001020 + 0x840);
+    dma3_copy_tilemap(gUnk_03001020 + 0x1064);
+    REG_BG2HOFS = 0;
+    REG_BG2VOFS = 0;
+    gSys.unk02 |= 0xF;
+    fx = (struct HblankFxState *)gUnk_03001020;
+    if (fx->unk1CC2 != 0)
+    {
+        fx->unk1E84 += 2;
+        table = (struct HblankTable *)gUnk_0300101C;
+        table->unk0 = ((gSineTable[(fx->unk1E84 / 2) & 0xFF] / 64) * 2 + (fx->unk1CC2 << 8)) >> 8;
+        phase = fx->unk1E84;
+        for (line = table->unk0; line < 0xA0; line++)
+        {
+            ((struct HblankFxState *)gUnk_03001020)->unk1D44[line] = (gCosineTable[phase & 0xFF] / 64) >> 8;
+            phase++;
+        }
+    }
+}
 
 extern u8 *gUnk_03001020;
-ASM_FUNC("asm/code_081599D8/irq_hblank_fx_bg.s", void irq_hblank_fx_bg(void))
+/*
+ * HBlank handler for the water scene: below the water line it DMAs the dark palette into BG
+ * palette RAM and adds the line's wave offset to BG1's scroll. BG2 gets a flat scroll, or
+ * (camera unk528 bit 0) its per-line scroll and blend from gUnk_0300101C. Like
+ * irq_hblank_fx_blend without the letterbox bars.
+ */
+void irq_hblank_fx_bg(void)
+{
+    u8 scanline = REG_VCOUNT;
 
-ASM_FUNC("asm/code_081599D8/irq_hblank_fx_blend.s", void irq_hblank_fx_blend(void))
+    if (scanline < 0xA0)
+    {
+        struct HblankFxState *fx = (struct HblankFxState *)gUnk_03001020;
+
+        if (fx->unk1CC2 != 0 && scanline >= ((struct HblankTable *)gUnk_0300101C)->unk0)
+        {
+            vu32 *dma = &REG_DMA0SAD;
+            vu16 *hofs;
+
+            dma[0] = (u32)fx->unk1CC4;
+            dma[1] = BG_PLTT;
+            dma[2] = 0x84000020; /* enable, 32-bit, 0x20 words: 64 colours */
+            dma[2];
+            hofs = &REG_BG1HOFS;
+            *hofs = (fx->unk1CA4 >> 8) + fx->unk1D44[scanline];
+        }
+        if (((((struct HblankFxState *)gUnk_03001020)->unk1CBC[0x528] ^ 1) & 1) != 0)
+        {
+            REG_BG2HOFS = 0;
+            REG_BG2VOFS = 0x80 - scanline;
+        }
+        else
+        {
+            REG_BG2HOFS = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk0;
+            REG_BG2VOFS = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk2;
+            REG_BLDALPHA = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk4;
+        }
+    }
+}
+
+/*
+ * HBlank handler for the water scene with letterbox bars: below the water line it DMAs the dark
+ * palette into BG palette RAM and adds the line's wave offset to BG1's scroll. The top and bottom
+ * gUnk_0300101C->unk2 lines are blacked out (brightness decrease, full strength); in between, BG2
+ * gets a flat scroll, or (camera unk528 bit 0) its per-line scroll and an alpha blend over the rest.
+ */
+void irq_hblank_fx_blend(void)
+{
+    u8 scanline = REG_VCOUNT;
+
+    if (scanline < 0xA0)
+    {
+        struct HblankFxState *fx = (struct HblankFxState *)gUnk_03001020;
+
+        if (fx->unk1CC2 != 0 && scanline >= ((struct HblankTable *)gUnk_0300101C)->unk0)
+        {
+            vu32 *dma = &REG_DMA0SAD;
+            vu16 *hofs;
+
+            dma[0] = (u32)fx->unk1CC4;
+            dma[1] = BG_PLTT;
+            dma[2] = 0x84000020; /* enable, 32-bit, 0x20 words: 64 colours */
+            dma[2];
+            hofs = &REG_BG1HOFS;
+            *hofs = (fx->unk1CA4 >> 8) + fx->unk1D44[scanline];
+        }
+        if (scanline <= (s16)((struct HblankTable *)gUnk_0300101C)->unk2)
+        {
+            REG_BLDCNT = 0xDF; /* everything, brightness decrease */
+            REG_BLDY = 0x1F;
+        }
+        else if (scanline > 0xA0 - (s16)((struct HblankTable *)gUnk_0300101C)->unk2)
+        {
+            REG_BLDCNT = 0xDF;
+            REG_BLDY = 0x1F;
+        }
+        else if (((((struct HblankFxState *)gUnk_03001020)->unk1CBC[0x528] ^ 1) & 1) != 0)
+        {
+            REG_BG2HOFS = 0;
+            REG_BG2VOFS = 0x80 - scanline;
+        }
+        else
+        {
+            REG_BG2HOFS = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk0;
+            REG_BG2VOFS = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk2;
+            REG_BLDALPHA = ((struct HblankTable *)gUnk_0300101C)->lines[scanline].unk4;
+            REG_BLDCNT = 0x1F44; /* BG2 alpha-blended over BG0-3 and OBJ */
+        }
+    }
+}
 
 u32 obj_overlap_box(struct SceneObj *a, struct SceneObj *b)
 {
@@ -1194,32 +1325,36 @@ NONMATCH("asm/code_081599D8/transition_scene_init.s", struct GameVars *transitio
 }
 END_NONMATCH
 
-void transition_exit(struct SceneObj *obj, u32 task)
+/* Tears down the transition scene (its destructor): stops music slot 0, turns the hblank
+   interrupt and its handler off, frees the scene's objects, score sprites, child task, camera
+   and hblank line table, resumes the task it paused (set_flags_2_3), frees its tile buffers
+   and removes its own task. */
+void transition_exit(struct HblankFxState *scene, u32 task)
 {
-    void *sub;
+    void *child;
     struct CamObj *cam;
 
-    *(u32 *)&obj->unk18 = (u32)gClassE420;
+    scene->unk18 = gClassE420;
     slot_reset(0);
     set_irq_callback(2, 0);
     REG_IME = 0;
-    gUnk_02000004 &= 0xFFEF;
-    REG_IE &= 0xFFFD;
-    REG_IF |= 2;
+    gUnk_02000004 &= ~DISPSTAT_HBLANK_IRQ;
+    REG_IE &= ~IRQ_HBLANK;
+    REG_IF |= IRQ_HBLANK;
     REG_IME = 1;
-    set_irq_callback(4, 0);
-    scene_free_objects(obj);
-    sub = *(void **)((u8 *)obj + 0x1CB8);
-    if (sub != 0)
+    set_irq_callback(IRQ_SLOT_HBLANK, 0);
+    scene_free_objects(scene);
+    child = scene->unk1CB8;
+    if (child != 0)
     {
-        obj_release_children_4(sub, 3);
+        obj_release_children_4(child, 3);
     }
-    sub = *(void **)((u8 *)obj + 0x1EA4);
-    if (sub != 0)
+    child = scene->unk1EA4;
+    if (child != 0)
     {
-        task_remove(sub, 3);
+        task_remove(child, 3);
     }
-    cam = *(struct CamObj **)((u8 *)obj + 0x1CBC);
+    cam = (struct CamObj *)scene->unk1CBC;
     if (cam != 0)
     {
         cam_free(cam, 3);
@@ -1227,10 +1362,10 @@ void transition_exit(struct SceneObj *obj, u32 task)
     heap_free(gUnk_0300101C);
     gSys.unk02 = 0xFFFF;
     ((struct ObjBit5 *)((u8 *)&gSys + 0x888))->bit5 = 0;
-    set_flags_2_3(*(u32 *)((u8 *)obj + 0x14));
+    set_flags_2_3(scene->unk14);
     obj_run_callbacks();
-    obj_free_tiles((u8 *)obj + 0x1064, 2);
-    obj_free_tiles((u8 *)obj + 0x840, 2);
-    obj_free_tiles((u8 *)obj + 0x1C, 2);
-    task_remove(obj, task);
+    obj_free_tiles(scene->unk1C[2], 2);
+    obj_free_tiles(scene->unk1C[1], 2);
+    obj_free_tiles(scene->unk1C[0], 2);
+    task_remove(scene, task);
 }

@@ -57,14 +57,15 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
+    /* jump arc (obj_jump_setup / obj_jump_arc_fly): targetH = apex height in px */
+    s32 param9C; /* arc: -curvature, height = (t - paramA0 / 2)^2 * param9C + apex */
+    s32 paramA0; /* arc: duration in frames */
+    s32 paramA4; /* arc: x distance to travel (1/256 px) */
+    s32 paramA8; /* arc: y distance to travel (1/256 px) */
     u16 timer;
-    s16 dx;
-    s16 dy;
-    s16 dh;
+    s16 dx; /* arc: start x in px */
+    s16 dy; /* arc: start y in px */
+    s16 dh; /* arc: base height in px */
 };
 
 struct PoseModeBits
@@ -193,23 +194,27 @@ NONMATCH("asm/code_0806A47C/obj_jump_arc_land.s", void obj_jump_arc_land(struct 
 }
 END_NONMATCH
 
+/* Waits out obj->timer, then starts a jump from the object's base position to its part's target:
+ * links to its owner, takes the jump pose (action 5), and sets up the parabola obj_jump_arc_fly
+ * follows: apex 0x40 px high, 4 px of ground covered per frame, curvature chosen so the arc peaks
+ * halfway (never 1, which is bumped to 2). */
 void obj_jump_setup(struct ActorObj *obj)
 {
-    s32 t = obj->timer;
-    s32 px;
-    s32 py;
+    s32 timer = obj->timer;
+    s32 targetX;
+    s32 targetY;
     s32 spanX;
     s32 spanY;
     s32 dist;
     s32 duration;
     s32 half;
     s32 curve;
-    s32 height;
+    s32 apex;
     s32 sign;
 
-    t--;
-    obj->timer = t;
-    if ((t << 16) <= 0)
+    timer--;
+    obj->timer = timer;
+    if ((timer << 16) <= 0)
     {
         partner_link_update(obj, obj->owner, 0xFF);
         if (obj->targetY == 1)
@@ -220,23 +225,24 @@ void obj_jump_setup(struct ActorObj *obj)
         {
             sprite_set_action(obj, 5, 0x204D, 0);
         }
-        height = 0x40;
-        obj->targetH = height;
-        px = obj->part->targetX;
-        py = obj->part->targetY;
+        apex = 0x40;
+        obj->targetH = apex;
+        targetX = obj->part->targetX;
+        targetY = obj->part->targetY;
         obj->dx = obj->baseX / 0x100;
         obj->dy = obj->baseY / 0x100;
-        spanX = px - (obj->dx << 8);
-        spanY = py - (obj->dy << 8);
+        spanX = targetX - (obj->dx << 8);
+        spanY = targetY - (obj->dy << 8);
         dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(spanX * spanX + spanY * spanY);
         if (dist < 0)
         {
             dist += 0x3FF;
         }
+        /* 1/256 px -> frames at 4 px per frame */
         duration = dist >> 10;
         sign = (u32)dist >> 31;
         half = (duration + sign) >> 1;
-        curve = (height << 8) / (half * half);
+        curve = (apex << 8) / (half * half);
         if (curve == 1)
         {
             curve = 2;
@@ -250,11 +256,14 @@ void obj_jump_setup(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_0806A47C/obj_jump_arc_fly.s", void obj_jump_arc_fly(struct ActorObj *obj))
+/* One frame of the jump set up by obj_jump_setup: moves obj (and its child with it) along a
+ * parabola over paramA0 frames; at the apex it takes the falling pose (action 6), and when the
+ * time is up it lands with action 8 and effect 0x1D82 (targetY == 1) or action 0xA and effect
+ * 0x1D90 at its part's target, then waits in jump_obj_pose_active_idle. */
+void obj_jump_arc_fly(struct ActorObj *obj)
 {
     struct ActorObj *child;
     struct ActorPart *part;
-    s32 variant;
 
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
@@ -267,11 +276,13 @@ NONMATCH("asm/code_0806A47C/obj_jump_arc_fly.s", void obj_jump_arc_fly(struct Ac
     child->posH = obj->posH;
     if ((s16)obj->timer == obj->paramA0 / 2)
     {
+        register u32 animId asm("r2");
+
         if (obj->targetY == 1)
-            variant = 0x2000;
+            animId = 0x2000;
         else
-            variant = 0x204D;
-        sprite_set_action(obj, 6, variant, 0);
+            animId = 0x204D;
+        sprite_set_action(obj, 6, animId, 0);
         ((struct PoseModeBits *)&obj->pose->flags)->mode = 1;
     }
     if ((s16)obj->timer > obj->paramA0)
@@ -280,15 +291,14 @@ NONMATCH("asm/code_0806A47C/obj_jump_arc_fly.s", void obj_jump_arc_fly(struct Ac
         {
             sprite_set_action(obj, 8, 0x4071, 0);
             part = obj->part;
-            effect_spawn_at(0x1D82, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
+            effect_spawn_at(0x1D82, part->targetX / 256, part->targetY / 256, part->targetH / 256, obj);
         }
         else
         {
             sprite_set_action(obj, 0xA, 0x4071, 0);
             part = obj->part;
-            effect_spawn_at(0x1D90, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
+            effect_spawn_at(0x1D90, part->targetX / 256, part->targetY / 256, part->targetH / 256, obj);
         }
         obj->state = jump_obj_pose_active_idle;
     }
 }
-END_NONMATCH

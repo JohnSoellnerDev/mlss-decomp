@@ -39,6 +39,8 @@ struct Hero
     u16 c22;
     u8 filler24[0x26 - 0x24];
     u16 c26;
+    u8 filler28[0x30 - 0x28];
+    u8 level;
 };
 
 struct LevelRec
@@ -120,7 +122,7 @@ struct Scroll
     u8 filler0[0x8];
     struct Sprite *sprite8;
     u8 filler0C[0x10 - 0xC];
-    s32 pos10;
+    s32 pos10; /* x position, 8.8 fixed point */
 };
 
 struct World
@@ -130,18 +132,18 @@ struct World
     u8 filler4C[0x7C - 0x4C];
     u32 unk7C;
     u8 filler80[0x24C - 0x80];
-    void *focus24C;
+    void *focus24C;                  /* the camera: offset_three_words makes positions screen-relative to it */
     void *mapSrc250;
     u8 filler254[0x278 - 0x254];
-    struct Owner *obj278;
+    struct Owner *obj278;            /* the stat row cursor */
     u8 filler27C[0x342 - 0x27C];
-    u8 pose342;
+    u8 pose342;                      /* stat row picked for the level-up bonus (0-5) */
     u8 filler343[0x368 - 0x343];
     struct Widget *menuObj;
     struct Widget *obj36C;
     struct Widget *digitObj;
     u8 filler374[0x37C - 0x374];
-    struct Scroll *scrollObj37C;
+    struct Scroll *scrollObj37C;     /* the up/down scroll arrows beside the stat rows */
     struct DisplayEntry *entry380[6];
 };
 
@@ -149,6 +151,21 @@ extern struct World *gWorld;
 extern u16 gSys[];
 extern u8 *gParty;
 extern u8 *gWorkBuf;
+
+#define PARTY_HERO_SIZE 0x3C        /* one hero's record in gParty: Mario's at 0, Luigi's at 0x3C */
+#define SPRITE_FLAG_ANIM_DONE 0x08  /* Sprite.flags: the current animation has finished */
+
+/* gWorkBuf + LEVELUP_STATS / LEVELUP_GAINS: u16 per stat row (6), the stat after the level-up and its gain */
+#define LEVELUP_STATS 0x8E1C
+#define LEVELUP_GAINS 0x8E28
+
+/* gWorkBuf + HERO_PANEL_DIGITS: the 10 bonus digits the hero panel's roulette cycles through */
+#define HERO_PANEL_DIGITS 0x8E34
+#define HERO_PANEL_DIGIT_COUNT 10
+
+/* Owner->timer of the digit roulette: frame within the current digit (low 11 bits), digit index above */
+#define ROULETTE_FRAME_MASK 0x7FF
+#define ROULETTE_DIGIT_SHIFT 11
 
 void state_create_result_entries(struct Owner *owner);
 void state_fx_step_counter(struct Owner *owner);
@@ -315,109 +332,123 @@ ASM_FUNC("asm/code_081041E4/task_draw_sprite_row.s", void task_draw_sprite_row(v
 
 ASM_FUNC("asm/code_081041E4/state_hero_entry_timeline.s", void state_hero_entry_timeline(void))
 
+/*
+ * State: slides the scroll arrows and the stat row cursor in from the right, a pixel a frame, until
+ * they are at screen x 0xD0. Then puts both exactly there, starts the cursor's action 4 on row 0
+ * and hands over to state_obj_anim_5_when_active.
+ */
 void state_scroll_entry_to_focus(struct Owner *owner)
 {
     struct World *world = gWorld;
-    struct Scroll *scroll = world->scrollObj37C;
-    struct Owner *marker = world->obj278;
-    s32 y;
-    s32 ax;
-    s32 ay;
-    s32 az;
-    s32 markerX;
+    struct Scroll *arrows = world->scrollObj37C;
+    struct Owner *cursor = world->obj278;
+    s32 x;
+    s32 screenX;
+    s32 screenY;
+    s32 screenZ;
+    s32 stopX;
 
-    y = scroll->pos10 - 0x100;
-    scroll->pos10 = y;
-    ((struct Scroll *)marker)->pos10 = y;
-    y = scroll->pos10;
-    if (y < 0)
+    x = arrows->pos10 - 0x100;
+    arrows->pos10 = x;
+    ((struct Scroll *)cursor)->pos10 = x;
+    x = arrows->pos10;
+    if (x < 0)
     {
-        y += 0xFF;
+        x += 0xFF;
     }
-    ax = y >> 8;
-    ay = 0;
-    az = 0;
-    offset_three_words(world->focus24C, &ax, &ay, &az, 0);
-    if (ax <= 0xD0)
+    screenX = x >> 8;
+    screenY = 0;
+    screenZ = 0;
+    offset_three_words(world->focus24C, &screenX, &screenY, &screenZ, 0);
+    if (screenX <= 0xD0)
     {
-        markerX = (s32)(obj_last_x(gWorld->focus24C) << 16) >> 8;
-        markerX += 0xD000;
-        scroll->pos10 = markerX;
-        ((struct Scroll *)marker)->pos10 = markerX;
-        sprite_set_action(marker, 4, 0, 0);
+        /* the camera's x plus 0xD0, in 8.8 fixed point */
+        stopX = (s32)(obj_last_x(gWorld->focus24C) << 16) >> 8;
+        stopX += 0xD000;
+        arrows->pos10 = stopX;
+        ((struct Scroll *)cursor)->pos10 = stopX;
+        sprite_set_action(cursor, 4, 0, 0);
         gWorld->pose342 = 0;
         owner->state = state_obj_anim_5_when_active;
     }
 }
 
+/*
+ * State: picking the stat row for the level-up bonus (gWorld->pose342, rows 0-5). Up/down (with
+ * key repeat) move the cursor one row, wrapping round; the scroll arrows animate while up/down
+ * are held. A confirms the row: the cursor plays action 6 and state_show_hero_panel starts the
+ * bonus roulette.
+ */
 void state_select_pose(struct Owner *owner)
 {
-    struct Owner *marker = gWorld->obj278;
-    struct Scroll *scroll = gWorld->scrollObj37C;
-    s32 pose = gWorld->pose342 & 0x7F;
-    u8 *base;
-    u16 *keys;
+    struct Owner *cursor = gWorld->obj278;
+    struct Scroll *arrows = gWorld->scrollObj37C;
+    s32 row = gWorld->pose342 & 0x7F;
+    u8 *sys;
+    u16 *repeatKeys;
 
-    base = (u8 *)gSys;
-    keys = (u16 *)(base + 0x42);
-    if (*keys & 0x40)
+    /* gSys + 0x3E: keys pressed this frame, + 0x40: released, + 0x42: pressed or repeating */
+    sys = (u8 *)gSys;
+    repeatKeys = (u16 *)(sys + 0x42);
+    if (*repeatKeys & DPAD_UP)
     {
         set_slot_value(0x5F, -1);
-        pose--;
+        row--;
     }
-    if (*keys & 0x80)
+    if (*repeatKeys & DPAD_DOWN)
     {
         set_slot_value(0x5F, -1);
-        pose++;
+        row++;
     }
-    if (pose < 0)
+    if (row < 0)
     {
-        s32 px;
-        s32 py;
+        s32 x;
+        s32 y;
 
-        pose = 5;
-        px = marker->baseX / 0x100;
-        py = marker->baseY / 0x100;
-        set_marker_position(px, py, 0x20 - (s16)obj_last_y(gWorld->focus24C));
+        row = 5;
+        x = cursor->baseX / 0x100;
+        y = cursor->baseY / 0x100;
+        set_marker_position(x, y, 0x20 - (s16)obj_last_y(gWorld->focus24C));
     }
-    if (pose > 5)
+    if (row > 5)
     {
-        s32 px;
-        s32 py;
+        s32 x;
+        s32 y;
 
-        pose = 0;
-        px = marker->baseX / 0x100;
-        py = marker->baseY / 0x100;
-        set_marker_position(px, py, 0x70 - (s16)obj_last_y(gWorld->focus24C));
+        row = 0;
+        x = cursor->baseX / 0x100;
+        y = cursor->baseY / 0x100;
+        set_marker_position(x, y, 0x70 - (s16)obj_last_y(gWorld->focus24C));
     }
-    if (pose != gWorld->pose342)
+    if (row != gWorld->pose342)
     {
-        s32 pz;
-        s32 px;
-        s32 py;
-        s32 focusY;
+        s32 z;
+        s32 x;
+        s32 y;
+        s32 cameraY;
         s32 rowY;
 
-        gWorld->pose342 = pose;
-        focusY = (s16)obj_last_y(gWorld->focus24C);
-        rowY = pose << 4;
+        /* the cursor slides to the new row, 16 pixels per row from y 0x30 */
+        gWorld->pose342 = row;
+        cameraY = (s16)obj_last_y(gWorld->focus24C);
+        rowY = row << 4;
         rowY += 0x30;
-        pz = 0xA0 - (focusY + rowY);
-        px = marker->baseX / 0x100;
-        py = marker->baseY / 0x100;
-        place_world_object(px, py, pz, 5, 0x7001);
+        z = 0xA0 - (cameraY + rowY);
+        x = cursor->baseX / 0x100;
+        y = cursor->baseY / 0x100;
+        place_world_object(x, y, z, 5, 0x7001);
     }
-    if (gSys[0x1F] & 0x40)
-        sprite_set_action((struct Owner *)scroll, 1, 0, 0);
-    else if (gSys[0x1F] & 0x80)
-        sprite_set_action((struct Owner *)scroll, 2, 0, 0);
-    else if (gSys[0x20] & 0xC0)
-        sprite_set_action((struct Owner *)scroll, 0, 0, 0);
-    if (gSys[0x1F] & 1)
+    if (gSys[0x1F] & DPAD_UP)
+        sprite_set_action((struct Owner *)arrows, 1, 0, 0);
+    else if (gSys[0x1F] & DPAD_DOWN)
+        sprite_set_action((struct Owner *)arrows, 2, 0, 0);
+    else if (gSys[0x20] & (DPAD_UP | DPAD_DOWN))
+        sprite_set_action((struct Owner *)arrows, 0, 0, 0);
+    if (gSys[0x1F] & A_BUTTON)
     {
-        if (scroll->sprite8->action != 0)
-            sprite_set_action((struct Owner *)scroll, 0, 0, 0);
-        sprite_set_action(marker, 6, 0, 0);
+        if (arrows->sprite8->action != 0)
+            sprite_set_action((struct Owner *)arrows, 0, 0, 0);
+        sprite_set_action(cursor, 6, 0, 0);
         set_slot_value(0x60, -1);
         owner->state = state_show_hero_panel;
     }
@@ -628,65 +659,79 @@ NONMATCH("asm/code_081041E4/hero_panel_digits.s", void hero_panel_digits(u8 *dig
 }
 END_NONMATCH
 
+/*
+ * Level-up state: once the stat cursor's confirm animation has finished, rolls the 10 bonus digits
+ * for the chosen stat row (from the hero's level and that row's new stat and gain), plays the
+ * cursor's action 7, starts the roulette sound 0x123 and lets state_digit_input_wait spin the
+ * roulette.
+ */
 void state_show_hero_panel(struct Owner *owner)
 {
     struct World *world = gWorld;
-    struct Owner *marker = world->obj278;
+    struct Owner *cursor = world->obj278;
 
-    if (marker->sprite->flags & 8)
+    if (cursor->sprite->flags & SPRITE_FLAG_ANIM_DONE)
     {
         s32 heroIdx = owner->posX;
-        u8 *hero = gParty + heroIdx * 0x3C;
-        u8 *effect = gWorkBuf;
-        u8 *digits = effect + 0x8E34;
-        u8 heroCtx = hero[0x30];
+        struct Hero *hero = (struct Hero *)(gParty + heroIdx * PARTY_HERO_SIZE);
+        u8 *workBuf = gWorkBuf;
+        u8 *bonusDigits = workBuf + HERO_PANEL_DIGITS;
+        u8 level = hero->level;
 
-        hero_panel_digits(digits, heroCtx, effect + 0x8E1C, effect + 0x8E28, world->pose342, heroIdx);
-        sprite_set_action(marker, 7, 0, 0);
+        hero_panel_digits(bonusDigits, level, workBuf + LEVELUP_STATS, workBuf + LEVELUP_GAINS,
+                          world->pose342, heroIdx);
+        sprite_set_action(cursor, 7, 0, 0);
         owner->timer = 0;
         owner->state = state_digit_input_wait;
         set_slot_value(0x123, -1);
     }
 }
 
-u32 draw_digit_cycle(struct Owner *owner, s32 n)
+/*
+ * One frame of the hero panel's bonus roulette: each of the 10 digits stays for
+ * framesPerDigit frames while it rolls in over the previous one. owner->timer packs
+ * the frame and the digit index; owner->index holds the current digit as BCD.
+ * Returns the new packed timer.
+ */
+u32 draw_digit_cycle(struct Owner *owner, s32 framesPerDigit)
 {
-    u32 cycle;
+    u32 frame;
     s32 digit;
-    u32 bcd;
-    u32 scaled;
+    u32 prevBcd;
+    u32 angle;
     u32 rowY;
-    u8 *base;
+    u8 *digits;
 
-    cycle = owner->timer & 0x7FF;
-    digit = owner->timer >> 11;
-    if (cycle == 0)
+    frame = owner->timer & ROULETTE_FRAME_MASK;
+    digit = owner->timer >> ROULETTE_DIGIT_SHIFT;
+    if (frame == 0)
     {
         digit++;
-        if (digit == 10)
+        if (digit == HERO_PANEL_DIGIT_COUNT)
         {
             digit = 0;
         }
-        base = gWorkBuf + 0x8E34;
-        owner->index = to_bcd(base[digit]);
+        digits = gWorkBuf + HERO_PANEL_DIGITS;
+        owner->index = to_bcd(digits[digit]);
     }
-    cycle++;
-    if (cycle == n)
+    frame++;
+    if (frame == framesPerDigit)
     {
-        cycle = 0;
+        frame = 0;
     }
     if (digit != 0)
     {
-        bcd = to_bcd(*(gWorkBuf + digit + 0x8E33));
+        prevBcd = to_bcd(*(gWorkBuf + digit + (HERO_PANEL_DIGITS - 1)));
     }
     else
     {
-        bcd = to_bcd(*(gWorkBuf + 0x8E3D));
+        prevBcd = to_bcd(*(gWorkBuf + (HERO_PANEL_DIGITS + HERO_PANEL_DIGIT_COUNT - 1)));
     }
     rowY = gWorld->pose342 * 0x10 + 0x28;
-    scaled = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(cycle << 6, n);
-    draw_number_rotated(owner->index, bcd, number_right_edge(owner->index, 0xB8), rowY, scaled);
-    return cycle | digit << 11;
+    /* roll progress: 0..63 is a quarter turn of the sine table */
+    angle = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(frame << 6, framesPerDigit);
+    draw_number_rotated(owner->index, prevBcd, number_right_edge(owner->index, 0xB8), rowY, angle);
+    return frame | digit << ROULETTE_DIGIT_SHIFT;
 }
 
 void state_digit_input_wait(struct Owner *owner)
@@ -711,9 +756,9 @@ void state_digit_input_wait(struct Owner *owner)
     }
 }
 
-NONMATCH("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step(struct Owner *owner))
+void state_draw_value_step(struct Owner *owner)
 {
-    u32 rowY = gWorld->pose342 * 0x10 + 0x28;
+    s32 rowY = ((gWorld->pose342 << 1) + 5) << 3;
     s32 value = owner->index;
     s32 rightEdge = number_right_edge(value, 0xB8);
     struct Sprite *obj;
@@ -733,7 +778,6 @@ NONMATCH("asm/code_081041E4/state_draw_value_step.s", void state_draw_value_step
         sound_stop_song(0x123);
     }
 }
-END_NONMATCH
 
 static inline void hero_add_points(u16 *counter, u16 points)
 {
@@ -807,6 +851,10 @@ static inline void fig_sprite_action(struct Figure *fig, u32 action)
     sprite_set_action((struct Owner *)((u8 *)fig + 8), 6, action, 0);
 }
 
+/* Owner state after the points are tallied: counts owner->timer up to 0x2C, starting song 0x79
+ * (set_slot_value queues a song at a volume) at 0x20. Then stops the song, puts the figure (if
+ * it is idle) back into its standing action, makes its sprite visible again and waits for the
+ * object to go active (state_wait_obj_active). */
 void state_entry_countdown(struct Owner *owner)
 {
     struct Figure *fig;
@@ -821,7 +869,7 @@ void state_entry_countdown(struct Owner *owner)
     {
         sound_stop_song(0x79);
         fig = owner->fig;
-        if (fig != 0 && (fig->ctrl & 6) == 2)
+        if (fig != NULL && (fig->ctrl & 6) == 2)
         {
             if (fig->anim == -1)
                 fig_sprite_action(fig, 0x2003);

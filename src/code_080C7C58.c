@@ -192,47 +192,40 @@ void schedule_pose_task(struct HeroBody *obj);
 void step_motion(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
 
+/* Steps hero B's state stack and hero A's motion. Once hero B's flags bit 5 (active) is set: if hero A
+ * is in mode 1 or 2 (mode bits 1-2), sends it to the partner's target point offset by the partner's
+ * ofsX/ofsY/ofsZ plus (-10, +3, -21) pixels at speed 0x600, and plays action 4 of 0x2034 (looping)
+ * when it still is; then keeps the low 12 bits of hero A's timer and goes on to
+ * hero_a_jitter_step_alt_7d58. */
 void hero_a_place_near_partner_if_b_active(struct HeroBody *body)
 {
-    struct Hero *hero_a = gWorld->heroA;
-    struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = gWorld->heroB;
-    struct HeroBody *body_b = &hero_b->body;
+    struct Hero *heroA = gWorld->heroA;
+    struct HeroBody *bodyA = &heroA->body;
+    struct Hero *heroB = gWorld->heroB;
+    struct HeroBody *bodyB = &heroB->body;
     struct HeroBody *partner = body->partner;
-    s32 tx;
-    s32 ty;
-    s32 tz;
     s32 x;
     s32 y;
     s32 z;
 
-    state_stack_advance_progress(body_b);
-    step_motion(body_a);
-    if ((hero_b->body.flags & 0x20) != 0)
+    state_stack_advance_progress(bodyB);
+    step_motion(bodyA);
+    if ((heroB->body.flags & 0x20) != 0)
     {
-        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
         {
-            tx = partner->targetX;
-            if (tx < 0)
-                tx += 0xFF;
-            x = (tx >> 8) + partner->ofsX - 10;
-            ty = partner->targetY;
-            if (ty < 0)
-                ty += 0xFF;
-            y = (ty >> 8) + partner->ofsY + 3;
-            tz = partner->targetZ;
-            if (tz < 0)
-                tz += 0xFF;
-            z = (tz >> 8) + partner->ofsZ - 0x15;
-            place_targets(body_a, x, y, z, -1);
-            set_motion_start(body_a, 0x600);
+            x = partner->targetX / 256 + partner->ofsX - 10;
+            y = partner->targetY / 256 + partner->ofsY + 3;
+            z = partner->targetZ / 256 + partner->ofsZ - 21;
+            place_targets(bodyA, x, y, z, -1);
+            set_motion_start(bodyA, 0x600);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
         {
-            sprite_set_action(body_a, 4, 0x2034, 0);
-            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
+            sprite_set_action(bodyA, 4, 0x2034, 0);
+            ((struct HeroSpriteBits *)&bodyA->sprite->flags)->mode = 0;
         }
-        body_a->timer = body_a->timer & 0xFFF;
+        bodyA->timer = bodyA->timer & 0xFFF;
         body->state = hero_a_jitter_step_alt_7d58;
     }
 }

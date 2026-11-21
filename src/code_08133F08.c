@@ -17,8 +17,6 @@ struct PartSprite
     u8 frame20;
     u8 filler21[0x2C - 0x21];
     s16 unk2C;
-    u8 filler2E[0x30 - 0x2E];
-    struct TileEntry *list30;
 };
 
 struct Part
@@ -91,18 +89,18 @@ struct SpriteNode
     s32 h;
 };
 
-struct TileEntry
+/* The task part_setup_render starts (task_create_list_48) to run part_refresh_tiles. */
+struct PartTileTask
 {
-    u8 filler0[0xC];
-    struct SpriteNode head;
-    u8 filler1C[0x30 - 0x1C];
-    struct TileEntry *next;
+    u8 filler0[4];
+    u32 active;             /* 0 ends the task */
+    struct Part *part;
 };
 
 struct TileMap
 {
     u8 filler0[0xC];
-    u16 cells[16];
+    u16 cells[16];          /* owner of each OBJ palette: 0xFFFF free, 0x1FFF lent to place_layer_tile */
 };
 
 struct OwnerSprite
@@ -241,29 +239,28 @@ void part_wait_ready_2(struct Part *obj);
 void part_setup_sprite(struct Part *obj);
 void part_motion_wait(struct Part *obj);
 void part_fly_drop(struct Part *obj);
-void part_refresh_tiles(struct Part *obj);
+void part_refresh_tiles(struct PartTileTask *task);
 void part_spawn_timed(struct Part *obj);
 void part_update_nodes(struct Part *obj);
 
-NONMATCH("asm/code_08133F08/part_track.s", void part_track(struct Part *obj))
+/* State of the shot part_launch_c fires: each frame it moves velA left and takes the y on the line
+ * from its launch point (limA4, countA8) to its target (targetA, targetB). Once it is more than 32 px
+ * past the left edge of the screen it is put back at x 0xF600 by its owner, taken off the object list
+ * and goes on to part_land_check. */
+void part_track(struct Part *obj)
 {
-    s32 sx;
-    s32 sy;
-    s32 sz;
-    s32 stepA;
-    s32 stepB;
-    s32 relA;
+    s32 screen[3];
+    s32 spanX = obj->limA4 - obj->targetA;
+    s32 spanY = obj->countA8 - obj->targetB;
+    register s16 *speed asm("r4") = &obj->velA;
 
-    stepA = obj->limA4 - obj->targetA;
-    stepB = obj->countA8 - obj->targetB;
-    obj->posA -= obj->velA;
-    relA = obj->posA - obj->limA4;
-    obj->posB = (stepB * relA) / stepA + obj->countA8;
-    sx = obj->posA / 0x100;
-    sy = obj->posB / 0x100;
-    sz = obj->height / 0x100;
-    offset_three_words_camera(&sx, &sy, &sz, 0);
-    if (sx < -0x20)
+    obj->posA -= *speed;
+    obj->posB = (obj->posA - obj->limA4) * spanY / spanX + obj->countA8;
+    screen[0] = obj->posA / 0x100;
+    screen[1] = obj->posB / 0x100;
+    screen[2] = obj->height / 0x100;
+    offset_three_words_camera(&screen[0], &screen[1], &screen[2], 0);
+    if (screen[0] < -0x20)
     {
         obj->posA = 0xF600;
         obj->posB = obj->owner->unk44 - 0x600;
@@ -272,7 +269,6 @@ NONMATCH("asm/code_08133F08/part_track.s", void part_track(struct Part *obj))
         obj->state = part_land_check;
     }
 }
-END_NONMATCH
 
 u32 part_check_contact(struct Part *obj)
 {
@@ -444,9 +440,16 @@ void part_motion_wait(struct Part *obj)
     }
 }
 
+/*
+ * Falls under gravity (targetH is the vertical speed, stepH the gravity, all
+ * 8.8 fixed point). On reaching the ground: spawns effect 0x273D and sets
+ * slot 0x8B, spawns a chain object 20 px left and 8 px up of the base
+ * position with 19 sprite nodes (run by part_update_nodes), then plays
+ * action 0xF and goes on to part_setup_render.
+ */
 void part_fly_drop(struct Part *obj)
 {
-    struct Part *child;
+    struct Part *chain;
     struct SpriteNode *node;
     struct SpriteNode *head;
     u16 *timer;
@@ -458,47 +461,56 @@ void part_fly_drop(struct Part *obj)
     {
         effect_spawn_at(0x273D, obj->baseA / 0x100, obj->baseB / 0x100 + 2, obj->baseH / 0x100, obj);
         set_slot_value(0x8B, -1);
-        child = obj_spawn(obj->owner, 0, obj->baseA / 0x100 - 0x14, obj->baseB / 0x100 - 8,
+
+        chain = obj_spawn(obj->owner, 0, obj->baseA / 0x100 - 0x14, obj->baseB / 0x100 - 8,
                           obj->baseH / 0x100, 1, 1);
-        child->next = obj->next;
-        obj->next = child;
-        child->limA4 = 0;
-        child->link6C = obj->link6C;
-        child->link = obj->link;
-        child->targetA = child->posA;
-        child->targetB = child->posB;
-        child->velA = 0;
+        chain->next = obj->next;
+        obj->next = chain;
+        chain->limA4 = 0;
+        chain->link6C = obj->link6C;
+        chain->link = obj->link;
+        chain->targetA = chain->posA;
+        chain->targetB = chain->posB;
+        chain->velA = 0;
         timer = &obj->timer;
+        /* push 19 nodes, all at the chain's base position */
         for (i = 0; i < 19; i++)
         {
-            node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-            head = child->spriteNodes;
+            node = sprite_node_alloc(chain->baseA, chain->baseB, chain->baseH);
+            head = chain->spriteNodes;
             node->next = head;
-            child->spriteNodes = node;
+            chain->spriteNodes = node;
         }
-        child->state = part_update_nodes;
+        chain->state = part_update_nodes;
+
         sprite_set_action(obj, 0xF, 0, 0);
         *timer = 1;
         obj->state = part_setup_render;
     }
 }
 
-void part_refresh_tiles(struct Part *obj)
+/* Task started by part_setup_render. While the part has chain objects (part->next list), redraws
+   the background under each chain and under each of its trail nodes as sprites (place_layer_tile,
+   two tiles each from tile 0x200). Once the chains are gone, it restores OBJ palette 15
+   (gUnk_02000460, saved in gWorkBuf + 0x3CD0) and the palette owners part_setup_render changed,
+   frees the palettes place_layer_tile borrowed, and ends. */
+void part_refresh_tiles(struct PartTileTask *task)
 {
-    struct PartSprite *sprite;
-    struct TileEntry *entry;
+    struct Part *part;
+    struct Part *chain;
     struct SpriteNode *node;
     u32 tile;
     s32 i;
 
-    sprite = obj->sprite;
-    if (sprite->list30 != 0)
+    part = task->part;
+    if (part->next != 0)
     {
         tile = 0x200;
         refresh_slot_flags();
-        for (entry = sprite->list30; entry != 0; entry = entry->next)
+        for (chain = part->next; chain != 0; chain = chain->next)
         {
-            for (node = &entry->head; node != 0; node = node->next)
+            /* the chain itself starts like a node (spriteNodes, then its position) */
+            for (node = (struct SpriteNode *)&chain->spriteNodes; node != 0; node = node->next)
             {
                 place_layer_tile(node->x / 0x100, node->y / 0x100, node->h / 0x100, 1, tile);
                 tile += 2;
@@ -518,13 +530,16 @@ void part_refresh_tiles(struct Part *obj)
                 gModelCtx->cells[i] = 0xFFFF;
             }
         }
-        obj->unk4 = 0;
+        task->active = 0;
     }
 }
 
+/* After the drop, every limA0 frames (counted in countA8) spawns one more chain object 20 px left
+   and 8 px up of the base position with 19 sprite nodes (run by part_update_nodes), counting the
+   chains in timer; once timer passes flag9C, plays action 0x10 and goes on to wait_for_index. */
 void part_spawn_timed(struct Part *obj)
 {
-    struct Part *child;
+    struct Part *chain;
     struct SpriteNode *node;
     struct SpriteNode *head;
     s32 i;
@@ -536,26 +551,27 @@ void part_spawn_timed(struct Part *obj)
         obj->timer += 1;
         if ((s16)obj->timer <= obj->flag9C)
         {
-            child = obj_spawn(obj->owner, 0, obj->baseA / 0x100 - 0x14, obj->baseB / 0x100 - 8,
+            chain = obj_spawn(obj->owner, 0, obj->baseA / 0x100 - 0x14, obj->baseB / 0x100 - 8,
                               obj->baseH / 0x100, 1, 1);
-            child->next = obj->next;
-            obj->next = child;
-            child->flag9C = 0;
-            child->limA0 = 0;
-            child->limA4 = 0;
-            child->link6C = obj->link6C;
-            child->link = obj->link;
-            child->targetA = child->posA;
-            child->targetB = child->posB;
-            child->velA = 0;
+            chain->next = obj->next;
+            obj->next = chain;
+            chain->flag9C = 0;
+            chain->limA0 = 0;
+            chain->limA4 = 0;
+            chain->link6C = obj->link6C;
+            chain->link = obj->link;
+            chain->targetA = chain->posA;
+            chain->targetB = chain->posB;
+            chain->velA = 0;
+            /* push 19 nodes, all at the chain's base position */
             for (i = 0; i < 19; i++)
             {
-                node = sprite_node_alloc(child->baseA, child->baseB, child->baseH);
-                head = child->spriteNodes;
+                node = sprite_node_alloc(chain->baseA, chain->baseB, chain->baseH);
+                head = chain->spriteNodes;
                 node->next = head;
-                child->spriteNodes = node;
+                chain->spriteNodes = node;
             }
-            child->state = part_update_nodes;
+            chain->state = part_update_nodes;
         }
         else
         {

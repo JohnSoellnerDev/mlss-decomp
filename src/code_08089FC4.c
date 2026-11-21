@@ -214,12 +214,15 @@ void drift_settle(struct ActorObj *obj)
     }
 }
 
+/* Counts the timer down (set by drift_settle on landing). Then the object takes pose 3 and jumps
+   from its base position to 2 px past its owner's part's target (jump_velocity arc with 0x400 and
+   gravity 0x200), plays sound 0x8D and flies there in drift_settle_short. */
 void wait_then_spawn_part_short(struct ActorObj *obj)
 {
-    s32 timer = obj->timer - 1;
+    s32 left = obj->timer - 1;
 
-    obj->timer = timer;
-    if ((s16)timer <= 0)
+    obj->timer = left;
+    if ((s16)left <= 0)
     {
         struct ActorObj *owner;
 

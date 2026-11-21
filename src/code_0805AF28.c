@@ -47,13 +47,13 @@ struct MapLoaderObj
     void *layerTiles;
     u8 filler9C[0xAC - 0x9C];
     struct MapAnimSlot anim[16];
-    u8 entryFlags;
-    u8 entryCounter;
-    u8 entryIndex;
+    u8 blendFlags;      /* BLEND_ANIM_ACTIVE | a BLEND_ANIM_* mode */
+    u8 blendBounces;    /* ping-pong: turns so far; odd while walking backwards */
+    u8 blendFrame;      /* current keyframe */
     u8 filler56F;
-    u16 entryBldcnt;
-    u16 entryTimer;
-    void *entryTable;
+    u16 blendBldCnt;    /* written to the BLDCNT shadow every frame */
+    u16 blendTimer;     /* frames left on the current keyframe */
+    struct BlendKeyframe *blendKeys;
     u8 filler578;
     u8 layer3Flag579;
     u8 filler57A[0x57C - 0x57A];
@@ -124,16 +124,27 @@ void map_put_rect(struct MapLoaderObj *obj, u32 layer, void *rect);
 void put_layer3_rect(struct MapLoaderObj *obj, void *rect);
 void set_flag(u8 *flags, u32 a, u32 b, u32 c);
 
+/* A change to the map (gLayer3Table[gUnk_03000DD0[0xA]] lists the map's): tile rectangles put on BG
+   layers 0-2 and on layer 3, kept once made by the event flag in the low 15 bits of flags. */
 struct Layer3Entry
 {
-    void *rect0;
+    void *rect0;    /* for map_put_rect, layer 0 (NULL: none) */
     void *rect1;
     void *rect2;
-    void *rect3;
-    u16 flags;
+    void *rect3;    /* for put_layer3_rect */
+    u16 flags;      /* bits 0-14: event flag LAYER3_FLAG_BASE + n, or LAYER3_NO_FLAG */
     u8 filler12[0x13 - 0x12];
-    u8 last;
+    u8 last;        /* bit 7: the last entry of the list */
     u8 filler14[20 - 0x14];
+};
+
+#define LAYER3_NO_FLAG   0x7FFF
+#define LAYER3_FLAG_BASE 0x720  /* event flags of the map changes (test_flag / set_flag) */
+
+struct Layer3Flags
+{
+    u16 event : 15;
+    u16 top : 1;
 };
 
 struct SelRecord
@@ -153,13 +164,22 @@ void heap_free_a(void *p);
 u32 dma_cancel_request(u32 dst);
 void task_remove(void *node, u32 kind);
 
-struct EntryRec
+/* One keyframe of a map's alpha-blend animation, packed in a word. */
+struct BlendKeyframe
 {
-    u32 low5 : 5;
-    u32 mid5 : 5;
-    u32 t8 : 8;
-    u32 rest : 14;
+    u32 eva : 5;      /* BLDALPHA first-target coefficient */
+    u32 evb : 5;      /* BLDALPHA second-target coefficient */
+    u32 duration : 8; /* frames the keyframe is held */
+    u32 last : 1;     /* last keyframe of the list (byte 2, bit 2) */
+    u32 unused : 13;
 };
+/* MapLoaderObj.blendFlags */
+#define BLEND_ANIM_ACTIVE    0x80
+#define BLEND_ANIM_MODE_MASK 3
+#define BLEND_ANIM_LOOP      0 /* after the last keyframe start again at the first */
+#define BLEND_ANIM_PINGPONG  1 /* walk the keyframes forwards, then backwards */
+/* bit of the keyframe's third byte that holds BlendKeyframe.last */
+#define BLEND_KEY_LAST_BIT   4
 
 extern const u32 gChunkGrids[];
 
@@ -254,38 +274,48 @@ NONMATCH("asm/code_0805AF28/map_blit_chunks.s", void map_blit_chunks(struct MapL
 }
 END_NONMATCH
 
-NONMATCH("asm/code_0805AF28/map_blit_tile.s", void map_blit_tile(struct MapLoaderObj *obj, u16 layer, s16 col, u16 row, u32 tile))
+/* Writes metatile `tile` (low 10 bits; four 8x8 tile entries) at metatile column `col`, row `row` of BG
+   layer `layer`'s 64x32 tilemap buffer: the top two entries on one tile row, the bottom two on the next.
+   Columns 16-31 land in the right-hand 32x32 screen (+0x400 entries). */
+void map_blit_tile(struct MapLoaderObj *obj, u16 layer, s16 col, u16 row, u32 tile)
 {
-    u16 tl;
-    u16 bl;
-    u16 *tilemap;
-    u16 *rec;
-    u16 *metatiles;
-    u16 *dst;
+    register u32 metaRow asm("r5") = row;
+    u16 topEntry;
+    u16 bottomEntry;
+    u32 tilemap;
+    u32 metatiles;
+    u16 *top;
+    u16 *bottom;
+    u16 *metatile;
     u32 index;
 
     index = (tile << 22) >> 22;
-    metatiles = (u16 *)obj->metatiles;
+    metatiles = (u32)obj->metatiles;
     if ((col & 0x10) == 0)
     {
-        tl = (layer << 11) + ((row & 0xF) << 6) + ((col & 0xF) << 1);
-        bl = (layer << 11) + ((((row & 0xF) << 1) + 1) << 5) + ((col & 0xF) << 1);
+        int mask = 0xF;
+        int layerBase = layer << 11;
+        int screenRow = metaRow & mask;
+        topEntry = layerBase + (screenRow << 6) + ((col & mask) << 1);
+        bottomEntry = layerBase + (((screenRow << 1) + 1) << 5) + ((col & mask) << 1);
     }
     else
     {
-        tl = (layer << 11) + ((row & 0xF) << 6) + ((col & 0xF) << 1) + 0x400;
-        bl = (layer << 11) + ((((row & 0xF) << 1) + 1) << 5) + ((col & 0xF) << 1) + 0x400;
+        int mask = 0xF;
+        int layerBase = layer << 11;
+        int screenRow = metaRow & mask;
+        topEntry = layerBase + (screenRow << 6) + ((col & mask) << 1) + 0x400;
+        bottomEntry = layerBase + (((screenRow << 1) + 1) << 5) + ((col & mask) << 1) + 0x400;
     }
-    tilemap = (u16 *)obj->tilemap;
-    dst = tilemap + tl;
-    rec = metatiles + index * 4;
-    dst[0] = rec[0];
-    dst[1] = rec[1];
-    dst = tilemap + bl;
-    dst[0] = rec[2];
-    dst[1] = rec[3];
+    tilemap = (u32)obj->tilemap;
+    top = (u16 *)(topEntry * 2 + tilemap);
+    metatile = (u16 *)(index * 8 + metatiles);
+    top[0] = metatile[0];
+    top[1] = metatile[1];
+    bottom = (u16 *)(bottomEntry * 2 + tilemap);
+    bottom[0] = metatile[2];
+    bottom[1] = metatile[3];
 }
-END_NONMATCH
 
 void map_load_metatiles(struct MapLoaderObj *obj)
 {
@@ -345,17 +375,23 @@ ASM_FUNC("asm/code_0805AF28/map_anim_update.s", void map_anim_update(void))
 
 ASM_FUNC("asm/code_0805AF28/map_anim_init.s", void map_anim_init(void))
 
+/* One sprite of a map's sprite list (gSpriteTable): up to 4, the last one has SPRITE_ENTRY_LAST. */
 struct SpriteEntry
 {
-    u8 flags;
-    u8 arg;
+    u8 flags; /* SPRITE_ENTRY_* */
+    u8 arg;   /* passed to sprite_alloc as 0x5000 | arg */
     u16 unk2;
 };
+#define SPRITE_ENTRY_SKIP 0x40 /* no sprite is allocated for this entry */
+#define SPRITE_ENTRY_LAST 0x80 /* last entry of the list */
 
-NONMATCH("asm/code_0805AF28/map_loader_map_obj_setup_sprites.s", void map_loader_map_obj_setup_sprites(struct MapLoaderObj *obj))
+/* Frees obj's 4 map sprite slots (0xFF), then, when it has a sprite context, allocates a sprite for
+ * each entry of the map's sprite list (gSpriteTable, picked by the selector's spriteIndex) that
+ * isn't marked SPRITE_ENTRY_SKIP, up to the entry marked SPRITE_ENTRY_LAST. */
+void map_loader_map_obj_setup_sprites(struct MapLoaderObj *obj)
 {
-    struct SpriteEntry *table;
-    u8 index;
+    struct SpriteEntry *list;
+    u8 listIndex;
     u8 i;
     u8 cur;
 
@@ -368,24 +404,23 @@ NONMATCH("asm/code_0805AF28/map_loader_map_obj_setup_sprites.s", void map_loader
 
     if (obj->spriteCtx != NULL)
     {
-        index = gSelTable[obj->selector].spriteIndex;
-        table = (struct SpriteEntry *)gSpriteTable[index];
-        if (table != NULL)
+        listIndex = gSelTable[obj->selector].spriteIndex;
+        list = (struct SpriteEntry *)gSpriteTable[listIndex];
+        if (list != NULL)
         {
             i = 0;
             do
             {
                 cur = i;
-                if ((table[cur].flags & 0x40) == 0)
+                if ((list[cur].flags & SPRITE_ENTRY_SKIP) == 0)
                 {
-                    obj->spriteSlots[cur] = sprite_alloc(obj->spriteCtx, 0xFF, table[cur].arg | 0x5000, 0xFF, 0xFFFF, 0xFFFF);
+                    obj->spriteSlots[cur] = sprite_alloc(obj->spriteCtx, 0xFF, (u16)(list[cur].arg | 0x5000), 0xFF, 0xFFFF, 0xFFFF);
                 }
                 i = cur + 1;
-            } while ((table[cur].flags & 0x80) == 0);
+            } while ((list[cur].flags & SPRITE_ENTRY_LAST) == 0);
         }
     }
 }
-END_NONMATCH
 
 void map_upload_tiles(u32 unused, u16 slot, u8 count, u16 index)
 {
@@ -396,11 +431,16 @@ ASM_FUNC("asm/code_0805AF28/map_anim2_update.s", void map_anim2_update(void))
 
 ASM_FUNC("asm/code_0805AF28/map_anim2_init.s", void map_anim2_init(void))
 
+/* Starts map tile animation animId, an entry of the map's list gAnimListTable[gUnk_03000DD0[7]], in
+   the first free one of the 16 animation slots (none free: nothing happens). Copies its frames
+   (pairs of tile and offset; bit 15 of the offset marks the last) and rewinds the slot. The
+   original tests the "can start" bit (flag bit 6) of list[slot], not of list[animId]; the same
+   function is in code_0805C82C (map_anim2_start_0805E018). */
 void map_anim2_start_0805BCCC(struct MapLoaderObj *obj, u16 animId)
 {
     u8 slot = 0;
-    u8 i;
-    u8 j;
+    u8 count;
+    u8 frame;
 
     if (obj->anim[0].state != 0)
     {
@@ -423,23 +463,24 @@ void map_anim2_start_0805BCCC(struct MapLoaderObj *obj, u16 animId)
 
             if (flag & 0x40)
             {
-                const struct MapAnimChunk *chunk;
+                const struct MapAnimChunk *frames;
 
+                /* type bits 0-1: the kind, bits 10-19 of the entry's first word, bits 4-8 of unk2 */
                 obj->anim[slot].state = (((u32)list[animId].type << 30) >> 30) + 0x20;
                 obj->anim[slot].value = (*(const u32 *)&list[animId] >> 10) & 0x3FF;
                 obj->anim[slot].sub = ((u32)list[animId].unk2 << 23) >> 27;
 
-                chunk = (const struct MapAnimChunk *)list[animId].chunks;
-                i = 0;
+                frames = (const struct MapAnimChunk *)list[animId].chunks;
+                count = 0;
                 do
                 {
-                    j = i;
-                    obj->anim[slot].tiles[j] = chunk[j].x;
-                    obj->anim[slot].offsets[j] = chunk[j].y & 0x7FFF;
-                    i = (u8)(i + 1);
-                } while (!(chunk[j].y & 0x8000));
+                    frame = count;
+                    obj->anim[slot].tiles[frame] = frames[frame].x;
+                    obj->anim[slot].offsets[frame] = frames[frame].y & 0x7FFF;
+                    count = (u8)(count + 1);
+                } while (!(frames[frame].y & 0x8000));
 
-                obj->anim[slot].limit = i;
+                obj->anim[slot].limit = count;
                 obj->anim[slot].index = 0;
                 obj->anim[slot].flags = 0;
             }
@@ -479,20 +520,24 @@ void map_check_layer3(struct MapLoaderObj *obj)
     }
 }
 
-NONMATCH("asm/code_0805AF28/map_layer3_entry.s", void map_layer3_entry(struct MapLoaderObj *obj, u32 index))
+/* Makes change index of the current map's list (gLayer3Table): puts its tile rectangles on BG layers
+   0-2 and layer 3, sets layer3Flag579 and layer3Flag599, and sets the change's event flag, so that
+   map_check_layer3 makes it again whenever the map is loaded. */
+void map_layer3_entry(struct MapLoaderObj *obj, u32 index)
 {
     u8 variant;
-    u16 idx;
-    u16 flags;
+    u16 entryIndex;
     struct Layer3Entry *entry;
     struct Layer3Entry *list;
+    register u16 flags asm("r2");
+    u32 event;
 
-    idx = index;
+    entryIndex = index;
     variant = gUnk_03000DD0[0xA];
     if (variant != 0)
     {
         list = (struct Layer3Entry *)gLayer3Table[variant][0];
-        entry = (struct Layer3Entry *)((u32)idx * 20 + (u32)list);
+        entry = (struct Layer3Entry *)((u32)entryIndex * sizeof(struct Layer3Entry) + (u32)list);
         if (entry->rect0 != NULL)
             map_put_rect(obj, 0, entry->rect0);
         if (entry->rect1 != NULL)
@@ -503,82 +548,92 @@ NONMATCH("asm/code_0805AF28/map_layer3_entry.s", void map_layer3_entry(struct Ma
             put_layer3_rect(obj, entry->rect3);
         obj->layer3Flag579 = 1;
         flags = entry->flags;
-        if ((0x7FFF & flags) != 0x7FFF)
+        if ((flags & LAYER3_NO_FLAG) != LAYER3_NO_FLAG)
         {
-            u32 event = (u32)flags << 17;
-
-            set_flag(gUnk_03000FC0 + 0x38C, 0, ((event >> 1) + 0x07200000) >> 16, 1);
+            /* LAYER3_FLAG_BASE + (flags & 0x7FFF) */
+            event = (u32)flags << 17;
+            set_flag(gUnk_03000FC0 + 0x38C, 0, ((event >> 1) + (LAYER3_FLAG_BASE << 16)) >> 16, 1);
         }
         obj->layer3Flag599 = 1;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805AF28/map_put_rect.s", void map_put_rect(struct MapLoaderObj *obj, u32 layer, void *rect))
 
 ASM_FUNC("asm/code_0805AF28/map_refresh_entry.s", void map_refresh_entry(void))
 
+/*
+ * Runs the map's alpha-blend animation once a frame: when the current keyframe's time is up, moves
+ * to the next one (looping, or ping-ponging back and forth) and writes its EVA/EVB to the BLDALPHA
+ * shadow (gUnk_02000052); the BLDCNT shadow (gUnk_02000050) gets blendBldCnt every frame.
+ */
 void map_entry_step(struct MapLoaderObj *obj)
 {
-    if (obj->entryFlags & 0x80)
+    if (obj->blendFlags & BLEND_ANIM_ACTIVE)
     {
-        u32 timer = obj->entryTimer - 1;
+        u32 timer = obj->blendTimer - 1;
 
-        obj->entryTimer = timer;
+        obj->blendTimer = timer;
         if ((timer << 16) == 0)
         {
-            u32 mode = obj->entryFlags & 3;
+            u32 mode = obj->blendFlags & BLEND_ANIM_MODE_MASK;
 
-            if (mode == 1)
+            if (mode == BLEND_ANIM_PINGPONG)
             {
-                if ((mode &= obj->entryCounter) != 0)
+                /* an odd number of turns: walking backwards */
+                if ((mode &= obj->blendBounces) != 0)
                 {
-                    if (obj->entryIndex == 0)
+                    if (obj->blendFrame == 0)
                     {
-                        obj->entryIndex++;
-                        obj->entryCounter++;
+                        obj->blendFrame++;
+                        obj->blendBounces++;
                     }
                     else
-                        obj->entryIndex--;
+                        obj->blendFrame--;
                 }
                 else
                 {
-                    u8 index = obj->entryIndex;
-                    u8 *e = (u8 *)obj->entryTable;
+                    u8 frame = obj->blendFrame;
+                    u8 *keyBytes = (u8 *)obj->blendKeys;
 
-                    if (e[(index << 2) + 2] & 4)
+                    /* blendKeys[frame].last */
+                    if (keyBytes[(frame << 2) + 2] & BLEND_KEY_LAST_BIT)
                     {
-                        obj->entryIndex--;
-                        obj->entryCounter++;
+                        obj->blendFrame--;
+                        obj->blendBounces++;
                     }
                     else
-                        obj->entryIndex++;
+                        obj->blendFrame++;
                 }
             }
-            else if (mode == 0)
+            else if (mode == BLEND_ANIM_LOOP)
             {
-                u8 index = obj->entryIndex;
-                u8 *e = (u8 *)obj->entryTable;
+                u8 frame = obj->blendFrame;
+                u8 *keyBytes = (u8 *)obj->blendKeys;
 
-                if (e[(index << 2) + 2] & 4)
-                    obj->entryIndex = 0;
+                if (keyBytes[(frame << 2) + 2] & BLEND_KEY_LAST_BIT)
+                    obj->blendFrame = 0;
                 else
-                    obj->entryIndex = index + 1;
+                    obj->blendFrame = frame + 1;
             }
 
-            obj->entryTimer = ((struct EntryRec *)obj->entryTable)[obj->entryIndex].t8;
-            gUnk_02000052 = ((((struct EntryRec *)obj->entryTable)[obj->entryIndex].mid5 << 8) + ((struct EntryRec *)obj->entryTable)[obj->entryIndex].low5);
+            obj->blendTimer = obj->blendKeys[obj->blendFrame].duration;
+            gUnk_02000052 = ((obj->blendKeys[obj->blendFrame].evb << 8) + obj->blendKeys[obj->blendFrame].eva);
         }
-        gUnk_02000050 = obj->entryBldcnt;
+        gUnk_02000050 = obj->blendBldCnt;
     }
 }
 
-NONMATCH("asm/code_0805AF28/map_obj_setup_state_sprites.s", void map_obj_setup_state_sprites(struct MapLoaderObj *obj))
+/* Like map_loader_map_obj_setup_sprites for the state sprite slots: frees obj's 4 state sprite slots
+ * (0xFF), then, when it has a state sprite context, allocates a sprite for each entry of sprite list
+ * gSpriteTable[gUnk_03000DD0[8]] (the current map's) that isn't marked SPRITE_ENTRY_SKIP, up to the
+ * entry marked SPRITE_ENTRY_LAST. */
+void map_obj_setup_state_sprites(struct MapLoaderObj *obj)
 {
-    struct SpriteEntry *table;
+    struct SpriteEntry *list;
     u8 i;
     u8 cur;
-    u8 index;
+    u8 listIndex;
 
     i = 0;
     do
@@ -589,24 +644,23 @@ NONMATCH("asm/code_0805AF28/map_obj_setup_state_sprites.s", void map_obj_setup_s
 
     if (obj->stateSpriteCtx != NULL)
     {
-        index = gUnk_03000DD0[8];
-        table = (struct SpriteEntry *)gSpriteTable[index];
-        if (table != NULL)
+        listIndex = gUnk_03000DD0[8];
+        list = (struct SpriteEntry *)gSpriteTable[listIndex];
+        if (list != NULL)
         {
             i = 0;
             do
             {
                 cur = i;
-                if ((table[cur].flags & 0x40) == 0)
+                if ((list[cur].flags & SPRITE_ENTRY_SKIP) == 0)
                 {
-                    obj->stateSpriteSlots[cur] = sprite_alloc(obj->stateSpriteCtx, 0xFF, table[cur].arg | 0x5000, 0xFF, 0xFFFF, 0xFFFF);
+                    obj->stateSpriteSlots[cur] = sprite_alloc(obj->stateSpriteCtx, 0xFF, (u16)(list[cur].arg | 0x5000), 0xFF, 0xFFFF, 0xFFFF);
                 }
                 i = cur + 1;
-            } while ((table[cur].flags & 0x80) == 0);
+            } while ((list[cur].flags & SPRITE_ENTRY_LAST) == 0);
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805AF28/init_bg3_scroll_obj.s", void init_bg3_scroll_obj(void))
 

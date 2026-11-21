@@ -65,12 +65,12 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
+    s32 param9C; /* jump arc: height curve (negative) */
+    s32 paramA0; /* jump arc: frames */
+    s32 paramA4; /* jump arc: distance in X */
+    s32 paramA8; /* jump arc: distance in Y */
     u16 timer;
-    s16 dx;
+    s16 dx;      /* jump arc: start position in pixels */
     s16 dy;
     s16 dh;
 };
@@ -286,17 +286,20 @@ void obj_pose_active_timer_action7_effect(struct ActorObj *obj)
     }
 }
 
+/* Once no state is busy: joins the object list, plays sound 0xD8 and jumps (action 5, dust effect
+ * 0x120A) to the owner's target X/Y at its own target height. The jump takes one frame per 2 px of
+ * distance and peaks 16 px up (0x1000) halfway; obj_arc_step_timer flies it. */
 void obj_wait_ready_setup_motion(struct ActorObj *obj)
 {
     s32 busy = is_state_busy();
 
     if (busy == 0)
     {
-        s32 dX;
-        s32 dY;
-        s32 d;
-        s32 t;
-        s32 q;
+        s32 distX;
+        s32 distY;
+        s32 dist;
+        s32 frames;
+        s32 curve;
         struct ActorObj *owner;
 
         obj_list_push_default(obj);
@@ -308,23 +311,23 @@ void obj_wait_ready_setup_motion(struct ActorObj *obj)
         obj->dx = obj->baseX / 0x100;
         obj->dy = obj->baseY / 0x100;
         obj->dh = obj->baseH / 0x100;
-        dX = obj->targetX - obj->baseX;
-        dY = obj->targetY - obj->baseY;
-        d = ((s32 (*)(s32))gMathRoutines)(dX * dX + dY * dY);
-        if (d < 0)
+        distX = obj->targetX - obj->baseX;
+        distY = obj->targetY - obj->baseY;
+        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(distX * distX + distY * distY);
+        if (dist < 0)
         {
-            d += 0x1FF;
+            dist += 0x1FF;
         }
-        t = d >> 9;
-        q = 0x1000 / ((t / 2) * (t / 2));
-        if (q == 1)
+        frames = dist >> 9;
+        curve = 0x1000 / ((frames / 2) * (frames / 2));
+        if (curve == 1)
         {
-            q = 2;
+            curve = 2;
         }
-        obj->param9C = -q;
-        obj->paramA0 = t;
-        obj->paramA4 = dX;
-        obj->paramA8 = dY;
+        obj->param9C = -curve;
+        obj->paramA0 = frames;
+        obj->paramA4 = distX;
+        obj->paramA8 = distY;
         obj->timer = busy;
         sprite_set_action(obj, 5, 0, 0);
         effect_spawn_at(0x120A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);

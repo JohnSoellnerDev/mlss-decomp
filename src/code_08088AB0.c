@@ -178,35 +178,43 @@ s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
 s32 move_step(u16 *outX, u16 *outY, u16 *outH, s32 dx, s32 dy, s32 dh, s32 speed);
 void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
 
-void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux)
+/* Sets up an accelerated move along the path in targetX/Y/H (each packed as to << 16 | from, in
+   pixels): starting at startSpeed (1/256 px per frame) and speeding up by accel per frame, the end
+   speed is sqrt(startSpeed^2 + 2 * accel * distance). The progress curve gets a linear part
+   (offsetA, 2 * start / (start + end)) and a squared part (heightLimit, (end - start) / (start + end)),
+   both 8.8 and adding up to 1, and the progress per frame (0x4000 = the whole path, at most 0x600)
+   goes to motionStart. Clears the motion-done flag. */
+void set_motion_speed_aux(struct Actor *obj, u32 startSpeed, s32 accel)
 {
     s32 dx = (obj->targetX >> 16) - (s16)obj->targetX;
     s32 dy = (obj->targetY >> 16) - (s16)obj->targetY;
     s32 dz = (obj->targetH >> 16) - (s16)obj->targetH;
-    s32 len = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + dz * dz);
-    s32 len2 = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)((((len << 1) * aux) << 8) + value * value);
-    s32 r5;
-    s32 speed;
+    s32 dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + dz * dz);
+    s32 endSpeed = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)((((dist << 1) * accel) << 8) + startSpeed * startSpeed);
+    s32 gain;
+    s32 step;
 
-    obj->heightLimit = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((r5 = len2 - value) << 8, len2 + value);
-    obj->offsetA = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(value << 9, len2 + value);
-    if (aux != 0)
+    obj->heightLimit = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((gain = endSpeed - startSpeed) << 8, endSpeed + startSpeed);
+    obj->offsetA = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(startSpeed << 9, endSpeed + startSpeed);
+    if (accel != 0)
     {
-        if (r5 != 0)
-            speed = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((aux << 14) + r5 / 2, r5);
+        /* frames = gain / accel */
+        if (gain != 0)
+            step = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((accel << 14) + gain / 2, gain);
         else
-            speed = 0x4000;
+            step = 0x4000;
     }
     else
     {
-        if (len != 0)
-            speed = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((value << 6) + len / 2, len);
+        /* frames = distance / speed */
+        if (dist != 0)
+            step = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((startSpeed << 6) + dist / 2, dist);
         else
-            speed = 0x4000;
+            step = 0x4000;
     }
-    if (speed > 0x600)
-        speed = 0x600;
-    obj->motionStart = speed;
+    if (step > 0x600)
+        step = 0x600;
+    obj->motionStart = step;
     ((struct FlagsBits *)&obj->flags)->rebuild = 0;
 }
 

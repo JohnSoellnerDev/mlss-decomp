@@ -91,6 +91,56 @@ struct Flags299Bits
     u8 rest : 6;
 };
 
+struct Flags20EBits
+{
+    u8 lo3 : 3;
+    u8 mid3 : 3;
+    u8 hi2 : 2;
+};
+
+struct ByteBits
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct Word214Bits
+{
+    u32 lo3 : 3;
+    u32 mid10 : 10;
+    u32 f13 : 4;
+    u32 hi15 : 15;
+};
+
+/* the sub sprite's state saved in its field object (obj_copy_sub_fields) so the sprite can
+ * be rebuilt from it later; each comment names the FieldSub field it is saved from */
+struct SubSpriteSave
+{
+    u8 filler0[0x298];
+    u8 valid : 1;  /* the fields below hold a saved state */
+    u8 mirror : 1; /* 0x11 bit 6 */
+    u8 lo1F : 2;   /* 0x1F bits 0-1 */
+    u8 mid1F : 2;  /* 0x1F bits 2-3 */
+    u8 pair12 : 2; /* 0x12 bits 1-2 */
+    u8 bit12_3 : 1; /* 0x12 bit 3 */
+    u8 still : 1;   /* 0x12 bit 4: the object stands still */
+    u8 rest299 : 6;
+    u8 filler29A;
+    u8 anim;       /* 0x21: the record obj_load_record loaded */
+    u8 frame;      /* 0x23 */
+    u8 filler29D;
+    u16 unk2A;     /* 0x2A */
+    u16 unk2C;     /* 0x2C */
+    u16 unk04;     /* 0x04 */
+    u16 unk06;     /* 0x06 */
+};
+
 struct FieldVtable
 {
     u8 filler0[0x38];
@@ -115,7 +165,7 @@ struct FieldObj
     u8 unk24;
     u8 filler25[0x28 - 0x25];
     u8 unk28;
-    u8 unk29;
+    s8 unk29;
     u8 filler2A[0x2C - 0x2A];
     s16 unk2C;
     u8 filler2E[0x34 - 0x2E];
@@ -146,41 +196,32 @@ struct FieldObj
     u8 filler220[0x230 - 0x220];
     s32 unk230;
     s32 unk234;
-    u8 unk238;
+    s8 unk238;
     u8 unk239;
     u8 filler23A[0x23D - 0x23A];
     u8 unk23D;
-    u16 unk23E;
-    u16 unk240;
+    u16 moveSpeed;           /* walking speed; the air speed while jumping */
+    u16 savedMoveSpeed;      /* moveSpeed before the jump, restored on landing */
     s16 unk242;
     s16 unk244;
     u8 filler246[0x248 - 0x246];
-    s32 unk248;
-    s32 unk24C;
-    s32 unk250;
-    s32 unk254;
-    s32 unk258;
-    s32 counter25C;
+    s32 gravity;             /* taken off velocityZ each frame of a jump */
+    s32 jumpStartZ;          /* unk14 + unk18 when the jump started */
+    s32 jumpStartHeight;     /* unk18 when the jump started */
+    s32 jumpVelocity;        /* vertical speed the jump started with */
+    s32 velocityZ;           /* current vertical speed, added to unk18 each frame */
+    s32 jumpFrame;           /* frames since the jump started, -1 = not jumping */
     u8 filler260[0x262 - 0x260];
-    u16 unk262;
-    s16 unk264;
-    s16 unk266;
-    u16 unk268;
+    u16 jumpMoveSpeed;       /* default air speed of a jump */
+    s16 defaultJumpVelocity; /* default jumpVelocity (0x52C) */
+    s16 defaultGravity;      /* default gravity (0x75) */
+    s16 unk268;
     u8 filler26A[0x26C - 0x26A];
-    u16 unk26C;
-    u8 unk26E;
+    u16 spriteId;   /* sprite graphics id, 0xFFFF = none */
+    s8 spriteSlot;  /* slot from sprite_alloc, -1 (0xFF) = none */
     u8 filler26F[0x294 - 0x26F];
     struct FieldSub *sub;
-    u8 flags298;
-    u8 flags299;
-    u8 filler29A;
-    u8 unk29B;
-    u8 unk29C;
-    u8 filler29D;
-    u16 unk29E;
-    u16 unk2A0;
-    u16 unk2A2;
-    u16 unk2A4;
+    u8 subSave[0x2A6 - 0x298]; /* struct SubSpriteSave */
     u8 filler2A6[0x2B5 - 0x2A6];
     u8 flags2B5;
     u8 filler2B6;
@@ -476,55 +517,61 @@ ASM_FUNC("asm/code_0803F510/build_sprite_oam.s", u32 build_sprite_oam(u8 *ent, u
 
 ASM_FUNC("asm/code_0803F510/tile_query.s", void tile_query(void))
 
-void decode_coord_mode(u32 row, u32 col, s32 x, u8 *out_a, u8 *out_b)
+/* Turns frame `frame` (group * directions + direction) of sprite entry `index` in `bank` into the
+   record to load and whether to draw it flipped. Entry word bits 29-30 give how many directions the
+   frames face (0: one, 1: four, 2/3: eight), bit 28 whether every direction has its own frame (else
+   mirrored ones share, 3 or 5 frames a group); gFrameAttrTable gives the frame within the group
+   (bits 0-6) and the flip (bit 7). A one-direction sprite loads record `frame` unflipped. */
+void decode_coord_mode(u32 bank, u32 index, s32 frame, u8 *outRecord, u8 *outFlip)
 {
-    u32 word;
-    u32 mode;
-    u32 variant;
-    s32 mul;
-    u8 v;
+    u32 entryWord;
+    u32 dirMode;
+    u32 allDirsDrawn;
+    s32 groupStart;
+    u8 attr;
 
-    word = *(u32 *)(gTableEntryRows[row] + (col << 2));
-    mode = (word << 1) >> 30;
-    variant = (word << 3) >> 31;
-    if (mode != 0)
+    entryWord = *(u32 *)(gTableEntryRows[bank] + (index << 2));
+    dirMode = (entryWord << 1) >> 30;
+    allDirsDrawn = (entryWord << 3) >> 31;
+    if (dirMode != 0)
     {
-        if (variant == 0)
+        // Split frame into the group's first record and the direction (four-direction ones doubled).
+        if (allDirsDrawn == 0)
         {
-            if (mode == 1)
+            if (dirMode == 1)
             {
-                mul = (x / 4) * 3;
-                x -= (x / 4) * 4;
-                x *= 2;
+                groupStart = (frame / 4) * 3;
+                frame -= (frame / 4) * 4;
+                frame *= 2;
             }
             else
             {
-                mul = (x / 8) * 5;
-                x -= (x / 8) * 8;
+                groupStart = (frame / 8) * 5;
+                frame -= (frame / 8) * 8;
             }
         }
         else
         {
-            if (mode == 1)
+            if (dirMode == 1)
             {
-                mul = (x / 4) * 4;
-                x -= mul;
-                x *= 2;
+                groupStart = (frame / 4) * 4;
+                frame -= groupStart;
+                frame *= 2;
             }
             else
             {
-                mul = (x / 8) * 8;
-                x -= mul;
+                groupStart = (frame / 8) * 8;
+                frame -= groupStart;
             }
         }
-        v = gFrameAttrTable[(mode << 4) + (variant << 3) + x];
-        *out_a = mul + (v & 0x7F);
-        *out_b = v >> 7;
+        attr = gFrameAttrTable[(dirMode << 4) + (allDirsDrawn << 3) + frame];
+        *outRecord = groupStart + (attr & 0x7F);
+        *outFlip = attr >> 7;
     }
     else
     {
-        *out_a = x;
-        *out_b = mode;
+        *outRecord = frame;
+        *outFlip = dirMode;
     }
 }
 
@@ -548,7 +595,44 @@ struct TaskObj *obj_update_oam_task_insert(struct TaskObj *obj, u8 kind)
     return obj;
 }
 
-ASM_FUNC("asm/code_0803F510/obj_init.s", void obj_init(void))
+/* Constructor of a field object (0x33C bytes): installs the base class's vtable, sets the
+ * default flags, ids and motion parameters, then loads entry `index` of object def `def`
+ * into it unless `def` is -1. */
+struct FieldObj *obj_init(struct FieldObj *obj, s32 def, u32 index)
+{
+    obj->vt338 = (struct FieldVtable *)gObjBaseClass;
+    obj->unk01 = 0xFF;
+    obj->unk29 = -1;
+    ((struct ByteBits *)&obj->flags20C)->bit0 = 1;
+    ((struct Flags20EBits *)&obj->flags20E)->mid3 = 1;
+    ((struct ByteBits *)&obj->flags20F)->bit1 = 1;
+    ((struct ByteBits *)&obj->flags210)->bit0 = 0;
+    ((struct ByteBits *)&obj->flags210)->bit1 = 1;
+    ((struct ByteBits *)&obj->flags210)->bit2 = 1;
+    ((struct ByteBits *)&obj->flags210)->bit3 = 1;
+    ((struct ByteBits *)&obj->flags210)->bit6 = 1;
+    ((struct Lo3Bits *)&obj->flags2B5)->lo3 = 0;
+    ((struct Lo3Bits *)&obj->flags2B7)->rest = 0x1F;
+    ((struct Lo3Bits *)&obj->flags2B8)->lo3 = 7;
+    ((struct Word214Bits *)&obj->state214)->lo3 = 3;
+    ((struct Word214Bits *)&obj->state214)->f13 = 0xE;
+    ((struct Flags298Bits *)&obj->flags216)->bit1 = 1;
+    ((struct Flags298Bits *)&obj->flags216)->f2 = 0;
+    obj->unk230 = -1;
+    obj->unk234 = -1;
+    obj->unk238 = -1;
+    obj->unk239 = 0x10;
+    obj->unk23D = 0;
+    obj->spriteId = 0xFFFF;
+    obj->spriteSlot = -1;
+    obj->unk268 = -1;
+    obj_set_motion_params(obj, 0x200, 0x200, 0x52C, 0x75);
+    if (def != -1)
+    {
+        load_object_def(def, index, obj);
+    }
+    return obj;
+}
 
 void obj_refresh_dirty(struct FieldObj *obj)
 {
@@ -576,64 +660,140 @@ void obj_refresh_dirty(struct FieldObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0803F510/motion_obj_set_move_target.s", void motion_obj_set_move_target(void))
-
-void obj_init_motion(struct FieldObj *obj, s32 goal, s32 step, s32 speed)
+/* Starts a jump: height is in pixels (-1: the default jump velocity, 0: none, 30: velocity 0x52C,
+   otherwise the starting speed that just reaches that height at this gravity), gravity -1 takes the
+   default gravity and airSpeed -1 the default air speed; the walking speed is saved for the landing. */
+void motion_obj_set_move_target(struct FieldObj *obj, s32 height, s32 gravity, s32 airSpeed)
 {
-    s32 *p248;
-    s32 *p254;
-    u16 *p23E;
-    s32 dir;
+    s32 *pGravity;
+    u16 *pSpeed;
+    s32 vel;
+    s32 dist;
+    s32 rising;
 
-    p248 = &obj->unk248;
-    if (step == -1)
+    pGravity = &obj->gravity;
+    if (gravity == -1)
     {
-        *p248 = obj->unk266;
+        *pGravity = obj->defaultGravity;
     }
     else
     {
-        *p248 = step;
+        *pGravity = gravity;
     }
-    p254 = &obj->unk254;
-    if (goal == -1)
+    if (height == -1)
     {
-        *p254 = obj->unk264;
+        obj->jumpVelocity = obj->velocityZ = obj->defaultJumpVelocity;
+    }
+    else if (height == 0)
+    {
+        obj->jumpVelocity = obj->velocityZ = 0;
+    }
+    else if (height == 30)
+    {
+        obj->jumpVelocity = obj->velocityZ = 0x52C;
     }
     else
     {
-        *p254 = goal;
+        /* Add up the speeds of a fall from rest until it covers the height, then take off the
+           part of the last frame that overshoots it. */
+        height <<= 8;
+        vel = 0;
+        dist = 0;
+        do
+        {
+            vel += obj->gravity;
+            dist += vel;
+        } while (dist < height);
+        dist -= height;
+        if (dist > 0)
+        {
+            dist <<= 8;
+            dist /= vel;
+            vel -= obj->gravity * dist / 0x100;
+        }
+        obj->jumpVelocity = vel;
+        obj->velocityZ = vel;
     }
-    obj->unk258 = obj->unk254;
-    obj->counter25C = 0;
-    obj->unk24C = obj->unk14 + obj->unk18;
-    obj->unk250 = obj->unk18;
-    p23E = &obj->unk23E;
-    obj->unk240 = *p23E;
-    if (speed == -1)
+    rising = 0;
+    if (obj->velocityZ > 0)
     {
-        *p23E = obj->unk262;
+        rising = 1;
+    }
+    ((struct Flags213Bits *)&obj->flags213)->bit5 = rising;
+    obj->jumpFrame = 0;
+    obj->jumpStartZ = obj->unk14 + obj->unk18;
+    obj->jumpStartHeight = obj->unk18;
+    pSpeed = &obj->moveSpeed;
+    obj->savedMoveSpeed = *pSpeed;
+    if (airSpeed == -1)
+    {
+        *pSpeed = obj->jumpMoveSpeed;
     }
     else
     {
-        *p23E = speed;
+        *pSpeed = airSpeed;
     }
-    dir = 0;
-    if (obj->unk258 > 0)
+}
+
+/* Starts a jump with a given launch speed: sets gravity and jumpVelocity (-1 takes the object's
+   defaults), starts velocityZ at jumpVelocity, records where the jump started, saves moveSpeed and
+   switches it to airSpeed (-1: jumpMoveSpeed), and sets flags213 bit 5 while rising. */
+void obj_init_motion(struct FieldObj *obj, s32 velocity, s32 gravity, s32 airSpeed)
+{
+    s32 *pGravity;
+    s32 *pVelocity;
+    u16 *pSpeed;
+    s32 rising;
+
+    pGravity = &obj->gravity;
+    if (gravity == -1)
     {
-        dir = 1;
+        *pGravity = obj->defaultGravity;
     }
-    ((struct Flags213Bits *)&obj->flags213)->bit5 = dir;
+    else
+    {
+        *pGravity = gravity;
+    }
+    pVelocity = &obj->jumpVelocity;
+    if (velocity == -1)
+    {
+        *pVelocity = obj->defaultJumpVelocity;
+    }
+    else
+    {
+        *pVelocity = velocity;
+    }
+    obj->velocityZ = obj->jumpVelocity;
+    obj->jumpFrame = 0;
+    obj->jumpStartZ = obj->unk14 + obj->unk18;
+    obj->jumpStartHeight = obj->unk18;
+    pSpeed = &obj->moveSpeed;
+    obj->savedMoveSpeed = *pSpeed;
+    if (airSpeed == -1)
+    {
+        *pSpeed = obj->jumpMoveSpeed;
+    }
+    else
+    {
+        *pSpeed = airSpeed;
+    }
+    rising = 0;
+    if (obj->velocityZ > 0)
+    {
+        rising = 1;
+    }
+    ((struct Flags213Bits *)&obj->flags213)->bit5 = rising;
 }
 
 void motion_obj_step_motion(struct FieldObj *obj)
 {
     s32 *counter;
 
-    counter = &obj->counter25C;
+    counter = &obj->jumpFrame;
     if (*counter >= 0)
     {
-        obj->unk18 += obj->unk258;
-        obj->unk258 -= obj->unk248;
+        obj->unk18 += obj->velocityZ;
+        obj->velocityZ -= obj->gravity;
         if (!(obj->flags20D & 0x20))
         {
             if (obj->unk18 <= 0)
@@ -645,7 +805,7 @@ void motion_obj_step_motion(struct FieldObj *obj)
         }
         else
         {
-            if (obj->unk14 + obj->unk18 <= obj->unk24C)
+            if (obj->unk14 + obj->unk18 <= obj->jumpStartZ)
             {
                 obj_reset_move_state(obj);
                 if (obj->unk14 + obj->unk18 < 0)
@@ -665,7 +825,7 @@ void obj_update_state(struct FieldObj *obj)
 
     if ((obj->flags20C & 1) && !(obj->flags216 & 0x20))
     {
-        if (obj->counter25C >= 0)
+        if (obj->jumpFrame >= 0)
         {
             if (obj->unk14 + obj->unk18 >= obj->unk3C + obj->unk40)
                 obj->state4 = 2;
@@ -705,133 +865,158 @@ void obj_update_special_flag(struct FieldObj *obj)
 
 ASM_FUNC("asm/code_0803F510/obj_refresh_anim_state.s", void obj_refresh_anim_state(void))
 
+/* Saves the sub sprite's state (mirror and flag bits, animation, frame and fields) into the
+ * object's SubSpriteSave at 0x298 and marks the save valid, so the sprite can be rebuilt later. */
 void obj_copy_sub_fields(struct FieldObj *obj)
 {
-    u32 v;
+    struct SubSpriteSave *save;
+    u32 bits;
 
-    v = ((struct SubBits11 *)obj->sub)->bit6;
-    ((struct Flags298Bits *)&obj->flags298)->bit1 = v;
-    v = ((struct SubBits1F *)obj->sub)->lo2;
-    ((struct Flags298Bits *)&obj->flags298)->f2 = v;
-    v = ((struct SubBits1F *)obj->sub)->mid2;
-    ((struct Flags298Bits *)&obj->flags298)->f4 = v;
-    v = ((struct SubBits12 *)obj->sub)->pair12;
-    ((struct Flags298Bits *)&obj->flags298)->f6 = v;
-    v = ((struct SubBits12 *)obj->sub)->bit3;
-    ((struct Flags299Bits *)&obj->flags299)->bit0 = v;
-    v = ((struct SubBits12 *)obj->sub)->bit4;
-    ((struct Flags299Bits *)&obj->flags299)->bit1 = v;
-    obj->unk29B = obj->sub->unk21;
-    obj->unk29C = obj->sub->unk23;
-    obj->unk29E = obj->sub->unk2A;
-    obj->unk2A0 = obj->sub->unk2C;
-    obj->unk2A2 = obj->sub->unk4;
-    obj->unk2A4 = obj->sub->unk6;
-    ((struct Flags298Bits *)&obj->flags298)->bit0 = 1;
+    save = (struct SubSpriteSave *)obj;
+    bits = ((struct SubBits11 *)obj->sub)->bit6;
+    save->mirror = bits;
+    bits = ((struct SubBits1F *)obj->sub)->lo2;
+    save->lo1F = bits;
+    bits = ((struct SubBits1F *)obj->sub)->mid2;
+    save->mid1F = bits;
+    bits = ((struct SubBits12 *)obj->sub)->pair12;
+    save->pair12 = bits;
+    bits = ((struct SubBits12 *)obj->sub)->bit3;
+    save->bit12_3 = bits;
+    bits = ((struct SubBits12 *)obj->sub)->bit4;
+    save->still = bits;
+    save->anim = obj->sub->unk21;
+    save->frame = obj->sub->unk23;
+    save->unk2A = obj->sub->unk2A;
+    save->unk2C = obj->sub->unk2C;
+    save->unk04 = obj->sub->unk4;
+    save->unk06 = obj->sub->unk6;
+    save->valid = 1;
 }
 
+/* state214 bits 0-2: how the object moves (0-1 and 4: on the ground, 2-3 and 5: free motion) */
+#define FIELD_MOTION_KIND(obj) (((u32)(obj)->state214 << 29) >> 29)
+/* unk24 / unk4C bits 0-2: the facing (one of 8) now / when the animation was last loaded */
+#define FIELD_FACING_BITS(b) ((u32)(b) << 29)
+#define FIELD_FLAG216_NO_UPDATE 0x20 /* obj_update_state and obj_refresh_motion_state skip it */
+#define FIELD_FLAG216_FACING_MODE 0xC
+
+/*
+ * Keeps a field object's animation in step with how it moves: picks its facing from its angle,
+ * reloads the animation (through the vtable, keeping the sub's pair12 bits) when the facing or
+ * the move state changed or `force` is set, and tells the sprite whether the object stands still.
+ * Only for objects whose flags20C bit 0 and flags20F bit 1 are both set (mask 0x02000001).
+ */
 void obj_refresh_motion_state(struct FieldObj *obj, u32 force)
 {
-    s32 flag;
-    s32 moving;
-    u32 pair;
-    u32 idx;
-    u32 t;
-    u32 b216;
-    u32 m;
+    s32 reload;
+    s32 still;
+    u32 savedPair;
+    u32 dir;
+    u32 facing;
+    u32 flags216;
+    u32 facingMode;
     struct FieldVtable *vt;
-    u8 *tbl;
+    u8 *facingTable;
 
     if ((*(u32 *)((u8 *)obj + 0x20C) & (u32)gUnk_02000001) == (u32)gUnk_02000001)
     {
-        b216 = obj->flags216;
-        if (!(b216 & 0x20))
+        flags216 = obj->flags216;
+        if (!(flags216 & FIELD_FLAG216_NO_UPDATE))
         {
-            if ((((u32)obj->state214 << 29) >> 29) > 2)
+            if (FIELD_MOTION_KIND(obj) > 2)
             {
-                tbl = (u8 *)gSpriteFacingTable;
-                idx = obj->unk02 >> 4;
-                m = 0xC;
-                m &= b216;
-                if (m != 4)
+                /* 16 directions from the angle's high nibble; the second half of the table is
+                   for every facing mode but 4 */
+                facingTable = (u8 *)gSpriteFacingTable;
+                dir = obj->unk02 >> 4;
+                facingMode = FIELD_FLAG216_FACING_MODE;
+                facingMode &= flags216;
+                if (facingMode != 4)
                 {
-                    idx += 0x10;
+                    dir += 0x10;
                 }
-                t = tbl[idx];
-                ((struct Lo3Bits *)&obj->unk24)->lo3 = t;
+                facing = facingTable[dir];
+                ((struct Lo3Bits *)&obj->unk24)->lo3 = facing;
             }
-            flag = force;
-            moving = 0;
-            switch (((u32)obj->state214 << 29) >> 29)
+            reload = force;
+            still = 0;
+            switch (FIELD_MOTION_KIND(obj))
             {
             case 0:
             case 1:
             case 4:
-                if (((u32)obj->unk24 << 29) != ((u32)obj->unk4C << 29))
+                if (FIELD_FACING_BITS(obj->unk24) != FIELD_FACING_BITS(obj->unk4C))
                 {
-                    flag = 1;
+                    reload = 1;
                 }
                 if ((obj->state214 & 7) == 0)
                 {
-                    moving = 1;
+                    still = 1;
                 }
                 break;
             case 2:
             case 3:
             case 5:
+                /* state4 is the move state obj_update_state picks; unk2C the one last shown */
                 if (obj->state4 != obj->unk2C)
                 {
-                    flag = 1;
+                    reload = 1;
                 }
-                else if (((u32)obj->unk24 << 29) != ((u32)obj->unk4C << 29))
+                else if (FIELD_FACING_BITS(obj->unk24) != FIELD_FACING_BITS(obj->unk4C))
                 {
-                    flag = 1;
+                    reload = 1;
                 }
                 if (obj->unk242 == 0 && obj->unk244 == 0)
                 {
-                    moving = 1;
+                    still = 1;
                 }
                 else if ((obj->state214 & 7) == 5)
                 {
-                    moving = 1;
+                    still = 1;
                 }
                 break;
             }
-            if (flag != 0)
+            if (reload != 0)
             {
-                pair = ((struct SubBits12 *)obj->sub)->pair12;
+                savedPair = ((struct SubBits12 *)obj->sub)->pair12;
                 vt = obj->vt338;
                 vt->fn3C((u8 *)obj + vt->off38, 1);
-                ((struct SubBits12 *)obj->sub)->pair12 = pair;
+                ((struct SubBits12 *)obj->sub)->pair12 = savedPair;
             }
-            ((struct SubBits12 *)obj->sub)->bit4 = moving;
+            ((struct SubBits12 *)obj->sub)->bit4 = still;
         }
     }
 }
 
+/* Points the field object's sub sprite at the record for its facing: with a facing mode in
+ * flags216 (bits 2-3: directions, bit 4: every direction drawn, as in decode_coord_mode) the
+ * record and flip come from gFrameAttrTable for the facing in unk24 bits 0-2, else the sub keeps
+ * its record, unflipped. Reloads the record when it or the flip changed, or when `force` is set. */
 void obj_sync_sub_state(struct FieldObj *obj, u8 force)
 {
-    u32 b;
-    u8 want;
-    u32 dir;
-    u8 t;
+    u32 flags;
+    u8 record;
+    u32 flip;
+    u8 attr;
 
-    b = obj->flags216;
-    if (!(b & 0xC))
+    flags = obj->flags216;
+    if (!(flags & FIELD_FLAG216_FACING_MODE))
     {
-        want = obj->sub->unk21;
-        dir = 0;
+        record = obj->sub->unk21;
+        flip = 0;
     }
     else
     {
-        t = gFrameAttrTable[((((b << 28) >> 30) << 4)) + ((((b << 27) >> 31) << 3)) + (((u32)obj->unk24 << 29) >> 29)];
-        want = t & 0x7F;
-        dir = t >> 7;
+        /* [dirMode][allDirsDrawn][facing] */
+        attr = gFrameAttrTable[((((flags << 28) >> 30) << 4)) + ((((flags << 27) >> 31) << 3)) + (((u32)obj->unk24 << 29) >> 29)];
+        record = attr & 0x7F;
+        flip = attr >> 7;
     }
-    if (obj->sub->unk21 != want || ((struct SubBits11 *)obj->sub)->bit6 != dir || force != 0)
+    if (obj->sub->unk21 != record || ((struct SubBits11 *)obj->sub)->bit6 != flip || force != 0)
     {
-        obj_load_record(obj->sub, want, 0, 0, 0);
-        ((struct SubBits11 *)obj->sub)->bit6 = dir;
+        obj_load_record(obj->sub, record, 0, 0, 0);
+        ((struct SubBits11 *)obj->sub)->bit6 = flip;
     }
 }
 

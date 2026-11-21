@@ -31,13 +31,21 @@ struct HeroSprite
     u8 unk21;
 };
 
+/* A sprite attached to a body (kept in its unkA8), drawn at the body's sprite position. */
 struct PoseTimer
 {
-    u16 unk0;
-    u16 unk2;
+    u16 unk0;                   /* screen x */
+    u16 unk2;                   /* screen y */
     u8 filler4[0x0E - 0x04];
-    u16 unkE;
+    u16 unkE;                   /* draw order, like HeroSprite.unkE */
 };
+
+/* HeroSprite.unkE: a sprite's draw order; SPRITE_ORDER_DEFAULT unless placed against another. */
+#define SPRITE_ORDER_DEFAULT 0x400
+
+/* HeroBody.flags bit: state_stack_advance_progress has reached the end (progress > 0x3FFF) */
+#define BODY_FLAG_PROGRESS_DONE 0x20
+#define PROGRESS_FULL 0x4000
 
 struct SpriteBit4
 {
@@ -81,14 +89,14 @@ struct BodyData
     u8 filler0E4[0xEC - 0xE4];
     s16 poseOfs;
     u8 filler0EE[0xF6 - 0xEE];
-    s16 effect;
+    s16 hp;
 };
 
 struct HeroBody
 {
     u8 filler0[0x08];
     struct HeroSprite *sprite;
-    u8 filler0C[0x10 - 0x0C];
+    void **parts;   // list of extra sprite parts (each node starts with its next pointer)
     s32 x;
     s32 y;
     s32 z;
@@ -112,16 +120,17 @@ struct HeroBody
     BodyFunc unk60;
     u8 filler64[0x68 - 0x64];
     BodyFunc spriteCallback;
-    u8 filler6C[0x74 - 0x6C];
+    u32 unk6C;
+    u8 filler70[0x74 - 0x70];
     u8 unk74;
     u8 filler75;
     u8 unk76;
     u8 style;
     u8 unk78;
-    u8 flags;
-    u16 unk7A;
+    u8 flags;           /* BODY_FLAG_* */
+    u16 progressStep;   /* added to progress each frame (scaled by unk7C / 0x100) */
     u16 unk7C;
-    u16 unk7E;
+    u16 progress;       /* state_stack_advance_progress: 0 up to 0x4000 */
     u8 filler80[0x84 - 0x80];
     s32 startX;
     s32 startY;
@@ -272,9 +281,13 @@ void wait_child_gone(struct HeroBody *body);
 
 struct HeroBody *obj_spawn(void *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 void *sprite_node_alloc(s32 x, s32 y, s32 z);
+/* Once the sprite's animation flag (bit 3) is set: switches to action 0xB, spawns effect 0xD5F at
+   the target and a trail child up and to the left of it that gets the body's partner and 19
+   sprite parts and follows the partner (trail_follow_partner). The body goes on to
+   begin_tile_update, and sound 0x8C plays. */
 void spawn_trail_part(struct HeroBody *body)
 {
-    struct HeroBody *child;
+    struct HeroBody *trail;
     void **node;
     void *head;
     s32 i;
@@ -282,25 +295,25 @@ void spawn_trail_part(struct HeroBody *body)
     if (body->sprite->flags & 0x8) {
         sprite_set_action(body, 0xB, 0, 0);
         effect_spawn_at(0xD5F, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-        child = obj_spawn(body->data, 0, body->targetX / 0x100 - 0x14, body->targetY / 0x100 - 8,
+        trail = obj_spawn(body->data, 0, body->targetX / 0x100 - 0x14, body->targetY / 0x100 - 8,
                           body->targetZ / 0x100, 1, 1);
-        body->child = child;
-        child->unk9C = 0;
-        *(u32 *)((u8 *)child + 0x6C) = *(u32 *)((u8 *)body + 0x6C);
-        child->partner = body->partner;
-        child->startX = child->x;
-        child->startY = child->y;
-        child->unkAE = 0;
+        body->child = trail;
+        trail->unk9C = 0;
+        trail->unk6C = body->unk6C;
+        trail->partner = body->partner;
+        trail->startX = trail->x;
+        trail->startY = trail->y;
+        trail->unkAE = 0;
         for (i = 0; i < 19; i++)
         {
-            node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-            head = *(void **)((u8 *)child + 0xC);
+            node = sprite_node_alloc(trail->targetX, trail->targetY, trail->targetZ);
+            head = trail->parts;
             *node = head;
-            *(void **)((u8 *)child + 0xC) = node;
+            trail->parts = node;
         }
-        child->state = trail_follow_partner;
+        trail->state = trail_follow_partner;
         body->state = begin_tile_update;
-        set_slot_value(0x8C, -1);
+        set_slot_value(0x8C, -1); /* plays sound 0x8C */
     }
 }
 
@@ -504,6 +517,10 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0809A420/child_jump_to_pose.s", void child_jump_to_pose(struct HeroBody *body))
 
+/* One frame of a spawned item's hop: adds gravity (unk94) to the z speed (unkB2), moves by the
+   x/y/z speed (unkAE/unkB0/unkB2) and spins the sprite for the special kind (unk9C < 0). Landing on
+   the ground height (unk8C) plays sound 0x6A; the first landing (bit 2 of unk98) restarts the jump
+   from the start position, the second releases the item. */
 void apply_velocity_step(struct HeroBody *body)
 {
     body->unkB2 += body->unk94;
@@ -514,9 +531,10 @@ void apply_velocity_step(struct HeroBody *body)
         body->sprite->unkC += 0xA00;
     if (body->unk8C >= body->z)
     {
-        u32 value = body->sprite->unk16 | ((((u32)body->sprite->unk1E << 28) >> 16) + 0x1000);
+        /* the sprite's kind: unk16, plus the low 4 bits of unk1E as bits 12-15, plus 0x1000 */
+        u32 spriteKind = body->sprite->unk16 | ((((u32)body->sprite->unk1E << 28) >> 16) + 0x1000);
 
-        if (value == 0x40D7)
+        if (spriteKind == 0x40D7)
             set_slot_value(0x6A, -1);
         else
             set_slot_value(0x6A, -1);
@@ -645,94 +663,109 @@ void play_anim_by_flag2(struct HeroBody *body)
 }
 
 
+/* Once start_anim4_fx's animation has finished: holds action 5 of 0x40BE and spawns two linked
+ * children with art 0x40C0, one per hero (unk20 = 0 / 1), each starting on its hero's first pose
+ * record in gPoseTable (rows of 18 pointers per hero) and running init_random_timer. Then plays sound
+ * 0x15D, spawns effect 0x2C7D at the body and goes on to random_timers_init. */
 void spawn_two_children(struct HeroBody *body)
 {
-    BodyFunc init;
+    BodyFunc childInit;
     struct HeroBody *child;
-    u32 art;
+    u32 childArt;
 
     if (body->sprite->flags & 8)
     {
         sprite_set_action(body, 5, 0x40BE, 0);
         ((struct ModeByte *)&body->sprite->flags)->mode = 1;
-        art = 0x40C0;
-        child = obj_spawn_linked(body, art, 0);
+        childArt = 0x40C0;
+
+        child = obj_spawn_linked(body, childArt, 0);
         ((struct HalfBit0 *)&child->flags)->bit0 = 1;
         ((struct HalfBit2 *)&child->flags)->bit2 = 1;
-        init = init_random_timer;
-        child->state = init;
-        init(child);
-        child->unk34 = (u8 *)gPoseTable[0];
+        childInit = init_random_timer;
+        child->state = childInit;
+        childInit(child);
+        child->unk34 = (u8 *)gPoseTable[0];          /* hero 0's first pose record */
         child->unk20 = 0;
-        child = obj_spawn_linked(body, art, 0);
+
+        child = obj_spawn_linked(body, childArt, 0);
         ((struct HalfBit0 *)&child->flags)->bit0 = 1;
         ((struct HalfBit2 *)&child->flags)->bit2 = 1;
-        child->state = init;
-        init(child);
-        child->unk34 = (u8 *)gPoseTable[0x12];
+        child->state = childInit;
+        childInit(child);
+        child->unk34 = (u8 *)gPoseTable[18];         /* hero 1's first pose record */
         child->unk20 = 1;
+
         set_slot_value(0x15D, -1);
         effect_spawn_at(0x2C7D, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
         body->state = random_timers_init;
     }
 }
 
+/*
+ * Idle loop of a body with up to two children (the child and its child); ends when there is no child.
+ * Plays sound 0x15D every 30-69 frames and effect 0x2C7D every 50-59 frames. A child carrying an
+ * attached sprite (unkA8) is drawn just in front of its partner with the attached sprite just behind
+ * it, at the same spot. When only one of the two has one, the other is ordered against it by y; when
+ * neither has one, both take SPRITE_ORDER_DEFAULT.
+ */
 void update_pose_timers(struct HeroBody *body)
 {
     struct HeroBody *child;
     struct HeroBody *grand;
-    struct PoseTimer *link;
-    s32 tb;
-    s32 h;
+    struct PoseTimer *attached;
+    s32 soundTimer;
+    s32 placed;
 
     if (body->child == 0)
     {
         body->state = 0;
         return;
     }
-    tb = (u16)body->unkAE - 1;
-    body->unkAE = tb;
-    if ((tb << 16) < 0)
+    soundTimer = (u16)body->unkAE - 1;
+    body->unkAE = soundTimer;
+    if ((soundTimer << 16) < 0)
     {
         set_slot_value(0x15D, -1);
-        body->unkAE = rand_below(0x28, mt19937_next()) + 0x1E;
+        body->unkAE = rand_below(40, mt19937_next()) + 30;
     }
     if (--body->unkA8 < 0)
     {
         effect_spawn_at(0x2C7D, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
-        body->unkA8 = rand_below(0xA, mt19937_next()) + 0x32;
+        body->unkA8 = rand_below(10, mt19937_next()) + 50;
     }
-    h = 0;
+    /* bit 0: the child was placed by its attached sprite, bit 1: the grandchild */
+    placed = 0;
     child = body->child;
-    link = (struct PoseTimer *)child->unkA8;
-    if (link != 0)
+    attached = (struct PoseTimer *)child->unkA8;
+    if (attached != 0)
     {
-        u16 partnerH = child->partner->sprite->unkE;
+        u16 partnerOrder = child->partner->sprite->unkE;
 
-        child->sprite->unkE = partnerH + 1;
-        link->unkE = partnerH - 1;
-        link->unk0 = child->sprite->unk0;
-        link->unk2 = child->sprite->unk2;
-        h = 1;
+        child->sprite->unkE = partnerOrder + 1;
+        attached->unkE = partnerOrder - 1;
+        attached->unk0 = child->sprite->unk0;
+        attached->unk2 = child->sprite->unk2;
+        placed = 1;
     }
     grand = body->child->child;
     if (grand != 0 && grand->unkA8 != 0)
     {
-        struct PoseTimer *link2 = (struct PoseTimer *)grand->unkA8;
-        u16 gpH = grand->partner->sprite->unkE;
+        struct PoseTimer *grandAttached = (struct PoseTimer *)grand->unkA8;
+        u16 grandPartnerOrder = grand->partner->sprite->unkE;
 
-        grand->sprite->unkE = gpH + 1;
-        link2->unkE = gpH - 1;
-        link2->unk0 = grand->sprite->unk0;
-        link2->unk2 = grand->sprite->unk2;
-        h |= 2;
+        grand->sprite->unkE = grandPartnerOrder + 1;
+        grandAttached->unkE = grandPartnerOrder - 1;
+        grandAttached->unk0 = grand->sprite->unk0;
+        grandAttached->unk2 = grand->sprite->unk2;
+        placed |= 2;
     }
-    switch (h)
+    switch (placed)
     {
     case 0:
-        body->child->sprite->unkE = 0x400;
+        body->child->sprite->unkE = SPRITE_ORDER_DEFAULT;
         if (body->child->child != 0)
-            body->child->child->sprite->unkE = 0x400;
+            body->child->child->sprite->unkE = SPRITE_ORDER_DEFAULT;
         break;
     case 1:
         if (body->child->child != 0)
@@ -897,20 +930,24 @@ void fall_and_release(struct HeroBody *body)
 }
 
 
+/* Waits until the partner's child is gone, then sets BLDALPHA (gUnk_02000052) to an even 8/8 blend,
+   starts the body's idle action (gActionCodes row 1 when World.unkC bit 7, the two-hero mode, is set),
+   lifts the body to the focus object's y plus its data height and, while it has HP, aims it at its
+   current target before moving on to update_pair_link. */
 void place_at_focus_y(struct HeroBody *body)
 {
     struct World **pworld = &gWorld;
     struct World *world = *pworld;
-    u32 flags;
+    u32 spriteFlags;
 
-    if (body->partner->child == 0)
+    if (body->partner->child == NULL)
     {
-        gUnk_02000052 = 0x808;
-        sprite_set_action(body, 0, gActionCodes[(world->unkC >> 7) * 0x12] + ~body->data->poseOfs, 0);
-        flags = body->sprite->flags;
-        body->sprite->flags = flags | 0x10;
+        gUnk_02000052 = 0x808; /* EVB 8, EVA 8 */
+        sprite_set_action(body, 0, gActionCodes[(world->unkC >> 7) * 18] + ~body->data->poseOfs, 0);
+        spriteFlags = body->sprite->flags;
+        body->sprite->flags = spriteFlags | 0x10;
         body->targetZ = body->z = ((s32)(obj_last_y((*pworld)->focus) << 16) >> 8) + body->data->height;
-        if (body->data->effect != 0)
+        if (body->data->hp != 0)
         {
             place_targets(body, body->targetX / 0x100, body->targetY / 0x100, 0, -1);
             set_motion_speed_aux(body, 0, 0x66);
@@ -944,7 +981,7 @@ void follow_focus_then_pose(struct HeroBody *body)
     struct World *world = gWorld;
     u8 *pick = body->unk34;
 
-    if (body->data->effect != 0)
+    if (body->data->hp != 0)
     {
         u8 offX = pick[1];
         u8 offY = pick[2];
@@ -1029,42 +1066,30 @@ void start_anim4_fx(struct HeroBody *body)
 }
 
 
-NONMATCH("asm/code_0809A420/start_anim_by_hero.s", void start_anim_by_hero(struct HeroBody *body))
+void start_anim_by_hero(struct HeroBody *body)
 {
     struct HeroBody *heroA = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
-    s32 x;
-    s32 y;
-    s32 z;
-    u32 effectCode = 0x11E6;
 
     if (body->unk9C != 0)
     {
         if (partner == heroA)
+        {
             sprite_set_action(body, 2, 0x40BF, 0);
+            ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+        }
         else
+        {
             sprite_set_action(body, 5, 0x40BF, 0);
-        ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+            ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+        }
     }
-    x = body->x;
-    if (x < 0)
-        x += 0xFF;
-    x >>= 8;
-    y = body->y;
-    if (y < 0)
-        y += 0xFF;
-    y >>= 8;
-    z = body->z;
-    if (z < 0)
-        z += 0xFF;
-    z >>= 8;
-    effect_spawn_at(effectCode, x, y, z, body);
+    effect_spawn_at(0x11E6, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
     body->state = follow_hero_anim;
 }
-END_NONMATCH
 
 
-NONMATCH("asm/code_0809A420/start_anim_by_partner.s", void start_anim_by_partner(struct HeroBody *body))
+void start_anim_by_partner(struct HeroBody *body)
 {
     struct HeroBody *heroA = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
@@ -1072,67 +1097,80 @@ NONMATCH("asm/code_0809A420/start_anim_by_partner.s", void start_anim_by_partner
     if (body->sprite->flags & 8)
     {
         if (partner == heroA)
-            sprite_set_action(body, 4, 0x40BF, 0);
-        else
-            sprite_set_action(body, 7, 0x40BF, 0);
-        ((struct ModeByte *)&body->sprite->flags)->mode = 1;
-        if (body->data->effect != 0)
         {
-            body->unk7A = 0x4000;
-            body->unk7E = 0;
-            ((struct BodyFlagBits *)&body->flags)->bit5 = 0;
+            sprite_set_action(body, 4, 0x40BF, 0);
+            ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+        }
+        else
+        {
+            sprite_set_action(body, 7, 0x40BF, 0);
+            ((struct ModeByte *)&body->sprite->flags)->mode = 1;
+        }
+        if (body->data->hp != 0)
+        {
+            body->progressStep = PROGRESS_FULL;
+            body->progress = 0;
+            ((struct BodyFlagBits *)&body->flags)->bit5 = 0; /* BODY_FLAG_PROGRESS_DONE */
         }
         body->state = fx_then_stop;
     }
 }
-END_NONMATCH
 
 
+/*
+ * State after start_anim_by_partner: steps the timed progress; once it is done it spawns effect
+ * 0x11F0 and, while the body still has HP, starts a new progress run of 40 frames, then goes on to
+ * spawn_child_anim.
+ */
 void fx_then_stop(struct HeroBody *body)
 {
     state_stack_advance_progress(body);
-    if (body->flags & 0x20)
+    if (body->flags & BODY_FLAG_PROGRESS_DONE)
     {
         effect_spawn_at(0x11F0, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
-        if (body->data->effect != 0)
+        if (body->data->hp != 0)
         {
-            body->unk7A = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x28);
-            body->unk7E = 0;
-            ((struct BodyFlagBits *)&body->flags)->bit5 = 0;
+            body->progressStep = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(PROGRESS_FULL, 40);
+            body->progress = 0;
+            ((struct BodyFlagBits *)&body->flags)->bit5 = 0; /* BODY_FLAG_PROGRESS_DONE */
         }
         body->state = spawn_child_anim;
     }
 }
 
 
+/* Steps the timed progress and, once a finished animation is due, goes back to action 0. When the
+ * progress is done (flags bit 5) it turns to the other hero, if that one is still in play (unk76
+ * mode 1): it becomes the partner and gets a linked 0x40C2 child that starts in rise_stop at once.
+ * Either way wait_child_gone takes over. */
 void choose_hero_target(struct HeroBody *body)
 {
     u8 unused[4];
     struct HeroBody *heroA = &gWorld->heroA->body;
     struct HeroBody *heroB = &gWorld->heroB->body;
-    struct HeroBody *partner = body->partner;
+    struct HeroBody *target = body->partner;
 
     state_stack_advance_progress(body);
     if (body->sprite->unk21 != 0 && (body->sprite->flags & 8))
         sprite_set_action(body, 0, 0, 0);
     if (body->flags & 0x20)
     {
-        if (partner == heroA && ((struct ModeByte *)&heroB->unk76)->mode == 1)
-            partner = heroB;
-        else if (partner == heroB && ((struct ModeByte *)&heroA->unk76)->mode == 1)
-            partner = heroA;
+        if (target == heroA && ((struct ModeByte *)&heroB->unk76)->mode == 1)
+            target = heroB;
+        else if (target == heroB && ((struct ModeByte *)&heroA->unk76)->mode == 1)
+            target = heroA;
         else
-            partner = 0;
-        if (partner != 0)
+            target = 0;
+        if (target != 0)
         {
             struct HeroBody *child;
-            BodyFunc fn;
+            BodyFunc firstState;
 
-            body->partner = partner;
-            child = obj_spawn_linked(body, 0x40C2, (u32)partner);
-            fn = rise_stop;
-            child->state = fn;
-            fn(child);
+            body->partner = target;
+            child = obj_spawn_linked(body, 0x40C2, (u32)target);
+            firstState = rise_stop;
+            child->state = firstState;
+            firstState(child);
         }
         body->state = wait_child_gone;
     }
@@ -1143,11 +1181,11 @@ void rise_stop(struct HeroBody *body)
 {
     body->y += 0x100;
     body->z = 0x2600;
-    if (body->data->effect != 0)
+    if (body->data->hp != 0)
     {
-        body->unk7A = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x18);
-        body->unk7E = 0;
-        ((struct BodyFlagBits *)&body->flags)->bit5 = 0;
+        body->progressStep = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(PROGRESS_FULL, 24);
+        body->progress = 0;
+        ((struct BodyFlagBits *)&body->flags)->bit5 = 0; /* BODY_FLAG_PROGRESS_DONE */
     }
     body->state = start_anim1;
 }

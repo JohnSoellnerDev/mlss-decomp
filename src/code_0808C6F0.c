@@ -138,6 +138,16 @@ struct KeyState
 
 extern struct KeyState gSys;
 extern u8 *gWorld;
+
+struct WorldSlots
+{
+    u8 filler0[0x264];
+    void (*savedState[2])(struct Actor *); /* each hero's state while it is parked (try_park_in_slot), by ~Data.slot */
+};
+
+/* Data.slot of the two heroes: the bitwise NOT of their gParty index */
+#define HERO_INDEX_MARIO -1
+#define HERO_INDEX_LUIGI -2
 extern u8 *gParty;
 
 void sprite_set_action(struct Actor *obj, u32 action, u32 part, u32 extra);
@@ -928,139 +938,148 @@ void wait_then_act5_b(struct Actor *obj)
     }
 }
 
-s32 dispatch_slot_by_flags(struct Actor *obj)
+/*
+ * Starts a hero's move with the handler for the battle's current mode and the hero's status:
+ * gWorld flags0C bits 7 (0x80) and 4 (0x10) pick one of four handler sets, and within a set the
+ * hero's status bits 0x400 / 0x800 (the two statuses that swap its sprite set) pick the variant.
+ * The plain case sets up hero A's (slot -1) or hero B's (slot -2) move here and arrives through
+ * on_arrive. Returns 1 (handled).
+ */
+s32 dispatch_slot_by_flags(struct Actor *hero)
 {
     if ((gWorld[0xC] & 0x80) != 0)
     {
         if ((gWorld[0xC] & 0x10) != 0)
         {
-            if ((obj->data->unk11E & 0x400) != 0)
-                return dispatch_slot_random_jump_b(obj);
-            if ((obj->data->unk11E & 0x800) != 0)
-                return dispatch_slot_random_pause_jump(obj);
-            return dispatch_slot_random_jump_a(obj);
+            if ((hero->data->unk11E & 0x400) != 0)
+                return dispatch_slot_random_jump_b(hero);
+            if ((hero->data->unk11E & 0x800) != 0)
+                return dispatch_slot_random_pause_jump(hero);
+            return dispatch_slot_random_jump_a(hero);
         }
-        if ((obj->data->unk11E & 0x400) != 0)
-            return charge_release_dispatch_slot_random_jump(obj);
-        if ((obj->data->unk11E & 0x800) != 0)
-            return hold_decay_dispatch_slot_pause_jump(obj);
-        return random_jump_dispatch_slot_random_jump(obj);
+        if ((hero->data->unk11E & 0x400) != 0)
+            return charge_release_dispatch_slot_random_jump(hero);
+        if ((hero->data->unk11E & 0x800) != 0)
+            return hold_decay_dispatch_slot_pause_jump(hero);
+        return random_jump_dispatch_slot_random_jump(hero);
     }
     if ((gWorld[0xC] & 0x10) != 0)
     {
-        if ((obj->data->unk11E & 0x400) != 0)
-            return dispatch_slot_list(obj);
-        if ((obj->data->unk11E & 0x800) != 0)
-            return dispatch_slot_begin_hold(obj);
-        return dispatch_slot_jump(obj);
+        if ((hero->data->unk11E & 0x400) != 0)
+            return dispatch_slot_list(hero);
+        if ((hero->data->unk11E & 0x800) != 0)
+            return dispatch_slot_begin_hold(hero);
+        return dispatch_slot_jump(hero);
     }
-    if ((obj->data->unk11E & 0x400) != 0)
-        return jump_orbit_dispatch_slot_pause_jump(obj);
-    if ((obj->data->unk11E & 0x800) != 0)
-        return dispatch_slot_hold(obj);
-    if (obj->data->slot == -1)
-        jump_orbit_setup_list_slot_b(obj);
-    else if (obj->data->slot == -2)
-        jump_orbit_setup_list_slot_a(obj);
-    obj->callback = on_arrive;
+    if ((hero->data->unk11E & 0x400) != 0)
+        return jump_orbit_dispatch_slot_pause_jump(hero);
+    if ((hero->data->unk11E & 0x800) != 0)
+        return dispatch_slot_hold(hero);
+    if (hero->data->slot == -1)
+        jump_orbit_setup_list_slot_b(hero);
+    else if (hero->data->slot == -2)
+        jump_orbit_setup_list_slot_a(hero);
+    hero->callback = on_arrive;
     return 1;
 }
 
-NONMATCH("asm/code_0808C6F0/try_park_in_slot.s", s32 try_park_in_slot(struct Actor *obj))
+/* At the top of a hero's jump: a hero whose Data.kind is 0x1C and whose button is held (A for
+   Mario, B for Luigi) hangs there: action 0xF for up to 12 frames, its current state saved in
+   gWorld's savedState until slot_wait_then_resume brings it back. Returns 1 if the hero was parked. */
+s32 try_park_in_slot(struct Actor *hero)
 {
-    if (obj->data->kind != 0x1C)
+    if (hero->data->kind != 0x1C)
         return 0;
-    if (obj->data->slot == -1)
+    if (hero->data->slot == HERO_INDEX_MARIO)
     {
-        if (((gSys.held ^ 1) & 1) != 0)
+        if (((gSys.held ^ A_BUTTON) & A_BUTTON) != 0)
             return 0;
-        sprite_set_action(obj, 0xF, -1, 0);
+        sprite_set_action(hero, 0xF, -1, 0);
     }
     else
     {
-        if ((gSys.held & 2) == 0)
+        if ((gSys.held & B_BUTTON) == 0)
             return 0;
-        sprite_set_action(obj, 0xF, -1, 0);
+        sprite_set_action(hero, 0xF, -1, 0);
     }
-    obj->timer = 0xC;
-    {
-        u8 *w = gWorld;
-        s32 idx = ~obj->data->slot;
-        u32 *e = (u32 *)(w + 0x264) + idx;
-        *e = (u32)obj->state;
-    }
-    obj->state = slot_wait_then_resume;
+    hero->timer = 0xC;
+    ((struct WorldSlots *)gWorld)->savedState[~hero->data->slot] = hero->state;
+    hero->state = slot_wait_then_resume;
     return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0808C6F0/slot_wait_then_resume.s", void slot_wait_then_resume(struct Actor *obj))
+/* State of a hero parked by try_park_in_slot: waits while its button (A for Mario, B for Luigi)
+   stays held, at most `timer` frames, then plays action 6 and goes back to the state it had. */
+void slot_wait_then_resume(struct Actor *hero)
 {
-    u16 t;
-    s32 bit;
-    u16 keys;
+    u16 timer;
+    s32 button;
+    u16 held;
 
-    t = obj->timer;
-    if ((s16)obj->timer > 0)
+    timer = hero->timer;
+    if ((s16)hero->timer > 0)
     {
-        obj->timer = t - 1;
-        if (obj->data->slot == -1)
+        hero->timer = timer - 1;
+        if (hero->data->slot == HERO_INDEX_MARIO)
         {
-            keys = gSys.held;
-            bit = 1;
+            held = gSys.held;
+            button = A_BUTTON;
         }
         else
         {
-            keys = gSys.held;
-            bit = 2;
+            held = gSys.held;
+            button = B_BUTTON;
         }
-        if ((bit & keys) != 0)
+        if ((button & held) != 0)
             return;
     }
-    sprite_set_action(obj, 6, -1, 0);
-    ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
-    ((struct Lo3Bits *)&obj->flags77)->lo3 = 1;
+    sprite_set_action(hero, 6, -1, 0);
+    ((struct PoseFlagBits *)&hero->pose->flags)->mode = 1;
+    ((struct Lo3Bits *)&hero->flags77)->lo3 = 1;
     {
-        u8 *w = gWorld;
-        u32 *tab;
-        s32 idx = ~obj->data->slot;
-        tab = (u32 *)(w + 0x264);
-        obj->state = (void (*)(struct Actor *))tab[idx];
-        idx = ~obj->data->slot;
-        tab[idx] = 0;
+        struct WorldSlots *world = (struct WorldSlots *)gWorld;
+
+        hero->state = world->savedState[~hero->data->slot];
+        world->savedState[~hero->data->slot] = 0;
     }
 }
-END_NONMATCH
 
 
 
-s32 setup_slot_by_flags(struct Actor *obj)
+/*
+ * Sets up a hero's orbit move with the handler for the battle's current mode and the hero's
+ * status, like dispatch_slot_by_flags: gWorld flags0C bit 7 (0x80) picks the handler set, and the
+ * hero's status bits 0x400 / 0x800 pick the variant. The plain case clears flags77 bits 5-6,
+ * copies the u16 at 0x2C of the hero's gParty record (index ~slot) into its data's slotValue and
+ * spawns the orbit child next (dispatch_slot_spawn_ext), ending through end_action. Returns 1.
+ */
+s32 setup_slot_by_flags(struct Actor *hero)
 {
     if ((gWorld[0xC] & 0x80) != 0)
     {
-        if ((obj->data->unk11E & 0x400) != 0)
-            return charge_release_setup_slot_state(obj);
-        if ((obj->data->unk11E & 0x800) != 0)
-            return hold_decay_setup_slot_state(obj);
-        return random_jump_setup_slot_spawn(obj);
+        if ((hero->data->unk11E & 0x400) != 0)
+            return charge_release_setup_slot_state(hero);
+        if ((hero->data->unk11E & 0x800) != 0)
+            return hold_decay_setup_slot_state(hero);
+        return random_jump_setup_slot_spawn(hero);
     }
-    if ((obj->data->unk11E & 0x400) != 0)
-        return jump_orbit_setup_slot_spawn(obj);
-    if ((obj->data->unk11E & 0x800) != 0)
-        return list_slot_start(obj);
-    ((struct Flags77Bits *)&obj->flags77)->bit6 = 0;
-    ((struct Flags77Bits *)&obj->flags77)->bit5 = 0;
+    if ((hero->data->unk11E & 0x400) != 0)
+        return jump_orbit_setup_slot_spawn(hero);
+    if ((hero->data->unk11E & 0x800) != 0)
+        return list_slot_start(hero);
+    ((struct Flags77Bits *)&hero->flags77)->bit6 = 0;
+    ((struct Flags77Bits *)&hero->flags77)->bit5 = 0;
     {
-        u32 *sv;
-        struct SlotEntry *tbl;
+        u32 *dest;
+        struct SlotEntry *member;
 
-        sv = &obj->data->slotValue;
-        tbl = (struct SlotEntry *)gParty;
-        tbl += ~obj->data->slot;
-        *sv = tbl->v2C;
+        dest = &hero->data->slotValue;
+        member = (struct SlotEntry *)gParty;
+        member += ~hero->data->slot;
+        *dest = member->v2C;
     }
-    obj->state = dispatch_slot_spawn_ext;
-    obj->callback = end_action;
+    hero->state = dispatch_slot_spawn_ext;
+    hero->callback = end_action;
     return 1;
 }
 
@@ -1079,13 +1098,19 @@ void end_action_if_done(struct Actor *obj)
         actor_end_action(obj);
 }
 
+// Starts the first orbit move: spawns the orbiting child at obj's base point (in whole pixels),
+// in action mode 3 with its box bytes (unk44-unk49: -10, 8, -10, 10, -12, 4), aiming at obj's base
+// X and its own base height, with animation gAnim284 and on_arrive as its callback. Then resets
+// the timer, clears slot value 0x7C and runs the first wind-up frame (orbit_slots_orbit_step_a).
 void orbit_slots_spawn_orbit_child(struct Actor *obj)
 {
     struct Actor *child;
+    u8 *flags;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
     obj->child = child;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 6; }
+    flags = &child->flags76;
+    *flags = *flags | 6; // ActBits.mode = 3
     child->unk44 = 0xF6;
     child->unk45 = 8;
     child->unk46 = 0xF6;
@@ -1096,21 +1121,28 @@ void orbit_slots_spawn_orbit_child(struct Actor *obj)
     child->targetX = obj->baseX;
     child->targetH = child->baseH;
     child->anim = gAnim284;
-    { u8 *p; p = (u8 *)&child->flags76; *p = *p | 0x40; }
+    flags = &child->flags76;
+    *flags = *flags | 0x40;
     child->callback = on_arrive;
-    { u8 *p; p = (u8 *)&child->flags79; *p = *p | 1; }
+    flags = &child->flags79;
+    *flags = *flags | 1;
     obj->timer = 0;
     set_slot_value(0x7C, -1);
     orbit_slots_orbit_step_a(obj);
 }
 
+/* Charge wind-up, one frame (timer = frames so far): while the button (obj->mask) is held, steps
+   animation 0x2025 through frames 0-3 (at timer 0, 2, 4 and 6) with the pose held, and at timer 7
+   sets flag 0x40000000 in both of the current state's flag words. At timer 8 the wind-up is
+   complete: action 1, timer reset and on to hold_then_orbit. Letting go earlier doubles the timer
+   and hands over to orbit_slots_orbit_step_b, which winds back down. */
 void orbit_slots_orbit_step_a(struct Actor *obj)
 {
-    s32 done;
+    s32 actionEnded;
 
     obj->state = orbit_slots_orbit_step_a;
-    done = poll_action_end(obj);
-    if (done == 0)
+    actionEnded = poll_action_end(obj);
+    if (actionEnded == 0)
     {
         if ((s16)obj->timer == 0)
             sprite_set_action(obj, 0, 0x2025, 0);
@@ -1126,6 +1158,7 @@ void orbit_slots_orbit_step_a(struct Actor *obj)
         {
             if ((gSys.held & obj->mask) == 0)
             {
+                /* let go too early */
                 obj->timer = (s16)obj->timer * 2;
                 obj->state = orbit_slots_orbit_step_b;
                 return;
@@ -1135,7 +1168,7 @@ void orbit_slots_orbit_step_a(struct Actor *obj)
         {
             sprite_set_action(obj, 1, 0, 0);
             ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
-            obj->timer = done;
+            obj->timer = actionEnded;
             obj->state = hold_then_orbit;
         }
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 1;
@@ -1143,36 +1176,41 @@ void orbit_slots_orbit_step_a(struct Actor *obj)
     }
 }
 
+/* Charge let go too early (after orbit_slots_orbit_step_a doubled the timer): winds animation 0x2025
+   back down, the timer falling by 2 a frame and showing frame 2, 1, then 0 (only frames the wind-up
+   reached), the pose held between steps. Once the timer runs out it plays action 4 once at frame
+   time 0xC0 / 8 and ends the action when it is done. */
 void orbit_slots_orbit_step_b(struct Actor *obj)
 {
-    s32 step;
-    u32 q;
+    s32 charge;
+    u32 frameTime;
 
     obj->state = orbit_slots_orbit_step_b;
     if (poll_action_end(obj) != 0)
         return;
-    step = (s16)obj->timer;
-    if (step < 0)
+    charge = (s16)obj->timer;
+    if (charge < 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
-        q = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 8);
-        obj->pose->result = q;
+        frameTime = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 8);
+        obj->pose->result = frameTime;
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
         obj->state = end_action_if_done;
         return;
     }
-    if (step <= 3)
+    /* pose->count: the frame the wind-up got to */
+    if (charge <= 3)
     {
         if (obj->pose->count != 0)
             sprite_set_action(obj, 0, 0x2025, 0);
     }
-    else if (step <= 7)
+    else if (charge <= 7)
     {
         if (obj->pose->count > 1)
             sprite_set_action(obj, 0, 0x2025, 1);
     }
-    else if (step <= 11)
+    else if (charge <= 11)
     {
         if (obj->pose->count > 2)
             sprite_set_action(obj, 0, 0x2025, 2);
@@ -1182,10 +1220,14 @@ void orbit_slots_orbit_step_b(struct Actor *obj)
 }
 
 
+/* Charge state after orbit_slots_orbit_step_a: while the button (obj->mask) is held the timer counts
+   up and the pose's hold flag goes off after 24 frames. Letting go starts the orbit (child angle
+   0xB400, speed -0x1CC; orbit_position_a). Held past 49 frames, the charge fails (action 5,
+   set_cur_flags_both); data kind 0x1E instead waits there until gWorld[9]'s high nibble is 1, then
+   cancels with action 4. */
 void hold_then_orbit(struct Actor *obj)
 {
     s32 held;
-    s32 f;
 
     if (poll_action_end(obj) != 0)
         return;
@@ -1201,7 +1243,7 @@ void hold_then_orbit(struct Actor *obj)
         obj->timer = held;
         return;
     }
-    if ((s16)obj->timer > 0x31)
+    if ((s16)obj->timer > 49)
     {
         if (obj->data->kind == 0x1E)
         {
@@ -1214,7 +1256,7 @@ void hold_then_orbit(struct Actor *obj)
                 obj->state = end_action_if_done;
                 return;
             }
-            obj->timer = 0x32;
+            obj->timer = 50;
             return;
         }
         sprite_set_action(obj, 5, 0, 0);
@@ -1224,26 +1266,30 @@ void hold_then_orbit(struct Actor *obj)
         set_cur_flags_both(0x40000000);
         return;
     }
-    if ((s16)obj->timer > 0x18)
+    if ((s16)obj->timer > 24)
     {
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
     }
     obj->timer++;
 }
 
+/* One frame of orbit a: swings the child around a circle above obj's base point (child angle
+ * unkA0 += its speed unkA4, the speed bent by 0xC00 towards obj's facing), steps obj's
+ * animation 0x2025 through frames 1-5, and at step 7 releases the child (action mode 3),
+ * locks obj's data and goes on to finish_orbit. */
 void orbit_position_a(struct Actor *obj)
 {
     struct Actor *child;
     s32 *angle;
     s32 *speed;
-    const s16 *cb;
-    const s16 *ct;
-    const s16 *st;
-    s32 q;
-    s32 idx;
-    s32 cs;
-    s32 sn;
-    s32 baseH;
+    const s16 *cosTable;
+    const s16 *cosEntry;
+    const s16 *sinEntry;
+    s32 wrapped;
+    s32 tableIdx;
+    s32 cosScaled;
+    s32 sinScaled;
+    s32 centerH;
 
     if (poll_action_end(obj) != 0)
         return;
@@ -1252,16 +1298,16 @@ void orbit_position_a(struct Actor *obj)
     angle = &child->unkA0;
     speed = &child->unkA4;
     *angle += *speed;
-    q = MATH_ROUTINE(MathFunc, iwram_div)(*angle, 0x168);
-    cb = gCosineTable;
-    idx = q & 0xFF;
-    ct = cb + idx;
-    cs = *ct / 0x40;
-    child->x = obj->baseX + cs * 0x16;
-    baseH = obj->baseH + 0x1600;
-    st = &gSineTable[idx];
-    sn = *st / 0x40;
-    child->h = baseH + sn * 0x16;
+    wrapped = MATH_ROUTINE(MathFunc, iwram_div)(*angle, 360);
+    cosTable = gCosineTable;
+    tableIdx = wrapped & 0xFF;
+    cosEntry = cosTable + tableIdx;
+    cosScaled = *cosEntry / 64;
+    child->x = obj->baseX + cosScaled * 22;
+    centerH = obj->baseH + 0x1600;
+    sinEntry = &gSineTable[tableIdx];
+    sinScaled = *sinEntry / 64;
+    child->h = centerH + sinScaled * 22;
     *speed = (obj->pose->dir & 0x40) != 0 ? *speed + 0xC00 : *speed - 0xC00;
     if ((s16)obj->timer == 2)
         sprite_set_action(obj, 2, 0x2025, 1);
@@ -1275,10 +1321,10 @@ void orbit_position_a(struct Actor *obj)
         sprite_set_action(obj, 2, 0x2025, 5);
     if ((s16)obj->timer == 7)
     {
-        u8 *p;
+        u8 *childAct;
 
-        p = &child->flags76;
-        *p = *p | 6;
+        childAct = &child->flags76;
+        *childAct = *childAct | 6; // ActBits.mode = 3: release the child
         sprite_set_action(obj, 3, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
@@ -1294,6 +1340,8 @@ void orbit_position_a(struct Actor *obj)
     }
 }
 
+/* After orbit_position_a has thrown the child: unlocks obj's data again, then ends the action
+ * once 24 more frames have passed (unless poll_action_end ends it first). */
 void finish_orbit(struct Actor *obj)
 {
     if (obj->data != NULL)
@@ -1302,42 +1350,49 @@ void finish_orbit(struct Actor *obj)
         actor_end_action(obj);
 }
 
+/* Start of the second orbit move: spawns the child the actor holds at its base position (action
+ * mode 3, hit box x -10/8, y -10/10, h -12/4, animation gAnim284, on_arrive when it lands), plays
+ * sound 0x7C and runs the wind-up, orbit_slots_orbit_step_c, from frame 0. */
 void orbit_slots_spawn_orbit_child_b(struct Actor *obj)
 {
     struct Actor *child;
-    u8 *p;
+    u8 *flags;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, 0, 1);
     obj->child = child;
-    p = &child->flags76;
-    *p = *p | 6;
-    child->unk44 = 0xF6;
+    flags = &child->flags76;
+    *flags = *flags | 6; /* ActBits.mode = 3 */
+    child->unk44 = -10;
     child->unk45 = 8;
-    child->unk46 = 0xF6;
-    child->unk47 = 0xA;
-    child->unk48 = 0xF4;
+    child->unk46 = -10;
+    child->unk47 = 10;
+    child->unk48 = -12;
     child->unk49 = 4;
     ((struct Lo3Bits *)&child->flags77)->lo3 = 2;
     child->targetX = obj->baseX;
     child->targetH = child->baseH;
     child->anim = gAnim284;
-    p = &child->flags76;
-    *p = *p | 0x40;
+    flags = &child->flags76;
+    *flags = *flags | 0x40;
     child->callback = on_arrive;
-    p = &child->flags79;
-    *p = *p | 1;
+    flags = &child->flags79;
+    *flags = *flags | 1;
     obj->timer = 0;
     set_slot_value(0x7C, -1);
     orbit_slots_orbit_step_c(obj);
 }
 
+/* Wind-up of the second orbit move (animation 0x2054): while the button (obj->mask) is held, the
+   timer counts up and shows wind-up frames 0-3 every 3 frames (frame 11 sets the 0x40000000 flag).
+   At frame 12 the wind-up is complete and hold_then_orbit_b takes over; letting go earlier hands the
+   timer (scaled by 3) to orbit_slots_orbit_step_d, which winds the animation back down. */
 void orbit_slots_orbit_step_c(struct Actor *obj)
 {
-    s32 done;
+    s32 actionEnded;
 
     obj->state = orbit_slots_orbit_step_c;
-    done = poll_action_end(obj);
-    if (done == 0)
+    actionEnded = poll_action_end(obj);
+    if (actionEnded == 0)
     {
         if ((s16)obj->timer == 0)
             sprite_set_action(obj, 0, 0x2054, 0);
@@ -1347,12 +1402,13 @@ void orbit_slots_orbit_step_c(struct Actor *obj)
             sprite_set_action(obj, 0, 0x2054, 2);
         if ((s16)obj->timer == 9)
             sprite_set_action(obj, 0, 0x2054, 3);
-        if ((s16)obj->timer == 0xB)
+        if ((s16)obj->timer == 11)
             set_cur_flags_both(0x40000000);
-        if ((s16)obj->timer != 0xC)
+        if ((s16)obj->timer != 12)
         {
             if ((gSys.held & obj->mask) == 0)
             {
+                /* let go early: wind back down */
                 obj->timer = (s16)obj->timer * 3;
                 obj->state = orbit_slots_orbit_step_d;
                 return;
@@ -1360,9 +1416,10 @@ void orbit_slots_orbit_step_c(struct Actor *obj)
         }
         else
         {
+            /* fully wound up */
             sprite_set_action(obj, 1, 0, 0);
             ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
-            obj->timer = done;
+            obj->timer = actionEnded;
             obj->state = hold_then_orbit_b;
         }
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 1;
@@ -1370,36 +1427,40 @@ void orbit_slots_orbit_step_c(struct Actor *obj)
     }
 }
 
+/* Let-go state of orbit_slots_orbit_step_c's wind-up (timer = wind-up frames * 3): plays animation
+   0x2054 back down, frame 2, 1 then 0 (each only if pose->count has it), as the timer counts down
+   by 3 a frame. Past 0 the move is cancelled: action 4, pose mode 1 with result 0xC0 / 12, and
+   end_action_if_done takes over. */
 void orbit_slots_orbit_step_d(struct Actor *obj)
 {
-    s32 step;
-    u32 q;
+    s32 windup;
+    u32 rate;
 
     obj->state = orbit_slots_orbit_step_d;
     if (poll_action_end(obj) != 0)
         return;
-    step = (s16)obj->timer;
-    if (step < 0)
+    windup = (s16)obj->timer;
+    if (windup < 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 1;
-        q = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 0xC);
-        obj->pose->result = q;
+        rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0xC0, 0xC);
+        obj->pose->result = rate;
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
         obj->state = end_action_if_done;
         return;
     }
-    if (step <= 8)
+    if (windup <= 8)
     {
         if (obj->pose->count != 0)
             sprite_set_action(obj, 0, 0x2054, 0);
     }
-    else if (step <= 17)
+    else if (windup <= 17)
     {
         if (obj->pose->count > 1)
             sprite_set_action(obj, 0, 0x2054, 1);
     }
-    else if (step <= 26)
+    else if (windup <= 26)
     {
         if (obj->pose->count > 2)
             sprite_set_action(obj, 0, 0x2054, 2);

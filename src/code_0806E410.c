@@ -147,30 +147,38 @@ struct ActorCands
 
 extern struct ActorCands *gWorld;
 
-NONMATCH("asm/code_0806E410/obj_pose_release_partner.s", void obj_pose_release_partner(struct ActorObj *obj))
+/* Once the current pose is done (pose flag 8): lets go of the partner sprite (obj->kind), picks
+   one of four sprite actions 0x4126-0x4129 by param9C and paramA0, lifts obj 0x30 pixels onto its
+   owner's line with an upward speed of 3 (in phase), saves the top 3 bits of dir in dx and faces
+   it 3, puts it on the list and hands over to obj_drift_up_until_height. */
+void obj_pose_release_partner(struct ActorObj *obj)
 {
-    u32 action;
-
     if (obj->pose->flags & 8)
     {
+        register u32 action asm("r2");
+
         obj_detach_active(obj->kind->pose);
         ((struct ActorFlagBits *)&obj->kind->flags)->bit3 = 0;
-        action = 0x4129;
         if (obj->paramA0 == 0)
         {
-            action = 0x4128;
-            if (obj->param9C == 0) action = 0x4126;
+            if (obj->param9C == 0)
+                action = 0x4126;
+            else
+                action = 0x4128;
         }
         else
         {
-            if (obj->param9C == 0) action = 0x4127;
+            if (obj->param9C == 0)
+                action = 0x4127;
+            else
+                action = 0x4129;
         }
         sprite_set_action(obj, 0, action, 0);
         obj->posY = obj->owner->part->targetY;
         obj->posH += 0x3000;
         obj->dh = 0;
-        obj->phase = 0x300;
-        obj->dx = obj->dir >> 5;
+        obj->phase = 0x300; /* upward speed, slowed by 0x33 a frame */
+        obj->dx = obj->dir >> 5; /* obj_aim_at_owner puts it back */
         ((struct ActorFlagBits *)&obj->flags)->bit0 = 0;
         obj->dir = (obj->dir & 0x1F) | 0x60;
         obj_list_push_default(obj);
@@ -179,7 +187,6 @@ NONMATCH("asm/code_0806E410/obj_pose_release_partner.s", void obj_pose_release_p
         obj->state = obj_drift_up_until_height;
     }
 }
-END_NONMATCH
 
 void obj_drift_up_until_height(struct ActorObj *obj)
 {
@@ -198,6 +205,10 @@ void obj_drift_up_until_height(struct ActorObj *obj)
     }
 }
 
+/* Drifts the object off the left edge at 3 px a frame, spinning its sprite and spawning effect 0x1FDC
+   below it every 10 frames; an idle owner is pushed along with it. Once 64 px past the edge it stops
+   song 0x6C, starts song 0x40 (set_slot_value queues a song; -1 keeps the volume), spawns effect 0x1FCF
+   and hands over to obj_aim_at_owner. */
 void obj_timer_drift_left_exit(struct ActorObj *obj)
 {
     obj->timer--;
@@ -222,29 +233,34 @@ void obj_timer_drift_left_exit(struct ActorObj *obj)
     }
 }
 
+/* Sets up the throw of the owner onto its part's target: moves the low 3 bits of dx into the top
+   3 bits of dir, takes the object off the list, saves param9C in phase (obj_arc_land puts it back),
+   records the owner's start (dx, dy, dh in pixels) and the 8.8 distance to the target, and sizes the
+   arc: one frame per 0x380 of distance (sqrt from the IWRAM math routines) and a curve param9C that
+   peaks 0x3000 above the start halfway through. Then hands over to obj_arc_land. */
 void obj_aim_at_owner(struct ActorObj *obj)
 {
-    s16 *dxp;
-    u8 *dirp;
-    s32 *phase;
-    s32 *p9c;
+    s16 *dxField;
+    u8 *dirField;
+    s32 *savedParam;
+    s32 *curve;
     s32 deltaX;
     s32 deltaY;
-    s32 ratio;
-    s32 half;
-    s32 time;
-    s32 shifted;
+    s32 frames;
+    s32 halfFrames;
+    s32 steep;
+    s32 facing;
 
-    dxp = &obj->dx;
-    shifted = (u8)*dxp;
-    dirp = &obj->dir;
-    shifted = shifted << 5;
-    *dirp = (*dirp & 0x1F) | shifted;
+    dxField = &obj->dx;
+    facing = (u8)*dxField;
+    dirField = &obj->dir;
+    facing = facing << 5;
+    *dirField = (*dirField & 0x1F) | facing;
     ((struct ActorFlagBits *)&obj->flags)->bit0 = 0;
     obj_list_remove(obj);
-    phase = &obj->phase;
-    p9c = &obj->param9C;
-    *phase = *p9c;
+    savedParam = &obj->phase;
+    curve = &obj->param9C;
+    *savedParam = *curve;
     obj->targetX = obj->owner->part->targetX;
     obj->targetY = obj->owner->part->targetY;
     obj->dx = obj->owner->posX / 0x100;
@@ -252,40 +268,46 @@ void obj_aim_at_owner(struct ActorObj *obj)
     obj->dh = obj->owner->posH / 0x100;
     deltaX = obj->targetX - (obj->dx << 8);
     deltaY = obj->targetY - (obj->dy << 8);
-    ratio = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY) / 0x380;
-    half = ratio / 2;
-    time = 0x3000 / (half * half);
-    if (time == 1)
+    /* gMathRoutines + 0 is the square root */
+    frames = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY) / 0x380;
+    halfFrames = frames / 2;
+    steep = 0x3000 / (halfFrames * halfFrames);
+    if (steep == 1)
     {
-        time = 2;
+        steep = 2;
     }
-    *p9c = -time;
-    obj->paramA0 = ratio;
+    *curve = -steep;
+    obj->paramA0 = frames;
     obj->paramA4 = deltaX;
     obj->paramA8 = deltaY;
     obj->timer = 0;
     obj->state = obj_arc_land;
 }
 
+/* State set up by obj_aim_at_owner: carries the owner along a parabola from its start (dx, dy, dh in pixels)
+   by (paramA4, paramA8) over paramA0 frames, with param9C as the (negative) curve; once past the apex and
+   back on the ground, the owner lands, both sprites get their landing actions and this object walks to its
+   part's target, then waits in obj_sync_child_reset. */
 void obj_arc_land(struct ActorObj *obj)
 {
     struct ActorObj *owner;
-    s32 d;
-    s32 t;
-    s32 u;
+    s32 fromApex;
+    s32 drop;
+    s32 apexH;
 
     owner = obj->owner;
     owner->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     owner->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    d = (s16)obj->timer - obj->paramA0 / 2;
-    t = (d * d) * obj->param9C;
-    u = ((s16)obj->dh << 8) + 0x3000;
-    owner->posH = t + u;
+    fromApex = (s16)obj->timer - obj->paramA0 / 2;
+    drop = (fromApex * fromApex) * obj->param9C;
+    apexH = ((s16)obj->dh << 8) + 0x3000;
+    owner->posH = drop + apexH;
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {
         if (obj->owner->posH <= 0)
         {
+            /* landed: restore the value obj_aim_at_owner saved in phase */
             obj->owner->posH = obj->owner->part->targetH;
             obj->param9C = obj->phase;
             obj->owner->state = 0;
@@ -304,6 +326,7 @@ void obj_arc_land(struct ActorObj *obj)
                 sprite_set_action(obj->kind, 0xE, 0, 0);
             }
             obj->pose->unkC = 0;
+            /* place this object and its kind at x = 300 on the part's line */
             obj->posX = 0x12C00;
             obj->posY = obj->part->targetY;
             obj->posH = obj->part->targetH;
@@ -315,6 +338,7 @@ void obj_arc_land(struct ActorObj *obj)
             obj->kind->byte74 = obj->owner->byte74;
             obj->byte75 = obj->owner->byte75;
             obj->kind->byte75 = obj->owner->byte75 + 1;
+            /* then move to the part's target */
             obj->targetX = obj->part->targetX;
             obj->targetY = obj->part->targetY;
             obj->phase = obj->part->targetH;

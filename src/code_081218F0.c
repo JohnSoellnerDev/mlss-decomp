@@ -1,11 +1,74 @@
 #include "global.h"
 
+struct SpriteObj;
+
+// A sprite a menu screen moves around (ScreenView.tweens[12], 0x40 bytes each).
 struct TweenEntry
 {
-    void *sprite;
-    u8 filler4[0x3C - 4];
-    u8 flags3C;
-    u8 filler3D[3];
+    struct SpriteObj *sprite;
+    // 0x04-0x13: copy of the sprite's drawing state (unknown_thumb_08121e42)
+    u16 savedX;
+    u16 savedY;
+    u16 savedAttr2; // tile | (palette + 1) << 12
+    u16 savedUnkA; // copy of unk3A
+    u8 savedUnk24;
+    u8 savedUnk25;
+    u8 savedUnk3D;
+    u8 savedUnk20;
+    u16 savedBits; // struct TweenSavedBits16 / TweenSavedBits8
+    u16 savedUnkE;
+    s32 x; // position, 24.8 fixed point
+    s32 y;
+    s32 startX;
+    s32 startY;
+    s32 endX;
+    s32 endY;
+    s16 velX; // per-frame step in velocity mode
+    s16 velY;
+    u16 frame;
+    u16 duration; // frames from start to end in interpolate mode
+    u8 filler34[0x36 - 0x34];
+    u16 unk36;
+    u16 unk38;
+    u16 unk3A;
+    u8 flags3C; // struct TweenFlags
+    u8 unk3D;
+    u8 filler3E[2];
+};
+
+// TweenEntry.flags3C
+struct TweenFlags
+{
+    u8 active : 1; // drawn each frame; its sprite's slots are released while clear
+    u8 mode : 2; // 0: idle, 2: interpolate start->end over duration, else: step by vel until end
+    u8 rest : 5;
+} __attribute__((packed));
+
+// A TweenEntry seen through the bitfields of its savedBits, read and written
+// as a halfword
+struct TweenSavedBits16
+{
+    u8 filler0[0x10];
+    u16 active : 1; // TweenFlags.active
+    u16 flag12_4 : 1; // SpriteObj.flags12 bit 4
+    u16 flag11_6 : 1; // SpriteObj.flags11 bit 6
+    u16 bits1F_0 : 2; // the four 2-bit fields of SpriteObj.bits1F
+    u16 bits1F_2 : 2;
+    u16 bits1F_4 : 2;
+    u16 bits1F_6 : 2;
+};
+
+// The same, written a byte at a time
+struct TweenSavedBits8
+{
+    u8 filler0[0x10];
+    u8 active : 1;
+    u8 flag12_4 : 1;
+    u8 flag11_6 : 1;
+    u8 bits1F_0 : 2;
+    u8 bits1F_2 : 2;
+    u16 bits1F_4 : 2;
+    u8 bits1F_6 : 2;
 };
 
 struct StatsCtx
@@ -28,72 +91,47 @@ struct WindowObj
     const void *klass;
 };
 
-struct SlotSrc
+struct SpriteObj
 {
-    u16 unk0;
-    u16 unk2;
+    u16 oam0; // x
+    u16 oam1; // y
     u8 filler4[0xE - 4];
     u16 unkE;
-    u8 filler10[0x11 - 0x10];
-    u8 unk11;
-    u8 unk12;
+    u8 filler10;
+    u8 flags11; // struct SprFlags11Word
+    u8 flags12; // struct SprFlags12 / SprFlags12Word
     u8 filler13[0x16 - 0x13];
-    u16 unk16;
+    u16 tile16;
     u8 filler18[0x1E - 0x18];
-    u8 unk1E;
-    u8 unk1F;
+    u8 palette1E; // low 4 bits: palette
+    u8 bits1F; // struct SprBits1F
     u8 unk20;
     u8 filler21[0x24 - 0x21];
     u8 unk24;
     u8 unk25;
 };
 
-struct SlotRec
+struct SprFlags11Word
 {
-    struct SlotSrc *src;
-    u16 unk4;
-    u16 unk6;
-    u16 unk8;
-    u16 unkA;
-    u8 unkC;
-    u8 unkD;
-    u8 unkE;
-    u8 unkF;
-    u16 bits10;
-    u16 unk12;
-    u8 filler14[0x3A - 0x14];
-    u16 unk3A;
-    u8 flag3C;
-    u8 flag3D;
-};
+    u32 b0_5 : 6;
+    u32 b6 : 1;
+    u32 b7 : 1;
+} __attribute__((packed));
 
-struct SlotRecBitsAt
+struct SprFlags12Word
 {
-    u8 filler0[0x10];
-    u16 b0 : 1;
-    u16 b1 : 1;
-    u16 b2 : 1;
-    u16 f3 : 2;
-    u16 f5 : 2;
-    u16 f7 : 2;
-    u16 f9 : 2;
-};
+    u32 b0_3 : 4;
+    u32 b4 : 1;
+    u32 b5_7 : 3;
+} __attribute__((packed));
 
-struct SlotHolder
+struct SprBits1F
 {
-    u8 filler0[0x158];
-    struct SlotRec *recs;
-};
-
-struct SpriteObj
-{
-    u16 oam0;
-    u16 oam1;
-    u8 filler4[0x12 - 4];
-    u8 flags12;
-    u8 filler13[0x16 - 0x13];
-    u16 tile16;
-};
+    u32 f0 : 2;
+    u32 f2 : 2;
+    u32 f4 : 2;
+    u32 f6 : 2;
+} __attribute__((packed));
 
 struct SlideObj
 {
@@ -107,7 +145,7 @@ struct ScreenView
     u8 filler1[0x30 - 1];
     struct SpriteObj *cursor;
     struct SpriteObj *slider;
-    u8 filler38[0x3C - 0x38];
+    u8 *waveSrc;
     void *item;
     u8 filler40[0x44 - 0x40];
     struct SpriteObj *sideL;
@@ -122,16 +160,21 @@ struct ScreenView
     u8 slideMax;
     u8 slideStep;
     s8 slideMin;
-    u8 filler14D[0x14F - 0x14D];
+    u8 blendLo;
+    u8 blendHi;
     u8 mode;
     u8 filler150;
     u8 entryMark;
     u8 transPending;
     u8 filler153;
     u8 transActive;
-    u8 filler155[0x158 - 0x155];
+    u8 filler155;
+    u8 waveActive;
+    u8 filler157;
     struct TweenEntry *tweens;
-    u8 filler15C[0x188 - 0x15C];
+    u8 filler15C[0x168 - 0x15C];
+    u8 waveTimer;
+    u8 filler169[0x188 - 0x169];
     u8 waveFlag;
     u8 cursorIdx;
     u8 count;
@@ -146,6 +189,24 @@ struct ScreenView
     u8 member;
     u8 filler1BD;
     u8 pick;
+};
+
+// ScreenView.mode: which page of the screen is shown, named after the function
+// that draws it.
+enum ScreenMode
+{
+    SCREEN_MODE_PARTY_OVERVIEW = 0,
+    SCREEN_MODE_CURSOR_ROW = 1,
+    SCREEN_MODE_SCROLL_LIST = 2,
+    SCREEN_MODE_MEMBER_STATUS = 3,
+    SCREEN_MODE_GRID = 4,
+};
+
+// SlideObj.state: odd while the slider moves, even while it rests.
+enum SlideState
+{
+    SLIDE_MOVE_LEFT = 1,
+    SLIDE_MOVE_RIGHT = 3,
 };
 
 struct ViewOwner
@@ -184,7 +245,6 @@ extern u32 (*gUnk_03000D48)();
 extern u32 (*gUnk_03000D4C)();
 
 void menu_transition_step(struct ScreenView *screen);
-void screen_wave_frame(struct ScreenView *screen);
 void screen_pending_redraw(struct ScreenView *screen);
 u32 test_flag(u8 *table, u8 *tableB, u16 id);
 void mem_copy_fast(void *dst, const void *src, u32 n);
@@ -197,46 +257,97 @@ u32 draw_cursor_row(struct ScreenView *screen, u32 oam);
 u32 obj_draw_scroll_list(struct ScreenView *screen, u32 oam);
 u32 draw_member_status_page(struct ScreenView *screen, u32 oam);
 
-ASM_FUNC("asm/code_081218F0/screen_wave_frame.s", void screen_wave_frame(struct ScreenView *screen))
+extern const u8 gWindowWaveTable[];
+extern u16 gUnk_02000050[];
+extern u16 gUnk_02000052;
+extern u16 gUnk_02000012;
+/* One frame of the screen's window wave (drawn while waveFlag is set). The I/O register shadows at
+   0x02000000 get: WIN0V (gUnk_02000044) top = gWindowWaveTable[frame of waveSrc] down to line 160;
+   every 5th frame BLDALPHA (gUnk_02000052) one more step of EVB (blendHi, up to 8); and BG0VOFS
+   (gUnk_02000012) 0xE0, which after 16 frames speeds up on a parabola. After 26 frames the wave
+   ends: BG0CNT (gUnk_02000008) = 0x1A08 and BLDCNT/BLDALPHA (gUnk_02000050) cleared. Returns the
+   frame mod 5. */
+u32 screen_wave_frame(struct ScreenView *screen)
+{
+    u8 wave[20];
+    s32 scroll_y;
+    u8 *frame;
+    u8 *counter;
+    u16 *blend;
+    u16 win0v;
+    u32 step;
+    register u32 phase asm("r0");
+
+    mem_copy_fast(wave, gWindowWaveTable, 0x14);
+    scroll_y = 0xE0;
+    frame = screen->waveSrc + 0x23;
+    win0v = (wave[*frame] << 8) | 0xA0;
+    *gUnk_02000044 = win0v;
+    step = *frame;
+    step %= 5;
+    phase = step;
+    if ((u8)step == 0)
+    {
+        counter = &screen->blendHi;
+        if (++*counter > 8)
+            *counter = 8;
+        gUnk_02000052 = (*counter << 8) | screen->blendLo;
+    }
+    counter = &screen->waveTimer;
+    if (++*counter > 0x10)
+    {
+        scroll_y = (*counter - 0x10) * (*counter - 0x10) + 0xE0;
+        if (scroll_y > 0x60 && *counter > 0x1A)
+        {
+            screen->waveActive = 0;
+            gUnk_02000008 = 0x1A08;
+            scroll_y = 0;
+            blend = gUnk_02000050;
+            *blend++ = 0;
+            *blend = 0;
+        }
+    }
+    gUnk_02000012 = scroll_y;
+    return phase;
+}
 
 ASM_FUNC("asm/code_081218F0/tween_move_to.s", void tween_move_to(void))
 
 ASM_FUNC("asm/code_081218F0/tween_step.s", void tween_step(void))
 
-NONMATCH("asm/code_081218F0/unknown_thumb_08121e42.s", void unknown_thumb_08121e42(struct SlotHolder *base))
+// Copies the drawing state of each of the screen's 12 tweens' sprites (position,
+// tile and palette, flag bits) into the tween's saved fields.
+void unknown_thumb_08121e42(struct ScreenView *screen)
 {
-    s32 three;
-    s32 one;
     s32 i;
-    struct SlotRec **recs;
+    u8 bits;
 
-    recs = &base->recs;
-    one = 1;
-    three = 3;
     for (i = 0; i < 12; i++)
     {
-        if ((*recs)[i].flag3D != 0)
+        if (screen->tweens[i].unk3D != 0)
         {
-            (*recs)[i].unk4 = (*recs)[i].src->unk0;
-            (*recs)[i].unk6 = (*recs)[i].src->unk2;
-            (*recs)[i].unk8 = ((((u32)(*recs)[i].src->unk1E << 28) >> 16) + 0x1000) | (*recs)[i].src->unk16;
-            (*recs)[i].unkA = (*recs)[i].unk3A;
-            (*recs)[i].unkC = (*recs)[i].src->unk24;
-            (*recs)[i].unkD = (*recs)[i].src->unk25;
-            (*recs)[i].unkE = (*recs)[i].flag3D;
-            (*recs)[i].unkF = (*recs)[i].src->unk20;
-            ((struct SlotRecBitsAt *)&(*recs)[i])->b0 = (((u32)(*recs)[i].flag3C << 31) >> 31);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->b1 = (((u32)(*recs)[i].src->unk12 << 27) >> 31);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->b2 = (((u32)(*recs)[i].src->unk11 << 25) >> 31);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->f3 = (((u32)(*recs)[i].src->unk1F << 30) >> 30);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->f5 = (((u32)(*recs)[i].src->unk1F << 28) >> 30);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->f7 = (((u32)(*recs)[i].src->unk1F << 26) >> 30);
-            ((struct SlotRecBitsAt *)&(*recs)[i])->f9 = ((*recs)[i].src->unk1F >> 6);
-            (*recs)[i].unk12 = (*recs)[i].src->unkE;
+            screen->tweens[i].savedX = screen->tweens[i].sprite->oam0;
+            screen->tweens[i].savedY = screen->tweens[i].sprite->oam1;
+            screen->tweens[i].savedAttr2 = ((((u32)screen->tweens[i].sprite->palette1E << 28) >> 16) + 0x1000) | screen->tweens[i].sprite->tile16;
+            screen->tweens[i].savedUnkA = screen->tweens[i].unk3A;
+            screen->tweens[i].savedUnk24 = screen->tweens[i].sprite->unk24;
+            screen->tweens[i].savedUnk25 = screen->tweens[i].sprite->unk25;
+            screen->tweens[i].savedUnk3D = screen->tweens[i].unk3D;
+            screen->tweens[i].savedUnk20 = screen->tweens[i].sprite->unk20;
+            ((struct TweenSavedBits8 *)&screen->tweens[i])->active = ((struct TweenFlags *)&screen->tweens[i].flags3C)->active;
+            ((struct TweenSavedBits16 *)&screen->tweens[i])->flag12_4 = ((struct SprFlags12Word *)&screen->tweens[i].sprite->flags12)->b4;
+            ((struct TweenSavedBits16 *)&screen->tweens[i])->flag11_6 = ((struct SprFlags11Word *)&screen->tweens[i].sprite->flags11)->b6;
+            bits = ((struct SprBits1F *)&screen->tweens[i].sprite->bits1F)->f0 & 3;
+            ((struct TweenSavedBits8 *)&screen->tweens[i])->bits1F_0 = bits;
+            bits = ((struct SprBits1F *)&screen->tweens[i].sprite->bits1F)->f2 & 3;
+            ((struct TweenSavedBits8 *)&screen->tweens[i])->bits1F_2 = bits;
+            ((struct TweenSavedBits16 *)&screen->tweens[i])->bits1F_4 = ((struct SprBits1F *)&screen->tweens[i].sprite->bits1F)->f4 & 3;
+            bits = ((struct SprBits1F *)&screen->tweens[i].sprite->bits1F)->f6 & 3;
+            ((struct TweenSavedBits8 *)&screen->tweens[i])->bits1F_6 = bits;
+            screen->tweens[i].savedUnkE = screen->tweens[i].sprite->unkE;
         }
     }
 }
-END_NONMATCH
 
 struct SysView
 {
@@ -247,6 +358,10 @@ struct SysView
     u8 filler889[0x8C0 - 0x889];
     u8 lang8C0;
 };
+
+#define SYS_VIEW ((struct SysView *)gSys)
+
+#define SYS_FLAG_NO_DRAW 0x10 // SysView.flags888: skip drawing the screen this frame
 
 struct SprFlags12
 {
@@ -270,6 +385,8 @@ static inline u32 bro_levels_draw(u32 oam)
     return oam;
 }
 
+// Per-frame update of the menu screen: steps transitions, slides the slider,
+// repositions the current page's sprites, then draws the page into OAM.
 void screen_view_update(struct ViewOwner *owner)
 {
     struct ScreenView *screen;
@@ -278,13 +395,13 @@ void screen_view_update(struct ViewOwner *owner)
     s32 i;
     s32 j;
     s32 k;
-    u32 flagA;
-    u32 flagB;
-    u32 flagC;
+    u32 flag222a;
+    u32 flag220;
+    u32 flag222b;
 
     mem_copy_fast(langTiles, gScreenLangTileTable, 0xA);
     screen = owner->screen;
-    oam = ((struct SysView *)gSys)->oam880;
+    oam = SYS_VIEW->oam880;
     if (screen->state <= 4)
     {
         return;
@@ -297,9 +414,9 @@ void screen_view_update(struct ViewOwner *owner)
     {
         screen_pending_redraw(screen);
     }
-    if (!(((struct SysView *)gSys)->flags888 & 0x10))
+    if (!(SYS_VIEW->flags888 & SYS_FLAG_NO_DRAW))
     {
-        if (screen->slide->state == 1)
+        if (screen->slide->state == SLIDE_MOVE_LEFT)
         {
             if (!(screen->cursor->flags12 & 0x20))
             {
@@ -313,7 +430,7 @@ void screen_view_update(struct ViewOwner *owner)
                 screen->slider->oam1 = screen->slideMin;
             }
         }
-        else if (screen->slide->state == 3)
+        else if (screen->slide->state == SLIDE_MOVE_RIGHT)
         {
             obj_release_slots(screen->cursor);
             obj_release_slots(screen->sideL);
@@ -329,7 +446,7 @@ void screen_view_update(struct ViewOwner *owner)
         {
             switch (screen->mode)
             {
-            case 1:
+            case SCREEN_MODE_CURSOR_ROW:
                 screen->cursor->oam0 = 0x4E;
                 screen->cursor->oam1 = screen->values[screen->index] * 0xB + 0xC;
                 if (screen->flagsTbl[screen->index] != 0)
@@ -343,25 +460,25 @@ void screen_view_update(struct ViewOwner *owner)
                 sprite_update_cd0(screen->sideL);
                 sprite_update_cd0(screen->sideR);
                 break;
-            case 2:
+            case SCREEN_MODE_SCROLL_LIST:
                 obj_load_record(screen->item, screen->page + 1, 0, 0, 0);
                 sprite_update_cd0(screen->item);
                 screen->cursor->oam0 = 0x68;
-                flagA = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
-                flagB = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x220);
-                flagC = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
+                flag222a = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
+                flag220 = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x220);
+                flag222b = test_flag(gUnk_03000FC0 + 0x38C, 0, 0x222);
                 {
                     s32 left = 0x2C;
 
-                    screen->cursor->oam1 = left - (u8)flagA * 8 - (u8)flagB * 16 + screen->category * (0x20 - (u8)flagC * 8);
+                    screen->cursor->oam1 = left - (u8)flag222a * 8 - (u8)flag220 * 16 + screen->category * (0x20 - (u8)flag222b * 8);
                 }
                 sprite_update_cd0(screen->cursor);
                 break;
-            case 3:
+            case SCREEN_MODE_MEMBER_STATUS:
                 obj_load_record(screen->item, screen->member + 1, 0, 0, 0);
                 sprite_update_cd0(screen->item);
                 break;
-            case 4:
+            case SCREEN_MODE_GRID:
                 for (i = 0; i < 2; i++)
                 {
                     if (screen->texts[i] != 0)
@@ -389,15 +506,15 @@ void screen_view_update(struct ViewOwner *owner)
                 }
                 if (screen->pick != 0xFF)
                 {
-                    setup_obj_10bc(screen->cursor, 7, langTiles[((struct SysView *)gSys)->lang8C0], 1, -1, -1, -1, -1);
+                    setup_obj_10bc(screen->cursor, 7, langTiles[SYS_VIEW->lang8C0], 1, -1, -1, -1, -1);
                     obj_load_record(screen->cursor, screen->pick, -1, 0, 0);
                     sprite_update_cd0(screen->cursor);
                     screen->cursor->oam0 = 0xDA;
                     screen->cursor->oam1 = 0xA;
                 }
                 break;
-            case 0:
-                if (screen->cursor->tile16 == (langTiles[((struct SysView *)gSys)->lang8C0] & 0xFFF)
+            case SCREEN_MODE_PARTY_OVERVIEW:
+                if (screen->cursor->tile16 == (langTiles[SYS_VIEW->lang8C0] & 0xFFF)
                     && screen->pick != 0xFF)
                 {
                     setup_obj_10bc(screen->cursor, 5, 0x6000, 1, -1, -1, -1, -1);
@@ -419,15 +536,15 @@ void screen_view_update(struct ViewOwner *owner)
             }
         }
 
-        if (screen->mode == 0 && !(screen->slide->state % 2) && screen->waveFlag == 0)
+        if (screen->mode == SCREEN_MODE_PARTY_OVERVIEW && !(screen->slide->state % 2) && screen->waveFlag == 0)
         {
             oam = bro_levels_draw(oam);
         }
-        if (screen->mode == 1 && !(screen->slide->state % 2))
+        if (screen->mode == SCREEN_MODE_CURSOR_ROW && !(screen->slide->state % 2))
         {
             oam = obj_draw_list(screen, oam);
         }
-        if (screen->mode == 4 && !(screen->slide->state % 2))
+        if (screen->mode == SCREEN_MODE_GRID && !(screen->slide->state % 2))
         {
             oam = screen_helpers_obj_draw_grid(screen, oam);
         }
@@ -457,21 +574,21 @@ void screen_view_update(struct ViewOwner *owner)
         {
             switch (screen->mode)
             {
-            case 0:
+            case SCREEN_MODE_PARTY_OVERVIEW:
                 oam = draw_party_overview(screen, oam);
                 break;
-            case 1:
+            case SCREEN_MODE_CURSOR_ROW:
                 oam = draw_cursor_row(screen, oam);
                 break;
-            case 2:
+            case SCREEN_MODE_SCROLL_LIST:
                 oam = obj_draw_scroll_list(screen, oam);
                 break;
-            case 3:
+            case SCREEN_MODE_MEMBER_STATUS:
                 oam = draw_member_status_page(screen, oam);
                 break;
             }
         }
-        ((struct SysView *)gSys)->oam880 = oam;
+        SYS_VIEW->oam880 = oam;
     }
     if (screen->waveFlag != 0)
     {
@@ -596,7 +713,7 @@ void start_sub_obj_display(struct StatsCtx *ctx)
     ctx->flag156 = 1;
 }
 
-NONMATCH("asm/code_081218F0/unknown_thumb_08122818.s", void unknown_thumb_08122818(void *unused, s16 v, u8 idx))
+void unknown_thumb_08122818(void *unused, s16 v, u8 idx)
 {
     s32 t = v;
     u16 mag;
@@ -608,14 +725,19 @@ NONMATCH("asm/code_081218F0/unknown_thumb_08122818.s", void unknown_thumb_081228
     mag = t;
     if (v <= 0)
     {
-        *(u16 *)((u8 *)gUnk_02000044 + (idx << 1)) = mag;
+        ((u16 *)gUnk_02000044)[idx] = mag;
     }
     else
     {
-        *(u16 *)((u8 *)gUnk_02000044 + (idx << 1)) = ((0xA0 - mag) << 8) | 0xA0;
+        u32 off = idx << 1;
+        register u32 base asm("r1") = (u32)gUnk_02000044;
+        u16 *p = (u16 *)(off + base);
+        register u32 w asm("r1");
+
+        w = ((0xA0 - mag) << 8) | 0xA0;
+        *p = w;
     }
 }
-END_NONMATCH
 
 u32 draw_bro_levels(void *unused, u32 oam)
 {

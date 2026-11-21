@@ -107,32 +107,37 @@ struct HookObj
     void (*hook1A0)();
 };
 
-struct WinObj
-{
-    u8 filler0[0x1C];
-    s16 unk1C;
-    s16 unk1E;
-    u16 unk20;
-    u16 unk22;
-    u16 unk24;
-    u16 unk26;
-    u16 unk28;
-    u16 unk2A;
-    u32 sub2C;
-    u32 sub30;
-    u32 sub34;
-    u32 sub38;
-    u8 *frame3C;
-    u8 *unk40;
-    u8 *unk44;
-    u8 *unk48;
-};
-
 struct FramePos
 {
     u16 x;
     u16 y;
 };
+
+/* The map screen: a map larger than the screen, scrolled with the d-pad, with a marker
+   on it and an arrow at each edge there is more map beyond. */
+struct MapWindow
+{
+    u8 filler0[0x1C];
+    s16 scrollX;
+    s16 scrollY;
+    u16 mapWidth;       /* pixels */
+    u16 mapHeight;
+    u16 mapLayout;      /* given to map_obj_start */
+    u16 markerX;        /* on the map */
+    u16 markerY;
+    u16 id;             /* looked up in gWindowSizeTable */
+    u32 arrowUp;        /* edge arrows, in gWindowSpritePoints order */
+    u32 arrowRight;
+    u32 arrowDown;
+    u32 arrowLeft;
+    u8 *marker;
+    u8 *block;
+    u8 *map;
+    u8 *fader;          /* fades the screen in and out */
+};
+
+#define SCREEN_WIDTH  240
+#define SCREEN_HEIGHT 160
 
 struct Lo4Bits
 {
@@ -213,29 +218,34 @@ struct AnimStepP
     u16 rest : 7;
 };
 
-/* shadow copy of the pending sprite's attributes */
+/* a sprite's attributes saved in its object (obj_save_sprite_attrs, obj_copy_sub_fields) so a
+ * new sprite can take them over; each field names the SpriteObj field it is saved from */
 struct ObjShadow298
 {
     u8 filler0[0x298];
-    u8 active : 1;
-    u8 mirror : 1;
-    u8 b23 : 2;
-    u8 b45 : 2;
-    u8 b67 : 2;
-    u8 b0 : 1;
-    u8 b1 : 1;
+    u8 active : 1;   /* the fields below hold a saved sprite */
+    u8 mirror : 1;   /* 0x11 bit 6 */
+    u8 b23 : 2;      /* 0x1F bits 0-1 */
+    u8 b45 : 2;      /* 0x1F bits 2-3 */
+    u8 b67 : 2;      /* 0x12 bits 1-2 */
+    u8 b0 : 1;       /* 0x12 bit 3 */
+    u8 b1 : 1;       /* 0x12 bit 4 */
     u8 rest299 : 6;
     u8 filler29A;
-    u8 unk29B;
-    u8 unk29C;
+    u8 unk29B;       /* 0x21 */
+    u8 unk29C;       /* 0x23 */
     u8 filler29D;
-    u16 unk29E;
-    u16 unk2A0;
-    u16 unk2A2;
-    u16 unk2A4;
+    u16 unk29E;      /* 0x2A */
+    u16 unk2A0;      /* 0x2C */
+    u16 unk2A2;      /* 0x04 */
+    u16 unk2A4;      /* 0x06 */
 };
 
-/* animation level in bits 10-16 of the word at 0x33C */
+/* object flag bits at 0x33C that obj_replace_sprite tests */
+#define OBJ_FLAG_HIDDEN      1 /* no pending sprite takes over the old one's attributes */
+#define OBJ_FLAG_REPLACE_NOW 4 /* the sprite is replaced at once, no pending sprite */
+
+/* animation level in bits 10-16 of the word at 0x33C (a hit block: how many of its drop it gave) */
 struct ObjAnimWord33C
 {
     u8 filler0[0x33C];
@@ -244,7 +254,7 @@ struct ObjAnimWord33C
     u32 rest : 15;
 };
 
-/* animation frame in bits 6-9 of the halfword at 0x33C */
+/* animation frame in bits 6-9 of the halfword at 0x33C (a hit block: what its drop looks like, drop_roll bits 0-3) */
 struct ObjAnimHalf33C
 {
     u8 filler0[0x33C];
@@ -255,12 +265,12 @@ struct ObjAnimHalf33C
 
 u32 drop_roll(u16 index, u8 kind, u8 flag);
 
-/* animation counters */
+/* a hit block's repeat hits (obj_apply_anim_code) */
 struct ObjTimers340
 {
     u8 filler0[0x340];
-    s16 timer340;
-    s16 timer342;
+    s16 timer340; /* hits left */
+    s16 timer342; /* frames left for the next hit, -1 before the first one */
     u16 unk344;
 };
 
@@ -298,7 +308,7 @@ extern struct FramePos gWindowSpritePoints[];
 extern s8 gWindowScrollTable[];
 void set_flags_2_3(void *p);
 void copy_track_limits(u8 *obj, u16 track, u16 *outA, u16 *outB);
-void scroll_clamp(struct WinObj *w);
+void scroll_clamp(struct MapWindow *window);
 void sub_08115F54(void *sub, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
 u8 sub_obj_running(void *menu);
 void set_slot_value(u32 id, s32 value);
@@ -348,12 +358,19 @@ struct ObjInitS
     u16 mask;
     s16 timer340;
     u16 timerB342;
-    s16 unk344;
-    u32 unk348;
-    u32 unk34C;
+    s16 unk344;     /* hit block: its id (BLOCK_HIT_FLAG), -1 for none */
+    u32 unk348;     /* hit block: its 6-byte map entry (obj_init_from_entry) */
+    u32 unk34C;     /* pending sprite (obj_activate_sprite) */
 };
 
+/* the object's pending sprite (ObjInitS.unk34C), built in the background and swapped in later */
+#define OBJ_PENDING_SPRITE(obj) (*(struct SpriteObj **)((obj) + 0x34C))
+
 extern u8 *gUnk_03000FC0;
+/* the game's flags (test_flag, set_flag) */
+#define GAME_FLAGS (gUnk_03000FC0 + 0x38C)
+/* game flag set once the map's hit block `id` has been hit */
+#define BLOCK_HIT_FLAG(id) ((u16)((id) + 0x1360))
 extern const u16 gSpriteSelectAnimTable[];
 void set_flag(u8 *flags, u32 a, u32 b, u32 c);
 void reset_record_fields(u8 *obj);
@@ -403,12 +420,16 @@ extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u8 gUnk_0203FFB8[];
 
+/* Suspends the object: deactivates it (0x20C bit 0) and puts it in link mode 2, which
+   obj_update_flags_from_child later undoes. A move still running (0x33E bits 0-1) is ended first:
+   the object lands (0x18 = 0) and the state to restore is saved. Then vtable slot 0x80 is called
+   with 1 on the object and, if one is linked to it (0x20F bit 1), on its child, deactivated too. */
 void obj_set_mode_4(u8 *obj)
 {
     struct ChildObj *child;
-    struct VtSlot *entry;
-    u32 bit;
-    u32 mid;
+    struct VtSlot *slot;
+    u32 flag;
+    u32 savedState;
 
     ((struct Bit0 *)(obj + 0x20C))->bit0 = 0;
     ((struct Mid2At1 *)(obj + 0x33C))->mode = 2;
@@ -416,54 +437,57 @@ void obj_set_mode_4(u8 *obj)
     {
         ((struct Lo4Bits *)(obj + 0x33E))->lo2 = 0;
         *(u32 *)(obj + 0x18) = 0;
-        bit = ((u32)obj[0x33E] << 29) >> 31;
-        ((struct Bits8 *)(obj + 0x20D))->b5 = bit;
+        flag = ((u32)obj[0x33E] << 29) >> 31;
+        ((struct Bits8 *)(obj + 0x20D))->b5 = flag;
         obj[2] = obj[0x33F];
         obj[0x23A] = 0;
-        mid = ((u32)obj[0x33C] << 25) >> 29;
-        ((struct Mode3 *)(obj + 0x33D))->mode = mid;
+        savedState = ((u32)obj[0x33C] << 25) >> 29;
+        ((struct ObjLink33C *)obj)->saved = savedState;
         ((struct Bits8 *)(obj + 0x33C))->b3 = 0;
     }
-    /* call method 0x80 of the object and of a linked child */
-    entry = (struct VtSlot *)((u8 *)((struct ChildObj *)obj)->vtable + 0x80);
-    entry->fn(obj + entry->offset, 1);
+    slot = (struct VtSlot *)((u8 *)((struct ChildObj *)obj)->vtable + 0x80);
+    slot->fn(obj + slot->offset, 1);
     child = ((struct ChildObj *)obj)->child;
     if (child != NULL && (((u8 *)child)[0x20F] & 2))
     {
-        struct ChildObj *c;
-        struct VtSlot *e;
+        struct ChildObj *linked;
+        struct VtSlot *childSlot;
 
         ((struct Bit0 *)((u8 *)child + 0x20C))->bit0 = 0;
-        c = ((struct ChildObj *)obj)->child;
-        e = (struct VtSlot *)((u8 *)c->vtable + 0x80);
-        e->fn((u8 *)c + e->offset, 1);
+        linked = ((struct ChildObj *)obj)->child;
+        childSlot = (struct VtSlot *)((u8 *)linked->vtable + 0x80);
+        childSlot->fn((u8 *)linked + childSlot->offset, 1);
     }
 }
 
+/* Ends the object's link mode (0x33C bits 1-2) unless it is busy (0x212 bits 7-8). From mode 2,
+   which obj_set_mode_4 suspends the object with, it is resumed first: it and its linked child
+   (0x20F bit 1) are reactivated (0x20C bit 0), the child takes its pending state (0x33C bit 1), the
+   object gets back the state obj_set_mode_4 saved (0x33D bit 7), and 0x33C bit 0 is set. */
 void obj_update_flags_from_child(u8 *obj)
 {
-    u8 **childSlot;
-    u32 link;
+    u8 **pChild;
+    u32 linkMode;
 
-    link = obj[0x33C] & 6;
-    if (link != 0)
+    linkMode = obj[0x33C] & 6;
+    if (linkMode != 0)
     {
         if ((*(u16 *)(obj + 0x212) & 0x180) == 0)
         {
-            if (link == 4)
+            if (linkMode == 4)
             {
                 ((struct Bit0 *)(obj + 0x20C))->bit0 = 1;
-                childSlot = (u8 **)(obj + 0x344);
-                if (*childSlot != NULL)
+                pChild = (u8 **)(obj + 0x344);
+                if (*pChild != NULL)
                 {
-                    if ((*childSlot)[0x20F] & 2)
+                    if ((*pChild)[0x20F] & 2)
                     {
-                        ((struct Bit0 *)((*childSlot) + 0x20C))->bit0 = 1;
+                        ((struct Bit0 *)((*pChild) + 0x20C))->bit0 = 1;
                         /* a linked child takes over its pending state */
-                        if (((struct ObjLink33C *)*childSlot)->b1)
+                        if (((struct ObjLink33C *)*pChild)->b1)
                         {
-                            ((struct ObjLink33C *)*childSlot)->state = ((struct ObjLink33C *)*childSlot)->childState;
-                            ((struct ObjLink33C *)*childSlot)->b1 = 0;
+                            ((struct ObjLink33C *)*pChild)->state = ((struct ObjLink33C *)*pChild)->childState;
+                            ((struct ObjLink33C *)*pChild)->b1 = 0;
                         }
                     }
                 }
@@ -727,49 +751,55 @@ void obj_teardown(u8 *obj, u32 flags)
     obj_base_teardown(obj, flags);
 }
 
-u32 obj_init_state(u8 *obj, u32 a, u32 b)
+/* Constructs an object of class gObjStateClass: the base object (obj_init, loading definition def
+ * unless it is -1), then clears its state flags, sets the mask bits 1-8, timer340 to 1 and leaves
+ * it without a hit block (unk344 -1) or pending sprite. Returns obj. */
+u32 obj_init_state(u8 *obj, u32 def, u32 index)
 {
-    struct ObjInitS *o;
-    u16 m;
+    struct ObjInitS *self;
+    u16 mask;
 
-    obj_init(obj, a, b);
-    o = (struct ObjInitS *)obj;
-    o->vtable = (struct ObjVtable *)gObjStateClass;
-    ((struct Bits33C *)&o->flags)->b0 = 1;
-    ((struct Bits33C *)&o->flags)->mid3 = 0;
-    ((struct Bits33C *)&o->flags)->b1 = 0;
-    ((struct Bits33C *)&o->flags)->b2 = 0;
-    ((struct Mid4At6 *)&o->flags)->mid4 = 0;
-    o->unk23B = 0;
-    m = o->mask;
-    o->mask = m | 0x1FE;
-    o->timer340 = 1;
-    o->timerB342 = 0xFFFF;
-    o->unk344 = -1;
-    o->unk348 = 0;
-    o->unk34C = 0;
+    obj_init(obj, def, index);
+    self = (struct ObjInitS *)obj;
+    self->vtable = (struct ObjVtable *)gObjStateClass;
+    ((struct Bits33C *)&self->flags)->b0 = 1;
+    ((struct Bits33C *)&self->flags)->mid3 = 0;
+    ((struct Bits33C *)&self->flags)->b1 = 0;
+    ((struct Bits33C *)&self->flags)->b2 = 0;
+    ((struct Mid4At6 *)&self->flags)->mid4 = 0;
+    self->unk23B = 0;
+    mask = self->mask;
+    self->mask = mask | 0x1FE;
+    self->timer340 = 1;
+    self->timerB342 = 0xFFFF;
+    self->unk344 = -1;
+    self->unk348 = 0;
+    self->unk34C = 0;
     return (u32)obj;
 }
 
-u32 obj_init_from_entry(u8 *obj, u8 *entry, u16 id, u32 a, u32 b)
+/* Sets up a hit block from its 6-byte map entry: places it at the entry's tile position, sets its
+   object flags and, unless its BLOCK_HIT_FLAG is already set, makes it hittable with the animation
+   set its kind (entry[0]: 0x20, 0x40 or other) picks. Remembers `blockId` and the entry. */
+u32 obj_init_from_entry(u8 *obj, u8 *entry, u16 blockId, u32 a, u32 b)
 {
     s32 x;
     s32 y;
     s32 z;
-    s32 ofs;
-    u32 kind;
-    u16 m;
+    s32 fine;
+    u32 animSet;
+    u16 mask;
 
     obj_init(obj, a, b);
     ((struct ObjInitS *)obj)->vtable = (struct ObjVtable *)gObjStateClass;
 
     /* tile position * 16 (z: * 8) plus a signed 5-bit offset packed into bytes 3-5 */
-    ofs = (entry[3] >> 7) | ((entry[4] << 1) & 0x1E);
-    x = ((entry[1] << 4) + ((entry[4] & 8) ? ofs | -0x20 : ofs)) << 8;
-    ofs = (entry[4] >> 4) | ((entry[5] << 4) & 0x10);
-    y = ((entry[2] << 4) + ((entry[5] & 1) ? ofs | -0x20 : ofs)) << 8;
-    ofs = entry[5] >> 1;
-    z = (((entry[3] & 0x7F) << 3) + ((entry[5] & 0x20) ? ofs | -0x20 : ofs)) << 8;
+    fine = (entry[3] >> 7) | ((entry[4] << 1) & 0x1E);
+    x = ((entry[1] << 4) + ((entry[4] & 8) ? fine | -0x20 : fine)) << 8;
+    fine = (entry[4] >> 4) | ((entry[5] << 4) & 0x10);
+    y = ((entry[2] << 4) + ((entry[5] & 1) ? fine | -0x20 : fine)) << 8;
+    fine = entry[5] >> 1;
+    z = (((entry[3] & 0x7F) << 3) + ((entry[5] & 0x20) ? fine | -0x20 : fine)) << 8;
     obj_set_or_add_pos(obj, x, y, z, 0, 0);
 
     ((struct Bits8 *)(obj + 0x20F))->b1 = 1;
@@ -799,10 +829,11 @@ u32 obj_init_from_entry(u8 *obj, u8 *entry, u16 id, u32 a, u32 b)
     ((struct Bits8 *)(obj + 0x20F))->b0 = 0;
     ((struct Mode3 *)(obj + 0x214))->mode = 1;
 
-    if (test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(id + 0x1360)) == 0)
+    if (test_flag(GAME_FLAGS, 0, BLOCK_HIT_FLAG(blockId)) == 0)
     {
-        kind = entry[0] == 0x20 ? 2 : entry[0] == 0x40;
-        ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->mid3 = kind;
+        /* not hit yet: hittable, animation set (gSpriteSelectAnimTable) by kind */
+        animSet = entry[0] == 0x20 ? 2 : entry[0] == 0x40;
+        ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->mid3 = animSet;
         ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b0 = 1;
     }
     else
@@ -813,55 +844,60 @@ u32 obj_init_from_entry(u8 *obj, u8 *entry, u16 id, u32 a, u32 b)
     ((struct Bits33C *)&((struct ObjInitS *)obj)->flags)->b2 = 1;
     ((struct Mid4At6 *)&((struct ObjInitS *)obj)->flags)->mid4 = 0;
     ((struct ObjInitS *)obj)->unk23B = 0;
-    m = ((struct ObjInitS *)obj)->mask;
-    ((struct ObjInitS *)obj)->mask = m | 0x1FE;
+    mask = ((struct ObjInitS *)obj)->mask;
+    ((struct ObjInitS *)obj)->mask = mask | 0x1FE;
     ((struct ObjInitS *)obj)->timer340 = 1;
     ((struct ObjInitS *)obj)->timerB342 = 0xFFFF;
-    ((struct ObjInitS *)obj)->unk344 = id;
+    ((struct ObjInitS *)obj)->unk344 = blockId;
     ((struct ObjInitS *)obj)->unk348 = (u32)entry;
     ((struct ObjInitS *)obj)->unk34C = 0;
     return (u32)obj;
 }
 
-void obj_replace_sprite(u8 *obj, u32 a, u32 b, u32 d)
+/*
+ * Gives the object a new sprite. Normally (flag bit 2 clear) obj_create_sub builds it from
+ * the given tables; unless the object is hidden (flag bit 0) a blank pending sprite then
+ * takes over the old sprite's attributes and the two are swapped, so the old one stays
+ * pending. With flag bit 2 set the sprite is replaced at once by the one its kind (flag
+ * bits 3-5, gSpriteSelectAnimTable) selects, with the shadow attributes if there are any.
+ */
+void obj_replace_sprite(u8 *obj, u32 sprite_ids, u32 anim_ids, u32 codes)
 {
     u8 *flags;
     u8 f;
-    u8 bit2;
-    struct SpriteObj *tmp;
+    u8 replace_now;
+    struct SpriteObj *swap;
     struct SpriteObj *spr;
     u32 sel;
     u32 anim;
-    u32 units;
-    u8 *link;
+    u32 width;
+    u8 *gfx;
 
     flags = obj + 0x33C;
-    bit2 = (f = *flags) & 4;
-    if (bit2 == 0)
+    replace_now = (f = *flags) & 4;
+    if (replace_now == 0)
     {
-        /* create a pending sprite that takes over the current one's attributes */
-        obj_create_sub(obj, a, b, d);
+        obj_create_sub(obj, sprite_ids, anim_ids, codes);
         if (*(u16 *)(obj + 0x218) == 0x8000)
         {
             return;
         }
-        (*(struct SpriteObj **)(obj + 0x34C)) = create_obj_de4(0, 0x8000, 0, -1, -1, -1, -1);
-        obj_load_record((*(struct SpriteObj **)(obj + 0x34C)), 3, -1, 0, bit2);
+        OBJ_PENDING_SPRITE(obj) = create_obj_de4(0, 0x8000, 0, -1, -1, -1, -1);
+        obj_load_record(OBJ_PENDING_SPRITE(obj), 3, -1, 0, replace_now);
         if (*flags & 1)
         {
             return;
         }
-        (*(struct SpriteObj **)(obj + 0x34C))->unkE = ((struct MainObj *)obj)->sprite->unkE;
-        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->lo2 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->lo2;
-        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b23 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b23;
-        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b45 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b45;
-        ((struct SpriteFlags *)(*(struct SpriteObj **)(obj + 0x34C)))->b67 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b67;
-        tmp = (*(struct SpriteObj **)(obj + 0x34C));
-        (*(struct SpriteObj **)(obj + 0x34C)) = ((struct MainObj *)obj)->sprite;
-        ((struct MainObj *)obj)->sprite = tmp;
+        OBJ_PENDING_SPRITE(obj)->unkE = ((struct MainObj *)obj)->sprite->unkE;
+        ((struct SpriteFlags *)OBJ_PENDING_SPRITE(obj))->lo2 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->lo2;
+        ((struct SpriteFlags *)OBJ_PENDING_SPRITE(obj))->b23 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b23;
+        ((struct SpriteFlags *)OBJ_PENDING_SPRITE(obj))->b45 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b45;
+        ((struct SpriteFlags *)OBJ_PENDING_SPRITE(obj))->b67 = ((struct SpriteFlags *)((struct MainObj *)obj)->sprite)->b67;
+        swap = OBJ_PENDING_SPRITE(obj);
+        OBJ_PENDING_SPRITE(obj) = ((struct MainObj *)obj)->sprite;
+        ((struct MainObj *)obj)->sprite = swap;
         return;
     }
-    /* replace the sprite at once, with the shadow attributes if there are any */
     if (f & 1)
     {
         sel = gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2];
@@ -876,13 +912,14 @@ void obj_replace_sprite(u8 *obj, u32 a, u32 b, u32 d)
     ((struct Lo4Bits *)(obj + 0x216))->b23 = 0;
     ((struct Bits8 *)(obj + 0x216))->b4 = 0;
     obj_load_record(spr, anim, -1, 0, 0);
-    link = *(u8 **)((u8 *)spr + 0x48);
-    if (link != NULL)
+    /* widen the sprite to its graphics' size */
+    gfx = *(u8 **)((u8 *)spr + 0x48);
+    if (gfx != NULL)
     {
-        units = read_varlen_plus1(*(void **)(link + 4)) >> 5;
-        if ((s32)units > (s32)((struct SpriteW28 *)spr)->width)
+        width = read_varlen_plus1(*(void **)(gfx + 4)) >> 5;
+        if ((s32)width > (s32)((struct SpriteW28 *)spr)->width)
         {
-            ((struct SpriteW28 *)spr)->width = units;
+            ((struct SpriteW28 *)spr)->width = width;
         }
     }
     if (((struct ObjShadow298 *)obj)->active)
@@ -900,60 +937,66 @@ void obj_replace_sprite(u8 *obj, u32 a, u32 b, u32 d)
     obj_load_part_shape(obj);
 }
 
+/* Saves a sprite's attributes into the object's shadow (ObjShadow298): those of the pending
+ * sprite when there is one (the object neither hidden nor replacing at once), otherwise
+ * obj_copy_sub_fields saves the current sprite's. */
 void obj_apply_pending_sprite(u8 *obj)
 {
-    struct ObjShadow298 *sh;
-    u8 **pslot;
+    struct ObjShadow298 *saved;
+    u8 **pending;
 
-    sh = (struct ObjShadow298 *)obj;
-    /* copy the pending sprite's attributes into the shadow values */
-    if ((obj[0x33C] & 5) == 0)
+    saved = (struct ObjShadow298 *)obj;
+    if ((obj[0x33C] & (OBJ_FLAG_HIDDEN | OBJ_FLAG_REPLACE_NOW)) == 0)
     {
-        pslot = (u8 **)(obj + 0x34C);
-        if (*pslot != NULL)
+        pending = (u8 **)&OBJ_PENDING_SPRITE(obj);
+        if (*pending != NULL)
         {
-            sh->mirror = ((u32)(*pslot)[0x11] << 25) >> 31;
-            sh->b23 = ((u32)(*pslot)[0x1F] << 30) >> 30;
-            sh->b45 = ((u32)(*pslot)[0x1F] << 28) >> 30;
-            sh->b67 = ((u32)(*pslot)[0x12] << 29) >> 30;
-            sh->b0 = ((u32)(*pslot)[0x12] << 28) >> 31;
-            sh->b1 = ((u32)(*pslot)[0x12] << 27) >> 31;
-            sh->unk29B = (*pslot)[0x21];
-            sh->unk29C = (*pslot)[0x23];
-            sh->unk29E = *(u16 *)(*pslot + 0x2A);
-            sh->unk2A0 = *(u16 *)(*pslot + 0x2C);
-            sh->unk2A2 = *(u16 *)(*pslot + 4);
-            sh->unk2A4 = *(u16 *)(*pslot + 6);
-            sh->active = 1;
+            saved->mirror = ((u32)(*pending)[0x11] << 25) >> 31;
+            saved->b23 = ((u32)(*pending)[0x1F] << 30) >> 30;
+            saved->b45 = ((u32)(*pending)[0x1F] << 28) >> 30;
+            saved->b67 = ((u32)(*pending)[0x12] << 29) >> 30;
+            saved->b0 = ((u32)(*pending)[0x12] << 28) >> 31;
+            saved->b1 = ((u32)(*pending)[0x12] << 27) >> 31;
+            saved->unk29B = (*pending)[0x21];
+            saved->unk29C = (*pending)[0x23];
+            saved->unk29E = *(u16 *)(*pending + 0x2A);
+            saved->unk2A0 = *(u16 *)(*pending + 0x2C);
+            saved->unk2A2 = *(u16 *)(*pending + 4);
+            saved->unk2A4 = *(u16 *)(*pending + 6);
+            saved->active = 1;
             return;
         }
     }
     obj_copy_sub_fields(obj);
 }
 
+/* A hit block was hit: rolls its drop (drop_roll on its map entry) and keeps what the drop looks
+ * like. Drops 1 and 2 given more than once make it a multi-hit block: the first hit allows
+ * count - 1 more within count * 17 frames, each further hit uses one up. Any other drop keeps its
+ * count. Then marks the block as hit (BLOCK_HIT_FLAG) and returns 1; 0 if nothing was rolled. */
 u32 obj_apply_anim_code(u8 *obj, u32 arg)
 {
-    u8 *entry;
-    u16 code;
-    u32 level;
-    u32 frame;
+    u8 *mapEntry;
+    u16 drop;
+    u32 count;
+    u32 look;
 
-    entry = *(u8 **)(obj + 0x348);
-    /* the rolled code: frame in bits 0-3, bit 4 = counted animation, level in bits 5-11 */
-    code = drop_roll((entry[7] << 8) | entry[6], entry[0], arg);
-    level = (code >> 5) & 0x7F;
-    frame = code & 0xF;
-    ((struct ObjAnimHalf33C *)obj)->frame = frame;
-    if (code & 0x10)
+    mapEntry = *(u8 **)(obj + 0x348);
+    /* the rolled drop: its look in bits 0-3, bit 4 = rolled, its count in bits 5-11 */
+    drop = drop_roll((mapEntry[7] << 8) | mapEntry[6], mapEntry[0], arg);
+    count = (drop >> 5) & 0x7F;
+    look = drop & 0xF;
+    ((struct ObjAnimHalf33C *)obj)->frame = look;
+    if (drop & 0x10)
     {
         if (((struct ObjAnimHalf33C *)obj)->frame != 0 && ((struct ObjAnimHalf33C *)obj)->frame <= 2)
         {
-            if (level > 1)
+            if (count > 1)
             {
                 if (((struct ObjTimers340 *)obj)->timer342 == -1)
                 {
-                    ((struct ObjTimers340 *)obj)->timer342 = level * 17;
-                    ((struct ObjTimers340 *)obj)->timer340 = level - 1;
+                    ((struct ObjTimers340 *)obj)->timer342 = count * 17;
+                    ((struct ObjTimers340 *)obj)->timer340 = count - 1;
                 }
                 else if (--((struct ObjTimers340 *)obj)->timer340 == 0)
                 {
@@ -969,75 +1012,81 @@ u32 obj_apply_anim_code(u8 *obj, u32 arg)
         }
         else
         {
-            ((struct ObjAnimWord33C *)obj)->level = level;
+            ((struct ObjAnimWord33C *)obj)->level = count;
             ((struct ObjTimers340 *)obj)->timer340 = 0;
             ((struct ObjTimers340 *)obj)->timer342 = 0;
         }
-        set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 1);
+        set_flag(GAME_FLAGS, 0, BLOCK_HIT_FLAG(*(u16 *)(obj + 0x344)), 1);
         return 1;
     }
     return 0;
 }
 
+/* Makes a hit block hittable again (bit 0 of its flags at 0x33C), unless it already is. With a pending
+   sprite, that one is swapped in with the current sprite's attributes (and the old one unlinked unless
+   bit 1 of 0x20F keeps it); otherwise its kind's animation (flag bits 3-5, gSpriteSelectAnimTable)
+   is loaded, the block's hit flag cleared and its animation state reset. */
 void obj_activate_sprite(u8 *obj)
 {
-    u8 *flags;
-    u8 f;
-    u16 m;
-    struct ObjInitS *o;
-    struct SpriteObj **pslot;
-    struct SpriteObj **cslot;
-    struct SpriteObj *tmp;
+    u8 *blockFlags;
+    u8 armed;
+    u16 mask;
+    struct ObjInitS *block;
+    struct SpriteObj **pending;
+    struct SpriteObj **current;
+    struct SpriteObj *swap;
 
-    flags = obj + 0x33C;
-    if (*flags & 1)
+    blockFlags = obj + 0x33C;
+    if (*blockFlags & 1)
     {
         return;
     }
-    f = *flags | 1;
-    *flags = f;
-    pslot = (struct SpriteObj **)(obj + 0x34C);
-    if (*pslot != NULL)
+    armed = *blockFlags | 1;
+    *blockFlags = armed;
+    pending = (struct SpriteObj **)(obj + 0x34C);
+    if (*pending != NULL)
     {
-        /* a pending sprite replaces the current one, keeping its attributes */
-        ((struct Bits33C *)flags)->mid3 = 0;
-        cslot = (struct SpriteObj **)(obj + 0x294);
-        unlink_d54(*cslot);
-        obj_queue_update(*pslot);
-        (*pslot)->unkE = (*cslot)->unkE;
-        ((struct SpriteFlags *)*pslot)->lo2 = ((struct SpriteFlags *)*cslot)->lo2;
-        ((struct SpriteFlags *)*pslot)->b23 = ((struct SpriteFlags *)*cslot)->b23;
-        ((struct SpriteFlags *)*pslot)->b45 = ((struct SpriteFlags *)*cslot)->b45;
-        ((struct SpriteFlags *)*pslot)->b67 = ((struct SpriteFlags *)*cslot)->b67;
-        tmp = *pslot;
-        *pslot = *cslot;
-        *cslot = tmp;
+        ((struct Bits33C *)blockFlags)->mid3 = 0;
+        current = (struct SpriteObj **)(obj + 0x294);
+        unlink_d54(*current);
+        obj_queue_update(*pending);
+        (*pending)->unkE = (*current)->unkE;
+        ((struct SpriteFlags *)*pending)->lo2 = ((struct SpriteFlags *)*current)->lo2;
+        ((struct SpriteFlags *)*pending)->b23 = ((struct SpriteFlags *)*current)->b23;
+        ((struct SpriteFlags *)*pending)->b45 = ((struct SpriteFlags *)*current)->b45;
+        ((struct SpriteFlags *)*pending)->b67 = ((struct SpriteFlags *)*current)->b67;
+        swap = *pending;
+        *pending = *current;
+        *current = swap;
         if (obj[0x20F] & 2)
         {
             return;
         }
-        unlink_d54(tmp);
+        unlink_d54(swap);
     }
     else
     {
-        /* no pending sprite: select the animation and reset the state */
-        obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)f << 26) >> 29) * 2 + 1], 1, 0, 0);
-        set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360), 0);
-        o = (struct ObjInitS *)obj;
-        ((struct Mid4At6 *)&o->flags)->mid4 = 0;
-        o->unk23B = 0;
-        m = o->mask;
-        o->mask = m | 0x1FE;
-        o->timer340 = 1;
-        o->timerB342 = 0xFFFF;
+        obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)armed << 26) >> 29) * 2 + 1], 1, 0, 0);
+        set_flag(GAME_FLAGS, 0, BLOCK_HIT_FLAG(*(u16 *)(obj + 0x344)), 0);
+        block = (struct ObjInitS *)obj;
+        ((struct Mid4At6 *)&block->flags)->mid4 = 0;
+        block->unk23B = 0;
+        mask = block->mask;
+        block->mask = mask | 0x1FE;
+        block->timer340 = 1;
+        block->timerB342 = 0xFFFF;
     }
 }
 
+/* A hit block is spent (the reverse of obj_activate_sprite): clears its hittable bit (bit 0 of its
+   flags at 0x33C) and its animation offset 0x23B. With a pending sprite, the current one is
+   unlinked and the pending one swapped in with the current sprite's attributes; otherwise the
+   current sprite loads animation 3. Does nothing when the block isn't hittable. */
 void obj_commit_sprite(u8 *obj)
 {
-    struct SpriteObj **pslot;
-    struct SpriteObj **cslot;
-    struct SpriteObj *tmp;
+    struct SpriteObj **pending;
+    struct SpriteObj **current;
+    struct SpriteObj *swap;
 
     if ((obj[0x33C] & 1) == 0)
     {
@@ -1045,24 +1094,25 @@ void obj_commit_sprite(u8 *obj)
     }
     ((struct Bit0 *)(obj + 0x33C))->bit0 = 0;
     ((struct ObjTimer *)obj)->unk23B = 0;
-    pslot = (struct SpriteObj **)(obj + 0x34C);
-    if (*pslot != NULL)
+    pending = (struct SpriteObj **)(obj + 0x34C);
+    if (*pending != NULL)
     {
-        cslot = (struct SpriteObj **)(obj + 0x294);
-        unlink_d54(*cslot);
-        obj_queue_update(*pslot);
-        (*pslot)->unkE = (*cslot)->unkE;
-        ((struct SpriteFlags *)*pslot)->lo2 = ((struct SpriteFlags *)*cslot)->lo2;
-        ((struct SpriteFlags *)*pslot)->b23 = ((struct SpriteFlags *)*cslot)->b23;
-        ((struct SpriteFlags *)*pslot)->b45 = ((struct SpriteFlags *)*cslot)->b45;
-        ((struct SpriteFlags *)*pslot)->b67 = ((struct SpriteFlags *)*cslot)->b67;
-        tmp = *pslot;
-        *pslot = *cslot;
-        *cslot = tmp;
+        current = (struct SpriteObj **)(obj + 0x294);
+        unlink_d54(*current);
+        obj_queue_update(*pending);
+        (*pending)->unkE = (*current)->unkE;
+        ((struct SpriteFlags *)*pending)->lo2 = ((struct SpriteFlags *)*current)->lo2;
+        ((struct SpriteFlags *)*pending)->b23 = ((struct SpriteFlags *)*current)->b23;
+        ((struct SpriteFlags *)*pending)->b45 = ((struct SpriteFlags *)*current)->b45;
+        ((struct SpriteFlags *)*pending)->b67 = ((struct SpriteFlags *)*current)->b67;
+        swap = *pending;
+        *pending = *current;
+        *current = swap;
     }
     else
     {
-        obj_load_record(*(void **)(obj + 0x294), 3, 0, 0, (u32)*pslot);
+        /* *pending is NULL here: the last argument is 0 */
+        obj_load_record(*(void **)(obj + 0x294), 3, 0, 0, (u32)*pending);
     }
 }
 
@@ -1072,33 +1122,42 @@ void obj_commit_sprite(u8 *obj);
 extern const u8 gObjAnimOffsetTable[];
 extern u8 gObjAnimWaveTable[]; /* not const: its frames are tested as plain bytes */
 
-void obj_step_anim(u8 *obj, u32 index)
+/*
+ * Per-frame animation of a hit block. While it's hittable (bit 0 of its flags at 0x33C), 0x23B
+ * cycles through gObjAnimOffsetTable (every 8 frames of `frame`) when idle (step bits 1-8 of 0x33E
+ * all set), or follows gObjAnimWaveTable one step a frame after a hit; when the wave reaches 0 the
+ * block goes idle again, and a block with bit 2 set whose timer at 0x342 has run out is spent
+ * (obj_commit_sprite). The timer counts down every frame. A block that isn't hittable but has
+ * bit 2 set reloads its kind's animation (flag bits 3-5, gSpriteSelectAnimTable) until its hit
+ * flag is set.
+ */
+void obj_step_anim(u8 *obj, u32 frame)
 {
-    struct ObjInitS *o;
-    u8 *flags;
+    struct ObjInitS *block;
+    u8 *blockFlags;
     u16 *mask;
-    struct AnimStepP *bits;
-    s16 *counter;
+    struct AnimStepP *anim;
+    s16 *timer;
 
-    o = (struct ObjInitS *)obj;
-    flags = obj + 0x33C;
-    if (*flags & 1)
+    block = (struct ObjInitS *)obj;
+    blockFlags = obj + 0x33C;
+    if (*blockFlags & 1)
     {
         mask = (u16 *)(obj + 0x33E);
-        bits = (struct AnimStepP *)mask;
+        anim = (struct AnimStepP *)mask;
         /* step a running animation wave, or show the offset frame when idle */
         if ((*mask & 0x1FE) == 0x1FE)
         {
-            o->unk23B = gObjAnimOffsetTable[(index >> 3) & 3];
+            block->unk23B = gObjAnimOffsetTable[(frame >> 3) & 3];
         }
-        else if (bits->step >= 0)
+        else if (anim->step >= 0)
         {
-            bits->step++;
-            o->unk23B = gObjAnimWaveTable[bits->step];
-            if (o->unk23B == 0)
+            anim->step++;
+            block->unk23B = gObjAnimWaveTable[anim->step];
+            if (block->unk23B == 0)
             {
                 *mask |= 0x1FE;
-                if (*flags & 4)
+                if (*blockFlags & 4)
                 {
                     if (*(s16 *)(obj + 0x342) == 0)
                     {
@@ -1107,17 +1166,17 @@ void obj_step_anim(u8 *obj, u32 index)
                 }
             }
         }
-        counter = (s16 *)(obj + 0x342);
-        if (*counter > 0)
+        timer = (s16 *)(obj + 0x342);
+        if (*timer > 0)
         {
-            (*counter)--;
+            (*timer)--;
         }
     }
-    else if (*flags & 4)
+    else if (*blockFlags & 4)
     {
-        if (test_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(*(u16 *)(obj + 0x344) + 0x1360)) == 0)
+        if (test_flag(GAME_FLAGS, 0, BLOCK_HIT_FLAG(*(u16 *)(obj + 0x344))) == 0)
         {
-            obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)*flags << 26) >> 29) * 2 + 1], 0, 0, 0);
+            obj_load_record(*(void **)(obj + 0x294), gSpriteSelectAnimTable[(((u32)*blockFlags << 26) >> 29) * 2 + 1], 0, 0, 0);
         }
     }
 }
@@ -1148,9 +1207,12 @@ void script_init_obj_refresh_sprite(u8 *obj)
     o->unk23D = 7;
 }
 
-u32 obj_init_flags(u8 *obj, u32 a, u32 b)
+/* Constructs an object of class gObjFlagsClass: the base object (obj_init, loading definition def
+ * unless it is -1), then clears most of the object flags at 0x20C-0x20F (0x20E bit 2 set) and the
+ * 4-bit field unk214_13 (which goes to bits 12-15 of the sprite's unkE). Returns obj. */
+u32 obj_init_flags(u8 *obj, u32 def, u32 index)
 {
-    obj_init(obj, a, b);
+    obj_init(obj, def, index);
     ((struct ChildObj *)obj)->vtable = (struct ObjVtable *)gObjFlagsClass;
     ((struct Bits8 *)(obj + 0x20C))->b5 = 0;
     ((struct Bits8 *)(obj + 0x20C))->b6 = 0;
@@ -1212,37 +1274,40 @@ void sub_080514D4(void)
 {
 }
 
-void obj_random_pick(u32 r0, u8 *obj, u32 *state)
+/* Wander state: starts a move in a random free direction (wander_to_edge), a random one of the two
+ * move distances at +0x130 at a random one of the four speeds at +0x100, faces the object along its
+ * velocity (+0x242/+0x244; 0xFF when still), sets walk mode 3 and continues in obj_random_enter. */
+void obj_random_pick(u32 owner, u8 *obj, u32 *state)
 {
-    u32 entry;
-    u8 *table;
-    u32 off;
-    u8 *base;
-    s16 value;
-    u16 shade;
-    u16 *pa;
-    u16 *pb;
-    u16 xa;
+    u32 dist;
+    u8 *speeds;
+    u32 distOfs;
+    u8 *dists;
+    s16 speed;
+    u16 heading;
+    u16 *vx;
+    u16 *vy;
+    u16 vxRaw;
 
-    /* wander with a random speed and distance from the object's tables */
-    table = obj + 0x100;
-    off = rand_below(2, mt19937_next()) << 1;
-    base = obj + 0x130;
-    entry = *(u16 *)(base + off);
-    value = *(s16 *)(table + (rand_below(4, mt19937_next()) << 1));
-    wander_to_edge(obj, entry, value);
-    pa = (u16 *)(obj + 0x242);
-    pb = (u16 *)(obj + 0x244);
-    xa = *pa;
-    if (xa | *pb)
+    speeds = obj + 0x100;
+    distOfs = rand_below(2, mt19937_next()) << 1;
+    dists = obj + 0x130;
+    dist = *(u16 *)(dists + distOfs);
+    speed = *(s16 *)(speeds + (rand_below(4, mt19937_next()) << 1));
+    wander_to_edge(obj, dist, speed);
+    vx = (u16 *)(obj + 0x242);
+    vy = (u16 *)(obj + 0x244);
+    vxRaw = *vx;
+    if (vxRaw | *vy)
     {
-        shade = ((u16)angle_of_vector16(*(s16 *)(obj + 0x242), *(s16 *)(obj + 0x244)) + 0x10) >> 8;
+        /* 256-step heading, rounded */
+        heading = ((u16)angle_of_vector16(*(s16 *)(obj + 0x242), *(s16 *)(obj + 0x244)) + 0x10) >> 8;
     }
     else
     {
-        shade = 0xFF;
+        heading = 0xFF;
     }
-    obj[2] = shade;
+    obj[2] = heading;
     ((struct Mode3 *)(obj + 0x214))->mode = 3;
     *state = (u32)obj_random_enter;
 }
@@ -1304,168 +1369,174 @@ extern u8 gWindowCreateBlockTag[];
 extern u8 gWindowCreateBlock2Tag[];
 extern u8 gWindowCreateSpriteTag[];
 extern u16 gWindowSizeTable[];
-struct WinObj *window_create(struct WinObj *w, u8 kind, u32 a, u16 id)
+/* Sets up the map screen task: blanks the display, looks up the map layout and marker
+   position for this id, then creates its sub-task, the screen fader and the map object. */
+struct MapWindow *window_create(struct MapWindow *window, u8 kind, u32 taskData, u16 id)
 {
     u16 *entry;
     u8 *block;
-    u8 *menu;
+    u8 *fader;
     u8 *map;
-    u8 *base;
+    u8 *sys;
 
-    task_insert(w, kind, a);
-    *(u32 *)((u8 *)w + 0x18) = (u32)gWindowStateClass;
-    *(u16 *)0x02000000 = 0;
-    base = gSys;
-    *(u32 *)(base + 0x884) = 0;
-    w->unk2A = id;
-    w->unk24 = 0x200;
-    w->unk1C = 0;
-    w->unk1E = 0;
-    w->unk20 = 0;
-    w->unk22 = 0;
-    w->unk26 = 0x78;
-    w->unk28 = 0x50;
+    task_insert(window, kind, taskData);
+    ((struct WinHead *)window)->class18 = (u32)gWindowStateClass;
+    *(u16 *)0x02000000 = 0; /* display control: everything off */
+    sys = gSys;
+    *(u32 *)(sys + 0x884) = 0; /* no palettes to reload */
+    window->id = id;
+    window->mapLayout = 0x200;
+    window->scrollX = 0;
+    window->scrollY = 0;
+    window->mapWidth = 0;
+    window->mapHeight = 0;
+    window->markerX = SCREEN_WIDTH / 2;
+    window->markerY = SCREEN_HEIGHT / 2;
+    /* gWindowSizeTable: {id, layout, marker x, marker y} records, ended by 0xFFFF */
     for (entry = gWindowSizeTable; entry[0] != 0xFFFF; entry += 4)
     {
         if (entry[0] == id)
         {
-            w->unk24 = entry[1];
-            w->unk26 = entry[2];
-            w->unk28 = entry[3];
+            window->mapLayout = entry[1];
+            window->markerX = entry[2];
+            window->markerY = entry[3];
             break;
         }
     }
     block = heap_alloc2(0x1C, 0, gWindowCreateBlockTag, 1);
     task_insert(block, 8, (u32)gWindowCreateBlockTag);
-    *(u32 *)(block + 0x18) = (u32)gWindowSubBlockClass;
-    w->unk40 = block;
-    *(struct WinObj **)(block + 0x14) = w;
+    ((struct WinHead *)block)->class18 = (u32)gWindowSubBlockClass;
+    window->block = block;
+    *(struct MapWindow **)(block + 0x14) = window;
     set_flag_2_2(block);
-    menu = menu_obj_init(heap_alloc2(0x5C, 0, gWindowCreateBlock2Tag, 0), 8, gWindowCreateBlock2Tag, 8);
-    w->unk48 = menu;
-    *(struct WinObj **)(menu + 0x14) = w;
-    set_flag_2_2(menu);
-    map = map_obj_start(heap_alloc2(0x59C, 0, gWindowCreateSpriteTag, 0), 8, gWindowCreateSpriteTag, w->unk24, w->unk1C, w->unk1E, w->unk48);
-    w->unk44 = map;
-    *(struct WinObj **)(map + 0x14) = w;
+    fader = menu_obj_init(heap_alloc2(0x5C, 0, gWindowCreateBlock2Tag, 0), 8, gWindowCreateBlock2Tag, 8);
+    window->fader = fader;
+    *(struct MapWindow **)(fader + 0x14) = window;
+    set_flag_2_2(fader);
+    map = map_obj_start(heap_alloc2(0x59C, 0, gWindowCreateSpriteTag, 0), 8, gWindowCreateSpriteTag,
+                        window->mapLayout, window->scrollX, window->scrollY, window->fader);
+    window->map = map;
+    *(struct MapWindow **)(map + 0x14) = window;
     init_obj_09a8(0x15C0, 0, 1, 0x80);
-    return w;
+    return window;
 }
 
 void scene_update_sprites(u8 *obj);
-void window_state_step(struct WinObj *w)
+/* Task of the map screen: once the map is loaded, creates the edge arrows and the marker,
+   scrolls so the marker is in the middle, fades in, scrolls with the d-pad until B is
+   pressed, fades out and frees everything. */
+void window_state_step(struct MapWindow *window)
 {
-    u32 *slot;
-    u16 *px;
-    u16 *py;
+    u32 *arrows;
+    u16 *width;
+    u16 *height;
     s32 i;
-    u32 idx;
-    u8 *base;
-    struct FramePos *pts;
+    u32 dir;
+    u8 *sys;
+    struct FramePos *points;
 
-    switch (((struct WinHead *)w)->state)
+    switch (((struct WinHead *)window)->state)
     {
     case 0:
-        /* create the edge sprites and the frame once the map is ready */
-        if (*(s16 *)(w->unk44 + 0x1C) != 0)
+        if (*(s16 *)(window->map + 0x1C) != 0) /* map still loading */
         {
             break;
         }
         i = 0;
-        px = &w->unk20;
-        py = &w->unk22;
-        slot = &w->sub2C;
-        pts = gWindowSpritePoints;
+        width = &window->mapWidth;
+        height = &window->mapHeight;
+        arrows = &window->arrowUp;
+        points = gWindowSpritePoints;
         for (; i < 4; i++)
         {
-            slot[i] = (u32)create_obj_de4(0, 0x80FE, 1, -1, -1, -1, -1);
-            obj_load_record((void *)slot[i], i, -1, 0, 0);
-            ((struct FramePos *)slot[i])->x = pts[i].x;
-            ((struct FramePos *)slot[i])->y = pts[i].y;
+            arrows[i] = (u32)create_obj_de4(0, 0x80FE, 1, -1, -1, -1, -1);
+            obj_load_record((void *)arrows[i], i, -1, 0, 0);
+            ((struct FramePos *)arrows[i])->x = points[i].x;
+            ((struct FramePos *)arrows[i])->y = points[i].y;
         }
-        w->frame3C = create_obj_de4(0, 0x80FD, 1, -1, -1, -1, -1);
-        obj_load_record(w->frame3C, 0, -1, 0, 0);
-        ((struct SpriteFlags *)w->frame3C)->lo2 = 2;
-        set_flags_2_3(w->unk40);
-        copy_track_limits(w->unk44, 2, px, py);
-        ((struct WinHead *)w)->state = 1;
+        window->marker = create_obj_de4(0, 0x80FD, 1, -1, -1, -1, -1);
+        obj_load_record(window->marker, 0, -1, 0, 0);
+        ((struct SpriteFlags *)window->marker)->lo2 = 2;
+        set_flags_2_3(window->block);
+        copy_track_limits(window->map, 2, width, height);
+        ((struct WinHead *)window)->state = 1;
         break;
     case 1:
         if (gUnk_03000C80[0] != 0)
         {
             break;
         }
-        set_flags_2_3(w->unk48);
-        sprite_update_cd0((u32)w->frame3C);
-        w->unk1C = w->unk26 - 0x78;
-        w->unk1E = w->unk28 - 0x58;
-        scroll_clamp(w);
-        scene_update_sprites((u8 *)w);
-        ((struct WinHead *)w)->state = 2;
+        set_flags_2_3(window->fader);
+        sprite_update_cd0((u32)window->marker);
+        window->scrollX = window->markerX - 0x78;
+        window->scrollY = window->markerY - 0x58;
+        scroll_clamp(window);
+        scene_update_sprites((u8 *)window);
+        ((struct WinHead *)window)->state = 2;
         break;
     case 2:
-        if (w->frame3C[0x13] & 3)
+        if (window->marker[0x13] & 3)
         {
             break;
         }
-        base = gSys;
-        *(u32 *)(base + 0x884) = -1;
-        sub_08115F54(w->unk48, 0, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
-        *(u16 *)0x02000000 = 0x1E40;
-        ((struct WinHead *)w)->state = 3;
+        sys = gSys;
+        *(u32 *)(sys + 0x884) = -1; /* reload every palette */
+        sub_08115F54(window->fader, 0, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
+        *(u16 *)0x02000000 = DISPCNT_OBJ_ON | DISPCNT_BG3_ON | DISPCNT_BG2_ON | DISPCNT_BG1_ON
+                           | DISPCNT_OBJ_1D_MAP;
+        ((struct WinHead *)window)->state = 3;
         break;
     case 3:
-        if (sub_obj_running(w->unk48) == 0)
+        if (sub_obj_running(window->fader) == 0) /* faded in */
         {
-            ((struct WinHead *)w)->state = 4;
+            ((struct WinHead *)window)->state = 4;
         }
         break;
     case 4:
-        /* scroll with the direction keys until B closes the window */
-        if (((struct SysKeys28 *)gSys)->pressed & 2)
+        if (((struct SysKeys28 *)gSys)->pressed & B_BUTTON)
         {
-            sub_08115F54(w->unk48, 4, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
+            sub_08115F54(window->fader, 4, 0, 0x10, 0xFFFF, 0xFFFF, 0, 0);
             set_slot_value(0x61, -1);
-            ((struct WinHead *)w)->state = 5;
+            ((struct WinHead *)window)->state = 5;
         }
         else
         {
-            idx = (((struct SysKeys28 *)gSys)->held & 0xF0) >> 4;
-            w->unk1C += gWindowScrollTable[idx * 2];
-            w->unk1E += gWindowScrollTable[idx * 2 + 1];
+            /* gWindowScrollTable: an (x, y) step for each combination of d-pad keys */
+            dir = (((struct SysKeys28 *)gSys)->held & (DPAD_RIGHT | DPAD_LEFT | DPAD_UP | DPAD_DOWN)) >> 4;
+            window->scrollX += gWindowScrollTable[dir * 2];
+            window->scrollY += gWindowScrollTable[dir * 2 + 1];
         }
-        scroll_clamp(w);
-        scene_update_sprites((u8 *)w);
+        scroll_clamp(window);
+        scene_update_sprites((u8 *)window);
         break;
     case 5:
-        /* wait for the closing animation, then free the window */
-        if (sub_obj_running(w->unk48) != 0)
+        if (sub_obj_running(window->fader) != 0) /* still fading out */
         {
             break;
         }
-        set_flags_2_3(((struct WinHead *)w)->block14);
-        if (w != NULL)
+        set_flags_2_3(((struct WinHead *)window)->block14);
+        if (window != NULL)
         {
-            ((struct WinHead *)w)->class18 = (u32)gWindowStateClass;
+            ((struct WinHead *)window)->class18 = (u32)gWindowStateClass;
             run_pending_obj_callbacks();
-            if (w->unk44 != NULL)
+            if (window->map != NULL)
             {
-                obj_release_parts(w->unk44, 3);
+                obj_release_parts(window->map, 3);
             }
-            if (w->unk40 != NULL)
+            if (window->block != NULL)
             {
-                *(u32 *)(w->unk40 + 0x18) = (u32)gWindowSubBlockClass;
-                task_remove(w->unk40, 3);
+                *(u32 *)(window->block + 0x18) = (u32)gWindowSubBlockClass;
+                task_remove(window->block, 3);
             }
-            if (w->unk48 != NULL)
+            if (window->fader != NULL)
             {
-                menu_obj_free(w->unk48, 3);
+                menu_obj_free(window->fader, 3);
             }
-            task_remove(w, 3);
+            task_remove(window, 3);
         }
         break;
     }
-    if ((u8)(((struct WinHead *)w)->state - 3) <= 2)
+    if ((u8)(((struct WinHead *)window)->state - 3) <= 2)
     {
         update_obj_list();
     }
@@ -1473,42 +1544,43 @@ void window_state_step(struct WinObj *w)
 
 void scene_update_sprites(u8 *obj)
 {
-    struct WinObj *w;
+    struct MapWindow *w;
 
-    w = (struct WinObj *)obj;
-    ((struct FramePos *)w->frame3C)->x = w->unk26 - w->unk1C;
-    ((struct FramePos *)w->frame3C)->y = w->unk28 - w->unk1E;
-    if (w->unk1E == 0)
+    /* marker follows the scroll; each edge arrow shows only while there is map beyond it */
+    w = (struct MapWindow *)obj;
+    ((struct FramePos *)w->marker)->x = w->markerX - w->scrollX;
+    ((struct FramePos *)w->marker)->y = w->markerY - w->scrollY;
+    if (w->scrollY == 0)
     {
-        obj_release_slots(w->sub2C);
+        obj_release_slots(w->arrowUp);
     }
     else
     {
-        sprite_update_cd0(w->sub2C);
+        sprite_update_cd0(w->arrowUp);
     }
-    if (w->unk1C == w->unk20 - 0xF0)
+    if (w->scrollX == w->mapWidth - SCREEN_WIDTH)
     {
-        obj_release_slots(w->sub30);
-    }
-    else
-    {
-        sprite_update_cd0(w->sub30);
-    }
-    if (w->unk1E == w->unk22 - 0xA0)
-    {
-        obj_release_slots(w->sub34);
+        obj_release_slots(w->arrowRight);
     }
     else
     {
-        sprite_update_cd0(w->sub34);
+        sprite_update_cd0(w->arrowRight);
     }
-    if (w->unk1C == 0)
+    if (w->scrollY == w->mapHeight - SCREEN_HEIGHT)
     {
-        obj_release_slots(w->sub38);
+        obj_release_slots(w->arrowDown);
     }
     else
     {
-        sprite_update_cd0(w->sub38);
+        sprite_update_cd0(w->arrowDown);
+    }
+    if (w->scrollX == 0)
+    {
+        obj_release_slots(w->arrowLeft);
+    }
+    else
+    {
+        sprite_update_cd0(w->arrowLeft);
     }
 }
 

@@ -36,6 +36,11 @@ struct Lo5Bits
     u8 hi3 : 3;
 };
 
+/* gSys offsets: two 1 KiB OAM buffers, and the byte whose bit 3 picks the one being filled */
+#define SYS_OAM_BUFFER 0x80
+#define SYS_OAM_BANK 0x888
+
+/* One OAM affine matrix (32 bytes): its four parameters sit in attr3 of four OAM entries. */
 struct OamAffineParams
 {
     u8 filler0[0x6];
@@ -462,27 +467,31 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_08062ADC/chain_metric.s", s32 chain_metric(struct ActorObj *obj))
 
+/* Chain state: the chain grows by 0x280 a frame; once twice its length reaches chain_metric, it
+ * spawns object 0x40D9 at the part's target (action 1, culled by obj_chain_cull after 6 frames,
+ * taking the part's owner and flags), keeps it as its child and goes on to chain_link_end
+ * with a 0x10-frame timer. */
 void chain_link_step(struct ActorObj *obj)
 {
     struct ActorPart *part;
-    struct ActorObj *tpl;
+    struct ActorObj *partObj;
     struct ActorObj *child;
-    s32 length;
+    s32 metric;
 
     obj->dx += 0x280;
-    length = chain_metric(obj);
-    if (((s16)obj->dx << 1) < length)
+    metric = chain_metric(obj);
+    if (((s16)obj->dx << 1) < metric)
         return;
     part = obj->part;
-    tpl = (struct ActorObj *)((u8 *)part + 8);
+    partObj = &part->sub8;
     child = obj_spawn(part, 0x40D9, part->sub8.targetX / 0x100, part->sub8.targetY / 0x100,
                       part->sub8.targetH / 0x100, 0, 1);
     sprite_set_action(child, 1, 0, 0);
     child->tag = 0xFF;
     ((struct Flags79Bit0 *)&child->flags79)->bit0 = 1;
     ((struct ActionBits *)&child->unk76)->mode = 3;
-    child->owner = tpl->owner;
-    child->unk6C = tpl->unk6C;
+    child->owner = partObj->owner;
+    child->unk6C = partObj->unk6C;
     obj_list_push_arg(child, 0);
     copy_part_flags(child, part);
     ((struct PoseBits12 *)&child->pose->flags)->mode = 0;
@@ -493,31 +502,37 @@ void chain_link_step(struct ActorObj *obj)
     obj->state = chain_link_end;
 }
 
+/* Last chain state: counts the timer down, setting the chain's OAM affine matrix (number
+ * desc->order, in the OAM buffer being filled) to the part's direction (dx, dy) rotated and
+ * scaled by 18 / timer, so the link shrinks away; at 1 it clears the part's timer and releases
+ * the object. */
 void chain_link_end(struct ActorObj *obj)
 {
-    u8 *base;
-    u8 *oamBase;
-    u32 bank;
-    u32 index;
-    u8 *oam;
-    s32 dirX;
-    s32 dirY;
+    u8 *sys;
+    u8 *oamBuffer;
+    u32 bankOffset;
+    u32 matrixOffset;
+    u8 *matrix;
+    s32 cosScaled;
+    s32 sinScaled;
 
     chain_metric(obj);
     obj->timer--;
     if ((s16)obj->timer <= 0x12)
     {
-        dirX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dx * 18, (s16)obj->timer);
-        dirY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dy * 18, (s16)obj->timer);
-        base = gSys;
-        bank = (((u32)*(base + 0x888) << 28) >> 31) << 10;
-        index = ((u32)obj->desc->order << 27) >> 22;
-        oamBase = base + 0x80;
-        oam = (u8 *)(bank + (index + (u32)oamBase));
-        ((struct OamAffineParams *)oam)->pa = dirX;
-        ((struct OamAffineParams *)oam)->pb = dirY;
-        ((struct OamAffineParams *)oam)->pc = -dirY;
-        ((struct OamAffineParams *)oam)->pd = dirX;
+        cosScaled = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dx * 18, (s16)obj->timer);
+        sinScaled = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->part->sub8.dy * 18, (s16)obj->timer);
+        sys = gSys;
+        /* bit 3 of the bank byte: the second 1 KiB buffer */
+        bankOffset = (((u32)*(sys + SYS_OAM_BANK) << 28) >> 31) << 10;
+        /* the low 5 bits of order, times 32 bytes a matrix */
+        matrixOffset = ((u32)obj->desc->order << 27) >> 22;
+        oamBuffer = sys + SYS_OAM_BUFFER;
+        matrix = (u8 *)(bankOffset + (matrixOffset + (u32)oamBuffer));
+        ((struct OamAffineParams *)matrix)->pa = cosScaled;
+        ((struct OamAffineParams *)matrix)->pb = sinScaled;
+        ((struct OamAffineParams *)matrix)->pc = -sinScaled;
+        ((struct OamAffineParams *)matrix)->pd = cosScaled;
         if ((s16)obj->timer == 1)
         {
             obj->part->sub8.timer = 0;

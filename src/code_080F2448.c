@@ -50,6 +50,18 @@ u32 cmd_reset_obj_part(u8 *obj, u8 *state, u32 *params, u8 idx);
 void alloc_code_entry(u32 code);
 u32 create_obj_de4(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
 
+/* The task owner_init_state sets up and free_task_state tears down. */
+struct ObjTask
+{
+    u8 filler0[0x18];
+    const u8 *handler;    /* gObjTaskHandler while it runs */
+    u8 filler1C[0x20 - 0x1C];
+    u32 parts[2];         /* objects freed with release_obj_parts */
+    u8 **slotTable;       /* a block whose first word is a block of its own */
+    u8 *state;            /* the 0x17A0-byte state owner_init_state allocates */
+    u32 unk30;
+};
+
 struct ObjFlags12
 {
     u8 bit0 : 1;
@@ -58,16 +70,19 @@ struct ObjFlags12
     u8 rest : 4;
 } __attribute__((packed));
 
-NONMATCH("asm/code_080F2448/cmd_set_global_flag.s", u32 cmd_set_global_flag(u32 unused0, u32 unused1, u8 *cmd))
+u32 cmd_set_global_flag(u32 unused0, u32 unused1, u8 *cmd)
 {
     u8 *flag = gEffectState + 0x55A;
-    u32 one = 1;
-    u32 bit = *cmd & one;
+    register u8 mask asm("r0") = 1;
+    u32 bit = mask & *cmd;
+    u32 old = *flag;
+    register s32 clr asm("r0") = ~1;
 
-    *flag = (*flag & -2) | bit;
+    clr &= old;
+    clr |= bit;
+    *flag = clr;
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_stop_move(u8 *owner, u32 unused, u32 *cmd)
 {
@@ -133,38 +148,26 @@ u32 cmd_find_slot(u8 *owner, u8 *obj_ref, u32 *out, u32 *rec, u32 kind_arg, u32 
     return 1;
 }
 
-NONMATCH("asm/code_080F2448/cmd_set_clear_flag4.s", u32 cmd_set_clear_flag4(u8 *owner, u32 unused, u32 *cmd))
+u32 cmd_set_clear_flag4(u8 *owner, u32 unused, u32 *cmd)
 {
-    u16 *flags;
-    u32 four;
-    u32 mask;
-    u32 cur;
-    u16 v;
     u32 index = cmd[1];
     u32 list = *(u32 *)(owner + 0x14);
-    u8 *obj = *(u8 **)((index << 2) + list + 0x28);
-    u32 mode = cmd[0];
-    switch (mode)
+    register u8 *obj asm("r0") = *(u8 **)(list + 4 * index + 0x28);
+    u16 *flags;
+
+    switch (cmd[0])
     {
     case 0:
         flags = (u16 *)(obj + 0xF8);
-        cur = *flags;
-        four = 4;
-        v = cur | four;
+        ((struct { u16 v; } *)flags)->v |= 4;
         break;
     case 1:
         flags = (u16 *)(obj + 0xF8);
-        cur = *flags;
-        mask = 0xFFFB;
-        v = cur & mask;
+        *flags &= 0xFFFB;
         break;
-    default:
-        return 1;
     }
-    *flags = v;
     return 1;
 }
-END_NONMATCH
 
 u32 unknown_thumb_080f2570(u32 unused, u8 *obj)
 {
@@ -287,130 +290,142 @@ void *init_obj_slot_table(u8 **out)
 
 ASM_FUNC("asm/code_080F2448/cmd_spawn_obj.s", void cmd_spawn_obj(void))
 
-u8 *owner_init_state(u8 *owner, u8 prio, u32 data)
+/* Sets up an object task (the counterpart of free_task_state): inserts it into the task list, gives
+   it gObjTaskHandler and a zeroed 0x17A0-byte state block, points the text tables at
+   gUnk_03000FC0 + 0x55C at their second set and clears its two object parts and its slot table. */
+struct ObjTask *owner_init_state(struct ObjTask *task, u8 prio, u32 data)
 {
     u8 *state;
     u32 size;
-    u32 *slot;
-    u8 *base;
+    u32 *part;
+    u8 *text;
     s16 i;
 
-    task_insert(owner, prio, data);
-    *(const u8 **)(owner + 0x18) = gObjTaskHandler;
+    task_insert(task, prio, data);
+    task->handler = gObjTaskHandler;
     size = 0x17A0;
     state = heap_alloc_raw(1, size, gOwnerStateTag);
-    *(u8 **)(owner + 0x2C) = state;
-    ((void (*)(u32, void *, u32))gMemRoutines)(0, state, size);
-    base = gUnk_03000FC0;
-    *(u32 *)(base + 0x55C) = gTextExtraFlagPtrs[1];
-    *(u32 *)(base + 0x560) = gTextCountPtrs[1];
-    *(u32 *)(base + 0x564) = gTextKindPtrs[1];
-    *(u32 *)(base + 0x568) = gTextModePtrs[1];
-    *(u32 *)(base + 0x56C) = gTextHalfPtrs[1];
+    task->state = state;
+    MEM_ROUTINE(void (*)(u32, void *, u32), iwram_fill)(0, state, size);
+    text = gUnk_03000FC0;
+    *(u32 *)(text + 0x55C) = gTextExtraFlagPtrs[1];
+    *(u32 *)(text + 0x560) = gTextCountPtrs[1];
+    *(u32 *)(text + 0x564) = gTextKindPtrs[1];
+    *(u32 *)(text + 0x568) = gTextModePtrs[1];
+    *(u32 *)(text + 0x56C) = gTextHalfPtrs[1];
     i = 2;
-    slot = (u32 *)(owner + 0x20);
+    part = task->parts;
     for (; i > 0; i--)
     {
-        *slot = 0;
-        slot++;
+        *part = 0;
+        part++;
     }
-    *(u32 *)(owner + 0x30) = 0;
-    *(u32 *)(owner + 0x28) = 0;
-    return owner;
+    task->unk30 = 0;
+    task->slotTable = NULL;
+    return task;
 }
 
-void free_task_state(u8 *task, u32 arg)
+/* Tears down a task set up by owner_init_state: releases its two object parts, frees its slot table
+   and its state block, points the text tables at gUnk_03000FC0 + 0x55C back at their first set
+   (owner_init_state picks the second) and removes the task (task_remove with `kind`). */
+void free_task_state(struct ObjTask *task, u32 kind)
 {
-    u8 *block;
-    u8 *base;
-    u32 *slot;
+    u8 **table;
+    u8 *text;
+    u32 *part;
     s16 i;
 
-    *(const u8 **)(task + 0x18) = gObjTaskHandler;
+    task->handler = gObjTaskHandler;
     i = 2;
-    slot = (u32 *)(task + 0x20);
+    part = task->parts;
     for (; i > 0; i--)
     {
-        if (*slot != 0)
+        if (*part != 0)
         {
-            release_obj_parts((u8 *)*slot, 3);
+            release_obj_parts((u8 *)*part, 3);
         }
-        *slot = 0;
-        slot++;
+        *part = 0;
+        part++;
     }
-    block = *(u8 **)(task + 0x28);
-    if (block != 0)
+    table = task->slotTable;
+    if (table != NULL)
     {
-        heap_free(*(u8 **)block);
-        heap_free_b(block);
-        *(u32 *)(task + 0x28) = 0;
+        heap_free(*table);
+        heap_free_b(table);
+        task->slotTable = NULL;
     }
-    if (*(u8 **)(task + 0x2C) != 0)
+    if (task->state != NULL)
     {
-        heap_free(*(u8 **)(task + 0x2C));
-        *(u32 *)(task + 0x2C) = 0;
+        heap_free(task->state);
+        task->state = NULL;
     }
-    *(u32 *)(task + 0x30) = 0;
-    base = gUnk_03000FC0;
-    *(u32 *)(base + 0x55C) = gTextExtraFlagPtrs[0];
-    *(u32 *)(base + 0x560) = gTextCountPtrs[0];
-    *(u32 *)(base + 0x564) = gTextKindPtrs[0];
-    *(u32 *)(base + 0x568) = gTextModePtrs[0];
-    *(u32 *)(base + 0x56C) = gTextHalfPtrs[0];
-    task_remove(task, arg);
+    task->unk30 = 0;
+    text = gUnk_03000FC0;
+    *(u32 *)(text + 0x55C) = gTextExtraFlagPtrs[0];
+    *(u32 *)(text + 0x560) = gTextCountPtrs[0];
+    *(u32 *)(text + 0x564) = gTextKindPtrs[0];
+    *(u32 *)(text + 0x568) = gTextModePtrs[0];
+    *(u32 *)(text + 0x56C) = gTextHalfPtrs[0];
+    task_remove(task, kind);
 }
 
 ASM_FUNC("asm/code_080F2448/task_update.s", void task_update(void))
 
-void task_slot_write(u8 *task, u8 slot_arg, u32 arg2)
+/* Starts script `script` on the task's part `slot` (cmd_reset_obj_part, mode 1) like a call: if the
+   part is running one (flags at +0xA0) and has no return saved yet (+0x8 == 0), its script start and
+   cursor (+0x0, +0x4), flags and key (+0xA4) are kept as the return (+0x8, +0xC, +0xA2, +0xA5), and
+   its context (+0x10/+0x14, +0x98/+0x9C, +0xA6, the 0x20 bytes at +0x58) is copied to the save area
+   (+0xAC/+0xB0, +0xF4/+0xF8, +0xFC, +0xB4). A return already saved stays. */
+void task_slot_write(u8 *task, u8 slot, u32 script)
 {
-    u8 *slot_base;
-    u8 *rec;
-    u32 args[2];
-    u32 val_a;
-    u32 val_b;
-    u8 byte_c;
-    u32 byte_1a6;
-    u16 count;
+    u8 *base; /* task state + slot * 0x100: part records start at +0x100 */
+    u8 *part;
+    u32 params[2];
+    u32 retStart;
+    u32 retCursor;
+    u8 retKey;
+    u32 savedByte;
+    u16 retFlags;
 
-    slot_base = *(u8 **)(task + 0x2C) + (slot_arg << 8);
-    rec = slot_base + 0x100;
-    val_b = 1;
-    args[0] = val_b;
-    args[1] = arg2;
-    count = *(u16 *)(slot_base + 0x1A0);
-    if (count != 0)
+    base = *(u8 **)(task + 0x2C) + (slot << 8);
+    part = base + 0x100;
+    retCursor = 1;
+    params[0] = retCursor; /* mode 1: one part */
+    params[1] = script;
+    retFlags = *(u16 *)(base + 0x1A0);
+    if (retFlags != 0)
     {
-        if (*(u32 *)(rec + 8) == 0)
+        if (*(u32 *)(part + 8) == 0)
         {
-            val_a = *(u32 *)rec;
-            val_b = *(u32 *)(rec + 4);
-            byte_c = slot_base[0x1A4];
-            *(u32 *)(slot_base + 0x1AC) = *(u32 *)(rec + 0x10);
-            *(u32 *)(slot_base + 0x1B0) = *(u32 *)(rec + 0x14);
-            *(u32 *)(slot_base + 0x1F4) = *(u32 *)(slot_base + 0x198);
-            *(u32 *)(slot_base + 0x1F8) = *(u32 *)(slot_base + 0x19C);
-            byte_1a6 = slot_base[0x1A6];
-            slot_base[0x1FC] = byte_1a6;
-            cpu_set(slot_base + 0x158, slot_base + 0x1B4, 0x20);
+            retStart = *(u32 *)part;
+            retCursor = *(u32 *)(part + 4);
+            retKey = base[0x1A4];
+            *(u32 *)(base + 0x1AC) = *(u32 *)(part + 0x10);
+            *(u32 *)(base + 0x1B0) = *(u32 *)(part + 0x14);
+            *(u32 *)(base + 0x1F4) = *(u32 *)(base + 0x198);
+            *(u32 *)(base + 0x1F8) = *(u32 *)(base + 0x19C);
+            savedByte = base[0x1A6];
+            base[0x1FC] = savedByte;
+            cpu_set(base + 0x158, base + 0x1B4, 0x20);
         }
         else
         {
-            val_a = *(u32 *)(rec + 8);
-            val_b = *(u32 *)(rec + 0xC);
-            byte_c = slot_base[0x1A5];
-            count = *(u16 *)(slot_base + 0x1A2);
+            retStart = *(u32 *)(part + 8);
+            retCursor = *(u32 *)(part + 0xC);
+            retKey = base[0x1A5];
+            retFlags = *(u16 *)(base + 0x1A2);
         }
-        *(u16 *)(rec + 0xA0) = 0;
-        cmd_reset_obj_part(task, *(u8 **)(task + 0x2C), args, slot_arg);
-        *(u32 *)(rec + 8) = val_a;
-        *(u32 *)(rec + 0xC) = val_b;
-        *(u16 *)(rec + 0xA2) = count;
-        rec[0xA5] = byte_c;
+        /* idle, so cmd_reset_obj_part restarts it */
+        *(u16 *)(part + 0xA0) = 0;
+        cmd_reset_obj_part(task, *(u8 **)(task + 0x2C), params, slot);
+        *(u32 *)(part + 8) = retStart;
+        *(u32 *)(part + 0xC) = retCursor;
+        *(u16 *)(part + 0xA2) = retFlags;
+        part[0xA5] = retKey;
     }
     else
     {
-        cmd_reset_obj_part(task, *(u8 **)(task + 0x2C), args, slot_arg);
+        cmd_reset_obj_part(task, *(u8 **)(task + 0x2C), params, slot);
     }
 }
 
@@ -500,117 +515,182 @@ NONMATCH("asm/code_080F2448/task_tick_objects.s", void task_tick_objects(u8 *tas
 }
 END_NONMATCH
 
-NONMATCH("asm/code_080F2448/cmd_update_kind.s", void cmd_update_kind(u8 *owner, u8 *arg, u8 kind))
+void cmd_update_kind(u8 *owner, u8 *arg, u8 kind)
 {
     u8 *entry;
     u8 *obj;
-    s32 count;
-    u8 *table;
 
     if (kind <= 7)
-    {
-        table = gWorld + 0x58;
-        entry = *(u8 **)(table + (kind << 2)) + 8;
-    }
+        entry = ((struct { u8 filler0[0x58]; u8 *slots[8]; } *)gWorld)->slots[kind] + 8;
     else
-    {
-        entry = gWorkBuf + kind * 0xD0 + 0x300;
-    }
+        entry = (u8 *)((struct { u8 data[0xD0]; } *)(gWorkBuf + 0x980) + kind - 8);
     obj = *(u8 **)(entry + 8);
     if (obj != 0)
     {
-        if (((struct ObjFlags12 *)(obj + 0x12))->mode != 1)
+        struct ObjFlags12 *flags = (struct ObjFlags12 *)(obj + 0x12);
+
+        if (flags->mode != 1)
+            flags->mode = 1;
+        if (flags->bit3)
         {
-            ((struct ObjFlags12 *)(obj + 0x12))->mode = 1;
-        }
-        if (((struct ObjFlags12 *)(obj + 0x12))->bit3 != 0)
-        {
-            count = *(s32 *)(arg + 0x9C) - 1;
-            *(s32 *)(arg + 0x9C) = count;
-            if (count == 0)
+            if (--*(s32 *)(arg + 0x9C) == 0)
             {
                 slot_apply_anim(owner, kind);
                 *(u16 *)(arg + 0xA0) ^= 0x20;
             }
-            ((struct ObjFlags12 *)(obj + 0x12))->mode = 0;
+            flags->mode = 0;
         }
     }
 }
-END_NONMATCH
 
+/* Straight-line scroll of the world's map object, in gWorld. */
+#define WORLD_MAP_OBJ 0x24C          /* u32: the map object that is scrolled (and shaken) */
+#define WORLD_SCROLL_START_X 0x354   /* s16: where the scroll starts */
+#define WORLD_SCROLL_START_Y 0x356   /* s16 (y grows the other way: the target is start - dy) */
+#define WORLD_SCROLL_DX 0x358        /* s16: the whole move */
+#define WORLD_SCROLL_DY 0x35A        /* s16 */
+#define WORLD_SCROLL_SPEED 0x35C     /* u16, 12.4 fixed point: distance per frame */
+#define WORLD_SCROLL_PROGRESS 0x35E  /* u16, 12.4 fixed point: distance so far */
+
+/* Task flags at obj + 0xA0: 0x100 runs world_scroll_step every frame. */
+#define TASK_FLAG_SCROLL 0x100
+
+/* One frame of the world map object's straight-line scroll: the distance covered grows by the
+ * speed, and the target is put that far along (dx, -dy) from the start; at the end it is put on
+ * start + (dx, -dy), the scroll is reset and the task's scroll flags (0x100, 0x400) are cleared. */
 void world_scroll_step(u8 *owner, u8 *obj)
 {
     u32 zero;
-    u8 *acc;
+    u8 *progress;
     u8 *world;
-    s32 sx;
-    s32 sy;
-    s32 a;
-    s32 steps;
-    s32 len;
-    u32 target;
-    s32 px;
-    s32 py;
+    s32 dx;
+    s32 dy;
+    s32 covered;
+    s32 dist;
+    s32 length;
+    u32 mapObj;
+    s32 x;
+    s32 y;
     u16 sum;
 
-    sx = *(s16 *)(gWorld + 0x358);
-    sy = *(s16 *)(gWorld + 0x35A);
-    acc = gWorld + 0x35E;
-    sum = *(u16 *)acc + *(u16 *)(gWorld + 0x35C);
+    dx = *(s16 *)(gWorld + WORLD_SCROLL_DX);
+    dy = *(s16 *)(gWorld + WORLD_SCROLL_DY);
+    progress = gWorld + WORLD_SCROLL_PROGRESS;
+    sum = *(u16 *)progress + *(u16 *)(gWorld + WORLD_SCROLL_SPEED);
     zero = 0;
-    *(u16 *)acc = sum;
-    a = *(s16 *)acc;
-    if (a < 0)
+    *(u16 *)progress = sum;
+    covered = *(s16 *)progress;
+    if (covered < 0)
     {
-        a += 0xF;
+        covered += 0xF;
     }
-    steps = a >> 4;
-    len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(sx * sx + sy * sy);
-    if (steps < len)
+    dist = covered >> 4;
+    length = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+    if (dist < length)
     {
-        target = *(u32 *)(gWorld + 0x24C);
-        px = *(s16 *)(gWorld + 0x354) + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sx * steps, len);
-        py = *(s16 *)(gWorld + 0x356) - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(sy * steps, len);
-        set_obj_target(target, px, py);
+        mapObj = *(u32 *)(gWorld + WORLD_MAP_OBJ);
+        x = *(s16 *)(gWorld + WORLD_SCROLL_START_X) + MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * dist, length);
+        y = *(s16 *)(gWorld + WORLD_SCROLL_START_Y) - MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * dist, length);
+        set_obj_target(mapObj, x, y);
     }
     else
     {
-        set_obj_target(*(u32 *)(gWorld + 0x24C), *(s16 *)(gWorld + 0x354) + sx, *(s16 *)(gWorld + 0x356) - sy);
+        set_obj_target(*(u32 *)(gWorld + WORLD_MAP_OBJ), *(s16 *)(gWorld + WORLD_SCROLL_START_X) + dx,
+                       *(s16 *)(gWorld + WORLD_SCROLL_START_Y) - dy);
         world = gWorld;
-        *(u16 *)(world + 0x35E) = zero;
-        *(u16 *)(world + 0x35C) = zero;
-        *(u16 *)(obj + 0xA0) &= 0xFAFF;
+        *(u16 *)(world + WORLD_SCROLL_PROGRESS) = zero;
+        *(u16 *)(world + WORLD_SCROLL_SPEED) = zero;
+        *(u16 *)(obj + 0xA0) &= 0xFAFF; /* ~(TASK_FLAG_SCROLL | 0x400) */
     }
 }
 
-struct MotionCtrl
+/* Shake of the world's map object (gWorld + 0x24C), kept in the task state. */
+#define SHAKE_CTRL 0x179D   /* struct ShakeCtrl */
+#define SHAKE_TIMING 0x179E /* struct ShakeAmp (byte), struct ShakeTimer (halfword) */
+#define SHAKE_PERIOD 0x179F /* struct ShakePeriod */
+
+struct ShakeCtrl
 {
-    u8 phase : 2;
-    u8 left : 5;
-    u8 axis : 1;
+    u8 stop : 2;     /* 1: stop when the current swing ends */
+    u8 swings : 5;   /* swings left; 0: until stopped */
+    u8 vertical : 1; /* shake along y instead of x */
 } __attribute__((packed));
 
-struct MotionOff
+struct ShakeAmp
 {
-    s8 off : 5;
+    s8 amplitude : 5; /* added to the target each frame, negated every swing */
     u8 rest : 3;
 } __attribute__((packed));
 
-struct MotionCnt
+struct ShakeTimer
 {
-    u16 off : 5;
-    u16 cnt : 5;
-    u16 rest : 6;
+    u16 amplitude : 5;
+    u16 timer : 5;  /* frames left in this swing */
+    u16 period : 5; /* frames per swing */
+    u16 unused : 1;
+} __attribute__((packed, aligned(2)));
+
+struct ShakePeriod
+{
+    u8 timerHi : 2;
+    u8 period : 5;
+    u8 unused : 1;
 } __attribute__((packed));
 
-struct MotionReload
+void add_obj_target_offset(u32 item, s32 a, s32 b);
+/*
+ * Shakes the world's map object: each frame its target moves by the amplitude
+ * along x (or y), the amplitude flips sign every swing, and after the last swing
+ * the target is put back to 0,0 and the shake ends.
+ */
+void world_target_motion(u8 *task)
 {
-    u8 lo : 2;
-    u8 val : 5;
-    u8 hi : 1;
-} __attribute__((packed));
+    u8 *state = *(u8 **)(task + 0x2C);
+    u8 *ctrl;
+    u8 *cur_state;
+    s16 dx;
+    s16 dy;
+    u32 period;
 
-ASM_FUNC("asm/code_080F2448/world_target_motion.s", void world_target_motion(void))
+    /* stop == 0 && swings == 0: no shake running */
+    if ((state[SHAKE_CTRL] & 0x7F) == 0)
+    {
+        return;
+    }
+    if (state[SHAKE_CTRL] & 0x80) /* vertical */
+    {
+        dx = 0;
+        dy = ((struct ShakeAmp *)(state + SHAKE_TIMING))->amplitude;
+    }
+    else
+    {
+        dy = 0;
+        dx = ((struct ShakeAmp *)(state + SHAKE_TIMING))->amplitude;
+    }
+    add_obj_target_offset(*(u32 *)(gWorld + 0x24C), dx, dy);
+    if (--((struct ShakeTimer *)(*(u8 **)(task + 0x2C) + SHAKE_TIMING))->timer == 0)
+    {
+        ctrl = *(u8 **)(task + 0x2C) + SHAKE_CTRL;
+        if (((struct ShakeCtrl *)ctrl)->swings != 0)
+        {
+            if (--((struct ShakeCtrl *)ctrl)->swings == 0)
+            {
+                ((struct ShakeCtrl *)(*(u8 **)(task + 0x2C) + SHAKE_CTRL))->stop = 1;
+            }
+        }
+        period = ((struct ShakePeriod *)(*(u8 **)(task + 0x2C) + SHAKE_PERIOD))->period;
+        ((struct ShakeTimer *)(*(u8 **)(task + 0x2C) + SHAKE_TIMING))->timer = period;
+        ((struct ShakeAmp *)(*(u8 **)(task + 0x2C) + SHAKE_TIMING))->amplitude = -((struct ShakeAmp *)(*(u8 **)(task + 0x2C) + SHAKE_TIMING))->amplitude;
+    }
+    cur_state = *(u8 **)(task + 0x2C);
+    /* stopping, and a swing has just ended */
+    if (((struct ShakeCtrl *)(cur_state + SHAKE_CTRL))->stop == 1
+        && ((struct ShakeTimer *)(cur_state + SHAKE_TIMING))->timer == ((struct ShakePeriod *)(cur_state + SHAKE_PERIOD))->period)
+    {
+        set_obj_target(*(u32 *)(gWorld + 0x24C), 0, 0);
+        ((struct ShakeCtrl *)(*(u8 **)(task + 0x2C) + SHAKE_CTRL))->stop = 0;
+    }
+}
 
 ASM_FUNC("asm/code_080F2448/node_step.s", void node_step(void))
 

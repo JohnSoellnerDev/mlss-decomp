@@ -59,8 +59,8 @@ struct Part
     u8 filler98[0x9C - 0x98];
     s32 flag9C;
     s32 limA0;
-    s32 limA4;
-    s32 countA8;
+    s32 startA; /* a shot's line start (part_track flies from here to targetA/targetB) */
+    s32 startB;
     u16 timer;
     s16 velA;
     s16 velB;
@@ -356,9 +356,12 @@ void part_anim_wait(struct Part *obj)
     }
 }
 
+/* Once the wind-up animation is done: plays the throw animation, spawns shot object 0x4135
+ * in front of the part (facing taken from its sprite), hooks it into the part's link and
+ * aims it from just ahead of the part at the linked target's position, then waits. */
 void part_launch_c(struct Part *obj)
 {
-    struct Part *child;
+    struct Part *shot;
 
     if (obj->sprite->flags12 & 8)
     {
@@ -366,27 +369,27 @@ void part_launch_c(struct Part *obj)
             sprite_set_action(obj, 6, 0, 0);
         else
             sprite_set_action(obj, 9, 0, 0);
-        child = obj_spawn(obj->owner, 0x4135, obj->baseA / 256 - 0x20, obj->baseB / 256 + 5,
-                          obj->baseH / 256 + 0x14, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
-        obj->next = child;
-        ((struct Flags78Bits *)&child->flags78)->kind = 1;
-        part_child_flags(obj, child);
-        child->callback68 = on_arrive;
-        child->link6C = obj->link6C;
-        child->link = obj->link;
-        obj_list_push_default(child);
-        child->handler5C = (void *)part_check_contact;
-        child->handler60 = (void *)part_check_contact;
-        child->kind74 = obj->kind74;
-        child->timer = 0;
-        child->flag9C = obj->flag9C;
-        child->limA0 = obj->limA0;
-        child->limA4 = obj->baseA + 0xFFFFE000;
-        child->countA8 = obj->baseB + 0x500;
-        child->targetA = obj->link->owner->unkD8;
-        child->targetB = obj->link->owner->unkDC;
-        child->state = part_track;
-        child->velA = 0x280;
+        shot = obj_spawn(obj->owner, 0x4135, obj->baseA / 256 - 0x20, obj->baseB / 256 + 5,
+                         obj->baseH / 256 + 0x14, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
+        obj->next = shot;
+        ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+        part_child_flags(obj, shot);
+        shot->callback68 = on_arrive;
+        shot->link6C = obj->link6C;
+        shot->link = obj->link;
+        obj_list_push_default(shot);
+        shot->handler5C = (void *)part_check_contact;
+        shot->handler60 = (void *)part_check_contact;
+        shot->kind74 = obj->kind74;
+        shot->timer = 0;
+        shot->flag9C = obj->flag9C;
+        shot->limA0 = obj->limA0;
+        shot->startA = obj->baseA + 0xFFFFE000;
+        shot->startB = obj->baseB + 0x500;
+        shot->targetA = obj->link->owner->unkD8;
+        shot->targetB = obj->link->owner->unkDC;
+        shot->state = part_track;
+        shot->velA = 0x280;
         obj->state = part_owner_idle_b;
     }
 }

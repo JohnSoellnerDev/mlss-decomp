@@ -221,6 +221,14 @@ void obj_timer_start_motion(struct ActorObj *obj)
     }
 }
 
+/*
+ * Spinning object (pose->unkC turns 0x1000 a frame) that waits while it is below 8 px of height
+ * and its timer runs; then it slides with x speed param9C (subtracted from posX), keeping posY on
+ * the line through (targetX, targetY) with slope dy / dx. Above 8 px it rises or falls by
+ * paramA0 under gravity 0x2C. Within 0x5E px of the owner's part target it brakes and turns back
+ * (speed down 0x19 a frame, to -0x280 at most). Once it passes targetX, its part's unkB4 is set
+ * and the object is released. (24.8 fixed point.)
+ */
 void obj_wait_then_slide_and_finish(struct ActorObj *obj)
 {
     obj->pose->unkC += 0x1000;
@@ -253,6 +261,11 @@ void obj_wait_then_slide_and_finish(struct ActorObj *obj)
     }
 }
 
+/* Spinning object (pose->unkC turns 0x1000 a frame) sliding left with x speed param9C, keeping
+   posY on the line through (targetX, targetY) with slope dy / dx and sinking 0xE6 a frame down to
+   8 px. Within 0x5E px of the owner's part target it brakes (speed down 0x11 a frame). At 64 px
+   from the left it gets a y speed paramA0 of 0x60 towards y = 0x68 px and turns back in
+   obj_move_step_d. (24.8 fixed point.) */
 void obj_move_step_c(struct ActorObj *obj)
 {
     s32 x;
@@ -423,6 +436,9 @@ void parts_obj_wait_ready_action2(struct ActorObj *obj)
     }
 }
 
+/* State: once obj's animation ends (pose flag 8), starts action 3, spawns effect 0xEDB where obj is
+ * and effect 0xEEA 0x30 px right of its owner's part target (0x48 px above obj), sets the timer to
+ * 0x4A, plays sound 0x10C and goes on to obj_timer_spawn_child_a. */
 void obj_pose_active_place_sprite_a(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
@@ -433,7 +449,7 @@ void obj_pose_active_place_sprite_a(struct ActorObj *obj)
         effect_spawn_at(0xEEA, obj->owner->part->targetX / 0x100 + 0x30, obj->owner->part->targetY / 0x100,
                         obj->baseH / 0x100 + 0x48, obj);
         obj->timer = 0x4A;
-        set_slot_value(0x10C, -1);
+        set_slot_value(0x10C, -1); /* plays sound 0x10C */
         obj->state = obj_timer_spawn_child_a;
     }
 }

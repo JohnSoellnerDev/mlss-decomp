@@ -66,6 +66,9 @@ struct FlagsBits
     u8 unk6 : 2;
 };
 
+/* Actor.flags bit (FlagsBits.rebuild) the step_motion functions set when the motion is done */
+#define ACTOR_FLAG_MOTION_DONE 0x20
+
 struct Rec
 {
     u8 filler0[0x18];
@@ -186,25 +189,27 @@ s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed);
 s32 move_step(u16 *outX, u16 *outY, u16 *outH, s32 dx, s32 dy, s32 dh, s32 speed);
 void set_motion_speed_aux(struct Actor *obj, u32 value, s32 aux);
 
-NONMATCH("asm/code_08087E1C/search_frame_pairs.s", u32 search_frame_pairs(struct Actor *a, struct Actor *b))
+u32 search_frame_pairs(struct Actor *a, struct Actor *b)
 {
-    s32 ia = 0;
+    s32 ia;
     s32 ib;
     s32 check;
 
-    do {
+    ia = 0;
+    while (ia >= 0)
+    {
         ia = find_frame_entry(a, ia);
         ib = 0;
-        do {
+        while (ib >= 0)
+        {
             ib = find_frame_entry(b, ib);
             check = contact_face(a, b);
             if (check != 0)
                 return check;
-        } while (ib >= 0);
-    } while (ia >= 0);
+        }
+    }
     return 0;
 }
-END_NONMATCH
 
 struct Rec *candidate_for_slot(struct Rec *obj)
 {
@@ -413,48 +418,54 @@ s32 distance_step_for_height(struct Actor *obj)
     return distance_step(obj->dh, obj->offsetA, obj->heightLimit - obj->baseH);
 }
 
+/* Velocity of length `speed` pointing along (dx, dy, dh): the delta is scaled down by 4 so the squares
+ * can't overflow, each component becomes delta * speed / |delta|. Returns |delta| (in quarter units),
+ * or 0 with a zero velocity when the delta is too small to move. */
 s32 move_step(u16 *outX, u16 *outY, u16 *outH, s32 dx, s32 dy, s32 dh, s32 speed)
 {
-    s32 x4 = dx;
-    s32 y4 = dy;
-    s32 h4 = dh;
-    s32 len;
+    s32 qx = dx;
+    s32 qy = dy;
+    s32 qh = dh;
+    s32 dist;
 
-    x4 = x4 / 4;
-    y4 = y4 / 4;
-    h4 = h4 / 4;
-    if (x4 == 0 && y4 == 0 && h4 == 0)
+    qx = qx / 4;
+    qy = qy / 4;
+    qh = qh / 4;
+    if (qx == 0 && qy == 0 && qh == 0)
     {
-        *outX = h4;
-        *outY = h4;
-        *outH = h4;
+        *outX = 0;
+        *outY = 0;
+        *outH = 0;
         return 0;
     }
-    len = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(x4 * x4 + y4 * y4 + h4 * h4);
-    *outX = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(x4 * speed, len);
-    *outY = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(y4 * speed, len);
-    *outH = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(h4 * speed, len);
-    return len;
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(qx * qx + qy * qy + qh * qh);
+    *outX = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(qx * speed, dist);
+    *outY = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(qy * speed, dist);
+    *outH = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(qh * speed, dist);
+    return dist;
 }
 
+/* Scales the vector (dx, dy) to length `speed`: writes that step to *outX / *outY and returns the
+   vector's length. dx and dy are quartered first so their squares stay within 32 bits (the length
+   is in those quarter units); a zero vector gives a zero step and length 0. */
 s32 step_vector(u16 *outX, u16 *outY, s32 dx, s32 dy, s32 speed)
 {
-    s32 x4 = dx;
-    s32 y4 = dy;
-    s32 len;
+    s32 qx = dx;
+    s32 qy = dy;
+    s32 length;
 
-    x4 = x4 / 4;
-    y4 = y4 / 4;
-    if (x4 == 0 && y4 == 0)
+    qx = qx / 4;
+    qy = qy / 4;
+    if (qx == 0 && qy == 0)
     {
-        *outX = y4;
-        *outY = y4;
+        *outX = qy;
+        *outY = qy;
         return 0;
     }
-    len = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(x4 * x4 + y4 * y4);
-    *outX = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(x4 * speed, len);
-    *outY = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(y4 * speed, len);
-    return len;
+    length = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(qx * qx + qy * qy);
+    *outX = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(qx * speed, length);
+    *outY = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(qy * speed, length);
+    return length;
 }
 
 void mark_candidate_pair(struct Actor *obj)
@@ -558,53 +569,64 @@ void start_rebuild(struct Actor *obj)
     }
 }
 
+/* Advances obj's motion by motionStart * motionSpeed and moves it from the start point (low
+ * halves of targetX/Y/H, in pixels) straight to the end point (high halves); with a heightLimit
+ * the height follows a parabola (parabola_height) instead. Once progress passes 0x3FFF (or there
+ * is no motion) obj snaps to the end point, gets its "motion done" flag and 0 is returned;
+ * 1 while it is still moving. */
 u32 step_motion(struct Actor *obj)
 {
-    s32 p;
-    s32 h;
+    s32 progress;
+    s32 height;
 
-    p = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
+    progress = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
     obj->timer = obj->progress;
-    obj->progress = p;
-    if (p <= 0x3FFF && obj->motionStart != 0)
+    obj->progress = progress;
+    if (progress <= 0x3FFF && obj->motionStart != 0)
     {
-        obj->x = ((obj->targetX >> 16) * p + (s16)obj->targetX * (0x4000 - p)) / 0x40;
-        obj->y = ((obj->targetY >> 16) * p + (s16)obj->targetY * (0x4000 - p)) / 0x40;
+        obj->x = ((obj->targetX >> 16) * progress + (s16)obj->targetX * (0x4000 - progress)) / 0x40;
+        obj->y = ((obj->targetY >> 16) * progress + (s16)obj->targetY * (0x4000 - progress)) / 0x40;
         if (obj->heightLimit == 0)
-            h = ((obj->targetH >> 16) * p + (s16)obj->targetH * (0x4000 - p)) / 0x40;
+            height = ((obj->targetH >> 16) * progress + (s16)obj->targetH * (0x4000 - progress)) / 0x40;
         else
-            h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
-        obj->h = h;
+            height = parabola_height(progress, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+        obj->h = height;
         return 1;
     }
     obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
     obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
     obj->h = ((struct HalfPair *)&obj->targetH)->hi << 8;
-    *((u8 *)obj + 0x79) |= 0x20;
+    *((u8 *)obj + 0x79) |= ACTOR_FLAG_MOTION_DONE;
     return 0;
 }
 
+/* Jump step: advances obj's motion by motionStart * motionSpeed and moves it in x/y from the
+ * start point (low halves of targetX/Y, in pixels) to the end point (high halves), with the
+ * height on a parabola (parabola_height). Past the end point obj stays there and keeps falling
+ * until its height drops below 0: then it lands at height 0, gets its "motion done" flag and 0
+ * is returned. Returns 1 while it is still in the air. */
 u32 step_motion_checked(struct Actor *obj)
 {
-    s32 p;
-    s32 h;
+    s32 progress;
+    s32 height;
 
-    p = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
+    progress = obj->progress + (obj->motionStart * obj->motionSpeed) / 0x100;
     obj->timer = obj->progress;
-    obj->progress = p;
-    if (p <= 0x3FFF)
+    obj->progress = progress;
+    if (progress <= 0x3FFF)
     {
-        obj->x = ((obj->targetX >> 16) * p + (s16)obj->targetX * (0x4000 - p)) / 0x40;
-        obj->y = ((obj->targetY >> 16) * p + (s16)obj->targetY * (0x4000 - p)) / 0x40;
-        obj->h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+        obj->x = ((obj->targetX >> 16) * progress + (s16)obj->targetX * (0x4000 - progress)) / 0x40;
+        obj->y = ((obj->targetY >> 16) * progress + (s16)obj->targetY * (0x4000 - progress)) / 0x40;
+        obj->h = parabola_height(progress, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
         return 1;
     }
     obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
     obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
-    h = parabola_height(p, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
-    obj->h = h;
-    if (h < 0)
+    height = parabola_height(progress, obj->offsetA, obj->heightLimit, (s16)obj->heightStep << 8);
+    obj->h = height;
+    if (height < 0)
     {
+        /* landed */
         obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
         obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
         obj->h = 0;
@@ -615,16 +637,21 @@ u32 step_motion_checked(struct Actor *obj)
     return 1;
 }
 
+/* Advances obj's motion by motionStart * motionSpeed and moves it from the start point (low
+ * halves of targetX/Y/H, in pixels) towards the end point (high halves) along an eased curve:
+ * the distance covered is heightLimit * p^2 + offsetA * p (8.8 weights, p = progress / 0x4000).
+ * Once progress passes 0x3FFF (or there is no motion) obj snaps to the end point, gets its
+ * "motion done" flag and 0 is returned; 1 while it is still moving. */
 u32 step_motion_scaled(struct Actor *obj)
 {
     s16 *progress;
     s32 p;
-    s32 t;
+    s32 dist;
     s32 dx;
     s32 dy;
     s32 dh;
-    s32 hl;
-    s32 oa;
+    s32 quadWeight;
+    s32 linWeight;
 
     progress = &obj->progress;
     p = *progress + (obj->motionStart * obj->motionSpeed) / 0x100;
@@ -632,69 +659,78 @@ u32 step_motion_scaled(struct Actor *obj)
     *progress = p;
     if (p <= 0x3FFF && obj->motionStart != 0)
     {
-        hl = obj->heightLimit;
-        oa = obj->offsetA;
-        t = ((hl * p) / 0x100 * p) / 0x40 + oa * p;
+        quadWeight = obj->heightLimit;
+        linWeight = obj->offsetA;
+        dist = ((quadWeight * p) / 0x100 * p) / 0x40 + linWeight * p;
         dx = (obj->targetX >> 16) - (s16)obj->targetX;
         dy = (obj->targetY >> 16) - (s16)obj->targetY;
         dh = (obj->targetH >> 16) - (s16)obj->targetH;
-        obj->x = ((s16)obj->targetX << 8) + (dx * t) / 0x4000;
-        obj->y = ((s16)obj->targetY << 8) + (dy * t) / 0x4000;
-        obj->h = ((s16)obj->targetH << 8) + (dh * t) / 0x4000;
+        obj->x = ((s16)obj->targetX << 8) + (dx * dist) / 0x4000;
+        obj->y = ((s16)obj->targetY << 8) + (dy * dist) / 0x4000;
+        obj->h = ((s16)obj->targetH << 8) + (dh * dist) / 0x4000;
         return 1;
     }
     obj->x = ((struct HalfPair *)&obj->targetX)->hi << 8;
     obj->y = ((struct HalfPair *)&obj->targetY)->hi << 8;
     obj->h = ((struct HalfPair *)&obj->targetH)->hi << 8;
-    *((u8 *)obj + 0x79) |= 0x20;
+    *((u8 *)obj + 0x79) |= 0x20; /* FlagsBits.rebuild: the motion is done */
     return 0;
 }
 
+/* Coarse variant of step_motion: progress runs to 0x800 (motionStart * motionSpeed / 0x800 per
+ * frame) and obj moves straight from the start point (low halves of targetX/Y/H, in pixels) to the
+ * end point (high halves); each coordinate is the weighted sum / 8 (rounded towards 0).
+ * It neither snaps to the end nor sets the "motion done" flag.
+ * Returns 1 while progress is below 0x800, 0 once it got there. */
 u32 step_motion_d(struct Actor *obj)
 {
-    s32 t;
-    s32 v;
+    s32 progress;
+    s32 pos;
 
-    t = obj->progress;
-    t += (obj->motionStart * obj->motionSpeed) / 0x800;
+    progress = obj->progress;
+    progress += (obj->motionStart * obj->motionSpeed) / 0x800;
     obj->timer = obj->progress;
-    obj->progress = t;
+    obj->progress = progress;
 
-    v = (obj->targetX >> 16) * t + (s16)obj->targetX * (0x800 - t);
-    if (v < 0)
-        v += 7;
-    obj->x = v >> 3;
+    pos = (obj->targetX >> 16) * progress + (s16)obj->targetX * (0x800 - progress);
+    if (pos < 0)
+        pos += 7;
+    obj->x = pos >> 3;
 
-    v = (obj->targetY >> 16) * t + (s16)obj->targetY * (0x800 - t);
-    if (v < 0)
-        v += 7;
-    obj->y = v >> 3;
+    pos = (obj->targetY >> 16) * progress + (s16)obj->targetY * (0x800 - progress);
+    if (pos < 0)
+        pos += 7;
+    obj->y = pos >> 3;
 
-    v = (obj->targetH >> 16) * t + (s16)obj->targetH * (0x800 - t);
-    if (v < 0)
-        v += 7;
-    obj->h = v >> 3;
+    pos = (obj->targetH >> 16) * progress + (s16)obj->targetH * (0x800 - progress);
+    if (pos < 0)
+        pos += 7;
+    obj->h = pos >> 3;
 
-    if (t <= 0x7FF)
+    if (progress <= 0x7FF)
         return 1;
     return 0;
 }
 
-void set_motion_start(struct Actor *obj, u32 value)
+/* Sets obj's motion rate (motionStart) so the straight move from the start point (low halves of
+ * targetX/Y/H) to the end point (high halves) runs at `speed`: rate = speed * 0x40 / distance,
+ * rounded, capped at 0x4000 (the whole path in one step; also used for a zero distance).
+ * Clears the "motion done" flag. */
+void set_motion_start(struct Actor *obj, u32 speed)
 {
     s32 dx = (obj->targetX >> 16) - (s16)obj->targetX;
     s32 dy = (obj->targetY >> 16) - (s16)obj->targetY;
     s32 dh = (obj->targetH >> 16) - (s16)obj->targetH;
-    s32 len = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + dh * dh);
-    s32 r;
+    s32 distance = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dx * dx + dy * dy + dh * dh);
+    s32 rate;
 
-    if (len != 0)
-        r = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((value << 6) + len / 2, len);
+    if (distance != 0)
+        rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)((speed << 6) + distance / 2, distance);
     else
-        r = 0x4000;
-    if (r > 0x4000)
-        r = 0x4000;
-    obj->motionStart = r;
+        rate = 0x4000;
+    if (rate > 0x4000)
+        rate = 0x4000;
+    obj->motionStart = rate;
     ((struct FlagsBits *)&obj->flags)->rebuild = 0;
 }
 

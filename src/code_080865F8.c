@@ -19,7 +19,7 @@ struct PoseBits11
     u8 lo6 : 6;
     u8 bit6 : 1;
     u8 bit7 : 1;
-};
+} __attribute__((packed));
 
 struct Pose
 {
@@ -38,8 +38,12 @@ struct Pose
           u8 filler22;
       u8 unk23;
       u8 filler24[0xBA - 0x24];
-      u16 unkBA;
+              u16 unkBA;
 };
+
+#define POSE_FLIPPED 0x40 // Pose.flags11: drawn mirrored horizontally
+#define POSE_FREE    0x20 // Pose.flags12: the record has been released
+
 
 struct Rec
 {
@@ -74,10 +78,12 @@ struct Rec
       u8 status111;
 };
 
+/* one entry of a record's slot table; an actor attached to it runs its routine */
 struct SlotEntry
 {
-    u8 filler0[0x8];
-    u8 flags8;
+    u8 filler0[0x4];
+    void (*routine4)(struct Actor *); /* run by poll_link_routine once the state isn't busy */
+    u8 flags8;          /* bits 5, 6: cleared ones set the actor's flags77 bits 6, 5 */
     u8 filler9[0xE - 0x9];
     s16 offE;
     s16 off10;
@@ -104,6 +110,10 @@ struct CandMgr
       struct Rec *cand7C;
     u8 filler80[0x84 - 0x80];
     s32 unk84;
+    u8 filler88[0x2BF - 0x88];
+    u8 unk2BF;
+    u8 filler2C0[0x2F9 - 0x2C0];
+    u8 unk2F9; /* 1: a contacted part waits for its pose instead of linking to the partner */
 };
 
 struct Actor
@@ -258,61 +268,81 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
+struct StatusBits110
+{
+    u8 low5 : 5;
+    u8 high3 : 3;
+} __attribute__((packed));
+
+struct LinkBitsCC
+{
+    u8 low7 : 7;
+    u8 bit7 : 1;
+} __attribute__((packed));
+
 void sub_08087FCC(struct Actor *obj, s32 divisor);
 
-void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 h)
+/*
+ * Starts a jump to (x, y, z), in pixels, that peaks at height peakH. A peak
+ * below the landing or the current height makes it a straight move. Otherwise
+ * unk94 / unk98 get the square roots of the fall and rise (the arc's shape for
+ * the height curve). The move takes 0x20 frames (sub_08087FCC sets the speed).
+ */
+void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 peakH)
 {
-    s32 *p94;
-    s32 *p98;
-    s32 pz;
-    s32 zt;
-    s32 f1;
-    s32 f2;
-    s32 neg;
+    s32 *arcTotal;
+    s32 *arcRise;
+    s32 startZ;
+    s32 top;
+    s32 fallRoot;
+    s32 riseRoot;
+    s32 flip;
 
     x <<= 8;
     y = y * 0x100;
     z <<= 8;
-    h <<= 8;
+    peakH <<= 8;
     obj->targetX = x;
     obj->targetY = y;
     obj->offX = (x - obj->posX) / 4;
     obj->offY = (y - obj->posY) / 4;
-    if (h < z || h < obj->posZ)
+    if (peakH < z || peakH < obj->posZ)
     {
+        /* no arc: straight to the landing height */
         obj->targetH = z;
         obj->offZ = (z - obj->posZ) / 4;
         obj->unk94 = 0;
     }
     else
     {
-        obj->targetH = h;
+        obj->targetH = peakH;
         obj->offZ = 0;
-        p94 = &obj->unk94;
-        p98 = &obj->unk98;
-        pz = obj->posZ;
-        zt = obj->targetH;
-        neg = 0;
-        if (zt < pz)
+        arcTotal = &obj->unk94;
+        arcRise = &obj->unk98;
+        startZ = obj->posZ;
+        top = obj->targetH;
+        flip = 0;
+        if (top < startZ)
         {
-            if (zt < z)
+            if (top < z)
             {
-                zt = pz + z - zt;
-                neg = 1;
+                top = startZ + z - top;
+                flip = 1;
             }
             else
-                zt = pz;
+                top = startZ;
         }
-        else if (zt < z)
-            zt = z;
-        f1 = ((s32 (*)(s32))gMathRoutines)((zt - z) << 8);
-        f2 = ((s32 (*)(s32))gMathRoutines)((zt - pz) << 8);
-        *p94 = f2 + f1;
-        *p98 = f2;
-        if (neg)
+        else if (top < z)
+            top = z;
+        /* gMathRoutines starts with the integer square root */
+        fallRoot = ((s32 (*)(s32))gMathRoutines)((top - z) << 8);
+        riseRoot = ((s32 (*)(s32))gMathRoutines)((top - startZ) << 8);
+        *arcTotal = riseRoot + fallRoot;
+        *arcRise = riseRoot;
+        if (flip)
         {
-            *p94 = -*p94;
-            *p98 = -*p98;
+            *arcTotal = -*arcTotal;
+            *arcRise = -*arcRise;
         }
     }
     obj->progress = 0x4000;
@@ -321,28 +351,32 @@ void sub_080865F8(struct Actor *obj, s32 x, s32 y, s32 z, s32 h)
 
 ASM_FUNC("asm/code_080865F8/contact_face.s", void contact_face(void))
 
+/* Springs the object toward its record's target on x and h: the distance from the base point / 32
+ * is added to the velocity (offX/offZ), which is then damped to 0xF2/0x100 and added to the
+ * position. Once velocity and pull are both small (v*v + a*a <= 0x40 on each axis) it snaps to the
+ * target and stops. */
 void obj_step_velocity(struct Actor *obj)
 {
     struct Rec *rec = obj->data;
-    s32 dx = rec->targetX - obj->baseX;
-    s32 dh;
-    s32 cellsX;
-    s32 cellsH;
+    s32 distX = rec->targetX - obj->baseX;
+    s32 distH;
+    s32 pullX;
+    s32 pullH;
 
-    if (dx < 0)
-        dx += 0x1F;
-    cellsX = dx >> 5;
-    dh = rec->targetH - obj->baseH;
-    if (dh < 0)
-        dh += 0x1F;
-    cellsH = dh >> 5;
-    *(u16 *)&obj->offX += cellsX;
-    *(u16 *)&obj->offZ += cellsH;
+    if (distX < 0)
+        distX += 0x1F;
+    pullX = distX >> 5;
+    distH = rec->targetH - obj->baseH;
+    if (distH < 0)
+        distH += 0x1F;
+    pullH = distH >> 5;
+    *(u16 *)&obj->offX += pullX;
+    *(u16 *)&obj->offZ += pullH;
     obj->offX = (obj->offX * 0xF2) / 0x100;
     obj->offZ = (obj->offZ * 0xF2) / 0x100;
     obj->posX += obj->offX;
     obj->posZ += obj->offZ;
-    if (obj->offX * obj->offX + cellsX * cellsX <= 0x40 && obj->offZ * obj->offZ + cellsH * cellsH <= 0x40)
+    if (obj->offX * obj->offX + pullX * pullX <= 0x40 && obj->offZ * obj->offZ + pullH * pullH <= 0x40)
     {
         obj->posX = obj->data->targetX;
         obj->posZ = obj->data->targetH;
@@ -352,103 +386,103 @@ void obj_step_velocity(struct Actor *obj)
 
 ASM_FUNC("asm/code_080865F8/obj_attach.s", void obj_attach(void))
 
-NONMATCH("asm/code_080865F8/obj_attach_entry.s", void obj_attach_entry(struct Actor *obj, struct Actor *owner, s32 entry))
+/*
+ * Attaches an actor in mode 4 (bits 1-2 of mode) to entry `index` of its
+ * record's slot table, under `owner`: takes the entry's flags and offsets,
+ * records the index in the record's status, sets the arrive / retarget
+ * callbacks, starts the actor's sequence and then waits to run the entry's
+ * routine (poll_link_routine).
+ */
+void obj_attach_entry(struct Actor *obj, struct Actor *owner, s32 index)
 {
     struct SlotEntry *ent;
-    s32 bits;
-    s32 st;
-    u8 bit7;
-    s32 mask;
-    u8 *p110;
-    s32 m1f = 0x1F;
-    s32 m20 = -0x20;
-    u8 st8;
-    s32 m80 = -0x80;
-    u8 mk;
+    s32 cleared;
+    u8 heldCC;
 
     if ((obj->mode & 6) != 4)
         return;
-    *((u8 *)gWorld + 0x2BF) |= 1;
+    *((u8 *)gWorld + 0x2BF) |= 1; /* gWorld->unk2BF */
     obj->owner = owner;
     ((struct ObjFlags77 *)obj)->bit3 = 0;
     ((struct ObjFlags77 *)obj)->bit4 = 0;
-    ent = &obj->data->table->entries[entry];
-    bits = (ent->flags8 & 0x60) ^ 0x60;
-    ((struct ObjFlags77 *)obj)->bit6 = (bits >> 5) & 1;
-    ((struct ObjFlags77 *)obj)->bit5 = (bits >> 6) & 1;
+    ent = &obj->data->table->entries[index];
+    /* entry flag bits 5 and 6 that are clear */
+    cleared = (ent->flags8 & 0x60) ^ 0x60;
+    ((struct ObjFlags77 *)obj)->bit6 = (cleared >> 5) & 1;
+    ((struct ObjFlags77 *)obj)->bit5 = (cleared >> 6) & 1;
     obj->link = (struct Actor *)ent;
-    p110 = &obj->data->status110;
-    entry &= m1f;
-    st8 = m20 & *p110;
-    st8 |= entry;
-    *p110 = st8;
+    ((struct StatusBits110 *)&obj->data->status110)->low5 = index;
     obj->activeNext = (struct Actor *)on_arrive;
     obj->field54 = (s32)set_targets_from_record;
     obj->unk9C = ent->offE;
     obj->unkA0 = ent->off10;
+    /* low 15 bits, sign-extended */
     obj->unkA4 = ((s32)(ent->unk12 << 17)) >> 17;
-    bit7 = obj->unkCC & 0x80;
-    if (bit7 != 0)
+    heldCC = obj->unkCC & 0x80;
+    if (heldCC != 0)
     {
-        obj->unkCC = obj->unkCC & 0x7F;
+        ((struct LinkBitsCC *)&obj->unkCC)->bit7 = 0;
     }
     else
     {
-        obj->unkC8 = bit7;
-        mk = m80 & obj->unkCC;
-        obj->unkCC = mk;
-        obj->unkCA = bit7;
+        obj->unkC8 = heldCC;
+        ((struct LinkBitsCC *)&obj->unkCC)->low7 = 0;
+        obj->unkCA = heldCC;
     }
     run_sequence_of_obj(obj);
     obj->state = poll_link_routine;
 }
-END_NONMATCH
 
 void obj_arrive_check(struct Actor *obj);
 ASM_FUNC("asm/code_080865F8/obj_track_target.s", void obj_track_target(struct Actor *obj))
 
+/* State run while an actor walks to its record's target (obj_track_target sets the step
+   offX/offY/offZ): places it one step from its base, and once that step gets it no closer to the
+   target (squared distances in 1/16 units, so they don't overflow) snaps it onto the target,
+   stops its walk action, unflips its pose and returns to the state it had saved. */
 void obj_arrive_check(struct Actor *obj)
 {
     struct Rec *rec;
-    s32 newX;
-    s32 newY;
-    s32 newH;
-    s32 tgtX;
-    s32 tgtY;
-    s32 tgtH;
-    s32 dxq;
-    s32 dyq;
-    s32 dhq;
-    s32 bxq;
-    s32 byq;
-    s32 bhq;
-    s32 d2;
-    s32 b2;
+    s32 nextX;
+    s32 nextY;
+    s32 nextH;
+    s32 targetX;
+    s32 targetY;
+    s32 targetH;
+    s32 nextDx;
+    s32 nextDy;
+    s32 nextDh;
+    s32 baseDx;
+    s32 baseDy;
+    s32 baseDh;
+    s32 nextDist2;
+    s32 baseDist2;
 
-    newX = obj->baseX + obj->offX;
-    obj->posX = newX;
-    newY = obj->baseY + obj->offY;
-    obj->posY = newY;
-    newH = obj->baseH + obj->offZ;
-    obj->posZ = newH;
+    nextX = obj->baseX + obj->offX;
+    obj->posX = nextX;
+    nextY = obj->baseY + obj->offY;
+    obj->posY = nextY;
+    nextH = obj->baseH + obj->offZ;
+    obj->posZ = nextH;
     rec = obj->data;
-    tgtX = rec->targetX;
-    dxq = (newX - tgtX) / 0x10;
-    tgtY = rec->targetY;
-    dyq = (newY - tgtY) / 0x10;
-    tgtH = rec->targetH;
-    dhq = (newH - tgtH) / 0x10;
-    bxq = (obj->baseX - tgtX) / 0x10;
-    byq = (obj->baseY - tgtY) / 0x10;
-    bhq = (obj->baseH - tgtH) / 0x10;
-    d2 = dxq * dxq + dyq * dyq + dhq * dhq;
-    b2 = bxq * bxq + byq * byq + bhq * bhq;
-    if (d2 >= b2)
+    targetX = rec->targetX;
+    nextDx = (nextX - targetX) / 16;
+    targetY = rec->targetY;
+    nextDy = (nextY - targetY) / 16;
+    targetH = rec->targetH;
+    nextDh = (nextH - targetH) / 16;
+    baseDx = (obj->baseX - targetX) / 16;
+    baseDy = (obj->baseY - targetY) / 16;
+    baseDh = (obj->baseH - targetH) / 16;
+    nextDist2 = nextDx * nextDx + nextDy * nextDy + nextDh * nextDh;
+    baseDist2 = baseDx * baseDx + baseDy * baseDy + baseDh * baseDh;
+    if (nextDist2 >= baseDist2)
     {
-        obj->posX = tgtX;
+        obj->posX = targetX;
         obj->posY = rec->targetY;
         obj->posZ = rec->targetH;
         sprite_set_action(obj, -1, -1, 0);
+        /* bit 6: flipped horizontally (obj_track_target sets it when walking left) */
         ((struct PoseBits11 *)&obj->pose->flags11)->bit6 = 0;
         obj->field58 = 0;
         obj->state = obj->savedState;
@@ -487,120 +521,124 @@ s32 obj_stop(struct Actor *obj)
 void obj_track_target(struct Actor *obj);
 void start_placement(struct Actor *obj);
 void obj_place_start(struct Actor *obj);
-NONMATCH("asm/code_080865F8/obj_slot_update.s", void obj_slot_update(struct Actor *obj))
+/* Starts a hero's placement and nudges its partner. The pair is (first, second) = the slot -2 hero
+   and the slot -1 hero (data->slot); the partner is gWorld->slotTab[slot + 8] (the hero pointers at
+   +0x70/+0x74, each one's actor at +8), or NULL while gWorld->unk84 is 0. If the partner is in
+   mode 2 it walks to its target (obj_track_target) when unk48 <= 0, else starts its placement when
+   gWorld->flags0C bit 6 is set. Then clears that bit and moves on to obj_place_start. */
+void obj_slot_update(struct Actor *obj)
 {
-    s16 *slotp = &obj->data->slot;
-    struct Rec *candA;
-    struct Rec *candB;
-    struct Rec *callArg;
+    s16 *slot = &obj->data->slot;
+    struct Rec *first;
+    struct Rec *second;
 
-    if (*slotp == -1)
+    if (*slot == -1)
     {
+        second = obj->data;
         if (gWorld->unk84 != 0)
-            candA = gWorld->slotTab[*slotp + 8];
+            first = gWorld->slotTab[*slot + 8];
         else
-            candA = NULL;
-        candB = obj->data;
+            first = NULL;
     }
     else
     {
-        candA = obj->data;
+        first = obj->data;
         if (gWorld->unk84 != 0)
-            candB = gWorld->slotTab[*slotp + 8];
+            second = gWorld->slotTab[*slot + 8];
         else
-            candB = NULL;
+            second = NULL;
     }
-    if (obj->data == candB)
+    // The partner is whichever of the two this actor isn't.
+    if (obj->data == second)
     {
-        if ((candA->flags7E & 6) != 2)
-            goto end;
-        if (candA->unk48 > 0)
+        if ((first->flags7E & 6) == 2)
         {
-            if (gWorld->flags0C & 0x40)
-                ((struct Actor *)((u8 *)candA + 8))->state = start_placement;
-            goto end;
+            if (first->unk48 <= 0)
+                obj_track_target((struct Actor *)((u8 *)first + 8));
+            else if (gWorld->flags0C & 0x40)
+                ((struct Actor *)((u8 *)first + 8))->state = start_placement;
         }
-        callArg = candA;
     }
     else
     {
-        if ((candB->flags7E & 6) != 2)
-            goto end;
-        if (candB->unk48 > 0)
+        if ((second->flags7E & 6) == 2)
         {
-            if (gWorld->flags0C & 0x40)
-                ((struct Actor *)((u8 *)candB + 8))->state = start_placement;
-            goto end;
+            if (second->unk48 <= 0)
+                obj_track_target((struct Actor *)((u8 *)second + 8));
+            else if (gWorld->flags0C & 0x40)
+                ((struct Actor *)((u8 *)second + 8))->state = start_placement;
         }
-        callArg = candB;
     }
-    obj_track_target((struct Actor *)((u8 *)callArg + 8));
-end:
     ((struct PoseFlags11 *)&gWorld->flags0C)->bit6 = 0;
     obj->state = obj_place_start;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080865F8/effect_from_table_obj.s", struct Actor *effect_from_table_obj(struct Actor *obj, s32 code))
+/*
+ * Spawns a follower for obj from the gOffsetRows row at halfword `row`: the row's first 6 values go to
+ * unk44-unk49, and after them come x/y/z offsets per animation frame. The follower stays at obj's
+ * current position plus the offset for obj's frame (mirrored with obj's flip) while obj keeps playing
+ * the same animation (effect_follow). It is placed right away, and obj takes its field58-field64.
+ */
+struct Actor *effect_from_table_obj(struct Actor *obj, s32 row)
 {
-    struct Actor *child;
-    void (*fn)(struct Actor *);
-    struct Pose *cpose;
-    s32 bitA;
-    s32 bitB;
-    const u16 *table;
+    struct Actor *follower;
+    void (*follow)(struct Actor *);
+    const u16 *header;
+    struct Pose *followerPose;
 
-    child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
-    table = &((const u16 *)gOffsetRows)[code];
-    ((struct HalfBit6 *)&child->mode)->bit6 = 1;
-    child->unk44 = table[0];
-    child->unk45 = table[1];
-    child->unk46 = table[2];
-    child->unk47 = table[3];
-    child->unk48 = table[4];
-    child->unk49 = table[5];
-    child->owner = obj->owner;
-    child->targetX = obj->posX;
-    child->targetY = obj->posY;
-    child->targetH = obj->posZ;
-    child->motionSpeed = obj->pose->waitFlag21;
-    child->child = obj;
-    child->motionStart = code;
-    cpose = child->pose;
-    bitB = obj->pose->flags11;
-    bitB &= 0x40;
-    bitA = cpose->flags11;
-    ((struct HalfBit6 *)&bitA)->bit6 = 0;
-    cpose->flags11 = bitA | bitB;
-    ((struct HalfBit0 *)&child->flags)->bit0 = 1;
-    child->link = obj->link;
-    fn = effect_follow;
-    child->state = fn;
-    obj_list_push_default(child);
-    fn(child);
-    child->baseX = child->posX;
-    child->baseY = child->posY;
-    child->baseH = child->posZ;
-    obj->field58 = child->field58;
-    obj->field5C = child->field5C;
-    obj->field60 = child->field60;
-    obj->field64 = child->field64;
-    return child;
+    follower = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
+    header = &((const u16 *)gOffsetRows)[row];
+    ((struct HalfBit6 *)&follower->mode)->bit6 = 1;
+    follower->unk44 = header[0];
+    follower->unk45 = header[1];
+    follower->unk46 = header[2];
+    follower->unk47 = header[3];
+    follower->unk48 = header[4];
+    follower->unk49 = header[5];
+    follower->owner = obj->owner;
+    follower->targetX = obj->posX;
+    follower->targetY = obj->posY;
+    follower->targetH = obj->posZ;
+    follower->motionSpeed = obj->pose->waitFlag21; /* the animation it follows */
+    follower->child = obj;
+    follower->motionStart = row;
+    followerPose = follower->pose;
+    {
+        register u32 flags asm("r0") = obj->pose->flags11;
+        ((struct PoseBits11 *)&followerPose->flags11)->bit6 = (flags << 25) >> 31;
+    }
+    ((struct HalfBit0 *)&follower->flags)->bit0 = 1;
+    follower->link = obj->link;
+    follow = effect_follow;
+    follower->state = follow;
+    obj_list_push_default(follower);
+    follow(follower);
+    follower->baseX = follower->posX;
+    follower->baseY = follower->posY;
+    follower->baseH = follower->posZ;
+    obj->field58 = follower->field58;
+    obj->field5C = follower->field5C;
+    obj->field60 = follower->field60;
+    obj->field64 = follower->field64;
+    return follower;
 }
-END_NONMATCH
 
+/* State of a follower made by effect_from_table_obj: released once the object it follows
+ * (child) is gone, plays another animation, or no other live object is left in
+ * gWorld->list78. Otherwise placed at its anchor (targetX/Y/H) plus the gOffsetRows offset for
+ * the followed pose's current frame (pose->unk23), mirrored in x when that pose is flipped. */
 void effect_follow(struct Actor *obj)
 {
     struct Pose *pose;
     struct Rec *cur;
-    const s16 *entry;
-    s32 targetX;
+    const s16 *offset;
+    s32 anchorX;
     s32 x;
-    s32 rowOff;
-    const u8 *base;
+    s32 frameOff;
+    const u8 *row;
 
     pose = obj->child->pose;
-    if (pose == NULL || pose->waitFlag21 != obj->motionSpeed || (pose->flags12 & 0x20) != 0)
+    if (pose == NULL || pose->waitFlag21 != obj->motionSpeed || (pose->flags12 & POSE_FREE) != 0)
     {
         obj_release(obj);
         return;
@@ -617,28 +655,32 @@ void effect_follow(struct Actor *obj)
             break;
         cur = cur->ringNext;
     }
-    base = (const u8 *)gOffsetRows + (obj->motionStart << 1);
-    rowOff = pose->unk23 * 6 + 12;
-    entry = (const s16 *)(base + rowOff);
-    targetX = obj->targetX;
-    if ((pose->flags11 & 0x40) != 0)
-        x = targetX - (entry[0] << 8);
+    /* the row starts with a 6-halfword header, then (x, y, z) per frame */
+    row = (const u8 *)gOffsetRows + (obj->motionStart << 1);
+    frameOff = pose->unk23 * 6 + 12;
+    offset = (const s16 *)(row + frameOff);
+    anchorX = obj->targetX;
+    if ((pose->flags11 & POSE_FLIPPED) != 0)
+        x = anchorX - (offset[0] << 8);
     else
-        x = targetX + (entry[0] << 8);
+        x = anchorX + (offset[0] << 8);
     obj->posX = x;
-    obj->posY = obj->targetY + (entry[1] << 8);
-    obj->posZ = obj->targetH + (entry[2] << 8);
+    obj->posY = obj->targetY + (offset[1] << 8);
+    obj->posZ = obj->targetH + (offset[2] << 8);
 }
 
+/* Starts a hero's hop to its placement target (data->targetX/Y) in three jumps: plays action
+   gActionCodes[5] (the next code for the slot -2 hero), aims the first jump a third of the way from
+   base to target at speed 0x700 and 24 px above baseH, and leaves the other two to obj_place_step. */
 void obj_place_start(struct Actor *obj)
 {
-    s32 code = gActionCodes[5];
+    s32 action = gActionCodes[5];
     s32 x;
     s32 y;
 
     if (obj->data->slot == -2)
-        code += 1;
-    sprite_set_action(obj, 0, code, 0);
+        action += 1;
+    sprite_set_action(obj, 0, action, 0);
     ((struct PoseBits *)&obj->pose->flags12)->mode = 0;
     obj->waitCount = 3;
     x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetX + obj->baseX * 2) / 0x100, 3);
@@ -651,9 +693,12 @@ void obj_place_start(struct Actor *obj)
 
 u8 step_motion(struct Actor *obj);
 void timed_wait_step(struct Actor *obj);
+/* One frame of the placement hops started by obj_place_start: when a jump lands and jumps are left,
+   aims the next one 1/n of the way from base to data->targetX/Y (n = jumps left) at speed 0x700 and
+   20 px above baseH; after the last one, waits 20 frames in timed_wait_step. */
 void obj_place_step(struct Actor *obj)
 {
-    s32 n;
+    s32 jumpsLeft;
     s32 *count;
     s32 x;
     s32 y;
@@ -661,11 +706,11 @@ void obj_place_step(struct Actor *obj)
     if (step_motion(obj) == 0)
     {
         count = &obj->waitCount;
-        n = *count;
-        if (n != 0)
+        jumpsLeft = *count;
+        if (jumpsLeft != 0)
         {
-            x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetX + obj->baseX * (n - 1)) / 0x100, n);
-            y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetY + obj->baseY * (n - 1)) / 0x100, n);
+            x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetX + obj->baseX * (jumpsLeft - 1)) / 0x100, jumpsLeft);
+            y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->data->targetY + obj->baseY * (jumpsLeft - 1)) / 0x100, jumpsLeft);
             place_targets(obj, x, y, 0, 0x100);
             set_step_and_offsets(obj, 0x700, (obj->baseH / 0x100) + 0x14);
             *count = *count - 1;
@@ -678,17 +723,21 @@ void obj_place_step(struct Actor *obj)
     }
 }
 
+/* State after the placement hops: once the pose's animation ends, sends the hero (speed 0x400) to its
+   record's target point, plays its stand action (0x2002 for the slot -1 hero, else 0x204F) mirrored
+   (PoseFlags11.bit6 is POSE_FLIPPED), and runs the move through enter_finish_rebuild with no state
+   to return to. */
 void obj_finish_placement(struct Actor *obj)
 {
-    struct Rec *rec;
+    struct Rec *hero;
     s32 action;
 
     if ((obj->pose->flags12 & 8) != 0)
     {
-        rec = obj->data;
-        place_targets(obj, rec->targetX / 0x100, rec->targetY / 0x100, rec->targetH / 0x100, 0x100);
+        hero = obj->data;
+        place_targets(obj, hero->targetX / 0x100, hero->targetY / 0x100, hero->targetH / 0x100, 0x100);
         set_motion_start(obj, 0x400);
-        action = (rec->slot == -1) ? 0x2002 : 0x204F;
+        action = (hero->slot == -1) ? 0x2002 : 0x204F;
         sprite_set_action(obj, 0, action, 0);
         ((struct PoseFlags11 *)&obj->pose->flags11)->bit6 = 1;
         ((struct PoseBits *)&obj->pose->flags12)->mode = 0;
@@ -697,114 +746,121 @@ void obj_finish_placement(struct Actor *obj)
     }
 }
 
-static inline void clear_slot_2a(void)
-{
-    set_slot_value(0x2A, -1);
-}
-
-NONMATCH("asm/code_080865F8/lookup_part.s", s32 lookup_part(struct Actor *obj, struct Actor *owner, s32 kind))
+/* inlined copy of query_contact (defined further down) */
+static inline s32 query_contact_inline(struct Actor *obj, struct Actor *other, s32 kind)
 {
     struct CandMgr *mgr;
-    struct Rec *rec;
-    struct Actor *cur;
-    s32 code;
-    s32 found;
-    s32 res;
 
     if (kind != 3)
         return 1;
-    if ((obj->mode & 6) == 4 && obj->link != NULL)
-    {
-        if ((((u8 *)obj->link)[9] & 0x80) == 0)
-            return 1;
-    }
-    clear_slot_2a();
-    if (owner->data->slot == -1)
-    {
-        mgr = gWorld;
-        ((struct CandBits *)&mgr->status08)->low = 1;
-    }
-    if (owner->data->slot == -2)
-    {
-        mgr = gWorld;
-        ((struct CandBits *)&mgr->status08)->low = 4;
-    }
-    if (owner->data->slot == -1)
-        code = 0x04021010;
-    else
-        code = 0x04021011;
-    res = resolve_contact_action(owner, obj, 0, 0, code);
-    if (res > 0)
-        return res;
-    rec = obj->data;
-    if (rec == NULL)
-        return 0;
-    found = 0;
-    if ((void *)obj != (u8 *)rec + 8)
-    {
-        cur = rec->field38;
-        if (cur != NULL)
-        {
-            if (obj == cur)
-                goto set;
-            do
-            {
-                cur = cur->child;
-                if (cur == NULL)
-                    goto check;
-            } while (obj != cur);
-            found = 1;
-        }
-    check:
-        if (!found)
-            return 0;
-    }
-set:
-    obj->index = 0;
-    if (*((u8 *)gWorld + 0x2F9) == 1)
-    {
-        obj->state = wait_pose_flag;
-        return 0;
-    }
-    obj->owner = owner;
-    actor_init_linked(obj);
-    return -1;
-}
-END_NONMATCH
-
-s32 lookup_slot(struct Actor *obj, struct Actor *other)
-{
-    s32 otherX;
-    s32 otherH;
-    s32 objX;
-    s32 objH;
-    s32 target;
-    s32 limit;
-    s32 wrapped;
-    struct CandMgr *mgr;
-
-    if (other != other->data->field38)
+    if ((obj->mode & 6) == 4 && obj->link != NULL && (((u8 *)obj->link)[9] & 0x80) == 0)
         return 1;
-    otherX = other->posX / 0x100;
-    otherH = (-other->posZ) / 0x100;
-    objX = obj->posX / 0x100;
-    objH = (-obj->posZ) / 0x100;
-    target = (u16)arc_tan2((s16)(objX - otherX), (s16)(objH - otherH));
-    wrapped = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((-other->unkA0) << 8, 0x168);
-    limit = wrapped & 0xFFFF;
-    if ((other->data->pose10->flags11 & 0x40) != 0)
-        target = (target + 0x8000) & 0xFFFF;
-    if (target < limit)
-        target += 0xFFFF;
-    if (target - limit > 0x8000)
-        return -1;
-    set_slot_value(0x7D, -1);
+    set_slot_value(0x2A, -1);
     if (other->data->slot == -1)
     {
         mgr = gWorld;
         ((struct CandBits *)&mgr->status08)->low = 1;
     }
     if (other->data->slot == -2)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 4;
+    }
+    return 0;
+}
+
+/* Contact handler: when a partner touches the object with contact kind 3, records the contact
+   (query_contact), resolves the partner's action (0x04021010 for slot -1, 0x04021011 otherwise)
+   and, if the object is its record's main actor or one of the parts chained from it, links it to
+   the partner (actor_init_linked), or makes it wait for its pose while gWorld->unk2F9 is 1.
+   Returns query_contact's or the action's result when they handle it, -1 once linked, else 0. */
+s32 lookup_part(struct Actor *obj, struct Actor *partner, s32 kind)
+{
+    struct Rec *rec;
+    struct Actor *part;
+    s32 result;
+    u8 isPart;
+
+    result = query_contact_inline(obj, partner, kind);
+    if (result != 0)
+        return result;
+    result = resolve_contact_action(partner, obj, 0, 0, (partner->data->slot == -1) ? 0x04021010 : 0x04021011);
+    if (result > 0)
+        return result;
+    rec = obj->data;
+    if (rec == NULL)
+        return 0;
+    isPart = 0;
+    /* not the record's main actor (embedded at +8): look for it in the part chain */
+    if ((void *)obj != (u8 *)rec + 8)
+    {
+        part = rec->field38;
+        if (part != NULL)
+        {
+            if (obj == part)
+                goto link;
+            do
+            {
+                part = part->child;
+                if (part == NULL)
+                    goto check;
+            } while (obj != part);
+            isPart = 1;
+        }
+    check:
+        if (!isPart)
+            return 0;
+    }
+link:
+    obj->index = 0;
+    if (gWorld->unk2F9 == 1)
+    {
+        obj->state = wait_pose_flag;
+        return 0;
+    }
+    obj->owner = partner;
+    actor_init_linked(obj);
+    return -1;
+}
+
+/* Contact check that only counts hits from the front: returns 1 when `partner` isn't its record's main
+   actor, -1 when `obj` lies outside the half-turn in front of the partner's facing angle (partner->unkA0,
+   degrees in 8.8; flipped by half a turn when the partner's pose is mirrored), and otherwise records the
+   contact (slot value 0x7D, gWorld's status nibble 1 for slot -1, 4 for slot -2) and returns 0. */
+s32 lookup_slot(struct Actor *obj, struct Actor *partner)
+{
+    s32 partnerX;
+    s32 partnerH;
+    s32 objX;
+    s32 objH;
+    s32 angle;
+    s32 facing;
+    s32 wrapped;
+    struct CandMgr *mgr;
+
+    if (partner != partner->data->field38)
+        return 1;
+    partnerX = partner->posX / 0x100;
+    partnerH = (-partner->posZ) / 0x100;
+    objX = obj->posX / 0x100;
+    objH = (-obj->posZ) / 0x100;
+    angle = (u16)arc_tan2((s16)(objX - partnerX), (s16)(objH - partnerH));
+    /* degrees (8.8) to a 16-bit binary angle */
+    wrapped = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((-partner->unkA0) << 8, 360);
+    facing = wrapped & 0xFFFF;
+    if ((partner->data->pose10->flags11 & 0x40) != 0)
+        angle = (angle + 0x8000) & 0xFFFF;
+    if (angle < facing)
+        angle += 0xFFFF;
+    if (angle - facing > 0x8000)
+        return -1;
+    set_slot_value(0x7D, -1);
+    if (partner->data->slot == -1)
+    {
+        mgr = gWorld;
+        ((struct CandBits *)&mgr->status08)->low = 1;
+    }
+    if (partner->data->slot == -2)
     {
         mgr = gWorld;
         ((struct CandBits *)&mgr->status08)->low = 4;
@@ -1130,30 +1186,27 @@ void noop_state_08087c7c(struct Actor *obj)
 
 void obj_release(struct Actor *obj);
 extern const s16 gOffsetRows[];
-NONMATCH("asm/code_080865F8/process_record_ring.s", s32 process_record_ring(struct Actor *obj))
+s32 process_record_ring(struct Actor *obj)
 {
-    struct Rec *next;
+    register struct Rec *next asm("r1");
     struct Rec *rec = obj->data;
-    struct Rec *cur;
-
+    register struct Rec *cur asm("r4");
     if ((next = rec->ringNext) != NULL)
     {
-        do
-        {
+        do {
             cur = next;
-            if ((cur->status111 & 2) != 0)
+            if (cur->status111 & 2)
                 task_create_list_4c(stop_unless_flagged, cur);
             else
                 obj_stop((struct Actor *)((u8 *)cur + 8));
         } while ((next = cur->ringNext) != rec);
     }
-    if ((rec->status111 & 2) != 0)
+    if (rec->status111 & 2)
         task_create_list_4c(stop_unless_flagged, rec);
     else
         obj_stop(obj);
     return 1;
 }
-END_NONMATCH
 
 void set_targets_from_record(struct Actor *obj)
 {

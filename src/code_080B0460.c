@@ -122,6 +122,10 @@ void hero_b_wait_ratio_then_fx(struct HeroBody *body);
 void pair_end_place_both_a(struct HeroBody *body);
 void hero_b_step_reach_13a4(struct HeroBody *body);
 
+/* Body state: once hero A's sprite animation is done (sprite flag 8), put both heroes into
+ * action 5, set B 0xA to the right of and 6 above A with A's draw order, and send B quickly
+ * (speed 0x600) to its partner (0x18 to the left, 12 below its offset Z); then go on with
+ * hero_b_step_threshold_b05dc. */
 void hero_b_to_partner_fast(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -150,6 +154,7 @@ void hero_b_to_partner_fast(struct HeroBody *body)
             sprite_set_action(body_b, 5, 0x2061, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
+        /* positions are 24.8 fixed point */
         body_b->posX = body_a->targetX + 0xA00;
         body_b->targetX = body_b->posX;
         body_b->posY = body_a->targetY;
@@ -171,6 +176,10 @@ void hero_b_to_partner_fast(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080B0460/hero_b_step_threshold_b05dc.s", void hero_b_step_threshold_b05dc(struct HeroBody *body))
 
+/* Body state: once hero B's animation ends, plays sound 0x2B and (if B is active, mode 2 or 4)
+ * sends B in an arc 0x10 above its target to 0x3C px left of its target plus offsets, on the
+ * ground (speed 0x600), and starts B's action 5 (art 0x2000, or 0x204D when B has a pose).
+ * Then goes on with hero_b_wait_ratio_then_fx. */
 void hero_b_take_target_pose(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
@@ -201,14 +210,19 @@ void hero_b_take_target_pose(struct HeroBody *body)
     }
 }
 
-NONMATCH("asm/code_080B0460/hero_b_wait_ratio_then_fx.s", void hero_b_wait_ratio_then_fx(struct HeroBody *body))
+/* Body state: steps hero B's motion. When the threshold (ratioHi << 14) / ratioLo lies between B's
+ * step and progress, B (in mode 2 or 4) switches to action 6. Once B's motion sets flag 0x20, sets
+ * slot 0x2E, puts B into action 8, spawns effect 0x1E at B's position and goes on with
+ * pair_end_place_both_a. */
+void hero_b_wait_ratio_then_fx(struct HeroBody *body)
 {
+    register struct Hero *hero_b asm("r5");
     struct HeroBody *body_b;
-    struct Hero *hero_b;
+    s32 inRange;
+    register s32 ratio asm("r2");
+    s32 progress;
     s32 ratioLo;
     s32 ratioHi;
-    s32 ratio;
-    s32 inRange;
 
     hero_b = gWorld->heroB;
     body_b = &hero_b->body;
@@ -216,38 +230,60 @@ NONMATCH("asm/code_080B0460/hero_b_wait_ratio_then_fx.s", void hero_b_wait_ratio
     ratioLo = hero_b->body.ratioLo;
     ratioHi = hero_b->body.ratioHi;
     ratio = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(ratioHi << 14, ratioLo);
-    if (hero_b->body.step > ratio)
-        inRange = 0;
-    else
-        inRange = hero_b->body.progress >= ratio;
-    if (inRange != 0)
+    if (hero_b->body.step <= ratio)
+    {
+        register s16 *progressPtr asm("r0") = &hero_b->body.progress;
+
+        progress = *progressPtr;
+        inRange = 1;
+        if (progress >= ratio)
+            goto in_range_done;
+    }
+    inRange = 0;
+in_range_done:
+    if (inRange)
     {
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             if (body_b->data->pose == -1)
+            {
                 sprite_set_action(body_b, 6, 0x2000, 0);
+            }
             else
+            {
                 sprite_set_action(body_b, 6, 0x204D, 0);
+            }
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
     }
-    if ((body_b->flags & 0x20) != 0)
+    if (body_b->flags & 0x20)
     {
         set_slot_value(0x2E, -1);
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             if (body_b->data->pose == -1)
+            {
                 sprite_set_action(body_b, 8, 0x2000, 0);
+            }
             else
+            {
                 sprite_set_action(body_b, 8, 0x204D, 0);
+            }
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
+        /* positions are 24.8 fixed point */
         effect_spawn_at(0x1E, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
         body->state = pair_end_place_both_a;
     }
 }
-END_NONMATCH
 
+/*
+ * Hero pair state: once hero B's sprite has finished its animation (sprite flag 8), clears slot
+ * 0x53 and, for hero B and then hero A (each only in mode 2 or 4), sends the hero to its data's
+ * target position (8.8 fixed point, speed 0x400), sets the standing action (0x2002, or 0x204F when
+ * it has a pose), faces it along its span, clears its sprite mode and hands it to
+ * enter_finish_rebuild.
+ */
 void pair_end_place_both_a(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -263,6 +299,8 @@ void pair_end_place_both_a(struct HeroBody *body)
     if ((body_b->sprite->flags & 8) != 0)
     {
         set_slot_value(0x53, -1);
+
+        /* hero B */
         if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
         {
             data = body_b->data;
@@ -288,6 +326,8 @@ void pair_end_place_both_a(struct HeroBody *body)
             body_b->state = 0;
             enter_finish_rebuild(body_b);
         }
+
+        /* hero A */
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             data = body_a->data;
@@ -316,40 +356,43 @@ void pair_end_place_both_a(struct HeroBody *body)
     }
 }
 
+/* Once hero B's animation is done: hero B jumps to 0x20 pixels beside hero A and hero A jumps onto
+   hero B's head (0x18 above it), each only while still in play; hero B then plays action 1 and the
+   state goes on to hero_b_step_reach_13a4. */
 void hero_pair_place_b_beside_a(struct HeroBody *body)
 {
     struct World *world = gWorld;
-    struct Hero *hero_a = world->heroA;
-    struct HeroBody *body_a = &hero_a->body;
-    struct Hero *hero_b = world->heroB;
-    struct HeroBody *body_b = &hero_b->body;
+    struct Hero *heroA = world->heroA;
+    struct HeroBody *bodyA = &heroA->body;
+    struct Hero *heroB = world->heroB;
+    struct HeroBody *bodyB = &heroB->body;
 
-    if ((body_b->sprite->flags & 8) != 0)
+    if ((bodyB->sprite->flags & 8) != 0)
     {
         set_slot_value(0x2B, -1);
-        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+        if ((heroB->body.mode & 6) == 2 || (heroB->body.mode & 6) == 4)
         {
-            place_targets(body_b, body_a->targetX / 0x100 + hero_a->body.ofsX + 0x20,
-                          body_a->targetY / 0x100 + hero_a->body.ofsY, 0, -1);
-            hero_b->body.height = body_b->targetZ / 0x100 + 0x20;
-            set_motion_offsets(body_b, 0x399);
+            place_targets(bodyB, bodyA->targetX / 0x100 + heroA->body.ofsX + 0x20,
+                          bodyA->targetY / 0x100 + heroA->body.ofsY, 0, -1);
+            heroB->body.height = bodyB->targetZ / 0x100 + 0x20;
+            set_motion_offsets(bodyB, 0x399);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
         {
-            u16 v;
+            u16 arcHeight;
 
-            place_targets(body_a, body_b->targetX / 0x100 + body_b->ofsX,
-                          body_b->targetY / 0x100 + body_b->ofsY, body_b->targetZ / 0x100 + 0x18, -1);
-            v = 0x20;
-            body_a->height = v;
-            set_motion_offsets(body_a, 0x600);
+            place_targets(bodyA, bodyB->targetX / 0x100 + bodyB->ofsX,
+                          bodyB->targetY / 0x100 + bodyB->ofsY, bodyB->targetZ / 0x100 + 0x18, -1);
+            arcHeight = 0x20;
+            bodyA->height = arcHeight;
+            set_motion_offsets(bodyA, 0x600);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
-            sprite_set_action(body_b, 1, 0x2061, 0);
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+            sprite_set_action(bodyB, 1, 0x2061, 0);
+            ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 1;
         }
-        body_b->timer = body_b->timer & 0xFFF;
+        bodyB->timer = bodyB->timer & 0xFFF;
         body->state = hero_b_step_reach_13a4;
     }
 }

@@ -11,9 +11,15 @@ struct HalfBit5
 struct ActorPose
 {
     u8 filler0[0x11];
-    u8 unk11;
+    u8 unk11; /* bit 6: the sprite faces the other way (flipped) */
     u8 flags;
 };
+
+/* ActorPose.flags bit: the current animation has finished. */
+#define POSE_FLAG_ANIM_DONE 0x08
+
+/* ActorObj.flags79 bit: start_motion's target is an absolute position, not an offset from the actor */
+#define ACTOR_MOTION_ABSOLUTE 0x20
 
 struct ActorPart
 {
@@ -56,11 +62,11 @@ struct ActorObj
     u8 filler76[0x77 - 0x76];
     u8 flags77;
     u8 flags78;
-    u8 flags79;
-    s16 motionStart;
-    s16 motionSpeed;
-    s32 index;
-    s32 targetX;
+    u8 flags79;         /* ACTOR_MOTION_* */
+    s16 motionStart;    /* start_motion: frames the move takes; 0 = work them out from motionSpeed */
+    s16 motionSpeed;    /* start_motion: speed when motionStart is 0 */
+    s32 index;          /* frames of the move left (0: arrived) */
+    s32 targetX;        /* where start_motion moves the actor (8.8) */
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
@@ -142,7 +148,7 @@ void obj_index_zero_slot_timer(struct ActorObj *obj);
 u32 obj_link_other_then_idle(struct ActorObj *obj, struct ActorObj *partner);
 u32 obj_notify_lookup_part(struct ActorObj *obj, u32 a, u32 b);
 u32 obj_link_owner_move_part(struct ActorObj *obj);
-void obj_lookup_part_b_then_state(void);
+u32 obj_lookup_part_b_then_state(struct ActorObj *obj);
 void effect_spawn_at(u32 id, s32 x, s32 y, s32 h, struct ActorObj *owner);
 void obj_list_push_default(struct ActorObj *obj);
 s32 resolve_contact_action(struct ActorObj *owner, struct ActorObj *obj, s32 a, s32 b, u32 code);
@@ -167,19 +173,23 @@ u32 obj_query_part_finish(struct ActorObj *obj, u32 a, u32 b);
 void actor_begin_offset_motion(struct ActorObj *obj);
 void actor_idle_reset_alt(struct ActorObj *obj);
 
+/* Actor state: counts frames (sound 0x125 on frame 30) and, once the current animation is done,
+ * plays action 6 with effect 0xD7A and spawns a 0x408A child next to the actor that inherits its
+ * owner, tag and facing and drifts off (actor_drift_left_release); then plays sound 0x58 and
+ * waits for the next animation to end (jump_obj_pose_active_clear_state). */
 void obj_spawn_part_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s16 counted;
+    s16 frame;
 
-    counted = ++obj->timer;
-    if (counted == 0x1E)
+    frame = ++obj->timer;
+    if (frame == 30)
         set_slot_value(0x125, -1);
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_FLAG_ANIM_DONE)
     {
         sprite_set_action(obj, 6, 0, 0);
         effect_spawn_at(0xD7A, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
-        child = obj_spawn(obj->part, 0x408A, obj->baseX / 256 - 0x11, obj->baseY / 256 + 2,
+        child = obj_spawn(obj->part, 0x408A, obj->baseX / 256 - 17, obj->baseY / 256 + 2,
                           obj->baseH / 256, ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
         ((struct Flags78Bits *)&child->flags78)->kind = 4;
@@ -208,6 +218,11 @@ void jump_obj_pose_active_clear_state(struct ActorObj *obj)
     }
 }
 
+/* Actor state while moving: spawns effect 0xDB2 at the actor every 10 frames. Once its motion is
+ * done (index, the frames left, is 0) it goes back to action 0 and, if paramA0 is set, spawns a
+ * 0x408A child at x 1 that inherits its owner, tag and facing and slides along x until it reaches
+ * the actor (obj_slide_x_finish); the actor then waits for the child to go
+ * (actor_action8_if_no_child). Without paramA0 the actor's state ends. */
 void unknown_code_0806b3ba(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -242,21 +257,24 @@ void unknown_code_0806b3ba(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_slot(struct ActorObj *obj))
+/* State step: once the pose's animation is done, counts the timer down; at 0 it plays the throw
+   (action paramA4 + 3 with effect 0xD92, or with paramA8 set action paramA4 + 6 and effect
+   0xD9A), then spawns its projectile (0x408B, or 0x408C) in front of it. The projectile flies
+   at speed 0x300 to the owner's part target and then on to a point as far past it as it
+   started before it (actor_begin_offset_motion). Plays sound 0x85. */
+void obj_spawn_child_by_slot(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 t;
-    s32 dxl;
-    s32 dyl;
-    u32 bits;
-    u32 parent6;
+    s32 timer;
+    s32 pastX;
+    s32 pastY;
 
     if (obj->pose->flags & 8)
     {
-        t = obj->timer;
-        t--;
-        obj->timer = t;
-        if ((t << 16) <= 0)
+        timer = obj->timer;
+        timer--;
+        obj->timer = timer;
+        if ((timer << 16) <= 0)
         {
             if (obj->paramA8 == 0)
             {
@@ -281,12 +299,8 @@ NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_
             }
             obj->child = child;
             ((struct Flags78Bits *)&child->flags78)->kind = 2;
-            parent6 = obj->flags77;
-            parent6 &= 0x40;
-            bits = child->flags77;
-            bits = (bits & ~0x40) | parent6;
-            ((struct HalfBit5 *)&bits)->bit5 = 0;
-            child->flags77 = bits;
+            ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+            ((struct ObjFlags77 *)child)->bit5 = 0;
             child->handler68 = on_arrive;
             child->unk6C = obj->unk6C;
             child->owner = obj->owner;
@@ -294,6 +308,8 @@ NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_
             obj_list_push_default(child);
             child->handler58 = (void (*)(struct ActorObj *))obj_link_owner;
             child->handler5C = (void (*)(struct ActorObj *))obj_query_part_finish;
+
+            /* fly to the owner's part target */
             child->targetX = obj->owner->part->targetX;
             child->targetY = obj->owner->part->targetY;
             child->targetH = obj->baseH;
@@ -302,16 +318,17 @@ NONMATCH("asm/code_0806B254/obj_spawn_child_by_slot.s", void obj_spawn_child_by_
             child->motionStart = 0;
             start_motion(child);
             child->state = actor_begin_offset_motion;
-            dyl = obj->owner->part->targetY - child->baseY;
-            dxl = obj->owner->part->targetX - child->baseX;
+
+            /* then on past it: the start point mirrored across the target */
+            pastY = obj->owner->part->targetY - child->baseY;
+            pastX = obj->owner->part->targetX - child->baseX;
             child->dh = child->baseH / 0x100;
-            child->dy = (obj->owner->part->targetY + dyl) / 0x100;
-            child->dx = (obj->owner->part->targetX + dxl) / 0x100;
+            child->dy = (obj->owner->part->targetY + pastY) / 0x100;
+            child->dx = (obj->owner->part->targetX + pastX) / 0x100;
             set_slot_value(0x85, -1);
         }
     }
 }
-END_NONMATCH
 
 void obj_pose_active_move_high(struct ActorObj *obj)
 {
@@ -350,23 +367,30 @@ void obj_timer_place_sprite_then_wait(struct ActorObj *obj)
     }
 }
 
+/*
+ * Attacker state after its dash: counts the timer down, then charges (action 4, speed 0x200) to
+ * 16 px past the target's position and joins the attack list (obj_list_push_default), so that
+ * reaching the target (obj_link_owner_move_part) or being countered
+ * (obj_lookup_part_b_then_state) decides what happens next. Plays sound 0x83 and leaves dust
+ * behind it while it moves (obj_timer_place_sprite_index).
+ */
 void obj_timer_move_sprite(struct ActorObj *obj)
 {
-    s32 t = obj->timer;
+    s32 timer = obj->timer;
 
-    t--;
-    obj->timer = t;
-    if ((t << 16) <= 0)
+    timer--;
+    obj->timer = timer;
+    if ((timer << 16) <= 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         obj->targetX = obj->owner->part->targetX + 0x1000;
         obj->targetY = obj->owner->part->targetY;
         obj->targetH = obj->baseH;
-        *(u8 *)&obj->flags79 |= 0x20;
+        *(u8 *)&obj->flags79 |= ACTOR_MOTION_ABSOLUTE;
         obj->motionSpeed = 0x200;
         obj->motionStart = 0;
         start_motion(obj);
-        obj->timer = 0xA;
+        obj->timer = 10;
         obj->state = obj_timer_place_sprite_index;
         obj_list_push_default(obj);
         obj->handler58 = (void (*)(struct ActorObj *))obj_link_owner_move_part;
@@ -414,7 +438,18 @@ void obj_timer_move_part_target(struct ActorObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0806B254/obj_lookup_part_b_then_state.s", void obj_lookup_part_b_then_state(void))
+u32 obj_lookup_part_b_then_state(struct ActorObj *obj)
+{
+    register u32 found asm("r4") = lookup_link_slot(obj);
+
+    if (found != 0)
+        return found;
+    sprite_set_action(obj, 1, 0, 0);
+    obj->timer = 0x14;
+    obj->index = found;
+    obj->state = obj_timer_move_part_target;
+    return 0;
+}
 
 u32 obj_link_owner_move_part(struct ActorObj *obj)
 {

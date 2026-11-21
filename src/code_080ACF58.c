@@ -183,29 +183,40 @@ static inline void *tracked_obj(void)
     return gWorld->trackedObj;
 }
 
+/*
+ * Hero state: the heroes reached the tracked object. Copies two party flags
+ * (bit 13 and bit 31 of the party word at +8) into the top two bits of the
+ * world's mode byte and clears slot 0x53. Each hero whose mode is 2 or 4 is
+ * sent to a spot below the tracked object (hero B at +0x50, hero A at +0x28
+ * in X, both +0x6E in Y), plays action 0x2002 (no pose) or 0x204F and faces
+ * along its span; hero B then drops its state and rebuilds. This body then
+ * waits in hero_a_stop_anim.
+ */
 void hero_b_on_object(struct HeroBody *body)
 {
     struct World *world;
     struct HeroBody *bodyA;
     struct HeroBody *bodyB;
     s16 *span;
-    u32 poseHi;
-    u32 poseC;
-    u8 poseBit;
-    u32 poseLo;
-    u32 poseMode;
+    u32 fieldLow;
+    u32 fieldHigh;
+    u8 flagBit13;
+    u32 flagBit31;
+    u32 modeBits;
 
     gWorld->enableByte = 1;
     world = gWorld;
-    poseBit = ((*(u32 *)(gParty + 8) << 14) >> 27) & 1;
-    poseHi = gParty[0xB] >> 6;
-    poseC = gParty[0xC];
-    poseLo = ((((poseC & 0xF) << 2) | poseHi) >> 1) & 1;
-    poseMode = (poseBit + (poseLo << 1)) << 6;
-    world->modeByte = (world->modeByte & 0x3F) | poseMode;
+    flagBit13 = ((*(u32 *)(gParty + 8) << 14) >> 27) & 1;
+    fieldLow = gParty[0xB] >> 6;
+    fieldHigh = gParty[0xC];
+    flagBit31 = ((((fieldHigh & 0xF) << 2) | fieldLow) >> 1) & 1;
+    modeBits = (flagBit13 + (flagBit31 << 1)) << 6;
+    world->modeByte = (world->modeByte & 0x3F) | modeBits;
     bodyA = &gWorld->heroA->body;
     bodyB = &gWorld->heroB->body;
     set_slot_value(0x53, -1);
+
+    /* hero B: walk to the object, play the arrive action and rebuild */
     if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
     {
         place_targets(bodyB, (s16)obj_last_x(tracked_obj()) + 0x50, (s16)obj_last_y(tracked_obj()) + 0x6E, 0, -1);
@@ -225,6 +236,8 @@ void hero_b_on_object(struct HeroBody *body)
         bodyB->state = 0;
         enter_finish_rebuild(bodyB);
     }
+
+    /* hero A: walk to the object and play the arrive action */
     if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
     {
         place_targets(bodyA, (s16)obj_last_x(tracked_obj()) + 0x28, (s16)obj_last_y(tracked_obj()) + 0x6E, 0, -1);

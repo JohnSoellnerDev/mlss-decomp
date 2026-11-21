@@ -34,8 +34,8 @@ struct HeroData
 {
     struct Hero *first;
     u8 filler4[0xD8 - 0x04];
-    s32 unkD8;
-    s32 unkDC;
+    s32 unkD8; /* drop_to_focus: the x it flies back in to and stops at */
+    s32 unkDC; /* drop_to_focus: the y it flies back in at */
     u8 filler0E0[0x106 - 0xE0];
     s16 unk106;
     s16 unk108;
@@ -167,7 +167,7 @@ struct Hero
 struct Part
 {
     u8 filler0[0x14];
-    u16 flags;
+    u16 flags; /* bit n set: OBJ palette n belongs to this part */
 };
 
 struct Entry
@@ -196,7 +196,15 @@ struct World
 struct LayerCtx
 {
     u8 filler0[0x0C];
-    u16 cells[16];
+    u16 cells[16];          /* owner of each OBJ palette: 0xFFFF free, 0x1FFF lent to place_layer_tile */
+};
+
+/* The task begin_tile_update starts for update_layer_tiles. */
+struct LayerTileTask
+{
+    u8 filler0[4];
+    u32 active;             /* 0 ends the task */
+    struct HeroBody *owner;
 };
 
 extern struct World *gWorld;
@@ -204,9 +212,9 @@ extern u8 gSys[];
 extern struct LayerCtx *gModelCtx;
 extern u8 *gWorkBuf;
 extern u8 gUnk_02000460[];
-extern u8 gUnk_02000280[];
-extern const u16 gTileHalfTable[];
-extern const u8 gUnk_089F46B0[];
+extern u8 gUnk_02000280[];         /* OBJ palette shadow: 16 palettes of 0x20 bytes */
+extern const u16 gTileHalfTable[]; /* archive entry numbers of the pictures in gUnk_089F46B0 */
+extern const u8 gUnk_089F46B0[];   /* picture archive: u32 offsets (from its start) to its entries */
 
 struct SysKeys3E
 {
@@ -303,33 +311,42 @@ void follow_spawn_child(struct HeroBody *body)
     }
 }
 
+/*
+ * Hero state, a button-mash push: shows the hero's button part above it (part 1 for hero A, 2 for
+ * hero B) and drops a particle every 16-19 frames. The hero slides left towards body->phase, a limit
+ * that creeps left by 0x19 a frame and jumps 4 pixels left each time its button (A for hero A, B for
+ * hero B) is pressed. Once it reaches 12 pixels right of the focus object, it walks to 0x30 pixels
+ * left of it and goes on to release_other_hero.
+ */
 void follow_focus_x(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *hero_a = &world->heroA->body;
     struct HeroBody *hero_b = &world->heroB->body;
-    s32 roll;
-    s32 step;
-    s32 target;
+    s32 particleDelay;
+    s32 speed;
+    s32 stopX;
 
     {
-        s32 wflags = world->flags;
+        s32 worldFlags = world->flags;
 
-        world->flags = wflags | 0x10;
+        world->flags = worldFlags | 0x10;
     }
     if (body == hero_a)
         set_body_part(body, 1, 0, -0x24, 1);
     else
         set_body_part(body, 2, 0, -0x24, 1);
 
-    roll = rand_below(4, mt19937_next()) + 0x10;
-    if ((u32)roll < (u32)body->clock)
+    /* a falling particle every 16-19 frames */
+    particleDelay = rand_below(4, mt19937_next()) + 0x10;
+    if ((u32)particleDelay < (u32)body->clock)
     {
         body->clock = 0;
         spawn_fall_particle(body);
     }
     body->clock++;
 
+    /* the hero's button pushes the limit 4 pixels further and plays the push action */
     if ((body == hero_a && (((struct SysKeys3E *)gSys)->keys & 1) != 0)
         || (body == hero_b && (((struct SysKeys3E *)gSys)->keys & 2) != 0))
     {
@@ -341,21 +358,22 @@ void follow_focus_x(struct HeroBody *body)
         sprite_set_action(body, 1, 0, 0);
     body->phase -= 0x19;
 
-    step = (s32)(((double)(body->data->unk106 / ((body->unk20 * 0x99) / 0x100)) + 1.2) * 256.0);
-    body->posX -= step;
+    /* slide left, but not past the limit */
+    speed = (s32)(((double)(body->data->unk106 / ((body->unk20 * 0x99) / 0x100)) + 1.2) * 256.0);
+    body->posX -= speed;
     if (body->posX < body->phase)
         body->posX = body->phase;
 
-    target = (s16)obj_last_x(focus_obj()) * 0x100 + 0xC00;
-    if (target >= body->posX)
+    stopX = (s16)obj_last_x(focus_obj()) * 0x100 + 0xC00;
+    if (stopX >= body->posX)
     {
-        body->posX = target;
+        body->posX = stopX;
         obj_free_parts(body);
         if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
         {
-            s32 y0 = body->sprite->unk2;
+            s32 offsetY = body->sprite->unk2;
             s32 x = (s16)obj_last_x(focus_obj()) - 0x30;
-            s32 y = (s16)obj_last_y(focus_obj()) + y0;
+            s32 y = (s16)obj_last_y(focus_obj()) + offsetY;
 
             place_targets(body, x, y, 0, -1);
             set_motion_start(body, 0x200);
@@ -364,12 +382,15 @@ void follow_focus_x(struct HeroBody *body)
     }
 }
 
+// Hero state when a push is knocked back: frees the hero's parts, plays the knock-back action 3 and
+// starts the hop's progress window (0 to 0x4000 in data->unk108 + 100 - level frames, or at once when
+// that is 0). Picks 2-4 falling particles for follow_focus_wait, which runs the hop.
 void prepare_follow_focus(struct HeroBody *body)
 {
     struct FollowFlagBits
     {
         u8 unk0 : 5;
-        u8 bit5 : 1;
+        u8 progressDone : 1;
         u8 unk6 : 2;
     };
 
@@ -383,15 +404,16 @@ void prepare_follow_focus(struct HeroBody *body)
         sprite_set_action(body, 3, 0, 0);
     }
     ((struct HeroSpriteBits *)&body->sprite->flags)->mode = 1;
+    /* on the field (mode bits 1-2 are 1 or 2) */
     if ((body->mode & 6) == 2 || (body->mode & 6) == 4)
     {
-        s32 value = body->data->unk108 + 0x64;
+        s32 frames = body->data->unk108 + 100;
 
-        body->handle = (value != body->level)
-            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, value - body->level)
+        body->handle = (frames != body->level)
+            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, frames - body->level)
             : 0x4000;
         body->unk7E = 0;
-        ((struct FollowFlagBits *)&body->flags)->bit5 = 0;
+        ((struct FollowFlagBits *)&body->flags)->progressDone = 0;
     }
     body->clock = 0;
     body->repeats = rand_below(3, mt19937_next()) + 2;
@@ -403,18 +425,22 @@ static inline void set_hero_anim(struct HeroBody *body, u32 anim)
     sprite_set_action(body, 1, anim, 0);
 }
 
+// Hero state after a push is knocked back (prepare_follow_focus): runs the knock-back hop and drops
+// its 2-4 falling particles, one every 4-7 frames. When the hop ends (flags bit 5), the other hero
+// is knocked back too if it is still pushing, this hero plays its push animation (0x2027 hero A,
+// 0x2056 hero B), its limit restarts at targetX, and it goes back to pushing (follow_focus_x).
 void follow_focus_wait(struct HeroBody *body)
 {
     struct HeroBody *hero_a = &gWorld->heroA->body;
     struct HeroBody *hero_b = &gWorld->heroB->body;
-    s32 clock;
+    s32 delay;
 
     state_stack_advance_progress(body);
     if (body->repeats != 0)
     {
-        clock = body->clock - 1;
-        body->clock = clock;
-        if (clock <= 0)
+        delay = body->clock - 1;
+        body->clock = delay;
+        if (delay <= 0)
         {
             body->clock = rand_below(4, mt19937_next()) + 4;
             body->repeats--;
@@ -609,9 +635,15 @@ static inline void push_sprite_node(struct HeroBody *child)
     child->nodes = node;
 }
 
+/* Once action 0x13 (anim_13_fx_then_spawn) is done: sets slots 0x8B and 0x8C, plays action 0x14,
+   spawns effect 0x28DF at the body's target point and an orbit object (0x403D) 50 px left of it.
+   The orbit draws its own sprite plus a trail of 4 sprite nodes (taken from the node pool, all
+   starting at its target point), circles around where it was spawned (orbit_nodes_a) and shares
+   the body's anim and partner. The body then waits for the end of its animation
+   (pose_update_if_active_a). Variant b (0x403C, 8 nodes) is focus_follow_spawn_orbit_child_b. */
 void focus_follow_spawn_orbit_child_a(struct HeroBody *body)
 {
-    struct HeroBody *child;
+    struct HeroBody *orbit;
 
     if (body->sprite->flags & 8)
     {
@@ -619,23 +651,23 @@ void focus_follow_spawn_orbit_child_a(struct HeroBody *body)
         set_slot_value(0x8C, -1);
         sprite_set_action(body, 0x14, 0, 0);
         effect_spawn_at(0x28DF, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-        child = obj_spawn(body->data, 0x403D, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
-        body->child = child;
-        ((struct HeroFlag0Bits *)&child->flags)->bit0 = 1;
-        child->phase = 0;
-        child->list = sprite_node_take();
-        child->list->sprite = child->sprite;
-        child->list->head = (struct ChildNode *)&child->nodes;
-        child->anim = body->anim;
-        child->partner = body->partner;
-        child->centerX = child->posX;
-        child->centerY = child->posY;
-        child->timerE = 0;
-        push_sprite_node(child);
-        push_sprite_node(child);
-        push_sprite_node(child);
-        push_sprite_node(child);
-        child->state = orbit_nodes_a;
+        orbit = obj_spawn(body->data, 0x403D, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
+        body->child = orbit;
+        ((struct HeroFlag0Bits *)&orbit->flags)->bit0 = 1;
+        orbit->phase = 0;
+        orbit->list = sprite_node_take();
+        orbit->list->sprite = orbit->sprite;
+        orbit->list->head = (struct ChildNode *)&orbit->nodes;
+        orbit->anim = body->anim;
+        orbit->partner = body->partner;
+        orbit->centerX = orbit->posX;
+        orbit->centerY = orbit->posY;
+        orbit->timerE = 0;
+        push_sprite_node(orbit);
+        push_sprite_node(orbit);
+        push_sprite_node(orbit);
+        push_sprite_node(orbit);
+        orbit->state = orbit_nodes_a;
         body->state = pose_update_if_active_a;
     }
 }
@@ -673,9 +705,14 @@ void anim_13_fx_then_spawn(struct HeroBody *body)
     }
 }
 
+/* Once action 0x10 (anim_10_fx_then_child) is done: queues sounds 0x8B and 0x8C, plays action 0x11,
+   spawns effect 0x28C6 at the body's target point and an orbit object (0x403C) 50 px left of it.
+   The orbit draws its own sprite plus a trail of 8 sprite nodes from the node pool, circles around
+   where it was spawned (orbit_nodes_b) and shares the body's anim and partner. The body then waits
+   for the end of its animation (pose_update_if_active_b). Variant a: focus_follow_spawn_orbit_child_a. */
 void focus_follow_spawn_orbit_child_b(struct HeroBody *body)
 {
-    struct HeroBody *child;
+    struct HeroBody *orbit;
     s32 i;
 
     if (body->sprite->flags & 8)
@@ -684,20 +721,20 @@ void focus_follow_spawn_orbit_child_b(struct HeroBody *body)
         set_slot_value(0x8C, -1);
         sprite_set_action(body, 0x11, 0, 0);
         effect_spawn_at(0x28C6, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-        child = obj_spawn(body->data, 0x403C, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
-        body->child = child;
-        child->phase = 0;
-        child->list = sprite_node_take();
-        child->list->sprite = child->sprite;
-        child->list->head = (struct ChildNode *)&child->nodes;
-        child->anim = body->anim;
-        child->partner = body->partner;
-        child->centerX = child->posX;
-        child->centerY = child->posY;
-        child->timerE = 0;
+        orbit = obj_spawn(body->data, 0x403C, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
+        body->child = orbit;
+        orbit->phase = 0;
+        orbit->list = sprite_node_take();
+        orbit->list->sprite = orbit->sprite;
+        orbit->list->head = (struct ChildNode *)&orbit->nodes;
+        orbit->anim = body->anim;
+        orbit->partner = body->partner;
+        orbit->centerX = orbit->posX;
+        orbit->centerY = orbit->posY;
+        orbit->timerE = 0;
         for (i = 0; i < 8; i++)
-            push_sprite_node(child);
-        child->state = orbit_nodes_b;
+            push_sprite_node(orbit);
+        orbit->state = orbit_nodes_b;
         body->state = pose_update_if_active_b;
     }
 }
@@ -824,9 +861,14 @@ void anim_10_fx_then_child(struct HeroBody *body)
     }
 }
 
+/* Once action 0xD (anim_0d_fx_then_spawn_c) is done: sets slots 0x8B and 0x8C, plays action 0xE,
+   spawns effect 0x28AD at the body's target point and an orbit object (0x403C) 50 px left of it,
+   with a trail of 8 sprite nodes starting at its target point. The orbit circles around where it
+   was spawned (orbit_nodes_c) and shares the body's anim and partner; the body then waits for the
+   end of its animation (pose_update_if_active_c). */
 void focus_follow_spawn_orbit_child_c(struct HeroBody *body)
 {
-    struct HeroBody *child;
+    struct HeroBody *orbit;
     s32 i;
 
     if (body->sprite->flags & 8)
@@ -835,20 +877,20 @@ void focus_follow_spawn_orbit_child_c(struct HeroBody *body)
         set_slot_value(0x8C, -1);
         sprite_set_action(body, 0xE, 0, 0);
         effect_spawn_at(0x28AD, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, body);
-        child = obj_spawn(body->data, 0x403C, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
-        body->child = child;
-        child->phase = 0;
-        child->list = sprite_node_take();
-        child->list->sprite = child->sprite;
-        child->list->head = (struct ChildNode *)&child->nodes;
-        child->anim = body->anim;
-        child->partner = body->partner;
-        child->centerX = child->posX;
-        child->centerY = child->posY;
-        child->timerE = 0;
+        orbit = obj_spawn(body->data, 0x403C, body->targetX / 0x100 - 0x32, body->targetY / 0x100, body->targetZ / 0x100, 1, 1);
+        body->child = orbit;
+        orbit->phase = 0;
+        orbit->list = sprite_node_take();
+        orbit->list->sprite = orbit->sprite;
+        orbit->list->head = (struct ChildNode *)&orbit->nodes;
+        orbit->anim = body->anim;
+        orbit->partner = body->partner;
+        orbit->centerX = orbit->posX;
+        orbit->centerY = orbit->posY;
+        orbit->timerE = 0;
         for (i = 0; i < 8; i++)
-            push_sprite_node(child);
-        child->state = orbit_nodes_c;
+            push_sprite_node(orbit);
+        orbit->state = orbit_nodes_c;
         body->state = pose_update_if_active_c;
     }
 }
@@ -972,11 +1014,15 @@ void anim_0d_fx_then_spawn_c(struct HeroBody *body)
     }
 }
 
+// Moves the body from 0x50 px left of its center toward its partner's target, 0x80 further
+// each frame (step_vector gives the offset in quarter units and the distance). On arrival it
+// plays sound 0xD5 and action 3, snaps 0x50 px right of the partner's target and goes on to
+// start_parts_after_32.
 void focus_follow_step_toward_partner(struct HeroBody *body)
 {
     u16 *step = (u16 *)&body->step;
-    s16 out[2];
-    s16 *outY;
+    s16 offset[2];
+    s16 *offsetY;
     struct HeroBody *partner;
     s32 startX;
     s32 dist;
@@ -984,14 +1030,14 @@ void focus_follow_step_toward_partner(struct HeroBody *body)
     s32 dy;
 
     *step += 1;
-    outY = &out[1];
+    offsetY = &offset[1];
     partner = body->partner;
     startX = body->centerX - 0x5000;
     dx = partner->targetX - startX;
     dy = partner->targetY - body->centerY;
-    dist = step_vector((u16 *)&out[0], (u16 *)outY, dx, dy, (s16)*step << 7);
-    body->posX = body->centerX + (out[0] << 2);
-    body->posY = body->centerY + (*outY << 2);
+    dist = step_vector((u16 *)&offset[0], (u16 *)offsetY, dx, dy, (s16)*step << 7);
+    body->posX = body->centerX + (offset[0] << 2);
+    body->posY = body->centerY + (*offsetY << 2);
     if (((s16)*step << 7) >= dist)
     {
         set_slot_value(0xD5, -1);
@@ -1051,12 +1097,16 @@ NONMATCH("asm/code_08098B18/start_parts_after_32.s", void start_parts_after_32(s
 END_NONMATCH
 
 s32 obj_last_x(void *obj);
+/* Flies the body left (0x2CC a frame) with effect 0xD1D every 6 frames. Once its sprite is past
+ * the screen's left edge (x < -0x30) it jumps to 0x120 right of the focus object at y data->unkDC
+ * and lets go of all its parts (off the update list, mode bit 6, partner and anim cleared). When
+ * it is back at data->unkD8 it stops there, stops sound 0x11A and ends (state NULL). */
 void drop_to_focus(struct HeroBody *body)
 {
     struct Hero *node;
     struct HeroBody *part;
     u16 *counter;
-    s32 limit;
+    s32 stopX;
     s32 mode;
     s32 clear;
     s32 zero;
@@ -1071,8 +1121,9 @@ void drop_to_focus(struct HeroBody *body)
     }
     if (body->sprite->unk0 < -0x30)
     {
-        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + 0x12000;
+        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + (0x120 << 8);
         body->posY = body->data->unkDC;
+        /* the parts form a ring that ends at the body's own record */
         node = body->data->first;
         zero = 0;
         clear = ~0x40;
@@ -1094,10 +1145,10 @@ void drop_to_focus(struct HeroBody *body)
     }
     if (body->targetX >= body->data->unkD8)
     {
-        limit = body->data->unkD8;
-        if (limit >= body->posX)
+        stopX = body->data->unkD8;
+        if (stopX >= body->posX)
         {
-            body->posX = limit;
+            body->posX = stopX;
             sprite_set_action(body, -1, 0, 0);
             sound_stop_song(0x11A);
             body->state = 0;
@@ -1106,58 +1157,69 @@ void drop_to_focus(struct HeroBody *body)
 }
 
 extern u8 gSys[];
-void unknown_code_08099f58(s32 a, s32 b)
+/* Loads picture gTileHalfTable[picture] (the next one when gSys[0x888] & 6) as a 16-colour palette
+ * into OBJ palette (first palette of entry `entry`'s part) + entry, and marks that palette dirty
+ * in gSys's u16 palette mask. */
+void unknown_code_08099f58(s32 entry, s32 picture)
 {
-    s32 flags;
-    s32 tile;
-    u16 half;
+    s32 paletteMask;
+    s32 palette;
+    u16 archiveEntry;
     u8 *src;
     void (*copy)(u8 *, u8 *, u32);
 
-    flags = gWorld->entries[a]->part->flags;
-    tile = 0;
-    if ((flags & 1) == 0)
+    paletteMask = gWorld->entries[entry]->part->flags;
+    palette = 0;
+    if ((paletteMask & 1) == 0)
     {
         do
         {
-            tile++;
-        } while (((flags >> tile) & 1) == 0);
+            palette++;
+        } while (((paletteMask >> palette) & 1) == 0);
     }
-    tile += a;
+    palette += entry;
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
-    half = gTileHalfTable[(gSys[0x888] & 6) != 0 ? b + 1 : b];
-    src = (u8 *)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (half << 2));
-    copy(src, gUnk_02000280 + (tile << 5), 0x20);
-    *(u16 *)gSys |= 1 << tile;
+    archiveEntry = gTileHalfTable[(gSys[0x888] & 6) != 0 ? picture + 1 : picture];
+    src = (u8 *)gUnk_089F46B0 + *(u32 *)(gUnk_089F46B0 + (archiveEntry << 2));
+    copy(src, gUnk_02000280 + (palette << 5), 0x20);
+    *(u16 *)gSys |= 1 << palette;
 }
 
+/* approach_partner stops this far to the right of its partner's target. */
+#define PARTNER_SIDE_OFFSET 0x5000
+#define SE_PARTNER_ARRIVE 0xD5
+
+/* State: walks the body from its start (centerX, centerY) in a straight line, 0x200 position units
+ * further each frame, to the spot PARTNER_SIDE_OFFSET right of its partner's target. On arrival it
+ * plays the arrival sound, switches to action 3, snaps there and goes on to start_parts_after_16. */
 void approach_partner(struct HeroBody *body)
 {
-    u16 *counter = (u16 *)&body->step;
-    s16 out[2];
-    s16 *outY;
+    u16 *frame = (u16 *)&body->step;
+    s16 offset[2];
+    s16 *offsetY;
     struct HeroBody *partner;
-    s32 startX;
-    s32 limit;
+    s32 fromX;
+    s32 distance;
     s32 dx;
     s32 dy;
 
-    *counter += 1;
-    outY = &out[1];
+    *frame += 1;
+    offsetY = &offset[1];
     partner = body->partner;
-    startX = body->centerX - 0x5000;
-    dx = partner->targetX - startX;
+    fromX = body->centerX - PARTNER_SIDE_OFFSET;
+    dx = partner->targetX - fromX;
     dy = partner->targetY - body->centerY;
-    limit = step_vector((u16 *)&out[0], (u16 *)outY, dx, dy, (s16)*counter << 7);
-    body->posX = body->centerX + (out[0] << 2);
-    body->posY = body->centerY + (*outY << 2);
-    if (((s16)*counter << 7) >= limit)
+    /* step_vector works in quarter units: offset and distance are 1/4 of the real ones */
+    distance = step_vector((u16 *)&offset[0], (u16 *)offsetY, dx, dy, (s16)*frame << 7);
+    body->posX = body->centerX + (offset[0] << 2);
+    body->posY = body->centerY + (*offsetY << 2);
+    if (((s16)*frame << 7) >= distance)
     {
-        set_slot_value(0xD5, -1);
+        set_slot_value(SE_PARTNER_ARRIVE, -1);
         sprite_set_action(body, 3, 0, 0);
-        *counter = 0;
+        *frame = 0;
         partner = body->partner;
-        body->posX = partner->targetX + 0x5000;
+        body->posX = partner->targetX + PARTNER_SIDE_OFFSET;
         body->posY = partner->targetY;
         body->state = start_parts_after_16;
     }
@@ -1209,12 +1271,16 @@ NONMATCH("asm/code_08098B18/start_parts_after_16.s", void start_parts_after_16(s
 }
 END_NONMATCH
 
+/* The same as drop_to_focus, for the second sequence: flies the body left (0x2CC a frame) with
+ * effect 0xD1D every 6 frames; once its sprite is past the screen's left edge (x < -0x30) it jumps
+ * to 0x120 right of the focus object at y data->unkDC and lets go of all its parts. When it is
+ * back at data->unkD8 it stops there, stops sound 0x11A and ends (state NULL). */
 void drop_to_focus_b(struct HeroBody *body)
 {
     struct Hero *node;
     struct HeroBody *part;
     u16 *counter;
-    s32 limit;
+    s32 stopX;
     s32 mode;
     s32 clear;
     s32 zero;
@@ -1229,8 +1295,9 @@ void drop_to_focus_b(struct HeroBody *body)
     }
     if (body->sprite->unk0 < -0x30)
     {
-        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + 0x12000;
+        body->posX = ((s32)(s16)obj_last_x(gWorld->focus) << 8) + (0x120 << 8);
         body->posY = body->data->unkDC;
+        /* the parts form a ring that ends at the body's own record */
         node = body->data->first;
         zero = 0;
         clear = ~0x40;
@@ -1252,34 +1319,42 @@ void drop_to_focus_b(struct HeroBody *body)
     }
     if (body->targetX >= body->data->unkD8)
     {
-        limit = body->data->unkD8;
-        if (limit >= body->posX)
+        stopX = body->data->unkD8;
+        if (stopX >= body->posX)
         {
-            body->posX = limit;
+            body->posX = stopX;
             sprite_set_action(body, -1, 0, 0);
             sound_stop_song(0x11A);
-            body->state = 0;
+            body->state = NULL;
         }
     }
 }
 
-void update_layer_tiles(struct HeroBody *body)
+/*
+ * Task started by begin_tile_update. While the owner has its trail object (owner->child),
+ * redraws the background under the trail object and under each of its trail nodes as
+ * sprites (place_layer_tile, two tiles each from tile 0x200). Once the trail is gone, it
+ * restores OBJ palette 15 (gUnk_02000460, saved in gWorkBuf + 0x3CD0) and the palette
+ * owners begin_tile_update changed, frees the palettes place_layer_tile borrowed, and ends.
+ */
+void update_layer_tiles(struct LayerTileTask *task)
 {
-    struct HeroSprite *sprite = body->sprite;
-    struct TileNode *tile;
-    u32 dest;
+    struct HeroBody *owner = task->owner;
+    struct TileNode *node;
+    u32 tile;
     s32 i;
 
-    if (sprite->tiles != 0)
+    if (owner->child != 0)
     {
         refresh_slot_flags();
-        dest = 0x200;
-        tile = &sprite->tiles->first;
-        while (tile != 0)
+        tile = 0x200;
+        /* the trail object itself starts like a node (its nodes, then its position) */
+        node = (struct TileNode *)&owner->child->nodes;
+        while (node != 0)
         {
-            place_layer_tile(tile->x / 0x100, tile->y / 0x100, tile->z / 0x100, 0, dest);
-            dest += 2;
-            tile = tile->next;
+            place_layer_tile(node->x / 0x100, node->y / 0x100, node->z / 0x100, 0, tile);
+            tile += 2;
+            node = node->next;
         }
     }
     else
@@ -1295,6 +1370,6 @@ void update_layer_tiles(struct HeroBody *body)
                 gModelCtx->cells[i] = 0xFFFF;
             }
         }
-        body->list = 0;
+        task->active = 0;
     }
 }

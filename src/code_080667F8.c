@@ -40,7 +40,9 @@ struct ActorObj
 {
     u8 filler0[0x08];
     struct ActorPose *pose;
-    u8 filler0C[0x10 - 0x0C];
+    /* the next object's chainNext field (a chain linked through +0xC), NULL at the end; each
+       link's posX/posY/posH follow it (obj_fan_out_children walks it as s32 words) */
+    void *chainNext;
     s32 posX;
     s32 posY;
     s32 posH;
@@ -85,6 +87,10 @@ struct ActorObj
     s16 dy;
     s16 dh;
 };
+
+// ActorObj.flags: targetX/targetY/targetH are absolute, not relative to the position
+// (read and cleared by start_motion).
+#define ACTOR_FLAG_ABS_TARGET 0x20
 
 s32 is_state_busy(void);
 s32 query_contact(struct ActorObj *obj, s32 a, s32 b);
@@ -152,6 +158,9 @@ void obj_stop(struct ActorObj *obj);
 
 ASM_FUNC("asm/code_080667F8/obj_spawn_pair_child.s", void obj_spawn_pair_child(struct ActorObj *obj))
 
+/* Remembers the start point (dx, dy, dh, in px) and moves obj at speed 0x600 to its owner's part,
+ * 2 units further in Y and 16 px (0x1000, 24.8) higher, as an absolute target. The child is put on
+ * obj, and obj_track_child_timer keeps it there until obj arrives. */
 void obj_motion_init_600(struct ActorObj *obj)
 {
     u8 *flags;
@@ -163,7 +172,7 @@ void obj_motion_init_600(struct ActorObj *obj)
     obj->targetY = obj->owner->part->targetY + 2;
     obj->targetH = obj->owner->part->targetH + 0x1000;
     flags = &obj->flags;
-    *flags |= 0x20;
+    *flags |= ACTOR_FLAG_ABS_TARGET;
     obj->motionSpeed = 0x600;
     obj->motionStart = 0;
     start_motion(obj);
@@ -171,22 +180,26 @@ void obj_motion_init_600(struct ActorObj *obj)
     obj->state = obj_track_child_timer;
 }
 
+/* Keeps the child on obj while the timer runs down. When it expires, hands obj's link to the
+ * part's object (with on_arrive as its arrival handler). If the part's unkF6 is 0, that object
+ * stops and obj and its child are released; otherwise obj moves back to its start point
+ * (dx, dy, dh) at speed 0x600 and obj_track_child_then_finish releases them on arrival. */
 void obj_child_timer_finish(struct ActorObj *obj)
 {
-    struct ActorObj *node;
+    struct ActorObj *partObj;
     u8 *flags;
 
     obj_set_target_xyh(obj->child, obj->posX, obj->posY, obj->posH);
     obj->timer--;
     if ((s16)obj->timer <= 0)
     {
-        node = (struct ActorObj *)((u8 *)obj->part + 8);
-        node->handler68 = on_arrive;
-        node->link = obj->link;
+        partObj = (struct ActorObj *)((u8 *)obj->part + 8);
+        partObj->handler68 = on_arrive;
+        partObj->link = obj->link;
         obj->link = 0;
-        if (node->part->unkF6 == 0)
+        if (partObj->part->unkF6 == 0)
         {
-            obj_stop(node);
+            obj_stop(partObj);
             obj_release(obj->child);
             obj_release(obj);
         }
@@ -196,7 +209,7 @@ void obj_child_timer_finish(struct ActorObj *obj)
             obj->targetY = obj->dy << 8;
             obj->targetH = obj->dh << 8;
             flags = &obj->flags;
-            *flags |= 0x20;
+            *flags |= ACTOR_FLAG_ABS_TARGET;
             obj->motionSpeed = 0x600;
             obj->motionStart = 0;
             start_motion(obj);
@@ -206,75 +219,80 @@ void obj_child_timer_finish(struct ActorObj *obj)
 }
 
 void offset_three_words_camera(s32 *a, s32 *b, s32 *c, u32 d);
+/* Spreads the chain of objects linked through chainNext (this object first) evenly along the line
+ * from the start point (dx, dy, dh, in pixels) towards the target point 16 px right of
+ * (targetX, targetY, targetH): the n-th link is put n/6 of the way there. The target is also
+ * turned into screen coordinates (offset_three_words_camera), but that result goes unused. */
 void obj_fan_out_children(struct ActorObj *obj)
 {
-    s32 x;
-    s32 y;
-    s32 h;
-    s32 camX;
-    s32 camY;
-    s32 camH;
-    s32 offX;
-    s32 offY;
-    s32 offH;
-    s32 stepX;
-    s32 stepY;
-    s32 stepH;
-    s32 accX;
-    s32 accY;
-    s32 accH;
-    s32 *node;
+    s32 endX;
+    s32 endY;
+    s32 endH;
+    s32 screenX;
+    s32 screenY;
+    s32 screenH;
+    s32 startX;
+    s32 startY;
+    s32 startH;
+    s32 spanX;
+    s32 spanY;
+    s32 spanH;
+    s32 sumX;
+    s32 sumY;
+    s32 sumH;
+    s32 *link;
     s32 t;
 
-    x = obj->targetX + 0x1000;
-    y = obj->targetY;
-    h = obj->targetH;
-    t = x;
-    if (x < 0)
+    endX = obj->targetX + 0x1000;
+    endY = obj->targetY;
+    endH = obj->targetH;
+    t = endX;
+    if (endX < 0)
     {
         t = obj->targetX + 0x10FF;
     }
-    camX = t >> 8;
-    t = y;
-    if (y < 0)
+    screenX = t >> 8;
+    t = endY;
+    if (endY < 0)
     {
         t += 0xFF;
     }
-    camY = t >> 8;
-    t = h;
-    if (h < 0)
+    screenY = t >> 8;
+    t = endH;
+    if (endH < 0)
     {
         t += 0xFF;
     }
-    camH = t >> 8;
-    offset_three_words_camera(&camX, &camY, &camH, 0);
+    screenH = t >> 8;
+    offset_three_words_camera(&screenX, &screenY, &screenH, 0);
 
-    offX = obj->dx << 8;
-    offY = obj->dy << 8;
-    offH = obj->dh << 8;
-    stepX = x - offX;
-    stepY = y - offY;
-    stepH = h - offH;
+    startX = obj->dx << 8;
+    startY = obj->dy << 8;
+    startH = obj->dh << 8;
+    spanX = endX - startX;
+    spanY = endY - startY;
+    spanH = endH - startH;
 
-    node = (s32 *)&obj->filler0C;
-    if (node != NULL)
+    /* link[0] is chainNext, link[1-3] the link's posX, posY, posH */
+    link = (s32 *)&obj->chainNext;
+    if (link != NULL)
     {
-        accH = stepH;
-        accY = stepY;
-        accX = stepX;
+        sumH = spanH;
+        sumY = spanY;
+        sumX = spanX;
         do
         {
-            s32 px = accX / 6 + offX;
-            s32 py = accY / 6 + offY;
-            s32 ph = accH / 6 + offH;
-            node[1] = px;
-            node[2] = py;
-            node[3] = ph;
-            node = (s32 *)*node;
-            accH += stepH;
-            accY += stepY;
-            accX += stepX;
-        } while (node != NULL);
+            s32 x = sumX / 6 + startX;
+            s32 y = sumY / 6 + startY;
+            s32 h = sumH / 6 + startH;
+            link[1] = x;
+            link[2] = y;
+            link[3] = h;
+            link = (s32 *)*link;
+            sumH += spanH;
+            sumY += spanY;
+            sumX += spanX;
+        } while (link != NULL);
     }
 }
 

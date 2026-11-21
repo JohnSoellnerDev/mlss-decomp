@@ -195,54 +195,57 @@ void on_arrive(struct MapObj *obj);
 void obj_list_push_default(struct MapObj *obj);
 struct MapObj *obj_spawn(struct MapPart *part, u32 type, s32 x, s32 y, s32 h, u32 a, u32 b);
 
+/* Once the countdown animation has finished: play action 6 with effect 0x10EE at the object, hand
+   over to map_obj_hide_step, and spawn two pieces (types 0x408E and 0x408F, one map unit above and
+   below it) that inherit its link, owner and parameters and slide in from 16/256 size. Plays sound 0xD3. */
 void map_view_map_obj_setup_sprites(struct MapObj *obj)
 {
-    struct MapObj *child;
-    struct MapObj *second;
+    struct MapObj *upper;
+    struct MapObj *lower;
 
     if (obj->pose->flags & 8)
     {
         sprite_set_action(obj, 6, 0, 0);
         effect_spawn_at(0x10EE, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         obj->state = map_obj_hide_step;
-        child = obj_spawn(obj->part, 0x408E, obj->baseX / 0x100, obj->baseY / 0x100 + 1,
+        upper = obj_spawn(obj->part, 0x408E, obj->baseX / 0x100, obj->baseY / 0x100 + 1,
                           obj->baseH / 0x100 + obj->radius, ((u32)obj->pose->flip << 25) >> 31, 1);
-        obj->sprite = child;
-        ((struct Flags78Bits *)&child->mode78)->kind = 2;
-        inherit_flags_77(obj, child);
-        child->state = slide_in_step;
-        child->handler68 = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->dx = 0x100;
-        child->timer = 0;
-        child->param9C = obj->param9C;
-        child->radius = obj->radius;
-        child->wait = obj->wait;
-        child->angle = obj->angle;
-        child->tag = obj->tag;
-        child->pose->unk4 = 0x10;
-        child->pose->unk6 = 0x10;
-        second = obj_spawn(obj->part, 0x408F, obj->baseX / 0x100, obj->baseY / 0x100 - 1,
-                           obj->baseH / 0x100 + obj->radius, ((u32)obj->pose->flip << 25) >> 31, 1);
-        child->sprite = second;
-        ((struct Flags78Bits *)&second->mode78)->kind = 2;
-        inherit_flags_77(obj, second);
-        second->state = slide_in_step;
-        second->handler68 = on_arrive;
-        second->link = obj->link;
-        second->owner = obj->owner;
-        obj_list_push_default(second);
-        second->dx = 0x100;
-        second->timer = 0;
-        second->param9C = obj->param9C;
-        second->radius = obj->radius;
-        second->wait = obj->wait;
-        second->angle = obj->angle;
-        second->tag = obj->tag;
-        second->pose->unk4 = 0x10;
-        second->pose->unk6 = 0x10;
+        obj->sprite = upper;
+        ((struct Flags78Bits *)&upper->mode78)->kind = 2;
+        inherit_flags_77(obj, upper);
+        upper->state = slide_in_step;
+        upper->handler68 = on_arrive;
+        upper->link = obj->link;
+        upper->owner = obj->owner;
+        obj_list_push_default(upper);
+        upper->dx = 0x100;
+        upper->timer = 0;
+        upper->param9C = obj->param9C;
+        upper->radius = obj->radius;
+        upper->wait = obj->wait;
+        upper->angle = obj->angle;
+        upper->tag = obj->tag;
+        upper->pose->unk4 = 0x10;
+        upper->pose->unk6 = 0x10;
+        lower = obj_spawn(obj->part, 0x408F, obj->baseX / 0x100, obj->baseY / 0x100 - 1,
+                          obj->baseH / 0x100 + obj->radius, ((u32)obj->pose->flip << 25) >> 31, 1);
+        upper->sprite = lower;
+        ((struct Flags78Bits *)&lower->mode78)->kind = 2;
+        inherit_flags_77(obj, lower);
+        lower->state = slide_in_step;
+        lower->handler68 = on_arrive;
+        lower->link = obj->link;
+        lower->owner = obj->owner;
+        obj_list_push_default(lower);
+        lower->dx = 0x100;
+        lower->timer = 0;
+        lower->param9C = obj->param9C;
+        lower->radius = obj->radius;
+        lower->wait = obj->wait;
+        lower->angle = obj->angle;
+        lower->tag = obj->tag;
+        lower->pose->unk4 = 0x10;
+        lower->pose->unk6 = 0x10;
         set_slot_value(0xD3, -1);
     }
 }

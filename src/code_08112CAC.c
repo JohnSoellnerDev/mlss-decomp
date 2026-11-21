@@ -76,24 +76,24 @@ struct SceneObj
     u8 filler77[0x78 - 0x77];
     u8 unk78;
     u8 flags79;
-    s16 stepX;
-    s16 stepY;
-    u8 unk7E;
+    s16 stepX;      /* motion: start rate (motionStart in step_motion) */
+    s16 stepY;      /* motion: speed, 0x4000 / frames (motionSpeed) */
+    u8 unk7E;       /* with unk7F: motion progress as an s16, 0 to 0x4000 */
     u8 unk7F;
     u8 filler80[0x84 - 0x80];
-    s32 unk84;
-    s32 unk88;
-    s32 unk8C;
+    s32 unk84;      /* motion x: start in the low half, end in the high half (pixels) */
+    s32 unk88;      /* motion y, the same way */
+    s32 unk8C;      /* motion z, the same way */
     u8 filler90[0x92 - 0x90];
-    s16 unk92;
-    s32 unk94;
-    s32 orbitAngle;
+    s16 unk92;      /* arc: start height (pixels) */
+    s32 unk94;      /* arc: parabola_height's v */
+    s32 orbitAngle; /* arc: parabola_height's s (heightLimit); 0 moves in a straight line */
     s32 unk9C;
     s32 unkA0;
     u8 filler0A4[0xA8 - 0xA4];
     s32 phase;
     s16 timer;
-    s16 unkAE;
+    s16 unkAE;      /* x (pixels) obj_set_scene_state's move heads to; obj_track_scene_part's trail effect switches there */
     s16 unkB0;
     u8 filler0B2[0xB8 - 0xB2];
     u16 unkB8;
@@ -208,26 +208,31 @@ void obj_timer_anim_6(struct SceneObj *obj);
 void obj_place_part_mode_anim7(struct SceneObj *obj);
 void obj_scene_move_or_stop(struct SceneObj *obj);
 
+/* One step of obj's motion: progress (unk7E, 0 to 0x4000) grows by stepX * stepY / 0x100 and the
+   position moves from the start point (low halves of unk84/88/8C, pixels) to the end point (high
+   halves), y on a parabola (parabola_height) when orbitAngle is set. Past 0x3FFF obj snaps to the
+   end point, gets flag 0x79 bit 5 (motion done) and 0 is returned; 1 while it is still moving. */
 u32 obj_blend_position(struct SceneObj *obj)
 {
-    s32 ctrl;
-    s32 next;
+    s32 prev;
+    s32 progress;
 
-    ctrl = *(s16 *)&obj->unk7E;
-    next = ctrl + (obj->stepX * obj->stepY) / 0x100;
+    prev = *(s16 *)&obj->unk7E;
+    progress = prev + (obj->stepX * obj->stepY) / 0x100;
     obj->timer = *(u16 *)&obj->unk7E;
-    *(s16 *)&obj->unk7E = next;
-    if (next <= 0x3FFF)
+    *(s16 *)&obj->unk7E = progress;
+    if (progress <= 0x3FFF)
     {
-        obj->dispX = ((obj->unk84 >> 16) * next + (s16)obj->unk84 * (0x4000 - next)) / 0x40;
-        obj->dispZ = ((obj->unk8C >> 16) * next + (s16)obj->unk8C * (0x4000 - next)) / 0x40;
+        /* end * t + start * (1 - t), to 1/0x100 pixels */
+        obj->dispX = ((obj->unk84 >> 16) * progress + (s16)obj->unk84 * (0x4000 - progress)) / 0x40;
+        obj->dispZ = ((obj->unk8C >> 16) * progress + (s16)obj->unk8C * (0x4000 - progress)) / 0x40;
         if (obj->orbitAngle == 0)
         {
-            obj->dispY = ((obj->unk88 >> 16) * next + (s16)obj->unk88 * (0x4000 - next)) / 0x40;
+            obj->dispY = ((obj->unk88 >> 16) * progress + (s16)obj->unk88 * (0x4000 - progress)) / 0x40;
         }
         else
         {
-            obj->dispY = parabola_height(next, obj->unk94, obj->orbitAngle, (s16)obj->unk92 << 8);
+            obj->dispY = parabola_height(progress, obj->unk94, obj->orbitAngle, (s16)obj->unk92 << 8);
         }
         return 1;
     }
@@ -674,20 +679,23 @@ void obj_place_part_timer(struct SceneObj *obj)
 }
 
 
+/* Starts obj's move (speed 0x100, action 0x19) to a spot beside its owner's target position:
+ * 0x2E pixels right and 2 up when obj's data modeByte is set, 0x40 pixels right otherwise.
+ * The spot's x is kept in unkAE, and obj_track_scene_part runs the move. */
 void obj_set_scene_state(struct SceneObj *obj)
 {
-    struct SceneData *target;
+    struct SceneData *ownerData;
 
-    target = obj->owner->data;
+    ownerData = obj->owner->data;
     if (obj->data->modeByte != 0)
     {
-        obj->unkAE = target->targetX / 0x100 + 0x2E;
-        place_targets(obj, target->targetX / 0x100 + 0x2E, target->targetY / 0x100 - 2, target->targetZ / 0x100, 0x100);
+        obj->unkAE = ownerData->targetX / 0x100 + 0x2E;
+        place_targets(obj, ownerData->targetX / 0x100 + 0x2E, ownerData->targetY / 0x100 - 2, ownerData->targetZ / 0x100, 0x100);
     }
     else
     {
-        obj->unkAE = target->targetX / 0x100 + 0x40;
-        place_targets(obj, target->targetX / 0x100 + 0x40, target->targetY / 0x100, target->targetZ / 0x100, 0x100);
+        obj->unkAE = ownerData->targetX / 0x100 + 0x40;
+        place_targets(obj, ownerData->targetX / 0x100 + 0x40, ownerData->targetY / 0x100, ownerData->targetZ / 0x100, 0x100);
     }
     set_motion_start(obj, 0x100);
     sprite_set_action(obj, 0x19, 0, 0);
@@ -696,9 +704,13 @@ void obj_set_scene_state(struct SceneObj *obj)
 }
 
 
+/* Runs the move obj_set_scene_state started: while obj's x still differs from its move's packed x
+ * (unk84, compared above the low byte), it leaves a trail effect every 10 frames, 0x297A left of
+ * the destination x (unkAE) and 0x2971 from there on. When step_motion finishes the move, obj
+ * starts action modeByte + 4 and waits in obj_anim_mode5_timer3. */
 void obj_track_scene_part(struct SceneObj *obj)
 {
-    s32 part;
+    s32 trailEffect;
 
     if ((obj->unk84 & 0xFFFFFF00) != (obj->posX & 0xFFFFFF00))
     {
@@ -706,14 +718,14 @@ void obj_track_scene_part(struct SceneObj *obj)
         {
             if (obj->posX / 0x100 < obj->unkAE)
             {
-                part = 0x297A;
+                trailEffect = 0x297A;
             }
             else
             {
-                part = 0x2971;
+                trailEffect = 0x2971;
             }
-            effect_spawn_at(part, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
-            obj->phase = 0xA;
+            effect_spawn_at(trailEffect, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
+            obj->phase = 10;
         }
         obj->phase--;
     }

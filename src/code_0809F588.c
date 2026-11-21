@@ -215,6 +215,10 @@ void anim4_with_effect_rate(struct Body *body)
     }
 }
 
+/* State after anim4_with_effect_rate: steps the body's motion (state_stack_advance_progress) and
+ * every 13 frames (unkA8 counts them) spawns effect 0x2622 at its position plus its
+ * (landX, landY, landZ) pixel offset. Once the motion is done (flags bit 5) it plays sound 0x85,
+ * starts action 5 in sprite mode 1 and goes on to spawn_effect_child. */
 void advance_and_fx_when_ready(struct Body *body)
 {
     state_stack_advance_progress(body);
@@ -229,44 +233,50 @@ void advance_and_fx_when_ready(struct Body *body)
     {
         s32 bits;
         s32 flags;
-        struct Sprite *spr;
+        struct Sprite *sprite;
 
         set_slot_value(0x85, -1);
         sprite_set_action(body, 5, 0, 0);
-        spr = body->sprite;
-        flags = spr->flags;
-        bits = -7;
+        /* sprite mode (flags bits 1-2) = 1 */
+        sprite = body->sprite;
+        flags = sprite->flags;
+        bits = ~6;
         bits &= flags;
         bits |= 2;
-        spr->flags = bits;
+        sprite->flags = bits;
         body->state = (void *)spawn_effect_child;
     }
 }
 
+/* State: once the animation ends, fires the shot: effect 0x263A at the body's position plus its
+ * (landX, landY, landZ) pixel offset, and a linked object 0x4040 moved to the same point, with
+ * flags78 bits 5-7 = 2, that runs setup_group_motion (it flies to the partner). The body then plays
+ * action 6 in sprite mode 1 and waits in anim7_when_shown. */
 void spawn_effect_child(struct Body *body)
 {
     if ((body->sprite->flags & 8) != 0)
     {
-        struct Body *child;
+        struct Body *shot;
         s32 bits;
         s32 flags;
-        struct Sprite *spr;
+        struct Sprite *sprite;
 
         effect_spawn_at(0x263A, body->posX / 0x100 + body->landX, body->posY / 0x100 + body->landY,
                         body->posZ / 0x100 + body->landZ, body);
-        child = obj_spawn_linked(body, 0x4040, 0);
-        child->posX += body->landX << 8;
-        child->posY += body->landY << 8;
-        child->posZ += body->landZ << 8;
-        child->flags78 = (child->flags78 & 0x1F) | 0x40;
-        child->state = (void *)setup_group_motion;
+        shot = obj_spawn_linked(body, 0x4040, 0);
+        shot->posX += body->landX << 8;
+        shot->posY += body->landY << 8;
+        shot->posZ += body->landZ << 8;
+        shot->flags78 = (shot->flags78 & 0x1F) | 0x40;
+        shot->state = (void *)setup_group_motion;
         sprite_set_action(body, 6, 0, 0);
-        spr = body->sprite;
-        flags = spr->flags;
+        /* sprite mode (flags bits 1-2) = 1 */
+        sprite = body->sprite;
+        flags = sprite->flags;
         bits = -7;
         bits &= flags;
         bits |= 2;
-        spr->flags = bits;
+        sprite->flags = bits;
         body->state = (void *)anim7_when_shown;
     }
 }
@@ -289,6 +299,10 @@ void setup_group_motion(struct Body *body)
     body->state = (void *)step_then_remove_if_flagged;
 }
 
+/* Last leg of the shot (after group_targets_then_step): steps its motion toward the partner, and once
+ * it arrives (flags bit 5) plays sound 0xAD, makes the data's member resolve the hit on the partner
+ * (contact code 0x13 if the member's pose is set, else 0x12), sets the partner's unkB8 to 0x193,
+ * spawns effect 0x2659 at the partner, hides its own sprite and waits in remove_when_group_idle. */
 void step_and_detach_child(struct Body *body)
 {
     struct Body *partner = body->partner;
@@ -796,32 +810,38 @@ NONMATCH("asm/code_0809F588/orbit_parts_sway.s", void orbit_parts_sway(struct Bo
 }
 END_NONMATCH
 
+/* Moves the body and its child to their landing spot; once both have arrived, releases the body
+   and its chain of three children, and the object that owns them (data + 8) plays action 0x18
+   with its sprite mode cleared, spawns effect 0x2AB7 where it stands and waits in
+   end_anim_when_active_b. */
 void land_group_with_effect(struct Body *body)
 {
-    s32 stepBody = step_motion(body);
-    s32 stepChild = step_motion(body->child);
+    s32 bodyMoving = step_motion(body);
+    s32 childMoving = step_motion(body->child);
     s32 negBody;
     s32 negChild;
 
-    negBody = -(u8)stepBody;
-    negChild = -(u8)stepChild;
+    /* both step_motion calls returned 0 (arrived) */
+    negBody = -(u8)bodyMoving;
+    negChild = -(u8)childMoving;
     if ((negChild | negBody) >= 0)
     {
         s32 bits;
         s32 flags;
-        struct Sprite *spr;
+        struct Sprite *sprite;
 
         obj_release(body->child->child->child);
         obj_release(body->child->child);
         obj_release(body->child);
         obj_release(body);
+        /* from here on `body` is the group's owner */
         body = (struct Body *)((u8 *)body->data + 8);
         sprite_set_action(body, 0x18, 0, 0);
-        spr = body->sprite;
-        flags = spr->flags;
-        bits = -7;
+        sprite = body->sprite;
+        flags = sprite->flags;
+        bits = ~6; /* SpriteModeBits.mode = 0 */
         bits &= flags;
-        spr->flags = bits;
+        sprite->flags = bits;
         effect_spawn_at(0x2AB7, body->posX / 0x100, body->posY / 0x100, body->posZ / 0x100, body);
         body->state = (void *)end_anim_when_active_b;
     }

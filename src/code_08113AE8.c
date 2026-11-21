@@ -137,7 +137,7 @@ struct Obj
     s32 keyY;
     s32 keyZ;
     u8 filler90[0x02];
-    u16 unk92;
+    u16 speedZ; /* vertical speed of a flight, 1/0x100 px a frame (read as s16) */
     u8 filler94[0x04];
     s32 unk98;
     s32 unk9C;
@@ -145,9 +145,9 @@ struct Obj
     s32 unkA4;
     u32 phase;
     s16 timer;
-    s16 slot;
-    s16 unkB0;
-    s16 unkB2;
+    s16 slot;  /* also a flight's whole-pixel dx */
+    s16 flightDy;     /* a flight's whole-pixel dy */
+    s16 flightFrames; /* how many frames a flight takes */
     u8 fillerB4[0x04];
     u16 timerLong;
 };
@@ -290,44 +290,53 @@ u32 obj_link_to_partner(struct Obj *obj, struct Obj *partner);
 void sprite_entry_update(struct Sprite *sprite);
 void obj_place_sprite_part(struct Obj *obj);
 
+/* Throw: once the windup animation ends (sprite event flag 8), plays action 0x18 and spawns
+ * the thrown object 0x403E 12 px back, 2 px down and 48 px up from the thrower (positions are
+ * 24.8 fixed point). It flies to the scene target (obj_setup_motion_from_scene) and checks
+ * contact through obj_query_contact_step. Also spawns effect 0x28F8 and plays sound 0xA0. */
 void obj_spawn_child(struct Obj *obj)
 {
-    struct Obj *child;
+    struct Obj *thrown;
 
     if (obj->sprite->mode & 8)
     {
         sprite_set_action(obj, 0x18, 0, 0);
-        child = obj_spawn_linked(obj, 0x403E, 0);
-        child->posX = child->posX + 0xFFFFF400;
-        child->dispX = child->posX;
-        child->posY = child->posY + 0x200;
-        child->dispY = child->posY;
-        child->posZ = child->posZ + 0x3000;
-        child->dispZ = child->posZ;
-        child->stepY = 0x100;
-        child->callback = obj_setup_motion_from_scene;
-        ((struct KindBits *)&child->kind)->kind = 2;
-        obj_list_push_default(child);
-        child->cb5C = (void (*)(struct Obj *))obj_query_contact_step;
+        thrown = obj_spawn_linked(obj, 0x403E, 0);
+        thrown->posX = thrown->posX - 0xC00;
+        thrown->dispX = thrown->posX;
+        thrown->posY = thrown->posY + 0x200;
+        thrown->dispY = thrown->posY;
+        thrown->posZ = thrown->posZ + 0x3000;
+        thrown->dispZ = thrown->posZ;
+        thrown->stepY = 0x100;
+        thrown->callback = obj_setup_motion_from_scene;
+        ((struct KindBits *)&thrown->kind)->kind = 2;
+        obj_list_push_default(thrown);
+        thrown->cb5C = (void (*)(struct Obj *))obj_query_contact_step;
         effect_spawn_at(0x28F8, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
         obj->callback = obj_stop_anim_clear_cb;
         set_slot_value(0xA0, -1);
     }
 }
 
+/* Starts a thrown object's flight (spawned by obj_spawn_child) to the target of its scene's
+ * owner: lands at the target's x/y at height 8, starting from the object's current spot. The flight
+ * takes one frame per 1.8 px of ground distance (frames in flightFrames, the whole-pixel dx/dy
+ * in slot/flightDy, the start in pixX/Y/Z), with a vertical speed of 4 px in speedZ; phase gets
+ * posZ / frames^2, at least 2 in magnitude. Then obj_motion_step_a flies it frame by frame. */
 void obj_setup_motion_from_scene(struct Obj *obj)
 {
-    struct Scene *scene;
+    struct Scene *target;
     s32 dx;
     s32 dy;
     s32 dist;
-    s32 steps;
-    s32 q;
+    s32 frames;
+    s32 fall;
     s32 *phase;
 
-    scene = obj->scene->entry->target;
-    obj->keyX = scene->x;
-    obj->keyY = scene->y;
+    target = obj->scene->entry->target;
+    obj->keyX = target->x;
+    obj->keyY = target->y;
     obj->keyZ = 0x800;
     obj->pixX = obj->posX / 0x100;
     obj->pixY = obj->posY / 0x100;
@@ -335,41 +344,46 @@ void obj_setup_motion_from_scene(struct Obj *obj)
     dx = obj->keyX - obj->posX;
     dy = obj->keyY - obj->posY;
     dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
-    steps = dist / 0x1CC;
-    q = obj->posZ / (steps * steps);
+    frames = dist / 0x1CC;
+    fall = obj->posZ / (frames * frames);
     phase = (s32 *)&obj->phase;
-    if (q <= 1)
+    if (fall <= 1)
     {
-        if (q < -1)
-            *phase = -q;
+        if (fall < -1)
+            *phase = -fall;
         else
             *phase = 2;
     }
     else
     {
-        *phase = q;
+        *phase = fall;
     }
     obj->slot = dx / 0x100;
-    obj->unkB0 = dy / 0x100;
-    obj->unkB2 = steps;
+    obj->flightDy = dy / 0x100;
+    obj->flightFrames = frames;
     obj->timer = 0;
-    obj->unk92 = 0x400;
-    obj->level = ((struct WorldEntry *)scene)->level7D - 10;
+    obj->speedZ = 0x400;
+    obj->level = ((struct WorldEntry *)target)->level7D - 10;
     obj->callback = obj_motion_step_a;
 }
 
+/* One frame of a thrown object's flight (set up by obj_setup_motion_from_scene): x/y move in a
+ * straight line from pixX/pixY by slot/flightDy over flightFrames frames, the height rises by
+ * speedZ under gravity 0xCC a frame, and the sprite spins (unkC += 0xB4C). On reaching height 8 px it
+ * bounces back up at 2/3 of its speed with sound 0x2F; once it is 32 px past the screen's left edge
+ * it is released. */
 void obj_motion_step_a(struct Obj *obj)
 {
-    obj->dispX = (((s32)obj->slot * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixX << 8);
-    obj->dispY = (((s32)obj->unkB0 * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixY << 8);
-    obj->dispZ += *(s16 *)&obj->unk92;
-    obj->unk92 = obj->unk92 - 0xCC;
+    obj->dispX = (((s32)obj->slot * obj->timer) << 8) / obj->flightFrames + ((s32)obj->pixX << 8);
+    obj->dispY = (((s32)obj->flightDy * obj->timer) << 8) / obj->flightFrames + ((s32)obj->pixY << 8);
+    obj->dispZ += *(s16 *)&obj->speedZ;
+    obj->speedZ = obj->speedZ - 0xCC;
     obj->sprite->unkC += 0xB4C;
     obj->timer += 1;
     if (obj->dispZ <= 0x800)
     {
         obj->dispZ = 0x800;
-        *(s16 *)&obj->unk92 = (-((*(s16 *)&obj->unk92) << 8)) / 0x180;
+        *(s16 *)&obj->speedZ = (-((*(s16 *)&obj->speedZ) << 8)) / 0x180;
         set_slot_value(0x2F, -1);
     }
     if (obj->dispX / 0x100 <= -0x20)
@@ -380,11 +394,11 @@ void obj_motion_step_a(struct Obj *obj)
 
 void obj_motion_step_b(struct Obj *obj)
 {
-    obj->dispX = (((s32)obj->slot * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixX << 8);
-    obj->dispY = (((s32)obj->unkB0 * obj->timer) << 8) / obj->unkB2 + ((s32)obj->pixY << 8);
+    obj->dispX = (((s32)obj->slot * obj->timer) << 8) / obj->flightFrames + ((s32)obj->pixX << 8);
+    obj->dispY = (((s32)obj->flightDy * obj->timer) << 8) / obj->flightFrames + ((s32)obj->pixY << 8);
     obj->sprite->unkC -= 0xB4C;
     obj->timer++;
-    if (obj->unkB2 <= obj->timer)
+    if (obj->flightFrames <= obj->timer)
     {
         obj->dispX = obj->keyX;
         obj->dispY = obj->keyY;
@@ -392,11 +406,15 @@ void obj_motion_step_b(struct Obj *obj)
     }
 }
 
+/* Last step of a thrown object's flight back (obj_motion_step_b): the world slot unk9C names gets
+   its part back. The part's object (embedded at +8 of the slot's item) takes the item's mirror bit
+   and its target spot, stops its animation (action -1) and refreshes its sprite. Then effect 0x2900
+   appears on the thrown object, it is released, and sound 0xAD plays. */
 void obj_place_sprite_part(struct Obj *obj)
 {
     struct ListItem *item;
     struct Obj *part;
-    s32 minusOne;
+    s32 none;
 
     item = ((struct WorldSlots *)gWorld)->slots[obj->unk9C];
     part = (struct Obj *)&item->filler8;
@@ -404,28 +422,33 @@ void obj_place_sprite_part(struct Obj *obj)
     part->dispX = item->targetX;
     part->dispY = item->targetY;
     part->dispZ = item->targetZ;
-    minusOne = -1;
-    sprite_set_action(part, minusOne, minusOne, 0);
+    none = -1;
+    sprite_set_action(part, none, none, 0);
     sprite_entry_update(part->sprite);
     effect_spawn_at(0x2900, obj->posX / 0x100, obj->posY / 0x100, obj->posZ / 0x100, obj);
     obj_release(obj);
     obj->callback = NULL;
-    set_slot_value(0xAD, minusOne);
+    set_slot_value(0xAD, none);
 }
 
+/* Contact callback of a thrown child object: returns query_contact's result while it has one.
+   Otherwise the object is put on the ground (height 0x800, no vertical speed) and, for slots
+   above 2, a part is placed into its slot from the world's motion table; the object then flies
+   from its position to that part's target in a straight line (one step per 0x280 of distance,
+   in 24.8 fixed point) through obj_motion_step_b. */
 u32 obj_query_contact_step(struct Obj *obj)
 {
     struct Obj *part;
     u8 *table;
-    struct MotionEntry *row;
-    s32 index;
+    struct MotionEntry *motion;
+    s32 slot;
     s32 dx;
     s32 dy;
-    s32 speed;
+    s32 steps;
     s32 q;
     s32 *phase;
     u32 contact;
-    s32 len;
+    s32 dist;
 
     contact = query_contact(obj);
     if (contact != 0)
@@ -433,14 +456,14 @@ u32 obj_query_contact_step(struct Obj *obj)
         return contact;
     }
     obj->dispZ = 0x800;
-    obj->unk92 = contact;
-    index = obj->unk9C;
-    if (index > 2)
+    obj->speedZ = contact;
+    slot = obj->unk9C;
+    if (slot > 2)
     {
         table = gWorld->unk1C;
-        row = &((struct MotionEntry (*)[6])gRomMotionTable)[table[1]][index];
-        part = (struct Obj *)place_part_in_slot(index, *(u16 *)(table + (index << 2) + 8),
-            row->x, row->y, row->z, row->flag, contact);
+        motion = &((struct MotionEntry (*)[6])gRomMotionTable)[table[1]][slot];
+        part = (struct Obj *)place_part_in_slot(slot, *(u16 *)(table + (slot << 2) + 8),
+            motion->x, motion->y, motion->z, motion->flag, contact);
         ((u8 *)part)[0x7E] |= 6;
         gWorld->unk5 -= 1;
         obj->keyX = ((struct ListItem *)part)->targetX;
@@ -450,9 +473,9 @@ u32 obj_query_contact_step(struct Obj *obj)
         obj->pixY = obj->posY / 0x100;
         dx = obj->keyX - obj->posX;
         dy = obj->keyY - obj->posY;
-        len = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
-        speed = len / 0x280;
-        q = obj->posZ / (speed * speed);
+        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+        steps = dist / 0x280;
+        q = obj->posZ / (steps * steps);
         phase = (s32 *)&obj->phase;
         if (q <= 1)
         {
@@ -466,8 +489,8 @@ u32 obj_query_contact_step(struct Obj *obj)
             *phase = q;
         }
         obj->slot = dx / 0x100;
-        obj->unkB0 = dy / 0x100;
-        obj->unkB2 = speed;
+        obj->flightDy = dy / 0x100;
+        obj->flightFrames = steps;
         obj->timer = 0;
         obj->scene->mode = 1;
         obj->callback = obj_motion_step_b;
@@ -592,45 +615,56 @@ void obj_timer_countdown_anim17(struct Obj *obj)
 
 void world_links_idle_step(struct Obj *obj);
 
+/*
+ * On the sprite's event flag (8): plays action 0x1C and hands this object's owner and parameters
+ * (unk9C..unkA4) to both world links (A and B, held by gWorld). Link B gets the world entry at the
+ * owner's target slot + 2 instead when the scene mode is 3. Each link that is on the field (mode 2)
+ * is set up, and moves to the scene's target if its scene-mode bit (A: bit 0, B: bit 1) is set.
+ * Then idles in world_links_idle_step.
+ */
 void obj_setup_world_links(struct Obj *obj)
 {
-    struct Obj *part;
+    struct Obj *link;
     struct Owner *owner;
     u32 zero;
 
     if (obj->sprite->mode & 8)
     {
         sprite_set_action(obj, 0x1C, 0, 0);
-        part = (struct Obj *)(gWorld->linkA + 8);
-        part->scene->mode = 0;
+        link = (struct Obj *)(gWorld->linkA + 8);
+        link->scene->mode = 0;
         zero = 0;
-        part->owner = obj->owner;
-        part->unk9C = obj->unk9C;
-        part->unkA0 = obj->unkA0;
-        part->unkA4 = obj->unkA4;
-        if (((struct SpriteBits *)&part->filler76)->mode == 2)
+        link->owner = obj->owner;
+        link->unk9C = obj->unk9C;
+        link->unkA0 = obj->unkA0;
+        link->unkA4 = obj->unkA4;
+        if (((struct SpriteBits *)&link->filler76)->mode == 2)
         {
-            world_link_a_setup(part, obj->scene->mode & 1);
+            world_link_a_setup(link, obj->scene->mode & 1);
         }
-        part = (struct Obj *)(gWorld->linkB + 8);
-        part->scene->mode = zero;
+        link = (struct Obj *)(gWorld->linkB + 8);
+        link->scene->mode = zero;
         owner = obj->owner;
-        part->owner = owner;
-        part->unk9C = obj->unk9C;
-        part->unkA0 = obj->unkA0;
-        part->unkA4 = obj->unkA4;
+        link->owner = owner;
+        link->unk9C = obj->unk9C;
+        link->unkA0 = obj->unkA0;
+        link->unkA4 = obj->unkA4;
         if (obj->scene->mode == 3)
         {
-            part->owner = (struct Owner *)(gWorld->entries[(s16)owner->target->slot + 2] + 8);
+            link->owner = (struct Owner *)(gWorld->entries[(s16)owner->target->slot + 2] + 8);
         }
-        if (((struct SpriteBits *)&part->filler76)->mode == 2)
+        if (((struct SpriteBits *)&link->filler76)->mode == 2)
         {
-            world_link_b_setup(part, (obj->scene->mode >> 1) & 1);
+            world_link_b_setup(link, (obj->scene->mode >> 1) & 1);
         }
         obj->callback = world_links_idle_step;
     }
 }
 
+/* Hold countdown started by obj_begin_wait: keeps the scene in mode 1 while the timer runs. When
+ * it runs out, the held object (obj->chain->chain) drops one level below its owner, plays action 5
+ * with effects 0x2ABF and 0x18CE, and can now be claimed (obj_claim_partner) or linked to a partner
+ * (obj_link_to_partner); the hold sound 0x120 stops and obj waits for the release animation. */
 void obj_timer_release_hold(struct Obj *obj)
 {
     struct Owner *owner;
@@ -645,7 +679,7 @@ void obj_timer_release_hold(struct Obj *obj)
     else
     {
         obj->callback = obj_wait_target_anim6;
-        obj = obj->chain->chain;
+        obj = obj->chain->chain; /* from here on: the held object */
         owner = obj->owner;
         obj->level = owner->level - 1;
         sprite_set_action(obj, 5, 0, 0);
@@ -690,13 +724,16 @@ void obj_spread_chain_to_hold(struct Obj *obj)
     }
 }
 
-void world_link_a_setup(struct Obj *obj, u16 flag)
+/* Sets up world link A: spawns its linked sprite (0x4031) offset to the left of obj, and a chain
+ * object (0x4033) whose four sprite nodes are spread between it and the object obj held before.
+ * With moveToTarget set, obj then moves to the scene's target; otherwise it idles. */
+void world_link_a_setup(struct Obj *obj, u16 moveToTarget)
 {
     struct Obj *link;
-    struct Obj *part;
-    struct SpriteNode *take;
+    struct Obj *chainObj;
+    struct SpriteNode *spriteNode;
     struct ChainNode *tail;
-    struct ChainNode *n;
+    struct ChainNode *node;
     s32 anim;
     s32 i;
 
@@ -715,30 +752,30 @@ void world_link_a_setup(struct Obj *obj, u16 flag)
     link->level = obj->level - 1;
     link->callback = NULL;
     ((struct KindBits *)&link->kind)->kind = 3;
-    part = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 - 8, obj->posY / 0x100 - 4, obj->posZ / 0x100 + 0x28, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
-    sprite_set_action(part, 1, 0, 0);
-    part->filler79[0] |= 1;
-    part->callback = obj_spread_chain_to_hold;
-    part->chain = obj->chain;
-    obj->chain = part;
-    /* the position block of the part heads a list of four sprite nodes */
-    tail = (struct ChainNode *)&part->filler0C;
+    chainObj = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 - 8, obj->posY / 0x100 - 4, obj->posZ / 0x100 + 0x28, ((struct SpriteFlags11 *)obj->sprite)->mirror, 1);
+    sprite_set_action(chainObj, 1, 0, 0);
+    chainObj->filler79[0] |= 1;
+    chainObj->callback = obj_spread_chain_to_hold;
+    chainObj->chain = obj->chain;
+    obj->chain = chainObj;
+    /* the position block of the chain object heads a list of four sprite nodes */
+    tail = (struct ChainNode *)&chainObj->filler0C;
     ((struct SpreadPos *)tail)->px = 8;
     ((struct SpreadPos *)tail)->py = -2;
     ((struct SpreadPos *)tail)->pz = 0;
-    take = sprite_node_take();
-    part->nodeTake4 = take;
-    take->sprite = part->sprite;
-    take->pos = (struct SpreadPos *)tail;
+    spriteNode = sprite_node_take();
+    chainObj->nodeTake4 = spriteNode;
+    spriteNode->sprite = chainObj->sprite;
+    spriteNode->pos = (struct SpreadPos *)tail;
     for (i = 0; i < 4; i++)
     {
-        n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-        tail->next = n;
-        tail = n;
+        node = sprite_node_alloc(chainObj->dispX, chainObj->dispY, chainObj->dispZ);
+        tail->next = node;
+        tail = node;
     }
     tail->next = NULL;
     obj->scene->mode = 1;
-    if (flag != 0)
+    if (moveToTarget != 0)
     {
         obj->callback = obj_move_to_scene_target;
     }
@@ -753,13 +790,17 @@ void *sprite_node_take(void);
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void link_state_clear_idle(struct Obj *obj);
 void obj_spread_chain_to_hold(struct Obj *obj);
-void world_link_b_setup(struct Obj *obj, u16 flag)
+/* Sets up world link B, the mirror of world_link_a_setup: spawns its linked sprite (0x4032) offset
+ * to the right of obj, and a chain object (0x4033) whose four sprite nodes are spread between it
+ * and the object obj held before. With moveToTarget set, obj then moves to the scene's target;
+ * otherwise it idles. */
+void world_link_b_setup(struct Obj *obj, u16 moveToTarget)
 {
     struct Obj *link;
-    struct Obj *part;
-    struct SpriteNode *take;
+    struct Obj *chainObj;
+    struct SpriteNode *spriteNode;
     struct ChainNode *tail;
-    struct ChainNode *n;
+    struct ChainNode *node;
     s32 anim;
     s32 i;
 
@@ -778,30 +819,30 @@ void world_link_b_setup(struct Obj *obj, u16 flag)
     link->level = obj->level - 1;
     link->callback = NULL;
     ((struct KindBits *)&link->kind)->kind = 3;
-    part = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 + 8, obj->posY / 0x100 + 4, obj->posZ / 0x100 + 0x28, ((u32)obj->sprite->flags11 << 25) >> 31, 1);
-    sprite_set_action(part, 1, 0, 0);
-    part->filler79[0] |= 1;
-    part->callback = obj_spread_chain_to_hold;
-    part->chain = obj->chain;
-    obj->chain = part;
-    /* the position block of the part heads a list of four sprite nodes */
-    tail = (struct ChainNode *)&part->filler0C;
+    chainObj = obj_spawn(obj->scene, 0x4033, obj->posX / 0x100 + 8, obj->posY / 0x100 + 4, obj->posZ / 0x100 + 0x28, ((struct SpriteFlags11 *)obj->sprite)->mirror, 1);
+    sprite_set_action(chainObj, 1, 0, 0);
+    chainObj->filler79[0] |= 1;
+    chainObj->callback = obj_spread_chain_to_hold;
+    chainObj->chain = obj->chain;
+    obj->chain = chainObj;
+    /* the position block of the chain object heads a list of four sprite nodes */
+    tail = (struct ChainNode *)&chainObj->filler0C;
     ((struct SpreadPos *)tail)->px = 8;
     ((struct SpreadPos *)tail)->py = -2;
     ((struct SpreadPos *)tail)->pz = 0;
-    take = sprite_node_take();
-    part->nodeTake4 = take;
-    take->sprite = part->sprite;
-    take->pos = (struct SpreadPos *)tail;
+    spriteNode = sprite_node_take();
+    chainObj->nodeTake4 = spriteNode;
+    spriteNode->sprite = chainObj->sprite;
+    spriteNode->pos = (struct SpreadPos *)tail;
     for (i = 0; i < 4; i++)
     {
-        n = sprite_node_alloc(part->dispX, part->dispY, part->dispZ);
-        tail->next = n;
-        tail = n;
+        node = sprite_node_alloc(chainObj->dispX, chainObj->dispY, chainObj->dispZ);
+        tail->next = node;
+        tail = node;
     }
     tail->next = NULL;
     obj->scene->mode = 1;
-    if (flag != 0)
+    if (moveToTarget != 0)
     {
         obj->callback = obj_move_to_scene_target;
     }
@@ -831,47 +872,46 @@ void obj_begin_effect(struct Obj *obj)
     set_slot_value(0xD5, -1);
 }
 
-NONMATCH("asm/code_08113AE8/obj_spawn_effect_part.s", void obj_spawn_effect_part(struct Obj *obj))
+/* Once obj's animation has finished (sprite flag 8): plays action 0x1F and spawns a linked piece
+   (0x4036) at the start point for the scene's mode (gModeStartX/gModeStartY, and gUnk_08202218 for
+   the height), shown with effect 0x2AED, which goes on in obj_start_anim1_timer. obj then waits in
+   obj_stop_anim; sound 0xD5 is stopped and slot 0x118 set to -1. */
+void obj_spawn_effect_part(struct Obj *obj)
 {
     struct Obj *piece;
-    u8 *mode;
-    s32 x;
-    s32 y;
-    s32 z;
+    u8 *sceneMode;
 
     if ((obj->sprite->mode & 8) != 0)
     {
         sprite_set_action(obj, 0x1F, 0, 0);
         ((struct SpriteBits *)&obj->sprite->mode)->mode = 1;
         piece = obj_spawn_linked(obj, 0x4036, 0);
-        x = gModeStartX[*(mode = &obj->scene->mode)];
-        piece->posX = x << 8;
-        piece->dispX = x << 8;
-        y = gModeStartY[*mode];
-        piece->posY = y << 8;
-        piece->dispY = y << 8;
-        z = gUnk_08202218[*mode];
-        piece->posZ = z << 8;
-        piece->dispZ = z << 8;
+        piece->dispX = piece->posX = gModeStartX[*(sceneMode = &obj->scene->mode)] << 8;
+        piece->dispY = piece->posY = gModeStartY[*sceneMode] << 8;
+        piece->dispZ = piece->posZ = gUnk_08202218[*sceneMode] << 8;
         piece->callback = obj_start_anim1_timer;
-        effect_spawn_at(0x2AED, x, y, z, piece);
+        effect_spawn_at(0x2AED, piece->posX / 0x100, piece->posY / 0x100, piece->posZ / 0x100, piece);
         obj->callback = obj_stop_anim;
         sound_stop_song(0xD5);
         set_slot_value(0x118, -1);
     }
 }
-END_NONMATCH
 
 void obj_release_when_motion_done(struct Obj *obj);
+// Moves the object round the right half of an ellipse centred on (0x50, 0x6C) px, 0x18 wide and
+// 0x10 high per cosine unit: the angle in unk98 (from 0xC000 or 0x4000, set by obj_finish_motion)
+// turns by gSlotAngle[slot] each frame, down or up by the scene's mode. Once it leaves
+// 0x4000..0xC000 the object runs off the left edge (x -0x20) and is released when it gets there.
+// A finished one-shot animation releases it at once (stopping song 0x10C).
 void obj_circle_step(struct Obj *obj)
 {
-    s32 *ang;
-    s32 *dst;
+    s32 *angleIn;
+    s32 *angleOut;
     s32 angle;
-    s32 idx;
-    s32 cs;
-    s32 sn;
-    s32 base;
+    s32 index;
+    s32 cosv;
+    s32 sinv;
+    s32 cur;
     s32 next;
     s32 mask;
 
@@ -885,29 +925,29 @@ void obj_circle_step(struct Obj *obj)
         }
     }
     angle = obj->unk98 + 0x8000;
-    ang = &obj->unk98;
+    angleIn = &obj->unk98;
     if (angle < 0)
     {
         angle = obj->unk98 + 0x80FF;
     }
-    idx = angle >> 8;
+    index = angle >> 8;
     mask = 0xFF;
-    cs = gCosineTable[idx & mask];
-    obj->dispX = (cs / 0x40) * 0x18 + 0x5000;
-    sn = gSineTable[idx & mask];
-    obj->dispY = (sn / 0x40) * 0x10 + 0x6C00;
-    dst = &obj->unk98;
-    base = *ang;
+    cosv = gCosineTable[index & mask];
+    obj->dispX = (cosv / 0x40) * 0x18 + 0x5000;
+    sinv = gSineTable[index & mask];
+    obj->dispY = (sinv / 0x40) * 0x10 + 0x6C00;
+    angleOut = &obj->unk98;
+    cur = *angleIn;
     if (obj->scene->mode != 0)
     {
-        next = base + gSlotAngle[obj->slot];
+        next = cur + gSlotAngle[obj->slot];
     }
     else
     {
-        next = base - gSlotAngle[obj->slot];
+        next = cur - gSlotAngle[obj->slot];
     }
-    *dst = next;
-    if ((u32)(*ang - 0x4000) > 0x8000)
+    *angleOut = next;
+    if ((u32)(*angleIn - 0x4000) > 0x8000)
     {
         place_targets(obj, -0x20, obj->posY / 0x100, obj->posZ / 0x100, 0x100);
         set_motion_start(obj, gSlotMotion[obj->slot]);
@@ -917,13 +957,18 @@ void obj_circle_step(struct Obj *obj)
 
 void obj_finish_motion(struct Obj *obj);
 
-u32 obj_partner_step(struct Obj *obj, struct Obj *partner)
+// Contact handler (cb60) of an object running off to the left: only the scene's main object
+// counts (1 for any other). Unless obj is left of scene->unk40, or posX is still left of dispX,
+// the object is knocked back: it moves to x 0x50 at gSlotMotion[slot] speed, flips the scene's
+// direction and then circles (obj_finish_motion). Each knock counts in slot; at unk9C it plays
+// action 3. Spawns effect 0x2AFB, plays sound 0x119. Returns -1 for the main object.
+u32 obj_partner_step(struct Obj *obj, struct Obj *other)
 {
-    if (partner != partner->scene->main)
+    if (other != other->scene->main)
     {
         return 1;
     }
-    if (obj->posX < partner->scene->unk40)
+    if (obj->posX < other->scene->unk40)
     {
         return -1;
     }
@@ -935,7 +980,7 @@ u32 obj_partner_step(struct Obj *obj, struct Obj *partner)
     set_motion_start(obj, gSlotMotion[obj->slot]);
     obj->scene->mode ^= 1;
     obj->callback = obj_finish_motion;
-    ((u16 *)&obj->slot)[0] = ((u16 *)&obj->slot)[0] + 1;
+    ((u16 *)&obj->slot)[0] = ((u16 *)&obj->slot)[0] + 1; // one more knock
     if (obj->slot >= obj->unk9C)
     {
         sprite_set_action(obj, 3, 0, 0);

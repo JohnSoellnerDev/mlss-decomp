@@ -12,6 +12,12 @@ struct ActorPose
     u8 flags;
 };
 
+/* ActorPose.flags: the current animation has finished. */
+#define POSE_ANIM_DONE 0x08
+
+/* Object type of the number sprite that counts down once a second (its action is the digit shown). */
+#define OBJ_COUNTDOWN_DIGIT 0x8031
+
 struct ActorPart
 {
     u8 filler0[0xB4];
@@ -184,35 +190,39 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
+/* Once the actor's animation is done: plays action 5 and spawns a countdown digit 0x40 above its part's
+ * target, starting at obj->paramA0 and linked into obj's children; it counts down once a second
+ * (step_timer_anim_then_remove). The actor then waits in step_countdown_place_then_wait until paramA4 is
+ * cleared. */
 void spawn_child_8031(struct ActorObj *obj)
 {
-    s32 childType = 0x8031;
+    s32 digitType = OBJ_COUNTDOWN_DIGIT;
     struct ActorPart *part;
-    struct ActorObj *child;
+    struct ActorObj *digit;
     s32 x;
     s32 y;
     s32 h;
 
-    if ((obj->pose->flags & 8) != 0)
+    if ((obj->pose->flags & POSE_ANIM_DONE) != 0)
     {
         sprite_set_action(obj, 5, 0, 0);
         part = obj->part;
         x = part->targetX / 0x100;
         y = part->targetY / 0x100;
         h = part->targetH / 0x100;
-        child = obj_spawn(part, childType, x, y, h + 0x40, 0, 1);
-        sprite_set_action(child, obj->paramA0, 0, 0);
-        child->child = obj->child;
-        obj->child = child;
-        ((struct ActorFlags79 *)&child->flags79)->bit0 = 1;
-        ((struct ActorFlags77 *)&child->flags77)->bit6 = 0;
-        ((struct ActorFlags77 *)&child->flags77)->bit5 = 0;
-        child->callback = on_arrive;
-        child->link = obj->link;
-        child->owner = obj->owner;
-        child->wait = obj->paramA0;
-        child->timer = 0x3C;
-        child->state = step_timer_anim_then_remove;
+        digit = obj_spawn(part, digitType, x, y, h + 0x40, 0, 1);
+        sprite_set_action(digit, obj->paramA0, 0, 0);
+        digit->child = obj->child;
+        obj->child = digit;
+        ((struct ActorFlags79 *)&digit->flags79)->bit0 = 1;
+        ((struct ActorFlags77 *)&digit->flags77)->bit6 = 0;
+        ((struct ActorFlags77 *)&digit->flags77)->bit5 = 0;
+        digit->callback = on_arrive;
+        digit->link = obj->link;
+        digit->owner = obj->owner;
+        digit->wait = obj->paramA0;
+        digit->timer = 60;
+        digit->state = step_timer_anim_then_remove;
         obj->paramA4 = 1;
         obj->state = step_countdown_place_then_wait;
         obj->paramA8 = 10;

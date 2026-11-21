@@ -58,6 +58,12 @@ struct ObjListHead
     void *buf3C;
 };
 
+/* ObjListHead.slots0C: 16 slot words, OBJ_SLOT_FREE when unused, otherwise the owner's kind
+   (bits 10-13) and id (bits 0-9). */
+#define OBJ_SLOT_FREE 0xFFFF
+#define OBJ_SLOT_KIND(slot) (((slot) >> 10) & 0xF)
+#define OBJ_SLOT_ID(slot) ((slot) & 0x3FF)
+
 struct BlockRec
 {
     struct BlockRec *prev;
@@ -68,11 +74,13 @@ struct BlockRec
     u16 id;
 };
 
+/* One entry of the sprite node buffer (ObjListHead.buf3C, 130 of them): a doubly linked list kept
+   sorted by key; iwram_routine_03006c53 copies out the nodes in use (unused == 0), 8 bytes apart. */
 struct NodeRec
 {
     u32 unk0;
     u16 unk4;
-    u16 unk6;
+    u16 unused;
     u32 key;
     struct NodeRec *prev;
     struct NodeRec *next;
@@ -119,10 +127,15 @@ struct Lo2Bits
 struct Flags13Bits
 {
     u8 lo2 : 2;
-    u8 bit2 : 1;
-    u8 bit3 : 1;
+    u8 bit2 : 1; /* OBJ_OWNS_BLOCK48 */
+    u8 bit3 : 1; /* OBJ_OWNS_BLOCK44 */
     u8 rest : 4;
 };
+
+/* ObjNode.flags13: the object allocated the block itself (obj_setup_blocks), so it frees it, or
+ * hands it on to another object that shares it. */
+#define OBJ_OWNS_BLOCK48 4 /* block48, a kind-2 block from alloc_list_entry */
+#define OBJ_OWNS_BLOCK44 8 /* block44, a kind-3 block */
 
 extern u16 gUnk_0203FFC0;
 
@@ -144,7 +157,7 @@ struct NodeCopy *iwram_routine_03006c53(struct NodeRec *node, struct NodeCopy *d
 
     while ((node = node->next) != NULL)
     {
-        if (node->unk6 == 0)
+        if (node->unused == 0)
         {
             u32 a = node->unk0;
             u16 b = node->unk4;
@@ -196,38 +209,50 @@ void init_node_flags(struct NodeRec *node, s32 count)
     node++;
     while (count != 0)
     {
-        node->unk6 = 1;
+        node->unused = 1;
         count--;
         node++;
     }
 }
 
-NONMATCH("asm/code_08020798/init_node_list.s", void init_node_list(struct NodeRec *node, u32 count))
+/* Links `count` nodes of a buffer into a doubly linked list, each marked unused with key -1. */
+void init_node_list(struct NodeRec *node, u32 count)
 {
     struct NodeRec *prev = NULL;
     struct NodeRec *next;
 
     while (count != 0)
     {
-        node->unk6 = 1;
+        node->unused = 1;
         node->key = -1;
         node->prev = prev;
         next = node + 1;
         node->next = next;
         prev = node;
         count--;
-        node = next;
+        /* never true: keeps `node++` a plain increment so the unrolled loop matches */
+        if (prev != node)
+            next = NULL;
+        node++;
     }
     (node - 1)->next = NULL;
 }
-END_NONMATCH
 
 extern u8 gSys[];
+/* The object-list routines copied into a heap block: gUnk_03000D48 is the block itself and its
+ * first routine (sorts the object list, called with (head, head + 0xA14)), gUnk_03000D4C writes
+ * the objects to OAM and returns the next OAM entry, gUnk_03000D50 a third routine. */
 extern u32 gUnk_03000D48;
 extern u32 gUnk_03000D4C;
 extern u32 gUnk_03000D50;
+/* Bit i set: sprite-command handler i (gUnk_03000D58[i]) has been loaded into its own heap block. */
 extern u8 gUnk_03000D70;
+/* SPRITE_CMD_HANDLER_COUNT sprite-command handlers, Thumb addresses (block + 1), called by
+ * the sprite script interpreter in code_0801D358. */
 extern u32 gUnk_03000D58[];
+
+#define SPRITE_CMD_HANDLER_COUNT 6
+#define THUMB_BIT 1 /* set in the address of a Thumb routine */
 
 struct RecordSource
 {
@@ -247,23 +272,27 @@ void fill_record_08f4(struct RecordSource *p)
     rec[3] = 0;
 }
 
+/* Frees the routines copied into RAM for drawing objects: the object-list routine block
+ * (gUnk_03000D48, with its entry points gUnk_03000D4C / gUnk_03000D50) and every loaded
+ * sprite-command handler (gUnk_03000D58[i] where bit i of gUnk_03000D70 is set, its Thumb bit
+ * removed to get the block back), then marks them all unloaded. */
 void release_timers_0908(void)
 {
     s32 i;
-    u32 *slot;
+    u32 *handler;
 
     heap_free((void *)gUnk_03000D48);
     gUnk_03000D48 = 0;
     gUnk_03000D4C = 0;
     gUnk_03000D50 = 0;
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < SPRITE_CMD_HANDLER_COUNT; i++)
     {
         if ((gUnk_03000D70 >> i) & 1)
         {
-            slot = &gUnk_03000D58[i];
-            *slot = *slot - 1;
-            heap_free((void *)*slot);
-            *slot = 0;
+            handler = &gUnk_03000D58[i];
+            *handler = *handler - THUMB_BIT;
+            heap_free((void *)*handler);
+            *handler = 0;
         }
     }
     gUnk_03000D70 = 0;
@@ -416,98 +445,117 @@ extern u8 *gWindowData[];
 u32 read_varlen_plus1(u8 *p);
 void table_register(void *entry);
 
-void *lookup_or_alloc_13b4(u32 sel, u32 v, s32 size, u8 flag)
+/*
+ * Finds or makes the tile block (list kind 2) of table entry `index` of `bank` (an index with
+ * bits 12-15 set picks bank (bits - 1) itself). The entry word gives the record (bits 18-26)
+ * and the source data in gWindowData[bank] (bits 9-17); a negative word means no entry.
+ * tiles == -1 sizes the block to the larger of the record's tile count and the data's.
+ * A new block gets a 0x10-byte header (refcount 1, source, data pointer) and is registered
+ * for loading. An existing one is returned only when reuse is nonzero; otherwise NULL.
+ */
+void *lookup_or_alloc_13b4(u32 bank, u32 index, s32 tiles, u8 reuse)
 {
-    u32 word;
-    u32 a;
-    u32 b;
-    u32 minUnits;
-    u8 sel8;
+    u32 entryWord;
+    u32 recIndex;
+    u32 dataIndex;
+    u32 minTiles;
+    u8 bank8;
     u8 *rec;
-    u8 *keyTbl;
-    u8 *key;
+    u8 *dataTbl;
+    u8 *src;
     void *entry;
-
-    if ((v & 0xF000) != 0)
-    {
-        sel = ((s32)v >> 12) - 1;
-        v &= 0xFFF;
-    }
-    word = *(u32 *)(gTableEntryRows[sel] + (v << 2));
-    if ((s32)word >= 0)
-    {
-        a = (word << 5) >> 23;
-        b = (word << 14) >> 23;
-        rec = (u8 *)gBankRecordTablePtrs[sel][a];
-        keyTbl = gWindowData[sel];
-        key = keyTbl + ((u32 *)keyTbl)[b];
-        if (size == -1)
-        {
-            minUnits = (rec[4] | ((rec[5] & 1) << 8)) + 1;
-            size = read_varlen_plus1(key) >> 5;
-            if ((s32)size < (s32)minUnits)
-                size = minUnits;
-        }
-        size <<= 5;
-        sel8 = sel & 0xFF;
-        entry = find_list_entry(2, sel8, b);
-        if (entry == NULL)
-        {
-            entry = alloc_list_entry(2, size + 0x10, sel8, b);
-            ((void (*)(u32, void *, u32))gMemRoutines)(0, entry, size + 0x10);
-            *(u32 *)entry = 1;
-            *(u8 **)((u8 *)entry + 4) = key;
-            *(u8 **)((u8 *)entry + 8) = (u8 *)entry + 0x10;
-            *(u32 *)((u8 *)entry + 0xC) = 0;
-            table_register(entry);
-        }
-        else if (flag == 0)
-            return NULL;
-        return entry;
-    }
-    return NULL;
-}
-
-void *lookup_or_alloc_14b8(u32 bank, u32 index, s32 size, u8 flag)
-{
-    u8 *hdr;
-    void *iVar1;
-    u32 uVar2;
-    u32 span;
 
     if ((index & 0xF000) != 0)
     {
         bank = ((s32)index >> 12) - 1;
         index &= 0xFFF;
     }
-    uVar2 = (*(u32 *)(gTableEntryRows[bank] + (index << 2)) & 0x7FFFFFF) >> 0x12;
-    hdr = (u8 *)gBankRecordTablePtrs[bank][uVar2];
-    span = hdr[2] | (hdr[3] << 8);
-    if (span == 0)
+    entryWord = *(u32 *)(gTableEntryRows[bank] + (index << 2));
+    if ((s32)entryWord >= 0)
     {
-        u8 *base = hdr - (hdr[0] | (hdr[1] << 8));
-        u32 cnt = (hdr[6] & 0x7F) + 1;
-        u32 unit = base[0];
+        recIndex = (entryWord << 5) >> 23;
+        dataIndex = (entryWord << 14) >> 23;
+        rec = (u8 *)gBankRecordTablePtrs[bank][recIndex];
+        dataTbl = gWindowData[bank];
+        src = dataTbl + ((u32 *)dataTbl)[dataIndex];
+        if (tiles == -1)
+        {
+            minTiles = (rec[4] | ((rec[5] & 1) << 8)) + 1;
+            tiles = read_varlen_plus1(src) >> 5;
+            if ((s32)tiles < (s32)minTiles)
+                tiles = minTiles;
+        }
+        // 32 bytes per 4bpp tile.
+        tiles <<= 5;
+        bank8 = bank & 0xFF;
+        entry = find_list_entry(2, bank8, dataIndex);
+        if (entry == NULL)
+        {
+            entry = alloc_list_entry(2, tiles + 0x10, bank8, dataIndex);
+            ((void (*)(u32, void *, u32))gMemRoutines)(0, entry, tiles + 0x10);
+            *(u32 *)entry = 1;
+            *(u8 **)((u8 *)entry + 4) = src;
+            *(u8 **)((u8 *)entry + 8) = (u8 *)entry + 0x10;
+            *(u32 *)((u8 *)entry + 0xC) = 0;
+            table_register(entry);
+        }
+        else if (reuse == 0)
+            return NULL;
+        return entry;
+    }
+    return NULL;
+}
+
+/*
+ * Finds or makes the decoded block (list kind 3) of the record behind table entry `index` of
+ * `bank` (an index with bits 12-15 set picks bank (bits - 1) itself; entry word bits 18-26 give
+ * the record). A record whose u16 at +2 is nonzero keeps its block prebuilt that many bytes
+ * before itself. Otherwise the block is decode_e400's output: size == -1 sizes it to
+ * groups * (count + 1) + 1 bytes, rounded up to a word. A new block is decoded from the record;
+ * an existing one is returned only when reuse is nonzero, otherwise NULL.
+ */
+void *lookup_or_alloc_14b8(u32 bank, u32 index, s32 size, u8 reuse)
+{
+    u8 *rec;
+    void *block;
+    u32 recIndex;
+    u32 prebuiltOfs;
+
+    if ((index & 0xF000) != 0)
+    {
+        bank = ((s32)index >> 12) - 1;
+        index &= 0xFFF;
+    }
+    recIndex = (*(u32 *)(gTableEntryRows[bank] + (index << 2)) & 0x7FFFFFF) >> 0x12;
+    rec = (u8 *)gBankRecordTablePtrs[bank][recIndex];
+    prebuiltOfs = rec[2] | (rec[3] << 8);
+    if (prebuiltOfs == 0)
+    {
+        u8 *base = rec - (rec[0] | (rec[1] << 8));
+        u32 perGroup = (rec[6] & 0x7F) + 1;
+        u32 groups = base[0];
 
         if (size == -1)
-            size = cnt * unit + 1;
+            size = perGroup * groups + 1;
         size = (size + 3) & 0xFFFFFFFC;
-        iVar1 = find_list_entry(3, bank & 0xFF, uVar2);
-        if (iVar1 == NULL)
+        block = find_list_entry(3, bank & 0xFF, recIndex);
+        if (block == NULL)
         {
-            iVar1 = alloc_list_entry(3, size, bank & 0xFF, uVar2);
-            decode_e400(iVar1, (u16 *)hdr);
+            block = alloc_list_entry(3, size, bank & 0xFF, recIndex);
+            decode_e400(block, (u16 *)rec);
         }
-        else if (flag == 0)
+        else if (reuse == 0)
             return NULL;
     }
     else
-        iVar1 = hdr - span;
-    return iVar1;
+        block = rec - prebuiltOfs;
+    return block;
 }
 
 ASM_FUNC("asm/code_08020798/find_or_alloc_obj_slots.s", u32 find_or_alloc_obj_slots(u32 a, u32 b, u32 c, u32 d, u32 e, void *f, s32 g))
 
+/* Frees every slot from list->unk04 on that belongs to (group, id); returns a mask of the freed
+   slots (bit i = slot i). Same as obj_lists_fill_free. */
 static inline u16 free_slots_matching(struct ObjListHead *list, u32 group, u32 id)
 {
     u16 *slots;
@@ -522,13 +570,13 @@ static inline u16 free_slots_matching(struct ObjListHead *list, u32 group, u32 i
     for (i = list->unk04; i < 16; i++)
     {
         p = &slots[i];
-        if (*p != 0xFFFF)
+        if (*p != OBJ_SLOT_FREE)
         {
-            kindField = (*p >> 10) & 0xF;
-            idField = *p & 0x3FF;
+            kindField = OBJ_SLOT_KIND(*p);
+            idField = OBJ_SLOT_ID(*p);
             if (group == kindField && id == idField)
             {
-                *p = 0xFFFF;
+                *p = OBJ_SLOT_FREE;
                 mask |= 1 << i;
             }
         }
@@ -536,56 +584,64 @@ static inline u16 free_slots_matching(struct ObjListHead *list, u32 group, u32 i
     return mask;
 }
 
-u16 free_matching_slots_1930(u32 idx)
+/* Frees slot `slotIndex` of the object list together with every other slot (from list->unk04 on)
+   owned by the same kind and id. Returns the mask of freed slots, or 0 if the slot was free. */
+u16 free_matching_slots_1930(u32 slotIndex)
 {
     struct ObjListHead *list;
     u16 *slots;
-    u32 group;
+    u32 kind;
     u32 id;
-    u16 res;
+    u16 freedMask;
 
     list = &gUnk_0203FFB8;
     slots = list->slots0C;
-    res = 0;
-    if (slots[idx] != 0xFFFF)
+    freedMask = 0;
+    if (slots[slotIndex] != OBJ_SLOT_FREE)
     {
-        group = (slots[idx] >> 10) & 0xF;
-        id = slots[idx] & 0x3FF;
-        res = free_slots_matching(list, group, id);
+        kind = OBJ_SLOT_KIND(slots[slotIndex]);
+        id = OBJ_SLOT_ID(slots[slotIndex]);
+        freedMask = free_slots_matching(list, kind, id);
     }
-    return res;
+    return freedMask;
 }
 
-u32 find_obj_1a2c(struct ObjNode *p, u32 mode)
+/* Looks for another object in the list (gUnk_0203FFB8) that shares something with `obj`, so a
+ * resource is freed only when its last user goes. mode 2: a live object (flags bit 5 clear,
+ * flags29 bit 4 clear) with the same key (the u32 at unk1C, masked to 0x00F0FFFF), which shares
+ * obj's slots. Other modes need the same low nibble of unk1E too, and then: 0 the same unk18
+ * (block48), 1 the same unk1A (block44), 3 the same rangeStart, 4 the same unk18 with no block44.
+ * Returns the object found, or 0. */
+u32 find_obj_1a2c(struct ObjNode *obj, u32 mode)
 {
-    struct ObjNode *cur;
+    struct ObjNode *other;
 
-    cur = gUnk_0203FFB8.first;
-    if (cur == NULL)
+    other = gUnk_0203FFB8.first;
+    if (other == NULL)
         return 0;
     if (mode == 2)
     {
         do
         {
-            if (cur != p && !(cur->flags & 0x20) && !(cur->flags29 & 0x10)
-                && (*(u32 *)&cur->unk1C & 0x00F0FFFF) == (*(u32 *)&p->unk1C & 0x00F0FFFF))
-                return (u32)cur;
-            cur = cur->next;
-        } while (cur != NULL);
+            if (other != obj && !(other->flags & 0x20) && !(other->flags29 & 0x10)
+                && (*(u32 *)&other->unk1C & 0x00F0FFFF) == (*(u32 *)&obj->unk1C & 0x00F0FFFF))
+                return (u32)other;
+            other = other->next;
+        } while (other != NULL);
         return 0;
     }
     do
     {
-        if (cur != p && (cur->unk1E & 0xF) == (p->unk1E & 0xF))
+        if (other != obj && (other->unk1E & 0xF) == (obj->unk1E & 0xF))
         {
-            if ((mode == 0 && cur->unk18 == p->unk18)
-                || (mode == 1 && cur->unk1A == p->unk1A)
-                || (mode == 3 && cur->rangeStart == p->rangeStart)
-                || (mode == 4 && cur->unk18 == p->unk18 && cur->block44 == 0))
-                return (u32)cur;
+            if ((mode == 0 && other->unk18 == obj->unk18)
+                || (mode == 1 && other->unk1A == obj->unk1A)
+                || (mode == 3 && other->rangeStart == obj->rangeStart)
+                || (mode == 4 && other->unk18 == obj->unk18 && other->block44 == 0))
+                return (u32)other;
         }
-        cur = cur->next;
-    } while (cur != NULL);
+        other = other->next;
+    } while (other != NULL);
     return 0;
 }
 
@@ -682,28 +738,32 @@ NONMATCH("asm/code_08020798/obj_setup_blocks.s", void obj_setup_blocks(struct Ob
 }
 END_NONMATCH
 
+/* Frees obj's blocks as it goes: a block it owns (block48, block44) is freed unless another object
+ * shares it (find_obj_1a2c), which then becomes its owner. block44 above 0x07FFFFFF is in ROM and
+ * never freed. With no block44, obj took its range from the top of the list's bump allocator
+ * (rangeEnd), which is given back if obj's range is the topmost one and nobody else uses it. */
 void obj_release_blocks(struct ObjNode *obj)
 {
-    struct ObjNode *other;
+    struct ObjNode *sharer;
     struct ObjListHead *list;
 
-    if (obj->block48 != 0 && (obj->flags13 & 4))
+    if (obj->block48 != 0 && (obj->flags13 & OBJ_OWNS_BLOCK48))
     {
-        other = (struct ObjNode *)find_obj_1a2c(obj, 0);
-        if (other == NULL)
+        sharer = (struct ObjNode *)find_obj_1a2c(obj, 0);
+        if (sharer == NULL)
             release_block((void *)obj->block48);
         else
-            other->flags13 |= 4;
+            sharer->flags13 |= OBJ_OWNS_BLOCK48;
     }
     if (obj->block44 != 0)
     {
-        if (obj->block44 <= 0x07FFFFFF && (obj->flags13 & 8))
+        if (obj->block44 <= 0x07FFFFFF && (obj->flags13 & OBJ_OWNS_BLOCK44))
         {
-            other = (struct ObjNode *)find_obj_1a2c(obj, 1);
-            if (other == NULL)
+            sharer = (struct ObjNode *)find_obj_1a2c(obj, 1);
+            if (sharer == NULL)
                 release_block((void *)obj->block44);
             else
-                other->flags13 |= 8;
+                sharer->flags13 |= OBJ_OWNS_BLOCK44;
         }
     }
     else
@@ -717,7 +777,60 @@ void obj_release_blocks(struct ObjNode *obj)
     }
 }
 
-ASM_FUNC("asm/code_08020798/alloc_list_entry.s", void *alloc_list_entry(s32 kind, u32 size, u8 sub, u16 id))
+void *alloc_list_entry(s32 kind, u32 size, u8 sub, u16 id)
+{
+    struct BlockRec *rec = gUnk_0203FFB8.firstBlock;
+    struct BlockRec *blk;
+    struct BlockRec *after;
+    u8 *data;
+    u32 avail;
+
+    size += 0xF;
+    size &= ~0xF;
+    size += 0x10;
+    do
+    {
+        avail = rec->size;
+        if (rec->kind == 0 && (s32)avail >= (s32)size)
+        {
+            if (avail >= size + 0x10)
+            {
+                blk = (struct BlockRec *)((u8 *)rec - size);
+                blk->prev = rec;
+                after = rec->next;
+                blk->next = after;
+                if (after != NULL)
+                    after->prev = blk;
+                blk->size = rec->size - size;
+                blk->kind = 0;
+                rec->next = blk;
+                rec->size = size;
+            }
+            else
+            {
+                rec->size = avail;
+            }
+            rec->kind = kind;
+            rec->sub = sub;
+            rec->id = id;
+            data = (u8 *)rec - (rec->size - 0x10);
+            switch (kind)
+            {
+            case 1:
+                break;
+            case 2:
+                *(u32 *)data = 0;
+                break;
+            case 3:
+                *data = 0;
+                break;
+            }
+            return data;
+        }
+        rec = rec->next;
+    } while (rec != NULL);
+    return NULL;
+}
 
 void release_block(void *node)
 {
@@ -764,34 +877,11 @@ void *find_list_entry(u32 kind, u8 sub, u16 id)
     return NULL;
 }
 
+/* Frees every slot of the object list (from list->unk04 on) owned by this kind and id, and returns
+   the mask of the freed slots (bit i = slot i). */
 u16 obj_lists_fill_free(u32 kind, u32 id)
 {
-    struct ObjListHead *list;
-    u16 *slots;
-    u16 *p;
-    u16 mask;
-    s32 i;
-    u32 kindField;
-    u32 idField;
-
-    list = &gUnk_0203FFB8;
-    slots = list->slots0C;
-    mask = 0;
-    for (i = list->unk04; i < 16; i++)
-    {
-        p = &slots[i];
-        if (*p != 0xFFFF)
-        {
-            kindField = (*p >> 10) & 0xF;
-            idField = *p & 0x3FF;
-            if (kind == kindField && id == idField)
-            {
-                *p = 0xFFFF;
-                mask |= 1 << i;
-            }
-        }
-    }
-    return mask;
+    return free_slots_matching(&gUnk_0203FFB8, kind, id);
 }
 
 extern const u32 gTableEntryRows[];

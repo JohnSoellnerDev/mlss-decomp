@@ -315,6 +315,14 @@ struct PoseByte49
     u32 high6 : 6;
 } __attribute__((packed));
 
+/*
+ * Cutscene step: copies bit 0 of party flags 0x47 and 0x49 into world mode
+ * bits 6-7, then sends hero A to (+0x40, +0x6E) and hero B to (+0x1E, +0x6E)
+ * from the focus object's last position (speed 0x200), each with its walk
+ * action (0x2002 with no pose, else 0x204F) and facing along its span.
+ * Hero A's state ends and it rebuilds; the body goes on to hero_b_end_a.
+ * Each hero is only touched while its mode is 2 or 4.
+ */
 void hero_pair_place_both_tracked(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -330,6 +338,7 @@ void hero_pair_place_both_tracked(struct HeroBody *body)
         + (((struct PoseByte49 *)&gParty[0x49])->high6 & 1) * 2;
     set_slot_value(0x53, -1);
 
+    /* hero A */
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
         place_targets(body_a, (s16)obj_last_x(focus_obj()) + 0x40,
@@ -359,6 +368,7 @@ void hero_pair_place_both_tracked(struct HeroBody *body)
         enter_finish_rebuild(body_a);
     }
 
+    /* hero B */
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
     {
         place_targets(body_b, (s16)obj_last_x(focus_obj()) + 0x1E,
@@ -402,11 +412,20 @@ void hero_b_step16_when_a_free(struct HeroBody *body)
     }
 }
 
+/*
+ * Cutscene step: waits until hero B's motion is done (flags bit 5, set by
+ * state_stack_advance_progress), then sets slot 0x87, gives hero B action
+ * 0x2055 and spawns two linked objects next to it: object 0x208B at
+ * (+18 px, +14 px Z) drawn 3 below hero B, and a child of that with action
+ * 0x20B9 another 16 px up in Z, drawn 2 above hero B. Hero B then starts a
+ * new 120-frame motion and the body goes on to hero_b_step_window_d3c38.
+ * Hero B is only touched while its mode is 2 or 4.
+ */
 void hero_b_spawn_child_chain(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    struct HeroBody *child;
+    struct HeroBody *spawned;
 
     state_stack_advance_progress(body_b);
     if ((hero_b->body.flags & 0x20) != 0)
@@ -417,22 +436,27 @@ void hero_b_spawn_child_chain(struct HeroBody *body)
             sprite_set_action(body_b, 0, 0x2055, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
-        child = obj_spawn_linked(body_b, 0x208B, 0);
-        child->flags |= 4;
-        child->sprite->unkE = body_b->sprite->unkE - 3;
-        child->flags |= 1;
-        child->posX += 0x1200;
-        child->posZ += 0xE00;
-        child = obj_spawn_linked(child, 0, 0);
-        sprite_set_action(child, 0, 0x20B9, 0);
-        child->posZ += 0x1000;
-        ((struct HeroSpriteBits *)&child->sprite->flags)->mode = 0;
-        child->flags |= 4;
-        child->sprite->unkE = body_b->sprite->unkE + 2;
+
+        /* first object: beside hero B, drawn just behind it (positions are 8.8 fixed point) */
+        spawned = obj_spawn_linked(body_b, 0x208B, 0);
+        spawned->flags |= 4;
+        spawned->sprite->unkE = body_b->sprite->unkE - 3;
+        spawned->flags |= 1;
+        spawned->posX += 0x1200;
+        spawned->posZ += 0xE00;
+
+        /* second object, linked to the first: drawn just in front of hero B */
+        spawned = obj_spawn_linked(spawned, 0, 0);
+        sprite_set_action(spawned, 0, 0x20B9, 0);
+        spawned->posZ += 0x1000;
+        ((struct HeroSpriteBits *)&spawned->sprite->flags)->mode = 0;
+        spawned->flags |= 4;
+        spawned->sprite->unkE = body_b->sprite->unkE + 2;
         {
-            s32 f = child->flags;
-            child->flags = 1 | f;
+            s32 flags = spawned->flags;
+            spawned->flags = 1 | flags;
         }
+
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x78);

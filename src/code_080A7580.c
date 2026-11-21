@@ -115,10 +115,10 @@ struct HeroBody
     u8 filler88[0x92 - 0x88];
     u16 height;
     u8 filler94[0x9C - 0x94];
-    u32 unk9C;
+    u32 unk9C; /* set once hero_a_step_wait_press has spawned its effect */
     u8 filler_A0[0xAC - 0xA0];
     s16 step;
-    u16 timer;
+    u16 timer; /* bits 12-15: result of the timed press (0 = none yet) */
     u8 filler_B0[0xC3 - 0xB0];
     s8 ofsX;
     s8 ofsY;
@@ -149,6 +149,12 @@ struct World
 };
 
 extern struct World *gWorld;
+
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroBody.flags bit set by state_stack_advance_progress once progress passes 0x3FFF. */
+#define HERO_FLAG_PROGRESS_DONE 0x20
 extern u8 *gParty;
 
 /* Party record: five 6-bit flag sets from bit 12 of the word at +8; the fourth one straddles
@@ -331,11 +337,13 @@ void sprite_entry_update(struct HeroNode *node);
 void hero_b_drop_node_702c(struct HeroBody *body);
 void hero_b_drop_node_6c40(struct HeroBody *body);
 
-/* Mode bits 6-7 of the world from the party flags, then both heroes to their targets with the
-   pose animation and mirror; hero B's state ends, the body goes on to clearing hero A's animation. */
+/* Cutscene step: copies bit 0 of party flag sets 0 and 3 into world mode bits 6-7, then sends
+   hero B to 20 px right and 16 px up of its target and hero A to 34 px left and 16 px down of its
+   own, each with its pose action (0x2002 with no pose, else 0x204F) and facing along its span.
+   Hero B's state ends; the body goes on to hero_a_active_clear_anim. */
 void hero_pair_place_then_a_clear(struct HeroBody *body)
 {
-    struct World *world_mode;
+    struct World *world;
     struct Hero *hero_b;
     struct HeroBody *body_a;
     struct HeroBody *body_b;
@@ -344,16 +352,16 @@ void hero_pair_place_then_a_clear(struct HeroBody *body)
     s32 x;
     s32 y;
     s32 z;
-    u8 flag_a;
-    u32 flag_bit;
-    u32 bits;
+    u8 set0_bit;
+    u32 set3_bit;
+    u32 mode_bits;
 
     gWorld->unkE = 0;
-    world_mode = gWorld;
-    flag_a = ((struct PartyFlags *)gParty)->set0 & 1;
-    flag_bit = ((struct PartyFlags *)gParty)->set3 & 1;
-    bits = (flag_a + (flag_bit << 1)) << 6;
-    world_mode->mode = (world_mode->mode & 0x3F) | bits;
+    world = gWorld;
+    set0_bit = ((struct PartyFlags *)gParty)->set0 & 1;
+    set3_bit = ((struct PartyFlags *)gParty)->set3 & 1;
+    mode_bits = (set0_bit + (set3_bit << 1)) << 6;
+    world->mode = (world->mode & 0x3F) | mode_bits;
 
     body_a = &gWorld->heroA->body;
     hero_b = gWorld->heroB;
@@ -363,8 +371,8 @@ void hero_pair_place_then_a_clear(struct HeroBody *body)
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
     {
         data = body_b->data;
-        x = data->targetX / 0x100 + 0x14;
-        y = data->targetY / 0x100 - 0x10;
+        x = data->targetX / 0x100 + 20;
+        y = data->targetY / 0x100 - 16;
         z = data->targetH / 0x100;
         place_targets(body_b, x, y, z, -1);
         set_motion_start(body_b, 0x300);
@@ -386,15 +394,15 @@ void hero_pair_place_then_a_clear(struct HeroBody *body)
 
     if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
     {
-        body_b->state = 0;
+        body_b->state = NULL;
         enter_finish_rebuild(body_b);
     }
 
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
         data = body_a->data;
-        x = data->targetX / 0x100 - 0x22;
-        y = data->targetY / 0x100 + 0x10;
+        x = data->targetX / 0x100 - 34;
+        y = data->targetY / 0x100 + 16;
         z = data->targetH / 0x100;
         place_targets(body_a, x, y, z, -1);
         set_motion_start(body_a, 0x400);
@@ -433,30 +441,36 @@ void hero_a_step_16_b_idle_alt(struct HeroBody *body)
     }
 }
 
+/* Cutscene step: advances hero A's progress; once it is done, plays sound 0x88 (set_slot_value),
+   starts action 0 on both heroes that are active (hero A art 0x202F, hero B art 0x205F, sprite
+   mode 1) and goes on to hero_a_sprite_place_at_b. */
 void hero_a_active_anims_pair(struct HeroBody *body)
 {
-    struct Hero *hero = gWorld->heroA;
-    struct HeroBody *a = &hero->body;
-    struct HeroBody *b = &gWorld->heroB->body;
+    struct Hero *hero_a = gWorld->heroA;
+    struct HeroBody *body_a = &hero_a->body;
+    struct HeroBody *body_b = &gWorld->heroB->body;
 
-    state_stack_advance_progress(a);
-    if ((a->flags & 0x20) != 0)
+    state_stack_advance_progress(body_a);
+    if ((body_a->flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         set_slot_value(0x88, -1);
-        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->body.mode))
         {
-            sprite_set_action(a, 0, 0x202F, 0);
-            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
+            sprite_set_action(body_a, 0, 0x202F, 0);
+            ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
         }
-        if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            sprite_set_action(b, 0, 0x205F, 0);
-            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 1;
+            sprite_set_action(body_b, 0, 0x205F, 0);
+            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
         }
         body->state = hero_a_sprite_place_at_b;
     }
 }
 
+/* Cutscene step: waits for hero A's sprite flag 8, then plays slot 0x2B, puts hero A 12 px above
+   hero B's target (plus B's offsets) at height 0x2F with motion 0x466, gives it sprite action
+   0x2030, clears its effect flag and press result, and goes on to hero_a_step_wait_press. */
 void hero_a_sprite_place_at_b(struct HeroBody *body)
 {
     struct Hero *hero_a;
@@ -478,11 +492,11 @@ void hero_a_sprite_place_at_b(struct HeroBody *body)
         {
             x = body_b->targetX / 0x100 + body_b->ofsX;
             y = body_b->targetY / 0x100 + body_b->ofsY;
-            z = body_b->targetZ / 0x100 + body_b->ofsZ - 0xC;
+            z = body_b->targetZ / 0x100 + body_b->ofsZ - 12;
             place_targets(body_a, x, y, z, -1);
             {
-                u16 h = 0x2F;
-                hero_a->body.height = h;
+                u16 height = 0x2F;
+                hero_a->body.height = height;
             }
             set_motion_offsets(body_a, 0x466);
         }

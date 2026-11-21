@@ -109,19 +109,23 @@ struct Actor
     s32 posY;
     s32 baseA;
     s32 baseB;
-    u8 filler1C[0x136 - 0x1C];
+    u8 filler1C[0x128 - 0x1C];
+    u16 waitTimes[4];      /* random_step_pick waits one of these between moves */
+    u8 filler130[0x136 - 0x130];
     u8 flags136;
     u8 filler137[0x198 - 0x137];
     void *update;
     void *update2;
     void *handler;
     void *collide;
-    u8 filler1A8[0x1B0 - 0x1A8];
+    u8 filler1A8[0x1AC - 0x1A8];
+    void *afterWait;       /* the handler tick_store hands over to once waitTimer runs out */
     s8 *rect;
     s16 *sensor;
     s16 vecX;
     s16 vecY;
-    u8 filler1BC[0x1D4 - 0x1BC];
+    u8 filler1BC[0x1D2 - 0x1BC];
+    u16 waitTimer;         /* frames left, counted down by tick_store */
     u16 timer1D4;
     u8 flags1D6;
     u8 filler1D7[0x214 - 0x1D7];
@@ -129,13 +133,16 @@ struct Actor
     u8 filler215[0x242 - 0x215];
     s16 vx;
     s16 vy;
-    u8 filler246[0x272 - 0x246];
+    u8 filler246[0x25C - 0x246];
+    s32 jumpFrames;        /* frames into the jump obj_jump_arc_step runs, -1 when not jumping */
+    u8 filler260[0x272 - 0x260];
     u16 width;
     u16 unk274;
     u16 height;
     u8 filler278[0x294 - 0x278];
     struct ActorChild *unk294;
-    u8 filler298[0x2B6 - 0x298];
+    u8 filler298[0x2B5 - 0x298];
+    u8 flags2B5;           /* bit 3: a jump is under way */
     u8 flags2B6;
     u8 filler2B7[0x2BC - 0x2B7];
     s32 startX;
@@ -217,7 +224,15 @@ void link_to_owner_entry(void);
 u16 angle_of_vector16(s32 x, s32 y);
 void obj_set_stage(struct Actor *obj, u8 stage);
 typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
-u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, ByteArg adjust, ByteArg flag);
+// tile_query's byte `adjust` is built straight in its stack slot (slot address first, then
+// the value): a BLKmode one-byte aggregate does that (see src/code_08171CAC.c).
+struct SlotFlag
+{
+    u8 value;
+    u8 end[0];
+} __attribute__((packed));
+typedef union __attribute__((packed)) { struct SlotFlag flag; u8 value; } SlotFlagArg __attribute__((transparent_union));
+u8 *tile_query(u8 *world, s32 x, s32 y, s32 *outA, s32 *outB, s32 *outC, SlotFlagArg adjust, ByteArg flag);
 
 u32 step_z(struct Obj *obj)
 {
@@ -250,9 +265,11 @@ u32 advance_move(struct Obj *obj)
     return obj->steps != 0;
 }
 
-void start_move_2d(struct Actor *obj, s32 x, s32 y, u16 frames, ByteArg rel)
+/* Starts a straight move of the actor to (x, y) (an offset from its position when relative is set)
+ * over the given number of frames: remembers start and target and sets the per-frame velocity. */
+void start_move_2d(struct Actor *obj, s32 x, s32 y, u16 frames, ByteArg relative)
 {
-    if (rel.value != 0)
+    if (relative.value != 0)
     {
         x += obj->posX;
         y += obj->posY;
@@ -262,6 +279,7 @@ void start_move_2d(struct Actor *obj, s32 x, s32 y, u16 frames, ByteArg rel)
     obj->startY = obj->posY;
     obj->targetX = x;
     obj->targetY = y;
+    /* distance left to go, split evenly over the frames */
     x -= obj->posX;
     y -= obj->posY;
     obj->vx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(x, frames);
@@ -317,14 +335,14 @@ s32 widths_overlap_x(struct Actor *a, struct Actor *b)
     return result;
 }
 
-NONMATCH("asm/code_0813C4A8/tile_blocks_move.s", u32 tile_blocks_move(struct Actor *obj, s32 x, s32 y, s32 pos, s32 span, u8 dir, u16 *flags))
+u32 tile_blocks_move(struct Actor *obj, s32 x, s32 y, s32 pos, s32 span, u8 dir, u16 *flags)
 {
     s32 outA;
     s32 outB;
     s32 outC;
     u8 *tile;
 
-    tile = tile_query(obj->map, x, y, &outA, &outB, &outC, (u8)1, (u8)(((u32)-dir) >> 31));
+    tile = tile_query(obj->map, x, y, &outA, &outB, &outC, (u8)1, (u8)(dir != 0));
     if (flags != 0)
     {
         if ((tile[0] & 0x78) == 8 || (tile[0] & 0x78) == 0x30)
@@ -347,7 +365,6 @@ NONMATCH("asm/code_0813C4A8/tile_blocks_move.s", u32 tile_blocks_move(struct Act
     }
     return 1;
 }
-END_NONMATCH
 
 static inline u8 actor_advance_move(struct Actor *ent)
 {
@@ -548,34 +565,39 @@ void vec2_store(s32 a, s32 b, s32 *out)
     out[1] = b;
 }
 
-void active_hit_state(struct Owner *owner, struct Actor *ent, void **out)
+/* Actor state: if the owner's active entry (partner) is inside the actor's hit box at
+ * rect[0x1A..0x1F], the next state is pick_active_target (and flags1D6 bit 0 is cleared, bit 1 set);
+ * otherwise, or with no active partner, it is setup_random_offset_state. */
+void active_hit_state(struct Owner *owner, struct Actor *ent, void **nextState)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
     s8 *rect;
-    void *entry;
+    void *partner;
 
-    if (find_active_entry(owner, idx) == 0)
+    if (find_active_entry(owner, activeIdx) == 0)
     {
-        *out = (void *)setup_random_offset_state;
+        *nextState = (void *)setup_random_offset_state;
     }
     else
     {
-        entry = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
+        /* owner->entries[activeIdx[0]] */
+        partner = *(void **)((u8 *)owner + 0x28 + (activeIdx[0] << 2));
         rect = ent->rect;
+        /* hit box bytes in 1/16 px: x0, y0, z above, x1, y1, z below */
         box[0] = rect[0x1A] << 4;
         box[2] = rect[0x1B] << 4;
         box[4] = rect[0x1C] << 4;
         box[1] = rect[0x1D] << 4;
         box[3] = rect[0x1E] << 4;
         box[5] = rect[0x1F] << 4;
-        if (boxes_overlap_oriented(box, ent, entry, box[4], box[5]) == 0)
+        if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]) == 0)
         {
-            *out = (void *)setup_random_offset_state;
+            *nextState = (void *)setup_random_offset_state;
         }
         else
         {
-            *out = (void *)pick_active_target;
+            *nextState = (void *)pick_active_target;
             ((struct Flags1D6Bits *)&ent->flags1D6)->bit0 = 0;
             ((struct Flags1D6Bits *)&ent->flags1D6)->bit1 = 1;
         }
@@ -586,68 +608,72 @@ void step_toward(struct Actor *obj, void *entry, s32 a, s32 *out);
 void pair_div256(s32 *dst, s32 *src);
 void pair_shl8(s32 *dst, s32 *src);
 void move_handler_timed_settle(void);
+/* Steps the actor along the dominant axis towards the active partner (step_toward gives the
+ * step). If the box the step sweeps (plus 16 pixels around) holds the partner, it steps anyway
+ * only on an odd roll above 90, else sidesteps the same distance along the other axis, in a
+ * random direction. No active partner: back to setup_random_offset_state. */
 void pick_active_target(struct Owner *owner, struct Actor *obj, void **out)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
-    s32 pair[2];
+    s32 step[2];
     void *partner;
     struct AimSub *sub;
-    s32 qx;
-    s32 qy;
-    s32 mag;
-    s32 px;
+    s32 pixX;
+    s32 pixY;
+    s32 side;
+    s32 stepX;
     u8 roll;
 
-    if (find_active_entry(owner, idx) == 0)
+    if (find_active_entry(owner, activeIdx) == 0)
     {
         *out = (void *)setup_random_offset_state;
         return;
     }
     sub = (struct AimSub *)((u8 *)obj + 0x58);
-    partner = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
-    step_toward(obj, partner, 0, pair);
-    pair_div256(pair, pair);
-    qx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posX, 0x100);
-    qy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posY, 0x100);
-    box[0] = (pair[0] > 0 ? 0 : pair[0]) + qx - 0x10;
-    box[3] = (pair[1] > 0 ? 0 : pair[1]) + qy - 0x10;
-    box[1] = (pair[0] < 0 ? 0 : pair[0]) + qx + 0x10;
-    box[2] = (pair[1] < 0 ? 0 : pair[1]) + qy + 0x10;
+    partner = *(void **)((u8 *)owner + 0x28 + (activeIdx[0] << 2)); // owner->entries[activeIdx[0]]
+    step_toward(obj, partner, 0, step);
+    pair_div256(step, step);
+    pixX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posX, 0x100);
+    pixY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(obj->posY, 0x100);
+    box[0] = (step[0] > 0 ? 0 : step[0]) + pixX - 16; // left
+    box[3] = (step[1] > 0 ? 0 : step[1]) + pixY - 16; // top
+    box[1] = (step[0] < 0 ? 0 : step[0]) + pixX + 16; // right
+    box[2] = (step[1] < 0 ? 0 : step[1]) + pixY + 16; // bottom
     if (point_in_box(box, partner, 0x7FFF, 0) != 0)
     {
-        roll = rand_below(0x64, mt19937_next());
-        if (roll > 0x5A && (roll & 1) != 0)
+        roll = rand_below(100, mt19937_next());
+        if (roll > 90 && (roll & 1) != 0)
         {
-            pair_shl8(pair, pair);
+            pair_shl8(step, step);
         }
         else
         {
-            px = pair[0];
-            if (px != 0)
+            stepX = step[0];
+            if (stepX != 0)
             {
-                mag = px << 8;
+                side = stepX << 8;
                 if ((((u8)rand_below(2, mt19937_next()) ^ 1) & 1) != 0)
-                    mag = -mag;
-                pair[1] = mag;
-                pair[0] = 0;
+                    side = -side;
+                step[1] = side;
+                step[0] = 0;
             }
             else
             {
-                mag = pair[1];
-                mag <<= 8;
+                side = step[1];
+                side <<= 8;
                 if ((((u8)rand_below(2, mt19937_next()) ^ 1) & 1) != 0)
-                    mag = -mag;
-                pair[0] = mag;
-                pair[1] = px;
+                    side = -side;
+                step[0] = side;
+                step[1] = stepX;
             }
         }
     }
     else
     {
-        pair_shl8(pair, pair);
+        pair_shl8(step, step);
     }
-    obj_start_move_to_target(obj, 1, pair[0], pair[1]);
+    obj_start_move_to_target(obj, 1, step[0], step[1]);
     *out = (void *)move_handler_timed_settle;
     sub->collide = (void *)active_hit_state;
 }
@@ -719,9 +745,13 @@ void run_handler_1a0_b(s32 arg, u8 *obj)
     handler(arg, obj, slot);
 }
 
-void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out)
+/* Wandering actor's handler while it moves: steps it toward its move target and along its jump arc.
+ * Once neither is under way (no jump: jumpFrames == -1), it waits one of its four waitTimes, picked
+ * at random, with flags1D6 bit 0 set (the player may be noticed), through tick_store, and then goes
+ * on with the handler in handlerSlot[1] (the next move). A wait of 0 goes on with it right away. */
+void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *handlerSlot)
 {
-    s32 flag = 0;
+    s32 done = 0;
 
     if (advance_move_step(owner, ent) == 1)
     {
@@ -729,47 +759,47 @@ void random_step_pick(struct Owner *owner, struct Actor *ent, u32 *out)
     }
     else
     {
-        s32 t = 0;
+        s32 noJump = 0;
 
-        if (*(s32 *)((u8 *)ent + 0x25C) + 1 == 0)
+        if (ent->jumpFrames + 1 == 0)
         {
-            t = 1;
+            noJump = 1;
         }
-        flag = t;
+        done = noJump;
     }
-    if ((*((u8 *)ent + 0x2B5) & 8) != 0)
+    if ((ent->flags2B5 & 8) != 0)
     {
         obj_jump_arc_step(ent);
     }
     else
     {
-        s32 t = 0;
+        s32 noJump = 0;
 
-        if (*(s32 *)((u8 *)ent + 0x25C) + 1 == 0)
+        if (ent->jumpFrames + 1 == 0)
         {
-            t = 1;
+            noJump = 1;
         }
-        flag = t;
+        done = noJump;
     }
-    if (flag != 0)
+    if (done != 0)
     {
-        u32 idx = rand_below(4, mt19937_next());
-        u32 off = idx << 1;
-        u8 *slot = (u8 *)ent + 0x128;
-        u16 value = *(u16 *)(slot + off);
+        u32 pick = rand_below(4, mt19937_next());
+        u32 off = pick << 1;
+        u8 *times = (u8 *)ent->waitTimes;
+        u16 wait = *(u16 *)(times + off);
 
-        *(u16 *)((u8 *)ent + 0x1D2) = value;
+        ent->waitTimer = wait;
         ((struct Flags1D6Bits *)&ent->flags1D6)->bit0 = 1;
         ((struct Flags1D6Bits *)&ent->flags1D6)->bit1 = 0;
-        if (*(u16 *)((u8 *)ent + 0x1D2) != 0)
+        if (ent->waitTimer != 0)
         {
             ((struct ModeBits *)&ent->mode)->mode = 0;
-            out[0] = (u32)tick_store;
-            *(u32 *)((u8 *)ent + 0x1AC) = out[1];
+            handlerSlot[0] = (u32)tick_store;
+            *(u32 *)&ent->afterWait = handlerSlot[1];
         }
         else
         {
-            out[0] = out[1];
+            handlerSlot[0] = handlerSlot[1];
         }
     }
 }
@@ -800,36 +830,39 @@ void box_hit_state_d4a5(struct Owner *owner, struct Actor *obj)
     }
 }
 
+/* Update state while the active bro stands in the actor's sensor area: runs the state's handler, then
+ * builds the area's pixel bounds from obj->sensor (tile minX, minY, maxX, maxY, each to its tile's
+ * centre) and goes back to start_state_d385 once the bro has left it. */
 void box_hit_state_d4ed(struct Owner *owner, struct Actor *obj)
 {
-    void *entry;
-    s16 box[8];
-    u8 idx;
-    s16 *p;
-    s32 v;
+    void *bro;
+    s16 bounds[8];
+    u8 broIdx;
+    s16 *tile;
+    s32 coord;
     void **handler;
-    s16 *bp;
+    s16 *out;
 
     handler = (void **)&obj->handler;
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
     if ((obj->flags1D6 & 1) != 0)
     {
-        if (find_active_entry(owner, &idx) != 0)
+        if (find_active_entry(owner, &broIdx) != 0)
         {
-            p = obj->sensor;
-            entry = *(void **)((u8 *)owner + 0x28 + (idx << 2));
-            bp = box;
-            v = p[0];
-            bp[0] = (v << 4) + 8;
-            p++;
-            v = p[0];
-            bp[3] = (v << 4) + 8;
-            p++;
-            v = p[0];
-            bp[1] = (v << 4) + 8;
-            v = p[1];
-            bp[2] = (v << 4) + 8;
-            if (point_in_box(box, entry, 0x7FFF, 0) == 0)
+            tile = obj->sensor;
+            bro = *(void **)((u8 *)owner + 0x28 + (broIdx << 2)); /* owner->entries[broIdx] */
+            out = bounds;
+            coord = tile[0];
+            out[0] = (coord << 4) + 8; /* min x */
+            tile++;
+            coord = tile[0];
+            out[3] = (coord << 4) + 8; /* min y */
+            tile++;
+            coord = tile[0];
+            out[1] = (coord << 4) + 8; /* max x */
+            coord = tile[1];
+            out[2] = (coord << 4) + 8; /* max y */
+            if (point_in_box(bounds, bro, 0x7FFF, 0) == 0)
                 obj->update = (void *)start_state_d385;
         }
     }
@@ -922,31 +955,36 @@ void start_state_c189(s32 arg, struct Actor *obj)
     fn(arg, obj);
 }
 
+/* Runs the actor's handler and counts timer1D4 down. Once it is 0, if the owner's active entry
+ * overlaps the actor's hit box (rect[0x18..0x1D]), goes on with advance_to_next_state and then
+ * aim_and_check_overlap. */
 void timer_overlap_state(struct Owner *owner, struct Actor *obj)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
-    s32 t;
+    s32 timer;
     s8 *rect;
-    void *entry;
+    void *target;
     void **handler;
 
     handler = (void **)&obj->handler;
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
-    t = obj->timer1D4;
-    if (t == 0)
+    timer = obj->timer1D4;
+    if (timer == 0)
     {
-        if (find_active_entry(owner, idx) != 0)
+        if (find_active_entry(owner, activeIdx) != 0)
         {
             rect = obj->rect;
-            entry = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
+            /* owner->entries[activeIdx[0]] */
+            target = *(void **)((u8 *)owner + 0x28 + (activeIdx[0] << 2));
+            /* hit box bytes in 1/16 px: x0, y0, z above, x1, y1, z below */
             box[0] = rect[0x18] << 4;
             box[2] = rect[0x19] << 4;
             box[4] = rect[0x1A] << 4;
             box[1] = rect[0x1B] << 4;
             box[3] = rect[0x1C] << 4;
             box[5] = rect[0x1D] << 4;
-            if (boxes_overlap_oriented(box, obj, entry, box[4], box[5]) != 0)
+            if (boxes_overlap_oriented(box, obj, target, box[4], box[5]) != 0)
             {
                 obj->update = (void *)advance_to_next_state;
                 obj->update2 = (void *)aim_and_check_overlap;
@@ -955,32 +993,37 @@ void timer_overlap_state(struct Owner *owner, struct Actor *obj)
     }
     else
     {
-        obj->timer1D4 = t - 1;
+        obj->timer1D4 = timer - 1;
     }
 }
 
+/* Turns the actor to face its target (the owner's active entry, else the one picked by
+ * owner bit 0x208.2) in one of 8 headings, runs its handler, and once that has finished
+ * (flags1D6 bit 0) checks the hit box at rect[0x30..0x35]: on overlap it links to the
+ * target and branches at random, otherwise it goes on with enter_state_d6dc. */
 void aim_and_check_overlap(struct Owner *owner, struct Actor *ent)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
     struct AimSub *sub;
-    struct Actor *partner;
+    struct Actor *target;
     s32 dx;
     s32 dy;
     s32 heading;
-    s8 *bytes;
+    s8 *hitRect;
     void **handler;
 
     sub = (struct AimSub *)((u8 *)ent + 0x58);
-    if (find_active_entry(owner, idx) == 0)
+    if (find_active_entry(owner, activeIdx) == 0)
     {
-        idx[0] = ((u32)(*(u8 *)((u8 *)owner + 0x208)) << 29) >> 31;
+        activeIdx[0] = ((u32)(*(u8 *)((u8 *)owner + 0x208)) << 29) >> 31;
     }
-    partner = *(struct Actor **)((u8 *)owner + 0x28 + (idx[0] << 2));
-    dx = partner->posX - ent->posX;
-    dy = partner->posY - ent->posY;
+    target = *(struct Actor **)((u8 *)owner + 0x28 + (activeIdx[0] << 2));
+    dx = target->posX - ent->posX;
+    dy = target->posY - ent->posY;
     if ((dx | dy) != 0)
     {
+        /* 0x10000 units per turn, rounded to the nearest eighth. */
         heading = (((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
     }
     else
@@ -994,20 +1037,21 @@ void aim_and_check_overlap(struct Owner *owner, struct Actor *ent)
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, ent, handler);
     if ((sub->flags1D6 & 1) != 0)
     {
-        bytes = sub->rect + 0x30;
+        /* Hit box bytes in 1/16 units: x0, y0, z above, x1, y1, z below. */
+        hitRect = sub->rect + 0x30;
         ((struct ModeBits *)&ent->mode)->mode = 3;
-        box[0] = bytes[0] << 4;
-        bytes++;
-        box[2] = bytes[0] << 4;
-        bytes++;
-        box[4] = bytes[0] << 4;
-        bytes++;
-        box[1] = bytes[0] << 4;
-        bytes++;
-        box[3] = bytes[0] << 4;
-        bytes++;
-        box[5] = bytes[0] << 4;
-        if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]) != 0)
+        box[0] = hitRect[0] << 4;
+        hitRect++;
+        box[2] = hitRect[0] << 4;
+        hitRect++;
+        box[4] = hitRect[0] << 4;
+        hitRect++;
+        box[1] = hitRect[0] << 4;
+        hitRect++;
+        box[3] = hitRect[0] << 4;
+        hitRect++;
+        box[5] = hitRect[0] << 4;
+        if (boxes_overlap_oriented(box, ent, target, box[4], box[5]) != 0)
         {
             sub->update = (void *)random_branch_state;
             sub->update2 = (void *)enter_state_d6dc;
@@ -1021,38 +1065,46 @@ void aim_and_check_overlap(struct Owner *owner, struct Actor *ent)
     }
 }
 
+/*
+ * Runs the actor's handler and counts timer1D4 down. Once it is 0, if the active party member
+ * stands inside the actor's zone (sensor[4..7]: left, top, right, bottom in 16 px tiles) and
+ * overlaps its hit box (rect[0x18..0x1D]), goes on with advance_to_next_state and then
+ * aim_and_box_state. Like timer_overlap_state, plus the zone check.
+ */
 void timer_overlap_state_b(struct Owner *owner, struct Actor *obj)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
     s16 *bp;
-    s16 *sensor;
+    s16 *zone;
     s8 *rect;
-    void *entry;
-    s32 t;
+    void *target;
+    s32 timer;
     s32 v;
     void **handler;
 
     handler = (void **)&obj->handler;
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
-    t = obj->timer1D4;
-    if (t == 0)
+    timer = obj->timer1D4;
+    if (timer == 0)
     {
-        if (find_active_entry(owner, idx) != 0)
+        if (find_active_entry(owner, activeIdx) != 0)
         {
-            sensor = obj->sensor;
-            entry = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
+            zone = obj->sensor;
+            target = *(void **)((u8 *)owner + 0x28 + (activeIdx[0] << 2));
+            /* zone tiles to tile centres in pixels: left, right, bottom, top */
             bp = box;
-            v = sensor[4];
+            v = zone[4];
             bp[0] = (v << 4) + 8;
-            v = sensor[5];
+            v = zone[5];
             bp[3] = (v << 4) + 8;
-            v = sensor[6];
+            v = zone[6];
             bp[1] = (v << 4) + 8;
-            v = sensor[7];
+            v = zone[7];
             bp[2] = (v << 4) + 8;
-            if (point_in_box(bp, entry, 0x7FFF, 0) != 0)
+            if (point_in_box(bp, target, 0x7FFF, 0) != 0)
             {
+                /* hit box bytes: x0, y0, z above, x1, y1, z below */
                 rect = obj->rect;
                 bp[0] = rect[0x18] << 4;
                 bp[2] = rect[0x19] << 4;
@@ -1060,7 +1112,7 @@ void timer_overlap_state_b(struct Owner *owner, struct Actor *obj)
                 bp[1] = rect[0x1B] << 4;
                 bp[3] = rect[0x1C] << 4;
                 bp[5] = rect[0x1D] << 4;
-                if (boxes_overlap_oriented(bp, obj, entry, bp[4], bp[5]) != 0)
+                if (boxes_overlap_oriented(bp, obj, target, bp[4], bp[5]) != 0)
                 {
                     obj->update = (void *)advance_to_next_state;
                     obj->update2 = (void *)aim_and_box_state;
@@ -1070,7 +1122,7 @@ void timer_overlap_state_b(struct Owner *owner, struct Actor *obj)
     }
     else
     {
-        obj->timer1D4 = t - 1;
+        obj->timer1D4 = timer - 1;
     }
 }
 
@@ -1147,23 +1199,29 @@ NONMATCH("asm/code_0813C4A8/aim_and_box_state.s", void aim_and_box_state(struct 
 }
 END_NONMATCH
 
+/* Runs the actor's handler and counts timer1D4 down. Once it is 0, if the owner's active entry
+ * overlaps the actor's hit box (rect[0x18..0x1D]), sets flags1D6 bit 1 (clearing bit 0) and goes
+ * on with obj_state_run_advance, then child_box_state, with place_child_by_stage as the handler.
+ * Like timer_overlap_state, with other follow-up states. */
 void timer_overlap_state_c(struct Owner *owner, struct Actor *obj)
 {
-    u8 idx[4];
+    u8 activeIdx[4];
     s16 box[8];
     s8 *rect;
-    void *entry;
+    void *target;
     void **handler;
-    s32 t;
+    s32 timer;
 
     handler = (void **)&obj->handler;
     ((void (*)(struct Owner *, struct Actor *, void **))*handler)(owner, obj, handler);
-    t = obj->timer1D4;
-    if (t == 0)
+    timer = obj->timer1D4;
+    if (timer == 0)
     {
-        if (find_active_entry(owner, idx) != 0)
+        if (find_active_entry(owner, activeIdx) != 0)
         {
-            entry = *(void **)((u8 *)owner + 0x28 + (idx[0] << 2));
+            /* owner->entries[activeIdx[0]] */
+            target = *(void **)((u8 *)owner + 0x28 + (activeIdx[0] << 2));
+            /* hit box bytes in 1/16 px: x0, y0, z above, x1, y1, z below */
             rect = obj->rect;
             box[0] = rect[0x18] << 4;
             box[2] = rect[0x19] << 4;
@@ -1171,7 +1229,7 @@ void timer_overlap_state_c(struct Owner *owner, struct Actor *obj)
             box[1] = rect[0x1B] << 4;
             box[3] = rect[0x1C] << 4;
             box[5] = rect[0x1D] << 4;
-            if (boxes_overlap_oriented(box, obj, entry, box[4], box[5]) != 0)
+            if (boxes_overlap_oriented(box, obj, target, box[4], box[5]) != 0)
             {
                 ((struct Flags1D6Bits *)&obj->flags1D6)->bit0 = 0;
                 ((struct Flags1D6Bits *)&obj->flags1D6)->bit1 = 1;
@@ -1184,7 +1242,7 @@ void timer_overlap_state_c(struct Owner *owner, struct Actor *obj)
     }
     else
     {
-        obj->timer1D4 = t - 1;
+        obj->timer1D4 = timer - 1;
     }
 }
 ASM_FUNC("asm/code_0813C4A8/place_child_by_stage.s", void place_child_by_stage(s32 arg, struct Obj *ent, u32 *out))

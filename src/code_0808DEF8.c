@@ -31,7 +31,7 @@ struct Actor
     u8 filler0[0x08];
     struct Pose *pose;
     u8 filler0C[0x10 - 0x0C];
-    s32 unk10;
+    s32 unk10; /* x position */
     u8 filler14[0x18 - 0x14];
     s32 h;
     u8 filler1C[0x28 - 0x1C];
@@ -59,15 +59,15 @@ struct Actor
     u8 filler78;
     u8 flags79;
     u8 filler7A[0x84 - 0x7A];
-    s32 unk84;
+    s32 targetX;
     u8 filler88[0x8C - 0x88];
-    s32 unk8C;
+    s32 targetH;
     u8 filler90[0x94 - 0x90];
     s32 speed;
     u8 filler98[0x9C - 0x98];
     s32 timer;
-    s32 unkA0;
-    s32 unkA4;
+    s32 unkA0; /* orbiting child: angle, sine table index = unkA0 / 360 (0xB400 = half a turn) */
+    s32 unkA4; /* orbiting child: angle speed added to unkA0 each frame */
     u32 keyMask;
     u16 step;
     u8 fillerAE[0xB2 - 0xAE];
@@ -81,6 +81,9 @@ struct ActBits
     u8 kind : 3;
     u8 unk6 : 2;
 };
+
+#define ACT_MODE_MASK 0x06 // ActBits.mode
+#define ACT_KIND_MASK 0x38 // ActBits.kind: set when the action is interrupted
 
 struct ObjFlagBits
 {
@@ -99,6 +102,8 @@ struct PoseFlagBits
     u8 hold : 1;
     u8 unk0_5 : 3;
 };
+
+#define POSE_HOLD_MASK 0x10 // PoseFlagBits.hold: keep the current animation frame
 
 struct PoseDirBits
 {
@@ -190,27 +195,32 @@ static inline void clear_switches(struct Actor *obj)
     ((struct ObjFlagBits *)&obj->flags)->switchA = 0;
 }
 
+/* Waits while the button (keyMask) is held. On release it starts orbit b: the child starts half a
+ * turn round at angle speed 0xA00 and obj goes on to orbit_position_b. Held for more than 0x2C
+ * frames the move fails: kind 0x1E waits there unless world byte 9 has 1 in its upper nibble
+ * (then action 4 with pose result 0xC0 / 12), any other kind takes action 5 and sets the both-heroes
+ * flag 0x40000000. Past 0x1D frames the pose's hold bit is cleared. */
 void hold_then_orbit_b(struct Actor *obj)
 {
-    u32 keys;
-    s16 *stepp;
+    u32 held;
+    s16 *holdFrames;
 
     if (poll_action_end(obj) != 0)
         return;
-    keys = gSys.keysHeld & obj->keyMask;
-    if (keys == 0)
+    held = gSys.keysHeld & obj->keyMask;
+    if (held == 0)
     {
         obj->timer = 1;
         obj->child->unkA0 = 0xB400;
         obj->child->unkA4 = 0xA00;
         sprite_set_action(obj, 2, 0, 0);
-        *(u8 *)&obj->pose->flags |= 0x10;
+        *(u8 *)&obj->pose->flags |= 0x10; // PoseFlagBits.hold
         obj->state = orbit_position_b;
-        obj->step = keys;
+        obj->step = held;
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp > 0x2C)
+    holdFrames = (s16 *)&obj->step;
+    if ((s16)*holdFrames > 0x2C)
     {
         if (obj->data->kind == 0x1E)
         {
@@ -238,31 +248,35 @@ void hold_then_orbit_b(struct Actor *obj)
         }
         return;
     }
-    if ((s16)*stepp > 0x1D)
+    if ((s16)*holdFrames > 0x1D)
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
     obj->step = obj->step + 1;
 }
 
+/* One frame of orbit b: swings the child around a circle of radius 24 above obj's base point
+ * (child angle unkA0 += its speed unkA4, the speed bent towards obj's facing), steps obj's
+ * animation 0x2054 through frames 1-5, and at step 9 releases the child (action mode 3), locks
+ * obj's data and goes on to finish_orbit_b. */
 void orbit_position_b(struct Actor *obj)
 {
     struct Actor *child;
-    const s16 *cosp;
+    const s16 *cosTable;
     s16 *stepp;
-    u32 idx;
+    u32 tableIdx;
     s32 angle;
-    s32 height;
+    s32 centerH;
 
     if (poll_action_end(obj) != 0)
         return;
     child = obj->child;
     ((struct ActBits *)&child->action)->mode = 1;
     child->unkA0 += child->unkA4;
-    angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 0x168);
-    cosp = gCosineTable;
-    idx = angle & 0xFF;
-    child->unk10 = obj->baseX + (cosp[idx] / 0x40) * 0x18;
-    height = obj->baseH + 0x1A00;
-    child->h = height + (gSineTable[idx] / 0x40) * 0x18;
+    angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 360);
+    cosTable = gCosineTable;
+    tableIdx = angle & 0xFF;
+    child->unk10 = obj->baseX + (cosTable[tableIdx] / 64) * 24;
+    centerH = obj->baseH + 0x1A00;
+    child->h = centerH + (gSineTable[tableIdx] / 64) * 24;
     if (obj->pose->dir & 0x40)
         child->unkA4 += 0x998;
     else
@@ -280,17 +294,17 @@ void orbit_position_b(struct Actor *obj)
         sprite_set_action(obj, 2, 0x2054, 5);
     if (*stepp == 9)
     {
-        *(u8 *)&child->action |= 6;
+        *(u8 *)&child->action |= 6; // ActBits.mode = 3
         sprite_set_action(obj, 3, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
         obj->step = 0;
         obj->state = finish_orbit_b;
         if (obj->data != NULL)
-            *(u8 *)&obj->data->lock |= 4;
+            *(u8 *)&obj->data->lock |= 4; // DataLockBits.locked
         return;
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= 0x10; // PoseFlagBits.hold
     obj->step = obj->step + 1;
 }
 
@@ -303,15 +317,18 @@ static inline void finish_pose_and_action(struct Actor *obj)
     sprite_set_action(obj, 0, -1, 0);
 }
 
+/* After orbit_position_b has thrown the child: unlocks obj's data again, then, once 28 more
+ * frames have passed (unless poll_action_end ends it first), ends the action like
+ * actor_end_action: drops the child, resets the pose and returns to action 0. */
 void finish_orbit_b(struct Actor *obj)
 {
-    s32 busy;
+    s32 ended;
     u16 step;
 
     if (obj->data != NULL)
         ((struct DataLockBits *)&obj->data->lock)->locked = 0;
-    busy = poll_action_end(obj);
-    if (busy == 0)
+    ended = poll_action_end(obj);
+    if (ended == 0)
     {
         step = obj->step;
         obj->step = step + 1;
@@ -324,36 +341,41 @@ void finish_orbit_b(struct Actor *obj)
                 if (obj->child != NULL)
                 {
                     obj_release(obj->child);
-                    obj->child = (struct Actor *)busy;
+                    obj->child = NULL;
                 }
                 finish_pose_and_action(obj);
-                obj->state = (void (*)(struct Actor *))busy;
+                obj->state = NULL;
             }
         }
     }
 }
 
+// Rising half of hero A's jump (button A; enter_jump_arc_fall_b is hero B's with B): the rise above
+// baseH (dh) moves by the vertical speed each frame, and holding A eases the speed toward the fall
+// speed -0x7A by 10/256 of the gap per frame (a higher jump); without it the speed is -0x7A at once.
+// Once back down at baseH it takes the falling action 6 (images 0x2000) in play mode 1, sets flag
+// phase 1 and falls the rest of the way in jump_arc_fall_a.
 void enter_jump_arc_fall_a(struct Actor *obj)
 {
-    u16 *dhp;
-    s32 *speedp;
+    u16 *rise;
+    s32 *vspeed;
     s32 h;
     s32 next;
-    s32 t;
+    s32 gap;
 
-    dhp = (u16 *)&obj->dh;
-    speedp = &obj->speed;
-    obj->dh = *dhp + *speedp;
+    rise = (u16 *)&obj->dh;
+    vspeed = &obj->speed;
+    obj->dh = *rise + *vspeed;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gSys.keysHeld & 1)
+    if (gSys.keysHeld & A_BUTTON)
     {
-        t = -0x7A - *speedp;
-        next = *speedp + (t * 10) / 0x100;
+        gap = -0x7A - *vspeed;
+        next = *vspeed + (gap * 10) / 0x100;
     }
     else
         next = -0x7A;
-    *speedp = next;
+    *vspeed = next;
     if (obj->dh > 0)
         return;
     sprite_set_action(obj, 6, 0x2000, 0);
@@ -362,27 +384,32 @@ void enter_jump_arc_fall_a(struct Actor *obj)
     obj->state = jump_arc_fall_a;
 }
 
+// Falling half of hero A's jump (images 0x2000, button A; jump_arc_fall_b is hero B's with B):
+// the rise above baseH (dh) moves by the vertical speed each frame. Holding A eases the speed
+// toward the fall speed -0x7A by 10/256 of the gap per frame, a floatier fall; without it the
+// speed is -0x7A at once. On reaching the ground it lands there with action 8 in play mode 1 and
+// waits in jump_orbit_finish_if_pose_visible_e.
 void jump_arc_fall_a(struct Actor *obj)
 {
-    u16 *dhp;
-    s32 *speedp;
+    u16 *rise;
+    s32 *vspeed;
     s32 h;
     s32 next;
-    s32 t;
+    s32 gap;
 
-    dhp = (u16 *)&obj->dh;
-    speedp = &obj->speed;
-    obj->dh = *dhp + *speedp;
+    rise = (u16 *)&obj->dh;
+    vspeed = &obj->speed;
+    obj->dh = *rise + *vspeed;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gSys.keysHeld & 1)
+    if (gSys.keysHeld & A_BUTTON)
     {
-        t = -0x7A - *speedp;
-        next = *speedp + (t * 10) / 0x100;
+        gap = -0x7A - *vspeed;
+        next = *vspeed + (gap * 10) / 0x100;
     }
     else
         next = -0x7A;
-    *speedp = next;
+    *vspeed = next;
     if (obj->h > obj->data->ground)
         return;
     ((struct ObjFlagBits *)&obj->flags)->phase = 0;
@@ -392,27 +419,32 @@ void jump_arc_fall_a(struct Actor *obj)
     obj->state = jump_orbit_finish_if_pose_visible_e;
 }
 
+// Rising half of hero B's jump (button B; enter_jump_arc_fall_a is hero A's with A): the rise above
+// baseH (dh) moves by the vertical speed each frame, and holding B eases the speed toward the fall
+// speed -0x7A by 10/256 of the gap per frame (a higher jump); without it the speed is -0x7A at once.
+// Once back down at baseH it takes the falling action 6 (images 0x204D) in play mode 1, sets flag
+// phase 1 and falls the rest of the way in jump_arc_fall_b.
 void enter_jump_arc_fall_b(struct Actor *obj)
 {
-    u16 *dhp;
-    s32 *speedp;
+    u16 *rise;
+    s32 *vspeed;
     s32 h;
     s32 next;
-    s32 t;
+    s32 gap;
 
-    dhp = (u16 *)&obj->dh;
-    speedp = &obj->speed;
-    obj->dh = *dhp + *speedp;
+    rise = (u16 *)&obj->dh;
+    vspeed = &obj->speed;
+    obj->dh = *rise + *vspeed;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gSys.keysHeld & 2)
+    if (gSys.keysHeld & B_BUTTON)
     {
-        t = -0x7A - *speedp;
-        next = *speedp + (t * 10) / 0x100;
+        gap = -0x7A - *vspeed;
+        next = *vspeed + (gap * 10) / 0x100;
     }
     else
         next = -0x7A;
-    *speedp = next;
+    *vspeed = next;
     if (obj->dh > 0)
         return;
     sprite_set_action(obj, 6, 0x204D, 0);
@@ -421,27 +453,32 @@ void enter_jump_arc_fall_b(struct Actor *obj)
     obj->state = jump_arc_fall_b;
 }
 
+// Falling half of hero B's jump (images 0x204D, button B; jump_arc_fall_a is hero A's with A):
+// the rise above baseH (dh) moves by the vertical speed each frame. Holding B eases the speed
+// toward the fall speed -0x7A by 10/256 of the gap per frame, a floatier fall; without it the
+// speed is -0x7A at once. On reaching the ground it lands there with action 8 in play mode 1 and
+// waits in finish_fall.
 void jump_arc_fall_b(struct Actor *obj)
 {
-    u16 *dhp;
-    s32 *speedp;
+    u16 *rise;
+    s32 *vspeed;
     s32 h;
     s32 next;
-    s32 t;
+    s32 gap;
 
-    dhp = (u16 *)&obj->dh;
-    speedp = &obj->speed;
-    obj->dh = *dhp + *speedp;
+    rise = (u16 *)&obj->dh;
+    vspeed = &obj->speed;
+    obj->dh = *rise + *vspeed;
     h = obj->baseH + obj->dh;
     obj->h = h;
-    if (gSys.keysHeld & 2)
+    if (gSys.keysHeld & B_BUTTON)
     {
-        t = -0x7A - *speedp;
-        next = *speedp + (t * 10) / 0x100;
+        gap = -0x7A - *vspeed;
+        next = *vspeed + (gap * 10) / 0x100;
     }
     else
         next = -0x7A;
-    *speedp = next;
+    *vspeed = next;
     if (obj->h > obj->data->ground)
         return;
     ((struct ObjFlagBits *)&obj->flags)->phase = 0;
@@ -653,13 +690,17 @@ void jump_orbit_finish_if_pose_visible_b(struct Actor *obj)
     }
 }
 
+// Starts the jump orbit move: spawns the orbiting child at obj's base point (in whole pixels),
+// in action mode 3 with its box bytes (unk44-unk49: -10, 8, -10, 10, -3, 3), phase 2, aiming at
+// obj's base X and its own base height, with animation gAnim284 and on_arrive as its callback.
+// Then resets the step, clears slot value 0x7C and runs the first wind-up frame (jump_orbit_step_a).
 void jump_orbit_spawn_orbit_child_a(struct Actor *obj)
 {
     struct Actor *child;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
     obj->child = child;
-    *(u8 *)&child->action |= 6;
+    *(u8 *)&child->action |= ACT_MODE_MASK; // ActBits.mode = 3
     child->unk44 = 0xF6;
     child->unk45 = 8;
     child->unk46 = 0xF6;
@@ -667,8 +708,8 @@ void jump_orbit_spawn_orbit_child_a(struct Actor *obj)
     child->unk48 = 0xFD;
     child->unk49 = 3;
     ((struct ObjFlagBits *)&child->flags)->phase = 2;
-    child->unk84 = obj->baseX;
-    child->unk8C = child->baseH;
+    child->targetX = obj->baseX;
+    child->targetH = child->baseH;
     child->anim = gAnim284;
     *(u8 *)&child->action |= 0x40;
     child->callback = on_arrive;
@@ -678,32 +719,36 @@ void jump_orbit_spawn_orbit_child_a(struct Actor *obj)
     jump_orbit_step_a(obj);
 }
 
+/* Wind-up of jump orbit a while the button (keyMask) is held: steps animation 0x2025 through frames
+ * 0-3 every 5 frames with the pose held. Fully wound up (20 frames) it takes action 1 and waits in
+ * jump_orbit_hold_a; let go earlier, step becomes frames * 4 and jump_orbit_step_b winds it back
+ * down. An interrupted action ends it at once. */
 void jump_orbit_step_a(struct Actor *obj)
 {
-    s16 *stepp;
+    s16 *windup;
     s32 kind;
 
     obj->state = jump_orbit_step_a;
-    kind = obj->action & 0x38;
+    kind = obj->action & ACT_KIND_MASK;
     if (kind != 0)
     {
         end_action(obj);
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp == 0)
+    windup = (s16 *)&obj->step;
+    if ((s16)*windup == 0)
         sprite_set_action(obj, 0, 0x2025, 0);
-    if ((s16)*stepp == 5)
+    if ((s16)*windup == 5)
         sprite_set_action(obj, 0, 0x2025, 1);
-    if ((s16)*stepp == 10)
+    if ((s16)*windup == 10)
         sprite_set_action(obj, 0, 0x2025, 2);
-    if ((s16)*stepp == 15)
+    if ((s16)*windup == 15)
         sprite_set_action(obj, 0, 0x2025, 3);
-    if ((s16)*stepp != 20)
+    if ((s16)*windup != 20)
     {
         if ((gSys.keysHeld & obj->keyMask) == 0)
         {
-            *stepp = (s16)*stepp * 4;
+            *windup = (s16)*windup * 4;
             obj->state = jump_orbit_step_b;
             return;
         }
@@ -711,25 +756,30 @@ void jump_orbit_step_a(struct Actor *obj)
     else
     {
         sprite_set_action(obj, 1, 0, 0);
-        *stepp = kind;
+        *windup = kind; /* 0: jump_orbit_hold_a counts hold frames from here */
         obj->state = jump_orbit_hold_a;
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= POSE_HOLD_MASK;
     obj->step = obj->step + 1;
 }
 
+/* The button was let go while jump_orbit_step_a was charging (step = charge * 4): winds the charge
+ * back down by 5 a frame, stepping animation 0x2025 back to frame 2, 1 and 0 as step falls below
+ * 0x3C, 0x28 and 0x14, with the pose held. Once step is below 0 it takes action 4 (pose result
+ * 0xC0 / 8), lets the pose go and ends in jump_orbit_end_action_if_pose_visible. An interrupted
+ * action ends it at once. */
 void jump_orbit_step_b(struct Actor *obj)
 {
-    s16 *stepp;
+    s16 *step;
 
     obj->state = jump_orbit_step_b;
-    if (obj->action & 0x38)
+    if (obj->action & ACT_KIND_MASK)
     {
         end_action(obj);
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp < 0)
+    step = (s16 *)&obj->step;
+    if ((s16)*step < 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         obj->pose->result = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xC0, 8);
@@ -737,49 +787,54 @@ void jump_orbit_step_b(struct Actor *obj)
         obj->state = jump_orbit_end_action_if_pose_visible;
         return;
     }
-    if ((s16)*stepp <= 0x13)
+    if ((s16)*step <= 0x13)
     {
         if (obj->pose->count != 0)
             sprite_set_action(obj, 0, 0x2025, 0);
     }
-    else if ((s16)*stepp <= 0x27)
+    else if ((s16)*step <= 0x27)
     {
         if (obj->pose->count > 1)
             sprite_set_action(obj, 0, 0x2025, 1);
     }
-    else if ((s16)*stepp <= 0x3B)
+    else if ((s16)*step <= 0x3B)
     {
         if (obj->pose->count > 2)
             sprite_set_action(obj, 0, 0x2025, 2);
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= 0x10; /* PoseFlagBits.hold */
     obj->step = obj->step - 5;
 }
 
+/* Waits while the button (keyMask) is held. On release it starts jump orbit a: the child starts
+ * half a turn round at angle speed -0x1CC and obj goes on to jump_orbit_circle_a. Held for more
+ * than 0x17 frames the move fails: kind 0x1E waits there unless world byte 9 has 1 in its upper
+ * nibble (then action 4 with pose result 0xC0 / 8), any other kind takes action 5. Past 0x0B
+ * frames the pose's hold bit is cleared. */
 void jump_orbit_hold_a(struct Actor *obj)
 {
-    u32 keys;
-    s16 *stepp;
+    u32 held;
+    s16 *holdFrames;
 
-    if (obj->action & 0x38)
+    if (obj->action & ACT_KIND_MASK)
     {
         end_action(obj);
         return;
     }
-    keys = gSys.keysHeld & obj->keyMask;
-    if (keys == 0)
+    held = gSys.keysHeld & obj->keyMask;
+    if (held == 0)
     {
         obj->timer = 1;
         obj->child->unkA0 = 0xB400;
         obj->child->unkA4 = -0x1CC;
         sprite_set_action(obj, 2, 0, 0);
-        *(u8 *)&obj->pose->flags |= 0x10;
+        *(u8 *)&obj->pose->flags |= 0x10; // PoseFlagBits.hold
         obj->state = jump_orbit_circle_a;
-        obj->step = keys;
+        obj->step = held;
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp > 0x17)
+    holdFrames = (s16 *)&obj->step;
+    if ((s16)*holdFrames > 0x17)
     {
         if (obj->data->kind == 0x1E)
         {
@@ -801,21 +856,25 @@ void jump_orbit_hold_a(struct Actor *obj)
         obj->state = jump_orbit_end_action_if_pose_visible;
         return;
     }
-    if ((s16)*stepp > 0x0B)
+    if ((s16)*holdFrames > 0x0B)
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
     obj->step = obj->step + 1;
 }
 
+/* One frame of jump orbit a: swings the child around a circle of radius 22 above obj's base
+ * point (child angle unkA0 += its speed unkA4, the speed bent by 0xC00 towards obj's facing),
+ * steps obj's animation 0x2025 through frames 1-5, and at step 7 releases the child (action
+ * mode 3), locks obj's data and goes on to jump_orbit_end_a. */
 void jump_orbit_circle_a(struct Actor *obj)
 {
     struct Actor *child;
-    const s16 *cosp;
+    const s16 *cosTable;
     s16 *stepp;
-    u32 idx;
+    u32 tableIdx;
     s32 angle;
-    s32 height;
+    s32 centerH;
 
-    if (obj->action & 0x38)
+    if (obj->action & ACT_KIND_MASK)
     {
         end_action(obj);
         return;
@@ -823,12 +882,12 @@ void jump_orbit_circle_a(struct Actor *obj)
     child = obj->child;
     ((struct ActBits *)&child->action)->mode = 1;
     child->unkA0 += child->unkA4;
-    angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 0x168);
-    cosp = gCosineTable;
-    idx = angle & 0xFF;
-    child->unk10 = obj->baseX + (cosp[idx] / 0x40) * 0x16;
-    height = obj->baseH + 0x1600;
-    child->h = height + (gSineTable[idx] / 0x40) * 0x16;
+    angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 360);
+    cosTable = gCosineTable;
+    tableIdx = angle & 0xFF;
+    child->unk10 = obj->baseX + (cosTable[tableIdx] / 64) * 22;
+    centerH = obj->baseH + 0x1600;
+    child->h = centerH + (gSineTable[tableIdx] / 64) * 22;
     if (obj->pose->dir & 0x40)
         child->unkA4 += 0xC00;
     else
@@ -846,35 +905,38 @@ void jump_orbit_circle_a(struct Actor *obj)
         sprite_set_action(obj, 2, 0x2025, 5);
     if (*stepp == 7)
     {
-        *(u8 *)&child->action |= 6;
+        *(u8 *)&child->action |= ACT_MODE_MASK; // ActBits.mode = 3: release the child
         sprite_set_action(obj, 3, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
         obj->step = 0;
         obj->state = jump_orbit_end_a;
         if (obj->data != NULL)
-            *(u8 *)&obj->data->lock |= 4;
+            *(u8 *)&obj->data->lock |= 4; // DataLockBits.locked
         return;
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= 0x10; // PoseFlagBits.hold
     obj->step = obj->step + 1;
 }
 
+/* Start of jump orbit b: spawns the child the actor holds at its base position (action mode 3, hit
+ * box x -10/8, y -10/10, h -3/3, target x/h = unk84/unk8C, animation gAnim284, on_arrive when it
+ * lands), plays sound 0x7C and runs the wind-up, jump_orbit_step_c, from step 0. */
 void jump_orbit_spawn_orbit_child_b(struct Actor *obj)
 {
     struct Actor *child;
 
     child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
     obj->child = child;
-    *(u8 *)&child->action |= 6;
-    child->unk44 = 0xF6;
+    *(u8 *)&child->action |= ACT_MODE_MASK; // ActBits.mode = 3
+    child->unk44 = -10;
     child->unk45 = 8;
-    child->unk46 = 0xF6;
-    child->unk47 = 0xA;
-    child->unk48 = 0xFD;
+    child->unk46 = -10;
+    child->unk47 = 10;
+    child->unk48 = -3;
     child->unk49 = 3;
     ((struct ObjFlagBits *)&child->flags)->phase = 2;
-    child->unk84 = obj->baseX;
-    child->unk8C = child->baseH;
+    child->targetX = obj->baseX;
+    child->targetH = child->baseH;
     child->anim = gAnim284;
     *(u8 *)&child->action |= 0x40;
     child->callback = on_arrive;
@@ -884,32 +946,36 @@ void jump_orbit_spawn_orbit_child_b(struct Actor *obj)
     jump_orbit_step_c(obj);
 }
 
+/* Wind-up of jump orbit b while the button (keyMask) is held: steps animation 0x2054 through frames
+ * 0-3 every 8 frames with the pose held. Fully wound up (32 frames) it takes action 1 and waits in
+ * jump_orbit_hold_b; let go earlier, step becomes frames * 6 and jump_orbit_step_d winds it back
+ * down. An interrupted action ends it at once. */
 void jump_orbit_step_c(struct Actor *obj)
 {
-    s16 *stepp;
+    s16 *windup;
     s32 kind;
 
     obj->state = jump_orbit_step_c;
-    kind = obj->action & 0x38;
+    kind = obj->action & ACT_KIND_MASK;
     if (kind != 0)
     {
         end_action(obj);
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp == 0)
+    windup = (s16 *)&obj->step;
+    if ((s16)*windup == 0)
         sprite_set_action(obj, 0, 0x2054, 0);
-    if ((s16)*stepp == 8)
+    if ((s16)*windup == 8)
         sprite_set_action(obj, 0, 0x2054, 1);
-    if ((s16)*stepp == 0x10)
+    if ((s16)*windup == 16)
         sprite_set_action(obj, 0, 0x2054, 2);
-    if ((s16)*stepp == 0x18)
+    if ((s16)*windup == 24)
         sprite_set_action(obj, 0, 0x2054, 3);
-    if ((s16)*stepp != 0x20)
+    if ((s16)*windup != 32)
     {
         if ((gSys.keysHeld & obj->keyMask) == 0)
         {
-            *stepp = (s16)*stepp * 6;
+            *windup = (s16)*windup * 6;
             obj->state = jump_orbit_step_d;
             return;
         }
@@ -917,16 +983,20 @@ void jump_orbit_step_c(struct Actor *obj)
     else
     {
         sprite_set_action(obj, 1, 0, 0);
-        *stepp = kind;
+        *windup = kind; /* 0: jump_orbit_hold_b counts hold frames from here */
         obj->state = jump_orbit_hold_b;
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= POSE_HOLD_MASK;
     obj->step = obj->step + 1;
 }
 
+/* Let-go state of jump_orbit_step_c's wind-up (step = wind-up frames * 6): plays animation 0x2054
+   back down, frame 2, 1 then 0 (each only if pose->count has it), as step counts down by 8 a
+   frame. Past 0 the move is cancelled with action 4 (pose result 0xC0 / 12) and
+   jump_orbit_end_action_if_pose_visible takes over. An action kind (action bits 3-5) ends it. */
 void jump_orbit_step_d(struct Actor *obj)
 {
-    s16 *stepp;
+    s16 *pStep;
 
     obj->state = jump_orbit_step_d;
     if (obj->action & 0x38)
@@ -934,8 +1004,8 @@ void jump_orbit_step_d(struct Actor *obj)
         end_action(obj);
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp < 0)
+    pStep = (s16 *)&obj->step;
+    if ((s16)*pStep < 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         obj->pose->result = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xC0, 0xC);
@@ -943,49 +1013,54 @@ void jump_orbit_step_d(struct Actor *obj)
         obj->state = jump_orbit_end_action_if_pose_visible;
         return;
     }
-    if ((s16)*stepp <= 0x2F)
+    if ((s16)*pStep <= 0x2F)
     {
         if (obj->pose->count != 0)
             sprite_set_action(obj, 0, 0x2054, 0);
     }
-    else if ((s16)*stepp <= 0x5F)
+    else if ((s16)*pStep <= 0x5F)
     {
         if (obj->pose->count > 1)
             sprite_set_action(obj, 0, 0x2054, 1);
     }
-    else if ((s16)*stepp <= 0x8F)
+    else if ((s16)*pStep <= 0x8F)
     {
         if (obj->pose->count > 2)
             sprite_set_action(obj, 0, 0x2054, 2);
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= 0x10; /* PoseFlagBits.hold */
     obj->step = obj->step - 8;
 }
 
+/* Waits while the button (keyMask) is held. On release it starts jump orbit b: the child starts
+ * half a turn round at angle speed 0xA00 and obj goes on to jump_orbit_circle_b. Held for more
+ * than 0x15 frames the move fails: kind 0x1E waits there unless world byte 9 has 1 in its upper
+ * nibble (then action 4 with pose result 0xC0 / 12), any other kind takes action 5. Past 0x0E
+ * frames the pose's hold bit is cleared. */
 void jump_orbit_hold_b(struct Actor *obj)
 {
-    u32 keys;
-    s16 *stepp;
+    u32 held;
+    s16 *holdFrames;
 
-    if (obj->action & 0x38)
+    if (obj->action & ACT_KIND_MASK)
     {
         end_action(obj);
         return;
     }
-    keys = gSys.keysHeld & obj->keyMask;
-    if (keys == 0)
+    held = gSys.keysHeld & obj->keyMask;
+    if (held == 0)
     {
         obj->timer = 1;
         obj->child->unkA0 = 0xB400;
         obj->child->unkA4 = 0xA00;
         sprite_set_action(obj, 2, 0, 0);
-        *(u8 *)&obj->pose->flags |= 0x10;
+        *(u8 *)&obj->pose->flags |= 0x10; // PoseFlagBits.hold
         obj->state = jump_orbit_circle_b;
-        obj->step = keys;
+        obj->step = held;
         return;
     }
-    stepp = (s16 *)&obj->step;
-    if ((s16)*stepp > 0x15)
+    holdFrames = (s16 *)&obj->step;
+    if ((s16)*holdFrames > 0x15)
     {
         if (obj->data->kind == 0x1E)
         {
@@ -1007,20 +1082,23 @@ void jump_orbit_hold_b(struct Actor *obj)
         obj->state = jump_orbit_end_action_if_pose_visible;
         return;
     }
-    if ((s16)*stepp > 0x0E)
+    if ((s16)*holdFrames > 0x0E)
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
     obj->step = obj->step + 1;
 }
 
 
+/* One frame of orbit b: swings the child around a circle of radius 24 above obj's base point
+ * (angle += angle speed, the speed bent towards obj's facing), steps obj's animation 0x2054
+ * through frames 1-5, and at step 9 releases the child and goes on to jump_orbit_end_b. */
 void jump_orbit_circle_b(struct Actor *obj)
 {
     struct Actor *child;
-    const s16 *cosp;
+    const s16 *cosTable;
     s16 *stepp;
-    u32 idx;
-    s32 angle;
-    s32 height;
+    u32 tableIdx;
+    s32 angleIdx;
+    s32 centerH;
 
     if (obj->action & 0x38)
     {
@@ -1030,12 +1108,12 @@ void jump_orbit_circle_b(struct Actor *obj)
     child = obj->child;
     ((struct ActBits *)&child->action)->mode = 1;
     child->unkA0 += child->unkA4;
-    angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 0x168);
-    cosp = gCosineTable;
-    idx = angle & 0xFF;
-    child->unk10 = obj->baseX + (cosp[idx] / 0x40) * 0x18;
-    height = obj->baseH + 0x1A00;
-    child->h = height + (gSineTable[idx] / 0x40) * 0x18;
+    angleIdx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->unkA0, 360);
+    cosTable = gCosineTable;
+    tableIdx = angleIdx & 0xFF;
+    child->unk10 = obj->baseX + (cosTable[tableIdx] / 64) * 24;
+    centerH = obj->baseH + 0x1A00;
+    child->h = centerH + (gSineTable[tableIdx] / 64) * 24;
     if (obj->pose->dir & 0x40)
         child->unkA4 += 0x998;
     else
@@ -1053,16 +1131,16 @@ void jump_orbit_circle_b(struct Actor *obj)
         sprite_set_action(obj, 2, 0x2054, 5);
     if (*stepp == 9)
     {
-        *(u8 *)&child->action |= 6;
+        *(u8 *)&child->action |= 6; /* ActBits.mode = 3: released */
         sprite_set_action(obj, 3, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->hold = 0;
         obj->step = 0;
         obj->state = jump_orbit_end_b;
         if (obj->data != NULL)
-            *(u8 *)&obj->data->lock |= 4;
+            *(u8 *)&obj->data->lock |= 4; /* DataLockBits.locked = 1 */
         return;
     }
-    *(u8 *)&obj->pose->flags |= 0x10;
+    *(u8 *)&obj->pose->flags |= 0x10; /* PoseFlagBits.hold = 1 */
     obj->step = obj->step + 1;
 }
 

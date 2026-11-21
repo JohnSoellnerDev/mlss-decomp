@@ -55,15 +55,16 @@ struct PairSub
     struct PairSub *partner;
 };
 
+/* A block on the map that can be hit from below. */
 struct HitEntry
 {
-    u8 flags;
+    u8 flags;       /* bit 0: stays solid after a hit, bit 1: already hit */
     u8 tileX;
     u8 tileY;
     u8 tileZ;
-    u16 half4;
+    u16 half4;      /* its "hit" flag is 0x1360 + half4 */
     u8 filler6[2];
-    u8 *data;
+    u8 *data;       /* [0]: drop kind, [6..7]: drop table index */
 };
 
 struct PairObj
@@ -219,8 +220,21 @@ typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((trans
 void update_pair_facing(void *obj, u32 a, u32 b);
 void obj_shift_state_slots(void *sub);
 void advance_anim_frame(void *obj, void *sub, u32 a, u32 b);
-void motion_obj_set_move_target(void *obj, u32 a, s32 b, s32 c);
-void contacts_obj_start_move(void *obj, s32 a, s32 b, s32 x, s32 y, s32 zero, s32 mode);
+/* Starts a jump: the launch speed that reaches `height` pixels under `gravity` (-1: the object's defaults). */
+void motion_obj_set_move_target(void *obj, u32 height, s32 gravity, s32 speed);
+/* Moves obj in a straight line to pixel (x, y, z) (by it when relative == 1); kind: enum MoveKind. */
+void contacts_obj_start_move(void *obj, s32 kind, s32 relative, s32 x, s32 y, s32 z, s32 speedOrFrames);
+
+enum MoveKind
+{
+    MOVE_BY_SPEED = 1,  /* a fixed step every frame */
+    MOVE_BY_FRAMES = 2, /* arrive after a fixed number of frames */
+};
+
+/* PairObj.flagFB bit 2: half gravity, slower jumps */
+#define PAIR_SLOW_JUMP 4
+/* the gravity of a pair jump, halved by PAIR_SLOW_JUMP */
+#define PAIR_JUMP_GRAVITY 0xEE
 void obj_set_id(void *sub, u32 id);
 void sound_stop_song(u32 song);
 void set_slot_value(u32 id, s32 value);
@@ -256,11 +270,15 @@ static inline struct PairSub *pair_slot_entry(struct PairObj *obj, struct PairSu
     return obj->entries[((s32)(sub->slot33C << 25)) >> 25];
 }
 
-/* A and B start state 0x1D: B moves to A, its jump height follows the height difference. */
+/*
+ * A and B start state 0x1D: B jumps over to A's spot in MOVE_BY_FRAMES (8 frames, 14 when slow).
+ * The jump is 0x24 pixels plus the height A stands above B, capped at 0x24 unless A is higher
+ * on a layer both share.
+ */
 void pair_start_state_1d(struct PairObj *obj)
 {
-    s32 maxDist;
-    s32 dist;
+    s32 maxHeight;
+    s32 jumpHeight;
 
     update_pair_facing(obj, 1, 1);
     pair_shift_advance(obj, 1);
@@ -268,184 +286,209 @@ void pair_start_state_1d(struct PairObj *obj)
     obj->pixX = obj->subB->posX / 0x100;
     obj->pixY = obj->subB->posY / 0x100;
     {
-        u8 *bf = obj->subB->frames;
+        u8 *framesB = obj->subB->frames;
         *obj->subA->frames = 4;
-        *bf = 4;
+        *framesB = 4;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         obj->subA->state4 = 0x1D;
-        b->state4 = 0x1D;
+        subB->state4 = 0x1D;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit6Bits *)&obj->subA->flags351)->bit6 = 1;
-        ((struct Bit6Bits *)&b->flags351)->bit6 = 1;
+        ((struct Bit6Bits *)&subB->flags351)->bit6 = 1;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit3Bits *)&obj->subA->flags358)->bit3 = 1;
-        ((struct Bit3Bits *)&b->flags358)->bit3 = 1;
+        ((struct Bit3Bits *)&subB->flags358)->bit3 = 1;
     }
     obj->field258 = 0;
     ((struct Hi3Bits *)&obj->state246)->hi3 = ((struct Cell24Bits *)obj->subA)->lo3;
-    maxDist = 0x24;
+
+    maxHeight = 0x24;
     if (obj->subA->posZ + obj->subA->posZB > obj->subB->posZ + obj->subB->posZB)
     {
-        u8 layerA = obj->subA->type26;
-        u8 layerB = obj->subB->type26;
-        if ((((u32)(layerA & layerB)) << 26) >> 30)
-            maxDist = obj->subA->posZ - obj->subB->posZ + 0x24;
+        /* type26 bits 4-5: the layers the object stands on */
+        u8 layersA = obj->subA->type26;
+        u8 layersB = obj->subB->type26;
+        if ((((u32)(layersA & layersB)) << 26) >> 30)
+            maxHeight = obj->subA->posZ - obj->subB->posZ + 0x24;
     }
-    dist = ((obj->subA->posZ + obj->subA->posZB) - (obj->subB->posZ + obj->subB->posZB)) / 0x100 + 0x24;
-    if (dist > maxDist)
-        dist = maxDist;
-    motion_obj_set_move_target(obj->subB, dist, 0xEE >> (((u32)obj->flagFB << 29) >> 31), obj->move100);
-    contacts_obj_start_move(obj->subB, 2, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
-        (obj->flagFB & 4) ? 0xE : 8);
+    jumpHeight = ((obj->subA->posZ + obj->subA->posZB) - (obj->subB->posZ + obj->subB->posZB)) / 0x100 + 0x24;
+    if (jumpHeight > maxHeight)
+        jumpHeight = maxHeight;
+
+    motion_obj_set_move_target(obj->subB, jumpHeight, PAIR_JUMP_GRAVITY >> (((u32)obj->flagFB << 29) >> 31),
+        obj->move100);
+    contacts_obj_start_move(obj->subB, MOVE_BY_FRAMES, 0, obj->subA->posX / 0x100, obj->subA->posY / 0x100, 0,
+        (obj->flagFB & PAIR_SLOW_JUMP) ? 0xE : 8);
     ((struct Bit7Bits *)&obj->select20B)->bit7 = 1;
     set_slot_value(0x2B, -1);
 }
 
-/* A in state 0x23 or 0x29 near the height of its slot entry: A and B start state 0x27. */
+/*
+ * A in state 0x23 or 0x29 and within 8 pixels of the height of its slot entry: A and B start
+ * state 0x27, A moves onto the entry (keeping its own height), A's sprite takes the entry's base
+ * layer (bits 2-3) and B's sprite the layer the entry is drawn on now (bits 0-1).
+ */
 void pair_start_state_27(struct PairObj *obj)
 {
-    struct PairSub *e;
-    s32 aPix;
-    s32 ePix;
-    s32 top;
+    struct PairSub *entry;
+    s32 heightA;
+    s32 entryHeight;
+    s32 reach;
 
     if ((s16)obj->subA->state4 != 0x23 && (s16)obj->subA->state4 != 0x29)
         return;
-    aPix = (obj->subA->posZ + obj->subA->posZB) / 0x100;
-    e = pair_slot_entry(obj, obj->subA);
-    ePix = e->posZ + e->posZB;
-    if (ePix < 0)
-        ePix += 0xFF;
-    ePix >>= 8;
-    top = aPix + 8;
-    if (top < ePix)
-        return;
-    if (top - 0x10 > ePix)
-        return;
+    heightA = (obj->subA->posZ + obj->subA->posZB) / 0x100;
+    entry = pair_slot_entry(obj, obj->subA);
+    entryHeight = entry->posZ + entry->posZB;
+    if (entryHeight < 0)
+        entryHeight += 0xFF;
+    entryHeight >>= 8;
+    reach = heightA + 8;
+    if (reach < entryHeight)
+        return; /* the entry is more than 8 pixels above A */
+    if (reach - 0x10 > entryHeight)
+        return; /* A is more than 8 pixels above the entry */
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         obj->subA->state4 = 0x27;
-        b->state4 = 0x27;
+        subB->state4 = 0x27;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit6Bits *)&obj->subA->flags351)->bit6 = 1;
-        ((struct Bit6Bits *)&b->flags351)->bit6 = 1;
+        ((struct Bit6Bits *)&subB->flags351)->bit6 = 1;
     }
-    e = pair_slot_entry(obj, obj->subA);
-    contacts_obj_start_move(obj->subA, 1, 0, e->posX / 0x100, e->posY / 0x100,
+    /* A moves to the entry's x/y, keeping its own height */
+    entry = pair_slot_entry(obj, obj->subA);
+    contacts_obj_start_move(obj->subA, MOVE_BY_SPEED, 0, entry->posX / 0x100, entry->posY / 0x100,
         (obj->subA->posZ + obj->subA->posZB) / 0x100, 0);
     ((struct Half20A *)&obj->flags20A)->b78 = 1;
     ((struct Bit0Bits *)&obj->subA->flags20D)->bit0 = 1;
     ((struct Bit4Bits *)&obj->subA->flags20D)->bit4 = 0;
+    /* A takes the entry's base layer, B the layer the entry is drawn on */
     {
-        struct PairSpr *spr = obj->subA->sprite;
-        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+        struct PairSpr *sprite = obj->subA->sprite;
+        ((struct SprLayerBits *)&sprite->flags1F)->lo2 = ((struct SprLayerBits *)&sprite->flags1F)->b23
             = ((struct SprLayerP *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->b23;
     }
     ((struct Bit4Bits *)&obj->subB->flags20D)->bit4 = 0;
     {
-        struct PairSpr *spr = obj->subB->sprite;
-        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
+        struct PairSpr *sprite = obj->subB->sprite;
+        ((struct SprLayerBits *)&sprite->flags1F)->lo2 = ((struct SprLayerBits *)&sprite->flags1F)->b23
             = ((struct SprLayerP *)&pair_slot_entry(obj, obj->subA)->sprite->flags1F)->lo2;
     }
     sound_stop_song(0x5D);
     set_slot_value(0x8E, -1);
 }
 
-/* A in state 0x21-0x24 or 0x2C: A and B start state 0x2A, A moves onto its slot entry. */
+/*
+ * A in state 0x21-0x24 or 0x2C: A and B start state 0x2A and A moves onto its slot entry. The
+ * pair remembers the slot and a height 0x60 pixels above the entry; A's and B's sprites take the
+ * entry's layer, and the entry is drawn one layer below.
+ */
 void pair_start_state_2a(struct PairObj *obj)
 {
-    struct PairSub *e;
+    struct PairSub *entry;
     s32 slot;
-    u16 st;
+    u16 state;
 
-    st = obj->subA->state4;
-    if ((u16)(st - 0x21) > 3 && st != 0x2C)
+    state = obj->subA->state4;
+    if ((u16)(state - 0x21) > 3 && state != 0x2C)
         return;
     slot = ((s32)(obj->subA->slot33C << 25)) >> 25;
-    e = obj->entries[slot];
+    entry = obj->entries[slot];
     obj->field25C = slot;
-    obj->field254 = e->posZ + e->posZB + 0x6000;
+    obj->field254 = entry->posZ + entry->posZB + 0x6000;
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         obj->subA->state4 = 0x2A;
-        b->state4 = 0x2A;
+        subB->state4 = 0x2A;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit6Bits *)&obj->subA->flags351)->bit6 = 1;
-        ((struct Bit6Bits *)&b->flags351)->bit6 = 1;
+        ((struct Bit6Bits *)&subB->flags351)->bit6 = 1;
     }
-    contacts_obj_start_move(obj->subA, 1, 0, e->posX / 0x100, e->posY / 0x100,
+    /* A moves to the entry's x/y, keeping its own height */
+    contacts_obj_start_move(obj->subA, 1, 0, entry->posX / 0x100, entry->posY / 0x100,
         (obj->subA->posZ + obj->subA->posZB) / 0x100, 0);
     ((struct Half20A *)&obj->flags20A)->b78 = 1;
     obj->field252 = 2;
     ((struct Bit0Bits *)&obj->subA->flags20D)->bit0 = 1;
     ((struct Bit4Bits *)&obj->subA->flags20D)->bit4 = 0;
+    /* A and B are drawn on the entry's layer */
     {
-        struct PairSpr *spr = obj->subA->sprite;
-        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
-            = ((struct SprLayerP *)&e->sprite->flags1F)->b23;
+        struct PairSpr *sprite = obj->subA->sprite;
+        ((struct SprLayerBits *)&sprite->flags1F)->lo2 = ((struct SprLayerBits *)&sprite->flags1F)->b23
+            = ((struct SprLayerP *)&entry->sprite->flags1F)->b23;
     }
     ((struct Bit4Bits *)&obj->subB->flags20D)->bit4 = 0;
     {
-        struct PairSpr *spr = obj->subB->sprite;
-        ((struct SprLayerBits *)&spr->flags1F)->lo2 = ((struct SprLayerBits *)&spr->flags1F)->b23
-            = ((struct SprLayerP *)&e->sprite->flags1F)->b23;
+        struct PairSpr *sprite = obj->subB->sprite;
+        ((struct SprLayerBits *)&sprite->flags1F)->lo2 = ((struct SprLayerBits *)&sprite->flags1F)->b23
+            = ((struct SprLayerP *)&entry->sprite->flags1F)->b23;
     }
-    ((struct SprLayerBits *)&e->sprite->flags1F)->lo2 = ((struct SprLayerP *)&e->sprite->flags1F)->b23 - 1;
-    ((struct Bit4Bits *)&e->flags20D)->bit4 = 0;
+    /* and the entry one layer below */
+    ((struct SprLayerBits *)&entry->sprite->flags1F)->lo2 = ((struct SprLayerP *)&entry->sprite->flags1F)->b23 - 1;
+    ((struct Bit4Bits *)&entry->flags20D)->bit4 = 0;
     ((struct Bit6Bits *)&obj->subA->flags20D)->bit6 = 0;
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct StateLo3 *)&obj->subA->stateBits214)->lo3 = 2;
-        ((struct StateLo3 *)&b->stateBits214)->lo3 = 2;
+        ((struct StateLo3 *)&subB->stateBits214)->lo3 = 2;
     }
 }
 
 ASM_FUNC("asm/code_08032528/pair_frame4_step.s", void pair_frame4_step(void))
 
-/* A and B start state 0x3B. */
+/*
+ * A and B start state 0x3B: both step their animation, take frame 6 and state 0x3B; B gets object
+ * id 0x1025 and a move target of height 0x10 (speed 0xEE, halved when flagFB bit 2 is set), A's
+ * frame byte 0x10 moves to 0x12, slot 0x3C is set and field272 becomes 10 (20 with flagFB bit 2).
+ */
 void pair_start_state_3b(struct PairObj *obj)
 {
     update_pair_facing(obj, 1, 1);
     pair_shift_advance(obj, 1);
     {
-        u8 *bf = obj->subB->frames;
+        u8 *framesB = obj->subB->frames;
         *obj->subA->frames = 6;
-        *bf = 6;
+        *framesB = 6;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         obj->subA->state4 = 0x3B;
-        b->state4 = 0x3B;
+        subB->state4 = 0x3B;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit6Bits *)&obj->subA->flags351)->bit6 = 1;
-        ((struct Bit6Bits *)&b->flags351)->bit6 = 1;
+        ((struct Bit6Bits *)&subB->flags351)->bit6 = 1;
     }
     {
-        struct PairSub *b = obj->subB;
+        struct PairSub *subB = obj->subB;
         ((struct Bit3Bits *)&obj->subA->flags358)->bit3 = 1;
-        ((struct Bit3Bits *)&b->flags358)->bit3 = 1;
+        ((struct Bit3Bits *)&subB->flags358)->bit3 = 1;
     }
+    /* A's flags */
     ((struct Bit4Bits *)&obj->subA->flags35B)->bit4 = 1;
     ((struct Bit5Bits *)&obj->subA->flags20D)->bit5 = 1;
     ((struct Bit1Bits *)&obj->subA->flags210)->bit1 = 0;
     ((struct Bit2Bits *)&obj->subA->flags210)->bit2 = 0;
+    /* B's flags */
     ((struct Bit6Bits *)&obj->subB->seqFlags212)->bit6 = 1;
     ((struct Bit5Bits *)&obj->subB->flags20D)->bit5 = 1;
     ((struct Bit1Bits *)&obj->subB->flags35A)->bit1 = 1;
+    /* the pair's flags */
     ((struct Bit0Bits *)&obj->flags208)->bit0 = 0;
     ((struct Bit7Bits *)&obj->select20B)->bit7 = 1;
+    /* B starts its move */
     ((struct StateLo3 *)&obj->subB->stateBits214)->lo3 = 4;
     obj_set_id(obj->subB, 0x1025);
     motion_obj_set_move_target(obj->subB, 0x10, 0xEE >> (((u32)obj->flagFB << 29) >> 31), obj->move100);
@@ -457,16 +500,17 @@ void pair_start_state_3b(struct PairObj *obj)
     obj->field272 = (obj->flagFB & 4) == 0 ? 0xA : 0x14;
 }
 
-/* The sub object hits: state 0x3E; a hit entry is marked, its drop rolled and shown. */
+/* (pair_sub_state_3e) The sub object jumps into state 0x3E. If it is right under an unhit block,
+   the block is marked hit, its drop is rolled for this brother and shown, and its save flag is set. */
 void sub_08033BAC(struct PairObj *obj, struct PairSub *sub)
 {
-    u32 hit;
-    struct HitEntry *entry;
-    u32 roll;
-    u16 amount;
-    u8 flag;
-    u32 itemId;
-    u32 hi;
+    u32 blockIndex;
+    struct HitEntry *block;
+    u32 drop;
+    u16 dropItem;
+    u8 dropGiven;
+    u32 dropCount;
+    u32 indexHi;
 
     update_pair_facing(obj, 1, 1);
     ((struct Bit4Bits *)&sub->flags35B)->bit4 = 0;
@@ -489,38 +533,40 @@ void sub_08033BAC(struct PairObj *obj, struct PairSub *sub)
     set_slot_value(0x38, -1);
     if (obj->flags20A & 2)
         return;
-    hit = obj_find_hit_entry(obj, sub);
-    if (hit != -1 && !(hit & 0x80))
+
+    /* -1: no block; bit 7 set: near a block but not right under it */
+    blockIndex = obj_find_hit_entry(obj, sub);
+    if (blockIndex != -1 && !(blockIndex & 0x80))
     {
-        entry = &obj->hits[hit];
-        ((struct Bit1Bits *)&entry->flags)->bit1 = 1;
-        hi = entry->data[7] << 8;
-        roll = drop_roll(entry->data[6] | hi, entry->data[0], sub->group54);
-        amount = roll & 0xF;
-        flag = (roll >> 4) & 1;
-        itemId = (roll >> 5) & 0x7F;
-        obj_draw_desc_entries(obj, (entry->tileX << 12) + 0x800, (entry->tileY << 12) - 0x800,
-            entry->tileZ << 11, 0xC00, amount, flag, (u8)1);
-        obj_build_message(obj, 1, amount, itemId, sub->sprite->half2 <= 0x3F);
-        if (flag)
+        block = &obj->hits[blockIndex];
+        ((struct Bit1Bits *)&block->flags)->bit1 = 1;
+        indexHi = block->data[7] << 8;
+        drop = drop_roll(block->data[6] | indexHi, block->data[0], sub->group54);
+        dropItem = drop & 0xF;
+        dropGiven = (drop >> 4) & 1;
+        dropCount = (drop >> 5) & 0x7F;
+        obj_draw_desc_entries(obj, (block->tileX << 12) + 0x800, (block->tileY << 12) - 0x800,
+            block->tileZ << 11, 0xC00, dropItem, dropGiven, (u8)1);
+        obj_build_message(obj, 1, dropItem, dropCount, sub->sprite->half2 <= 0x3F);
+        if (dropGiven)
         {
-            set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(entry->half4 + 0x1360), 1);
-            if (!(entry->flags & 1))
+            set_flag(gUnk_03000FC0 + 0x38C, 0, (u16)(block->half4 + 0x1360), 1);
+            if (!(block->flags & 1))
             {
-                u32 *tile = tile_ptr_at(obj->map304, entry->tileX, entry->tileY);
+                u32 *tile = tile_ptr_at(obj->map304, block->tileX, block->tileY);
                 layer3_entries_by_group(obj->map304, (*tile << 1) >> 30);
             }
         }
     }
     if (sub->entryIndex33E != -1)
     {
-        struct PairSub *ent = obj->entries[sub->entryIndex33E];
-        if ((ent->state20E & 0x38) == 0x18)
+        struct PairSub *linked = obj->entries[sub->entryIndex33E];
+        if ((linked->state20E & 0x38) == 0x18)
         {
-            obj_reset_movement(ent);
+            obj_reset_movement(linked);
             attach_sprite_setup(sub);
         }
         else
-            motion_obj_set_move_target(ent, 0x30, -1, obj->move100);
+            motion_obj_set_move_target(linked, 0x30, -1, obj->move100);
     }
 }

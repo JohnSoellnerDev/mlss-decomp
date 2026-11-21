@@ -181,17 +181,20 @@ void obj_wait_free_action2_arc(struct Actor *obj);
 void obj_pose_then_spawn_arc(struct Actor *obj);
 void obj_spawn_child_412b(struct Actor *obj);
 
+/* Flies the part along a parabolic arc (paramA0 frames, paramA4/paramA8 the total X/Y travel,
+   param9C the curve, targetH the apex height). On landing it plays sound 0x7C and either
+   disappears once it is past the left edge or starts a small 8-pixel hop to the left. */
 void part_arc_move(struct Actor *obj)
 {
-    s32 offset;
-    s32 dist;
-    s32 half;
+    s32 fromApex;
+    s32 frames;
+    s32 halfFrames;
     s32 curve;
 
     obj->x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dx << 8);
     obj->y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dy << 8);
-    offset = (s16)obj->timer - obj->paramA0 / 2;
-    obj->h = (offset * offset) * obj->param9C + ((s32)obj->targetH << 8) + ((s32)obj->dh << 8);
+    fromApex = (s16)obj->timer - obj->paramA0 / 2;
+    obj->h = (fromApex * fromApex) * obj->param9C + ((s32)obj->targetH << 8) + ((s32)obj->dh << 8);
     obj->timer++;
     if (obj->h < 0)
     {
@@ -207,15 +210,16 @@ void part_arc_move(struct Actor *obj)
             obj->dy = base_to_px(obj->baseY);
             obj->dh = 0;
             obj->targetH = 2;
-            dist = ((s32 (*)(s32))gMathRoutines)(0x400000) / 0x299;
-            half = dist / 2;
-            curve = (obj->targetH << 8) / (half * half);
+            /* square root routine: length of the 0x800 hop, over a speed of 0x299 per frame */
+            frames = ((s32 (*)(s32))gMathRoutines)(0x400000) / 0x299;
+            halfFrames = frames / 2;
+            curve = (obj->targetH << 8) / (halfFrames * halfFrames);
             if (curve == 1)
             {
                 curve = 2;
             }
             obj->param9C = -curve;
-            obj->paramA0 = dist;
+            obj->paramA0 = frames;
             obj->paramA4 = -0x800;
             obj->paramA8 = 0;
             obj->timer = 0;
@@ -382,21 +386,24 @@ void obj_aim_at_owner_then_wait(struct Actor *obj)
     }
 }
 
+/* Once the walk started by obj_aim_at_owner_then_wait has arrived (index counts its frames down to 0),
+   stops that walk's song 0x11C, walks to 0x16 px right of the owner's target, joins the active
+   object list with the arc-flight / link-lookup callbacks and waits 1-4 frames before following. */
 void obj_wait_slot_then_follow(struct Actor *obj)
 {
-    u32 index = obj->index;
-    if (index == 0)
+    u32 framesLeft = obj->index;
+    if (framesLeft == 0)
     {
-        u8 *fp;
+        u8 *flags;
         sound_stop_song(0x11C);
         sprite_set_action(obj, 4, 0, 0);
         obj->targetX = obj->owner->data->targetX + 0x1600;
         obj->targetY = obj->owner->data->targetY;
         obj->targetH = obj->baseH;
-        fp = &obj->flags;
-        *fp |= 0x20;
+        flags = &obj->flags;
+        *flags |= 0x20; /* target is absolute, not relative to the current position */
         obj->motionSpeed = 0x200;
-        obj->motionStart = index;
+        obj->motionStart = framesLeft;
         start_motion(obj);
         obj_list_push_default(obj);
         obj->cb58 = actor_arc_flight_callback;
@@ -485,21 +492,25 @@ static inline void land_effect(struct Actor *obj, struct Actor *child, u32 id)
     effect_spawn_at(id, x, y, h, obj);
 }
 
+// Flies the part along a parabolic arc (timer frames out of paramA0, apex 0x3000 above
+// the start) toward its owner's target. Once it comes down there, it spawns the landed
+// child (kind chosen by variant, targetH and the owner's mode), plays its effect and
+// hands the owner and the child over to their next states.
 void part_arc_land_spawn(struct Actor *obj)
 {
     struct Actor *child;
     struct Actor *owner;
     struct ActorData *ownerData;
-    s32 offset;
-    s32 k3000;
-    s32 bounce;
-    s32 ownerMode;
+    s32 fromApex;
+    s32 apexHeight;
+    s32 variant;
+    s32 ownerAltMode;
 
     obj->x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dx << 8);
     obj->y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s32)obj->dy << 8);
-    offset = (s16)obj->timer - obj->paramA0 / 2;
-    k3000 = 0x3000;
-    obj->h = (offset * offset) * obj->param9C + (((s32)obj->dh << 8) + k3000);
+    fromApex = (s16)obj->timer - obj->paramA0 / 2;
+    apexHeight = 0x3000;
+    obj->h = (fromApex * fromApex) * obj->param9C + (((s32)obj->dh << 8) + apexHeight);
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {
@@ -512,14 +523,14 @@ void part_arc_land_spawn(struct Actor *obj)
             owner = obj->owner;
             owner->state = actor_landing_idle;
             ownerData = owner->data;
-            ownerMode = (ownerData->modeBits & 3) != 0;
-            bounce = obj->targetX;
-            switch (bounce)
+            ownerAltMode = (ownerData->modeBits & 3) != 0;
+            variant = obj->targetX;
+            switch (variant)
             {
                 case 0:
                     if (obj->targetH == 0)
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
                             child = spawn_land_child(obj, ownerData, 0x4096, 1);
                         }
@@ -531,7 +542,7 @@ void part_arc_land_spawn(struct Actor *obj)
                     }
                     else
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
                             child = spawn_land_child(obj, ownerData, 0x4097, 1);
                         }
@@ -545,25 +556,25 @@ void part_arc_land_spawn(struct Actor *obj)
                 case 1:
                     if (obj->targetH == 0)
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
-                            child = spawn_land_child(obj, ownerData, 0x409A, bounce);
+                            child = spawn_land_child(obj, ownerData, 0x409A, variant);
                         }
                         else
                         {
-                            child = spawn_land_child(obj, ownerData, 0x409C, bounce);
+                            child = spawn_land_child(obj, ownerData, 0x409C, variant);
                         }
                         land_effect(obj, child, 0x1172);
                     }
                     else
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
-                            child = spawn_land_child(obj, ownerData, 0x409B, bounce);
+                            child = spawn_land_child(obj, ownerData, 0x409B, variant);
                         }
                         else
                         {
-                            child = spawn_land_child(obj, ownerData, 0x409D, bounce);
+                            child = spawn_land_child(obj, ownerData, 0x409D, variant);
                         }
                         land_effect(obj, child, 0x117F);
                     }
@@ -571,7 +582,7 @@ void part_arc_land_spawn(struct Actor *obj)
                 case 2:
                     if (obj->targetH == 0)
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
                             child = spawn_land_child(obj, ownerData, 0x409E, 1);
                         }
@@ -583,7 +594,7 @@ void part_arc_land_spawn(struct Actor *obj)
                     }
                     else
                     {
-                        if (ownerMode == 0)
+                        if (ownerAltMode == 0)
                         {
                             child = spawn_land_child(obj, ownerData, 0x409F, 1);
                         }
@@ -605,7 +616,7 @@ void part_arc_land_spawn(struct Actor *obj)
             child->link = obj->link;
             child->owner = obj->owner;
             child->tag = obj->tag;
-            child->timer = 0x1E;
+            child->timer = 30;
             child->state = obj_timer_remove;
             obj_detach_active(obj->pose);
             obj_detach_active(obj->owner->pose);

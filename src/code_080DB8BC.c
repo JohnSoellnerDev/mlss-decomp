@@ -4,11 +4,16 @@
 struct ActorPose
 {
     u8 filler0[0x11];
-    u8 byte11;
+    u8 byte11; /* POSE_MIRROR: the sprite faces the other way */
     u8 flags;
     u8 filler13[0x21 - 0x13];
     u8 busy;
 };
+
+#define POSE_MIRROR 0x40 /* ActorPose.byte11 bit 6 */
+
+#define SFX_HOP 0x8D       /* set_slot_value id: the obj's hop sound */
+#define HOP_DAMPING 0xFD   /* jump_velocity damp: X/Y offsets shrink by 0xFD/0x100 per frame */
 
 struct ActorPart
 {
@@ -244,21 +249,30 @@ u32 part_unlink_clear_81(struct ActorObj *obj, u32 a, u32 b)
     return partner_link_update(obj, a, b);
 }
 
+/* Starts the obj's hop to 52 pixels right of its owner's part target, landing at that target's
+   height (jump_velocity, damping HOP_DAMPING), with the hop sound and sprite action 2; the hop
+   itself goes on in obj_settle_step_roll_bounces. */
 void obj_begin_part_to_owner_x52(struct ActorObj *obj)
 {
-    struct ActorPart *data;
-    s32 h;
+    struct ActorPart *ownerData;
+    s32 groundH;
 
-    obj->targetX = (data = obj->owner->data)->targetX + 0x3400;
-    obj->targetY = data->targetY;
-    obj->targetH = (h = data->targetH);
-    obj->ground = h;
-    obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX, obj->targetY - obj->baseY, h - obj->baseH, 0x400, 0x400, 0xFD, 0);
-    set_slot_value(0x8D, -1);
+    obj->targetX = (ownerData = obj->owner->data)->targetX + 0x3400;
+    obj->targetY = ownerData->targetY;
+    obj->targetH = (groundH = ownerData->targetH);
+    obj->ground = groundH;
+    obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX,
+                                obj->targetY - obj->baseY, groundH - obj->baseH, 0x400, 0x400,
+                                HOP_DAMPING, 0);
+    set_slot_value(SFX_HOP, -1);
     sprite_set_action(obj, 2, 0, 0);
     obj->state = obj_settle_step_roll_bounces;
 }
 
+/* One frame of the obj's hop toward its owner: scales its X/Y offsets by 0xFD/0x100, adds dhStep to
+ * its height offset and moves it to base + offsets. Once it falls to the ground it lands there with
+ * sprite action 4, picks 0-2 extra hops (spawnLeft), waits 8 frames and goes on in
+ * obj_settle_wait_bounce. */
 void obj_settle_step_roll_bounces(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0xFD / 0x100;
@@ -277,13 +291,17 @@ void obj_settle_step_roll_bounces(struct ActorObj *obj)
     }
 }
 
+/* State after the obj landed: waits out its timer, then hops in place again (obj_begin_settle)
+ * while spawnLeft, the random number of extra hops left, lasts. After the last one it rejoins the
+ * default object list and hops halfway to its owner's position (jump_velocity with 1/2 the
+ * distance, damping 0xFD/0x100 per frame), with sound 0x8D and sprite action 3. */
 void obj_settle_wait_bounce(struct ActorObj *obj)
 {
     obj->timer--;
     if ((s16)obj->timer < 0)
     {
-        struct ActorPart *data;
-        s32 h;
+        struct ActorPart *ownerData;
+        s32 groundH;
 
         obj->spawnLeft--;
         if (obj->spawnLeft >= 0)
@@ -293,18 +311,24 @@ void obj_settle_wait_bounce(struct ActorObj *obj)
         else
         {
             obj_list_push_default(obj);
-            obj->targetX = (data = obj->owner->data)->targetX;
-            obj->targetY = data->targetY;
-            obj->targetH = (h = data->targetH);
-            obj->ground = h;
-            obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, (obj->targetX - obj->baseX) / 2, (obj->targetY - obj->baseY) / 2, (h - obj->baseH) / 2, 0x800, 0x200, 0xFD, 0);
-            set_slot_value(0x8D, -1);
+            obj->targetX = (ownerData = obj->owner->data)->targetX;
+            obj->targetY = ownerData->targetY;
+            obj->targetH = (groundH = ownerData->targetH);
+            obj->ground = groundH;
+            obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, (obj->targetX - obj->baseX) / 2,
+                                        (obj->targetY - obj->baseY) / 2, (groundH - obj->baseH) / 2, 0x800, 0x200,
+                                        0xFD, 0);
+            set_slot_value(0x8D, -1); /* plays the hop sound 0x8D */
             sprite_set_action(obj, 3, 0, 0);
             obj->state = obj_settle_step_land_then_bce4;
         }
     }
 }
 
+/* One frame of the obj's first half-way hop toward its owner: damps its X/Y offsets by 0xFD/0x100,
+ * adds dhStep to its height offset and moves it to base + offsets. Once it falls to the ground it
+ * lands there with sprite action 4, waits 8 frames and hops the rest of the way in
+ * obj_wait_timer_hop_then_bd88. */
 void obj_settle_step_land_then_bce4(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0xFD / 0x100;
@@ -322,26 +346,33 @@ void obj_settle_step_land_then_bce4(struct ActorObj *obj)
     }
 }
 
+/* State after the obj landed halfway (obj_settle_step_land_then_bce4): waits out its timer, then
+ * hops the rest of the way onto its owner's position (jump_velocity, damping 0xFD/0x100 per
+ * frame) with sound 0x8D and sprite action 3, and flies on in obj_settle_step_land_then_be2c. */
 void obj_wait_timer_hop_then_bd88(struct ActorObj *obj)
 {
     obj->timer--;
     if ((s16)obj->timer < 0)
     {
-        struct ActorPart *data;
-        u8 *flags;
-        s32 h;
+        struct ActorPart *ownerData;
+        s32 groundH;
 
-        obj->targetX = (data = obj->owner->data)->targetX;
-        obj->targetY = data->targetY;
-        obj->targetH = (h = data->targetH);
-        obj->ground = h;
-        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX, obj->targetY - obj->baseY, h - obj->baseH, 0x800, 0x200, 0xFD, 0);
-        set_slot_value(0x8D, -1);
+        obj->targetX = (ownerData = obj->owner->data)->targetX;
+        obj->targetY = ownerData->targetY;
+        obj->targetH = (groundH = ownerData->targetH);
+        obj->ground = groundH;
+        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX,
+                                    obj->targetY - obj->baseY, groundH - obj->baseH, 0x800, 0x200, 0xFD, 0);
+        set_slot_value(0x8D, -1); /* plays the hop sound 0x8D */
         sprite_set_action(obj, 3, 0, 0);
         obj->state = obj_settle_step_land_then_be2c;
     }
 }
 
+/* One frame of the obj's hop onto its owner's position: damps its X/Y offsets by 0xFD/0x100, adds
+ * dhStep to its height offset and moves it to base + offsets. Once it falls to the ground it lands
+ * there with sprite action 4, waits 16 frames and hops back to its own target point in
+ * obj_wait_timer_release_hop_then_bed0. */
 void obj_settle_step_land_then_be2c(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0xFD / 0x100;
@@ -359,22 +390,26 @@ void obj_settle_step_land_then_be2c(struct ActorObj *obj)
     }
 }
 
+/* State after the obj landed on its owner (obj_settle_step_land_then_be2c): waits out its timer,
+ * then leaves the object list and hops back to its own target point (its ActorPart's target
+ * X/Y/H) with the hop sound and sprite action 2; obj_settle_step_land_arrive flies it there. */
 void obj_wait_timer_release_hop_then_bed0(struct ActorObj *obj)
 {
     obj->timer--;
     if ((s16)obj->timer < 0)
     {
-        struct ActorPart *data;
-        u8 *flags;
-        s32 h;
+        struct ActorPart *part;
+        s32 groundH;
 
         obj_list_remove(obj);
-        obj->targetX = (data = obj->data)->targetX;
-        obj->targetY = data->targetY;
-        obj->targetH = (h = data->targetH);
-        obj->ground = h;
-        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX, obj->targetY - obj->baseY, h - obj->baseH, 0x400, 0x400, 0xFD, 0);
-        set_slot_value(0x8D, -1);
+        obj->targetX = (part = obj->data)->targetX;
+        obj->targetY = part->targetY;
+        obj->targetH = (groundH = part->targetH);
+        obj->ground = groundH;
+        obj->dhStep = jump_velocity(&obj->dx, &obj->dy, &obj->dh, obj->targetX - obj->baseX,
+                                    obj->targetY - obj->baseY, groundH - obj->baseH, 0x400, 0x400,
+                                    HOP_DAMPING, 0);
+        set_slot_value(SFX_HOP, -1);
         sprite_set_action(obj, 2, 0, 0);
         obj->state = obj_settle_step_land_arrive;
     }
@@ -508,6 +543,9 @@ void obj_wait_index_then_move_to_data(struct ActorObj *obj)
     }
 }
 
+/* State: each frame shrink the horizontal offset from the base point by 0xFD/0x100 and add dhStep
+ * to the height offset. On reaching the ground: snap to it, play action 2, flip the sprite, start
+ * sound 0x11A (play_song_at_volume, keeping the volume), and wait 32 frames in obj_wait_then_move_to_edge. */
 void obj_drop_until_ground(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0xFD / 0x100;
@@ -519,22 +557,23 @@ void obj_drop_until_ground(struct ActorObj *obj)
     if (obj->posH <= obj->ground)
     {
         struct ActorPose *pose;
-        s32 flags;
-        s32 bit;
-        s32 cleared;
+        s32 attr;
+        s32 mirror;
+        s32 rest;
 
         obj->posH = obj->ground;
         sprite_set_action(obj, 2, 0, 0);
+        /* toggle POSE_MIRROR */
         pose = obj->pose;
-        flags = pose->byte11;
-        bit = ((u32)flags << 25) >> 31;
-        bit = bit ^ 1;
-        bit = bit << 6;
-        cleared = -0x41 & flags;
-        cleared = cleared | bit;
-        pose->byte11 = cleared;
+        attr = pose->byte11;
+        mirror = ((u32)attr << 25) >> 31;
+        mirror = mirror ^ 1;
+        mirror = mirror << 6;
+        rest = ~POSE_MIRROR & attr;
+        rest = rest | mirror;
+        pose->byte11 = rest;
         set_slot_value(0x11A, -1);
-        obj->timer = 0x20;
+        obj->timer = 32;
         obj->state = obj_wait_then_move_to_edge;
     }
 }
@@ -561,17 +600,20 @@ void obj_wait_then_move_to_edge(struct ActorObj *obj)
     }
 }
 
+/* State: once the move to the edge has ended (index 0) and 20 more frames have passed, joins the
+ * object list (handler obj_await_part), reappears paramA0 px right of the owner's target point and
+ * walks (action 4) to 4 px right of it at speed paramA4, then goes on with obj_setup_move_to_data. */
 void obj_wait_then_place_at_owner(struct ActorObj *obj)
 {
-    s32 index = obj->index;
+    s32 moving = obj->index;
 
-    if (index == 0)
+    if (moving == 0)
     {
         struct ActorPart *data;
         u8 *flags;
-        s32 x;
-        s32 y;
-        s32 h;
+        s32 startX;
+        s32 startY;
+        s32 startH;
 
         obj->timer--;
         if ((s16)obj->timer < 0)
@@ -579,22 +621,22 @@ void obj_wait_then_place_at_owner(struct ActorObj *obj)
             obj_list_push_default(obj);
             obj->handler5C = (void (*)(struct ActorObj *))obj_await_part;
             data = obj->owner->data;
-            x = data->targetX + (obj->paramA0 << 8);
-            obj->baseX = x;
-            obj->posX = x;
-            y = data->targetY;
-            obj->baseY = y;
-            obj->posY = y;
-            h = data->targetH;
-            obj->baseH = h;
-            obj->posH = h;
+            startX = data->targetX + (obj->paramA0 << 8);
+            obj->baseX = startX;
+            obj->posX = startX;
+            startY = data->targetY;
+            obj->baseY = startY;
+            obj->posY = startY;
+            startH = data->targetH;
+            obj->baseH = startH;
+            obj->posH = startH;
             obj->targetX = data->targetX + 0x400;
             obj->targetY = data->targetY;
             obj->targetH = data->targetH;
             flags = &obj->flags;
-            *flags |= 0x20;
+            *flags |= 0x20; /* moving */
             obj->motionSpeed = obj->paramA4 << 8;
-            obj->motionStart = index;
+            obj->motionStart = moving;
             start_motion(obj);
             sprite_set_action(obj, 4, 0, 0);
             obj->state = obj_setup_move_to_data;

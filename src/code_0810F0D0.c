@@ -101,7 +101,39 @@ ASM_FUNC("asm/code_0810F0D0/attach_marker_to_part.s", void attach_marker_to_part
 
 ASM_FUNC("asm/code_0810F0D0/action_factor.s", void action_factor(void))
 
-ASM_FUNC("asm/code_0810F0D0/start_part_place.s", void start_part_place(void))
+void wait_move_then_place_base_b(struct ActionObj *obj);
+/* State: once the record's animation ends, takes the owner's timer minus one and moves to the
+ * owner's part target, 0x2A px right (variant set, then wait_move_then_place_base_b; its height
+ * is divided by 0x1000, not 0x100) or 0x22 px right (wait_move_then_action_15), at speed `scale`.
+ * Plays action 5, sets the record's display and plays sound 0x112. */
+void start_part_place(struct ActionObj *obj)
+{
+    struct ActionRecord *rec = obj->record;
+    if (rec->flags & 8)
+    {
+        struct ActionPart *ownerPart = obj->owner->part;
+        struct ActionRecord *record;
+
+        obj->timer = obj->owner->timer - 1;
+        if (obj->variant != 0)
+        {
+            place_targets(obj, ownerPart->targetX / 0x100 + 0x2A, ownerPart->targetY / 0x100,
+                          ownerPart->targetZ / 0x1000, 0x100);
+            obj->state = wait_move_then_place_base_b;
+        }
+        else
+        {
+            place_targets(obj, ownerPart->targetX / 0x100 + 0x22, ownerPart->targetY / 0x100,
+                          ownerPart->targetZ / 0x100, 0x100);
+            obj->state = wait_move_then_action_15;
+        }
+        set_motion_start(obj, obj->scale);
+        sprite_set_action(obj, 5, 0, 0);
+        record = obj->record;
+        record->display = obj->display;
+        set_slot_value(0x112, -1);
+    }
+}
 
 void start_part_place_b(struct ActionObj *obj)
 {
@@ -137,6 +169,10 @@ void start_part_place_b(struct ActionObj *obj)
     }
 }
 
+/* State: once the record's animation ends, plays action 0x11 and spawns a child of kind 0x40E1
+ * (0x40E0 for part kind 0x3C) on the ground under the owner, facing the way the record's bit 6
+ * says. The child plays action 2, gets childFlags bit 0 and the owner's timer minus one; this
+ * object then waits in wait_child_then_progress. */
 void action_part_states_spawn_part_child(struct ActionObj *obj)
 {
     struct ActionRecord *rec = obj->record;
@@ -144,27 +180,22 @@ void action_part_states_spawn_part_child(struct ActionObj *obj)
     {
         struct ActionObj *owner;
         struct ActionObj *child;
-        s32 pk;
-        u32 kind;
+        s32 partKind;
+        u32 childKind;
         s32 x;
         s32 y;
 
         sprite_set_action(obj, 0x11, 0, 0);
         ((struct ActionFlagBits *)&obj->record->flags)->mode = 1;
         owner = obj->owner;
-        pk = obj->part->kind;
-        kind = 0x40E1;
-        if (pk == 0x3C)
-            kind--;
-        x = owner->posX;
-        if (x < 0)
-            x += 0xFF;
-        x >>= 8;
-        y = owner->posY;
-        if (y < 0)
-            y += 0xFF;
-        y >>= 8;
-        child = obj_spawn(obj->part, kind, x, y, 0, ((u32)obj->record->unk11 << 25) >> 31, 1);
+        partKind = obj->part->kind;
+        childKind = 0x40E1;
+        if (partKind == 0x3C)
+            childKind--;
+        /* the owner's position in pixels (8.8 fixed point, rounded toward zero) */
+        x = owner->posX / 0x100;
+        y = owner->posY / 0x100;
+        child = obj_spawn(obj->part, childKind, x, y, 0, ((u32)obj->record->unk11 << 25) >> 31, 1);
         obj->child = child;
         sprite_set_action(child, 2, 0, 0);
         ((struct ActionFlagBits *)&child->record->flags)->mode = 1;
@@ -174,6 +205,10 @@ void action_part_states_spawn_part_child(struct ActionObj *obj)
     }
 }
 
+/* State: keeps linked to the owner while it stands on the ground (owner flag 0x80 clear), and runs
+ * the progress window. Once it ends, spawns effect 0x216E (0x2165 for part kind 0x3C) at the child's
+ * base, releases the child, stops song 0x10F, moves to the part's target at speed 0x300, plays sound
+ * 0x11B and waits in wait_move_then_clear. */
 void wait_child_then_place(struct ActionObj *obj)
 {
     struct ActionObj *owner = obj->owner;
@@ -186,7 +221,7 @@ void wait_child_then_place(struct ActionObj *obj)
     {
         struct ActionObj *child = obj->child;
         struct ActionPart *part;
-        u32 placeId;
+        u32 effectId;
         s32 kind;
         s32 t;
         s32 x;
@@ -194,9 +229,10 @@ void wait_child_then_place(struct ActionObj *obj)
         s32 z;
 
         kind = obj->part->kind;
-        placeId = 0x216E;
+        effectId = 0x216E;
         if (kind == 0x3C)
-            placeId -= 9;
+            effectId -= 9;
+        /* child base in pixels (8.8 fixed point, rounded toward zero) */
         x = child->baseX;
         if (x < 0)
             x += 0xFF;
@@ -209,7 +245,7 @@ void wait_child_then_place(struct ActionObj *obj)
         if (z < 0)
             z += 0xFF;
         z >>= 8;
-        effect_spawn_at(placeId, x, y, z, child);
+        effect_spawn_at(effectId, x, y, z, child);
         obj_release(child);
         sound_stop_song(0x10F);
         part = obj->part;
@@ -232,7 +268,43 @@ void wait_child_then_place(struct ActionObj *obj)
     }
 }
 
-ASM_FUNC("asm/code_0810F0D0/start_part_place_list.s", void start_part_place_list(void))
+void wait_move_then_place_base(struct ActionObj *obj);
+void obj_list_push_default(struct ActionObj *obj);
+void link_to_slot(struct ActionObj *obj);
+/* State: once the record's animation ends, takes the owner's timer minus one and moves to the
+ * owner's part target, 0x2A px right (variant set, then wait_move_then_place_base) or 0x22 px
+ * right (wait_move_then_start_progress), at speed `scale`. Plays action 5, sets the record's
+ * display, plays sound 0x112, joins the update list and runs link_to_slot as its handler. */
+void start_part_place_list(struct ActionObj *obj)
+{
+    struct ActionRecord *rec = obj->record;
+    if (rec->flags & 8)
+    {
+        struct ActionPart *ownerPart = obj->owner->part;
+        struct ActionRecord *record;
+
+        obj->timer = obj->owner->timer - 1;
+        if (obj->variant != 0)
+        {
+            place_targets(obj, ownerPart->targetX / 0x100 + 0x2A, ownerPart->targetY / 0x100,
+                          ownerPart->targetZ / 0x100, 0x100);
+            obj->state = wait_move_then_place_base;
+        }
+        else
+        {
+            place_targets(obj, ownerPart->targetX / 0x100 + 0x22, ownerPart->targetY / 0x100,
+                          ownerPart->targetZ / 0x100, 0x100);
+            obj->state = wait_move_then_start_progress;
+        }
+        set_motion_start(obj, obj->scale);
+        sprite_set_action(obj, 5, 0, 0);
+        record = obj->record;
+        record->display = obj->display;
+        set_slot_value(0x112, -1);
+        obj_list_push_default(obj);
+        obj->handler = link_to_slot;
+    }
+}
 
 void start_part_place_c(struct ActionObj *obj)
 {
@@ -305,45 +377,49 @@ void start_part_offset_effect(struct ActionObj *obj)
     }
 }
 
+/* State: once the move off the left edge ends, leaves the update list and stops song 0x86, jumps
+ * to x = 256 px (just past the right edge) at the part's target height, then walks back to the
+ * part's target at speed 0x200 playing action 5, and waits in wait_move_then_action_8. */
 void wait_move_then_place(struct ActionObj *obj)
 {
     if (!step_motion(obj))
     {
         struct ActionPart *part;
-        s32 t;
+        s32 fixed;
         s32 x;
         s32 y;
         s32 z;
-        struct ActionRecord *rec2;
+        struct ActionRecord *record;
 
         obj_list_remove(obj);
         sound_stop_song(0x86);
         part = obj->part;
-        obj->posX = 0x10000;
-        obj->baseX = 0x10000;
-        t = part->targetY;
-        obj->posY = t;
-        obj->baseY = t;
-        t = part->targetZ;
-        obj->posZ = t;
-        obj->baseZ = t;
-        t = part->targetX;
-        if (t < 0)
-            t += 0xFF;
-        x = t >> 8;
-        t = part->targetY;
-        if (t < 0)
-            t += 0xFF;
-        y = t >> 8;
-        t = part->targetZ;
-        if (t < 0)
-            t += 0xFF;
-        z = t >> 8;
+        obj->posX = 256 << 8;
+        obj->baseX = 256 << 8;
+        fixed = part->targetY;
+        obj->posY = fixed;
+        obj->baseY = fixed;
+        fixed = part->targetZ;
+        obj->posZ = fixed;
+        obj->baseZ = fixed;
+        /* the part's target in pixels (8.8 fixed point, rounded toward zero) */
+        fixed = part->targetX;
+        if (fixed < 0)
+            fixed += 0xFF;
+        x = fixed >> 8;
+        fixed = part->targetY;
+        if (fixed < 0)
+            fixed += 0xFF;
+        y = fixed >> 8;
+        fixed = part->targetZ;
+        if (fixed < 0)
+            fixed += 0xFF;
+        z = fixed >> 8;
         place_targets(obj, x, y, z, 0x100);
         set_motion_start(obj, 0x200);
         sprite_set_action(obj, 5, 0, 0);
-        rec2 = obj->record;
-        rec2->display = obj->display;
+        record = obj->record;
+        record->display = obj->display;
         obj->state = wait_move_then_action_8;
     }
 }

@@ -170,11 +170,12 @@ struct Work
     void (*savedState)(struct Owner *);
 };
 
+/* An OAM entry from the sprite pool, kept in a ring of entries */
 struct MarkerNode
 {
-    s16 x;
-    s16 y;
-    u16 tile;
+    s16 x;    /* OAM attr0: despite the name, the screen y (low 8 bits) */
+    s16 y;    /* OAM attr1: the screen x (low 9 bits) */
+    u16 tile; /* OAM attr2: palette, priority and tile */
     u16 unk6;
     u8 filler8[4];
     struct MarkerNode *prev;
@@ -191,8 +192,8 @@ struct MarkerPose
 
 struct MarkerLink
 {
-    u16 unk0;
-    s16 y2;
+    u16 unk0; /* the unit sprite's screen x */
+    s16 y2;   /* its screen y */
     u8 filler4[0x12 - 0x4];
     u8 flags12;
     u8 filler13[0x14 - 0x13];
@@ -787,6 +788,9 @@ void state_load_record_when_free(struct Owner *owner)
     }
 }
 
+/* Battle state: sets the old effect's mode (flags5 bits 0-1) to 1, clears bit 6 of the flags
+   byte at +0x122 of all 8 slot objects, goes on to state_wait_free_then_2199, marks flag
+   0x20000000 pending and loads the fixed label entries. */
 void state_clear_hero_flags(struct Owner *owner)
 {
     struct Effect *effect = gWorld->oldEffect;
@@ -799,9 +803,9 @@ void state_clear_hero_flags(struct Owner *owner)
     effect->flags5 = flags;
     for (i = 0; i < 8; i++)
     {
-        u8 *entry = (u8 *)gWorld->list58[i] + 0x122;
+        u8 *slotFlags = (u8 *)gWorld->list58[i] + 0x122;
 
-        *(s8 *)entry &= -0x41;
+        *(s8 *)slotFlags &= ~0x40;
     }
     owner->state = state_wait_free_then_2199;
     set_cur_flags_pending(0x20000000);
@@ -1188,80 +1192,75 @@ void marker_flag100_update(struct MarkerObj *obj);
 void marker_cursor_update(struct MarkerObj *obj);
 void marker_flag400_update(struct MarkerObj *obj);
 void marker_flag800_update(struct MarkerObj *obj);
-NONMATCH("asm/code_08107268/update_world_objects.s", void update_world_objects(void))
+/*
+ * Animates and draws the status markers over the battle's units, picked by each unit's flags11E:
+ * the six enemy slots of gWorld->list58 (mode bits == 4) first, then the two heroes (== 2).
+ * Markers are drawn only while flags122 bit 6 is set; the 0x100 marker's animation runs anyway.
+ */
+void update_world_objects(void)
 {
     struct MarkerObj **slot;
-    struct MarkerObj **next;
-    struct MarkerObj *obj;
+    struct MarkerObj *unit;
     s32 i;
 
     slot = (struct MarkerObj **)gWorld->list58;
     for (i = 6; i > 0; slot++, i--)
     {
-        obj = *slot;
-        if (obj == 0 || (obj->mode7E & 6) != 4)
+        unit = *slot;
+        if (unit == 0 || (unit->mode7E & 6) != 4)
         {
             continue;
         }
-        if ((obj->flags11E & 0x100) != 0)
+        if ((unit->flags11E & 0x100) != 0)
         {
-            if ((u32)obj != obj->self0 || (void *)obj->link != (void *)obj->poseCache)
+            /* the cached pose is only valid while the unit is linked to itself */
+            if ((u32)unit != unit->self0 || (void *)unit->link != (void *)unit->poseCache)
             {
-                obj->poseCache = find_lowest_order_pose((u8 *)obj + 8);
+                unit->poseCache = find_lowest_order_pose((u8 *)unit + 8);
             }
-            marker_flag100_update(obj);
-            if ((obj->flags122 & 0x40) == 0)
+            marker_flag100_update(unit);
+            if ((unit->flags122 & 0x40) == 0)
             {
                 continue;
             }
         }
         else
         {
-            if ((obj->flags122 & 0x40) == 0)
+            if ((unit->flags122 & 0x40) == 0)
             {
                 continue;
             }
-            if ((obj->flags11E & 1) != 0)
+            if ((unit->flags11E & 1) != 0)
             {
-                marker_flag1_update(obj);
+                marker_flag1_update(unit);
             }
-            else if ((obj->flags11E & 2) != 0)
+            else if ((unit->flags11E & 2) != 0)
             {
-                marker_flag2_update(obj);
+                marker_flag2_update(unit);
             }
         }
-        if ((obj->flags11E & 0xFC) != 0)
+        if ((unit->flags11E & 0xFC) != 0)
         {
-            marker_cursor_update(obj);
+            marker_cursor_update(unit);
         }
     }
-    next = slot;
-    obj = *slot;
-    if (obj != 0 && (obj->mode7E & 6) == 2 && (obj->flags122 & 0x40) != 0)
+    /* slot now points at the heroes, list58[6] and [7] */
+    for (i = 0; i < 2; i++, slot++)
     {
-        if ((obj->flags11E & 0x400) != 0)
+        unit = *slot;
+        if (unit != 0 && (unit->mode7E & 6) == 2 && (unit->flags122 & 0x40) != 0)
         {
-            marker_flag400_update(obj);
-        }
-        else if ((obj->flags11E & 0x800) != 0)
-        {
-            marker_flag800_update(obj);
-        }
-    }
-    obj = next[1];
-    if (obj != 0 && (obj->mode7E & 6) == 2 && (obj->flags122 & 0x40) != 0)
-    {
-        if ((obj->flags11E & 0x400) != 0)
-        {
-            marker_flag400_update(obj);
-        }
-        else if ((obj->flags11E & 0x800) != 0)
-        {
-            marker_flag800_update(obj);
+            if ((unit->flags11E & 0x400) != 0)
+            {
+                marker_flag400_update(unit);
+            }
+            else if ((unit->flags11E & 0x800) != 0)
+            {
+                marker_flag800_update(unit);
+            }
         }
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_08107268/marker_flag100_update.s", void marker_flag100_update(struct MarkerObj *obj))
 {
@@ -1335,9 +1334,15 @@ END_NONMATCH
 
 void *find_lowest_order_pose(u8 *pic);
 extern void *gModelCtx;
-NONMATCH("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(struct MarkerObj *obj))
+/*
+ * Animates and draws the status marker of a unit with flags11E bit 0: one OAM sprite (tile 0xB899)
+ * above the unit that swings up and down over 8 frames of 12 ticks each, linked into the unit's
+ * pose ring so it is drawn with it. Nothing is drawn while the unit's sprite is hidden
+ * (flags12 bit 5).
+ */
+void marker_flag1_update(struct MarkerObj *obj)
 {
-    struct MarkerLink *link;
+    register struct MarkerLink *link asm("r6");
     s32 left = obj->timer - 1;
 
     obj->timer = left;
@@ -1351,54 +1356,65 @@ NONMATCH("asm/code_08107268/marker_flag1_update.s", void marker_flag1_update(str
         }
     }
     link = obj->link;
-    if (link->poseList != 0 && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
+    if (link->poseList != NULL && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
     {
         struct MarkerPool *pool = gModelCtx;
-        struct MarkerNode *node = pool->free;
+        struct MarkerNode *oam = pool->free;
         struct MarkerNode *ring;
         struct MarkerNode *ringPrev;
-        s32 base;
-        s32 adj;
-        s32 x;
+        register struct MarkerPose **cache asm("r5");
+        s32 top;
+        s32 rest;
+        s32 screenY;
 
-        pool->free = node->next;
+        pool->free = oam->next;
         pool->used++;
-        node->unk6 = 0;
-        base = link->y2 + obj->data->unk5 - obj->data->unk6;
-        adj = base - 8;
+        oam->unk6 = 0;
+        top = link->y2 + obj->data->unk5 - obj->data->unk6;
+        rest = top - 8;
+        /* up by one pixel a frame for frames 0-4, back down for 5-7 */
         if ((s8)obj->frame <= 4)
         {
-            x = adj - (s8)obj->frame;
+            screenY = rest - (s8)obj->frame;
         }
         else
         {
-            x = (s8)obj->frame + (base - 0x10);
+            register s32 low asm("r0") = top - 0x10;
+
+            screenY = low + (s8)obj->frame;
         }
-        node->x = x & 0xFF;
-        node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
-        node->tile = 0xB899;
-        if (obj->poseCache == 0)
+        oam->x = screenY & 0xFF;
+        oam->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
+        oam->tile = 0xB899;
+        cache = &obj->poseCache;
+        if (*cache == NULL)
         {
-            obj->poseCache = find_lowest_order_pose((u8 *)obj + 8);
+            *cache = find_lowest_order_pose((u8 *)obj + 8);
         }
-        node->prev->next = node->next;
-        node->next->prev = node->prev;
-        ring = obj->poseCache->ring;
-        node->next = ring;
+        /* move the entry from the free list into the pose's ring */
+        oam->prev->next = oam->next;
+        oam->next->prev = oam->prev;
+        ring = (*cache)->ring;
+        oam->next = ring;
         ringPrev = ring->prev;
-        node->prev = ringPrev;
-        ring->prev = node;
-        ringPrev->next = node;
+        oam->prev = ringPrev;
+        ring->prev = oam;
+        ringPrev->next = oam;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(struct MarkerObj *obj))
+/*
+ * Animates and draws the status marker of a unit with flags11E bit 1: one OAM sprite (tile 0xB89A)
+ * above the unit that swings up and down over 8 frames (frames 2 and 6 last 6 ticks, the others 12),
+ * linked into the unit's pose ring so it is drawn with it. Nothing is drawn while the unit's sprite
+ * is hidden (flags12 bit 5).
+ */
+void marker_flag2_update(struct MarkerObj *obj)
 {
-    struct MarkerLink *link;
+    register struct MarkerLink *link asm("r6");
     u16 *timer = &obj->timer;
     s32 left = *timer - 1;
-    s32 reset;
+    s32 frameTicks;
 
     *timer = left;
     if ((left << 16) == 0)
@@ -1406,60 +1422,65 @@ NONMATCH("asm/code_08107268/marker_flag2_update.s", void marker_flag2_update(str
         obj->frame++;
         if ((s8)obj->frame == 2 || (s8)obj->frame == 6)
         {
-            reset = 6;
+            frameTicks = 6;
         }
         else
         {
-            reset = 0xC;
+            frameTicks = 0xC;
         }
-        *timer = reset;
+        *timer = frameTicks;
         if ((s8)obj->frame > 7)
         {
             obj->frame = 0;
         }
     }
     link = obj->link;
-    if (link->poseList != 0 && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
+    if (link->poseList != NULL && link->poseList->unk6 == 0 && (link->flags12 & 0x20) == 0)
     {
         struct MarkerPool *pool = gModelCtx;
-        struct MarkerNode *node = pool->free;
+        struct MarkerNode *oam = pool->free;
         struct MarkerNode *ring;
         struct MarkerNode *ringPrev;
-        s32 base;
-        s32 adj;
-        s32 x;
+        register struct MarkerPose **cache asm("r5");
+        s32 top;
+        s32 rest;
+        s32 screenY;
 
-        pool->free = node->next;
+        pool->free = oam->next;
         pool->used++;
-        node->unk6 = 0;
-        base = link->y2 + obj->data->unk5 - obj->data->unk6;
-        adj = base - 8;
+        oam->unk6 = 0;
+        top = link->y2 + obj->data->unk5 - obj->data->unk6;
+        rest = top - 8;
+        /* up by one pixel a frame for frames 0-4, back down for 5-7 */
         if ((s8)obj->frame <= 4)
         {
-            x = adj - (s8)obj->frame;
+            screenY = rest - (s8)obj->frame;
         }
         else
         {
-            x = (s8)obj->frame + (base - 0x10);
+            register s32 low asm("r0") = top - 0x10;
+
+            screenY = low + (s8)obj->frame;
         }
-        node->x = x & 0xFF;
-        node->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
-        node->tile = 0xB89A;
-        if (obj->poseCache == 0)
+        oam->x = screenY & 0xFF;
+        oam->y = ((s8)obj->data->unk4 + link->unk0 - 3) & 0x1FF;
+        oam->tile = 0xB89A;
+        cache = &obj->poseCache;
+        if (*cache == NULL)
         {
-            obj->poseCache = find_lowest_order_pose((u8 *)obj + 8);
+            *cache = find_lowest_order_pose((u8 *)obj + 8);
         }
-        node->prev->next = node->next;
-        node->next->prev = node->prev;
-        ring = obj->poseCache->ring;
-        node->next = ring;
+        /* move the entry from the free list into the pose's ring */
+        oam->prev->next = oam->next;
+        oam->next->prev = oam->prev;
+        ring = (*cache)->ring;
+        oam->next = ring;
         ringPrev = ring->prev;
-        node->prev = ringPrev;
-        ring->prev = node;
-        ringPrev->next = node;
+        oam->prev = ringPrev;
+        ring->prev = oam;
+        ringPrev->next = oam;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08107268/marker_cursor_update.s", void marker_cursor_update(struct MarkerObj *obj))
 

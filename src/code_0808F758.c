@@ -113,12 +113,12 @@ struct HoldActor
     s32 baseX;
     s32 baseY;
     s32 baseH;
-    u8 unk44;
-    u8 unk45;
-    u8 unk46;
-    u8 unk47;
-    u8 unk48;
-    u8 unk49;
+    s8 boxMinX; /* collision box, pixels from the base point */
+    s8 boxMaxX;
+    s8 boxMinY;
+    s8 boxMaxY;
+    s8 boxMinH;
+    s8 boxMaxH;
     u8 filler4A[0x4C - 0x4A];
     void (*state)(struct HoldActor *obj);
     u8 filler50[0x68 - 0x50];
@@ -284,6 +284,11 @@ void jump_orbit_finish_if_pose_visible_d(struct HoldActor *obj)
     }
 }
 
+/* Starts the orbit move: spawns the orbiting child at obj's base point (in whole pixels) in action
+ * mode 3 with a collision box of x -10..8, y -10..10, h -3..3, aimed at obj's base X and its own base
+ * height, with animation gAnim284 and on_arrive as its callback. Then resets the step, plays song
+ * 0x7C at the current volume (song_play_with_volume, still named set_slot_value) and runs the first
+ * wind-up frame (orbit_step_e). */
 void jump_orbit_spawn_orbit_child_c(struct HoldActor *obj)
 {
     struct HoldActor *child;
@@ -291,12 +296,12 @@ void jump_orbit_spawn_orbit_child_c(struct HoldActor *obj)
     child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
     obj->child = child;
     ((struct ActionBits *)&child->action)->mode = 3;
-    child->unk44 = 0xF6;
-    child->unk45 = 8;
-    child->unk46 = 0xF6;
-    child->unk47 = 0xA;
-    child->unk48 = 0xFD;
-    child->unk49 = 3;
+    child->boxMinX = -10;
+    child->boxMaxX = 8;
+    child->boxMinY = -10;
+    child->boxMaxY = 10;
+    child->boxMinH = -3;
+    child->boxMaxH = 3;
     ((struct FlagsPhase *)&child->flags)->phase = 2;
     child->targetX = obj->baseX;
     child->targetH = child->baseH;
@@ -309,55 +314,53 @@ void jump_orbit_spawn_orbit_child_c(struct HoldActor *obj)
     orbit_step_e(obj);
 }
 
-NONMATCH("asm/code_0808F758/orbit_step_e.s", void orbit_step_e(struct HoldActor *obj))
+/* Wind-up of the orbit move, one frame per call: ends the action if action bits 3-5 are set.
+ * Otherwise shows wind-up frame `step` (0-3) of sprite 0x2025 while obj's buttons stay held (let
+ * go: orbit_wait_c); at step 4 it plays action 1, restarts the step count and waits in hold_wait_a.
+ * Holds the pose (pose flags bit 4) and advances the step. */
+void orbit_step_e(struct HoldActor *obj)
 {
-    s32 busy;
-    u8 act;
-    s16 *st;
+    s16 *stepPtr;
+    s32 interrupted;
+    s32 step;
 
     obj->state = orbit_step_e;
-    act = obj->action;
-    busy = 0x38;
-    busy &= act;
-    if (busy != 0)
+    interrupted = obj->action & 0x38;
+    if (interrupted != 0)
     {
         end_action(obj);
+        return;
+    }
+    step = (s16)obj->step;
+    stepPtr = (s16 *)&obj->step;
+    if (step == 0)
+        sprite_set_action(obj, 0, 0x2025, 0);
+    if ((s16)*stepPtr == 1)
+        sprite_set_action(obj, 0, 0x2025, 1);
+    if ((s16)*stepPtr == 2)
+        sprite_set_action(obj, 0, 0x2025, 2);
+    if ((s16)*stepPtr == 3)
+    {
+        /* unused |step|, left over in the original */
+        s32 magnitude = (s16)*stepPtr;
+        if (magnitude < 0)
+            magnitude = -magnitude;
+        sprite_set_action(obj, 0, 0x2025, 3);
+    }
+    if ((s16)*stepPtr != 4)
+    {
+        if ((gSys.held & obj->buttons) == 0)
+        {
+            obj->state = orbit_wait_c;
+            return;
+        }
     }
     else
     {
-        st = (s16 *)&obj->step;
-        if (*st == 0)
-        {
-            sprite_set_action(obj, 0, 0x2025, 0);
-        }
-        if (*st == 1)
-        {
-            sprite_set_action(obj, 0, 0x2025, 1);
-        }
-        if (*st == 2)
-        {
-            sprite_set_action(obj, 0, 0x2025, 2);
-        }
-        if (*st == 3)
-        {
-            sprite_set_action(obj, 0, 0x2025, 3);
-        }
-        if ((u16)*st != 4)
-        {
-            if ((gSys.held & obj->buttons) == 0)
-            {
-                obj->state = orbit_wait_c;
-                return;
-            }
-        }
-        else
-        {
-            sprite_set_action(obj, 1, 0, 0);
-            obj->step = busy;
-            obj->state = hold_wait_a;
-        }
-        ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
-        obj->step++;
+        sprite_set_action(obj, 1, 0, 0);
+        *stepPtr = interrupted; /* 0; the increment below makes it 1 */
+        obj->state = hold_wait_a;
     }
+    ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
+    (*stepPtr)++;
 }
-END_NONMATCH

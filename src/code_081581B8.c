@@ -324,10 +324,16 @@ struct Half36Bit
     u16 rest : 15;
 };
 
-extern vu16 gUnk_02000050;
-extern vu16 gUnk_02000054;
-extern vu16 gUnk_02000004;
+extern vu16 gUnk_02000050; // shadow of REG_BLDCNT
+extern vu16 gUnk_02000054; // shadow of REG_BLDY
+extern vu16 gUnk_02000004; // shadow of REG_DISPSTAT
 extern vu16 gUnk_02000080;
+
+#define BLDCNT_DARKEN_ALL   0xDF // darken BG0-3 and sprites
+#define BLDY_BLACK          0x1F // as dark as it goes
+#define DISPSTAT_HBLANK_IRQ 0x10
+#define IRQ_HBLANK          0x02 // REG_IE, REG_IF
+#define IRQ_SLOT_HBLANK     4    // set_irq_callback
 
 struct LineScroll
 {
@@ -390,18 +396,22 @@ static inline struct TransChar *trans_find_kind(struct TransGame *game, u8 kind)
     return 0;
 }
 
-struct TransRecD *transition_states_obj_init_scan_pool(struct TransRecD *rec, struct TransGame *game)
+/* Constructor of transition D (see transition_states_transition_step_d): starts it at state 0
+ * with its class table, clears the fade and timer, takes the first pool objects of kind 0xC and
+ * 0xD as its two effects (effA, effD), sets up the scene effect's sprite pair and copies
+ * unk1CB0->unk1C into the scene's unk1F2C. Returns the record. */
+struct TransRecD *transition_states_obj_init_scan_pool(struct TransRecD *trans, struct TransGame *scene)
 {
-    rec->state = 0;
-    rec->table = (const struct ClassVt *)gTransitionClassDee0;
-    rec->fade = 0;
-    rec->timer = 0;
-    rec->unk18 = 0;
-    rec->effA = trans_find_kind(game, 0xC);
-    rec->effD = trans_find_kind(game, 0xD);
-    effect_init_sprite_pair(game->effect);
-    game->unk1F2C = game->unk1CB0->unk1C;
-    return rec;
+    trans->state = 0;
+    trans->table = (const struct ClassVt *)gTransitionClassDee0;
+    trans->fade = 0;
+    trans->timer = 0;
+    trans->unk18 = 0;
+    trans->effA = trans_find_kind(scene, 0xC);
+    trans->effD = trans_find_kind(scene, 0xD);
+    effect_init_sprite_pair(scene->effect);
+    scene->unk1F2C = scene->unk1CB0->unk1C;
+    return trans;
 }
 
 static inline u32 trans_char_falling(struct TransChar *o)
@@ -419,95 +429,98 @@ static inline void trans_sync_cam(struct TransChar *o, struct TransGame *game)
     k->fn1C((u8 *)o + k->thisOffset18, &game->camX);
 }
 
-/* Transition steps 0-3 fall through: reset the characters, wait, wait until both are down, run the
- * effect; 4 switches the display to the iris window, 5 fades out and ends the scene. */
-u32 transition_state_step(struct TransRec *rec, struct TransGame *game)
+/* One frame of a scene transition: 0-3 fall through (reset both characters, wait 45 frames,
+ * wait until both have landed, run the effect, then start the closing animations), 4 waits 65
+ * frames and turns on the HBlank iris window, 5 closes the iris, blacks the screen out and ends
+ * the scene, starting the next one unless it was the last. Returns 0 once the last has ended. */
+u32 transition_state_step(struct TransRec *trans, struct TransGame *scene)
 {
-    vu16 *p;
+    vu16 *reg;
 
-    switch (rec->state)
+    switch (trans->state)
     {
     case 0:
-        game->flags &= 0xFFF6;
-        trans_reset_char(game->charA);
-        trans_reset_char(game->charB);
-        rec->timer = 0x2D;
-        rec->state++;
+        scene->flags &= 0xFFF6;
+        trans_reset_char(scene->charA);
+        trans_reset_char(scene->charB);
+        trans->timer = 45;
+        trans->state++;
         /* fall through */
     case 1:
-        if (--rec->timer > 0)
+        if (--trans->timer > 0)
             goto move;
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 2:
-        if (trans_char_falling(game->charA))
+        if (trans_char_falling(scene->charA))
             goto move;
-        if (trans_char_falling(game->charB))
+        if (trans_char_falling(scene->charB))
             goto move;
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 3:
-        if (effect_step_b(game->effect) == 0)
+        if (effect_step_b(scene->effect) == 0)
             goto move;
-        game->charA->klass->fn14((u8 *)game->charA + game->charA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
-        game->charB->klass->fn14((u8 *)game->charB + game->charB->klass->thisOffset10, game->viewB, game->speed, &game->camX, 0xC);
-        rec->objA->klass->fn14((u8 *)rec->objA + rec->objA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
-        rec->objB->klass->fn14((u8 *)rec->objB + rec->objB->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0xC);
-        rec->timer = 0x41;
-        rec->state++;
+        scene->charA->klass->fn14((u8 *)scene->charA + scene->charA->klass->thisOffset10, scene->viewA, scene->speed, &scene->camX, 0xC);
+        scene->charB->klass->fn14((u8 *)scene->charB + scene->charB->klass->thisOffset10, scene->viewB, scene->speed, &scene->camX, 0xC);
+        trans->objA->klass->fn14((u8 *)trans->objA + trans->objA->klass->thisOffset10, scene->viewA, scene->speed, &scene->camX, 0xC);
+        trans->objB->klass->fn14((u8 *)trans->objB + trans->objB->klass->thisOffset10, scene->viewA, scene->speed, &scene->camX, 0xC);
+        trans->timer = 65;
+        trans->state++;
         goto move;
     case 4:
-        rec->objA->klass->fn14((u8 *)rec->objA + rec->objA->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0);
-        rec->objB->klass->fn14((u8 *)rec->objB + rec->objB->klass->thisOffset10, game->viewA, game->speed, &game->camX, 0);
-        if (--rec->timer > 0)
+        trans->objA->klass->fn14((u8 *)trans->objA + trans->objA->klass->thisOffset10, scene->viewA, scene->speed, &scene->camX, 0);
+        trans->objB->klass->fn14((u8 *)trans->objB + trans->objB->klass->thisOffset10, scene->viewA, scene->speed, &scene->camX, 0);
+        if (--trans->timer > 0)
             goto move;
-        p = &gUnk_02000050;
-        *p = 0xDF;
-        p += 2;
-        *p = 0x1F;
-        rec->fade = 0;
+        reg = &gUnk_02000050;
+        *reg = BLDCNT_DARKEN_ALL;
+        reg += 2;
+        *reg = BLDY_BLACK;
+        trans->fade = 0;
         ((struct LineScroll *)gUnk_03001014)->x = 0;
+        /* swap in the iris window's HBlank handler with interrupts off */
         REG_IME = 0;
-        gUnk_02000004 &= 0xFFEF;
-        REG_IE &= 0xFFFD;
-        REG_IF |= 2;
+        gUnk_02000004 &= ~DISPSTAT_HBLANK_IRQ;
+        REG_IE &= ~IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        set_irq_callback(4, (void *)hblank_iris_window);
+        set_irq_callback(IRQ_SLOT_HBLANK, (void *)hblank_iris_window);
         REG_IME = 0;
-        gUnk_02000004 |= 0x10;
-        REG_IE |= 2;
-        REG_IF |= 2;
+        gUnk_02000004 |= DISPSTAT_HBLANK_IRQ;
+        REG_IE |= IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        rec->state++;
+        trans->state++;
         goto move;
     case 5:
-        ((struct LineScroll *)gUnk_03001014)->x = rec->fade >> 8;
-        rec->fade += 0x200;
-        if (rec->fade <= 0x5000)
+        ((struct LineScroll *)gUnk_03001014)->x = trans->fade >> 8;
+        trans->fade += 0x200;
+        if (trans->fade <= 0x5000)
             goto move;
-        gUnk_02000050 = 0xDF;
+        gUnk_02000050 = BLDCNT_DARKEN_ALL;
         REG_BLDCNT = gUnk_02000050;
-        gUnk_02000054 = 0x1F;
-        p = &REG_BLDY;
-        *p = gUnk_02000054;
+        gUnk_02000054 = BLDY_BLACK;
+        reg = &REG_BLDY;
+        *reg = gUnk_02000054;
         gUnk_02000080 = 0;
-        scene_release_objects(game);
+        scene_release_objects(scene);
         slot_reset(0);
-        game->state++;
-        if (game->state > 5)
+        scene->state++;
+        if (scene->state > 5)
         {
-            game->state = 6;
+            scene->state = 6;
             gUnk_02000054 = 0;
-            trans_table_call(rec);
+            trans_table_call(trans);
             return 0;
         }
-        trans_table_call(rec);
+        trans_table_call(trans);
         {
             void *obj = heap_alloc2(8, 1, gHeapTagTransitionObjDf60, 0);
 
             obj_reset_e400((struct TransObj *)obj);
             ((void **)obj)[1] = (void *)gTransitionClassDf60;
-            game->newObj = obj;
+            scene->newObj = obj;
         }
         return 1;
     default:
@@ -516,19 +529,19 @@ u32 transition_state_step(struct TransRec *rec, struct TransGame *game)
 
 move:
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charA, speed);
+        obj_move_by_speed(scene->charA, speed);
     }
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charB, speed);
+        obj_move_by_speed(scene->charB, speed);
     }
-    trans_track_view(game->charA, game->viewA);
-    trans_track_view(game->charB, game->viewB);
-    trans_sync_cam(game->charA, game);
-    trans_sync_cam(game->charB, game);
+    trans_track_view(scene->charA, scene->viewA);
+    trans_track_view(scene->charB, scene->viewB);
+    trans_sync_cam(scene->charA, scene);
+    trans_sync_cam(scene->charB, scene);
     return 1;
 }
 
@@ -557,135 +570,140 @@ struct GameModeBytes
     u8 flags1;
 };
 
-/* Like transition_state_step, but the camera target slides in first (state 2) and the end
- * waits a while before the blend shadows are restored. */
-u32 transition_step_c(struct TransRecC *rec, struct TransGame *game)
+/* One frame of a scene transition, like transition_state_step but with a camera object that
+ * slides in from the left (state 2) before the effect runs: 0-1 reset both characters and wait
+ * 45 frames, 2 slides the camera object across the screen and then sets both characters' closing
+ * sprites, 3 runs the effect and turns on the HBlank iris window, 4 closes the iris, 5 waits 60
+ * frames, restores (or clears) the blend shadows and ends. Returns 0 once it has ended. */
+u32 transition_step_c(struct TransRecC *trans, struct TransGame *scene)
 {
-    vu16 *p;
-    vu16 *s;
+    vu16 *reg;
+    vu16 *shadow;
     u32 mode;
     u32 done;
-    u8 flag;
+    u8 keepBlend;
 
-    switch (rec->state)
+    switch (trans->state)
     {
     case 0:
-        s = &game->flags;
-        game->flags = *s & 0xFFF6;
-        trans_reset_char(game->charA);
-        trans_reset_char(game->charB);
-        rec->timer = 0x2D;
-        rec->state++;
+        shadow = &scene->flags;
+        scene->flags = *shadow & 0xFFF6;
+        trans_reset_char(scene->charA);
+        trans_reset_char(scene->charB);
+        trans->timer = 45;
+        trans->state++;
         /* fall through */
     case 1:
-        if (--rec->timer > 0)
+        if (--trans->timer > 0)
             goto move;
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 2:
         {
-            s32 anchor = game->camObj->unk30 + 4;
+            s32 camX = scene->camObj->unk30 + 4;
 
-            obj_set_behavior_table(game->camObj, anchor);
-            trans_place_cam_obj(game);
-            if (anchor <= 0xF0)
+            obj_set_behavior_table(scene->camObj, camX);
+            trans_place_cam_obj(scene);
+            if (camX <= 240)
                 goto move;
         }
-        if (game->charA->unk25 == 0)
-            obj_set_sprite_kind((struct TransObj *)game->charA, 0xB);
+        if (scene->charA->unk25 == 0)
+            obj_set_sprite_kind((struct TransObj *)scene->charA, 0xB);
         else
-            obj_set_sprite_kind((struct TransObj *)game->charA, 0xC);
-        if (game->charB->unk25 == 0)
-            obj_set_sprite_kind((struct TransObj *)game->charB, 0xB);
+            obj_set_sprite_kind((struct TransObj *)scene->charA, 0xC);
+        if (scene->charB->unk25 == 0)
+            obj_set_sprite_kind((struct TransObj *)scene->charB, 0xB);
         else
-            obj_set_sprite_kind((struct TransObj *)game->charB, 0xC);
+            obj_set_sprite_kind((struct TransObj *)scene->charB, 0xC);
         mode = gGameMode & 0x1F;
         if (mode == 1 || mode == 6)
-            rec->aux = effect_create_sprites(heap_alloc2(0x10, 1, gHeapTagTransitionAux, 0));
+            trans->aux = effect_create_sprites(heap_alloc2(0x10, 1, gHeapTagTransitionAux, 0));
         else
-            effect_init_sprite_pair(game->effect);
-        rec->state++;
+            effect_init_sprite_pair(scene->effect);
+        trans->state++;
         goto move;
     case 3:
         mode = gGameMode & 0x1F;
         if (mode == 1 || mode == 6)
-            done = effect_step_c(rec->aux);
+            done = effect_step_c(trans->aux);
         else
-            done = effect_step_b(game->effect);
+            done = effect_step_b(scene->effect);
         if (done == 0)
             goto move;
-        p = &gUnk_02000050;
-        *p = 0xDF;
-        p += 2;
-        *p = 0x1F;
-        rec->fade = 0;
+        reg = &gUnk_02000050;
+        *reg = BLDCNT_DARKEN_ALL;
+        reg += 2;
+        *reg = BLDY_BLACK;
+        trans->fade = 0;
         ((struct LineScroll *)gUnk_03001014)->x = 0;
+        /* swap in the iris window's HBlank handler with interrupts off */
         REG_IME = 0;
-        gUnk_02000004 &= 0xFFEF;
-        REG_IE &= 0xFFFD;
-        REG_IF |= 2;
+        gUnk_02000004 &= ~DISPSTAT_HBLANK_IRQ;
+        REG_IE &= ~IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        set_irq_callback(4, (void *)hblank_iris_window);
+        set_irq_callback(IRQ_SLOT_HBLANK, (void *)hblank_iris_window);
         REG_IME = 0;
-        gUnk_02000004 |= 0x10;
-        REG_IE |= 2;
-        REG_IF |= 2;
+        gUnk_02000004 |= DISPSTAT_HBLANK_IRQ;
+        REG_IE |= IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        rec->state++;
+        trans->state++;
         goto move;
     case 4:
-        ((struct LineScroll *)gUnk_03001014)->x = rec->fade >> 8;
-        rec->fade += 0x400;
-        if (rec->fade <= 0x5000)
+        ((struct LineScroll *)gUnk_03001014)->x = trans->fade >> 8;
+        trans->fade += 0x400;
+        if (trans->fade <= 0x5000)
             goto move;
-        rec->timer = 0x3C;
-        rec->state++;
+        trans->timer = 60;
+        trans->state++;
         /* fall through */
     case 5:
-        if (--rec->timer > 0)
+        if (--trans->timer > 0)
             goto move;
-        flag = ((struct GameModeBytes *)&gGameMode)->flags1 & 0x80;
-        if (flag)
+        keepBlend = ((struct GameModeBytes *)&gGameMode)->flags1 & 0x80;
+        if (keepBlend)
         {
-            vu16 *z = &gUnk_02000050;
+            vu16 *blend = &gUnk_02000050;
 
-            *z = 0;
-            z += 2;
-            *z = 0;
+            *blend = 0;
+            blend += 2;
+            *blend = 0;
         }
         else
         {
-            s = &gUnk_02000050;
-            *s = 0xDF;
-            p = &REG_BLDCNT;
-            *p = *s;
-            s += 2;
-            *s = 0x1F;
-            p += 2;
-            *p = *s;
-            gUnk_02000080 = flag;
+            /* black screen: set the shadows and copy them to BLDCNT/BLDY */
+            shadow = &gUnk_02000050;
+            *shadow = BLDCNT_DARKEN_ALL;
+            reg = &REG_BLDCNT;
+            *reg = *shadow;
+            shadow += 2;
+            *shadow = BLDY_BLACK;
+            reg += 2;
+            *reg = *shadow;
+            gUnk_02000080 = keepBlend;
         }
-        if (rec->aux != 0)
-            obj_release_child_free_b(rec->aux, 3);
-        trans_c_table_call(rec);
+        if (trans->aux != 0)
+            obj_release_child_free_b(trans->aux, 3);
+        trans_c_table_call(trans);
         return 0;
     }
 
 move:
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charA, speed);
+        obj_move_by_speed(scene->charA, speed);
     }
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charB, speed);
+        obj_move_by_speed(scene->charB, speed);
     }
-    trans_track_view(game->charA, game->viewA);
-    trans_track_view(game->charB, game->viewB);
-    trans_sync_cam(game->charA, game);
-    trans_sync_cam(game->charB, game);
+    trans_track_view(scene->charA, scene->viewA);
+    trans_track_view(scene->charB, scene->viewB);
+    trans_sync_cam(scene->charA, scene);
+    trans_sync_cam(scene->charB, scene);
     return 1;
 }
 
@@ -696,32 +714,35 @@ static inline void trans_d_table_call(struct TransRecD *rec)
     t->fn0C((u8 *)rec + t->thisOffset, 3);
 }
 
-/* Variant with the two pool effects of the record; the last state switches the HBlank
- * callback off again. */
-u32 transition_states_transition_step_d(struct TransRecD *rec, struct TransGame *game)
+/* One frame of a scene transition, like transition_state_step but with the record's own two
+ * effects: 0-1 reset both characters and wait until both have landed, 2 waits 45 frames and sets
+ * both characters' closing sprites, 3 runs the effect (effD in game modes up to 5, else effA) and
+ * turns on the HBlank iris window, 4 closes the iris, 5 waits 60 frames, 6 turns the HBlank
+ * handler off again, restores (or clears) the blend shadows and ends. Returns 0 once it has ended. */
+u32 transition_states_transition_step_d(struct TransRecD *trans, struct TransGame *scene)
 {
-    vu16 *s;
+    vu16 *reg;
     u32 done;
-    u8 flag;
+    u8 keepBlend;
 
-    switch (rec->state)
+    switch (trans->state)
     {
     case 0:
-        game->flags &= 0xFFF6;
-        trans_reset_char(game->charA);
-        trans_reset_char(game->charB);
-        rec->state++;
+        scene->flags &= 0xFFF6;
+        trans_reset_char(scene->charA);
+        trans_reset_char(scene->charB);
+        trans->state++;
         /* fall through */
     case 1:
-        if (trans_char_falling(game->charA))
+        if (trans_char_falling(scene->charA))
             goto move;
-        if (trans_char_falling(game->charB))
+        if (trans_char_falling(scene->charB))
             goto move;
-        rec->timer = 0x2D;
-        rec->state++;
+        trans->timer = 45;
+        trans->state++;
         /* fall through */
     case 2:
-        if (--rec->timer > 0)
+        if (--trans->timer > 0)
             goto move;
         if (((struct TransGame *)gGamePtr)->charA->unk25 == 0)
             obj_set_sprite_kind((struct TransObj *)((struct TransGame *)gGamePtr)->charA, 0xD);
@@ -731,89 +752,92 @@ u32 transition_states_transition_step_d(struct TransRecD *rec, struct TransGame 
             obj_set_sprite_kind((struct TransObj *)((struct TransGame *)gGamePtr)->charB, 0xD);
         else
             obj_set_sprite_kind((struct TransObj *)((struct TransGame *)gGamePtr)->charB, 0xE);
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 3:
         if (((struct GameModeSigned *)&gGameMode)->mode <= 5)
-            done = effect_step_d(rec->effD);
+            done = effect_step_d(trans->effD);
         else
-            done = effect_step_a(rec->effA);
+            done = effect_step_a(trans->effA);
         if (done == 0)
             goto move;
-        rec->fade = 0;
+        trans->fade = 0;
         ((struct LineScroll *)gUnk_03001014)->x = 0;
+        /* swap in the iris window's HBlank handler with interrupts off */
         REG_IME = 0;
-        gUnk_02000004 &= 0xFFEF;
-        REG_IE &= 0xFFFD;
-        REG_IF |= 2;
+        gUnk_02000004 &= ~DISPSTAT_HBLANK_IRQ;
+        REG_IE &= ~IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        set_irq_callback(4, (void *)hblank_iris_window);
+        set_irq_callback(IRQ_SLOT_HBLANK, (void *)hblank_iris_window);
         REG_IME = 0;
-        gUnk_02000004 |= 0x10;
-        REG_IE |= 2;
-        REG_IF |= 2;
+        gUnk_02000004 |= DISPSTAT_HBLANK_IRQ;
+        REG_IE |= IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 4:
-        ((struct LineScroll *)gUnk_03001014)->x = rec->fade >> 8;
-        rec->fade += 0x400;
-        if (rec->fade <= 0x5000)
+        ((struct LineScroll *)gUnk_03001014)->x = trans->fade >> 8;
+        trans->fade += 0x400;
+        if (trans->fade <= 0x5000)
             goto move;
-        rec->timer = 0x3C;
-        rec->state++;
+        trans->timer = 60;
+        trans->state++;
         /* fall through */
     case 5:
-        if (--rec->timer > 0)
+        if (--trans->timer > 0)
             goto move;
-        rec->state++;
+        trans->state++;
         /* fall through */
     case 6:
-        set_irq_callback(4, 0);
+        /* remove the HBlank handler again */
+        set_irq_callback(IRQ_SLOT_HBLANK, 0);
         REG_IME = 0;
-        s = &gUnk_02000004;
-        *s &= 0xFFEF;
-        REG_IE &= 0xFFFD;
-        REG_IF |= 2;
+        reg = &gUnk_02000004;
+        *reg &= ~DISPSTAT_HBLANK_IRQ;
+        REG_IE &= ~IRQ_HBLANK;
+        REG_IF |= IRQ_HBLANK;
         REG_IME = 1;
-        flag = ((struct GameModeBytes *)&gGameMode)->flags1 & 0x80;
-        if (flag)
+        keepBlend = ((struct GameModeBytes *)&gGameMode)->flags1 & 0x80;
+        if (keepBlend)
         {
-            vu16 *z = &gUnk_02000050;
+            vu16 *blend = &gUnk_02000050;
 
-            *z = 0;
-            z += 2;
-            *z = 0;
+            *blend = 0;
+            blend += 2;
+            *blend = 0;
         }
         else
         {
-            s = &gUnk_02000050;
-            *s = 0xDF;
-            REG_BLDCNT = *s;
-            s += 2;
-            *s = 0x1F;
-            REG_BLDY = *s;
-            gUnk_02000080 = flag;
+            /* black screen: set the shadows and copy them to BLDCNT/BLDY */
+            reg = &gUnk_02000050;
+            *reg = BLDCNT_DARKEN_ALL;
+            REG_BLDCNT = *reg;
+            reg += 2;
+            *reg = BLDY_BLACK;
+            REG_BLDY = *reg;
+            gUnk_02000080 = keepBlend;
         }
-        trans_d_table_call(rec);
+        trans_d_table_call(trans);
         return 0;
     }
 
 move:
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charA, speed);
+        obj_move_by_speed(scene->charA, speed);
     }
     {
-        s32 speed = game->speed;
+        s32 speed = scene->speed;
 
-        obj_move_by_speed(game->charB, speed);
+        obj_move_by_speed(scene->charB, speed);
     }
-    trans_track_view(game->charA, game->viewA);
-    trans_track_view(game->charB, game->viewB);
-    trans_sync_cam(game->charA, game);
-    trans_sync_cam(game->charB, game);
+    trans_track_view(scene->charA, scene->viewA);
+    trans_track_view(scene->charB, scene->viewB);
+    trans_sync_cam(scene->charA, scene);
+    trans_sync_cam(scene->charB, scene);
     return 1;
 }
 

@@ -23,6 +23,15 @@ struct MapObj
     void *unkB8;
 };
 
+/* Task holding a number as decimal digits (set_obj_digits), most significant digit first. */
+struct DigitsObj
+{
+    u8 filler0[0x18];
+    u8 *vtable;        /* gObjDigitsClass */
+    u8 digits[6];      /* a 6-digit number */
+    u8 smallDigits[2]; /* a 2-digit number */
+};
+
 struct ObjLists
 {
     u8 filler0[0x3C];
@@ -115,40 +124,35 @@ extern u8 gUnk_0200000A[];
 
 ASM_FUNC("asm/code_0805799C/oam_draw_unit_markers.s", void oam_draw_unit_markers(void))
 
-NONMATCH("asm/code_0805799C/set_obj_digits.s", u8 *set_obj_digits(u8 *obj, u8 kind, u32 unused2, u32 value, u8 small))
+/* Starts a digits task (struct DigitsObj, priority kind) showing `value` as 6 decimal digits and
+   `small` as 2, most significant digit first; higher digits are dropped. The map scene fills one
+   from the save. The digits are written by byte offset: field access changes the code. */
+u8 *set_obj_digits(u8 *obj, u8 kind, u32 unusedTag, u32 value, u8 small)
 {
-    u8 *p;
+    s32 i;
+    u8 *tens;
 
     task_insert(obj, kind);
-    ((struct MapObj *)obj)->unk18 = gObjDigitsClass;
-    p = obj + 0x21;
-    *p = value % 10;
-    value = value / 10;
-    p--;
-    *p = value % 10;
-    value = value / 10;
-    obj[0x1F] = value % 10;
-    value = value / 10;
-    obj[0x1E] = value % 10;
-    value = value / 10;
-    obj[0x1D] = value % 10;
-    value = value / 10;
-    obj[0x1C] = value % 10;
-    p += 2;
-    obj[0x23] = small % 10;
-    *p = (u8)(small / 10) % 10;
+    ((struct DigitsObj *)obj)->vtable = gObjDigitsClass;
+    for (i = 0; i < 6; i++)
+    {
+        obj[0x21 - i] = value % 10; /* digits[5 - i], from the last digit up */
+        value /= 10;
+    }
+    tens = obj + 0x22;              /* smallDigits[0] */
+    obj[0x23] = small % 10;         /* smallDigits[1] */
+    *tens = (u8)(small / 10) % 10;
     return obj;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_0805799C/map_scene_free.s", void map_scene_free(struct MapObj *obj, u32 kind))
+void map_scene_free(struct MapObj *obj, u32 kind)
 {
     vu16 *dma;
     u8 *sys;
+    u32 one;
     u16 zero;
-    u16 one;
+    u16 v;
 
-    one = 1;
     obj->unk18 = gMapSceneClass;
     dma = (vu16 *)REG_ADDR_DMA0SAD;
     dma[5] = dma[5] & 0xC5FF;
@@ -162,15 +166,17 @@ NONMATCH("asm/code_0805799C/map_scene_free.s", void map_scene_free(struct MapObj
     heap_free_b(gUnk_03000DA0);
     run_pending_obj_callbacks();
     *(u16 *)gUnk_02000080 = 0x7FFF;
-    zero = 0;
     sys = gSys;
-    *(u16 *)(sys + 2) = *(u16 *)(sys + 2) | one;
+    v = *(u16 *)(sys + 2);
+    one = 1;
+    zero = 0;
+    one |= v;
+    *(u16 *)(sys + 2) = one;
     *(u16 *)0x02000000 = zero;
     sys[0x31] = 2;
     frame_update();
     task_remove(obj, kind);
 }
-END_NONMATCH
 
 void flip_oam_buffer(void)
 {
@@ -310,43 +316,127 @@ void obj_release_parts(struct MapObj *obj, u32 arg)
     task_remove(obj, arg);
 }
 
-ASM_FUNC("asm/code_0805799C/init_obj_bg_layers.s", void init_obj_bg_layers(void))
+/*
+ * Sets the map scene's BG layers up: allocates and clears its 8 KiB layer buffer (obj+0xA4) and
+ * writes the BG1-BG3 control shadows (gUnk_0200000A, mirrors of REG_BG1CNT..REG_BG3CNT): 512x256
+ * text BGs with tiles in char block 1 and maps at screen blocks 0, 2 and 4. Their priorities come
+ * from bits 5-6 of the current area entry's byte 2 (gUnk_03000DD0[2]); an unknown order leaves all 0.
+ */
+void init_obj_bg_layers(u8 *obj)
+{
+    u32 zero = 0;
+    u16 phase = 0xFFFB;
+    void **bufSlot;
+    void *buf;
+    u8 layerOrder;
+    u16 bg1Priority;
+    u16 bg2Priority;
+    u16 bg3Priority;
 
-ASM_FUNC("asm/code_0805799C/clamp_camera_to_map.s", void clamp_camera_to_map(void))
+    *(u16 *)(obj + 0x1C) = phase;
+    obj[0x578] = 1;
+    bufSlot = (void **)(obj + 0xA4);
+    buf = heap_alloc(0x2000, 1, gHeapTagObjBgLayers, 0);
+    *bufSlot = buf;
+    {
+        u32 fill = zero;
+
+        // Fill 0x800 words (8 KiB) with 0.
+        cpu_fast_set(&fill, buf, 0x1000800);
+    }
+    layerOrder = gUnk_03000DD0[2] & 0x60;
+    bg1Priority = 0;
+    bg2Priority = 0;
+    bg3Priority = 0;
+    switch (layerOrder)
+    {
+    case 0:
+        bg1Priority = 1;
+        bg2Priority = 2;
+        bg3Priority = 3;
+        break;
+    case 0x20:
+        bg1Priority = 1;
+        bg2Priority = 3;
+        bg3Priority = 2;
+        break;
+    case 0x40:
+        bg1Priority = 2;
+        bg2Priority = 3;
+        bg3Priority = 1;
+        break;
+    }
+    {
+        register vu16 *bgCnt asm("r1") = (vu16 *)gUnk_0200000A;
+
+        *bgCnt++ = bg1Priority | (BGCNT_TXT512x256 | BGCNT_SCREENBASE(0) | BGCNT_CHARBASE(1));
+        *bgCnt++ = bg2Priority | (BGCNT_TXT512x256 | BGCNT_SCREENBASE(2) | BGCNT_CHARBASE(1));
+        *bgCnt = bg3Priority | (BGCNT_TXT512x256 | BGCNT_SCREENBASE(4) | BGCNT_CHARBASE(1));
+    }
+}
+
+u8 clamp_camera_to_map(struct TrackObj *obj, s16 x, s16 y)
+{
+    s16 cx;
+    s16 cy;
+    u8 flags;
+    u32 slot;
+
+    cx = x;
+    cy = y;
+    flags = 0;
+    slot = 2;
+    if (cx <= 0)
+    {
+        cx = 0;
+        flags = 4;
+    }
+    else if (cx >= obj->widthPx[slot] - 240)
+    {
+        cx = obj->widthPx[slot] - 240;
+        flags = 8;
+    }
+    if (cy <= 0)
+    {
+        cy = 0;
+        flags |= 1;
+    }
+    else if (cy >= obj->heightPx[slot] - 160)
+    {
+        cy = obj->heightPx[slot] - 160;
+        flags |= 2;
+    }
+    obj->stepA[slot] = cx - (s16)obj->posA[slot];
+    obj->stepB[slot] = cy - (s16)obj->posB[slot];
+    return flags;
+}
 
 ASM_FUNC("asm/code_0805799C/map_obj_slots_obj_state_step.s", void map_obj_slots_obj_state_step(void))
 
-NONMATCH("asm/code_0805799C/offset_obj_pos_by_mode.s", void offset_obj_pos_by_mode(struct TrackObj *obj, u8 kind, s16 dx, s16 dy))
+void offset_obj_pos_by_mode(struct TrackObj *obj, u8 kind, s16 dx, s16 dy)
 {
-    s32 v;
+    s16 *p;
 
     switch (kind)
     {
     case 0:
         if ((((struct MapStateScroll *)gUnk_03000DD0)->scroll & 0xC000) != 0x8000)
-        {
             return;
-        }
-        v = dx;
-        obj->baseA[0] = v + obj->baseA[0];
-        v = dy;
-        obj->baseB[0] = v + obj->baseB[0];
+        p = &obj->baseA[0];
+        *p = dx + *p;
+        p += 3;
+        *p = dy + *p;
         break;
     case 1:
         if ((((struct MapStateScroll *)gUnk_03000DD0)->scroll & 0x3000) != 0x2000)
-        {
             return;
-        }
-        v = dx;
-        obj->baseA[1] = v + obj->baseA[1];
-        v = dy;
-        obj->baseB[1] = v + obj->baseB[1];
+        p = &obj->baseA[1];
+        *p = dx + *p;
+        p += 3;
+        *p = dy + *p;
         break;
-    default:
-        return;
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805799C/obj_slots_update.s", void obj_slots_update(struct TrackObj *obj))
 
@@ -425,6 +515,51 @@ ASM_FUNC("asm/code_0805799C/redraw_map_columns.s", void redraw_map_columns(void)
 
 ASM_FUNC("asm/code_0805799C/load_map_tilemap_layers.s", void load_map_tilemap_layers(void))
 
-ASM_FUNC("asm/code_0805799C/draw_metatile_2x2.s", void draw_metatile_2x2(void))
+struct MetatileMapObj
+{
+    u8 filler0[0x1E];
+    u16 selector;
+    u8 filler20[0x94 - 0x20];
+    u16 *bgBuf;
+    u16 *tilemap;
+    u8 filler9C[0xA8 - 0x9C];
+    u16 (*metatiles)[4];
+};
+
+/*
+ * Draws metatile `tile` (4 tilemap entries: top-left, top-right, bottom-left, bottom-right) at
+ * metatile column col, row row into BG layer `layer` of the map's tilemap buffer. A layer is
+ * 64 x 32 tiles (0x800 entries): two 32 x 32 screen blocks side by side, so bit 4 of col picks the
+ * right one (+0x400) and the low 4 bits of col and row the place in it.
+ */
+void draw_metatile_2x2(struct MetatileMapObj *map, u16 layer, s16 col, u16 row, u32 tileArg)
+{
+    register u32 y asm("r5") = row;
+    u16 tile = tileArg;
+    u16 (*metatiles)[4] = map->metatiles;
+    u16 top;
+    u16 bottom;
+
+    if ((col & 0x10) == 0)
+    {
+        int mask = 0xF;
+        int base = layer << 11;
+        int ym = y & mask;
+        top = base + (ym << 6) + ((col & mask) << 1);
+        bottom = base + (((ym << 1) + 1) << 5) + ((col & mask) << 1);
+    }
+    else
+    {
+        int mask = 0xF;
+        int base = layer << 11;
+        int ym = y & mask;
+        top = base + (ym << 6) + ((col & mask) << 1) + 0x400;
+        bottom = base + (((ym << 1) + 1) << 5) + ((col & mask) << 1) + 0x400;
+    }
+    map->bgBuf[top] = metatiles[tile][0];
+    map->bgBuf[top + 1] = metatiles[tile][1];
+    map->bgBuf[bottom] = metatiles[tile][2];
+    map->bgBuf[bottom + 1] = metatiles[tile][3];
+}
 
 ASM_FUNC("asm/code_0805799C/scroll_map_slot.s", void scroll_map_slot(struct TrackObj *obj, u32 slot, s16 a, s16 b))

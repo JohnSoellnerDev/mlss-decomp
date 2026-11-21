@@ -12,6 +12,9 @@ struct ActorPose
     u8 flags;
 };
 
+/* ActorPose.flags bit: the current animation has finished */
+#define POSE_FLAG_ANIM_DONE 0x08
+
 struct ActorPart
 {
     u8 filler0[0xB4];
@@ -25,8 +28,8 @@ struct ActorPart
     u8 filler1[0xEC - 0xE4];
     s16 slot;
     u8 filler2[0xF6 - 0xEE];
-    s16 cursorX;
-    s16 cursorY;
+    s16 hp;
+    s16 maxHp;
 };
 
 struct ActorObj
@@ -61,7 +64,7 @@ struct ActorObj
     s16 motionStart;
     s16 motionSpeed;
     u8 filler7E[0x80 - 0x7E];
-    s32 index;
+    s32 index;          /* time of the move left, 8.8 frames (0: arrived) */
     s32 targetX;
     s32 targetY;
     s32 targetH;
@@ -117,7 +120,7 @@ struct ActorCands
 };
 
 extern struct ActorCands *gWorld;
-extern u32 gUnk_03000E3C;
+extern u32 gUnk_03000E3C; /* the attack's hitbox: the follower effect_from_table_obj spawns */
 
 void sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 id, s32 value);
@@ -192,9 +195,13 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
+/* Actor state: in mode 0 (timer == 0) the sprite spins; every 10 frames a trail effect is spawned at the
+   base position. Once index reaches 0, mode 0 goes on to slide off screen; any other mode starts a move
+   to 0x20 px right of the owner's target, level with the second actor (gWorld->cand74), and then waits
+   in place_then_wait_slide_a. */
 void approach_then_place_a(struct ActorObj *obj)
 {
-    struct ActorCand *cand;
+    struct ActorCand *other;
     s32 index;
     s32 flags;
 
@@ -207,13 +214,13 @@ void approach_then_place_a(struct ActorObj *obj)
     {
         if (obj->timer == 0)
         {
-            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 0xC, obj);
+            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 12, obj);
         }
         else
         {
             effect_spawn_at(0x23CC, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
-        obj->wait = 0xA;
+        obj->wait = 10;
     }
     index = obj->index;
     if (index == 0)
@@ -224,9 +231,9 @@ void approach_then_place_a(struct ActorObj *obj)
         }
         else
         {
-            cand = gWorld->cand74;
+            other = gWorld->cand74;
             obj->targetX = obj->owner->part->targetX + 0x2000;
-            obj->targetY = cand->obj.part->targetY;
+            obj->targetY = other->obj.part->targetY;
             obj->targetH = obj->posH;
             flags = obj->flags79;
             flags |= 0x20;
@@ -239,6 +246,10 @@ void approach_then_place_a(struct ActorObj *obj)
     }
 }
 
+/* Actor state after approach_then_place_a (mode 0): slides left by paramA0 a frame. In mode 0
+   (timer == 0) the sprite spins; every 10 frames a trail effect is spawned at the base position
+   (0x23C3 12 px lower in mode 0, else 0x23CC). Once it is 32 px past the left edge of the screen,
+   song 0x8C is stopped and the actor is released. */
 void slide_fire_then_finish(struct ActorObj *obj)
 {
     if (obj->timer == 0)
@@ -250,25 +261,29 @@ void slide_fire_then_finish(struct ActorObj *obj)
     {
         if (obj->timer == 0)
         {
-            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 0xC, obj);
+            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 12, obj);
         }
         else
         {
             effect_spawn_at(0x23CC, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
-        obj->wait = 0xA;
+        obj->wait = 10;
     }
     obj->posX -= obj->paramA0;
-    if (obj->posX / 0x100 <= -0x20)
+    if (obj->posX / 0x100 <= -32)
     {
         sound_stop_song(0x8C);
         obj_release(obj);
     }
 }
 
+/* Actor state: in mode 0 (timer == 0) the sprite spins; every 10 frames a trail effect is spawned at the
+   base position. Once index reaches 0, mode 0 goes on to slide off screen; any other mode starts a move
+   to 0x20 px right of the owner's target, level with the first actor (gWorld->cand70), and then waits
+   in place_then_wait_slide_b. */
 void approach_then_place_b(struct ActorObj *obj)
 {
-    struct ActorCand *cand;
+    struct ActorCand *other;
     s32 index;
     s32 flags;
 
@@ -281,13 +296,13 @@ void approach_then_place_b(struct ActorObj *obj)
     {
         if (obj->timer == 0)
         {
-            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 0xC, obj);
+            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 12, obj);
         }
         else
         {
             effect_spawn_at(0x23CC, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
-        obj->wait = 0xA;
+        obj->wait = 10;
     }
     index = obj->index;
     if (index == 0)
@@ -298,9 +313,9 @@ void approach_then_place_b(struct ActorObj *obj)
         }
         else
         {
-            cand = gWorld->cand70;
+            other = gWorld->cand70;
             obj->targetX = obj->owner->part->targetX + 0x2000;
-            obj->targetY = cand->obj.part->targetY;
+            obj->targetY = other->obj.part->targetY;
             obj->targetH = obj->posH;
             flags = obj->flags79;
             flags |= 0x20;
@@ -313,6 +328,10 @@ void approach_then_place_b(struct ActorObj *obj)
     }
 }
 
+/* Actor state after approach_then_place_b (mode 0), the twin of slide_fire_then_finish: slides left
+   by paramA0 a frame. In mode 0 (timer == 0) the sprite spins; every 10 frames a trail effect is
+   spawned at the base position (0x23C3 12 px lower in mode 0, else 0x23CC). Once it is 32 px past
+   the left edge of the screen, the actor is released and song 0x8C is stopped. */
 void slide_finish_then_fire(struct ActorObj *obj)
 {
     if (obj->timer == 0)
@@ -324,16 +343,16 @@ void slide_finish_then_fire(struct ActorObj *obj)
     {
         if (obj->timer == 0)
         {
-            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 0xC, obj);
+            effect_spawn_at(0x23C3, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 12, obj);
         }
         else
         {
             effect_spawn_at(0x23CC, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
-        obj->wait = 0xA;
+        obj->wait = 10;
     }
     obj->posX -= obj->paramA0;
-    if (obj->posX / 0x100 <= -0x20)
+    if (obj->posX / 0x100 <= -32)
     {
         obj_release(obj);
         sound_stop_song(0x8C);
@@ -433,6 +452,13 @@ NONMATCH("asm/code_0807544C/place_steps_spawn_random_child.s", void place_steps_
 }
 END_NONMATCH
 
+/*
+ * State of a child spawned by place_steps_spawn_random_child: it hops along a
+ * straight line (slope targetY / targetX) from its spawn X to the end point
+ * (phase, linkB0), bouncing with vertical speed targetH under gravity. Kind 2
+ * spins while it hops and bounces off a raised floor (height 8). Past the end
+ * point it heads for its part's target and moves on to shrink_then_finish.
+ */
 void slide_step_to_target(struct ActorObj *obj)
 {
 
@@ -471,27 +497,32 @@ void slide_step_to_target(struct ActorObj *obj)
     }
 }
 
+/* The thrower's loop: while neither bro (gWorld->cand70/cand74) is busy (index 0), throws a random
+ * item every 60 frames (targetH counts down to place_steps_spawn_random_child). Every 16 frames
+ * (wait) it spawns effect 0x23D5 at its base. Each time its animation ends, targetX counts down the
+ * loops left; when none are left, song 0x157 stops and it waits in child_gone_place_notify for
+ * the last item to be gone. */
 void periodic_spawn_step(struct ActorObj *obj)
 {
-    struct ActorCand *candA;
-    struct ActorCand *candB;
+    struct ActorCand *bro1;
+    struct ActorCand *bro2;
 
-    candA = gWorld->cand70;
-    candB = gWorld->cand74;
-    if (candA->obj.index == 0 && candB->obj.index == 0)
+    bro1 = gWorld->cand70;
+    bro2 = gWorld->cand74;
+    if (bro1->obj.index == 0 && bro2->obj.index == 0)
     {
         obj->targetH--;
         if (obj->targetH <= 0)
         {
             place_steps_spawn_random_child(obj);
-            obj->targetH = 0x3C;
+            obj->targetH = 60;
         }
     }
     obj->wait--;
     if (obj->wait <= 0)
     {
         effect_spawn_at(0x23D5, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        obj->wait = 0x10;
+        obj->wait = 16;
     }
     if (obj->pose->flags & 8)
     {
@@ -511,28 +542,32 @@ void menu_cursor_place_step(struct ActorObj *obj)
 
     if (obj->pose->flags & 8)
     {
-        cursor = menu_cursor_pos(obj->part->cursorX, obj->part->cursorY, 0xA);
+        cursor = menu_cursor_pos(obj->part->hp, obj->part->maxHp, 0xA);
         sign = signed_byte_e4(obj->part);
-        popup_digit_spawn(cursor - obj->part->cursorX, obj->baseX / 0x100, obj->baseY / 0x100, sign, 1);
-        obj->part->cursorX = cursor;
+        popup_digit_spawn(cursor - obj->part->hp, obj->baseX / 0x100, obj->baseY / 0x100, sign, 1);
+        obj->part->hp = cursor;
         sprite_set_action(obj, 0, 0, 0);
         obj->state = phase_wait_idle;
         obj->phase = 0x20;
     }
 }
 
+/* Arrival handler of the items place_steps_spawn_random_child throws at its owner, by kind (timer):
+ * kind 0 heals the owner by 5 HP (with a number popup and effect 0xF93), kind 1 tries the status of
+ * anim_bit1_chance on it (chance 200, effect 0x2396); both are then released. Kind 2 hits the owner
+ * instead (partner_link_update) and leaves the object list. */
 s32 kind_place_or_finish(struct ActorObj *obj, struct ActorObj *owner)
 {
-    s32 cursor;
-    s32 extra;
+    s32 newHp;
+    s32 popupZ;
 
     switch (obj->timer)
     {
     case 0:
-        cursor = menu_cursor_pos(owner->part->cursorX, owner->part->cursorY, 5);
-        extra = signed_byte_e4(owner->part);
-        popup_digit_spawn(cursor - owner->part->cursorX, owner->baseX / 0x100, owner->baseY / 0x100, extra, 1);
-        owner->part->cursorX = cursor;
+        newHp = menu_cursor_pos(owner->part->hp, owner->part->maxHp, 5);
+        popupZ = signed_byte_e4(owner->part);
+        popup_digit_spawn(newHp - owner->part->hp, owner->baseX / 0x100, owner->baseY / 0x100, popupZ, 1);
+        owner->part->hp = newHp;
         effect_spawn_at(0xF93, owner->baseX / 0x100, owner->baseY / 0x100, owner->baseH / 0x100, owner);
         obj_release(obj);
         return 1;
@@ -567,6 +602,9 @@ void start_move_then_wait_slot(struct ActorObj *obj)
     }
 }
 
+/* State during the move start_move_then_wait_slot starts: puffs effect 0x244B every 8 frames on the
+ * way; on arrival it stops the travel sound 0x58, plays 0x12B, switches to action 4, spawns effect
+ * 0x2454 and goes on to pose_action5_prep_then_effect. */
 void timer_place_then_fire(struct ActorObj *obj)
 {
     obj->wait--;
@@ -585,9 +623,15 @@ void timer_place_then_fire(struct ActorObj *obj)
     }
 }
 
+/*
+ * Attacker state: each time the current animation ends, counts `wait` down; at 0 it strikes:
+ * action 6, sound 0xAF, effect 0x2470 and a hitbox from offset row 0x183E. A hit
+ * (unlink_then_step_64c8) or a counter (lookup_part_b_then_prep) decides what follows; otherwise it
+ * goes on to pose_action7_place_then_move.
+ */
 void effect_timer_step(struct ActorObj *obj)
 {
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_FLAG_ANIM_DONE)
     {
         obj->wait--;
         if (obj->wait <= 0)
@@ -624,6 +668,9 @@ void pose_start_move_then_wait(struct ActorObj *obj)
     }
 }
 
+/* State during the move pose_start_move_then_wait starts: leaves trail effect 0x2487 every 8 frames;
+ * on arrival (index 0) it plays sound 0x12B (set_slot_value plays a song), switches to action 9,
+ * spawns landing effect 0x2462 and waits for that animation to end (stop_when_pose_active_c). */
 void timer_place_then_fire_b(struct ActorObj *obj)
 {
     obj->wait--;
@@ -680,7 +727,7 @@ NONMATCH("asm/code_0807544C/loop_targets_then_move.s", void loop_targets_then_mo
                 idx = (*count + 1) & 1;
                 *count = idx;
                 node = &((struct ActorCand *)gWorld->actors[idx + 6])->obj;
-                cur = node->part->cursorX;
+                cur = node->part->hp;
                 zero = 1;
                 if (cur != 0)
                 {

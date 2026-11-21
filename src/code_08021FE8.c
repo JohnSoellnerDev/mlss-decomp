@@ -15,26 +15,27 @@ struct SysBits88A
 
 struct ModelCtx;
 
+/* The scene object init_scene_obj builds and obj_teardown_subs tears down. */
 struct SceneObj
 {
     u8 filler0[0x18];
-    const void *cls18;
-    void *key1C;
-    void *attr20;
-    void *ptr24;
+    const void *klass;          /* class table */
+    void *key1C;                /* 0x2C0-byte buffer */
+    void *attr20;               /* 0x574-byte buffer */
+    void *ptr24;                /* 0x400-byte buffer */
     u8 filler28[0x1FC - 0x28];
-    void *sub1FC;
+    void *block1FC;             /* freed with free_block_if_bit0 */
     u8 filler200[0x23C - 0x200];
-    void *ptr23C;
+    void *ptr23C;               /* 0x1000-byte buffer */
     u8 filler240[0x304 - 0x240];
-    void *sub304;
-    void *sub308;
-    void *sub30C;
-    void *sub310;
-    void *sub314;
+    void *parts;                /* obj_release_parts */
+    void *mapView;              /* map_view_map_obj_destroy */
+    void *task30C;
+    void *entryTask;            /* entry update task (gEntryUpdateTaskClass) */
+    void *menu;                 /* menu_obj_free */
     u8 filler318[0x31C - 0x318];
-    void *sub31C;
-    void *sub320;
+    void *effect;               /* effect state task (gTagEffect) */
+    void *taskSlot;             /* task slot (gTagTask) */
 };
 
 extern struct ObjListHeadX gUnk_0203FFB8;
@@ -141,7 +142,7 @@ NONMATCH("asm/code_08021FE8/init_scene_obj.s", struct SceneObj *init_scene_obj(s
     L.a5 = arg5.value;
     L.a6 = arg6.value;
     task_insert(obj, kind, arg2);
-    obj->cls18 = gSceneObjClass;
+    obj->klass = gSceneObjClass;
     noSpeed = 0;
     if (speed == 0xFFFFFFFF)
     {
@@ -151,14 +152,14 @@ NONMATCH("asm/code_08021FE8/init_scene_obj.s", struct SceneObj *init_scene_obj(s
     L.flag = 1;
     *L.pf8 = (*L.pf8 & ~2) | (noSpeed << 1);
 
-    slot = (void **)&obj->sub320;
+    slot = (void **)&obj->taskSlot;
     task = heap_alloc2(0x24, 0, gTagTask, 0);
     task = task_slot_attach(task, 1, 7, gTagTask);
     *slot = task;
     *(struct SceneObj **)(*(u8 **)task + 0x14) = obj;
     set_flag_2_2(*(void **)task);
 
-    slot = (void **)&obj->sub31C;
+    slot = (void **)&obj->effect;
     effect = heap_alloc2(0x24, 0, gTagEffect, 0);
     effect = init_effect_state(effect, 1, 6, gTagEffect);
     *slot = effect;
@@ -169,7 +170,7 @@ NONMATCH("asm/code_08021FE8/init_scene_obj.s", struct SceneObj *init_scene_obj(s
     mt19937_seed(*(u32 *)(sys + 0x8D0), *(u32 *)(sys + 0x1C));
 
     gUnk_03000D7C = obj;
-    gUnk_03000D78 = obj->sub31C;
+    gUnk_03000D78 = obj->effect;
     *(u16 *)0x02000000 = 0;
     sys = gSys;
     *(u8 **)(o + 0xD0) = sys + 0x3C;
@@ -278,57 +279,60 @@ NONMATCH("asm/code_08021FE8/init_scene_obj.s", struct SceneObj *init_scene_obj(s
 }
 END_NONMATCH
 
-void obj_teardown_subs(struct SceneObj *obj, u32 param)
+/* Destructor of the scene object init_scene_obj builds: frees its menu, tasks, map view, parts,
+   children and buffers, its effect state and task slot, turns IRQ callback 2 off, clears the
+   gSys flag init_scene_obj set and removes the object's own task. */
+void obj_teardown_subs(struct SceneObj *obj, u32 flags)
 {
-    struct SceneObj *sub;
+    struct SceneObj *entryTask;
     u8 *sys;
 
-    obj->cls18 = gSceneObjClass;
-    if (obj->sub314 != 0)
+    obj->klass = gSceneObjClass;
+    if (obj->menu != 0)
     {
-        menu_obj_free(obj->sub314, 3);
+        menu_obj_free(obj->menu, 3);
     }
-    if (obj->sub30C != 0)
+    if (obj->task30C != 0)
     {
-        task_remove(obj->sub30C, 3);
+        task_remove(obj->task30C, 3);
     }
-    sub = obj->sub310;
-    if (sub != 0)
+    entryTask = obj->entryTask;
+    if (entryTask != 0)
     {
-        sub->cls18 = gEntryUpdateTaskClass;
-        task_remove(sub, 3);
+        entryTask->klass = gEntryUpdateTaskClass;
+        task_remove(entryTask, 3);
     }
-    if (obj->sub1FC != 0)
+    if (obj->block1FC != 0)
     {
-        free_block_if_bit0(obj->sub1FC, 3);
+        free_block_if_bit0(obj->block1FC, 3);
     }
-    if (obj->sub308 != 0)
+    if (obj->mapView != 0)
     {
-        map_view_map_obj_destroy(obj->sub308, 3);
+        map_view_map_obj_destroy(obj->mapView, 3);
     }
-    if (obj->sub304 != 0)
+    if (obj->parts != 0)
     {
-        obj_release_parts(obj->sub304, 3);
+        obj_release_parts(obj->parts, 3);
     }
     destroy_obj_children(obj);
     heap_free_b(obj->key1C);
     heap_free_b(obj->attr20);
     heap_free_b(obj->ptr23C);
     heap_free_b(obj->ptr24);
-    if (obj->sub31C != 0)
+    if (obj->effect != 0)
     {
-        teardown_effect_task(obj->sub31C, 3);
+        teardown_effect_task(obj->effect, 3);
     }
-    if (obj->sub320 != 0)
+    if (obj->taskSlot != 0)
     {
-        task_slot_release(obj->sub320, 3);
+        task_slot_release(obj->taskSlot, 3);
     }
-    free_effect_state(obj->sub31C);
+    free_effect_state(obj->effect);
     run_pending_obj_callbacks();
     set_irq_callback(2, 0);
     sys = gSys;
     ((struct SysBits88A *)&sys[0x88A])->bit5 = 0;
-    task_remove(obj, param);
+    task_remove(obj, flags);
 }
 
 ASM_FUNC("asm/code_08021FE8/scene_obj_state_dispatch.s", void scene_obj_state_dispatch(void))

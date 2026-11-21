@@ -236,6 +236,10 @@ void advance_and_step_z_alt(struct Enemy *parent, struct Enemy *obj, u32 *slot)
     }
 }
 
+/* Fall sub-state: lowers the enemy's height by its fall speed (unk2DC) each frame. If it hits
+ * something (unk24 bits 15-16), it seeks the active partner along an axis when unk1D8 bits 0 and 1
+ * are both set and there is one, or else wanders again (start_axis_wander_alt). Otherwise, once it
+ * reaches the landing height unk2D4, it lands (fall_landing_active_state). */
 void fall_landing_active(struct Enemy *parent, struct Enemy *obj, u32 *slot)
 {
     struct
@@ -243,14 +247,14 @@ void fall_landing_active(struct Enemy *parent, struct Enemy *obj, u32 *slot)
         s16 box[8];
         u8 idx;
     } local;
-    s32 dz;
+    s32 height;
 
     if (obj->cell->unk12 & 8)
     {
         ((struct BitsMode *)&obj->unk214)->low = 0;
     }
-    dz = obj->dz - obj->unk2DC;
-    obj->dz = dz;
+    height = obj->dz - obj->unk2DC;
+    obj->dz = height;
     if (obj->unk24 & 0x18000)
     {
         if ((obj->unk1D8 << 31) != 0 && (s32)(obj->unk1D8 << 30) < 0
@@ -263,7 +267,7 @@ void fall_landing_active(struct Enemy *parent, struct Enemy *obj, u32 *slot)
             *slot = (u32)start_axis_wander_alt;
         }
     }
-    else if (obj->posZ + dz <= obj->unk2D4)
+    else if (obj->posZ + height <= obj->unk2D4)
     {
         *slot = (u32)fall_landing_active_state;
     }

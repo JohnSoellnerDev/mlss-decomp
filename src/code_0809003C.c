@@ -202,6 +202,10 @@ void hold_orbit_finish_if_pose_visible_d(struct HoldActor *obj);
 void hold_orbit_finish_if_pose_visible_e(struct HoldActor *obj);
 void finish_if_pose_visible_f(struct HoldActor *obj);
 
+/* The buttons were let go during the wind-up (orbit_start_a): plays the wind-up frames of
+ * animation 0x2054 back to frame 0, two steps a frame (only frames the pose has already
+ * shown, pose->count), then cancels with action 4 (pose result 0xC0 / 6) and hands over to
+ * hold_release. Any of action bits 3-5 cancels it (end_action). */
 void hold_countdown_a(struct HoldActor *obj)
 {
     obj->state = hold_countdown_a;
@@ -243,18 +247,23 @@ void hold_countdown_a(struct HoldActor *obj)
     obj->step -= 2;
 }
 
+/* Waits while the action's buttons are held, counting frames in step. Letting go starts the
+ * child's spin (hold_orbit_circle_b: angle 0xB400, speed 0xA00, action 2). From frame 60 on the
+ * pose stops holding its frame; after frame 89 the hold times out with action 5 and hold_release,
+ * except for kind 0x1E: in world mode 0x1? it plays action 4 (pose result 0xC0 / 6), otherwise it
+ * keeps waiting at frame 90. Any of action bits 3-5 cancels it (end_action). */
 void hold_wait_b(struct HoldActor *obj)
 {
     struct HoldActor *child;
-    u32 keys;
+    u32 heldButtons;
 
     if (obj->action & 0x38)
     {
         end_action(obj);
         return;
     }
-    keys = gSys.held & obj->buttons;
-    if (keys == 0)
+    heldButtons = gSys.held & obj->buttons;
+    if (heldButtons == 0)
     {
         obj->timer = 1;
         child = obj->child;
@@ -263,10 +272,10 @@ void hold_wait_b(struct HoldActor *obj)
         sprite_set_action(obj, 2, 0, 0);
         ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
         obj->state = hold_orbit_circle_b;
-        obj->step = keys;
+        obj->step = heldButtons;
         return;
     }
-    if ((s16)obj->step > 0x59)
+    if ((s16)obj->step > 89)
     {
         if (obj->data->kind == 0x1E)
         {
@@ -278,7 +287,7 @@ void hold_wait_b(struct HoldActor *obj)
             }
             else
             {
-                obj->step = 0x5A;
+                obj->step = 90;
                 return;
             }
         }
@@ -290,18 +299,23 @@ void hold_wait_b(struct HoldActor *obj)
         obj->state = hold_release;
         return;
     }
-    if ((s16)obj->step > 0x3B)
+    if ((s16)obj->step > 59)
     {
         ((struct PoseHoldBit *)&obj->pose->flags)->hold = 0;
     }
     obj->step++;
 }
 
+/* One frame of the held child's spin: the child circles in the x/height plane around
+   (baseX, baseH + 0x1A00), speeding up each frame in the direction the pose faces (pose->turn
+   bit 6), while the holder's action-2 animation steps through frames 1-5 on steps 3 and 5-8.
+   On step 9 the spin ends: the child switches to mode 3, the holder to action 3, and
+   orbit_end_wait_b takes over. Any of action bits 3-5 cancels it (end_action). */
 void hold_orbit_circle_b(struct HoldActor *obj)
 {
     struct HoldActor *child;
-    u32 idx;
-    s32 base;
+    u32 angle;
+    s32 centerH;
 
     if (obj->action & 0x38)
     {
@@ -311,9 +325,10 @@ void hold_orbit_circle_b(struct HoldActor *obj)
     child = obj->child;
     ((struct ActionBits *)&child->action)->mode = 1;
     child->childAngle += child->childSpeed;
-    child->childX = obj->baseX + 24 * (gCosineTable[idx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->childAngle, 0x168) & 0xFF] / 64);
-    base = obj->baseH + 0x1A00;
-    child->height = base + 24 * (gSineTable[idx] / 64);
+    // childAngle / 360 is the angle in 256ths of a turn.
+    child->childX = obj->baseX + 24 * (gCosineTable[angle = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->childAngle, 0x168) & 0xFF] / 64);
+    centerH = obj->baseH + 0x1A00;
+    child->height = centerH + 24 * (gSineTable[angle] / 64);
     if (obj->pose->turn & 0x40)
     {
         child->childSpeed += 0x998;
@@ -629,11 +644,15 @@ void hold_orbit_finish_if_pose_visible_b(struct HoldActor *obj)
     }
 }
 
+// Rising half of hero A's jump while holding something (images 0x2000, button A): the rise above
+// baseH (dh) moves by the vertical speed each frame, and holding A eases the speed toward the fall
+// speed -0x7A by 10/256 of the gap per frame instead of setting it at once. Once the rise is back at
+// or below 0 it shows the falling action 6 in play mode 1 and goes on in fall_a.
 void enter_fall_a(struct HoldActor *obj)
 {
     obj->dh = obj->dh + obj->speed;
     obj->height = obj->baseH + (s16)obj->dh;
-    if (gSys.held & 1)
+    if (gSys.held & A_BUTTON)
     {
         obj->speed = obj->speed + ((-0x7A - obj->speed) * 10) / 256;
     }
@@ -671,11 +690,15 @@ void fall_a(struct HoldActor *obj)
     }
 }
 
+// Rising half of hero B's jump while holding something (images 0x204D, button B): the rise above
+// baseH (dh) moves by the vertical speed each frame, and holding B eases the speed toward the fall
+// speed -0x7A by 10/256 of the gap per frame instead of setting it at once. Once the rise is back at
+// or below 0 it shows the falling action 6 in play mode 1 and goes on in fall_b.
 void enter_fall_b(struct HoldActor *obj)
 {
     obj->dh = obj->dh + obj->speed;
     obj->height = obj->baseH + (s16)obj->dh;
-    if (gSys.held & 2)
+    if (gSys.held & B_BUTTON)
     {
         obj->speed = obj->speed + ((-0x7A - obj->speed) * 10) / 256;
     }

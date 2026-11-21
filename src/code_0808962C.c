@@ -58,13 +58,13 @@ struct ActorPart
     u8 filler4[0xF6 - 0xEE];
     s16 timerF6;
     u8 filler0F8[0x102 - 0xF8];
-    s16 unk102;
-    s16 unk104;
+    s16 power;        /* attack stat used by the contact damage formula */
+    s16 defense;      /* defense stat used by the contact damage formula */
     u8 filler106[0x10A - 0x106];
-    u16 unk10A;
-    u16 unk10C;
+    u16 powerScale;   /* 8.8 multiplier on power (0x100 = 1.0) */
+    u16 defenseScale; /* 8.8 multiplier on defense */
     u8 filler10E[0x114 - 0x10E];
-    s32 unk114;
+    s32 damageScale;  /* 8.8 multiplier on the damage dealt, used only above 1.0 */
 };
 
 struct ActorObj
@@ -119,16 +119,17 @@ struct ActorObj
     s16 dh;
 };
 
-struct BodyData
+/* The battle stats in an actor's part record (see code_0806F354.c), as the damage formula reads them. */
+struct PartStats
 {
     u8 filler0[0x102];
-    s16 unk102;
-    s16 unk104;
+    s16 pow;          /* attack */
+    s16 defense;      /* subtracted in the damage formula */
     u8 filler106[0x10A - 0x106];
-    u16 unk10A;
-    u16 unk10C;
+    u16 powScale;     /* attack multiplier, 0x100 = 1.0 */
+    u16 defScale;     /* defense multiplier, 0x100 = 1.0 */
     u8 filler10E[0x114 - 0x10E];
-    u32 unk114;
+    u32 damageScale;  /* damage multiplier, 0x100 = 1.0; only used above 1.0 */
 };
 
 void apply_partner_effect(struct ActorObj *a, struct ActorObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
@@ -254,43 +255,48 @@ void timed_move_3800(struct ActorObj *obj)
     }
 }
 
+/* Moves toward the bros: the owner's part is one of the two bro records, which lie 0x130 bytes
+   apart (slot -1 first, slot -2 second). Targets the midpoint of their targets when both have a
+   slot, else the base point of the one that does, paramA4 px to the right and 2 px down, at the
+   owner's part's height. Then starts the motion (speed 0x600) with action 2 and waits in
+   start_motion_by_owner_slot. */
 void set_target_from_records(struct ActorObj *obj)
 {
     struct ActorObj *owner = obj->owner;
-    struct ActorPart *data = owner->part;
-    struct ActorPart *a;
-    struct ActorPart *b;
+    struct ActorPart *part = owner->part;
+    struct ActorPart *second;
+    struct ActorPart *first;
 
-    if (data->slot == -1)
+    if (part->slot == -1)
     {
-        b = data;
-        a = (struct ActorPart *)((u8 *)data + 0x130);
+        first = part;
+        second = (struct ActorPart *)((u8 *)part + 0x130);
     }
-    else if (data->slot == -2)
+    else if (part->slot == -2)
     {
-        b = (struct ActorPart *)((u8 *)data - 0x130);
-        a = data;
+        first = (struct ActorPart *)((u8 *)part - 0x130);
+        second = part;
     }
-    if (b->slot != 0)
+    if (first->slot != 0)
     {
-        if (a->slot != 0)
+        if (second->slot != 0)
         {
-            obj->targetX = (b->targetX + a->targetX) / 2 + obj->paramA4 * 0x100;
-            obj->targetY = (b->targetY + a->targetY) / 2 + 0x200;
+            obj->targetX = (first->targetX + second->targetX) / 2 + obj->paramA4 * 0x100;
+            obj->targetY = (first->targetY + second->targetY) / 2 + 0x200;
         }
         else
         {
-            obj->targetX = b->baseX + obj->paramA4 * 0x100;
-            obj->targetY = b->baseY + 0x200;
+            obj->targetX = first->baseX + obj->paramA4 * 0x100;
+            obj->targetY = first->baseY + 0x200;
         }
     }
     else
     {
-        obj->targetX = a->baseX + obj->paramA4 * 0x100;
-        obj->targetY = a->baseY + 0x200;
+        obj->targetX = second->baseX + obj->paramA4 * 0x100;
+        obj->targetY = second->baseY + 0x200;
     }
     obj->targetH = owner->part->targetH;
-    *((u8 *)obj + 0x79) |= 0x20;
+    *((u8 *)obj + 0x79) |= 0x20; /* flags79 bit 5 */
     obj->motionSpeed = 0x600;
     obj->motionStart = 0;
     start_motion(obj);
@@ -365,161 +371,173 @@ NONMATCH("asm/code_0808962C/spawn_child_with_offsets.s", void spawn_child_with_o
 }
 END_NONMATCH
 
+/* State of the child spawned by spawn_child_with_offsets: each frame its distance (dx, 24.8)
+ * changes by dy, and it is placed that far from its base along the line from its part's base
+ * (5 px higher) to the owner's part's target. When dx reaches -param9C it hands unk6C and
+ * on_arrive back to its spawner (the object at part + 8), which plays action 6 and waits in
+ * wait_pose_then_index, and the child is released. */
 void offset_and_move_child(struct ActorObj *obj)
 {
-    struct ActorPart *rec = obj->part;
+    struct ActorPart *part = obj->part;
     struct ActorObj *owner = obj->owner;
-    s16 outX;
-    s16 outY;
-    s16 outH;
-    s32 hOffset = 0x500;
+    s16 stepX;
+    s16 stepY;
+    s16 stepH;
+    s32 heightOffset = 0x500;
 
     obj->dx = (u16)obj->dx + (u16)obj->dy;
-    move_step(&outX, &outY, &outH,
-              owner->part->targetX - rec->baseX,
-              owner->part->targetY - rec->baseY,
-              owner->part->targetH - (rec->baseH + hOffset),
+    move_step(&stepX, &stepY, &stepH,
+              owner->part->targetX - part->baseX,
+              owner->part->targetY - part->baseY,
+              owner->part->targetH - (part->baseH + heightOffset),
               obj->dx);
-    obj->posX = obj->baseX + outX;
-    obj->posY = obj->baseY + outY;
-    obj->posH = obj->baseH + outH;
+    obj->posX = obj->baseX + stepX;
+    obj->posY = obj->baseY + stepY;
+    obj->posH = obj->baseH + stepH;
     if (obj->dx <= -obj->param9C)
     {
-        struct ActorObj *sprite = (struct ActorObj *)((u8 *)rec + 8);
+        struct ActorObj *spawner = (struct ActorObj *)((u8 *)part + 8);
 
-        sprite->state = (void (*)(struct ActorObj *))wait_pose_then_index;
-        sprite->handler68 = on_arrive;
-        sprite->unk6C = obj->unk6C;
-        sprite_set_action(sprite, 6, 0, 0);
+        spawner->state = (void (*)(struct ActorObj *))wait_pose_then_index;
+        spawner->handler68 = on_arrive;
+        spawner->unk6C = obj->unk6C;
+        sprite_set_action(spawner, 6, 0, 0);
         obj->unk6C = 0;
         obj_release(obj);
     }
 }
 
-s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 arg)
+/* Contact handler: when other hits body (query_contact returns 0), deals other's damage to body:
+   (pow * 0.4 * powScale - defense * 0.2 * defScale) / 2, times other's damageScale when it's above
+   1.0, at least 1. Then body reacts to the hit for 8 frames. Returns query_contact's result. */
+s32 contact_step_79e4(struct ActorObj *body, struct ActorObj *other, s32 kind)
 {
-    s32 contact = query_contact(body, (u32)other, arg);
+    s32 contact = query_contact(body, (u32)other, kind);
 
     if (contact == 0)
     {
-        struct BodyData *otherData = (struct BodyData *)other->part;
-        s32 otherWord = otherData->unk114;
-        s32 otherW = otherData->unk102;
-        u16 otherH = otherData->unk10A;
-        struct BodyData *bodyData = (struct BodyData *)body->part;
-        s32 bodyW = bodyData->unk104;
-        u16 bodyH = bodyData->unk10C;
-        s32 otherProd;
-        s32 strength;
-        s32 bodyScale;
+        struct PartStats *attacker = (struct PartStats *)other->part;
+        s32 damageScale = attacker->damageScale;
+        s32 pow = attacker->pow;
+        u16 powScale = attacker->powScale;
+        struct PartStats *defender = (struct PartStats *)body->part;
+        s32 defense = defender->defense;
+        u16 defScale = defender->defScale;
+        s32 product;
+        s32 damage;
+        s32 defense51;
 
-        strength = otherW * 0x66;
-        otherProd = strength * otherH;
-        if (otherProd < 0)
+        damage = pow * 0x66;
+        product = damage * powScale;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength = otherProd >> 8;
-        bodyScale = bodyW * 3;
-        bodyScale = bodyScale + (bodyScale << 4);
-        otherProd = bodyH * bodyScale;
-        if (otherProd < 0)
+        damage = product >> 8;
+        defense51 = defense * 3;
+        defense51 = defense51 + (defense51 << 4);
+        product = defScale * defense51;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength -= otherProd >> 8;
-        strength /= 2;
-        if (otherWord > 0x100)
+        damage -= product >> 8;
+        damage /= 2;
+        if (damageScale > 0x100)
         {
-            s32 scaled = otherWord * strength;
+            s32 scaled = damageScale * damage;
 
-            strength = scaled;
-            if (strength < 0)
+            damage = scaled;
+            if (damage < 0)
             {
-                scaled = strength + 0xFFFF;
+                scaled = damage + 0xFFFF;
             }
-            strength = scaled >> 16;
+            damage = scaled >> 16;
         }
         else
         {
-            s32 scaled = strength;
+            s32 scaled = damage;
 
-            if (strength < 0)
+            if (damage < 0)
             {
                 scaled += 0xFF;
             }
-            strength = scaled >> 8;
+            damage = scaled >> 8;
         }
-        if (strength <= 1)
+        if (damage <= 1)
         {
-            strength = 1;
+            damage = 1;
         }
-        apply_partner_effect(other, body, strength, 0, other->posX / 0x100, other->posH / 0x100, 0);
+        apply_partner_effect(other, body, damage, 0, other->posX / 0x100, other->posH / 0x100, 0);
         hit_react(body);
-        *(u16 *)((u8 *)body + 0xAC) = 8;
+        body->timer = 8;
     }
     return contact;
 }
 
+/* Contact handler: unless lookup_slot reports an existing contact, deals contact damage from other
+   to obj. Damage = (other's power * 0.4 * powerScale - obj's defense * 0.2 * defenseScale) / 2 in
+   8.8, times other's damageScale when that is above 1.0, at least 1. Then obj reacts to the hit
+   and its timer is set to 8. Returns lookup_slot's result. */
 u32 contact_step_75bc(struct ActorObj *obj, struct ActorObj *other)
 {
     s32 contact = lookup_slot(obj, (u32)other);
 
     if (contact == 0)
     {
-        struct ActorPart *otherPart = other->part;
-        s32 otherWord = otherPart->unk114;
-        s32 otherW = otherPart->unk102;
-        u16 otherH = otherPart->unk10A;
-        struct ActorPart *objPart = obj->part;
-        s32 objW = objPart->unk104;
-        u16 objH = objPart->unk10C;
-        s32 otherProd;
-        s32 strength;
-        s32 objScale;
+        struct ActorPart *attacker = other->part;
+        s32 damageScale = attacker->damageScale;
+        s32 power = attacker->power;
+        u16 powerScale = attacker->powerScale;
+        struct ActorPart *target = obj->part;
+        s32 defense = target->defense;
+        u16 defenseScale = target->defenseScale;
+        s32 product;
+        s32 damage;
+        s32 defense51;
 
-        strength = otherW * 0x66;
-        otherProd = strength * otherH;
-        if (otherProd < 0)
+        damage = power * 0x66; /* 0x66 / 256 = 0.4 */
+        product = damage * powerScale;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength = otherProd >> 8;
-        objScale = objW * 3;
-        objScale = objScale + (objScale << 4);
-        otherProd = objH * objScale;
-        if (otherProd < 0)
+        damage = product >> 8;
+        defense51 = defense * 3;
+        defense51 = defense51 + (defense51 << 4); /* 51 / 256 = 0.2 */
+        product = defenseScale * defense51;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength -= otherProd >> 8;
-        strength /= 2;
-        if (otherWord > 0x100)
+        damage -= product >> 8;
+        damage /= 2;
+        if (damageScale > 0x100)
         {
-            s32 scaled = otherWord * strength;
+            s32 scaled = damageScale * damage;
 
-            strength = scaled;
-            if (strength < 0)
+            damage = scaled;
+            if (damage < 0)
             {
-                scaled = strength + 0xFFFF;
+                scaled = damage + 0xFFFF;
             }
-            strength = scaled >> 16;
+            damage = scaled >> 16;
         }
         else
         {
-            s32 scaled = strength;
+            s32 scaled = damage;
 
-            if (strength < 0)
+            if (damage < 0)
             {
                 scaled += 0xFF;
             }
-            strength = scaled >> 8;
+            damage = scaled >> 8;
         }
-        if (strength <= 1)
+        if (damage <= 1)
         {
-            strength = 1;
+            damage = 1;
         }
-        apply_partner_effect(other, obj, strength, 0, other->posX / 0x100, other->posH / 0x100, 0);
+        apply_partner_effect(other, obj, damage, 0, other->posX / 0x100, other->posH / 0x100, 0);
         hit_react(obj);
         obj->timer = 8;
     }
@@ -623,6 +641,11 @@ void drift_step(struct ActorObj *obj)
     }
 }
 
+/*
+ * State after landing: counts the timer down, then either hops in place (while the hop
+ * counter unk98 is negative; bounce_step counts it up and comes back here) or jumps to the
+ * point halfway between its start and the owner's part target, playing sound 0x8D.
+ */
 void wait_then_spawn_part(struct ActorObj *obj)
 {
     s32 timer = obj->timer - 1;
@@ -633,11 +656,12 @@ void wait_then_spawn_part(struct ActorObj *obj)
         sprite_set_action(obj, 3, 0, 0);
         if (obj->unk98 < 0)
         {
-            s32 span;
+            s32 hopDivisor;
 
+            /* small hop in place: rise at 0x80, gravity -0x3BC0 / 0x880 */
             obj->dh = 0x80;
-            span = 0x880;
-            obj->acc94 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0xFFFFC440, span);
+            hopDivisor = 0x880;
+            obj->acc94 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(-0x3BC0, hopDivisor);
             obj->state = bounce_step;
             set_slot_value(0x8D, -1);
         }

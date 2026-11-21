@@ -62,6 +62,29 @@ struct Bits33E
     u8 rest : 5;
 };
 
+struct Bits33CByte
+{
+    u8 b0 : 1;
+    u8 mid12 : 2;
+    u8 b3 : 1;
+    u8 bits4 : 3;
+    u8 b7 : 1;
+} __attribute__((packed));
+
+struct ObjBits214
+{
+    u8 filler0[0x214];
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
+struct ObjBits33D
+{
+    u8 filler0[0x33D];
+    u8 lo3 : 3;
+    u8 rest : 5;
+};
+
 struct Bits45
 {
     u8 lo4 : 4;
@@ -179,6 +202,14 @@ struct Obj
     u8 filler35C[0x368 - 0x35C];
     struct SlotState *slots;
 };
+
+struct ObjSel353
+{
+    u8 filler0[0x353];
+    u8 lo4 : 4;
+    u8 sel : 2;
+    u8 hi2 : 2;
+} __attribute__((packed));
 
 void unlink_d54(void *e);
 void obj_set_id(struct Obj *obj, u32 id);
@@ -299,17 +330,14 @@ u8 update_if_active(struct Obj *obj)
     return result;
 }
 
-NONMATCH("asm/code_0804EA7C/update_facing_bits.s", void update_facing_bits(struct Obj *obj))
+void update_facing_bits(struct Obj *obj)
 {
-    if (obj->unk25C == -1 && (obj->unk2B5 & 7) == 0) {
-        const u8 *table = gFacingTable;
-        u32 idx = ((obj->flags2 >> 5) << 2) + (((u32)((u8 *)obj)[0x26] << 28) >> 30);
-        u8 value = table[idx];
-        u8 *dst = &obj->unk353;
-        ((struct Bits45 *)dst)->f = value & 3;
+    if (obj->unk25C == -1 && (obj->unk2B5 & 7) == 0)
+    {
+        u32 value = gFacingTable[((obj->flags2 >> 5) << 2) + (((u32)((u8 *)obj)[0x26] << 28) >> 30)];
+        ((struct ObjSel353 *)obj)->sel = value;
     }
 }
-END_NONMATCH
 
 void obj_shift_state_slots(struct Obj *obj)
 {
@@ -399,32 +427,40 @@ void child_forward_obj_step_motion(struct Obj *obj)
     }
 }
 
-struct Obj *obj_init_with_child(struct Obj *obj, u32 a, u32 b)
+/* Sets up an object that forwards to a child: inits it, sets its class, and when definition defId
+ * is found allocates and attaches the child object (child344). If the object's one-time story flag
+ * (0x960 + the 12-bit index in bits 10-21 of unk22C, set by obj_refresh_child_sprite) is already
+ * set, the object and its child start inactive (0x20C bit 0) and hidden (0x20F bit 1). */
+struct Obj *obj_init_with_child(struct Obj *obj, u32 defId, u32 childArg)
 {
-    u8 found;
+    u8 defIndex;
 
     obj_init(obj);
     obj->vtable338 = (struct ObjVtable *)gObjForwardChildClass;
     ((struct Bit0 *)&obj->unk210)->b0 = 0;
-    if ((u8)find_def_index((u16)a, &found, obj) != 0) {
-        struct Obj **slot = &obj->child344;
+    if ((u8)find_def_index((u16)defId, &defIndex, obj) != 0) {
+        struct Obj **childSlot = &obj->child344;
         void *block = heap_alloc2(0x348, 1, gObjInitChildTag, 1);
 
-        *slot = obj_attach_child(block, -1, b, found, obj);
+        *childSlot = obj_attach_child(block, -1, childArg, defIndex, obj);
     }
     ((struct Bits33C *)&obj->unk33C)->b0 = 1;
     ((struct Bits33C *)&obj->unk33C)->mid12 = 0;
     if (test_flag(gUnk_03000FC0 + 0x38C, 0, ((obj->unk22C << 10) >> 20) + 0x960) == 1) {
-        ((struct Bit0 *)((u8 *)obj + 0x20C))->b0 = 0;
-        ((struct Bit1Field *)((u8 *)obj + 0x20F))->b1 = 0;
-        if (obj->child344 != 0) {
-            ((struct Bit0 *)((u8 *)obj->child344 + 0x20C))->b0 = 0;
-            ((struct Bit1Field *)((u8 *)obj->child344 + 0x20F))->b1 = 0;
+        ((struct Bit0 *)&obj->unk20C)->b0 = 0;
+        ((struct Bit1Field *)&obj->unk20F)->b1 = 0;
+        if (obj->child344 != NULL) {
+            ((struct Bit0 *)&obj->child344->unk20C)->b0 = 0;
+            ((struct Bit1Field *)&obj->child344->unk20F)->b1 = 0;
         }
     }
     return obj;
 }
 
+/* Starts the spin-and-recover sequence that obj_update_mode steps (mode 1 in unk33E): saves what
+   the sequence changes and puts back at its end (0x20D bit 5 in unk33E bit 2, the facing flags2 in
+   unk33F, and once the 3-bit state of unk214 in unk33C bits 4-6, bit 3 marking it saved), clears
+   0x20D bit 5 and unk33C bit 0, sets state 5 and makes the object hop (height 0x40, gravity 0x20). */
 void obj_reset_movement(struct Obj *obj)
 {
     ((struct Bits33E *)&obj->unk33E)->mode = 1;
@@ -440,7 +476,17 @@ void obj_reset_movement(struct Obj *obj)
     motion_obj_set_move_target(obj, 0x40, 0x20, -1);
 }
 
-NONMATCH("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(struct Obj *obj))
+/*
+ * Steps the spin-and-recover sequence obj_reset_movement starts (mode in the low 2 bits of
+ * unk33E), while both bits of the mask gUnk_02000001 (0x02000001, an address used as a constant)
+ * are set in the word at unk20C:
+ *   1: spin (flags2's top bits are the facing, +0x10 a frame) until unk18 reaches 0, then face
+ *      0x80 and wait 3 frames;
+ *   2: wait, then wobble for 60 frames;
+ *   3: unk23A wobbles 0, -1, 0, +1; at the end everything obj_reset_movement saved is put back
+ *      (0x20D bit 5, flags2, the 3-bit state in unk33D or unk214) and the sequence ends.
+ */
+void obj_update_mode(struct Obj *obj)
 {
     u32 mode;
 
@@ -452,47 +498,45 @@ NONMATCH("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(struct Obj 
                 obj->flags2 = 0x80;
                 obj->unk18 = 0;
                 obj->unk340 = 3;
-                obj->unk33E = (obj->unk33E & -4) | 2;
+                ((struct Bits33E *)&obj->unk33E)->mode = 2;
             } else {
                 obj->flags2 += 0x10;
             }
             break;
         case 2: {
-            u32 cnt = obj->unk340 - 1;
+            u32 timer = obj->unk340 - 1;
 
-            obj->unk340 = cnt;
-            if ((cnt << 24) == 0) {
-                obj->unk340 = 0x3C;
-                obj->unk33E |= 3;
+            obj->unk340 = timer;
+            if ((timer << 24) == 0) {
+                obj->unk340 = 60;
+                ((struct Bits33E *)&obj->unk33E)->mode = 3;
             }
             break;
         }
         case 3: {
-            u32 cnt = obj->unk340 - 1;
-            s32 sc;
-            u32 flags;
+            u32 timer = obj->unk340 - 1;
+            s32 left;
 
-            obj->unk340 = cnt;
-            sc = (s8)cnt;
-            if (sc == 0) {
-                u32 m2 = ((u32)obj->unk33E << 29) >> 31;
+            obj->unk340 = timer;
+            left = (s8)timer;
+            if (left == 0) {
+                u32 savedBit5 = ((u32)obj->unk33E << 29) >> 31;
 
-                ((struct Bit5 *)((u8 *)obj + 0x20D))->b5 = m2;
+                ((struct Bit5 *)((u8 *)obj + 0x20D))->b5 = savedBit5;
                 obj->flags2 = obj->unk33F;
-                obj->unk23A = sc;
-                flags = obj->unk33C | 1;
-                obj->unk33C = flags;
-                if ((flags & 0x80) != 0) {
-                    ((struct Lo3Bits *)&obj->unk33D)->lo3 = (flags << 25) >> 29;
+                obj->unk23A = left;
+                ((struct Bits33CByte *)&obj->unk33C)->b0 = 1;
+                if (((struct Bits33CByte *)&obj->unk33C)->b7) {
+                    ((struct ObjBits33D *)obj)->lo3 = ((struct Bits33CByte *)&obj->unk33C)->bits4;
                 } else {
-                    ((struct Lo3Bits *)&obj->unk214)->lo3 = (flags << 25) >> 29;
+                    ((struct ObjBits214 *)obj)->lo3 = ((struct Bits33CByte *)&obj->unk33C)->bits4;
                 }
                 ((struct Bits33C *)&obj->unk33C)->b3 = 0;
                 ((struct Bits33E *)&obj->unk33E)->mode = 0;
             } else {
-                s32 bits = cnt & mode;
+                s32 wobble = timer & mode; /* mode is 3 here */
 
-                switch (bits) {
+                switch (wobble) {
                 case 0:
                 case 2:
                     obj->unk23A = 0;
@@ -510,7 +554,6 @@ NONMATCH("asm/code_0804EA7C/obj_update_mode.s", void obj_update_mode(struct Obj 
         }
     }
 }
-END_NONMATCH
 
 NONMATCH("asm/code_0804EA7C/obj_refresh_child_sprite.s", void obj_refresh_child_sprite(struct Obj *obj))
 {

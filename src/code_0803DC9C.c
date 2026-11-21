@@ -94,66 +94,70 @@ void update_pair_facing(void *obj, u32 a, u32 b);
 void obj_set_id(void *sub, u32 id);
 void obj_init_from_table(void *table, u32 a, void *sub, u32 b);
 void set_slot_value(u32 id, s32 value);
-void motion_obj_set_move_target(void *obj, u32 a, s32 b, s32 c);
+/* Starts a jump: height in pixels (-1: the object's default), gravity (8.8 px per frame per frame,
+ * -1: default) and speed in the air (-1: default). */
+void motion_obj_set_move_target(void *obj, s32 height, s32 gravity, s32 airSpeed);
 void obj_setup_aux_1045(void *sub);
 void obj_release_oam(void *block);
-extern const u16 gUnitStatusIdTable[];
+extern const u16 gUnitStatusIdTable[]; /* 5 ids; a unit's position in it goes in status359 bits 5-7 */
 
-NONMATCH("asm/code_0803DC9C/set_unit_table_flags.s", void set_unit_table_flags(struct PairObj *obj, struct PairSub *unit))
+/* PairSub.ringFlags358: the unit has a second part (part388) that takes the same state. */
+#define UNIT_HAS_LINKED_PART 0x08
+/* PairSub.status359: bits 0-4 are kept, bits 5-7 hold the gUnitStatusIdTable index. */
+#define UNIT_STATUS_LOW_MASK 0x1F
+#define UNIT_STATUS_INDEX_SHIFT 5
+
+/*
+ * Puts the unit into state 0x6B: stores where its id (half218) sits in gUnitStatusIdTable in
+ * status359 bits 5-7 (unchanged if it isn't there), updates the pair's facing, clears the low
+ * state bits, sets state 0x6B with flags351 bit 6 on the unit and its linked part, clears
+ * field355 and plays sound 0x4A.
+ */
+void set_unit_table_flags(struct PairObj *obj, struct PairSub *unit)
 {
-    s32 mask = 0x1F;
-    const u16 *table = gUnitStatusIdTable;
-    u16 *half = &unit->half218;
-    u8 *status = &unit->status359;
-    s32 extra;
+    s32 i;
 
-    if (table[0] == *half)
+    for (i = 0; i < 5; i++)
     {
-        *status = mask & *status;
+        if (gUnitStatusIdTable[i] == unit->half218)
+        {
+            unit->status359 = (i << UNIT_STATUS_INDEX_SHIFT) | (unit->status359 & UNIT_STATUS_LOW_MASK);
+            break;
+        }
     }
-    else
-    {
-        if (table[1] == *half)
-            extra = 0x20;
-        else if (table[2] == *half)
-            extra = 0x40;
-        else if (table[3] == *half)
-            extra = 0x60;
-        else if (table[4] == *half)
-            extra = 0x80;
-        else
-            goto done;
-        *status = (mask & *status) | extra;
-    }
-
-done:
     update_pair_facing(obj, 1, 1);
+
     ((struct StateLo3 *)&unit->stateWord214)->lo3 = 0;
     unit->state = 0x6B;
     ((struct Flag351Bits *)&unit->flags351)->b6 = 1;
     unit->field23B = 0;
-    if (unit->ringFlags358 & 8)
+    if (unit->ringFlags358 & UNIT_HAS_LINKED_PART)
     {
         unit->part388->state = 0x6B;
         ((struct Flag351Bits *)&unit->part388->flags351)->b6 = 1;
         unit->part388->field23B = 0;
     }
     unit->field355 = 0;
-    set_slot_value(0x4A, -1);
+    set_slot_value(0x4A, -1); /* plays sound 0x4A */
 }
-END_NONMATCH
 
+/*
+ * Makes the unit jump: updates the pair's facing, puts the unit (and its linked part) into state
+ * 0x48 with flags351 bit 6, sets its id to 0x1002, starts a 24-pixel jump (gravity 0x75) at the
+ * pair's speed, calls the unit's method at table338 + 0x38 with 1, copies the pair's frame
+ * (fieldFB / 8) to the unit's control block and plays sound 0x46.
+ */
 void setup_unit_move(struct PairObj *obj, struct PairSub *unit)
 {
     struct SubTable338 *table;
-    void *arg0;
-    void (*func)(void *, u32);
+    void *self;
+    void (*method)(void *, u32);
 
     update_pair_facing(obj, 1, 1);
     unit->state = 0x48;
     ((struct Flag351Bits *)&unit->flags351)->b6 = 1;
     unit->field23B = 0;
-    if (unit->ringFlags358 & 8)
+    if (unit->ringFlags358 & UNIT_HAS_LINKED_PART)
     {
         unit->part388->state = 0x48;
         ((struct Flag351Bits *)&unit->part388->flags351)->b6 = 1;
@@ -162,13 +166,13 @@ void setup_unit_move(struct PairObj *obj, struct PairSub *unit)
     obj_set_id(unit, 0x1002);
     motion_obj_set_move_target(unit, 0x18, 0x75, obj->speed100);
     table = unit->table338;
-    arg0 = (u8 *)unit + table->off38;
-    func = table->func3C;
-    func(arg0, 1);
+    self = (u8 *)unit + table->off38;
+    method = table->func3C;
+    method(self, 1);
     unit->field23B = 0;
     obj_setup_aux_1045(unit);
     unit->ctl36C->frame20 = obj->fieldFB >> 3;
-    set_slot_value(0x46, -1);
+    set_slot_value(0x46, -1); /* plays sound 0x46 */
 }
 
 NONMATCH("asm/code_0803DC9C/setup_pair_move_58.s", void setup_pair_move_58(struct PairObj *obj))
@@ -202,10 +206,16 @@ NONMATCH("asm/code_0803DC9C/setup_pair_move_58.s", void setup_pair_move_58(struc
 }
 END_NONMATCH
 
+/*
+ * Puts the unit into state 0x3A: updates the pair's facing, sets flags351 bit 6, clears field23B,
+ * sets the low state bits to 4 and the unit's id to 0x1030, copies the pair's frame (fieldFB / 8)
+ * to the unit's sprite and field239, sets up the pair's first OAM block (4) for unit A, sets
+ * field355 to 0x46 and plays sound 0x56.
+ */
 void init_sub_unit_table(struct PairObj *obj, struct PairSub *unit)
 {
     struct PairSprite *sprite;
-    u8 v;
+    u8 frame;
 
     update_pair_facing(obj, 1, 1);
     unit->state = 0x3A;
@@ -214,25 +224,32 @@ void init_sub_unit_table(struct PairObj *obj, struct PairSub *unit)
     ((struct StateLo3 *)&unit->stateWord214)->lo3 = 4;
     obj_set_id(unit, 0x1030);
     sprite = unit->sprite;
-    v = obj->fieldFB >> 3;
-    sprite->frame20 = v;
-    unit->field239 = v;
+    frame = obj->fieldFB >> 3;
+    sprite->frame20 = frame;
+    unit->field239 = frame;
     obj_init_from_table(obj->oamBlocks[0], 4, obj->subA, 0);
     unit->field355 = 0x46;
-    set_slot_value(0x56, -1);
+    set_slot_value(0x56, -1); /* plays sound 0x56 */
 }
 
-NONMATCH("asm/code_0803DC9C/release_unit.s", void release_unit(struct PairObj *obj, struct PairSub *unit))
+/*
+ * Puts the unit (and its linked part) into state 0xF and releases the pair's 8 OAM blocks, then
+ * sets the unit's id to 0x1001 (group54 == 0) or 0x1002, resets its sprite scale to 1.0 (0x100),
+ * clears field23B, calls the unit's method at table338 + 0x80 with 1 and plays sound 0x49.
+ */
+void release_unit(struct PairObj *obj, struct PairSub *unit)
 {
     u8 *group;
-    s32 none;
     s32 id;
+    struct PairSprite *sprite;
+    void **blocks;
 
     unit->state = 0xF;
-    if (unit->ringFlags358 & 8)
+    if (unit->ringFlags358 & UNIT_HAS_LINKED_PART)
         unit->part388->state = 0xF;
+    blocks = obj->oamBlocks;
     group = &unit->group54;
-    obj_release_oam(obj->oamBlocks[0]);
+    obj_release_oam(blocks[0]);
     obj_release_oam(obj->oamBlocks[1]);
     obj_release_oam(obj->oamBlocks[2]);
     obj_release_oam(obj->oamBlocks[3]);
@@ -240,23 +257,29 @@ NONMATCH("asm/code_0803DC9C/release_unit.s", void release_unit(struct PairObj *o
     obj_release_oam(obj->oamBlocks[5]);
     obj_release_oam(obj->oamBlocks[6]);
     obj_release_oam(obj->oamBlocks[7]);
-    none = -1;
-    if (*group == 0)
-        id = 0x1001;
-    else
-        id = 0x1002;
-    obj_set_id(unit, id);
-    unit->sprite->half6 = 0x100;
-    unit->sprite->half4 = 0x100;
-    unit->field23B = 0;
     {
-        struct SubTable80 *t = (struct SubTable80 *)((u8 *)unit->table338 + 0x80);
-        u8 *arg0 = (u8 *)unit + t->off0;
-        t->func4(arg0, 1);
+        register s32 noValue asm("r5") = -1;
+
+        do
+        {
+            if (*group == 0)
+                id = 0x1001;
+            else
+                id = 0x1002;
+            obj_set_id(unit, id);
+        } while (0);
+        sprite = unit->sprite;
+        sprite->half6 = 0x100; /* scale 1.0 */
+        sprite->half4 = 0x100;
+        unit->field23B = 0;
+        {
+            struct SubTable80 *method = (struct SubTable80 *)((u8 *)unit->table338 + 0x80);
+            u8 *self = (u8 *)unit + method->off0;
+            method->func4(self, 1);
+        }
+        set_slot_value(0x49, noValue); /* plays sound 0x49 */
     }
-    set_slot_value(0x49, none);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0803DC9C/update_obj_gfx_state.s", void update_obj_gfx_state(void))
 

@@ -120,22 +120,17 @@ struct VoiceTrack
 
 ASM_FUNC("asm/code_0805335C/textbox_setup_tiles.s", void textbox_setup_tiles(void))
 
-NONMATCH("asm/code_0805335C/textbox_place.s", void textbox_place(struct TextboxObj *obj))
+void textbox_place(struct TextboxObj *obj)
 {
-    u32 bits;
-    u32 w;
-    u32 h;
-    u32 x;
-    u32 y;
+    u32 bits = (u32)obj->unk3C << 28;
+    u32 wt = (u32)gBoxStyleSizes[(bits >> 29) * 4] << 24;
+    u32 w = wt >> 24;
+    u32 ht = (u32)gBoxStyleSizes[(u16)(((u8)(bits >> 28) >> 1) * 2 + 1) * 2] << 24;
+    u32 h = ht >> 24;
+    u8 x = 15 - (wt >> 25), y = 10 - (ht >> 25);
 
-    bits = (u32)obj->unk3C << 28;
-    w = gBoxStyleSizes[(bits >> 29) * 4] << 24;
-    h = gBoxStyleSizes[((bits >> 29) * 2 + 1) * 2] << 24;
-    x = (u8)(0xF - (w >> 25));
-    y = (u8)(0xA - (h >> 25));
-    window_place(&obj->unk48, obj->unk40, x, y, w >> 24, h >> 24, 0xC800);
+    window_place(&obj->unk48, obj->unk40, x, y, w, h, 0xC800);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0805335C/textbox_emit_oam.s", void textbox_emit_oam(void))
 
@@ -358,6 +353,8 @@ void textbox_free(struct TextboxObj *obj, u32 kind)
 #define CHANNEL_SLICE 0x3C00
 #define MAP_BYTES 0x800
 #define KEY_A 1
+#define KEY_B 2
+#define KEY_START 8
 #define KEY_LEFT_RIGHT 0x30
 #define NO_SAVE_BLOCK 0xFFFF
 #define SAVE_INDEX_END 0x400
@@ -725,26 +722,31 @@ NONMATCH("asm/code_0805335C/textbox_create.s", struct TextboxObj *textbox_create
 }
 END_NONMATCH
 
+/* Frame update of a notice textbox (textbox_create). State 0: lets the window's open animation
+   (window at unk38: byte 0 bit 0 = closing, byte 1 = frames left) run, then waits until unk1C
+   frames have passed or A, B or START is pressed and starts closing the window. State 1: once it
+   has closed, frees the textbox (as textbox_task_free does) and starts the next scene task. */
 void textbox_update(struct TextboxObj *obj)
 {
     switch (obj->state)
     {
     case 0:
     {
-        s32 anim;
-        s32 timer;
+        s32 frames;
+        s32 timeLeft;
 
-        anim = ((s8 *)&obj->unk38)[1];
-        if (anim > 0)
+        frames = ((s8 *)&obj->unk38)[1];
+        if (frames > 0)
         {
             window_anim_step(&obj->unk38);
             break;
         }
-        timer = obj->unk1C - 1;
-        obj->unk1C = timer;
-        if ((timer << 24) != 0 && (((struct SysKeys2A *)gSys)->keys & 0xB) == 0)
+        timeLeft = obj->unk1C - 1;
+        obj->unk1C = timeLeft;
+        /* still counting down (low byte) and no key pressed */
+        if ((timeLeft << 24) != 0 && (((struct SysKeys2A *)gSys)->keys & (KEY_A | KEY_B | KEY_START)) == 0)
             break;
-        gBgRequestPtr[1] |= 0x20;
+        bg_req_or(1, 0x20);
         ((u8 *)&obj->unk38)[0] |= 1;
         ((u8 *)&obj->unk38)[1] = 7;
         obj->state = 1;
@@ -752,11 +754,11 @@ void textbox_update(struct TextboxObj *obj)
     }
     case 1:
     {
-        s32 anim;
+        s32 frames;
 
         window_anim_step(&obj->unk38);
-        anim = ((s8 *)&obj->unk38)[1];
-        if (anim != 0)
+        frames = ((s8 *)&obj->unk38)[1];
+        if (frames != 0)
             break;
         if (obj != NULL)
         {

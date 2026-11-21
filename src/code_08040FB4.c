@@ -1,5 +1,15 @@
 #include "global.h"
 
+struct PartShapeSrc
+{
+    u8 filler0[0x16];
+    u16 row16;
+    u8 filler18[0x1E - 0x18];
+    u8 table1E:4;
+};
+
+extern const u8 *const gTablePartRows[];
+
 struct ContactObj
 {
     u8 id0;
@@ -45,14 +55,24 @@ struct ContactObj
     s32 speed258;
     s32 counter25C;
     u8 filler260[0x270 - 0x260];
-    s16 partOff270;
-    u16 size272;
-    u16 zExt274;
-    u16 size276;
-    u8 filler278[0x2B5 - 0x278];
+    s16 partOff270;    /* collision box Y offset from posY (8.8 fixed point px) */
+    u16 size272;       /* collision box (8.8 fixed point px): X width */
+    u16 zExt274;       /* collision box: Z height */
+    u16 size276;       /* collision box: Y depth */
+    u16 box2W278;      /* second box (8.8 fixed point px): X width */
+    u16 box2H27A;      /* second box: Z height */
+    u16 box2D27C;      /* second box: Y depth */
+    u16 box2InnerW27E; /* second box width, 8 px narrower unless flags20E & 0x38 */
+    u16 box2InnerD280; /* second box depth, 2 px shallower unless flags20E & 0x38 */
+    u8 pxW282;         /* width in whole pixels */
+    u8 pxH283;         /* height in whole pixels */
+    u8 filler284[0x294 - 0x284];
+    struct PartShapeSrc *shape294;
+    u8 filler298[0x2B5 - 0x298];
     u8 moveFlags2B5;
     u8 axisFlags2B6;
 };
+
 
 static inline int zb_counts(s32 zb, s32 tgtZB)
 {
@@ -72,11 +92,128 @@ ASM_FUNC("asm/code_08040FB4/obj_update_cell_levels.s", void obj_update_cell_leve
 
 ASM_FUNC("asm/code_08040FB4/obj_emit_entry.s", void obj_emit_entry(void))
 
-ASM_FUNC("asm/code_08040FB4/obj_load_part_shape.s", void obj_load_part_shape(void))
+/*
+ * Loads the object's two collision boxes from its row in gTablePartRows: 7 bytes
+ * of packed 5- and 6-bit fields giving sizes in pixels, stored here as 8.8 fixed
+ * point. Without a table, both boxes default to 16 x 32 x 8 px. The inner box is
+ * the second box shrunk by 8 px in X and 2 px in Y unless flags20E & 0x38 is set.
+ * (The sign extension of partOff270 tests the already scaled value, so it never
+ * fires.)
+ */
+void obj_load_part_shape(struct ContactObj *obj)
+{
+    const u8 *row = gTablePartRows[obj->shape294->table1E];
+
+    if (row != NULL)
+    {
+        row += obj->shape294->row16 * 7;
+        obj->size272 = ((((row[0] >> 3) << 1) & 0x3F) + 2) * 0x100;
+        obj->zExt274 = ((((row[0] << 3) | (row[1] >> 5)) & 0x3F) + 1) * 0x100;
+        obj->size276 = ((((row[1] << 1) | (row[2] >> 7)) & 0x3F) + 1) * 0x100;
+        obj->box2W278 = ((((row[2] >> 2) << 1) & 0x3F) + 2) * 0x100;
+        obj->box2H27A = ((((row[2] << 4) | (row[3] >> 4)) & 0x3F) + 1) * 0x100;
+        obj->box2D27C = ((((row[3] << 2) | (row[4] >> 6)) & 0x3F) + 1) * 0x100;
+        obj->partOff270 = (row[4] & 0x3F) * 0x100;
+        obj->pxW282 = (((row[5] >> 3) << 1) & 0x3F) + 2;
+        obj->pxH283 = (((row[5] << 3) | (row[6] >> 5)) & 0x3F) + 1;
+        if (obj->partOff270 & 0x20)
+            obj->partOff270 |= 0xC0;
+    }
+    else
+    {
+        obj->size272 = 16 << 8;
+        obj->zExt274 = 32 << 8;
+        obj->size276 = 8 << 8;
+        obj->box2W278 = 16 << 8;
+        obj->box2H27A = 32 << 8;
+        obj->box2D27C = 8 << 8;
+        obj->partOff270 = 0;
+        obj->pxW282 = 16;
+        obj->pxH283 = 32;
+    }
+    obj->box2InnerW27E = obj->box2W278;
+    obj->box2InnerD280 = obj->box2D27C;
+    if (!(obj->flags20E & 0x38))
+    {
+        obj->box2InnerW27E = obj->box2W278 - (8 << 8);
+        obj->box2InnerD280 = obj->box2D27C - (2 << 8);
+    }
+}
 
 ASM_FUNC("asm/code_08040FB4/obj_set_part_sizes.s", void obj_set_part_sizes(void))
 
-ASM_FUNC("asm/code_08040FB4/obj_try_ride_platform.s", void obj_try_ride_platform(void))
+/*
+ * Carries an object along with the platform it stands on (list[obj->listIndex29]): when the
+ * object is enabled, may ride (flags20D & 0x40), is not rising and is no higher than its target
+ * height, it moves by the platform's offset from its target position and is set on the
+ * platform's top. If their collision boxes then overlap in X and Y and the object has no link
+ * yet, the platform becomes its link (link1) and counter25C is set to -1.
+ */
+void obj_try_ride_platform(struct ContactObj *obj, struct ContactObj **list)
+{
+    struct ContactObj *platform;
+    s32 objLeft;
+    s32 platformLeft;
+    s32 overlap;
+    s32 objY;
+    s32 platformY;
+    u16 objWidth;
+    u16 platformWidth;
+    u16 objDepth;
+    u16 platformDepth;
+
+    if (!(obj->flags20C & 1))
+        return;
+    if (obj->flags216 & 0x20)
+        return;
+    if (obj->listIndex29 == -1)
+        return;
+    if (!(obj->flags20D & 0x40))
+        return;
+    if (obj->counter25C > 0)
+        return;
+    if (obj->posZ + obj->posZB > obj->tgtZ + obj->tgtZB)
+        return;
+    if (obj->speed258 > 0)
+        return;
+
+    platform = list[obj->listIndex29];
+    if (!(platform->flags20C & 1))
+        return;
+
+    obj->posX += platform->posX - platform->tgtX;
+    obj->posY += platform->posY - platform->tgtY;
+    obj->posZ = platform->posZ;
+    obj->posZB = platform->posZB + platform->zExt274;
+
+    objWidth = obj->size272;
+    platformWidth = platform->size272;
+    objLeft = obj->posX - (objWidth >> 1);
+    platformLeft = platform->posX - (platformWidth >> 1);
+    if (platformLeft < objLeft)
+        overlap = platformLeft + platformWidth - objLeft;
+    else
+        overlap = objLeft + objWidth - platformLeft;
+    if (overlap <= 0)
+        return;
+
+    objDepth = obj->size276;
+    platformDepth = platform->size276;
+    objY = obj->posY + obj->partOff270;
+    platformY = platform->posY + platform->partOff270;
+    if (platformY > objY)
+        overlap = objY - (platformY - platformDepth);
+    else
+        overlap = platformY - (objY - objDepth);
+    if (overlap <= 0)
+        return;
+
+    if ((s8)obj->link1 == -1)
+    {
+        obj->link1 = obj->listIndex29;
+        obj->counter25C = -1;
+    }
+}
 
 NONMATCH("asm/code_08040FB4/obj_resolve_contacts.s", void obj_resolve_contacts(struct ContactObj *obj, struct ContactObj **list, u32 count, u8 flag))
 {

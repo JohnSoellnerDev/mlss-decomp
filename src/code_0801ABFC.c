@@ -147,7 +147,17 @@ void anim_global_create(u32 prio);
 void serial_free_buffers(void);
 void anim_global_free(void);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
-void init_scene_obj(void *obj, u32 n, const void *tag, u32 arg);
+// A byte argument passed in its own stack slot (a one-byte aggregate, stored with strb).
+typedef union __attribute__((packed)) { u8 value; } ByteArgX __attribute__((transparent_union));
+// A BLKmode one-byte aggregate (the zero-length array keeps it out of a register), so the
+// byte is stored straight into its stack slot: slot address first, then the value.
+struct SceneByte
+{
+    u8 value;
+    u8 end[0];
+} __attribute__((packed));
+typedef union __attribute__((packed)) { struct SceneByte b; u8 value; } SceneByteArg __attribute__((transparent_union));
+void init_scene_obj();
 void textbox_open_scene(void *block, u32 n, const void *tag);
 void scene_create(void *block, u32 n, const void *tag);
 void dma_copy_or_queue(void *src, void *dst, u32 len, u32 unit, u32 flags);
@@ -188,18 +198,23 @@ void serial_schedule(u16 a, u16 b, u32 c)
     }
 }
 
+/* Per-frame tick of the timer serial_schedule sets up, while in link mode (gSys[0x888] & 6 == 2).
+   gUnk_03000D28 holds the phase in bits 0-1 of byte 0 and the final state in bit 2, the second
+   phase's length at +2 and the frame count at +4. Phase 1 counts down the delay, then (if gSys[0x88B]
+   bit 0 is set) puts gUnk_03000D18 bits 4-5 into state 2 and starts phase 2; phase 2 counts down
+   its length and then sets that state to the final state (0 or 1) and ends. */
 void serial_timer_tick(void)
 {
     u8 *sys = gSys;
 
     if ((sys[0x888] & 6) == 2)
     {
-        register u32 b asm("r4");
+        register u32 bits asm("r4");
         register u8 *timer asm("r3") = gUnk_03000D28;
         u32 phase, count;
 
-        b = timer[0];
-        phase = (b << 30) >> 30;
+        bits = timer[0];
+        phase = (bits << 30) >> 30;
         switch (phase)
         {
         case 1:
@@ -224,12 +239,12 @@ void serial_timer_tick(void)
                 {
                     u32 cleared;
 
-                    if ((4 & b) == 0)
+                    if ((4 & bits) == 0)
                         ((struct Bits18 *)gUnk_03000D18)->field45 = 0;
                     else
                         ((struct Bits18 *)gUnk_03000D18)->field45 = 1;
                     cleared = ~3;
-                    cleared &= b;
+                    cleared &= bits;
                     timer[0] = cleared;
                 }
             }
@@ -358,9 +373,9 @@ void save_slot_store(void)
     store_save_slot();
 }
 
-NONMATCH("asm/code_0801ABFC/link_window_open.s", void link_window_open(u32 mode))
+void init_scene_obj(void *obj, u32 n, const void *tag, s32 arg, SceneByteArg a5, SceneByteArg a6);
+void link_window_open(u32 mode)
 {
-    u8 buf[8];
     void *block;
     s32 arg;
 
@@ -370,11 +385,8 @@ NONMATCH("asm/code_0801ABFC/link_window_open.s", void link_window_open(u32 mode)
     {
         arg = 0x73;
     }
-    *(u8 *)(buf + 4) = 0;
-    buf[0] = 1;
-    init_scene_obj(block, 8, gHeapTagLinkWindow, arg);
+    init_scene_obj(block, 8, gHeapTagLinkWindow, arg, (u8)1, (u8)0);
 }
-END_NONMATCH
 
 void serial_free_buffers(void)
 {
@@ -670,18 +682,19 @@ void quat_mul_pure_fixed(s32 *q, s32 a, s32 b, s32 c)
     q[3] = (-q0 * a - q1 * b - q2 * c) / 0x100;
 }
 
+/* quat_mul_fixed: q = q * p, the Hamilton product of two (x, y, z, w) quaternions in 8.8 fixed point. */
 void sub_0801B684(s32 *q, s32 *p)
 {
-    s32 a = q[0];
-    s32 b = q[1];
-    s32 c = q[2];
-    s32 d = q[3];
-    s32 e = p[0];
+    s32 qx = q[0];
+    s32 qy = q[1];
+    s32 qz = q[2];
+    s32 qw = q[3];
+    s32 px = p[0];
 
-    q[0] = (e * d + p[3] * a + p[2] * b - p[1] * c) / 0x100;
-    q[1] = (d * p[1] - a * p[2] + b * p[3] + c * e) / 0x100;
-    q[2] = (d * p[2] + a * p[1] - b * e + c * p[3]) / 0x100;
-    q[3] = (d * p[3] - a * e - b * p[1] - c * p[2]) / 0x100;
+    q[0] = (px * qw + p[3] * qx + p[2] * qy - p[1] * qz) / 0x100;
+    q[1] = (qw * p[1] - qx * p[2] + qy * p[3] + qz * px) / 0x100;
+    q[2] = (qw * p[2] + qx * p[1] - qy * px + qz * p[3]) / 0x100;
+    q[3] = (qw * p[3] - qx * px - qy * p[1] - qz * p[2]) / 0x100;
 }
 
 u32 *sub_0801B73C(u32 *rec, u32 a, u32 b, u32 c, u32 d)

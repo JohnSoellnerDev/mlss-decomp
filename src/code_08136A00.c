@@ -123,51 +123,56 @@ struct T3dF *t3d_f_init(struct T3dF *f);
 void t3d_node_update(struct T3dNode *node, struct Mat4 *m);
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 
-struct T3dModel *t3d_model_new(struct T3dModel *m)
+/* Constructs a T3dModel in place: identity base matrix, plus a freshly allocated
+ * T3dC and T3dL (vectors zeroed, matrices identity) and a T3dF node tree. */
+struct T3dModel *t3d_model_new(struct T3dModel *model)
 {
-    struct Mat4 *mm = &m->unk10;
-    struct T3dC *c;
-    struct T3dL *l;
-    struct Vec3 *v;
-    struct Mat4 *cm;
-    struct Mat4 *lm;
+    struct Mat4 *modelMat = &model->unk10;
+    struct T3dC *t3dc;
+    struct T3dL *t3dl;
+    struct Vec3 *vec;
+    struct Mat4 *t3dcMat;
+    struct Mat4 *t3dlMat;
 
-    mm->cb40 = gAppearCallback40Class;
-    mat4_set_identity(mm);
-    c = heap_alloc2(0x9C, 1, gHeapTagT3dc, 0);
-    v = &c->unk8;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    v = &c->unk1C;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    v = &c->unk30;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    v = &c->unk44;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    cm = &c->unk58;
-    cm->cb40 = gAppearCallback40Class;
-    mat4_set_identity(cm);
-    m->unk0 = c;
-    l = heap_alloc2(0x84, 1, gHeapTagT3dl, 0);
-    v = &l->unk4;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    v = &l->unk18;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    v = &l->unk2C;
-    v->cb10 = gAppearCallback10Class;
-    vec3_zero(v);
-    lm = &l->unk40;
-    lm->cb40 = gAppearCallback40Class;
-    mat4_set_identity(lm);
-    m->unk4 = l;
-    m->unk8 = 0;
-    m->unkC = (struct T3dNode *)t3d_f_init(heap_alloc2(0xE0, 1, gHeapTagT3df, 0));
-    return m;
+    modelMat->cb40 = gAppearCallback40Class;
+    mat4_set_identity(modelMat);
+
+    t3dc = heap_alloc2(sizeof(struct T3dC), 1, gHeapTagT3dc, 0);
+    vec = &t3dc->unk8;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    vec = &t3dc->unk1C;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    vec = &t3dc->unk30;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    vec = &t3dc->unk44;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    t3dcMat = &t3dc->unk58;
+    t3dcMat->cb40 = gAppearCallback40Class;
+    mat4_set_identity(t3dcMat);
+    model->unk0 = t3dc;
+
+    t3dl = heap_alloc2(sizeof(struct T3dL), 1, gHeapTagT3dl, 0);
+    vec = &t3dl->unk4;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    vec = &t3dl->unk18;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    vec = &t3dl->unk2C;
+    vec->cb10 = gAppearCallback10Class;
+    vec3_zero(vec);
+    t3dlMat = &t3dl->unk40;
+    t3dlMat->cb40 = gAppearCallback40Class;
+    mat4_set_identity(t3dlMat);
+    model->unk4 = t3dl;
+
+    model->unk8 = 0;
+    model->unkC = (struct T3dNode *)t3d_f_init(heap_alloc2(sizeof(struct T3dF), 1, gHeapTagT3df, 0));
+    return model;
 }
 void t3d_model_free(struct T3dModel *m, u32 flags)
 {
@@ -209,52 +214,54 @@ void t3d_model_free(struct T3dModel *m, u32 flags)
         heap_free_b(m);
 }
 
-void t3d_model_update(struct T3dModel *m)
+/* Updates the model's node tree (unkC) with a base matrix: the T3dC's matrix when the model has
+ * one, the identity otherwise. */
+void t3d_model_update(struct T3dModel *model)
 {
-    struct Mat4 tmp;
-    struct Mat4 *cm;
+    struct Mat4 base;
+    struct Mat4 *src;
 
-    tmp.cb40 = gAppearCallback40Class;
-    mat4_set_identity(&tmp);
-    tmp.m[0] = 0x100;
-    tmp.m[1] = 0;
-    tmp.m[2] = 0;
-    tmp.m[3] = 0;
-    tmp.m[4] = 0;
-    tmp.m[5] = 0x100;
-    tmp.m[6] = 0;
-    tmp.m[7] = 0;
-    tmp.m[8] = 0;
-    tmp.m[9] = 0;
-    tmp.m[10] = 0x100;
-    tmp.m[11] = 0;
-    tmp.m[12] = 0;
-    tmp.m[13] = 0;
-    tmp.m[14] = 0;
-    tmp.m[15] = 0x100;
-    if (m->unk0 != 0)
+    base.cb40 = gAppearCallback40Class;
+    mat4_set_identity(&base);
+    base.m[0] = 0x100;
+    base.m[1] = 0;
+    base.m[2] = 0;
+    base.m[3] = 0;
+    base.m[4] = 0;
+    base.m[5] = 0x100;
+    base.m[6] = 0;
+    base.m[7] = 0;
+    base.m[8] = 0;
+    base.m[9] = 0;
+    base.m[10] = 0x100;
+    base.m[11] = 0;
+    base.m[12] = 0;
+    base.m[13] = 0;
+    base.m[14] = 0;
+    base.m[15] = 0x100;
+    if (model->unk0 != NULL)
     {
-        cm = &m->unk0->unk58;
-        tmp.m[0] = cm->m[0];
-        tmp.m[1] = cm->m[1];
-        tmp.m[2] = cm->m[2];
-        tmp.m[3] = cm->m[3];
-        tmp.m[4] = cm->m[4];
-        tmp.m[5] = cm->m[5];
-        tmp.m[6] = cm->m[6];
-        tmp.m[7] = cm->m[7];
-        tmp.m[8] = cm->m[8];
-        tmp.m[9] = cm->m[9];
-        tmp.m[10] = cm->m[10];
-        tmp.m[11] = cm->m[11];
-        tmp.m[12] = cm->m[12];
-        tmp.m[13] = cm->m[13];
-        tmp.m[14] = cm->m[14];
-        tmp.m[15] = cm->m[15];
+        src = &model->unk0->unk58;
+        base.m[0] = src->m[0];
+        base.m[1] = src->m[1];
+        base.m[2] = src->m[2];
+        base.m[3] = src->m[3];
+        base.m[4] = src->m[4];
+        base.m[5] = src->m[5];
+        base.m[6] = src->m[6];
+        base.m[7] = src->m[7];
+        base.m[8] = src->m[8];
+        base.m[9] = src->m[9];
+        base.m[10] = src->m[10];
+        base.m[11] = src->m[11];
+        base.m[12] = src->m[12];
+        base.m[13] = src->m[13];
+        base.m[14] = src->m[14];
+        base.m[15] = src->m[15];
     }
-    if (m->unkC != 0)
-        t3d_node_update(m->unkC, &tmp);
-    tmp.cb40 = gAppearCallback40Class;
+    if (model->unkC != NULL)
+        t3d_node_update(model->unkC, &base);
+    base.cb40 = gAppearCallback40Class;
 }
 
 void t3d_f_walk(struct T3dF *f)

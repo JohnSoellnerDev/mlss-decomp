@@ -523,19 +523,24 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0810BB0C/draw_obj_display.s", void draw_obj_display(void *obj))
 
+/* Raster task that slides the timer window panel in, 3 lines a frame (obj->unk14 is the distance so
+   far). Past 0x18 lines it snaps to 0x20, frees the timer's tile slots 4 and 5, sends the timer object
+   to timer_object_state_db08 and leaves battle_bg_scroll_callback to fix the scroll. Each frame BG2/BG3
+   scroll up with the panel and WIN0V/WIN1V get an 11-line band that follows it.
+   gUnk_0200001A / gUnk_0200001E are the RAM copies of REG_BG2VOFS / REG_BG3VOFS. */
 void slide_window_panel(struct Obj *obj)
 {
     s32 height;
-    s32 bg2;
-    s32 t;
-    s32 y;
-    s32 top;
-    s32 bottom;
-    s32 first;
-    s32 second;
+    s32 panelY;
+    s32 h;
+    s32 slide;
+    s32 bottomOfs;
+    s32 topOfs;
+    s32 scrollA;
+    s32 scrollB;
     u32 win;
-    vu16 *shadow;
-    vu32 *win0;
+    vu16 *bg2Scroll;
+    vu32 *win0v;
 
     height = obj->unk14 + 3;
     obj->unk14 = height;
@@ -554,20 +559,22 @@ void slide_window_panel(struct Obj *obj)
         }
         obj->unkC = (struct Obj *)battle_bg_scroll_callback;
     }
-    bg2 = ((struct PanelInfo *)gWorld->timerObj->unkC)->unk16;
-    REG_BG2VOFS = bg2 - ((t = obj->unk14) + 6);
+    panelY = ((struct PanelInfo *)gWorld->timerObj->unkC)->unk16;
+    REG_BG2VOFS = panelY - ((h = obj->unk14) + 6);
     REG_BG3VOFS = gUnk_0200001E - obj->unk14;
-    win0 = (vu32 *)REG_ADDR_WIN0V;
-    shadow = &gUnk_0200001A;
-    first = shadow[0];
-    y = (s16)obj->unk14;
-    top = y - 0x99;
-    win = first - top;
-    second = shadow[0];
-    bottom = y - 0x8E;
-    win |= (second - bottom) << 8;
-    win |= ((shadow[0] - top) | ((shadow[0] - bottom) << 8)) << 16;
-    *win0 = win;
+
+    /* WIN0V and WIN1V in one write: bottom edge in the low byte, top edge in the high byte. */
+    win0v = (vu32 *)REG_ADDR_WIN0V;
+    bg2Scroll = &gUnk_0200001A;
+    scrollA = bg2Scroll[0];
+    slide = (s16)obj->unk14;
+    bottomOfs = slide - 0x99;
+    win = scrollA - bottomOfs;
+    scrollB = bg2Scroll[0];
+    topOfs = slide - 0x8E;
+    win |= (scrollB - topOfs) << 8;
+    win |= ((bg2Scroll[0] - bottomOfs) | ((bg2Scroll[0] - topOfs) << 8)) << 16;
+    *win0v = win;
 }
 
 void setup_status_panel(void)
@@ -591,11 +598,10 @@ static inline __typeof__(gWorld->timerObj) get_world_timerObj(void)
     return gWorld->timerObj;
 }
 
-NONMATCH("asm/code_0810BB0C/create_status_objects.s", void create_status_objects(void))
+void create_status_objects(void)
 {
     struct Obj *head;
     struct Obj *sub;
-    u16 *reg;
     s32 fl;
 
     if (get_world_timerObj() == 0)
@@ -610,14 +616,16 @@ NONMATCH("asm/code_0810BB0C/create_status_objects.s", void create_status_objects
             sub = raster_line_add(timer_window_setup, 0x86, update_voice_message);
             gWorld->timerObj->unkC = sub;
             sub->unk16 = gUnk_0200001A;
-            reg = (u16 *)&gUnk_02000048;
-            *reg = 0x3F3F;
-            *(reg += 1) = 0x3F3B;
+            {
+                register vu16 *win asm("r1") = (vu16 *)&gUnk_02000048;
+                *win = 0x3F3F;
+                win++;
+                *win = 0x3F3B;
+            }
         }
         raster_line_add(retract_window_panel, 0x88, 0)->unk14 = 0x18;
     }
 }
-END_NONMATCH
 
 void retract_window_panel(struct Obj *obj)
 {
@@ -867,54 +875,57 @@ NONMATCH("asm/code_0810BB0C/update_slot_display.s", void update_slot_display(u32
 }
 END_NONMATCH
 
+// Idle state of a figure's slot marker (after step_slot_object has shrunk it to full size): keeps the
+// sprite semi-transparent (OBJ mode 1) unless flags2BF bit 0 is set and the figure has no 0x300 status,
+// and frees the marker when the world is shutting slots down or the figure leaves marker mode 1.
 void clear_slot_entry(struct Obj *obj)
 {
-    struct SlotChild *sub;
-    struct Fig *rec;
-    struct Obj *entry;
-    s16 idx;
-    s32 flag2;
-    s32 k;
+    struct SlotChild *sprite;
+    struct Fig *fig;
+    struct Obj *marker;
+    s16 slot;
+    s32 translucent;
+    s32 slotIdx;
 
-    idx = obj->unk16 & 1;
+    slot = obj->unk16 & 1;
     if ((gWorld->flags0B & 0x80) != 0)
     {
-        entry = gWorld->slotObjs[idx];
-        if (entry != 0)
+        marker = gWorld->slotObjs[slot];
+        if (marker != 0)
         {
-            obj_release_node(entry->unk8);
-            gWorld->slotObjs[idx] = 0;
-            entry->unk4 = 0;
+            obj_release_node(marker->unk8);
+            gWorld->slotObjs[slot] = 0;
+            marker->unk4 = 0;
         }
     }
     else
     {
-        if (gWorld->slotObjs[idx] == 0)
+        if (gWorld->slotObjs[slot] == 0)
         {
             return;
         }
-        rec = gWorld->figs[idx];
-        sub = (struct SlotChild *)obj->unk8;
-        if ((gWorld->flags2BF & 1) == 0 || (rec->unk11E & 0x300) != 0)
+        fig = gWorld->figs[slot];
+        sprite = (struct SlotChild *)obj->unk8;
+        if ((gWorld->flags2BF & 1) == 0 || (fig->unk11E & 0x300) != 0)
         {
-            flag2 = 1;
+            translucent = 1;
         }
         else
         {
-            flag2 = 0;
+            translucent = 0;
         }
-        ((struct Bits11 *)&sub->unk11)->mode = flag2;
-        if (((struct Bits7E *)&rec->unk7E)->mode == 1)
+        ((struct Bits11 *)&sprite->unk11)->mode = translucent;
+        if (((struct Bits7E *)&fig->unk7E)->mode == 1)
         {
             return;
         }
-        k = idx;
-        entry = gWorld->slotObjs[k];
-        if (entry != 0)
+        slotIdx = slot;
+        marker = gWorld->slotObjs[slotIdx];
+        if (marker != 0)
         {
-            obj_release_node(entry->unk8);
-            gWorld->slotObjs[idx] = 0;
-            entry->unk4 = 0;
+            obj_release_node(marker->unk8);
+            gWorld->slotObjs[slot] = 0;
+            marker->unk4 = 0;
         }
     }
 }

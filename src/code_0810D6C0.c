@@ -547,7 +547,7 @@ void scroll_text_step(struct Obj *obj)
     }
 }
 
-NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(void))
+void start_timer_display(void)
 {
     struct Obj *timer;
     struct Obj *child;
@@ -561,14 +561,13 @@ NONMATCH("asm/code_0810D6C0/start_timer_display.s", void start_timer_display(voi
         gWorld->timerObj->unkC = child;
         child->unk16 = gUnk_0200001A;
         {
-            vu16 *win = (vu16 *)&gUnk_02000048;
+            register vu16 *win asm("r1") = (vu16 *)&gUnk_02000048;
             *win = 0x3F3F;
             win++;
             *win = 0x3F3B;
         }
     }
 }
-END_NONMATCH
 
 void timer_window_setup(struct Obj *obj);
 void update_voice_message(void);
@@ -1450,100 +1449,83 @@ l_ea96:
 END_NONMATCH
 
 void apply_partner_effect(struct PartnerObj *a, struct PartnerObj *b, s32 strength, s32 c, s32 x, s32 z, s32 d);
-NONMATCH("asm/code_0810D6C0/partner_link_update.s", u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode))
+// Hits `partner` (only while its state bits 1-2 say 2 or 4) with an amount worked out like damage:
+// obj's power (aux +0xC) * 0x66 scaled by obj's state +0x10A, minus partner's +0x104 * 0x33 scaled
+// by partner's +0x10C, all / 256, at least 1. `mode` picks the effect kind (1 -> 1, 3 -> 2 and turns
+// partner +0xB2 by 0x400). Afterwards a partner whose +0xF6 is 0 (and bit 1 of +0x111 clear) is
+// stopped; otherwise obj's aux flag 0x80 copies +0x54 to +0x4C, partner's +0x30 object is released
+// and partner's +0x58 callback runs. Always returns 1.
+u32 partner_link_update(struct PartnerObj *obj, struct PartnerObj *partner, u32 mode)
 {
-    s32 speedMul = 0x66;
-    s32 delta;
-    s32 vel;
-    s32 v2;
-    s32 scaled;
-    s32 modeVal;
-    s32 link;
-    u16 speedA;
-    u16 animScale;
-    u16 scaleB;
+    s32 amount;
+    s32 t;
+    s32 effect;
+    s32 remaining;
+    s32 power;
+    s32 powerScale;
+    s32 resist;
+    s32 resistScale;
 
-    link = 6;
-    link &= partner->unk28->unk7E;
-    if (link != 2 && link != 4)
+    switch (partner->unk28->unk7E & 6)
     {
+    case 2:
+    case 4:
+        break;
+    default:
         return 1;
     }
-    speedA = obj->unk6C->unkC;
-    animScale = obj->unk28->unk10A;
-    vel = partner->unk28->unk104;
-    scaleB = partner->unk28->unk10C;
-    delta = speedA;
-    scaled = delta * speedMul;
-    scaled = animScale * scaled;
-    if (scaled < 0)
-    {
-        scaled += 0xFF;
-    }
-    delta = scaled >> 8;
-    scaled = (vel << 1) + vel;
-    scaled = scaled + (scaled << 4);
-    scaled = scaleB * scaled;
-    if (scaled < 0)
-    {
-        scaled += 0xFF;
-    }
-    delta = delta - (scaled >> 8);
-    scaled = delta;
-    if (delta < 0)
-    {
-        scaled += 0xFF;
-    }
-    delta = scaled >> 8;
-    if (delta <= 0)
-    {
-        delta = 1;
-    }
-    modeVal = 0;
+    power = obj->unk6C->unkC;
+    powerScale = obj->unk28->unk10A;
+    resist = partner->unk28->unk104;
+    resistScale = partner->unk28->unk10C;
+    amount = power * 0x66;
+    amount = (amount * powerScale) / 0x100;
+    t = resist * 0x33;
+    amount -= (t * resistScale) / 0x100;
+    t = amount;
+    if (amount < 0)
+        t += 0xFF;
+    amount = t >> 8;
+    if (amount <= 0)
+        amount = 1;
+    effect = 0;
     if (mode == 2)
     {
-        partner->unkB2 = modeVal;
+        partner->unkB2 = effect;
     }
     else if (mode == 1)
     {
-        partner->unkB2 = modeVal;
-        modeVal = 1;
+        partner->unkB2 = effect;
+        effect = 1;
     }
     else if (mode == 3)
     {
         partner->unkB2 += 0x400;
-        modeVal = 2;
+        effect = 2;
     }
     else
     {
-        partner->unkB2 = modeVal;
+        partner->unkB2 = effect;
     }
-    apply_partner_effect(obj, partner, delta, modeVal, partner->unk10 / 0x100, partner->unk18 / 0x100, 0);
+    apply_partner_effect(obj, partner, amount, effect, partner->unk10 / 0x100, partner->unk18 / 0x100, 0);
     if ((partner->unk28->unk111 & 2) == 0)
     {
-        v2 = partner->unk28->unkF6;
-        if (v2 == 0)
+        remaining = partner->unk28->unkF6;
+        if (remaining == 0)
         {
             obj_stop(partner);
-            partner->unk28->unk11E = v2;
+            partner->unk28->unk11E = remaining;
             return 1;
         }
     }
     if (obj->unk6C != 0 && (obj->unk6C->unk8 & 0x80) != 0 && obj->unk54 != 0)
-    {
         obj->unk4C = obj->unk54;
-    }
     if (partner->unk30 != 0)
-    {
         obj_release(partner->unk30);
-    }
     if (partner->unk58 != 0)
-    {
         partner->unk58(partner, obj, 0);
-    }
     return 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_0810D6C0/hero_random_offset.s", void hero_random_offset(void))
 

@@ -102,25 +102,30 @@ struct ListElem
     u8 *sprite;
 };
 
+/* Per-frame scene update: the camera (obj+0x30) follows the tracked object (obj+0x20), halved and
+ * clamped to 0..0x1000 / 0..0x6000; every child in the list (obj+0x1C) is drawn relative to the
+ * camera with a depth (sprite+0xE) by its state; flag 8 at obj+0x490 reloads the scaled anims.
+ * Last, the wave phase (obj+0x48C) advances and the BG3 HBlank scroll table that
+ * start_hblank_scroll_dma reads (gUnk_03001030) starts at row 2..0x1F of obj+0x74, by its sine. */
 void obj_update_children(u8 *obj)
 {
-    u8 *motion;
-    u8 *link;
+    u8 *tracked;
+    u8 *camera;
     s32 x;
     s32 y;
     s32 clamped;
-    struct ListElem *elem;
-    u32 *counter;
+    struct ListElem *child;
+    u32 *phase;
     u32 idx;
-    s32 sine;
-    u8 *slot;
-    u8 *base;
-    u8 **slotPtr;
+    s32 row;
+    u8 *rows;
+    u8 *waveRows;
+    u8 **scrollTable;
     const s16 *sineTab;
 
-    motion = *(u8 **)(obj + 0x20);
-    x = (*(s32 *)(motion + 0x14) + 0x8000) / 2 - 0x7800;
-    y = (*(s32 *)(motion + 0x1C) + 0x8000) / 2 - 0x5000;
+    tracked = *(u8 **)(obj + 0x20);
+    x = (*(s32 *)(tracked + 0x14) + 0x8000) / 2 - 0x7800;
+    y = (*(s32 *)(tracked + 0x1C) + 0x8000) / 2 - 0x5000;
     if (x > 0)
     {
         clamped = x;
@@ -137,57 +142,57 @@ void obj_update_children(u8 *obj)
     }
     else
         y = 0;
-    link = *(u8 **)(obj + 0x30);
-    obj_set_pos(link, x, y);
-    elem = *(struct ListElem **)*(u8 **)(obj + 0x1C);
-    base = obj + 0x74;
-    while (elem != NULL)
+    camera = *(u8 **)(obj + 0x30);
+    obj_set_pos(camera, x, y);
+    child = *(struct ListElem **)*(u8 **)(obj + 0x1C);
+    waveRows = obj + 0x74;
+    while (child != NULL)
     {
-        link = *(u8 **)(obj + 0x30);
-        update_obj_sprite_pos(elem, *(u32 *)(link + 0x18), *(u32 *)(link + 0x1C));
-        switch (elem->state)
+        camera = *(u8 **)(obj + 0x30);
+        update_obj_sprite_pos(child, *(u32 *)(camera + 0x18), *(u32 *)(camera + 0x1C));
+        switch (child->state)
         {
         case 0:
         case 1:
-            *(u16 *)(elem->sprite + 0xE) = 0x40;
+            *(u16 *)(child->sprite + 0xE) = 0x40;
             break;
         case 7:
-            *(u16 *)(elem->sprite + 0xE) = 0x20;
+            *(u16 *)(child->sprite + 0xE) = 0x20;
             break;
         case 2:
-            *(u16 *)(elem->sprite + 0xE) = 0x80;
+            *(u16 *)(child->sprite + 0xE) = 0x80;
             break;
         case 3:
         case 4:
-            *(u16 *)(elem->sprite + 0xE) = 0x80;
+            *(u16 *)(child->sprite + 0xE) = 0x80;
             break;
         case 5:
         case 6:
-            *(u16 *)(elem->sprite + 0xE) = 0x10;
+            *(u16 *)(child->sprite + 0xE) = 0x10;
             break;
         }
-        elem = elem->next;
+        child = child->next;
     }
     if (*(u32 *)(obj + 0x490) & 8)
         obj_load_scaled_anims(*(u32 *)(obj + 0x6C), *(u32 *)(*(u8 **)(obj + 0x20) + 0x54));
-    counter = (u32 *)(obj + 0x48C);
-    *counter = (*counter + 1) & 0xFF;
+    phase = (u32 *)(obj + 0x48C);
+    *phase = (*phase + 1) & 0xFF;
     sineTab = gSineTable;
-    idx = *counter & 0xFF;
-    sine = sineTab[idx];
-    if (sine < 0)
-        sine += 0x3F;
-    sine = (sine >> 10) + 0x10;
-    slotPtr = (u8 **)&gUnk_03001030;
-    if (sine > 1)
+    idx = *phase & 0xFF;
+    row = sineTab[idx];
+    if (row < 0)
+        row += 0x3F;
+    row = (row >> 10) + 0x10;
+    scrollTable = (u8 **)&gUnk_03001030;
+    if (row > 1)
     {
-        if (sine > 0x1F)
-            sine = 0x1F;
-        slot = base + sine * 4;
+        if (row > 0x1F)
+            row = 0x1F;
+        rows = waveRows + row * 4;
     }
     else
-        slot = obj + 0x78;
-    *slotPtr = slot;
+        rows = obj + 0x78;
+    *scrollTable = rows;
 }
 
 void child_states_obj_list_pass_store(void)

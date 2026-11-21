@@ -12,6 +12,9 @@ struct ActorPose
     u8 flags;
 };
 
+/* ActorPose.flags: the current animation has finished. */
+#define POSE_ANIM_DONE 0x08
+
 struct ActorPart
 {
     u8 filler0[0xB4];
@@ -375,20 +378,23 @@ void wait_phase_world_update(struct ActorObj *obj)
     }
 }
 
+/* Once the actor's animation is done: plays action 3 and spawns object 0x4047 0x28 above each bro's target
+ * (gWorld->actors[6..7]), with action obj->timer and step_countdown_notify_or_place as its handler, linked into
+ * obj's children, each with effect 0x24C2. Then sound 0x119 and set_anim_04_place_part. */
 void spawn_actor_children(struct ActorObj *obj)
 {
     struct ActorObj *children[2];
-    struct ActorCand *cand;
+    struct ActorCand *bro;
     s32 i;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
         sprite_set_action(obj, 3, 0, 0);
         for (i = 0; i < 2; i++)
         {
-            cand = (struct ActorCand *)gWorld->actors[i + 6];
-            children[i] = obj_spawn(obj->part, 0x4047, cand->obj.part->targetX / 0x100,
-                                    cand->obj.part->targetY / 0x100, cand->obj.part->targetH / 0x100 + 0x28, 0, 1);
+            bro = (struct ActorCand *)gWorld->actors[i + 6];
+            children[i] = obj_spawn(obj->part, 0x4047, bro->obj.part->targetX / 0x100,
+                                    bro->obj.part->targetY / 0x100, bro->obj.part->targetH / 0x100 + 0x28, 0, 1);
             sprite_set_action(children[i], obj->timer, 0, 0);
             children[i]->child = obj->child;
             obj->child = children[i];

@@ -34,6 +34,9 @@ struct PoseModeBits
     u8 rest : 5;
 };
 
+/* ActorPose.flags bit 3: the current animation has finished. */
+#define ACTOR_POSE_ANIM_DONE 0x08
+
 struct ActorFlags79Bits
 {
     u8 bit0 : 1;
@@ -190,6 +193,10 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
+/* The hop actor_wait_ready_then_fly starts (height speed paramA4, gravity paramA8). On landing it
+ * plays action 3 and walks at speed 0x100 to where it attacks from: param9C px beside the owner's
+ * part when aimed (obj->dx == 0), else the fixed spot (param9C, paramA0). Sound 0x81 starts and
+ * actor_wait_index_action4 waits for it to arrive. */
 void actor_land_and_move(struct ActorObj *obj)
 {
     obj->posH += obj->paramA4;
@@ -214,8 +221,9 @@ void actor_land_and_move(struct ActorObj *obj)
         ((struct ActorFlags79Bits *)&obj->flags79)->bit5 = 1;
         obj->motionStart = 0;
         start_motion(obj);
-        obj->timer = 0x14;
+        obj->timer = 20;
         obj->state = actor_wait_index_action4;
+        /* both aim modes use the same sound */
         if (obj->dx == 0)
             set_slot_value(0x81, -1);
         else
@@ -223,13 +231,18 @@ void actor_land_and_move(struct ActorObj *obj)
     }
 }
 
+/* Wind-up before the actor's flight: counts timer down once per finished animation (action 4), then
+ * takes the flight action 5 and starts moving: aimed (obj->dx == 0) at the owner's part at speed
+ * paramA0, else to the fixed spot x = 48 px on its own row at speed 0x200. Its trail effect fires every
+ * 15 frames, an aimed flight stops at a slot it hits (actor_lookup_slot_wait), and the flight itself
+ * runs in actor_wait_index_action6 with sound 0x81 playing. */
 void actor_start_motion_wait(struct ActorObj *obj)
 {
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & ACTOR_POSE_ANIM_DONE)
     {
-        s32 left = --obj->timer << 16;
+        s32 loopsLeft = --obj->timer << 16;
 
-        if (left <= 0)
+        if (loopsLeft <= 0)
         {
             sprite_set_action(obj, 5, 0, 0);
             if (obj->dx == 0)
@@ -250,7 +263,7 @@ void actor_start_motion_wait(struct ActorObj *obj)
             start_motion(obj);
             obj_list_push_default(obj);
             obj->handler58 = 0;
-            obj->timer = 0xF;
+            obj->timer = 15;
             if (obj->dx == 0)
                 obj->handler60 = (void (*)(struct ActorObj *))actor_lookup_slot_wait;
             obj->state = actor_wait_index_action6;
@@ -262,27 +275,32 @@ void actor_start_motion_wait(struct ActorObj *obj)
     }
 }
 
+/* Actor flight state (started by actor_start_motion_wait, its flight sound 0x81 looping). obj->dx is
+ * the aim mode: 0 flies at the owner's part, 1 to a fixed spot. Aimed at the part, the actor drops out
+ * of the flight (actor_fall_place_sprite, action 7) once the part's flags111 bit 2 is set. Every 15
+ * frames it leaves effect 0x1C9F behind. When the motion has arrived (index 0) it plays action 6,
+ * swaps the flight sound for 0x40 (aimed) or 0xCC (fixed spot) and hits in actor_link_partners_jump. */
 void actor_wait_index_action6(struct ActorObj *obj)
 {
-    s16 dx = obj->dx;
+    s16 aimMode = obj->dx;
 
-    if (dx == 0 && (obj->owner->part->flags111 & 4))
+    if (aimMode == 0 && (obj->owner->part->flags111 & 4))
     {
         obj->state = actor_fall_place_sprite;
-        obj->paramA4 = 0x280;
-        obj->paramA8 = 0x66;
-        obj->index = dx;
+        obj->paramA4 = 0x280; /* upward speed */
+        obj->paramA8 = 0x66;  /* gravity */
+        obj->index = aimMode;
         sprite_set_action(obj, 7, 0, 0);
         sound_stop_song(0x81);
         return;
     }
     {
-        s32 left = --obj->timer << 16;
+        s32 framesLeft = --obj->timer << 16;
 
-        if (left <= 0)
+        if (framesLeft <= 0)
         {
             effect_spawn_at(0x1C9F, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-            obj->timer = 0xF;
+            obj->timer = 15;
         }
     }
     if (obj->index == 0)
@@ -303,6 +321,11 @@ void actor_wait_index_action6(struct ActorObj *obj)
     }
 }
 
+/* Hit state after actor_wait_index_action6: once the sprite's animation has ended (pose flag 8), the
+ * actor hits its target with partner_link_update: the owner when aimed at it (obj->dx == 0), else
+ * both heroes (gWorld + 0x70 / 0x74) whose part has a non-zero unkF6. Then it spawns its impact
+ * effect (0x1C8A aimed, 0x1CB1 fixed spot) 2 px below itself and waits 20 frames in
+ * actor_timeout_release before it is removed. */
 void actor_link_partners_jump(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
@@ -313,20 +336,20 @@ void actor_link_partners_jump(struct ActorObj *obj)
         }
         else
         {
-            struct ActorCands *cands = gWorld;
-            struct ActorObj *a = (struct ActorObj *)(cands->cand70 + 8);
-            struct ActorObj *b = (struct ActorObj *)(cands->cand74 + 8);
+            struct ActorCands *world = gWorld;
+            struct ActorObj *heroA = (struct ActorObj *)(world->cand70 + 8);
+            struct ActorObj *heroB = (struct ActorObj *)(world->cand74 + 8);
 
-            if (a->part->unkF6 != 0)
-                partner_link_update(obj, a, 0xFF);
-            if (b->part->unkF6 != 0)
-                partner_link_update(obj, b, 0xFF);
+            if (heroA->part->unkF6 != 0)
+                partner_link_update(obj, heroA, 0xFF);
+            if (heroB->part->unkF6 != 0)
+                partner_link_update(obj, heroB, 0xFF);
         }
         if (obj->dx == 0)
             effect_spawn_at(0x1C8A, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100, obj);
         else
             effect_spawn_at(0x1CB1, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100, obj);
-        obj->timer = 0x14;
+        obj->timer = 20;
         obj->state = actor_timeout_release;
     }
 }
@@ -428,15 +451,19 @@ void actor_wait_ready_then_fly(struct ActorObj *obj)
     }
 }
 
+/* The hop obj_wait_busy_then_state starts (height speed in targetH, gravity paramA8). On landing it
+ * plays action 3 and walks at speed 0x180 to 48 px beside the owner's part, back on the ground
+ * (baseH), with handlers obj_link_owner_then_wait / obj_query_part_then_idle; sound 0x81 plays while
+ * obj_pick_random_target waits for it to arrive. */
 void actor_fly_then_land_ext(struct ActorObj *obj)
 {
-    obj->posH += obj->targetH;
-    obj->targetH -= obj->paramA8;
+    obj->posH += obj->targetH;    /* targetH: height speed while hopping */
+    obj->targetH -= obj->paramA8; /* gravity */
     if (obj->posH <= 0)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0, 0);
-        obj->targetX = obj->owner->part->targetX + 0x3000;
+        obj->targetX = obj->owner->part->targetX + (48 << 8);
         obj->targetY = obj->owner->part->targetY;
         obj->targetH = obj->baseH;
         ((struct ActorFlags79Bits *)&obj->flags79)->bit5 = 1;
@@ -478,6 +505,9 @@ void actor_jump_to_target_a(struct ActorObj *obj);
 void actor_jump_to_target_b(struct ActorObj *obj);
 void obj_jump_arc(struct ActorObj *obj);
 
+/* Waits until the state system is free, then queues sound 0x55 and shows the actor picking up its
+   child: variant 1 (param9C == 1) plays action 7 with effect 0x1D5A, the other plays action 9 with
+   effect 0x1D6E, both at its base position. Then actor_spawn_child_4072 spawns the child. */
 void actor_wait_ready_show_sprite(struct ActorObj *obj)
 {
     if (is_state_busy(obj) == 0)
@@ -497,6 +527,10 @@ void actor_wait_ready_show_sprite(struct ActorObj *obj)
     }
 }
 
+/* Once the animation is done, plays action 4 (variant by param9C) and spawns the carried child
+   (object 0x4072) at the actor's base position, set up like the actor (owner, link, facing),
+   its param9C (hit flag) cleared. Then starts 3 hops toward the owner's part
+   (actor_aim_and_count; targetX counts the hops left, targetY keeps the sprite variant). */
 void actor_spawn_child_4072(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -527,12 +561,18 @@ void actor_spawn_child_4072(struct ActorObj *obj)
         child->handler60 = (void (*)(struct ActorObj *))obj_find_slot;
         child->state = 0;
         child->param9C = 0;
+        /* hops left, sprite variant */
         obj->targetX = 3;
         obj->targetY = obj->param9C;
         obj->state = actor_aim_and_count;
     }
 }
 
+/* Between hops toward the owner's part (targetX counts the hops left, targetY picks the sprite
+   variant). If the child (0x4072) was hit (its param9C set), drops it and falls
+   (jump_obj_fall_step). Otherwise, once the animation is done, plays action 5 and starts the next
+   hop: actor_jump_to_target_a with more than one left, actor_jump_to_target_b with one, and with
+   none a 40-frame arc of random height 0x30-0x3F straight to the owner's part (obj_jump_arc_land). */
 void actor_aim_and_count(struct ActorObj *obj)
 {
     struct ActorObj *child = obj->child;
@@ -547,12 +587,12 @@ void actor_aim_and_count(struct ActorObj *obj)
     }
     if (obj->pose->flags & 8)
     {
-        s32 r7;
-        s32 px;
-        s32 py;
-        s32 x;
-        s32 y;
-        s32 ratio;
+        s32 peak;
+        s32 goalX;
+        s32 goalY;
+        s32 distX;
+        s32 distY;
+        s32 curve;
 
         if (obj->targetY == 1)
             sprite_set_action(obj, 5, 0x2000, 0);
@@ -565,34 +605,40 @@ void actor_aim_and_count(struct ActorObj *obj)
         else
         {
             set_slot_value(0x30, -1);
-            r7 = (mt19937_next() & 0xF) + 0x30;
-            obj->targetH = r7;
-            px = obj->owner->part->targetX;
-            py = obj->owner->part->targetY;
+            peak = (mt19937_next() & 0xF) + 0x30;
+            obj->targetH = peak;
+            goalX = obj->owner->part->targetX;
+            goalY = obj->owner->part->targetY;
+            /* start point, whole pixels */
             obj->dx = obj->baseX / 0x100;
             obj->dy = obj->baseY / 0x100;
-            x = px - (obj->dx << 8);
-            y = py - (obj->dy << 8);
-            ((s32 (*)(s32))gMathRoutines)(x * x + y * y);
-            ratio = (r7 << 8) / 400;
-            if (ratio == 1)
-                ratio = 2;
-            obj->param9C = -ratio;
+            distX = goalX - (obj->dx << 8);
+            distY = goalY - (obj->dy << 8);
+            ((s32 (*)(s32))gMathRoutines)(distX * distX + distY * distY); /* result unused */
+            /* height = (t - 20)^2 * -curve + peak: 0 at both ends of the 40 frames */
+            curve = (peak << 8) / 400;
+            if (curve == 1)
+                curve = 2;
+            obj->param9C = -curve;
             obj->paramA0 = 0x28;
-            obj->paramA4 = x;
-            obj->paramA8 = y;
+            obj->paramA4 = distX;
+            obj->paramA8 = distY;
             obj->timer = 0;
             obj->state = obj_jump_arc_land;
         }
     }
 }
 
+/* One of several hops toward the owner's part (targetX counts the hops left). If the child (0x4072)
+   was hit (its param9C set), drops it and falls (jump_obj_fall_step). Otherwise starts a 40-frame
+   arc (obj_jump_arc) of random height 0x30-0x3F that covers an even share of the x distance to
+   16 px right of the owner's part, landing at a random y of 0x50-0x8F px. */
 void actor_jump_to_target_a(struct ActorObj *obj)
 {
     struct ActorObj *child = obj->child;
-    s32 cp = child->param9C;
+    s32 childHit = child->param9C;
 
-    if (cp != 0)
+    if (childHit != 0)
     {
         obj->param9C = 0x300;
         obj->paramA0 = 0x66;
@@ -601,48 +647,53 @@ void actor_jump_to_target_a(struct ActorObj *obj)
     }
     else
     {
-        s32 q;
-        s32 r;
-        s32 x;
-        s32 y;
-        s32 ratio;
-        s32 px;
+        s32 hopX;
+        s32 peak;
+        s32 distX;
+        s32 distY;
+        s32 curve;
+        s32 goalX;
 
         set_slot_value(0x30, -1);
-        px = obj->owner->part->targetX + 0x1000;
-        q = (obj->baseX - px) / (obj->targetX + 1);
+        goalX = obj->owner->part->targetX + 0x1000;
+        hopX = (obj->baseX - goalX) / (obj->targetX + 1);
         mt19937_next();
-        r = (mt19937_next() & 0xF) + 0x30;
-        obj->targetH = r;
-        x = obj->baseX - q;
+        peak = (mt19937_next() & 0xF) + 0x30;
+        obj->targetH = peak;
+        distX = obj->baseX - hopX;
         {
-            s32 yb = ((mt19937_next() & 0x3F) + 0x50) << 8;
+            s32 landY = ((mt19937_next() & 0x3F) + 0x50) << 8;
 
+            /* start point, whole pixels */
             obj->dx = obj->baseX / 0x100;
             obj->dy = obj->baseY / 0x100;
             obj->dh = obj->baseH / 0x100;
-            x = x - (obj->dx << 8);
-            y = yb - (obj->dy << 8);
+            distX = distX - (obj->dx << 8);
+            distY = landY - (obj->dy << 8);
         }
-        ((s32 (*)(s32))gMathRoutines)(x * x + y * y);
-        ratio = (r << 8) / 400;
-        if (ratio == 1)
-            ratio = 2;
-        obj->param9C = -ratio;
+        ((s32 (*)(s32))gMathRoutines)(distX * distX + distY * distY); /* result unused */
+        /* height = (t - 20)^2 * -curve + peak: 0 at both ends of the 40 frames */
+        curve = (peak << 8) / 400;
+        if (curve == 1)
+            curve = 2;
+        obj->param9C = -curve;
         obj->paramA0 = 0x28;
-        obj->paramA4 = x;
-        obj->paramA8 = y;
-        obj->timer = cp;
+        obj->paramA4 = distX;
+        obj->paramA8 = distY;
+        obj->timer = childHit;
         obj->state = obj_jump_arc;
     }
 }
 
+/* The last hop toward the owner's part. If the child (0x4072) was hit (its param9C set), drops
+   it and falls (jump_obj_fall_step). Otherwise starts a 40-frame arc (obj_jump_arc) of random
+   height 0x30-0x3F that lands 28 px right of the owner's part, on its y. */
 void actor_jump_to_target_b(struct ActorObj *obj)
 {
     struct ActorObj *child = obj->child;
-    s32 cp = child->param9C;
+    s32 childHit = child->param9C;
 
-    if (cp != 0)
+    if (childHit != 0)
     {
         obj->param9C = 0x300;
         obj->paramA0 = 0x66;
@@ -651,32 +702,34 @@ void actor_jump_to_target_b(struct ActorObj *obj)
     }
     else
     {
-        s32 r;
-        s32 px;
-        s32 py;
-        s32 x;
-        s32 y;
-        s32 ratio;
+        s32 peak;
+        s32 goalX;
+        s32 goalY;
+        s32 distX;
+        s32 distY;
+        s32 curve;
 
         set_slot_value(0x30, -1);
-        r = (mt19937_next() & 0xF) + 0x30;
-        obj->targetH = r;
-        px = obj->owner->part->targetX + 0x1C00;
-        py = obj->owner->part->targetY;
+        peak = (mt19937_next() & 0xF) + 0x30;
+        obj->targetH = peak;
+        goalX = obj->owner->part->targetX + 0x1C00;
+        goalY = obj->owner->part->targetY;
+        /* start point, whole pixels */
         obj->dx = obj->baseX / 0x100;
         obj->dy = obj->baseY / 0x100;
         obj->dh = obj->baseH / 0x100;
-        x = px - (obj->dx << 8);
-        y = py - (obj->dy << 8);
-        ((s32 (*)(s32))gMathRoutines)(x * x + y * y);
-        ratio = (r << 8) / 400;
-        if (ratio == 1)
-            ratio = 2;
-        obj->param9C = -ratio;
+        distX = goalX - (obj->dx << 8);
+        distY = goalY - (obj->dy << 8);
+        ((s32 (*)(s32))gMathRoutines)(distX * distX + distY * distY); /* result unused */
+        /* height = (t - 20)^2 * -curve + peak: 0 at both ends of the 40 frames */
+        curve = (peak << 8) / 400;
+        if (curve == 1)
+            curve = 2;
+        obj->param9C = -curve;
         obj->paramA0 = 0x28;
-        obj->paramA4 = x;
-        obj->paramA8 = y;
-        obj->timer = cp;
+        obj->paramA4 = distX;
+        obj->paramA8 = distY;
+        obj->timer = childHit;
         obj->state = obj_jump_arc;
     }
 }

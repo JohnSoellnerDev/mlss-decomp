@@ -178,25 +178,30 @@ u32 obj_lookup_slot_then_state_bc0(struct ActorObj *obj);
 void obj_move_place_cull(struct ActorObj *obj);
 void obj_no_sprite_idle(struct ActorObj *obj);
 
-void obj_update_position_timer(struct ActorObj *obj)
+/* State of the shot thrown at the owner's part (set up in code_08064310.c): spins its sprite (pose
+ * unkC += 0x400) and flies along an arc, timer frames in. X and Y go linearly from the start
+ * (dx, dy) by the span paramA4/paramA8 over paramA0 frames; the height is the parabola
+ * param9C * (timer - paramA0 / 2)^2 on top of the start height plus 0x40 pixels. Released once the
+ * height reaches 0. */
+void obj_update_position_timer(struct ActorObj *shot)
 {
-    s32 t;
-    s32 sq;
-    s32 hb;
+    s32 fromMiddle;
+    s32 arc;
+    s32 base;
 
-    obj->pose->unkC += 0x400;
-    obj->posX = (obj->paramA4 * *(s16 *)&obj->timer) / obj->paramA0 + (obj->dx << 8);
-    obj->posY = (obj->paramA8 * *(s16 *)&obj->timer) / obj->paramA0 + (obj->dy << 8);
-    t = *(s16 *)&obj->timer - obj->paramA0 / 2;
-    sq = t * t;
-    sq = obj->param9C * sq;
-    hb = obj->dh << 8;
-    hb += 0x4000;
-    obj->posH = sq + hb;
-    obj->timer++;
-    if (obj->posH <= 0)
+    shot->pose->unkC += 0x400;
+    shot->posX = (shot->paramA4 * *(s16 *)&shot->timer) / shot->paramA0 + (shot->dx << 8);
+    shot->posY = (shot->paramA8 * *(s16 *)&shot->timer) / shot->paramA0 + (shot->dy << 8);
+    fromMiddle = *(s16 *)&shot->timer - shot->paramA0 / 2;
+    arc = fromMiddle * fromMiddle;
+    arc = shot->param9C * arc;
+    base = shot->dh << 8;
+    base += 0x4000;
+    shot->posH = arc + base;
+    shot->timer++;
+    if (shot->posH <= 0)
     {
-        obj_release(obj);
+        obj_release(shot);
     }
 }
 
@@ -419,6 +424,10 @@ void parts_obj_pose_active_clear_state(struct ActorObj *obj)
     }
 }
 
+/* Actor state: once the current animation has ended (pose flag 8) it plays action 3 with effect
+   0x1284 at its base position (param9C == 0) or action 4 with effect 0x128D (param9C != 0),
+   plays sound 0x28 (set_slot_value queues the song, -1 keeps the volume) and goes on with
+   obj_pose_active_action5_or_9. */
 void obj_active_place_then_wait(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
@@ -433,6 +442,7 @@ void obj_active_place_then_wait(struct ActorObj *obj)
             sprite_set_action(obj, 4, 0, 0);
             effect_spawn_at(0x128D, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         }
+        // both variants play the same sound
         if (obj->paramA0 == 0)
         {
             set_slot_value(0x28, -1);

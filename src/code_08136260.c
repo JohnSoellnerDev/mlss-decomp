@@ -141,38 +141,41 @@ static inline void mat4_copy_words(struct Mat4 *d, struct Mat4 *s)
     d->m[13] = s->m[13];
     d->m[14] = s->m[14];
     d->m[15] = s->m[15];
+    s->cb40 = gAppearCallback40Class;
 }
 
-NONMATCH("asm/code_08136260/mat4_apply_translate.s", void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z))
+// m = m * b, through a temporary on the stack.
+static inline void mat4_mul_into(struct Mat4 *m, struct Mat4 *b)
 {
-    s32 kc = 0x100;
-    s32 kz = 0;
-    struct Mat4 tr;
     struct Mat4 out;
+    mat4_mul(&out, m, b);
+    mat4_copy_words(m, &out);
+}
 
+void mat4_apply_translate(struct Mat4 *m, s32 x, s32 y, s32 z)
+{
+    struct Mat4 tr;
+    s32 one = 0x100, zero = 0;
     tr.cb40 = gAppearCallback40Class;
-    tr.m[0] = kc;
-    tr.m[1] = kz;
-    tr.m[2] = kz;
-    tr.m[3] = kz;
-    tr.m[4] = kz;
-    tr.m[5] = kc;
-    tr.m[6] = kz;
-    tr.m[7] = kz;
-    tr.m[8] = kz;
-    tr.m[9] = kz;
-    tr.m[10] = kc;
-    tr.m[11] = kz;
+    tr.m[0] = one;
+    tr.m[1] = zero;
+    tr.m[2] = zero;
+    tr.m[3] = zero;
+    tr.m[4] = zero;
+    tr.m[5] = one;
+    tr.m[6] = zero;
+    tr.m[7] = zero;
+    tr.m[8] = zero;
+    tr.m[9] = zero;
+    tr.m[10] = one;
+    tr.m[11] = zero;
     tr.m[12] = x;
     tr.m[13] = y;
     tr.m[14] = z;
-    tr.m[15] = kc;
-    mat4_mul(&out, m, &tr);
-    mat4_copy_words(m, &out);
-    out.cb40 = gAppearCallback40Class;
+    tr.m[15] = one;
+    mat4_mul_into(m, &tr);
     tr.cb40 = gAppearCallback40Class;
 }
-END_NONMATCH
 
 struct T3dF *t3d_f_init(struct T3dF *f)
 {

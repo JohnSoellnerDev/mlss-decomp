@@ -10,6 +10,9 @@ struct ActorPose
     u8 cmd;
 };
 
+/* pose->flags: the current animation has finished */
+#define POSE_ANIM_DONE 8
+
 struct Flags79Bits
 {
     u8 low5 : 5;
@@ -174,15 +177,19 @@ void obj_walk_by_side(struct ActorObj *obj);
 void obj_pose_action15(struct ActorObj *obj);
 void obj_fall_and_launch(struct ActorObj *obj);
 
+/* Counts the timer down once per finished animation. When it runs out: stops the sound started in
+   obj_side_action_timer (0x7C), then either turns to the other side (paramA4 set: action 9, or 0xF
+   on side 1, then obj_flip_side_walk) or winds up the attack (action 0x1E / 0x1F, three more
+   animations, then actor_spawn_effect_set_cmd). paramA8 is the side the actor is on. */
 void actor_wait_then_side_action(struct ActorObj *obj)
 {
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
-        s32 t = obj->timer;
+        s32 timer = obj->timer;
 
-        t--;
-        obj->timer = t;
-        if ((t << 16) <= 0)
+        timer--;
+        obj->timer = timer;
+        if ((timer << 16) <= 0)
         {
             sound_stop_song(0x7C);
             if (obj->paramA4 != 0)
@@ -214,31 +221,35 @@ void actor_wait_then_side_action(struct ActorObj *obj)
     }
 }
 
+// Counts the timer down once per finished animation. When it runs out: plays sound slot 0x44,
+// clears param9C, starts the side's attack action (0xA / effect 0x163A, or 0x10 / effect 0x16BC
+// when paramA8 is set), installs the link/contact handlers, passes paramA0 on as the pose
+// command and hands over to obj_start_effect_by_side.
 void actor_spawn_effect_set_cmd(struct ActorObj *obj)
 {
-    u32 id;
+    u32 effectId;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
-        s32 t = obj->timer;
+        s32 timer = obj->timer;
 
-        t--;
-        obj->timer = t;
-        if ((t << 16) <= 0)
+        timer--;
+        obj->timer = timer;
+        if ((timer << 16) <= 0)
         {
             set_slot_value(0x44, -1);
             obj->param9C = 0;
             if (obj->paramA8 == 0)
             {
                 sprite_set_action(obj, 0xA, 0, 0);
-                id = 0x163A;
+                effectId = 0x163A;
             }
             else
             {
                 sprite_set_action(obj, 0x10, 0, 0);
-                id = 0x16BC;
+                effectId = 0x16BC;
             }
-            gUnk_03000E3C = effect_from_table_obj(obj, id);
+            gUnk_03000E3C = effect_from_table_obj(obj, effectId);
             ((struct Flags77Bits *)&obj->flags77)->bit6 = 1;
             obj->handler58 = (void (*)(struct ActorObj *))actor_set_speed_link;
             obj->handler5C = (void (*)(struct ActorObj *))actor_link_contact_partner;
@@ -257,59 +268,75 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
-struct NodeModeBits
-{
-    u8 low : 1;
-    u8 mode : 2;
-    u8 high : 5;
-};
-
 struct Flags78Bits
 {
     u8 low5 : 5;
     u8 kind : 3;
 };
 
+/* gWorld->partners[6] and [7] are the two heroes; their mode bits (bits 1-2) sit at this offset */
+#define HERO_SLOT_A 6
+#define HERO_SLOT_B 7
+#define HERO_MODE_OFFSET 0x7E
+struct HeroModeBits
+{
+    u8 low : 1;
+    u8 mode : 2;
+    u8 high : 5;
+};
+#define HERO_MODE_ON_FIELD 1 /* standing in battle, can be targeted */
+
+#define EFFECT_SHOT_FIRE 0x1DF0
+#define SPRITE_WAVE_SHOT 0x4101
+#define SLOT_SHOT_FIRED 0x12B
+
+/*
+ * Once the wind-up animation ends: if either hero is on the field, fire a wavy shot at them
+ * (it picks its target in actor_random_partner_link) and count it off in
+ * actor_countdown_then_timer; with no hero left to hit, go idle.
+ */
 void actor_spawn_lift_child(struct ActorObj *obj)
 {
     struct ActorWorld *world;
-    u8 *nodeA;
-    u8 *nodeB;
-    struct ActorObj *child;
+    u8 *heroA;
+    u8 *heroB;
+    struct ActorObj *shot;
     void (*next)(struct ActorObj *);
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
         world = gWorld;
-        nodeA = world->partners[6];
-        nodeB = world->partners[7];
-        if (!(((struct NodeModeBits *)(nodeB + 0x7E))->mode == 1 || ((struct NodeModeBits *)(nodeA + 0x7E))->mode == 1))
+        heroA = world->partners[HERO_SLOT_A];
+        heroB = world->partners[HERO_SLOT_B];
+        if (!(((struct HeroModeBits *)(heroB + HERO_MODE_OFFSET))->mode == HERO_MODE_ON_FIELD
+              || ((struct HeroModeBits *)(heroA + HERO_MODE_OFFSET))->mode == HERO_MODE_ON_FIELD))
         {
             sprite_set_action(obj, 0, 0, 0);
-            next = 0;
+            next = NULL;
         }
         else
         {
             sprite_set_action(obj, 0x16, 0, 0);
-            effect_spawn_at(0x1DF0, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
-            child = obj_spawn(obj->part, 0x4101, obj->baseX / 256 - 0x1A, obj->baseY / 256 + 2,
-                              obj->baseH / 256 + 0xB, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-            obj->child = child;
-            ((struct Flags78Bits *)&child->flags78)->kind = 2;
-            ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
-            ((struct ObjFlags77 *)child)->bit5 = 0;
-            child->handler68 = on_arrive;
-            child->unk6C = obj->unk6C;
-            child->owner = obj->owner;
-            child->tag = obj->tag;
-            obj_list_push_default(child);
-            child->handler58 = (void (*)(struct ActorObj *))actor_link_and_release;
-            child->handler60 = (void (*)(struct ActorObj *))actor_vanish_if_slot_missing;
-            child->state = actor_random_partner_link;
-            child->param9C = obj->paramA0;
-            sprite_set_action(child, 1, 0, 0);
-            child->dh = 0;
-            set_slot_value(0x12B, -1);
+            effect_spawn_at(EFFECT_SHOT_FIRE, obj->baseX / 256, obj->baseY / 256, obj->baseH / 256, obj);
+            /* the shot leaves from the actor's mouth, facing the way the pose faces */
+            shot = obj_spawn(obj->part, SPRITE_WAVE_SHOT, obj->baseX / 256 - 26, obj->baseY / 256 + 2,
+                             obj->baseH / 256 + 11, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+            obj->child = shot;
+            ((struct Flags78Bits *)&shot->flags78)->kind = 2;
+            ((struct ObjFlags77 *)shot)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+            ((struct ObjFlags77 *)shot)->bit5 = 0;
+            shot->handler68 = on_arrive;
+            shot->unk6C = obj->unk6C;
+            shot->owner = obj->owner;
+            shot->tag = obj->tag;
+            obj_list_push_default(shot);
+            shot->handler58 = (void (*)(struct ActorObj *))actor_link_and_release;        /* on hit */
+            shot->handler60 = (void (*)(struct ActorObj *))actor_vanish_if_slot_missing;
+            shot->state = actor_random_partner_link;
+            shot->param9C = obj->paramA0; /* the shot's speed */
+            sprite_set_action(shot, 1, 0, 0);
+            shot->dh = 0;
+            set_slot_value(SLOT_SHOT_FIRED, -1);
             next = actor_countdown_then_timer;
         }
         obj->state = next;
@@ -382,34 +409,38 @@ NONMATCH("asm/code_0806CB50/actor_random_partner_link.s", void actor_random_part
 }
 END_NONMATCH
 
+/* Per-frame step of the wave shot: moves left by its speed (param9C) along the line from its
+ * start (dx, dy, in pixels) towards the target (slope targetY / targetX), bobs its height
+ * around targetH by sine(paramA0) / 8 with a random phase step of 0..7, switches to action 0
+ * once its first animation ends (dh marks that), and is released 32 pixels past the left edge. */
 void actor_linear_wave_step(struct ActorObj *obj)
 {
-    s32 xRel;
-    s32 yPart;
-    s32 wave;
-    u16 dhu;
-    s32 *hp;
-    s32 *angle;
+    s32 travelX;
+    s32 offsetY;
+    s32 sine;
+    u16 switched;
+    s32 *baseH;
+    s32 *phase;
 
     obj->posX = obj->posX - obj->param9C;
-    xRel = obj->posX - (obj->dx << 8);
-    yPart = (xRel * obj->targetY) / obj->targetX;
-    obj->posY = yPart + (obj->dy << 8);
-    hp = &obj->targetH;
-    wave = gSineTable[(u8)obj->paramA0];
-    angle = &obj->paramA0;
-    if (wave < 0)
+    travelX = obj->posX - (obj->dx << 8);
+    offsetY = (travelX * obj->targetY) / obj->targetX;
+    obj->posY = offsetY + (obj->dy << 8);
+    baseH = &obj->targetH;
+    sine = gSineTable[(u8)obj->paramA0];
+    phase = &obj->paramA0;
+    if (sine < 0)
     {
-        wave += 0x3F;
+        sine += 0x3F;
     }
-    obj->posH = *hp + ((wave >> 6) << 3);
-    *angle += mt19937_next() & 7;
-    if (obj->pose->flags & 8)
+    obj->posH = *baseH + ((sine >> 6) << 3);
+    *phase += mt19937_next() & 7;
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
-        dhu = obj->dh;
+        switched = obj->dh;
         if (obj->dh == 0)
         {
-            obj->dh = dhu + 1;
+            obj->dh = switched + 1;
             sprite_set_action(obj, 0, 0, 0);
         }
     }
@@ -645,10 +676,16 @@ void obj_pose_action15(struct ActorObj *obj)
     }
 }
 
+/*
+ * State: falls, with targetX as the height's speed and targetH as gravity. On landing plays
+ * action 3 and moves (speed 0x200, at base height) to (0x78, 0x6C) px with dx = 1 when either
+ * hero's part has a slot (>= 0), else to (0x58, 0x6C) with dx = 0. Plays sound 0x81 and goes on
+ * to obj_index_zero_action4_exit.
+ */
 void obj_fall_and_launch(struct ActorObj *obj)
 {
-    struct ActorObj *a;
-    struct ActorPart *partB;
+    struct ActorObj *heroA;
+    struct ActorPart *heroBPart;
 
     obj->posH += obj->targetX;
     obj->targetX -= obj->targetH;
@@ -656,9 +693,9 @@ void obj_fall_and_launch(struct ActorObj *obj)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0, 0);
-        a = (struct ActorObj *)(gWorld->partners[6] + 8);
-        partB = *(struct ActorPart **)(gWorld->partners[7] + 0x30);
-        if (partB->slot >= 0 || a->part->slot >= 0)
+        heroA = (struct ActorObj *)(gWorld->partners[HERO_SLOT_A] + 8);
+        heroBPart = *(struct ActorPart **)(gWorld->partners[HERO_SLOT_B] + 0x30);
+        if (heroBPart->slot >= 0 || heroA->part->slot >= 0)
         {
             obj->dx = 1;
             obj->targetX = 0x7800;

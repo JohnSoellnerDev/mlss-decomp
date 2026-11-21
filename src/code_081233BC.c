@@ -4,7 +4,7 @@
 struct SysRam
 {
     u8 filler0[0x24];
-    u32 word24;
+    u32 playTime;
     u16 keys28;
     u16 keys2A;
     u8 filler2C[0x898 - 0x2C];
@@ -20,6 +20,87 @@ struct AreaEntry
     u8 filler2[22];
 };
 
+struct PartyMember
+{
+    u8 filler0[0x32];
+    u8 unk32;
+    u8 filler33[0x36 - 0x33];
+    u8 unk36;
+    u8 unk37;
+    u8 filler38[0x3C - 0x38];
+};
+
+struct PartyState
+{
+    struct PartyMember members[2];
+    u16 unk78[8];
+    u16 unk88;
+    u8 unk8A[0x20];
+    u8 unkAA[8];
+    u8 unkB2[8];
+    u8 unkBA[0x38];
+    u8 unkF2[0x38];
+    u8 unk12A[0x10];
+    u8 unk13A[0x38];
+    u8 unk172[0x38];
+    u8 unk1AA[0x10];
+};
+
+struct RowEntry
+{
+    u8 filler0[6];
+    u8 unk6;
+    u8 filler7[0xA - 0x7];
+    u8 unkA;
+    u8 fillerB[0x14 - 0xB];
+};
+
+#define PARTY ((struct PartyState *)gParty)
+
+/* One save slot in the EEPROM image (gUnk_03000FFC + 0x10 + n * 0x6F8). */
+struct SaveSlot
+{
+    u8 index;               /* slot number 0-2 */
+    u8 sum;                 /* low byte of the sum of the 0x6F0 bytes from data */
+    u8 tag[2];              /* "AD" once written */
+    u8 data[0x20 - 0x4];
+    u8 party[0x1BC];        /* copy of the gParty block */
+    u8 data1DC[0x6F0 - 0x1DC];
+    u32 playTime;           /* gSys.playTime when saved */
+    u8 tail[4];
+};
+
+/* gUnk_03000D40: save/session state bits. */
+struct SaveCtl
+{
+    u8 lo2 : 2;             /* bit 0: serial buffers allocated, bit 1: game loaded from a save */
+    u8 slot : 2;            /* selected save slot */
+    u8 rest : 4;
+};
+
+/* The selected save slot, from gUnk_03000D40. */
+#define CUR_SAVE_SLOT (((struct SaveCtl *)&gUnk_03000D40)->slot)
+
+static inline u8 save_checksum(u8 *data, s32 size)
+{
+    u32 sum = 0;
+    s32 i;
+
+    for (i = 0; i < size; i++)
+        sum += data[i];
+    return sum;
+}
+
+/* The EEPROM save image gUnk_03000FFC points at. */
+struct SaveFile
+{
+    u8 magic[6];            /* "MALRPG" */
+    u8 valid;               /* bit n: slot n holds a save */
+    u8 unk7;
+    u8 filler8[8];
+    struct SaveSlot slots[3];
+};
+
 extern struct SysRam gSys;
 extern u8 *gParty;
 extern u32 gUnk_03000D40;
@@ -30,6 +111,8 @@ extern const u8 gPartyMenuObjTag[];
 extern const u8 gMenuObjTagFlagged[];
 extern const u32 gAreaPtrTable[];
 extern const struct AreaEntry gAreaEntryTable[];
+extern const struct PartyMember gPartyDefaultRecords[];
+extern const struct RowEntry gRowTable[];
 
 void *heap_alloc2(u32 size, u32 a, const void *table, u32 c);
 void heap_free_a(void *p);
@@ -45,6 +128,8 @@ u32 slot_bit_test(u32 a);
 void slot_set_mode(u32 i, u32 v, u8 flag);
 u16 eeprom_write_block_wait(u16 idx, void *data);
 u32 eeprom_verify(u16 idx, void *data);
+void recalc_char_stats(u8 idx);
+void set_sys24_request(u32 value);
 
 ASM_FUNC("asm/code_081233BC/draw_party_stats_2.s", void draw_party_stats_2(void))
 
@@ -58,11 +143,16 @@ void refresh_hud_tiles(u32 ctx)
 
 ASM_FUNC("asm/code_081233BC/draw_sprite.s", void draw_sprite(void))
 
-u16 *oam_write_attrs(u16 *oam, u16 y, u8 flags, u8 mode, u8 mosaic, u8 colors, u8 shape, u16 x, u8 affine, u8 size, u16 tile, u8 prio, u8 palette)
+/* Packs one GBA OAM entry's three attributes into oam[0..2] and returns the next entry (oam + 4,
+ * skipping the affine parameter halfword). Each field is ORed in as given, unmasked. */
+u16 *oam_write_attrs(u16 *oam, u16 y, u8 affineMode, u8 objMode, u8 mosaic, u8 is8bpp, u8 shape, u16 x, u8 matrixOrFlip, u8 size, u16 tile, u8 priority, u8 palette)
 {
-    oam[0] = y | (shape << 14 | colors << 13 | mosaic << 12 | mode << 10 | flags << 8);
-    oam[1] = x | (size << 14 | affine << 9);
-    oam[2] = tile | (palette << 12 | prio << 10);
+    /* attr0: Y 0-7, affine/double-size 8-9, mode 10-11, mosaic 12, 256 colours 13, shape 14-15 */
+    oam[0] = y | (shape << 14 | is8bpp << 13 | mosaic << 12 | objMode << 10 | affineMode << 8);
+    /* attr1: X 0-8, affine matrix (or H/V flip in bits 12-13) 9-13, size 14-15 */
+    oam[1] = x | (size << 14 | matrixOrFlip << 9);
+    /* attr2: tile 0-9, priority 10-11, palette 12-15 */
+    oam[2] = tile | (palette << 12 | priority << 10);
     return oam + 4;
 }
 
@@ -80,11 +170,76 @@ void create_menu_object(u32 ctx, u32 flag)
     }
 }
 
-ASM_FUNC("asm/code_081233BC/init_party_state.s", void init_party_state(void))
+/*
+ * Resets the party block for a new game: copies both members' default
+ * records (0x1E halfwords each), and for each member whose id (unk32) is set
+ * (bit 7 clear) takes two bytes from that id's gRowTable row and recalculates
+ * the member's stats. Then clears the 8 halfwords at unk78 (and points
+ * gUnk_03000FF8 at them), marks every slot of the party's tables empty
+ * (0xFF, unkB2 zero), flags both member ids in unkF2 and lists them first in
+ * unk172.
+ */
+void init_party_state(void)
+{
+    u8 i;
+    vu16 zero;
+
+    for (i = 0; i < 2; i++)
+        cpu_set(&gPartyDefaultRecords[i], &PARTY->members[i], 0x1E);
+    if (!(PARTY->members[0].unk32 & 0x80))
+    {
+        const struct RowEntry *rowTable = gRowTable;
+
+        PARTY->members[0].unk36 = rowTable[PARTY->members[0].unk32].unk6;
+        PARTY->members[0].unk37 = rowTable[PARTY->members[0].unk32].unkA;
+        recalc_char_stats(0);
+    }
+    if (!(PARTY->members[1].unk32 & 0x80))
+    {
+        const struct RowEntry *rowTable = gRowTable;
+
+        PARTY->members[1].unk36 = rowTable[PARTY->members[1].unk32].unk6;
+        PARTY->members[1].unk37 = rowTable[PARTY->members[1].unk32].unkA;
+        recalc_char_stats(1);
+    }
+
+    /* fill mode (bit 24), 8 halfwords */
+    zero = 0;
+    cpu_set((void *)&zero, PARTY->unk78, 0x1000008);
+    gUnk_03000FF8 = (u32)PARTY->unk78;
+    PARTY->unk88 = 0;
+
+    /* every table entry starts empty */
+    for (i = 0; i < 0x20; i++)
+        PARTY->unk8A[i] |= 0xFF;
+    for (i = 0; i < 8; i++)
+        PARTY->unkB2[i] = 0;
+    for (i = 0; i < 8; i++)
+        PARTY->unkAA[i] |= 0xFF;
+    for (i = 0; i < 0x38; i++)
+        PARTY->unkBA[i] |= 0xFF;
+    for (i = 0; i < 0x38; i++)
+        PARTY->unkF2[i] |= 0xFF;
+    for (i = 0; i < 0x10; i++)
+        PARTY->unk12A[i] |= 0xFF;
+    for (i = 0; i < 0x38; i++)
+        PARTY->unk13A[i] |= 0xFF;
+    for (i = 0; i < 0x38; i++)
+        PARTY->unk172[i] |= 0xFF;
+    for (i = 0; i < 0x10; i++)
+        PARTY->unk1AA[i] |= 0xFF;
+
+    /* the members' own ids are flagged and listed first */
+    PARTY->unkF2[PARTY->members[0].unk32] = 1;
+    PARTY->unkF2[PARTY->members[1].unk32] = 1;
+    PARTY->unk172[0] = PARTY->members[0].unk32;
+    PARTY->unk172[1] = PARTY->members[1].unk32;
+    set_sys24_request(0);
+}
 
 ASM_FUNC("asm/code_081233BC/give_reward.s", void give_reward(void))
 
-ASM_FUNC("asm/code_081233BC/recalc_char_stats.s", void recalc_char_stats(void))
+ASM_FUNC("asm/code_081233BC/recalc_char_stats.s", void recalc_char_stats(u8 idx))
 
 void clear_byte_if_sys_flag(u8 *flag)
 {
@@ -181,7 +336,7 @@ NONMATCH("asm/code_081233BC/save_game_flush_irq_off.s", u32 save_game_flush_irq_
         {
             save_slot_store();
             idx = (gUnk_03000D40 << 0x1C) >> 0x1E;
-            *(u32 *)(buf + idx * 0x6F8 + 0x700) = gSys.word24;
+            *(u32 *)(buf + idx * 0x6F8 + 0x700) = gSys.playTime;
             MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gParty, buf + idx * 0x6F8 + 0x30, 0x1BC);
         }
         idx = (gUnk_03000D40 << 0x1C) >> 0x1E;
@@ -287,6 +442,53 @@ NONMATCH("asm/code_081233BC/save_game_flush_irq_off.s", u32 save_game_flush_irq_
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_081233BC/save_slot.s", void save_slot(void))
+/*
+ * Fills the EEPROM save image's header and the selected save slot before it is
+ * written out. mode 0 stores the current game (play time and party) into the
+ * slot, 1 erases the slot; any other mode only refreshes its checksum and tags.
+ */
+void save_slot(u32 mode)
+{
+    struct SaveFile *save;
+    u32 zero;
+    s32 i;
+
+    save = (struct SaveFile *)gUnk_03000FFC;
+    save->magic[0] = 'M';
+    save->magic[1] = 'A';
+    save->magic[2] = 'L';
+    save->magic[3] = 'R';
+    save->magic[4] = 'P';
+    save->magic[5] = 'G';
+    save->unk7 = 0;
+    if (mode != 1)
+    {
+        if (mode == 0)
+        {
+            save_slot_store();
+            save->slots[CUR_SAVE_SLOT].playTime = gSys.playTime;
+            /* 0xDE halfwords: the whole 0x1BC-byte party block */
+            cpu_set(gParty, save->slots[CUR_SAVE_SLOT].party, 0xDE);
+        }
+        save->valid |= 1 << CUR_SAVE_SLOT;
+        {
+            register u32 bits asm("r2") = gUnk_03000D40 << 0x1C;
+            register u32 slot asm("r1") = bits >> 0x1E;
+            save->slots[slot].index = bits = slot;
+        }
+        save->slots[CUR_SAVE_SLOT].sum = save_checksum(save->slots[CUR_SAVE_SLOT].data, 0x6F0);
+        save->slots[CUR_SAVE_SLOT].tag[0] = 'A';
+        save->slots[CUR_SAVE_SLOT].tag[1] = 'D';
+        for (i = 0; i < 4; i++)
+            save->slots[CUR_SAVE_SLOT].tail[i] = 0;
+    }
+    else
+    {
+        /* 32-bit fill of 0x1BE words: the whole 0x6F8-byte slot */
+        zero = 0;
+        cpu_set(&zero, &save->slots[CUR_SAVE_SLOT], 0x050001BE);
+        save->valid &= ~(1 << CUR_SAVE_SLOT);
+    }
+}
 
 ASM_FUNC("asm/code_081233BC/eeprom_store_blocks.s", void eeprom_store_blocks(void))

@@ -108,6 +108,12 @@ struct ActorObj
     s16 dh;
 };
 
+/* flags79 bit 5: start_motion takes targetX/Y/H as an absolute point (else as an offset from
+   posX/Y/H) and clears the bit again */
+#define MOTION_TARGET_ABSOLUTE 0x20
+/* pose->flags bit 3: the current animation has finished */
+#define POSE_ANIM_DONE 8
+
 u32 sprite_set_action(struct ActorObj *obj, u32 action, u32 a2, u32 a3);
 u32 partner_link_update(struct ActorObj *obj, u32 partner, u32 mode);
 u32 lookup_link_slot(struct ActorObj *obj);
@@ -197,17 +203,21 @@ void reset_height_motion(struct ActorObj *obj)
     obj->state = wait_timer_then_place;
 }
 
+/* Once the current animation has finished (pose flag 8): hides the first partner (it reappears in
+ * anim_track_slot), spawns the 0x40B8 child at the object's base point, facing the same way, one
+ * layer in front and without a state of its own, plays action 2 on both (the object with sprite
+ * 0x40B7), spawns effect 0x21F2 and goes on to count_dx_and_notify with dx cleared. */
 void spawn_child_and_place(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    struct ActorObj *slot;
+    struct ActorObj *partner;
     s32 zero;
-    s32 flags;
 
     if (obj->pose->flags & 8)
     {
-        slot = (struct ActorObj *)(gWorld->partners[0] + 8);
-        obj_detach_active(slot->pose);
+        partner = (struct ActorObj *)(gWorld->partners[0] + 8);
+        obj_detach_active(partner->pose);
+        /* bit 6 of pose->unk11: facing (mirrored) */
         child = obj_spawn(obj->part, 0x40B8, obj->baseX / 0x100, obj->baseY / 0x100,
                           obj->baseH / 0x100, (((u32)obj->pose->unk11 << 25) >> 31), 1);
         obj->child = child;
@@ -224,11 +234,14 @@ void spawn_child_and_place(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation has finished: plays action 4 on the object (sprite 0x40B7) and its
+ * child, spawns effect 0x21FB at the base point, starts a move at speed 0x500 to the fixed point
+ * (0xA000, 0x6800, 0xA000), plays sound 0x69 and goes on to timer_30_when_idle. */
 void place_and_move_fixed(struct ActorObj *obj)
 {
     s32 flags;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
         sprite_set_action(obj, 4, 0x40B7, 0);
         sprite_set_action(obj->child, 4, 0, 0);
@@ -238,7 +251,7 @@ void place_and_move_fixed(struct ActorObj *obj)
         obj->targetH = 0xA000;
         obj->motionSpeed = 0x500;
         flags = obj->flags79;
-        flags |= 0x20;
+        flags |= MOTION_TARGET_ABSOLUTE;
         obj->flags79 = flags;
         obj->motionStart = 0;
         start_motion(obj);
@@ -247,10 +260,13 @@ void place_and_move_fixed(struct ActorObj *obj)
     }
 }
 
+/* Counts the timer down (set by timer_30_when_idle). When it runs out: action 5 on the object (sprite
+ * 0x40B7) and its child, fall speed 0x66 growing by 0x33 per frame (param9C/paramA0), and a 0x40BB
+ * rider is spawned at the base point as the child's child, facing the same way, ten layers in front
+ * and without a state of its own. Then the object falls in obj_fall_and_split. */
 void timer_spawn_grandchild(struct ActorObj *obj)
 {
-    struct ActorObj *spawned;
-    s32 flags;
+    struct ActorObj *rider;
 
     obj->timer--;
     if ((s16)obj->timer <= 0)
@@ -259,23 +275,29 @@ void timer_spawn_grandchild(struct ActorObj *obj)
         sprite_set_action(obj->child, 5, 0, 0);
         obj->param9C = 0x66;
         obj->paramA0 = 0x33;
-        spawned = obj_spawn(obj->part, 0x40BB, obj->baseX / 0x100, obj->baseY / 0x100,
-                            obj->baseH / 0x100, (((u32)obj->pose->unk11 << 25) >> 31), 1);
-        obj->child->child = spawned;
-        spawned->group = obj->group;
-        spawned->depth = obj->depth + 0xA;
-        ((struct Flags79Bits *)&spawned->flags79)->bit3 = 0;
-        spawned->state = 0;
+        /* bit 6 of pose->unk11: facing (mirrored) */
+        rider = obj_spawn(obj->part, 0x40BB, obj->baseX / 0x100, obj->baseY / 0x100,
+                          obj->baseH / 0x100, (((u32)obj->pose->unk11 << 25) >> 31), 1);
+        obj->child->child = rider;
+        rider->group = obj->group;
+        rider->depth = obj->depth + 10;
+        ((struct Flags79Bits *)&rider->flags79)->bit3 = 0;
+        rider->state = NULL;
         obj->state = obj_fall_and_split;
     }
 }
 
+/* Drops the object by its fall speed (param9C, growing by paramA0 each frame) with its
+   grandchild riding 0x10 above it. On landing: sound 0x40, two impact effects, and the
+   object splits into four 0x40BA pieces that slide off sideways (param9C: 0 left, 1 right;
+   paramA0: slide speed). The first pair waits 60 frames, the second goes at once; the two
+   left pieces can hit things. */
 void obj_fall_and_split(struct ActorObj *obj)
 {
-    struct ActorObj *piece;
-    struct ActorObj *b;
-    struct ActorObj *c;
-    struct ActorObj *d;
+    struct ActorObj *leftA;
+    struct ActorObj *rightA;
+    struct ActorObj *leftB;
+    struct ActorObj *rightB;
 
     obj->child->child->posH = obj->posH + 0x1000;
     obj->posH -= obj->param9C;
@@ -291,111 +313,120 @@ void obj_fall_and_split(struct ActorObj *obj)
         effect_spawn_at(0x220C, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100, obj);
         obj->timer = 0x14;
 
-        piece = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+        leftA = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
                           obj->posH / 0x100, 1, 1);
-        obj->child->child = piece;
-        piece->group = obj->group;
-        piece->depth = 0x7F;
-        piece->param9C = 0;
-        piece->paramA0 = 0;
-        ((struct Flags79Bits *)&piece->flags79)->bit0 = 1;
-        ((struct Flags77Bits *)&piece->flags77)->bit6 = 0;
-        ((struct Flags77Bits *)&piece->flags77)->bit5 = 0;
-        piece->handler68 = on_arrive;
-        piece->field6C = obj->field6C;
-        piece->owner = obj->owner;
-        obj_list_push_default(piece);
-        piece->handler58 = bind_part_then_step;
-        piece->handler5C = 0;
-        piece->timer = 0x3C;
-        piece->state = timer_then_step_2b35;
+        obj->child->child = leftA;
+        leftA->group = obj->group;
+        leftA->depth = 0x7F;
+        leftA->param9C = 0;
+        leftA->paramA0 = 0;
+        ((struct Flags79Bits *)&leftA->flags79)->bit0 = 1;
+        ((struct Flags77Bits *)&leftA->flags77)->bit6 = 0;
+        ((struct Flags77Bits *)&leftA->flags77)->bit5 = 0;
+        leftA->handler68 = on_arrive;
+        leftA->field6C = obj->field6C;
+        leftA->owner = obj->owner;
+        obj_list_push_default(leftA);
+        leftA->handler58 = bind_part_then_step;
+        leftA->handler5C = 0;
+        leftA->timer = 0x3C;
+        leftA->state = timer_then_step_2b35;
 
-        b = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
-                      obj->posH / 0x100, 0, 1);
-        piece->child = b;
-        b->group = obj->group;
-        b->depth = 0x7F;
-        b->param9C = 1;
-        b->paramA0 = 0;
-        b->timer = 0x3C;
-        b->state = timer_then_step_2b35;
+        rightA = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                           obj->posH / 0x100, 0, 1);
+        leftA->child = rightA;
+        rightA->group = obj->group;
+        rightA->depth = 0x7F;
+        rightA->param9C = 1;
+        rightA->paramA0 = 0;
+        rightA->timer = 0x3C;
+        rightA->state = timer_then_step_2b35;
 
-        c = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
-                      obj->posH / 0x100, 1, 1);
-        b->child = c;
-        c->group = obj->group;
-        c->depth = 0x7F;
-        c->param9C = 0;
-        c->paramA0 = 0x33;
-        c->pose->unk4 = 0x80;
-        ((struct Flags79Bits *)&c->flags79)->bit0 = 1;
-        c->state = scroll_obj_out;
-        ((struct Flags77Bits *)&c->flags77)->bit6 = 0;
-        ((struct Flags77Bits *)&c->flags77)->bit5 = 0;
-        c->handler68 = on_arrive;
-        c->field6C = obj->field6C;
-        c->owner = obj->owner;
-        obj_list_push_default(c);
-        c->handler58 = roll_action_chance;
-        c->handler5C = 0;
+        leftB = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                          obj->posH / 0x100, 1, 1);
+        rightA->child = leftB;
+        leftB->group = obj->group;
+        leftB->depth = 0x7F;
+        leftB->param9C = 0;
+        leftB->paramA0 = 0x33;
+        leftB->pose->unk4 = 0x80;
+        ((struct Flags79Bits *)&leftB->flags79)->bit0 = 1;
+        leftB->state = scroll_obj_out;
+        ((struct Flags77Bits *)&leftB->flags77)->bit6 = 0;
+        ((struct Flags77Bits *)&leftB->flags77)->bit5 = 0;
+        leftB->handler68 = on_arrive;
+        leftB->field6C = obj->field6C;
+        leftB->owner = obj->owner;
+        obj_list_push_default(leftB);
+        leftB->handler58 = roll_action_chance;
+        leftB->handler5C = 0;
 
-        d = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
-                      obj->posH / 0x100, 0, 1);
-        c->child = d;
-        d->group = obj->group;
-        d->depth = 0x7F;
-        d->param9C = 1;
-        d->paramA0 = 0x33;
-        d->state = scroll_obj_out;
-        d->pose->unk4 = 0x80;
+        rightB = obj_spawn(obj->part, 0x40BA, obj->posX / 0x100, obj->posY / 0x100,
+                           obj->posH / 0x100, 0, 1);
+        leftB->child = rightB;
+        rightB->group = obj->group;
+        rightB->depth = 0x7F;
+        rightB->param9C = 1;
+        rightB->paramA0 = 0x33;
+        rightB->state = scroll_obj_out;
+        rightB->pose->unk4 = 0x80;
         obj->state = anim_track_slot;
     }
 }
 
+/*
+ * Once the current animation has finished and the timer has run out, the first partner
+ * reappears at this object's position (sprite 0x40AA) and both jump back to their own part's
+ * target on a parabola 0x30 pixels high: the partner at 0x66 and this object at 0x180 per
+ * frame (action 7, landing in move_by_speed_then_land). For each jump param9C holds the
+ * parabola's (negative) coefficient, paramA0 its length in frames, paramA4/paramA8 the
+ * distance to cover and dx/dy/dh the start position in pixels.
+ */
 void anim_track_slot(struct ActorObj *obj)
 {
-    struct ActorObj *slot;
-    s32 dxd;
-    s32 dyd;
-    s32 slotDx;
-    s32 slotDy;
+    struct ActorObj *partner;
+    s32 distX;
+    s32 distY;
+    s32 partnerDistX;
+    s32 partnerDistY;
     s32 dist;
-    s32 duration;
+    s32 frames;
     s32 half;
-    s32 factor;
+    s32 coef;
 
     if (obj->pose->flags & 8)
     {
         obj->timer--;
         if ((s16)obj->timer <= 0)
         {
-            slot = (struct ActorObj *)(gWorld->partners[0] + 8);
-            sprite_entry_update(slot->pose);
-            slot->posX = obj->posX;
-            slot->posY = obj->posY;
-            slot->posH = obj->posH;
-            sprite_set_action(slot, 0, 0x40AA, 0);
-            slot->state = move_by_speed_xy;
-            slot->targetX = slot->part->targetX;
-            slot->targetY = slot->part->targetY;
-            slot->dx = slot->posX / 0x100;
-            slot->dy = slot->posY / 0x100;
-            slot->dh = slot->posH / 0x100;
-            slotDx = slot->targetX - (slot->dx << 8);
-            slotDy = slot->targetY - (slot->dy << 8);
-            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(slotDx * slotDx + slotDy * slotDy);
-            duration = dist / 0x66;
-            half = duration / 2;
-            factor = 0x3000 / (half * half);
-            if (factor == 1)
+            partner = (struct ActorObj *)(gWorld->partners[0] + 8);
+            sprite_entry_update(partner->pose);
+            partner->posX = obj->posX;
+            partner->posY = obj->posY;
+            partner->posH = obj->posH;
+            sprite_set_action(partner, 0, 0x40AA, 0);
+            partner->state = move_by_speed_xy;
+            partner->targetX = partner->part->targetX;
+            partner->targetY = partner->part->targetY;
+            partner->dx = partner->posX / 0x100;
+            partner->dy = partner->posY / 0x100;
+            partner->dh = partner->posH / 0x100;
+            partnerDistX = partner->targetX - (partner->dx << 8);
+            partnerDistY = partner->targetY - (partner->dy << 8);
+            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(partnerDistX * partnerDistX + partnerDistY * partnerDistY);
+            frames = dist / 0x66;
+            half = frames / 2;
+            /* starts and ends at the base height, 0x3000 above it halfway */
+            coef = 0x3000 / (half * half);
+            if (coef == 1)
             {
-                factor = 2;
+                coef = 2;
             }
-            slot->param9C = -factor;
-            slot->paramA0 = duration;
-            slot->paramA4 = slotDx;
-            slot->paramA8 = slotDy;
-            slot->timer = 0;
+            partner->param9C = -coef;
+            partner->paramA0 = frames;
+            partner->paramA4 = partnerDistX;
+            partner->paramA8 = partnerDistY;
+            partner->timer = 0;
 
             sprite_set_action(obj, 7, 0x40B7, 0);
             sprite_set_action(obj->child, 7, 0, 0);
@@ -404,38 +435,42 @@ void anim_track_slot(struct ActorObj *obj)
             obj->dx = obj->posX / 0x100;
             obj->dy = obj->posY / 0x100;
             obj->dh = obj->posH / 0x100;
-            dxd = obj->targetX - (obj->dx << 8);
-            dyd = obj->targetY - (obj->dy << 8);
-            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dxd * dxd + dyd * dyd);
-            duration = dist / 0x180;
-            half = duration / 2;
-            factor = 0x3000 / (half * half);
-            if (factor == 1)
+            distX = obj->targetX - (obj->dx << 8);
+            distY = obj->targetY - (obj->dy << 8);
+            dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(distX * distX + distY * distY);
+            frames = dist / 0x180;
+            half = frames / 2;
+            coef = 0x3000 / (half * half);
+            if (coef == 1)
             {
-                factor = 2;
+                coef = 2;
             }
-            obj->param9C = -factor;
-            obj->paramA0 = duration;
-            obj->paramA4 = dxd;
-            obj->paramA8 = dyd;
+            obj->param9C = -coef;
+            obj->paramA0 = frames;
+            obj->paramA4 = distX;
+            obj->paramA8 = distY;
             obj->timer = 0;
             obj->state = move_by_speed_then_land;
         }
     }
 }
 
+/* One frame of the partner's jump that anim_track_slot set up: moves linearly from the start
+ * (dx, dy) by (paramA4, paramA8) over paramA0 frames, on a parabola (coefficient param9C < 0)
+ * 0x30 px above the start height dh at its middle. Once past the middle and down to the ground,
+ * it lands on its part's target height and stops (state = 0). Positions are 24.8 fixed point. */
 void move_by_speed_xy(struct ActorObj *obj)
 {
-    s32 rel;
-    s32 h;
-    s32 offH;
+    s32 fromMiddle;
+    s32 arc;
+    s32 peakH;
 
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
-    rel = (s16)obj->timer - obj->paramA0 / 2;
-    h = rel * rel * obj->param9C;
-    offH = (obj->dh << 8) + 0x3000;
-    obj->posH = h + offH;
+    fromMiddle = (s16)obj->timer - obj->paramA0 / 2;
+    arc = fromMiddle * fromMiddle * obj->param9C;
+    peakH = (obj->dh << 8) + 0x3000;
+    obj->posH = arc + peakH;
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {
@@ -447,27 +482,32 @@ void move_by_speed_xy(struct ActorObj *obj)
     }
 }
 
+/* One frame of the jump anim_track_slot set up: moves linearly from the start (dx, dy) by
+ * (paramA4, paramA8) over paramA0 frames, on a parabola (coefficient param9C) 0x30 px above the
+ * start height at its middle. Once past the middle and down to the ground, it lands on its
+ * part's target height, spawns effect 0x2214 there, shows sprite 0x40B3, releases its child and
+ * waits (wait_for_index). */
 void move_by_speed_then_land(struct ActorObj *obj)
 {
-    s32 rel;
+    s32 fromMiddle;
     s32 h;
-    s32 offH;
-    s32 hTarget;
+    s32 peakH;
+    s32 groundH;
 
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
-    rel = (s16)obj->timer - obj->paramA0 / 2;
-    h = rel * rel * obj->param9C;
-    offH = (obj->dh << 8) + 0x3000;
-    obj->posH = h + offH;
+    fromMiddle = (s16)obj->timer - obj->paramA0 / 2;
+    h = fromMiddle * fromMiddle * obj->param9C;
+    peakH = (obj->dh << 8) + 0x3000;
+    obj->posH = h + peakH;
     obj->timer++;
     if ((s16)obj->timer >= obj->paramA0 / 2)
     {
         if (obj->posH <= 0)
         {
-            hTarget = obj->part->targetH;
-            obj->posH = hTarget;
-            effect_spawn_at(0x2214, obj->posX / 0x100, obj->posY / 0x100, hTarget / 0x100, obj);
+            groundH = obj->part->targetH;
+            obj->posH = groundH;
+            effect_spawn_at(0x2214, obj->posX / 0x100, obj->posY / 0x100, groundH / 0x100, obj);
             sprite_set_action(obj, 0, 0x40B3, 0);
             obj_release(obj->child);
             obj->state = wait_for_index;

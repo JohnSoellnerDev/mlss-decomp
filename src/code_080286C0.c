@@ -31,6 +31,7 @@ struct DmaSource
 
 struct SceneTable
 {
+    /* 0x00-0x28: the 11 tile blocks of gLookup13b4Ids (load_table_13b4) */
     struct DmaSource *unk0;
     u8 filler4[0x0C - 0x04];
     struct DmaSource *unk0C;
@@ -84,13 +85,13 @@ struct SceneObj
     s16 unk274;
     s16 unk276;
     s16 unk278;
-    u16 unk27A;
-    u16 unk27C;
+    u16 scrollX;        // view's top-left corner on the map, pixels
+    u16 scrollY;
     s16 camX;
     s16 camY;
     u8 filler282[0x286 - 0x282];
-    u16 unk286;
-    u16 unk288;
+    u16 mapWidth;       // pixels
+    u16 mapHeight;
     u8 unk28A;
     u8 unk28B;
     u8 unk28C;
@@ -102,16 +103,16 @@ struct SceneObj
     u8 filler2AE[0x2B4 - 0x2AE];
     u16 half2B4;
     u8 filler2B6[0x2EC - 0x2B6];
-    u16 unk2EC;
-    u16 unk2EE;
+    u16 scrollFromX;    // a scroll move (see sprites_obj_set_move_target): start,
+    u16 scrollFromY;
     u8 filler2F0[0x2F2 - 0x2F0];
-    u16 unk2F2;
-    u16 unk2F4;
+    u16 scrollToX;      // target,
+    u16 scrollToY;
     u8 filler2F6[0x2F8 - 0x2F6];
     u16 unk2F8;
-    u16 unk2FA;
-    u16 unk2FC;
-    u8 unk2FE;
+    u16 scrollTime;     // frames done,
+    u16 scrollDuration; // frames in all,
+    u8 scrollAngle;     // direction (256 to a turn)
     u8 filler2FF[0x304 - 0x2FF];
     void *resource;
     u8 filler308[0x314 - 0x308];
@@ -210,11 +211,13 @@ struct Entity
 
 struct SpriteEntry
 {
-    u16 posX;
+    u16 posX;       // on screen, pixels
     u16 posY;
     u8 filler4[0x12 - 0x4];
     u8 flags12;
 };
+
+#define SPRITE_ENTRY_UNLINKED 0x20 // SpriteEntry.flags12: taken off the sprite list (unlink_d54)
 
 
 struct SlotInit
@@ -231,6 +234,8 @@ struct SlotInit
 };
 
 extern u8 gFlowState;
+/* Load mode of table_register: sub_0800063C (the end of the RAM decompress routine) queues the
+   blocks it gets for loading later; 0 decompresses each one at once. */
 extern u32 gUnk_03000C78;
 void sub_0800063C(void);
 extern u8 gUnk_02000080[];
@@ -296,35 +301,43 @@ struct AnimObj
     u8 mode;
 };
 
-void register_effect_entry(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g);
+/* Sets effect vars 0x2F (index) and 0x31 (facing, or altFacing + 7 when altFacing isn't 0) for
+ * the owner's object `index`, turning it to `facing` if `turn` and it allows that, then registers
+ * the slot with `arg` and keeps `action`. */
+void register_effect_entry(u32 owner, u32 index, u32 arg, u32 facing, u32 altFacing, u32 turn, u32 action);
 
+/* Starts an effect entry for `obj` through register_effect_entry: the entry index is the signed
+ * 7-bit field in animC, the one-hot direction in mode's low 4 bits (1, 2, 4, 8) becomes facing 4,
+ * 6, 0 or 2 (obj_set_stage's 0-7), and mode's bits 4-5 (1, 2) become the alternative 2 or 1. animB
+ * is passed along as the action: when animA is 3 it becomes 0x19, and when animA is -1 actions 7,
+ * 9 and 10 become 0, and 12 and 14 become 11. Action 0x10 doesn't turn the entry's object. */
 void apply_anim_state(struct AnimActor *actor, struct AnimObj *obj, struct AnimSrc *src)
 {
-    u32 modeLo = 0;
-    u32 modeHi = 0;
+    u32 facing = 0;
+    u32 altFacing = 0;
 
     switch (((u32)obj->mode << 28) >> 28)
     {
     case 1:
-        modeLo = 4;
+        facing = 4;
         break;
     case 2:
-        modeLo = 6;
+        facing = 6;
         break;
     case 4:
         break;
     case 8:
-        modeLo = 2;
+        facing = 2;
         break;
     }
 
     switch (((u32)obj->mode << 26) >> 30)
     {
     case 1:
-        modeHi = 2;
+        altFacing = 2;
         break;
     case 2:
-        modeHi = 1;
+        altFacing = 1;
         break;
     }
 
@@ -350,56 +363,59 @@ void apply_anim_state(struct AnimActor *actor, struct AnimObj *obj, struct AnimS
         }
     }
 
-    register_effect_entry(actor->anim, ((u32)(((s32)((u32)obj->animC << 25)) >> 1)) >> 24, src->word, modeLo, modeHi, (s8)obj->animB != 0x10, (u16)(s8)obj->animB);
+    register_effect_entry(actor->anim, ((u32)(((s32)((u32)obj->animC << 25)) >> 1)) >> 24, src->word, facing, altFacing, (s8)obj->animB != 0x10, (u16)(s8)obj->animB);
 }
 
-void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 rel, s32 tx, s32 ty, u32 speed)
+/* Starts scrolling the view to (targetX, targetY), relative to the current scroll when relative is 1,
+   clamped so the screen stays on the map. Mode 1 moves at `speed` (8.8 pixels a frame, so the
+   duration is distance / speed + 1 frames); other modes take `speed` as the duration itself. */
+void sprites_obj_set_move_target(struct SceneObj *obj, u32 mode, u32 relative, s32 targetX, s32 targetY, u32 speed)
 {
     u16 spd = speed;
 
-    if (rel == 1)
+    if (relative == 1)
     {
-        tx += (s16)obj->unk27A;
-        ty += (s16)obj->unk27C;
+        targetX += (s16)obj->scrollX;
+        targetY += (s16)obj->scrollY;
     }
-    if (tx < 0)
+    if (targetX < 0)
     {
-        tx = 0;
+        targetX = 0;
     }
-    else if (tx > obj->unk286 - 0xF0)
+    else if (targetX > obj->mapWidth - SCREEN_WIDTH)
     {
-        tx = obj->unk286 - 0xF0;
+        targetX = obj->mapWidth - SCREEN_WIDTH;
     }
-    if (ty < 0)
+    if (targetY < 0)
     {
-        ty = 0;
+        targetY = 0;
     }
-    else if (ty > obj->unk288 - 0xA0)
+    else if (targetY > obj->mapHeight - SCREEN_HEIGHT)
     {
-        ty = obj->unk288 - 0xA0;
+        targetY = obj->mapHeight - SCREEN_HEIGHT;
     }
-    obj->unk2EC = obj->unk27A;
-    obj->unk2EE = obj->unk27C;
-    obj->unk2F2 = tx;
-    obj->unk2F4 = ty;
+    obj->scrollFromX = obj->scrollX;
+    obj->scrollFromY = obj->scrollY;
+    obj->scrollToX = targetX;
+    obj->scrollToY = targetY;
     if (mode == 1)
     {
-        s32 dx = (s16)obj->unk2F2 - (s16)obj->unk2EC;
-        s32 dy = (s16)obj->unk2F4 - (s16)obj->unk2EE;
-        s32 dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy);
-        s32 q;
-        u16 *dur;
+        s32 dx = (s16)obj->scrollToX - (s16)obj->scrollFromX;
+        s32 dy = (s16)obj->scrollToY - (s16)obj->scrollFromY;
+        s32 dist = ((s32 (*)(s32))gMathRoutines)(dx * dx + dy * dy); /* square root */
+        s32 frames;
+        u16 *duration;
 
-        q = (dist << 8) / (s16)spd;
-        dur = &obj->unk2FC;
-        *dur = (u16)(q + 1);
+        frames = (dist << 8) / (s16)spd;
+        duration = &obj->scrollDuration;
+        *duration = (u16)(frames + 1);
     }
     else
     {
-        obj->unk2FC = spd;
+        obj->scrollDuration = spd;
     }
-    obj->unk2FA = 0;
-    obj->unk2FE = arc_tan2((s16)(obj->unk2EE - obj->unk2F4), (s16)(obj->unk2F2 - obj->unk2EC)) >> 8;
+    obj->scrollTime = 0;
+    obj->scrollAngle = arc_tan2((s16)(obj->scrollFromY - obj->scrollToY), (s16)(obj->scrollToX - obj->scrollFromX)) >> 8;
     ((struct PendingBits *)&obj->pending)->low2 = mode;
 }
 
@@ -461,7 +477,7 @@ void clear_obj_state_2f8(struct SceneObj *obj)
     s32 v;
 
     obj->unk2F8 = 0;
-    obj->unk2FC = 0;
+    obj->scrollDuration = 0;
     ((struct PendingBits *)&obj->pending)->low2 = 0;
 }
 
@@ -800,57 +816,55 @@ void queue_tile_dmas(struct SceneObj *obj)
     dma_copy_or_queue(obj->table->unk0C->data, (void *)0x060108C0, 0x500, 0x20, 0);
 }
 
+/* Finds or decodes the records of the 11 ids in gLookup14b8Ids (bank 0, reused when already
+ * loaded) with lookup_or_alloc_14b8 and keeps them in obj->table->ids2C. */
 void load_table_14b8(struct SceneObj *obj)
 {
-    const u16 *p = gLookup14b8Ids;
+    const u16 *id = gLookup14b8Ids;
     s32 i;
 
-    for (i = 0; i < 11; p++, i++)
-        obj->table->ids2C[i] = (void *)lookup_or_alloc_14b8(0, *p, -1, 1);
+    for (i = 0; i < 11; id++, i++)
+        obj->table->ids2C[i] = (void *)lookup_or_alloc_14b8(0, *id, -1, 1);
 }
 
+/* Finds or makes the tile blocks of the 11 ids in gLookup13b4Ids (bank 0, reused when already
+ * there) and keeps them as the first 11 pointers of obj->table. table_register decompresses them
+ * at once meanwhile (gUnk_03000C78 = 0), then goes back to queuing loads. */
 void load_table_13b4(struct SceneObj *obj)
 {
-    const u16 *p;
+    const u16 *id;
     s32 i;
-    u8 *base;
+    u8 *table;
 
     gUnk_03000C78 = 0;
-    p = gLookup13b4Ids;
-    for (i = 0; i < 11; p++, i++)
+    id = gLookup13b4Ids;
+    for (i = 0; i < 11; id++, i++)
     {
-        void *v = (void *)lookup_or_alloc_13b4(0, *p, -1, 1);
+        void *block = (void *)lookup_or_alloc_13b4(0, *id, -1, 1);
 
-        base = (u8 *)obj->table;
-        *(void **)(base + (i << 2)) = v;
+        table = (u8 *)obj->table;
+        *(void **)(table + (i << 2)) = block;
     }
     gUnk_03000C78 = (u32)sub_0800063C;
 }
 
-static inline void place_entry_sprite(struct EntrySlot *e, u16 *camX, u16 *camY)
+/* Moves the scene's four entry sprites that are still on the sprite list to their map positions
+   seen from the camera (camX, camY). */
+void update_entry_sprites(struct SceneObj *obj)
 {
-    if ((e->sprite->flags12 & 0x20) == 0)
+    struct SceneTable *table = obj->table;
+    struct EntrySlot *entry = table->entries25C;
+    s32 i;
+
+    for (i = 0; i < 4; i++, entry++)
     {
-        e->sprite->posX = e->x - *camX;
-        e->sprite->posY = e->y - *camY;
+        if ((entry->sprite->flags12 & SPRITE_ENTRY_UNLINKED) == 0)
+        {
+            entry->sprite->posX = entry->x - *(u16 *)&obj->camX;
+            entry->sprite->posY = entry->y - *(u16 *)&obj->camY;
+        }
     }
 }
-
-NONMATCH("asm/code_080286C0/update_entry_sprites.s", void update_entry_sprites(struct SceneObj *obj))
-{
-    struct SceneTable *t = obj->table;
-    struct EntrySlot *e = &t->entries25C[0];
-    u16 *camX;
-    u16 *camY;
-
-    camX = (u16 *)&obj->camX;
-    camY = (u16 *)&obj->camY;
-    place_entry_sprite(e, camX, camY);
-    place_entry_sprite(e + 1, camX, camY);
-    place_entry_sprite(e + 2, camX, camY);
-    place_entry_sprite(e + 3, camX, camY);
-}
-END_NONMATCH
 
 void unlink_entry_sprites(struct SceneObj *obj)
 {

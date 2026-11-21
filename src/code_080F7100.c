@@ -37,7 +37,12 @@ struct SlotObj
     s32 posX;
     s32 posY;
     s32 posZ;
-    u8 filler44[0x76 - 0x44];
+    u8 filler44[0x70 - 0x44];
+    u16 savedAnimSet; /* refresh_slot_view: the sprite's animation set, for slot_apply_anim */
+    u16 savedAction;  /* refresh_slot_view: the sprite's action in that set */
+#define unk70 savedAnimSet
+#define unk72 savedAction
+    u8 filler74[0x76 - 0x74];
     u8 state76;
     u8 filler77[0x79 - 0x77];
     u8 flag79;
@@ -117,7 +122,8 @@ struct World
     u8 filler88[0x244 - 0x88];
     struct Owner *cur;
     void *ptr248;
-    u8 filler24C[0x2BF - 0x24C];
+    void *camera;
+    u8 filler250[0x2BF - 0x250];
     u8 flags2BF;
     u8 filler2C0[0x2D8 - 0x2C0];
     struct Effect *effect;
@@ -180,8 +186,67 @@ struct SubStartCmd
 
 extern struct World *gWorld;
 extern u8 *gWorkBuf;
+
+struct WorkHits
+{
+    u8 filler0[0x8E3E];
+    u16 hitKeys[4];
+    u8 hitCounts[4];
+};
 extern u8 *gParty;
 extern u8 gItemTable[];
+
+struct Flags8
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+/* A slot index below WORLD_SLOT_COUNT is an object of gWorld->slots; the others are objects of
+   gWorkBuf, WORK_SLOT_OBJ_SIZE bytes each, indexed from gWorkBuf + WORK_SLOT_OBJS. */
+#define WORLD_SLOT_COUNT 8
+#define WORK_SLOT_OBJS 0x300
+#define WORK_SLOT_OBJ_SIZE 0xD0
+
+// SlotObj.state76 bit 0: the slot's flip flag, saved by refresh_slot_view
+struct SlotState76
+{
+    u8 filler0[0x76];
+    u8 savedFlip : 1;
+    u8 rest : 7;
+};
+
+// Slot.flag110 bit 6: the slot faces the other way (mirrored)
+struct SlotFlag110
+{
+    u8 filler0[0x110];
+    u8 lo6 : 6;
+    u8 flip : 1;
+    u8 bit7 : 1;
+};
+
+// The sprite of a slot's object (SlotObj.obj8)
+struct SlotSprite
+{
+    u8 filler0[0x11];
+    u8 lo11 : 6;
+    u8 flip : 1;     // drawn mirrored
+    u8 bit7 : 1;
+    u8 filler12[0x16 - 0x12];
+    u16 animId;      // animation set: ((animBank << 12) + 0x1000) | animId
+    u8 filler18[0x1E - 0x18];
+    u8 animBank : 4;
+    u8 hi1E : 4;
+    u8 filler1F[0x21 - 0x1F];
+    u8 action;       // current action in the set (sprite_set_action)
+};
+
 
 void give_reward(u32 item, u32 amount, u32 flag);
 
@@ -203,22 +268,101 @@ u8 sub_obj_running(void *menu);
 u8 world_entry_ready(void);
 void start_motion(void *obj);
 void effect_spawn_at(u32 type, s32 x, s32 y, s32 h, void *owner);
+void offset_three_words(void *camera, s32 *a, s32 *b, s32 *c, u32 hide);
 void slot_set_timer(s16 idx, u32 value);
+void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
 void task_spawn_wait_idle(void *obj);
 u32 cmd_reset_obj_part(struct Owner *obj, u8 *state, u32 *params, u8 idx);
 
-ASM_FUNC("asm/code_080F7100/refresh_slot_view.s", void refresh_slot_view(void))
-ASM_FUNC("asm/code_080F7100/slot_apply_anim.s", void slot_apply_anim(void))
+/* Saves slot idx's current animation set and action (and, for a gWorld slot, its flip flag) in its
+   object, so that slot_apply_anim can put them back later. Slots 0-7 are gWorld->slots' objects,
+   higher ones objects of gWorkBuf. */
+void refresh_slot_view(void *unused0, s16 idx)
+{
+    register s32 index asm("r2") = idx;
+    struct SlotObj *obj;
+    struct SlotSprite *sprite;
+    if (index <= WORLD_SLOT_COUNT - 1)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = index * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
+    else
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = WORK_SLOT_OBJ_SIZE * index;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + WORK_SLOT_OBJS);
+    }
+    sprite = (struct SlotSprite *)obj->obj8;
+    if (sprite != NULL)
+    {
+        obj->savedAnimSet = ((sprite->animBank << 12) + 0x1000) | sprite->animId;
+        obj->savedAction = ((struct SlotSprite *)obj->obj8)->action;
+        if (idx <= WORLD_SLOT_COUNT - 1)
+            ((struct SlotState76 *)obj)->savedFlip = ((struct SlotFlag110 *)gWorld->slots[idx])->flip;
+    }
+}
+/* Puts back what refresh_slot_view saved for slot idx (0-7: a slot's object in gWorld->slots,
+   otherwise object idx of gWorkBuf): its flip flag on the slot and its sprite, and its animation
+       set (savedAnimSet) and action (savedAction), which are then cleared. */
+void slot_apply_anim(void *unused0, s16 idx)
+{
+    register s32 index asm("r2") = idx;
+    struct SlotObj *obj;
+    if (index <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = index * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
+    else
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * index;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
+    if (idx <= 7)
+        ((struct SlotFlag110 *)gWorld->slots[idx])->flip = ((struct SlotState76 *)obj)->savedFlip;
+    if (obj->obj8 != NULL)
+    {
+        ((struct SlotSprite *)obj->obj8)->flip = ((struct SlotState76 *)obj)->savedFlip;
+        sprite_set_action(obj, obj->unk72, obj->unk70, 0);
+        obj->unk72 = 0;
+        obj->unk70 = 0;
+    }
+}
 
 ASM_FUNC("asm/code_080F7100/slot_reload_record.s", void slot_reload_record(void))
 
-NONMATCH("asm/code_080F7100/slot_set_value.s", void slot_set_value(void *unused0, s16 idx, u32 value, u8 mode))
+void slot_set_value(void *unused0, s16 idx, u32 value, u8 mode)
 {
+    register s32 i asm("r2") = idx;
     struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     if (mode != 0)
     {
         if ((value & 0x40) != 0)
@@ -232,19 +376,22 @@ NONMATCH("asm/code_080F7100/slot_set_value.s", void slot_set_value(void *unused0
     else
         slot_set_timer(idx, value);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/slot_get_field.s", void slot_get_field(void))
 
+/* Value 6 of the script's get-value command: what the current entry (table2FC, picked by the s16
+ * at ptr310 + 0x10) has chosen, as one index, or -1. With a camera target that is its part's byte
+ * +0xF4 + 0x11 (only in state_hero_menu_plain), with entry mode 5 (+0x9C) 0x10, otherwise the first
+ * of unk343 (+4), unk344 (+7), unk345 (+0x19) and unk342 (+0) that is set (bit 7 clear). */
 u32 world_frame_index(void)
 {
-    s32 idx;
-    u32 word;
+    s32 index;
+    u32 entry;
     if (gWorld->ptr310 == 0)
         return -1;
-    idx = *(s16 *)((u8 *)gWorld->ptr310 + 0x10);
-    word = gWorld->table2FC[idx];
-    if (word == 0)
+    index = *(s16 *)((u8 *)gWorld->ptr310 + 0x10);
+    entry = gWorld->table2FC[index];
+    if (entry == 0)
         return -1;
     if (gWorld->cam->target != 0)
     {
@@ -252,7 +399,7 @@ u32 world_frame_index(void)
             return -1;
         return gWorld->cam->target->ptr28[0xF4] + 0x11;
     }
-    if (*(u32 *)((u8 *)word + 0x9C) == 5)
+    if (*(u32 *)((u8 *)entry + 0x9C) == 5)
         return 0x10;
     if ((gWorld->unk343 & 0x80) == 0)
         return gWorld->unk343 + 4;
@@ -409,7 +556,35 @@ NONMATCH("asm/code_080F7100/change_item_count.s", u32 change_item_count(u8 index
 }
 END_NONMATCH
 
-ASM_FUNC("asm/code_080F7100/record_slot_hit.s", void record_slot_hit(struct Slot *slot, struct World *world))
+/* Script command (cmd_obj_flags kind 0) for a battle object: adds its record's two u16 values (h24,
+   h26; presumably the rewards it gives) to gWorld's totals pos16/pos18, then counts it in the work
+   buffer's list of up to 4 object keys: an existing key's count goes up (to at most 0xFF), a new
+   key is added with count 1 while there is room. `world` is gWorld and isn't used. */
+void record_slot_hit(struct Slot *slot, struct World *world)
+{
+    s32 i;
+
+    if (slot->recF0 == NULL)
+        return;
+    gWorld->pos16 += slot->recF0->h24;
+    gWorld->pos18 += slot->recF0->h26;
+    for (i = 0; i < gWorld->count3A6; i++)
+    {
+        if (slot->keyEC == ((struct WorkHits *)gWorkBuf)->hitKeys[i])
+        {
+            if (((struct WorkHits *)gWorkBuf)->hitCounts[i] < 0xFF)
+                ((struct WorkHits *)gWorkBuf)->hitCounts[i]++;
+            return;
+        }
+    }
+    /* not listed yet: i is the first free entry */
+    if (gWorld->count3A6 < 4)
+    {
+        ((struct WorkHits *)gWorkBuf)->hitKeys[i] = slot->keyEC;
+        ((struct WorkHits *)gWorkBuf)->hitCounts[i] = 1;
+        gWorld->count3A6++;
+    }
+}
 
 void set_cur_flags_pending(u32 bits)
 {
@@ -455,13 +630,26 @@ void set_world_flag0(u8 flag)
     ((struct Bit0Bits *)&gWorld->flags2BF)->b0 = flag & 1;
 }
 
-NONMATCH("asm/code_080F7100/slot_start_motion.s", void slot_start_motion(s16 idx, u8 flag))
+void slot_start_motion(s16 idx, u8 flag)
 {
     struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    register s32 i asm("r2") = idx;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(u8 *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     start_motion(obj);
     task_spawn_wait_idle(obj);
     if (obj->ring != 0 && flag != 0)
@@ -472,19 +660,30 @@ NONMATCH("asm/code_080F7100/slot_start_motion.s", void slot_start_motion(s16 idx
         *(s32 *)(sub + 0xE0) = obj->vecZ;
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F7100/slot_set_timer.s", void slot_set_timer(s16 idx, u32 value))
+void slot_set_timer(s16 idx, u32 value)
 {
     struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    register s32 i asm("r2") = idx;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(u8 *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     obj->timer7A = value;
     obj->unk7C = 0;
 }
-END_NONMATCH
 
 struct Bit5Of79
 {
@@ -493,19 +692,31 @@ struct Bit5Of79
     u8 hi2 : 2;
 };
 
-NONMATCH("asm/code_080F7100/slot_set_vec.s", void slot_set_vec(s16 idx, s32 x, s32 y, s32 z, u8 flag))
+void slot_set_vec(s16 idx, s32 x, s32 y, s32 z, u8 flag)
 {
-    struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    register struct SlotObj *obj asm("r12");
+    register s32 i asm("r2") = idx;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(u8 *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + 0x300 + idx * 0xD0);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     obj->vecX = x << 8;
     obj->vecY = y << 8;
     obj->vecZ = z << 8;
     ((struct Bit5Of79 *)&obj->flag79)->b5 = flag;
 }
-END_NONMATCH
 
 void obj_task_attach(struct TaskObj *obj)
 {
@@ -516,7 +727,28 @@ void obj_task_attach(struct TaskObj *obj)
     gWorld->flags2BF = bits;
 }
 
-ASM_FUNC("asm/code_080F7100/obj_task_attach_idx.s", void obj_task_attach_idx(void))
+void obj_task_attach_idx(struct TaskObj *obj)
+{
+    struct PartRec
+    {
+        u8 filler0[0xA0];
+        u16 unkA0;
+        u8 fillerA2[0x100 - 0xA2];
+    };
+    struct World *world = gWorld;
+    u8 slot_arg = obj->unkF4;
+    struct Owner *task = world->cur;
+    u32 arg2 = obj->unkE8;
+    u32 args[2];
+    s32 bits;
+    args[0] = 1;
+    args[1] = arg2;
+    ((struct PartRec *)task->state)[slot_arg + 1].unkA0 = 0;
+    cmd_reset_obj_part(task, (u8 *)task->state, args, slot_arg);
+    bits = gWorld->flags2BF;
+    bits |= 4;
+    gWorld->flags2BF = bits;
+}
 u32 slot_widest_span(void *unused0, s32 threshold)
 {
     s32 best = threshold;
@@ -580,53 +812,95 @@ u32 slot_find_max_key(void *unused0, s32 threshold)
     return bestIdx;
 }
 
-NONMATCH("asm/code_080F7100/slot_read_pos.s", void slot_read_pos(void *unused0, s16 idx, s16 *outX, s16 *outY, s16 *outZ))
+void slot_read_pos(void *unused0, s16 idx, s16 *outX, s16 *outY, s16 *outZ)
 {
+    register s32 i asm("r2") = idx;
     struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     *outX = obj->drawX / 0x100;
     *outY = obj->drawY / 0x100;
     *outZ = obj->drawZ / 0x100;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F7100/slot_set_pos_rel.s", void slot_set_pos_rel(void *unused0, s16 idx, s32 x, s32 y, s32 z))
+void slot_set_pos_rel(void *unused0, s16 idx, s32 x, s32 y, s32 z)
 {
+    register s32 i asm("r2") = idx;
     struct SlotObj *obj;
     u32 addr;
     u32 addr2;
-    s32 v;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    s32 vx;
+    s32 vy;
+    s32 vz;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     addr = (u32)obj->ring + 0xD8;
-    v = obj->posX + (x << 8);
-    obj->drawX = v;
-    *(s32 *)addr = v;
+    vx = x << 8;
+    vx += obj->posX;
+    obj->drawX = vx;
+    *(s32 *)addr = vx;
     addr2 = addr + 4;
-    v = obj->posY + (y << 8);
-    obj->drawY = v;
-    *(s32 *)addr2 = v;
+    vy = y << 8;
+    vy += obj->posY;
+    obj->drawY = vy;
+    *(s32 *)addr2 = vy;
     addr = addr2 + 4;
-    v = obj->posZ + (z << 8);
-    obj->drawZ = v;
-    *(s32 *)addr = v;
+    vz = z << 8;
+    vz += obj->posZ;
+    obj->drawZ = vz;
+    *(s32 *)addr = vz;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F7100/slot_set_pos_abs.s", void slot_set_pos_abs(void *unused0, s16 idx, s32 x, s32 y, s32 z))
+void slot_set_pos_abs(void *unused0, s16 idx, s32 x, s32 y, s32 z)
 {
+    register s32 i asm("r2") = idx;
     struct SlotObj *obj;
     u32 addr;
     u32 addr2;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     addr = (u32)obj->ring + 0xD8;
     obj->drawX = x << 8;
     *(u32 *)addr = x << 8;
@@ -637,21 +911,107 @@ NONMATCH("asm/code_080F7100/slot_set_pos_abs.s", void slot_set_pos_abs(void *unu
     obj->drawZ = z << 8;
     *(u32 *)addr = z << 8;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080F7100/slot_set_flag6.s", void slot_set_flag6(void))
-NONMATCH("asm/code_080F7100/slot_set_bias.s", void slot_set_bias(void *unused0, s16 idx, u8 bias))
+void slot_set_flag6(void *unused0, s16 idx, u8 flag)
 {
+    struct SprBits11
+    {
+        u8 filler0[0x11];
+        s8 lo6 : 6;
+        s8 bit6 : 1;
+        s8 bit7 : 1;
+    };
+    struct SlotBits110
+    {
+        u8 filler0[0x110];
+        s8 lo6 : 6;
+        s8 bit6 : 1;
+        s8 bit7 : 1;
+    };
+    register s32 i asm("r2") = idx;
     struct SlotObj *obj;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    struct SprBits11 *spr;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
+    spr = (struct SprBits11 *)obj->obj8;
+    if (idx <= 7)
+        ((struct SlotBits110 *)gWorld->slots[idx])->bit6 = flag;
+    if (spr != NULL)
+    {
+        s32 v = (s8)flag;
+        spr->bit6 = v;
+    }
+}
+void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
+void slot_set_bias(void *unused0, s16 idx, u8 bias)
+{
+    register s32 i asm("r3") = idx;
+    struct SlotObj *obj;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
+    else
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     obj->biasC5 = bias;
 }
-END_NONMATCH
 
-ASM_FUNC("asm/code_080F7100/slot_pos_offset.s", void slot_pos_offset(void))
+void slot_pos_offset(void *unused0, s16 idx, s32 *outX, s32 *outY, s32 *outZ)
+{
+    s32 tmp[3];
+    register s32 i asm("r3") = idx;
+    struct SlotObj *obj;
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
+    else
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
+    if (outX == NULL)
+        outX = &tmp[0];
+    if (outY == NULL)
+        outY = &tmp[1];
+    if (outZ == NULL)
+        outZ = &tmp[2];
+    *outX = obj->posX / 0x100;
+    *outY = obj->posY / 0x100;
+    *outZ = obj->posZ / 0x100;
+    offset_three_words(gWorld->camera, outX, outY, outZ, 0);
+}
 
 u32 ring_find_entry(struct SlotObj *obj, struct CopyNode *node, u32 *key)
 {
@@ -765,18 +1125,31 @@ u32 owner_state_set(struct Owner *obj)
     return 1;
 }
 
-NONMATCH("asm/code_080F7100/cmd_slot_place.s", u32 cmd_slot_place(void *unused0, void *unused1, s32 *cmd))
+void offset_three_words(void *camera, s32 *a, s32 *b, s32 *c, u32 hide);
+u32 cmd_slot_place(void *unused0, void *unused1, s32 *cmd)
 {
-    s32 idx = cmd[0];
+    register s32 i asm("r3") = cmd[0];
     struct SlotObj *obj;
     u32 a;
     s32 dx;
     s32 dy;
     s32 dz;
-    if (idx <= 7)
-        obj = (struct SlotObj *)((u8 *)gWorld->slots[idx] + 8);
+    if (i <= 7)
+    {
+        struct World *world = gWorld;
+        register u32 offset asm("r1") = i * sizeof(struct Slot *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        obj = (struct SlotObj *)(*(u8 **)slots + 8);
+    }
     else
-        obj = (struct SlotObj *)(gWorkBuf + idx * 0xD0 + 0x300);
+    {
+        register u32 offset asm("r0");
+        u8 **work = &gWorkBuf;
+        offset = 0xD0 * i;
+        offset += (u32)*work;
+        obj = (struct SlotObj *)(offset + 0x300);
+    }
     a = cmd[1];
     dx = obj->posX / 0x100 + cmd[2];
     dy = obj->posY / 0x100 + cmd[3];
@@ -784,7 +1157,6 @@ NONMATCH("asm/code_080F7100/cmd_slot_place.s", u32 cmd_slot_place(void *unused0,
     effect_spawn_at(a, dx, dy, dz, obj);
     return 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080F7100/cmd_slot_start_table.s", void cmd_slot_start_table(void))
 
@@ -828,7 +1200,7 @@ struct Lo3Bits
     u8 hi5 : 5;
 };
 
-NONMATCH("asm/code_080F7100/cmd_obj_flags.s", u32 cmd_obj_flags(void *unused0, struct ObjFlags *obj, u32 *block))
+u32 cmd_obj_flags(void *unused0, struct ObjFlags *obj, u32 *block)
 {
     u32 kind = *block++;
     switch (kind)
@@ -836,18 +1208,27 @@ NONMATCH("asm/code_080F7100/cmd_obj_flags.s", u32 cmd_obj_flags(void *unused0, s
         case 0:
         {
             u32 idx = *block;
-            struct World *w = gWorld;
-            record_slot_hit(*(struct Slot **)((idx << 2) + (u8 *)w + 0x58), w);
+            u32 w = (u32)gWorld;
+            record_slot_hit(*(struct Slot **)((idx << 2) + w + 0x58), (struct World *)w);
             break;
         }
         case 1:
-            ((struct Lo3Bits *)&obj->bitsFE)->lo3 = *(u8 *)block;
+        {
+            u8 *flags = &obj->bitsFE;
+            register u8 mask asm("r0") = 7;
+            u32 v = mask & *(u8 *)block;
+            u32 f = *flags;
+            register s32 clr asm("r0") = ~7;
+
+            clr &= f;
+            clr |= v;
+            *flags = clr;
             obj->flagsA0 |= 0x1000;
             return 0;
+        }
     }
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_world_bits318(void *unused0, void *unused1, u32 *block)
 {

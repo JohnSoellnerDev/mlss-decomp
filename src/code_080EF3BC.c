@@ -64,175 +64,200 @@ u32 obj_collision_mask(u8 *owner, u32 idx);
 void update_box_and_scroll(u8 *owner);
 void update_owner_objects(u8 *owner);
 
-u32 claim_effect_slot(u8 *owner, u32 unused, u32 *cmds)
+/* Script command: shows an overlay sprite in the effect slot table (gUnk_03000FC8). args[0] is an
+ * entity of the owner's scene, args[1] the sprite kind, args[2] nonzero to follow that entity
+ * (offset by its camera position, raised by its +0x283 byte), args[3]/args[4] the x/y position and
+ * args[5] the lifetime (0xFF: the kind's default from gClaimKindTable). Always returns 1 (done). */
+u32 claim_effect_slot(u8 *owner, u32 unused, u32 *args)
 {
-    s32 x;
-    s32 y;
-    u32 index = cmds[0];
-    u8 *list = *(u8 **)(owner + 0x14);
-    u8 *obj = *(u8 **)(list + index * 4 + 0x28);
+    s32 offsetX;
+    s32 offsetY;
+    u32 entity = args[0];
+    u8 *scene = *(u8 **)(owner + 0x14);
+    u8 *entityObj = *(u8 **)(scene + entity * 4 + 0x28);
     u32 slot;
 
-    y = 0;
-    x = 0;
-    if (cmds[2] != 0)
+    offsetY = 0;
+    offsetX = 0;
+    if (args[2] != 0)
     {
-        entity_camera_offset(list, index, &x, &y);
-        y = y - obj[0x283];
+        entity_camera_offset(scene, entity, &offsetX, &offsetY);
+        offsetY = offsetY - entityObj[0x283];
     }
-    if (cmds[5] == 0xFF)
+    if (args[5] == 0xFF)
     {
-        cmds[5] = gClaimKindTable[cmds[1]];
+        args[5] = gClaimKindTable[args[1]];
     }
-    slot = (u8)claim_table_slot(gUnk_03000FC8, (u8)cmds[0], (u8)cmds[1], (u8)cmds[2],
-                                *(s16 *)((u8 *)cmds + 0xC), *(s16 *)((u8 *)cmds + 0x10), (u8)cmds[5]);
+    slot = (u8)claim_table_slot(gUnk_03000FC8, (u8)args[0], (u8)args[1], (u8)args[2],
+                                *(s16 *)((u8 *)args + 0xC), *(s16 *)((u8 *)args + 0x10), (u8)args[5]);
+    /* 0x3F: no free slot */
     if (slot != 0x3F)
     {
-        u8 *pool = gUnk_03000FC8;
-        u8 *entry = *(u8 **)pool + (slot << 4);
+        u8 *table = gUnk_03000FC8;
+        u8 *entry = *(u8 **)table + (slot << 4);
 
-        *(s16 *)(entry + 8) = x;
-        *(s16 *)(entry + 0xA) = y;
-        update_slot_bounds(pool, slot);
+        *(s16 *)(entry + 8) = offsetX;
+        *(s16 *)(entry + 0xA) = offsetY;
+        update_slot_bounds(table, slot);
     }
     return 1;
 }
 
+/* The bros pair (struct PairObj) a script owner works on: subA/subB at +0x200/+0x204. */
+#define OWNER_PAIR(owner) (*(u8 **)((owner) + 0x14))
+
+/* The pair's state byte (+0x12A); follow_anchor sets 3 while the bros walk to the anchor,
+ * and states 3-5 mean the pair is still busy with such a move. */
+#define PAIR_STATE(pair) (*(u8 *)((pair) + 0x12A))
+
+/* Pair flags byte at +0x208: bit 3 and bit 4 (bit 4: the pair has reached its anchor). */
+#define PAIR_FLAGS_208 0x208
 struct AnchorBits4 { u8 lo4 : 4; u8 b4 : 1; u8 top : 3; };
 struct AnchorBits3 { u8 lo3 : 3; u8 b3 : 1; u8 top : 4; };
 void set_sub_pair_mode(u8 *target, u32 a, u32 b, u32 c);
 void follow_anchor(u8 *target, u32 arg);
 
-u32 apply_anchor_command(u8 *obj, u8 *dst, u32 *cmds)
+/* Script command "anchor": while the owner's bros pair is still busy with a move (state 3-5),
+ * rewinds the script to this command and yields (returns 0). Otherwise cmds[0] picks:
+ * 0-3: set_sub_pair_mode with bit 0 and bit 1 of the command; 4 / 7: follow the anchor
+ * (follow_anchor 0 / 1); 5: clear flag bit 4, then set flag bit 3 to 0; 6: set flag bit 3.
+ * Unknown commands do nothing. Returns 1 (go on with the script). */
+u32 apply_anchor_command(u8 *owner, u8 *script, u32 *cmds)
 {
-    u8 *list = *(u8 **)(obj + 0x14);
-    u32 mode;
+    u8 *pair = OWNER_PAIR(owner);
+    u32 cmd;
 
-    if ((u8)(*(u8 *)(list + 0x12A) - 3) <= 2)
+    if ((u8)(PAIR_STATE(pair) - 3) <= 2)
     {
-        *(u32 *)dst = *(u32 *)(dst + 0x14);
+        *(u32 *)script = *(u32 *)(script + 0x14);
         return 0;
     }
-    mode = cmds[0];
-    if (mode > 7)
+    cmd = cmds[0];
+    if (cmd > 7)
     {
         return 1;
     }
-    switch (mode)
+    switch (cmd)
     {
     case 0:
     case 1:
     case 2:
     case 3:
-        set_sub_pair_mode(*(u8 **)(obj + 0x14), mode & 1, ((s32)mode >> 1) & 1, 0);
+        set_sub_pair_mode(OWNER_PAIR(owner), cmd & 1, ((s32)cmd >> 1) & 1, 0);
         break;
     case 4:
-        follow_anchor(*(u8 **)(obj + 0x14), 0);
+        follow_anchor(OWNER_PAIR(owner), 0);
         break;
     case 5:
-        ((struct AnchorBits4 *)(*(u8 **)(obj + 0x14) + 0x208))->b4 = 0;
+        ((struct AnchorBits4 *)(OWNER_PAIR(owner) + PAIR_FLAGS_208))->b4 = 0;
         /* fall through */
     case 6:
     {
-        u8 *target = *(u8 **)(obj + 0x14);
+        u8 *target = OWNER_PAIR(owner);
         u32 bit = cmds[0] - 5;
-        ((struct AnchorBits3 *)(target + 0x208))->b3 = bit & 1;
+        ((struct AnchorBits3 *)(target + PAIR_FLAGS_208))->b3 = bit & 1;
         break;
     }
     case 7:
-        follow_anchor(*(u8 **)(obj + 0x14), 1);
+        follow_anchor(OWNER_PAIR(owner), 1);
         break;
     }
     return 1;
 }
 
 struct Bit1Bits { u8 lo1 : 1; u8 b1 : 1; u8 rest : 6; };
+
 u32 pair_slot_kind(u8 *list);
 u32 sub_0803C454(u8 *list);
 u32 sub_0803C4EC(u8 *list);
 
-u32 check_object_condition(u8 *obj, u32 *dst, u32 *cmds)
+/* Script command "branch if": tests condition `cmds[0]` on the owner's bros pair and, if it holds,
+ * sets *next to the target in cmds[1]. 0-4: pair_slot_kind is nonzero / above 1 / 2 / 4 / 3;
+ * 5: either bro's state byte (+0x368) is 9; 6: pair flag 0xF8 bit 1 (cleared afterwards);
+ * 7: pair flag 0x2B8 bit 6; 8/9: sub_0803C454 / sub_0803C4EC; 10/11: pair flag 0xF8 bit 2 set /
+ * clear. Unknown conditions do nothing. Always returns 1 (go on with the script). */
+u32 check_object_condition(u8 *owner, u32 *next, u32 *cmds)
 {
-    u32 op = *cmds++;
+    u32 cond = *cmds++;
 
-    if (op > 0xB)
+    if (cond > 0xB)
     {
         return 1;
     }
-    switch (op)
+    switch (cond)
     {
     case 0:
-        if (pair_slot_kind(*(u8 **)(obj + 0x14)) != 0)
+        if (pair_slot_kind(OWNER_PAIR(owner)) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 1:
-        if (pair_slot_kind(*(u8 **)(obj + 0x14)) > 1)
+        if (pair_slot_kind(OWNER_PAIR(owner)) > 1)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 2:
-        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 2)
+        if (pair_slot_kind(OWNER_PAIR(owner)) == 2)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 3:
-        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 4)
+        if (pair_slot_kind(OWNER_PAIR(owner)) == 4)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 4:
-        if (pair_slot_kind(*(u8 **)(obj + 0x14)) == 3)
+        if (pair_slot_kind(OWNER_PAIR(owner)) == 3)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 5:
-        if (*(u8 *)(*(u8 **)(*(u8 **)(*(u8 **)(obj + 0x14) + 0x200) + 0x368)) == 9
-            || *(u8 *)(*(u8 **)(*(u8 **)(*(u8 **)(obj + 0x14) + 0x204) + 0x368)) == 9)
+        if (*(u8 *)(*(u8 **)(*(u8 **)(OWNER_PAIR(owner) + 0x200) + 0x368)) == 9
+            || *(u8 *)(*(u8 **)(*(u8 **)(OWNER_PAIR(owner) + 0x204) + 0x368)) == 9)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 6:
-        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 2) != 0)
+        if ((*(u8 *)(OWNER_PAIR(owner) + 0xF8) & 2) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
-        ((struct Bit1Bits *)(*(u8 **)(obj + 0x14) + 0xF8))->b1 = 0;
+        ((struct Bit1Bits *)(OWNER_PAIR(owner) + 0xF8))->b1 = 0;
         break;
     case 7:
-        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0x2B8) & 0x40) != 0)
+        if ((*(u8 *)(OWNER_PAIR(owner) + 0x2B8) & 0x40) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 8:
-        if ((u8)sub_0803C454(*(u8 **)(obj + 0x14)) != 0)
+        if ((u8)sub_0803C454(OWNER_PAIR(owner)) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 9:
-        if ((u8)sub_0803C4EC(*(u8 **)(obj + 0x14)) != 0)
+        if ((u8)sub_0803C4EC(OWNER_PAIR(owner)) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 10:
-        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 4) != 0)
+        if ((*(u8 *)(OWNER_PAIR(owner) + 0xF8) & 4) != 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     case 11:
-        if ((*(u8 *)(*(u8 **)(obj + 0x14) + 0xF8) & 4) == 0)
+        if ((*(u8 *)(OWNER_PAIR(owner) + 0xF8) & 4) == 0)
         {
-            *dst = *cmds;
+            *next = *cmds;
         }
         break;
     }
@@ -244,48 +269,54 @@ extern const u8 gAreaEntryTable[];
 extern u8 *gRecordPtrTable[];
 void set_flag(u32 a, u32 b, u32 value, u32 flag);
 
-NONMATCH("asm/code_080EF3BC/apply_record_setting.s", u32 apply_record_setting(u32 unused0, u32 unused1, u32 *cmds))
+/* Script command (area, record, value): sets the "done" flag of one of an area's object records,
+   flag 0x960 + the record's id, to value; only records of kind 3 (byte 0x12 bits 3-5) have one.
+   Area 0x3FF means every area: all 2048 of those flags (gUnk_03000FC0 + 0x14C..0x24C, which is
+   flags 0x960..0x115F) are set (value != 0) or cleared. */
+u32 apply_record_setting(u32 unused0, u32 unused1, u32 *cmds)
 {
     if (cmds[0] != 0x3FF)
     {
-        u32 index = cmds[0];
-        const u8 *table = gAreaEntryTable + index * 24;
+        u32 area = cmds[0];
+        const u8 *areaEntry = gAreaEntryTable + area * 24;
+        u8 *recordSet;
+        u8 *records;
         u8 *record;
-        u8 *base;
-        u8 *entry;
 
         cmds++;
-        record = gRecordPtrTable[*(u16 *)(table + 0x10)];
-        base = record - ((record[7] << 8) | record[6]);
-        entry = base + *cmds++ * 20;
+        /* areaEntry +0x10: the area's record set in gRecordPtrTable */
+        recordSet = *(u8 **)(*(u16 *)(areaEntry + 0x10) * 4 + (u32)gRecordPtrTable);
+        /* the set's bytes 6-7 hold how far back its 20-byte records start */
+        records = recordSet - ((recordSet[7] << 8) | recordSet[6]);
+        record = records + *cmds++ * 20;
 
-        if (((entry[0x12] >> 3) & 7) == 3)
+        if (((record[0x12] >> 3) & 7) == 3)
         {
-            u32 value = (((u32)entry[0xF] << 24) | (entry[0xE] << 16) | (entry[0xD] << 8) | entry[0xC]) >> 10;
+            u32 id = (((u32)record[0xF] << 24) | (record[0xE] << 16) | (record[0xD] << 8) | record[0xC]) >> 10;
 
-            set_flag(0, 0, (u16)(value + 0x960), *(u8 *)cmds);
+            set_flag(0, 0, (u16)(id + 0x960), *(u8 *)cmds);
         }
     }
     else
     {
-        u8 *gfx = gUnk_03000FC0;
-        u32 *flagWord = (u32 *)(gfx + 0x14C);
-        u32 value = 0;
-        u8 *dst;
+        register u8 *vars asm("r4") = gUnk_03000FC0;
+        u32 *flagWord;
+        u32 fill;
 
+        flagWord = (u32 *)(vars + 0x14C);
         if (cmds[2] != 0)
-        {
-            value = value - 1;
-        }
-        cmds[0] = value;
-        *flagWord = value;
-        dst = gfx + 0x150;
-        ((void (*)(u32, void *, u32))gMemRoutines)(cmds[0], dst, 0xFC);
-        *(u32 *)(gfx + 0x248) = cmds[0];
+            fill = -1;
+        else
+            fill = 0;
+        cmds[0] = fill;
+        *flagWord = fill;
+        flagWord = (u32 *)(vars + 0x150);
+        ((void (*)(u32, void *, u32))gMemRoutines)(cmds[0], flagWord, 0xFC);
+        flagWord = (u32 *)(vars + 0x248);
+        *flagWord = cmds[0];
     }
     return 1;
 }
-END_NONMATCH
 
 struct FlagBits7 { u8 lo7 : 7; u8 b7 : 1; };
 struct FlagBits6 { u8 lo6 : 6; u8 b6 : 1; u8 top : 1; };
@@ -306,7 +337,7 @@ static inline void set_flag_bit7(u8 *p, u32 v)
     ((struct FlagBits7 *)p)->b7 = v;
 }
 
-NONMATCH("asm/code_080EF3BC/entity_setup_set_flag_bit.s", u32 entity_setup_set_flag_bit(u8 *obj, u32 unused, u32 *cmds))
+u32 entity_setup_set_flag_bit(u8 *obj, u32 unused, u32 *cmds)
 {
     u8 *list = *(u8 **)(obj + 0x14);
     u32 idx;
@@ -332,7 +363,15 @@ NONMATCH("asm/code_080EF3BC/entity_setup_set_flag_bit.s", u32 entity_setup_set_f
     case 1:
     {
         u32 value = *cmds;
-        set_flag_bit6(list + 0x209, value);
+        register u8 *p asm("r3") = list + 0x209;
+        register u8 mask asm("r0") = 1;
+        u32 v = (mask & value) << 6;
+        u32 f = *p;
+        register s32 clr asm("r0") = ~0x40;
+
+        clr &= f;
+        clr |= v;
+        *p = clr;
         break;
     }
     case 2:
@@ -343,33 +382,43 @@ NONMATCH("asm/code_080EF3BC/entity_setup_set_flag_bit.s", u32 entity_setup_set_f
     }
     case 3:
     {
-        u8 *bits = list + 0x26A;
-        set_flag_bit6(bits, *(u8 *)cmds);
+        register u8 *p asm("r3") = list + 0x26A;
+        register u8 mask asm("r0") = 1;
+        u32 v = (mask & *(u8 *)cmds) << 6;
+        u32 f = *p;
+        register s32 clr asm("r0") = ~0x40;
+
+        clr &= f;
+        clr |= v;
+        *p = clr;
         break;
     }
     }
     return 1;
 }
-END_NONMATCH
 
-u32 set_var_from_entry(u8 *owner, u8 *dst, s16 *cmd)
+/* Script command: stores one field of the owner's field scene (owner + 0x14, the one whose
+ * entity list set_var_from_source reads) in script variable cmd[0]. The word at cmd + 4
+ * picks the field: 0 = u16 +0x124, 1 = s16 +0x27E, 2 = s16 +0x280, 3 = top 3 bits of
+ * +0x26B, 4 = s16 +0x26E. */
+u32 set_var_from_entry(u8 *owner, u8 *thread, s16 *cmd)
 {
     switch (*(u32 *)((u8 *)cmd + 4))
     {
     case 0:
-        set_var(gEffectState + 0x4B0, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(u16 *)(*(u8 **)(owner + 0x14) + 0x124));
+        set_var(gEffectState + 0x4B0, thread + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(u16 *)(*(u8 **)(owner + 0x14) + 0x124));
         break;
     case 1:
-        set_var(gEffectState + 0x4B0, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x27E));
+        set_var(gEffectState + 0x4B0, thread + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x27E));
         break;
     case 2:
-        set_var(gEffectState + 0x4B0, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x280));
+        set_var(gEffectState + 0x4B0, thread + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x280));
         break;
     case 3:
-        set_var(gEffectState + 0x4B0, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(u8 *)(*(u8 **)(owner + 0x14) + 0x26B) >> 5);
+        set_var(gEffectState + 0x4B0, thread + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(u8 *)(*(u8 **)(owner + 0x14) + 0x26B) >> 5);
         break;
     case 4:
-        set_var(gEffectState + 0x4B0, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x26E));
+        set_var(gEffectState + 0x4B0, thread + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], *(s16 *)(*(u8 **)(owner + 0x14) + 0x26E));
         break;
     }
     return 1;
@@ -377,41 +426,67 @@ u32 set_var_from_entry(u8 *owner, u8 *dst, s16 *cmd)
 
 struct SignedId7 { s8 id : 7; u8 top : 1; };
 
-u32 set_var_from_source(u8 *owner, u8 *dst, s16 *cmd, u8 *vars)
+/* Script command: read one property of a field entity into a script variable */
+struct EntityPropCmd
+{
+    s16 var;      /* variable to set */
+    u8 filler2[2];
+    u32 property; /* enum EntityProperty */
+    u32 entity;   /* index into the owner's entity list (list + 0x28) */
+};
+
+enum EntityProperty
+{
+    ENTITY_PROP_X,              /* world x, pixels */
+    ENTITY_PROP_Y,              /* world y, pixels */
+    ENTITY_PROP_HEIGHT,         /* height plus its offset, pixels */
+    ENTITY_PROP_FACING,         /* one of 8 */
+    ENTITY_PROP_HERO_BYTE54,    /* byte 0x54 of the hero (list + 0x200 / 0x204) with this id, else 0xFF */
+    ENTITY_PROP_BYTE0,
+    ENTITY_PROP_UNK23E,         /* high byte of +0x23E, or (bits 6-7 of its low byte >> 4) | 0x40 */
+    ENTITY_PROP_SCREEN_X,
+    ENTITY_PROP_SCREEN_Y,
+    ENTITY_PROP_SPRITE_UNK23,   /* the sprite's byte 0x23 */
+    ENTITY_PROP_TABLE_VALUE,    /* entry_table_value */
+    ENTITY_PROP_COLLISION_MASK, /* obj_collision_mask */
+};
+
+/* Script command: stores one property of a field entity (position, facing, ...) in a script variable. */
+u32 set_var_from_source(u8 *owner, u8 *dst, struct EntityPropCmd *cmd, u8 *vars)
 {
     u8 *list = *(u8 **)(owner + 0x14);
-    u32 off = *(u32 *)((u8 *)cmd + 8) << 2;
-    u8 *slots = list + 0x28;
-    u8 *entry = *(u8 **)(slots + off);
-    u32 kind = *(u32 *)((u8 *)cmd + 4);
+    u32 off = cmd->entity << 2;
+    u8 *entities = list + 0x28;
+    u8 *entity = *(u8 **)(entities + off);
+    u32 property = cmd->property;
     s32 value;
-    s32 y;
+    s32 other;
 
-    switch (kind)
+    switch (property)
     {
-    case 0:
-        value = *(s32 *)(entry + 0xC) / 0x100;
+    case ENTITY_PROP_X:
+        value = *(s32 *)(entity + 0xC) / 0x100;
         break;
-    case 1:
-        value = *(s32 *)(entry + 0x10) / 0x100;
+    case ENTITY_PROP_Y:
+        value = *(s32 *)(entity + 0x10) / 0x100;
         break;
-    case 2:
-        value = (*(s32 *)(entry + 0x14) + *(s32 *)(entry + 0x18)) / 0x100;
+    case ENTITY_PROP_HEIGHT:
+        value = (*(s32 *)(entity + 0x14) + *(s32 *)(entity + 0x18)) / 0x100;
         break;
-    case 3:
-        value = ((u32)*(u8 *)(entry + 0x24) << 29) >> 29;
+    case ENTITY_PROP_FACING:
+        value = ((u32)*(u8 *)(entity + 0x24) << 29) >> 29;
         break;
-    case 4:
+    case ENTITY_PROP_HERO_BYTE54:
     {
-        u8 *a = *(u8 **)(*(u8 **)(owner + 0x14) + 0x200);
-        u8 *b = *(u8 **)(*(u8 **)(owner + 0x14) + 0x204);
-        if (((struct SignedId7 *)(a + 0x33C))->id == *(u32 *)((u8 *)cmd + 8))
+        u8 *heroA = *(u8 **)(*(u8 **)(owner + 0x14) + 0x200);
+        u8 *heroB = *(u8 **)(*(u8 **)(owner + 0x14) + 0x204);
+        if (((struct SignedId7 *)(heroA + 0x33C))->id == cmd->entity)
         {
-            value = a[0x54];
+            value = heroA[0x54];
         }
-        else if (((struct SignedId7 *)(b + 0x33C))->id == *(u32 *)((u8 *)cmd + 8))
+        else if (((struct SignedId7 *)(heroB + 0x33C))->id == cmd->entity)
         {
-            value = b[0x54];
+            value = heroB[0x54];
         }
         else
         {
@@ -419,37 +494,37 @@ u32 set_var_from_source(u8 *owner, u8 *dst, s16 *cmd, u8 *vars)
         }
         break;
     }
-    case 5:
-        value = *(u8 *)entry;
+    case ENTITY_PROP_BYTE0:
+        value = *(u8 *)entity;
         break;
-    case 6:
+    case ENTITY_PROP_UNK23E:
     {
-        s32 t = ((s32)*(u16 *)(entry + 0x23E)) << 16;
+        s32 raw = ((s32)*(u16 *)(entity + 0x23E)) << 16;
 
-        value = t >> 24;
+        value = raw >> 24;
         if (value == 0)
         {
-            value = ((t >> 20) & 0xC) | 0x40;
+            value = ((raw >> 20) & 0xC) | 0x40;
         }
         break;
     }
-    case 7:
-        entity_camera_offset(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8), &value, &y);
+    case ENTITY_PROP_SCREEN_X:
+        entity_camera_offset(*(u8 **)(owner + 0x14), cmd->entity, &value, &other);
         break;
-    case 8:
-        entity_camera_offset(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8), &y, &value);
+    case ENTITY_PROP_SCREEN_Y:
+        entity_camera_offset(*(u8 **)(owner + 0x14), cmd->entity, &other, &value);
         break;
-    case 9:
-        value = *(u8 *)(*(u8 **)(entry + 0x294) + 0x23);
+    case ENTITY_PROP_SPRITE_UNK23:
+        value = *(u8 *)(*(u8 **)(entity + 0x294) + 0x23);
         break;
-    case 10:
-        value = (u8)entry_table_value(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8));
+    case ENTITY_PROP_TABLE_VALUE:
+        value = (u8)entry_table_value(*(u8 **)(owner + 0x14), cmd->entity);
         break;
-    case 11:
-        value = obj_collision_mask(*(u8 **)(owner + 0x14), *(u32 *)((u8 *)cmd + 8));
+    case ENTITY_PROP_COLLISION_MASK:
+        value = obj_collision_mask(*(u8 **)(owner + 0x14), cmd->entity);
         break;
     }
-    set_var(vars, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd[0], value);
+    set_var(vars, dst + 0x18, gUnk_03000FC0 + 0x38C, 0, cmd->var, value);
     return 1;
 }
 
@@ -520,52 +595,64 @@ u32 set_state_slot(u32 unused0, u32 value, u32 unused1, u32 *cmds)
     return 1;
 }
 
+/* gEffectState holds 4 script threads of EFFECT_SLOT_SIZE bytes; their u16 flags sit at +0xA0 */
+#define SCRIPT_THREAD_RUNNING    0x0001 /* the thread is executing its script */
+#define SCRIPT_THREAD_WAIT_TIMER 0x0010 /* waits until its countdown at +0x9C reaches 0 */
+#define SCRIPT_THREAD_WAIT_OWNER 0x0100 /* waits until the owner's sprites have no pending bits */
+#define SCRIPT_THREAD_3_OFFSET   0x1F8  /* the fourth thread, 3 * EFFECT_SLOT_SIZE */
+#define EFFECT_CUR_THREAD        0x548  /* u8: index of the thread being stepped */
+
 void step_status_1f8(u8 **obj);
 void sprites_obj_step_move(u8 *list);
 void decode_stream_run(u8 *record, u32 *buf, u8 *gfx, u8 *vars, u8 *extra, u32 kind);
 u32 obj_command_dispatch(u8 *owner, u32 zero, u8 *record, u32 *buf);
 u32 step_effect_slot(u8 *owner, u32 zero, u8 *record);
 
-NONMATCH("asm/code_080EF3BC/step_object_effects.s", void step_object_effects(u8 **obj))
+/* Steps script thread 3 (the fourth one in gEffectState) for one frame: updates its waits, and if
+ * it is running and not waiting, runs its script commands until one yields or fails. While it
+ * waits on the owner, the owner's sprites keep moving instead. */
+void step_object_effects(u8 **obj)
 {
-    u8 *counter = gEffectState + 0x548;
-    u8 *record;
-    u8 *owner;
-    u32 flags;
-    s32 one = 1;
-    u32 buf[13];
-    u32 kind;
-
-    step_status_1f8(obj);
-    *counter = 3;
-    record = gEffectState + 0x1F8;
-    flags = *(u16 *)(gEffectState + 0x298);
-    if ((flags & 0x100) != 0)
+  u8 *curThread = gEffectState + EFFECT_CUR_THREAD;
+  u8 *thread;
+  u8 *owner;
+  u32 flags;
+  u32 cmd[13];
+  u32 done;
+  step_status_1f8(obj);
+  *curThread = 3;
+  thread = gEffectState + SCRIPT_THREAD_3_OFFSET;
+  flags = *((u16 *) (gEffectState + SCRIPT_THREAD_3_OFFSET + 0xA0));
+  if ((flags & SCRIPT_THREAD_WAIT_OWNER) != 0)
+  {
+    sprites_obj_step_move(*((u8 **) ((*obj) + 0x14)));
+    return;
+  }
+  if ((flags & (SCRIPT_THREAD_WAIT_TIMER | 0x4)) != 0)
+  {
+    return;
+  }
+  owner = *obj;
+  {
+    /* not running? */
+    register u16 one asm("r1") = SCRIPT_THREAD_RUNNING;
+    register u16 stopped asm("r0") = one ^ (u16)flags;
+    if ((stopped & one) != 0)
     {
-        sprites_obj_step_move(*(u8 **)(*obj + 0x14));
-        return;
+      return;
     }
-    if ((flags & 0x14) != 0)
+  }
+  done = (u8) step_effect_slot(owner, 0, thread);
+  while (done == 0)
+  {
+    decode_stream_run(thread, cmd, gUnk_03000FC0, gEffectState + 0x4B0, gUnk_03000FC0 + 0x38C, done);
+    if (((u8) obj_command_dispatch(owner, 0, thread, cmd)) == 0)
     {
-        return;
+      break;
     }
-    owner = *obj;
-    if ((((u16)flags ^ one) & one) != 0)
-    {
-        return;
-    }
-    kind = (u8)step_effect_slot(owner, 0, record);
-    while (kind == 0)
-    {
-        decode_stream_run(record, buf, gUnk_03000FC0, gEffectState + 0x4B0, gUnk_03000FC0 + 0x38C, kind);
-        if ((u8)obj_command_dispatch(owner, 0, record, buf) == 0)
-        {
-            break;
-        }
-        kind = (u8)step_effect_slot(owner, 0, record);
-    }
+    done = (u8) step_effect_slot(owner, 0, thread);
+  }
 }
-END_NONMATCH
 
 extern const u8 gEffectStateTag[];
 extern u32 gTextExtraFlagPtrs[];
@@ -575,49 +662,61 @@ extern u32 gTextModePtrs[];
 extern u32 gTextHalfPtrs[];
 void *heap_alloc_raw(u32 pool, u32 size, const u8 *tag);
 void task_insert(void *node, u8 kind, u32 data);
-u8 *init_effect_state(u8 *owner, u32 flag, u32 kind, u32 arg)
+/*
+ * Constructor of the effect-script task (C++-style, with the task as a virtual base: self[0] points
+ * to it). With inCharge set it also builds that base task (task_insert, at self + 4); then it installs
+ * gTaskTemplate as the task's handler table, or, when a derived constructor owns the base, a stack
+ * copy whose offset (+8) is adjusted to this subobject. It allocates and clears gEffectState (0x560
+ * bytes), selects the default text tables (entry 0) in the var block, and clears the text layer
+ * (gUnk_03000FCC), the slot table (gUnk_03000FC8) and gCurObj bytes 0x26-0x27.
+ */
+u8 *init_effect_state(u8 *self, u32 inCharge, u32 kind, u32 data)
 {
-    u32 task[4];
-    u8 *node;
-    u8 *record;
-    u8 *dst;
-    u8 *base;
-    u8 *state;
-    u8 *pool;
-    u8 k;
+    u32 vtblCopy[4];
+    u8 *baseTask;
+    u8 *task;
+    u8 *copy;
+    u8 *taskStart;
+    u8 *vars;
+    u8 *curObj;
+    u8 prio;
 
-    k = kind;
-    if (flag != 0)
+    prio = kind;
+    if (inCharge != 0)
     {
-        node = owner + 4;
-        *(u8 **)owner = node;
-        task_insert(node, k, arg);
-        *(const u8 **)(node + 0x18) = gDefaultTaskDesc;
+        baseTask = self + 4;
+        *(u8 **)self = baseTask;
+        task_insert(baseTask, prio, data);
+        *(const u8 **)(baseTask + 0x18) = gDefaultTaskDesc;
     }
-    record = *(u8 **)owner;
-    *(u8 **)(record + 0x18) = gTaskTemplate;
-    if (flag == 0)
+    task = *(u8 **)self;
+    *(u8 **)(task + 0x18) = gTaskTemplate;
+    if (inCharge == 0)
     {
-        *(struct TaskCopy *)task = *(struct TaskCopy *)gTaskTemplate;
-        *(u8 **)(record + 0x18) = (u8 *)task;
-        dst = (u8 *)task;
-        base = record - 4;
-        *(u16 *)(dst + 8) = (u16)((u32)owner - (u32)base + *(u16 *)(gTaskTemplate + 8));
+        *(struct TaskCopy *)vtblCopy = *(struct TaskCopy *)gTaskTemplate;
+        *(u8 **)(task + 0x18) = (u8 *)vtblCopy;
+        copy = (u8 *)vtblCopy;
+        taskStart = task - 4;
+        *(u16 *)(copy + 8) = (u16)((u32)self - (u32)taskStart + *(u16 *)(gTaskTemplate + 8));
     }
+
     gEffectState = heap_alloc_raw(1, 0x560, gEffectStateTag);
     ((void (*)(u32, void *, u32))gMemRoutines)(0, gEffectState, 0x560);
-    state = gUnk_03000FC0;
-    *(u32 *)(state + 0x55C) = gTextExtraFlagPtrs[0];
-    *(u32 *)(state + 0x560) = gTextCountPtrs[0];
-    *(u32 *)(state + 0x564) = gTextKindPtrs[0];
-    *(u32 *)(state + 0x568) = gTextModePtrs[0];
-    *(u32 *)(state + 0x56C) = gTextHalfPtrs[0];
+
+    /* the default text tables */
+    vars = gUnk_03000FC0;
+    *(u32 *)(vars + 0x55C) = gTextExtraFlagPtrs[0];
+    *(u32 *)(vars + 0x560) = gTextCountPtrs[0];
+    *(u32 *)(vars + 0x564) = gTextKindPtrs[0];
+    *(u32 *)(vars + 0x568) = gTextModePtrs[0];
+    *(u32 *)(vars + 0x56C) = gTextHalfPtrs[0];
+
     gUnk_03000FCC = 0;
     gUnk_03000FC8 = 0;
-    pool = gCurObj;
-    pool[0x27] = 0;
-    pool[0x26] = 0;
-    return owner;
+    curObj = gCurObj;
+    curObj[0x27] = 0;
+    curObj[0x26] = 0;
+    return self;
 }
 
 void update_object_states(u8 **task);
@@ -719,15 +818,20 @@ void update_effect_slots(u8 **task)
 }
 
 void apply_key_filter(u8 *list);
-void start_effect(u8 **owner, u32 arg)
+/* Starts effect script `script` for a task: clears gEffectState's flag bits 1 and 3-5 (+0x55A),
+ * zeroes its halfwords at +0x554/+0x556/+0x558 and sets the counter at +0x549 to 16, applies the
+ * key filter to the task's scene, restarts each of the scene's members on its own script (member +0x58,
+ * script pointer at +0x228), calls the task's virtual hook (vtable +8: this offset, +0xC: function)
+ * and finally starts `script` in gEffectState. */
+void start_effect(u8 **task, u32 script)
 {
-    u8 *list;
-    u8 **ptr;
-    s16 count;
-    u8 *sub;
+    u8 *scene;
+    u8 **member;
+    s16 left;
+    u8 *vtbl;
 
-    ((s8 *)gEffectState)[0x55A] &= -3;
-    ((s8 *)gEffectState)[0x55A] &= -0x39;
+    ((s8 *)gEffectState)[0x55A] &= ~0x02;
+    ((s8 *)gEffectState)[0x55A] &= ~0x38;
     {
         u8 *state = gEffectState;
         *(u16 *)(state + 0x558) = 0;
@@ -735,137 +839,282 @@ void start_effect(u8 **owner, u32 arg)
         *(u16 *)(state + 0x554) = 0;
         state[0x549] = 0x10;
     }
-    apply_key_filter(*(u8 **)(*owner + 0x14));
-    list = *(u8 **)(*owner + 0x14);
-    count = list[0x10B];
-    ptr = (u8 **)(list + 0x28);
-    if (count != 0)
+    apply_key_filter(*(u8 **)(*task + 0x14));
+    scene = *(u8 **)(*task + 0x14);
+    left = scene[0x10B]; /* member count */
+    member = (u8 **)(scene + 0x28);
+    if (left != 0)
     {
         do
         {
-            reset_obj_params_b(*owner + 0x1C, *ptr + 0x58, *(u32 *)(*ptr + 0x228), 0, 1, 0xFF);
-            ptr++;
-            count--;
-        } while (count > 0);
+            reset_obj_params_b(*task + 0x1C, *member + 0x58, *(u32 *)(*member + 0x228), 0, 1, 0xFF);
+            member++;
+            left--;
+        } while (left > 0);
     }
-    sub = *(u8 **)(*owner + 0x18);
-    ((void (*)(u8 *))(*(u32 *)(sub + 0xC)))(*owner + *(s16 *)(sub + 8));
-    reset_obj_params_b(*owner + 0x1C, gEffectState, arg, 0, 1, 0xFF);
+    vtbl = *(u8 **)(*task + 0x18);
+    ((void (*)(u8 *))(*(u32 *)(vtbl + 0xC)))(*task + *(s16 *)(vtbl + 8));
+    reset_obj_params_b(*task + 0x1C, gEffectState, script, 0, 1, 0xFF);
 }
 
 ASM_FUNC("asm/code_080EF3BC/register_effect_entry.s", void register_effect_entry(void))
 
-void update_setup_bg_layer(u32 unused, u16 scrOff, u16 chrOff)
+/* Sets BG0 up as the text layer: zeroes its scroll, points BG0CNT at the given screen and
+   character blocks (VRAM offsets), creates the text object (gUnk_03000FCC) on those tiles, fills
+   the VRAM map and a new 0x800-byte map buffer (gEffectState + 0x4AC) with tile 0x180, clears the
+   first tile and hands everything to flags_vars_setup_bg_layer. */
+void update_setup_bg_layer(u32 unused, u16 screenOfs, u16 charOfs)
 {
-    u8 *b = gEffectState;
-    u32 scr = scrOff;
-    u32 chr = chrOff;
-    u16 *p = gUnk_02000010;
-    u8 *block;
+    u8 *state = gEffectState;
+    u32 screen = screenOfs;
+    u32 chars = charOfs;
+    u16 *reg = gUnk_02000010; /* BG0HOFS shadow */
+    u8 *mapBuf;
     u32 zero = 0;
 
-    *p = zero;
-    p++;
-    *p = zero;
-    p -= 5;
-    *p = (((scr >> 11) & 0x1F) << 8) | (((chr >> 14) & 3) << 2);
-    gUnk_03000FCC = init_text_obj(heap_alloc2(8, 0, gBgLayerTag, zero), 0x06000020 + chr, 0x4AE0, 6);
-    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, (void *)(0x06000000 + scr), 0x800);
-    ((void (*)(u32, void *, u32))gMemRoutines)(0, (void *)(0x06000000 + chr), 0x20);
-    block = heap_alloc_raw(1, 0x800, gBgBufferTag);
-    *(u8 **)(gEffectState + 0x4AC) = block;
-    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, block, 0x800);
-    flags_vars_setup_bg_layer(gUnk_03000FCC, 0, 0xF, *(u8 **)(gEffectState + 0x4AC), 2, 0x180, b + 0x540, b + 0x538, b + 0x528);
+    *reg = zero;
+    reg++;
+    *reg = zero; /* BG0VOFS */
+    reg -= 5;
+    /* BG0CNT shadow: screen base block in bits 8-12, character base block in bits 2-3 */
+    *reg = (((screen >> 11) & 0x1F) << 8) | (((chars >> 14) & 3) << 2);
+    gUnk_03000FCC = init_text_obj(heap_alloc2(8, 0, gBgLayerTag, zero), 0x06000020 + chars, 0x4AE0, 6);
+    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, (void *)(0x06000000 + screen), 0x800);
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, (void *)(0x06000000 + chars), 0x20);
+    mapBuf = heap_alloc_raw(1, 0x800, gBgBufferTag);
+    *(u8 **)(gEffectState + 0x4AC) = mapBuf;
+    ((void (*)(u32, void *, u32))gMemRoutines)(0x01800180, mapBuf, 0x800);
+    flags_vars_setup_bg_layer(gUnk_03000FCC, 0, 0xF, *(u8 **)(gEffectState + 0x4AC), 2, 0x180, state + 0x540, state + 0x538, state + 0x528);
 }
 
 
-ASM_FUNC("asm/code_080EF3BC/reset_effect_state.s", void reset_effect_state(void))
+void cpu_set(const void *src, void *dst, u32 ctl);
+/* CpuSet control: fill `count` halfwords with the value at src (bit 24: fixed source). */
+#define CPU_SET_FILL_16(count) (0x01000000 | (count))
+
+#define EFFECT_SLOT_SIZE 0xA8 /* gEffectState holds 3 effect-script slots of this size */
+
+/* Clears the effect-script state for a new run: the three script slots (the loop's fourth pass only
+   steps past them), the halfword at +0x544, 8 bytes of the var block at +0x38C and its 16 halfwords
+   at +0x53C, the counters at +0x549/+0x54A/+0x550, flags 0x55A bits 0 and 6-7, and bits 5-6 of
+   0x55B and of 0x55F (the screen shake's mode, BobbingState.mode). */
+void reset_effect_state(void)
+{
+    u8 *slot = gEffectState;
+    s16 i;
+    vu16 zero;
+
+    for (i = 0; i <= 3; i++)
+    {
+        if (i != 3)
+        {
+            ((void (*)(u32, void *, u32))gMemRoutines)(0, slot, EFFECT_SLOT_SIZE);
+        }
+        slot += EFFECT_SLOT_SIZE;
+    }
+    zero = 0;
+    cpu_set((void *)&zero, gEffectState + 0x544, CPU_SET_FILL_16(1));
+    ((void (*)(u32, void *, u32))gMemRoutines)(0, gUnk_03000FC0 + 0x38C, 8);
+    zero = 0;
+    cpu_set((void *)&zero, gUnk_03000FC0 + 0x53C, CPU_SET_FILL_16(0x10));
+    ((s8 *)gEffectState)[0x55A] &= ~0x01;
+    ((s8 *)gEffectState)[0x55A] &= 0x3F;
+    {
+        u8 *state = gEffectState;
+        *(u32 *)(state + 0x550) = 0;
+        *(u16 *)(state + 0x54A) = 0;
+        state[0x549] = 0;
+    }
+    ((s8 *)gEffectState)[0x55B] &= ~0x60;
+    ((s8 *)gEffectState)[0x55F] &= ~0x60;
+}
+
+/* Screen shake in gEffectState: the offset swings between -amp and +amp by step per frame. */
+struct BobbingState
+{
+    u8 filler0[0x55D];
+    s8 step;
+    u16 count : 6;  /* swings left; 0 shakes until mode is set to BOB_MODE_SETTLE */
+    u16 amp : 7;
+    u16 mode : 2;
+    u16 useAlt : 1; /* shake the y offset instead of x */
+};
+
+#define BOB_MODE_SETTLE 1 /* stop once the offset is back within one step of 0 */
+
+/* The byte at gEffectState+0x55F, holding BobbingState.mode. */
+struct BobbingModeByte
+{
+    u8 low5 : 5;
+    u8 mode : 2;
+    u8 high : 1;
+};
+
+/* Shake offsets of the scene (the object at *task + 0x14). */
+struct BobOffsets
+{
+    u8 filler0[0x12E];
+    s16 x;
+    s16 y;
+};
 
 ASM_FUNC("asm/code_080EF3BC/update_object_states.s", void update_object_states(u8 **task))
 
-ASM_FUNC("asm/code_080EF3BC/step_bobbing_offset.s", void step_bobbing_offset(u8 **task))
+/* Advance the screen shake by one frame: move the scene's x (or y) offset by step, bounce it
+ * back at +-amp (counting the swings down), and in BOB_MODE_SETTLE end the shake once the
+ * offset is within one step of 0. */
+void step_bobbing_offset(u8 **task)
+{
+    u16 edge;
+    u16 magnitude;
+    s16 *offset;
+    s16 value;
 
+    if (((struct BobbingState *)gEffectState)->count == 0 && ((struct BobbingState *)gEffectState)->mode == 0)
+        return;
+    if (((struct BobbingState *)gEffectState)->useAlt)
+        offset = &(*(struct BobOffsets **)(*task + 0x14))->y;
+    else
+        offset = &(*(struct BobOffsets **)(*task + 0x14))->x;
+    *offset += ((struct BobbingState *)gEffectState)->step;
+    if (*offset >= 0)
+    {
+        magnitude = *offset;
+        edge = ((struct BobbingState *)gEffectState)->amp;
+    }
+    else
+    {
+        magnitude = -*offset;
+        edge = -((struct BobbingState *)gEffectState)->amp;
+    }
+    if ((s16)magnitude >= ((struct BobbingState *)gEffectState)->amp)
+    {
+        if (((struct BobbingState *)gEffectState)->count != 0)
+        {
+            if (--((struct BobbingState *)gEffectState)->count == 0)
+            {
+                ((struct BobbingState *)gEffectState)->mode = BOB_MODE_SETTLE;
+            }
+        }
+        do
+        {
+            *offset = edge;
+        } while (0);
+        ((struct BobbingState *)gEffectState)->step *= -1;
+    }
+    /* the same variable holds the offset of the mode byte */
+    edge = 0x55F;
+    if (((struct BobbingModeByte *)&gEffectState[edge])->mode == BOB_MODE_SETTLE)
+    {
+        edge = ((struct BobbingState *)gEffectState)->step;
+        magnitude = *offset;
+        value = *offset;
+        if (value < 0)
+            magnitude = value * -1;
+        if ((s16)edge < 0)
+            edge = (s16)edge * -1;
+        if ((s16)magnitude - (s16)edge <= 0)
+        {
+            (*(struct BobOffsets **)(*task + 0x14))->y = 0;
+            (*(struct BobOffsets **)(*task + 0x14))->x = 0;
+            ((struct BobbingState *)*(u8 *volatile *)&gEffectState)->mode = 0;
+        }
+    }
+}
+
+/*
+ * One of the four slots at gEffectState + 0x2A0 that move a point toward a target
+ * (positions in 1/0x100 pixels). Slot i runs while bit i of gEffectState[0x55B]
+ * bits 1-4 is set.
+ */
 struct MotionSlot
 {
     s32 x;
     s32 y;
-    s32 xBase;
+    s32 xBase;  /* x rounded down to a whole pixel, at most 0xFF behind it */
     s32 yBase;
-    s16 xLim;
+    s16 xLim;   /* target, in pixels */
     s16 yLim;
     s32 vx;
     s32 vy;
+    u8 filler1C[0x20 - 0x1C];
 };
 
 void offset_obj_pos_by_mode(u8 *obj, u32 kind, s32 dx, s32 dy);
 
+/*
+ * Moves each running motion slot one step toward its target, axis by axis, stopping
+ * at it. Slots 1 and 2 move the owner's objects (list + 0x304) by the whole pixels
+ * moved since their base; a slot that has reached its target on both axes stops.
+ */
 void advance_motion_slots(u8 **task)
 {
-    struct MotionSlot *e;
+    struct MotionSlot *slot;
     s32 i;
-    s16 flags;
-    s32 mask;
-    s32 v;
+    s16 arrived;
+    s32 pixelMask;
+    s32 running;
 
-    e = (struct MotionSlot *)(gEffectState + 0x2A0);
+    slot = (struct MotionSlot *)(gEffectState + 0x2A0);
     i = 0;
-    mask = ~0xFF;
-    for (; i <= 3; e = (struct MotionSlot *)((u8 *)e + 0x20), i++)
+    pixelMask = ~0xFF;
+    for (; i <= 3; slot++, i++)
     {
-        v = ((u32)gEffectState[0x55B] << 27) >> 28;
-        if (((v >> i) & 1) != 0)
+        running = ((u32)gEffectState[0x55B] << 27) >> 28;   /* bits 1-4 */
+        if (((running >> i) & 1) != 0)
         {
-            flags = 0;
-            if (e->vx >= 0)
+            /* bit 0: x has arrived, bit 1: y has */
+            arrived = 0;
+            if (slot->vx >= 0)
             {
-                if (e->x - e->xBase > 0xFF)
+                if (slot->x - slot->xBase > 0xFF)
                 {
-                    e->xBase = e->x & mask;
+                    slot->xBase = slot->x & pixelMask;
                 }
-                e->x = e->x + e->vx;
-                if (((s32)e->xLim << 8) <= e->x)
+                slot->x = slot->x + slot->vx;
+                if (((s32)slot->xLim << 8) <= slot->x)
                 {
-                    e->x = (s32)e->xLim << 8;
-                    flags = 1;
+                    slot->x = (s32)slot->xLim << 8;
+                    arrived = 1;
                 }
             }
             else
             {
-                if (e->xBase - e->x > 0xFF)
+                if (slot->xBase - slot->x > 0xFF)
                 {
-                    e->xBase = e->x & mask;
+                    slot->xBase = slot->x & pixelMask;
                 }
-                e->x = e->x + e->vx;
-                if (((s32)e->xLim << 8) >= e->x)
+                slot->x = slot->x + slot->vx;
+                if (((s32)slot->xLim << 8) >= slot->x)
                 {
-                    e->x = (s32)e->xLim << 8;
-                    flags = 1;
+                    slot->x = (s32)slot->xLim << 8;
+                    arrived = 1;
                 }
             }
-            if (e->vy >= 0)
+            if (slot->vy >= 0)
             {
-                if (e->y - e->yBase > 0xFF)
+                if (slot->y - slot->yBase > 0xFF)
                 {
-                    e->yBase = e->y & mask;
+                    slot->yBase = slot->y & pixelMask;
                 }
-                e->y = e->y + e->vy;
-                if (((s32)e->yLim << 8) <= e->y)
+                slot->y = slot->y + slot->vy;
+                if (((s32)slot->yLim << 8) <= slot->y)
                 {
-                    e->y = (s32)e->yLim << 8;
-                    flags = (s16)(flags | 2);
+                    slot->y = (s32)slot->yLim << 8;
+                    arrived = (s16)(arrived | 2);
                 }
             }
             else
             {
-                if (e->yBase - e->y > 0xFF)
+                if (slot->yBase - slot->y > 0xFF)
                 {
-                    e->yBase = e->y & mask;
+                    slot->yBase = slot->y & pixelMask;
                 }
-                e->y = e->y + e->vy;
-                if (((s32)e->yLim << 8) >= e->y)
+                slot->y = slot->y + slot->vy;
+                if (((s32)slot->yLim << 8) >= slot->y)
                 {
-                    e->y = (s32)e->yLim << 8;
-                    flags = (s16)(flags | 2);
+                    slot->y = (s32)slot->yLim << 8;
+                    arrived = (s16)(arrived | 2);
                 }
             }
             switch (i)
@@ -874,33 +1123,34 @@ void advance_motion_slots(u8 **task)
             case 2:
             {
                 u8 *list = *(u8 **)(*task + 0x14);
-                u32 handle = *(u32 *)(list + 0x304);
-                u8 idx = i - 1;
-                s32 dx = e->x - e->xBase;
+                u32 obj = *(u32 *)(list + 0x304);
+                u8 kind = i - 1;
+                s32 dx = slot->x - slot->xBase;
                 s32 dy;
-                s32 dx2;
-                s32 dy2;
+                s32 dxPixels;
+                s32 dyPixels;
                 if (dx < 0)
                 {
                     dx += 0xFF;
                 }
-                dx2 = ((s32)((u32)dx << 8)) >> 16;
-                dy = e->y - e->yBase;
+                dxPixels = ((s32)((u32)dx << 8)) >> 16;   /* (s16)(dx / 0x100) */
+                dy = slot->y - slot->yBase;
                 if (dy < 0)
                 {
                     dy += 0xFF;
                 }
-                dy2 = ((s32)((u32)dy << 8)) >> 16;
-                offset_obj_pos_by_mode((u8 *)handle, idx, dx2, dy2);
+                dyPixels = ((s32)((u32)dy << 8)) >> 16;
+                offset_obj_pos_by_mode((u8 *)obj, kind, dxPixels, dyPixels);
             }
             }
-            if (flags == 3)
+            if (arrived == 3)
             {
-                s32 bv = gEffectState[0x55B];
-                s32 v2 = ((u32)bv << 27) >> 28;
-                s32 cleared = v2 & ~(1 << i);
-                s32 sh = cleared << 1;
-                gEffectState[0x55B] = (bv & ~0x1E) | sh;
+                /* clear this slot's running bit */
+                s32 bits = gEffectState[0x55B];
+                s32 slots = ((u32)bits << 27) >> 28;
+                s32 left = slots & ~(1 << i);
+                s32 field = left << 1;
+                gEffectState[0x55B] = (bits & ~0x1E) | field;
             }
         }
     }
@@ -953,28 +1203,39 @@ void unknown_thumb_080f0a54(u8 **owner, u8 idx, u32 arg)
     reset_obj_params_b(*owner + 0x1C, state, arg, 0, 1, 0xFF);
 }
 
-void start_effect_slot(u32 *owner, u32 value, u8 flag, u16 word)
+/* Offsets into gEffectState used by start_effect_slot */
+#define EFFECT_THREAD_FLAGS(n)   ((n) * EFFECT_SLOT_SIZE + 0xA0) /* u16 flags of script thread n */
+#define EFFECT_SCRIPT_VARS       0x4B0 /* the effect scripts' variable block */
+#define EFFECT_SCRIPT_ID         0x54C /* u16: id of the last started script (cmd_copy_if_equal tests it) */
+#define EFFECT_FLAGS_55A         0x55A /* u8: bit 0 lets thread 2 take a script when thread 1 is busy */
+#define EFFECT_VAR_START_ARG     0x2F  /* script variable that receives the start argument */
+#define START_THREAD_1_OR_2      2     /* register_effect_slot kind: thread 1, else thread 2 */
+
+/* Starts effect script `script` on effect thread 1 (thread 2 if 1 is busy and 0x55A bit 0 allows it),
+ * after putting `arg` in script variable 0x2F; records `scriptId` at +0x54C. Does nothing if no
+ * thread can take it. */
+void start_effect_slot(u32 *owner, u32 script, u8 arg, u16 scriptId)
 {
     u8 **pstate = &gEffectState;
     u8 *state = *pstate;
-    u32 la[2];
+    u32 startArgs[2];
 
-    if (*(u16 *)(state + 0x148) & 1)
+    if (*(u16 *)(state + EFFECT_THREAD_FLAGS(1)) & SCRIPT_THREAD_RUNNING)
     {
-        if (*(u16 *)(state + 0x1F0) & 1)
+        if (*(u16 *)(state + EFFECT_THREAD_FLAGS(2)) & SCRIPT_THREAD_RUNNING)
         {
             return;
         }
-        if ((*(u8 *)(state + 0x55A) & 1) == 0)
+        if ((*(u8 *)(state + EFFECT_FLAGS_55A) & 1) == 0)
         {
             return;
         }
     }
-    la[0] = 2;
-    la[1] = value;
-    set_var(state + 0x4B0, 0, gUnk_03000FC0 + 0x38C, 0, 0x2F, flag);
-    register_effect_slot(*owner, *pstate + 0xA8, la);
-    *(u16 *)(*pstate + 0x54C) = word;
+    startArgs[0] = START_THREAD_1_OR_2;
+    startArgs[1] = script;
+    set_var(state + EFFECT_SCRIPT_VARS, 0, gUnk_03000FC0 + 0x38C, 0, EFFECT_VAR_START_ARG, arg);
+    register_effect_slot(*owner, *pstate + EFFECT_SLOT_SIZE, startArgs);
+    *(u16 *)(*pstate + EFFECT_SCRIPT_ID) = scriptId;
 }
 
 void refresh_bg_layer(void)

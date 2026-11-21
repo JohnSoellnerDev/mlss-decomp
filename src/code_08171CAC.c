@@ -134,7 +134,16 @@ void obj_set_table_44(void *obj, const void *table);
 void obj_set_frame_table(void *obj, const void *table);
 void obj_create_sprite_10(void *obj, u32 a, u32 kind, u32 b, u32 c, u32 d);
 typedef union __attribute__((packed)) { u8 value; } ByteArg __attribute__((transparent_union));
-void obj_setup_slot(void *obj, u32 a, u32 b, u32 c, s32 offset, ByteArg flag);
+// The original builds obj_setup_slot's byte flag straight in its stack slot (slot address
+// first, then the value). That happens for a BLKmode one-byte aggregate: the zero-length
+// array keeps SlotFlag (and the union) out of a register, so the u8 lands in place.
+struct SlotFlag
+{
+    u8 value;
+    u8 end[0];
+} __attribute__((packed));
+typedef union __attribute__((packed)) { struct SlotFlag flag; u8 value; } SlotFlagArg __attribute__((transparent_union));
+void obj_setup_slot(void *obj, u32 a, u32 b, u32 c, s32 offset, SlotFlagArg flag);
 extern const u8 gSlidePartCTimerScript[];
 extern const u8 gSlidePartBTimerScript[];
 extern const u8 gSpriteFrameBaseByMode[];
@@ -272,19 +281,16 @@ void obj_destroy_ec78(struct HudObj *obj, u32 flags)
     obj_destroy_sprites(obj, flags);
 }
 
-NONMATCH("asm/code_08171CAC/slide_part_c_setup.s", void slide_part_c_setup(struct HudObj *obj))
+void slide_part_c_setup(struct HudObj *obj)
 {
-    u8 zero;
-
     obj_copy_mode_fields(obj);
-    obj_setup_slot(obj, 0x3000, 0, 0x3C00, (obj->unk6C + 1) << 3, zero = 0);
+    obj_setup_slot(obj, 0x3000, 0, 0x3C00, (obj->unk6C + 1) << 3, (u8)0);
     obj->unk52 = 0;
     obj->unk56 = 1;
     obj_update_frame_flags(obj);
     obj_set_table_44(obj, gSlidePartCTimerScript);
     obj->unk6C = 0;
 }
-END_NONMATCH
 
 void obj_destroy_ec88(struct HudObj *obj, u32 flags)
 {
@@ -308,19 +314,16 @@ struct HudObj *init_vt_08cdec88(struct HudObj *obj)
     return obj;
 }
 
-NONMATCH("asm/code_08171CAC/slide_part_b_setup.s", void slide_part_b_setup(struct HudObj *obj))
+void slide_part_b_setup(struct HudObj *obj)
 {
-    u8 zero;
-
     obj_copy_mode_fields(obj);
-    obj_setup_slot(obj, 0x4800, 0, 0x2400, (obj->unk6C + 1) << 3, zero = 0);
+    obj_setup_slot(obj, 0x4800, 0, 0x2400, (obj->unk6C + 1) << 3, (u8)0);
     obj->unk52 = 6;
     obj->unk56 = 1;
     obj_update_frame_flags(obj);
     obj_set_table_44(obj, gSlidePartBTimerScript);
     obj->unk6C = 0;
 }
-END_NONMATCH
 
 void obj_destroy_ec98(struct HudObj *obj, u32 flags)
 {

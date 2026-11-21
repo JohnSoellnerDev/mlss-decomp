@@ -10,9 +10,9 @@ struct ScreenObj
     u8 filler28[0x8C - 0x28];
     u8 *keys;
     u8 filler90[0xA6 - 0x90];
-    u16 unkA6;
-    u8 unkA8;
-    u8 unkA9;
+    u16 unkA6; /* the enabled keys from before menu_obj_open */
+    u8 unkA8;  /* the key repeat delay from before menu_obj_open */
+    u8 unkA9;  /* the key repeat rate from before menu_obj_open */
     u8 filler[0xC8 - 0xAA];
     void *unkC8;
 };
@@ -24,6 +24,24 @@ struct MenuChild
     void *vtable;
 };
 
+struct SysBits888
+{
+    u8 bit0 : 1;
+    u8 bit1 : 1;
+    u8 bit2 : 1;
+    u8 bit3 : 1;
+    u8 bit4 : 1;
+    u8 bit5 : 1;
+    u8 bit6 : 1;
+    u8 bit7 : 1;
+};
+
+struct SysFlags888
+{
+    u8 filler0[0x888];
+    struct SysBits888 bits;
+};
+
 extern u16 gUnk_02000008;
 extern const u8 gUnk_08A59364[];
 extern const u8 gUnpackTag[];
@@ -31,7 +49,11 @@ extern const u8 gSaveMenuClass[];
 extern const u8 gSaveMenuChildClass[];
 extern const u8 gMenuChildTaskTag[];
 extern const u8 gMenuChildObjTag[];
-extern u8 gUnk_03000388[];
+extern u8 gUnk_03000388[]; /* key input settings: [8] repeat delay, [9] repeat rate, +0x3C enabled keys */
+#define KEY_REPEAT_DELAY 8          /* byte of gUnk_03000388: frames before a held key repeats */
+#define KEY_REPEAT_RATE 9           /* byte of gUnk_03000388: frames between repeats */
+#define KEY_INPUT_ENABLED_KEYS 0x3C /* u16 offset in gUnk_03000388 */
+#define KEYS_ALL 0x3FF              /* all 10 GBA buttons */
 extern u8 gSys[];
 extern void (*gUnk_03000C84)(const u8 *src, void *dst);
 
@@ -130,26 +152,29 @@ u32 rom_table_entry(u32 idx, u32 *len_out)
     return entry;
 }
 
+/* Constructor of the save menu: inserts obj as a task, saves the enabled keys and key repeat delay/rate
+ * and switches to all keys with repeat 10/8, blanks the display, runs a frame, sets bits 5 and 6 of
+ * byte 0x84C of gUnk_03000388, then creates its child task and menu object. screen_obj_free undoes it. */
 void *menu_obj_open(struct ScreenObj *obj, u8 kind, void *arg)
 {
-    u32 hw;
+    u32 enabledKeys;
     u8 *sysFlags;
     struct MenuChild *child;
-    void *menu_mem;
+    void *menuMem;
     void *menu;
 
     task_insert(obj, kind, arg);
     obj->vtable = (void *)gSaveMenuClass;
     obj->keys = gUnk_03000388;
-    hw = *(u16 *)(gUnk_03000388 + 0x3C);
-    obj->unkA6 = (hw << 22) >> 22;
-    *(u16 *)(gUnk_03000388 + 0x3C) = hw | 0x3FF;
-    obj->unkA8 = obj->keys[8];
-    obj->unkA9 = obj->keys[9];
-    obj->keys[8] = 0xA;
-    obj->keys[9] = 8;
-    *(u16 *)0x02000000 = 0;
-    *(u16 *)0x02000050 = 0;
+    enabledKeys = *(u16 *)(gUnk_03000388 + KEY_INPUT_ENABLED_KEYS);
+    obj->unkA6 = (enabledKeys << 22) >> 22;
+    *(u16 *)(gUnk_03000388 + KEY_INPUT_ENABLED_KEYS) = enabledKeys | KEYS_ALL;
+    obj->unkA8 = obj->keys[KEY_REPEAT_DELAY];
+    obj->unkA9 = obj->keys[KEY_REPEAT_RATE];
+    obj->keys[KEY_REPEAT_DELAY] = 10;
+    obj->keys[KEY_REPEAT_RATE] = 8;
+    REG_BUF_DISPCNT = 0;
+    REG_BUF_BLDCNT = 0;
     frame_update();
     sysFlags = gUnk_03000388 + 0x84C;
     *sysFlags |= 0x20;
@@ -158,47 +183,34 @@ void *menu_obj_open(struct ScreenObj *obj, u8 kind, void *arg)
     task_insert(child, 8, gMenuChildTaskTag);
     child->vtable = (void *)gSaveMenuChildClass;
     obj->child = child;
-    menu_mem = heap_alloc2(0x5C, 0, gMenuChildObjTag, 1);
-    menu = menu_obj_init(menu_mem, 8, gMenuChildObjTag, 8);
+    menuMem = heap_alloc2(0x5C, 0, gMenuChildObjTag, 1);
+    menu = menu_obj_init(menuMem, 8, gMenuChildObjTag, 8);
     obj->menu = menu;
     ((struct MenuChild *)obj->child)->parent = obj;
     return obj;
 }
 
-NONMATCH("asm/code_08128B60/screen_obj_free.s", void screen_obj_free(struct ScreenObj *obj, u32 kind))
+void screen_obj_free(struct ScreenObj *obj, u32 kind)
 {
-    s32 flags;
-    void *owner;
-    void *mem;
-    void *menu;
-    void *child;
-
     obj->vtable = (void *)gSaveMenuClass;
     *(u16 *)0x02000000 = 0;
     *(u16 *)0x02000048 = 0;
     *(u16 *)0x0200004A = 0;
     *(u16 *)0x02000050 = 0;
-    flags = gSys[0x888];
-    flags &= -0x21;
-    flags &= -9;
-    flags &= -0x41;
-    gSys[0x888] = flags;
-    owner = obj->owner;
-    if (owner != 0)
-        owner_destroy(owner, 3);
+    ((struct SysFlags888 *)gSys)->bits.bit5 = 0;
+    ((struct SysFlags888 *)gSys)->bits.bit3 = 0;
+    ((struct SysFlags888 *)gSys)->bits.bit6 = 0;
+    if (obj->owner != 0)
+        owner_destroy(obj->owner, 3);
     run_pending_obj_callbacks();
-    mem = obj->unkC8;
-    if (mem != 0)
-        heap_free_a(mem);
-    menu = obj->menu;
-    if (menu != 0)
-        menu_obj_free(menu, 3);
-    child = obj->child;
-    if (child != 0)
-        task_remove(child, 3);
+    if (obj->unkC8 != 0)
+        heap_free_a(obj->unkC8);
+    if (obj->menu != 0)
+        menu_obj_free(obj->menu, 3);
+    if (obj->child != 0)
+        task_remove(obj->child, 3);
     task_remove(obj, kind);
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_08128B60/save_menu_step.s", void save_menu_step(void))
 

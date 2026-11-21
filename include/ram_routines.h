@@ -12,8 +12,8 @@ extern u8 iwram_copy[];
 // copy of the block starting with iwram_sqrt: +0 square root, +0x10C division
 extern u8 *gMathRoutines;
 extern u8 iwram_sqrt[];
-extern u8 iwram_div[];
-extern u8 iwram_math_08199424[];
+extern u8 iwram_div[];            // (a, b) -> a / b
+extern u8 iwram_math_08199424[];  // (a, b) -> a % b
 
 #define MEM_ROUTINE(type, name) ((type)(gMemRoutines + ((u32)name - (u32)iwram_fill)))
 #define MATH_ROUTINE(type, name) ((type)(gMathRoutines + ((u32)name - (u32)iwram_sqrt)))

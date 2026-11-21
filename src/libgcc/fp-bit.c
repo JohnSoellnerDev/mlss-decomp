@@ -633,7 +633,10 @@ unpack_d (FLO_union_type * src, fp_number_type * dst)
 #endif
 
 #if defined(L_addsub_sf) || defined(L_addsub_df)
-static fp_number_type *
+#ifndef _fpadd_parts
+static
+#endif
+fp_number_type *
 _fpadd_parts (fp_number_type * a,
 	      fp_number_type * b,
 	      fp_number_type * tmp)

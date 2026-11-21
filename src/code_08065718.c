@@ -213,6 +213,10 @@ static inline void obj_child_flags(struct ActorObj *obj, struct ActorObj *child,
     ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
 }
 
+/* Counts the timer down; when it runs out, switches to action 4 and throws a child sprite (kind 0x40DC)
+   from 0x30 px right of the owner's target point, 0x48 px above this object. The child takes over the
+   parent's handlers and owner, arcs left towards its own spawn point (obj_move_place_cull) and the parent
+   plays song 0x10F (set_slot_value queues a song; -1 keeps the volume) and waits without a sprite. */
 void obj_timer_spawn_child_a(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -236,6 +240,11 @@ void obj_timer_spawn_child_a(struct ActorObj *obj)
     obj->state = obj_no_sprite_idle_b;
 }
 
+/* Counts the timer down; when it runs out, spawns a child sprite (kind 0x40DD) at the owner's
+   target point, 2 px lower, at this object's height and facing its way. The child takes over the
+   parent's handlers and owner and, 8 frames after its pose ends, starts its effect
+   (obj_timer_spawn_effect_place); the parent plays sound 0x8C (set_slot_value queues a song; -1
+   keeps the volume) and waits for the child to go (obj_no_sprite_idle). */
 void obj_timer_spawn_child_b(struct ActorObj *obj)
 {
     struct ActorObj *child;

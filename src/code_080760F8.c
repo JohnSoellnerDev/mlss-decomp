@@ -184,13 +184,19 @@ void start_move_then_wait_slot(struct ActorObj *obj);
 void effect_timer_step(struct ActorObj *obj);
 void pose_start_move_then_wait(struct ActorObj *obj);
 
+/* State: once obj's animation ends (pose flag 8), lifts it 12 px (posH += 0xC00), starts action 0xB
+ * and sound 0x8C (stopped again in drift_then_wait_index), and starts a move at speed 0x380 to its
+ * owner's part target, 12 px up (flags79 bit 5 set). Then pushes obj on the object list with the
+ * handlers unlink_then_move_end / lookup_part_then_wait, clears timer (the pose value
+ * drift_then_wait_index raises), waits 10 frames before its first trail effect and goes on to
+ * drift_then_wait_index. */
 void place_then_start_move(struct ActorObj *obj)
 {
     if (obj->pose->flags & 8)
     {
         obj->posH += 0xC00;
         sprite_set_action(obj, 0xB, 0, 0);
-        set_slot_value(0x8C, -1);
+        set_slot_value(0x8C, -1); /* plays sound 0x8C */
         obj->targetX = obj->owner->part->targetX;
         obj->targetY = obj->owner->part->targetY;
         obj->targetH = obj->owner->part->targetH + 0xC00;
@@ -202,7 +208,7 @@ void place_then_start_move(struct ActorObj *obj)
         obj->handler58 = unlink_then_move_end;
         obj->handler5C = lookup_part_then_wait;
         obj->timer = 0;
-        obj->wait = 0xA;
+        obj->wait = 10;
         obj->state = drift_then_wait_index;
     }
 }

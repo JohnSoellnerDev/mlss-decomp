@@ -132,6 +132,11 @@ void jump_obj_pose_active_clear_state(struct ActorObj *obj);
 u32 obj_pair_link_state(struct ActorObj *obj);
 u32 actor_lookup_or_remove(struct ActorObj *obj, u32 slot);
 
+/* Knocked out of a hop (its child was hit): drifts right 0x133 a frame while the height follows
+   the vertical speed (param9C) and the gravity (paramA0) slows it. On the ground: plays the
+   landing action and effect for its sprite variant (targetY 1: Mario's, action 8 and effect
+   0x1D82; otherwise Luigi's, action 0xA and effect 0x1D90) at its base position, then waits in
+   obj_land_pose_link. */
 void jump_obj_fall_step(struct ActorObj *obj)
 {
     if (obj->posH > 0)
@@ -356,18 +361,21 @@ void obj_timer_move_then_sprite(struct ActorObj *obj)
     }
 }
 
+// Counts the timer down; when it runs out, plans a parabolic jump from the current position to the
+// owner's part target: duration = horizontal distance / speed (param9C), height curve = baseH / duration²,
+// then hands over to obj_arc_descend and plays sound 0x111 (set_slot_value queues a song).
 void obj_timer_arc_setup(struct ActorObj *obj)
 {
-    s32 t = obj->timer;
+    s32 timer = obj->timer;
     s32 spanX;
     s32 spanY;
     s32 dist;
     s32 duration;
     s32 curve;
 
-    t--;
-    obj->timer = t;
-    if ((t << 16) <= 0)
+    timer--;
+    obj->timer = timer;
+    if ((timer << 16) <= 0)
     {
         sprite_set_action(obj, 4, 0, 0);
         obj->targetX = obj->owner->part->targetX;
@@ -399,6 +407,11 @@ void obj_timer_arc_setup(struct ActorObj *obj)
     }
 }
 
+/* Flies the arc obj_timer_arc_setup planned: x/y move linearly by (paramA4, paramA8) per paramA0
+ * frames from (dx, dy), and the height is param9C * (t - paramA0)^2, so the object comes down on
+ * the target at t = paramA0 and swings back up past it. After 2 * paramA0 frames it leaves the
+ * update list, re-enters from x = 0x100 at its part's target y and height, moves (speed 0x180)
+ * onto its part's target, stops sound 0x111 and waits in obj_index_zero_clear_state. */
 void obj_arc_descend(struct ActorObj *obj)
 {
     obj->posX = (obj->paramA4 * *(s16 *)&obj->timer) / obj->paramA0 + (obj->dx << 8);
@@ -408,7 +421,7 @@ void obj_arc_descend(struct ActorObj *obj)
     if (*(s16 *)&obj->timer > obj->paramA0 * 2)
     {
         obj_list_remove(obj);
-        obj->posX = 0x10000;
+        obj->posX = 0x100 << 8;
         obj->posY = obj->part->targetY;
         obj->posH = obj->part->targetH;
         sprite_set_action(obj, 5, 0, 0);

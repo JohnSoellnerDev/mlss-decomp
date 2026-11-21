@@ -1,22 +1,8 @@
 #include "global.h"
 #include "ram_routines.h"
+#include "tile_window.h"
 
 #define DISPCNT_SHADOW 0x02000000
-
-// One tile slot. The slots are 0x14 bytes each, slot idx starts at obj + idx * 0x14.
-struct TileSlot
-{
-    u8 value;
-    u8 unk1;
-    u8 maxTiles;
-    u8 unk3;
-    u16 size;
-    u16 end;
-    u16 pos;
-    u8 filler0A[2];
-    u8 *block;
-    u8 *spare;
-};
 
 extern u32 gSavedDispcnt;
 extern u16 gUnk_02000018;
@@ -69,6 +55,7 @@ struct MoveObj
     s16 velH;
 };
 
+
 NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx, u32 flag, u32 value, u32 p5, u32 p6, u32 p7))
 {
     struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
@@ -94,13 +81,6 @@ NONMATCH("asm/code_08084DB4/set_tile_slot.s", void set_tile_slot(u8 *obj, u8 idx
     slot->block = 0;
 }
 END_NONMATCH
-
-struct SpanNode
-{
-    struct SpanNode *next;
-    s16 start;
-    s16 len;
-};
 
 void insert_span(u8 *obj, s32 start, s32 len)
 {
@@ -442,54 +422,60 @@ void clear_map_rect(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h)
     }
 }
 
-void copy_map_rect_add(u8 *obj, u32 y, u32 x, u32 layer, s32 w, s32 h, u16 *src, u32 add)
+// Copies a w x h block of cells from src (its rows TILE_WINDOW_MAP_WIDTH cells apart) to cell
+// (x, y) of tilemap `map`, adding `add` to each cell (e.g. palette bits), and queues them for
+// VRAM. Does nothing without src.
+void copy_map_rect_add(struct TileWindow *win, u32 map, u32 x, u32 y, s32 w, s32 h, u16 *src, u32 add)
 {
     if (src != NULL)
     {
-        u16 off = y * 0x280 + layer * 32 + x;
-        u16 *row = *(u16 **)(obj + 0x288) + off;
+        u16 start = map * TILE_WINDOW_MAP_CELLS + y * TILE_WINDOW_MAP_WIDTH + x;
+        u16 *row = win->tilemap + start;
         s32 i;
 
-        insert_span(obj, off, ((h - 1) << 5) + w);
+        insert_span((u8 *)win, start, ((h - 1) << 5) + w);
         while (--h >= 0)
         {
             i = w;
             while (--i >= 0)
                 row[i] = src[i] + add;
-            row += 0x20;
-            src += 0x20;
+            row += TILE_WINDOW_MAP_WIDTH;
+            src += TILE_WINDOW_MAP_WIDTH;
         }
     }
 }
 
-void fill_map_rect(u8 *obj, u32 y, u16 *src, u32 h, u32 value)
+// Sets the first `rows` rows of tilemap `map`: copies them from src adding `value` to each cell,
+// or, without src, fills them with `value`. The rows are queued for VRAM.
+void fill_map_rect(struct TileWindow *win, u32 map, u16 *src, u32 rows, u32 value)
 {
     u16 *dst;
-    s32 n;
+    s32 cells;
     s32 i;
-    u16 *p;
+    u16 *cell;
 
-    dst = (u16 *)(*(u8 **)(obj + 0x288) + ((y * 5) << 8));
-    if (src != 0)
+    // map * TILE_WINDOW_MAP_CELLS cells, in bytes
+    dst = (u16 *)((u8 *)win->tilemap + ((map * 5) << 8));
+    if (src != NULL)
     {
-        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)src, (u8 *)dst, h << 6);
+        MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)((u8 *)src, (u8 *)dst, rows << 6);
     }
     else
     {
-        ((void (*)(u32, u8 *, u32))gMemRoutines)((value << 16) | value, (u8 *)dst, h << 6);
+        MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)((value << 16) | value, (u8 *)dst, rows << 6);
     }
-    insert_span(obj, (y * 5) << 7, h << 5);
-    if (value != 0 && src != 0)
+    insert_span((u8 *)win, (map * 5) << 7, rows << 5);
+    if (value != 0 && src != NULL)
     {
-        n = h << 5;
-        if (n > 0)
+        cells = rows << 5;
+        if (cells > 0)
         {
-            p = dst;
-            i = n;
+            cell = dst;
+            i = cells;
             do
             {
-                *p = *p + value;
-                p++;
+                *cell = *cell + value;
+                cell++;
             } while (--i != 0);
         }
     }
@@ -545,44 +531,47 @@ void draw_slot_text(u8 *obj, u8 idx, u32 x, u32 y, u8 *text, u8 color)
     }
 }
 
+/* Frees window slot idx's tiles: gives its tile block back to its tilemap's free list (the first
+ * time it only moves the block to spare), clears its rectangle of tilemap cells and queues them
+ * for the copy to VRAM. A slot with no width is left alone. */
 void release_tile_slot(u8 *obj, u8 idx)
 {
     struct TileSlot *slot = (struct TileSlot *)(obj + idx * 0x14);
     u8 *block;
-    void **list;
+    void **heaps;
     u32 off;
     u16 *row;
-    s32 h;
-    s32 i;
-    u32 bit6;
+    s32 rows;
+    s32 col;
+    u32 map;
 
     if (slot->maxTiles != 0)
     {
         if (slot->spare != 0)
         {
             block = slot->block;
-            if (block == 0)
+            if (block == NULL)
             {
                 return;
             }
-            bit6 = ((u32)((u8 *)slot)[5] << 25) >> 31;
-            off = bit6 * 4;
-            list = (void **)(obj + 0x280);
-            free_list_move(*(void **)((u8 *)list + off), block);
+            map = ((struct TileSlotFlags *)slot)->bit6;
+            off = map * sizeof(void *);
+            heaps = ((struct TileWindow *)obj)->tileHeaps;
+            free_list_move(*(void **)((u8 *)heaps + off), block);
         }
         else
         {
             slot->spare = slot->block;
         }
-        slot->block = 0;
-        h = slot->unk3;
-        row = *(u16 **)(obj + 0x288) + slot->pos;
-        while (--h >= 0)
+        slot->block = NULL;
+        rows = slot->unk3;
+        row = ((struct TileWindow *)obj)->tilemap + slot->pos;
+        while (--rows >= 0)
         {
-            i = slot->maxTiles;
-            while (--i >= 0)
-                row[i] = 0;
-            row += 0x20;
+            col = slot->maxTiles;
+            while (--col >= 0)
+                row[col] = 0;
+            row += TILE_WINDOW_MAP_WIDTH;
         }
         insert_span(obj, slot->pos, slot->end);
     }
@@ -611,38 +600,45 @@ void flush_copy_queue(u8 *obj)
 }
 
 ASM_FUNC("asm/code_08084DB4/free_slot_blocks.s", void free_slot_blocks(void))
+/*
+ * Saves DISPCNT (for restore_display) and sets the display up in the register buffer: every layer
+ * and both windows on, BG2 and BG3 unscrolled, both windows covering the whole screen with every
+ * layer shown, an even alpha blend; then clears BG3's tiles (char block 2) and tilemap (screen block 31).
+ */
 void reset_display(void)
 {
-    vu16 *p;
+    vu16 *reg;
 
-    gSavedDispcnt = *(u16 *)DISPCNT_SHADOW;
-    *(u16 *)DISPCNT_SHADOW = 0x7F40;
-    *(u16 *)(DISPCNT_SHADOW + 0x50) = 0x3740;
-    *(u16 *)(DISPCNT_SHADOW + 0x52) = 0x808;
-    *(u16 *)(DISPCNT_SHADOW + 0x0C) = 0x1E04;
-    *(u16 *)(DISPCNT_SHADOW + 0x0E) = 0x1F08;
-    p = (vu16 *)&gUnk_02000018;
-    *p = 0;
-    p++;
-    *p = 0;
-    p++;
-    *p = 0;
-    p++;
-    *p = 0;
-    p += 0x15;
-    *p = 0x3F3F;
-    p++;
-    *p = 0x3F3F;
-    p -= 5;
-    *p = 0xF0;
-    p += 2;
-    *p = 0xA0;
-    p--;
-    *p = 0xF0;
-    p += 2;
-    *p = 0xA0;
-    dma_fill_or_queue(0, (void *)0x06008000, 0x5000, 0x20, 0);
-    dma_fill_or_queue(0, (void *)0x0600F800, 0x800, 0x20, 0);
+    gSavedDispcnt = REG_BUF_DISPCNT;
+    REG_BUF_DISPCNT = DISPCNT_OBJ_1D_MAP | DISPCNT_BG0_ON | DISPCNT_BG1_ON | DISPCNT_BG2_ON | DISPCNT_BG3_ON
+                    | DISPCNT_OBJ_ON | DISPCNT_WIN0_ON | DISPCNT_WIN1_ON;
+    REG_BUF_BLDCNT = BLDCNT_EFFECT_BLEND | BLDCNT_TGT2_BG0 | BLDCNT_TGT2_BG1 | BLDCNT_TGT2_BG2
+                   | BLDCNT_TGT2_OBJ | BLDCNT_TGT2_BD;
+    REG_BUF_BLDALPHA = BLDALPHA_BLEND(8, 8);
+    REG_BUF_BG2CNT = BGCNT_PRIORITY(0) | BGCNT_CHARBASE(1) | BGCNT_SCREENBASE(30);
+    REG_BUF_BG3CNT = BGCNT_PRIORITY(0) | BGCNT_CHARBASE(2) | BGCNT_SCREENBASE(31);
+    reg = (vu16 *)&gUnk_02000018;
+    *reg = 0; // BG2HOFS
+    reg++;
+    *reg = 0; // BG2VOFS
+    reg++;
+    *reg = 0; // BG3HOFS
+    reg++;
+    *reg = 0; // BG3VOFS
+    reg += 0x15;
+    *reg = WIN_ALL_LAYERS | (WIN_ALL_LAYERS << 8); // WININ
+    reg++;
+    *reg = WIN_ALL_LAYERS | (WIN_ALL_LAYERS << 8); // WINOUT
+    reg -= 5;
+    *reg = WIN_RANGE(0, SCREEN_WIDTH); // WIN0H
+    reg += 2;
+    *reg = WIN_RANGE(0, SCREEN_HEIGHT); // WIN0V
+    reg--;
+    *reg = WIN_RANGE(0, SCREEN_WIDTH); // WIN1H
+    reg += 2;
+    *reg = WIN_RANGE(0, SCREEN_HEIGHT); // WIN1V
+    dma_fill_or_queue(0, (void *)(VRAM + 0x8000), 0x5000, 0x20, 0);
+    dma_fill_or_queue(0, (void *)(VRAM + 0xF800), 0x800, 0x20, 0);
 }
 
 void restore_display(u8 *obj, u32 flags)
@@ -767,24 +763,28 @@ NONMATCH("asm/code_08084DB4/unknown_code_08085f6c.s", s32 unknown_code_08085f6c(
 END_NONMATCH
 
 s32 distance_step(s32 x, s32 y, s32 z);
-s32 sub_080861A4(s32 *dist, s32 *outX, s32 x, s32 y, s32 h, s32 n)
+/* Plans a jump (like jump_velocity, along one axis): it covers `distance` at `speed` per frame,
+   rises over `peak` and lands `height` above the start. Returns the gravity per frame, with the
+   starting vertical speed in *outVelH and the frame it reaches `height` again (distance_step)
+   in *outLandFrame. */
+s32 sub_080861A4(s32 *outLandFrame, s32 *outVelH, s32 distance, s32 height, s32 peak, s32 speed)
 {
-    s32 s1;
-    s32 s2;
-    s32 s3;
-    s32 s4;
-    s32 s5;
-    s32 h2;
+    s32 rise;
+    s32 path;
+    s32 frames;
+    s32 gravity;
+    s32 frameProduct;
+    s32 apex;
 
-    s1 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((h * (h / 2)) / 2 - (h * (y / 2)) / 2);
-    h2 = h + s1 * 2;
-    s2 = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((h2 * (h2 / 2)) / 2 + (x * (x / 4)) / 4);
-    *outX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(n * h2 * 0x10 + s2 / 2, s2) << 3;
-    s3 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(s2 * 4 + n / 2, n);
-    s5 = s3 * (s3 + 1);
-    s4 = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((y << 8) - *outX * s3) * 2 + s5 / 2, s5);
-    *dist = distance_step(*outX, s4, y);
-    return s4;
+    rise = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((peak * (peak / 2)) / 2 - (peak * (height / 2)) / 2);
+    apex = peak + rise * 2;
+    path = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)((apex * (apex / 2)) / 2 + (distance * (distance / 4)) / 4);
+    *outVelH = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(speed * apex * 0x10 + path / 2, path) << 3;
+    frames = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(path * 4 + speed / 2, speed);
+    frameProduct = frames * (frames + 1);
+    gravity = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(((height << 8) - *outVelH * frames) * 2 + frameProduct / 2, frameProduct);
+    *outLandFrame = distance_step(*outVelH, gravity, height);
+    return gravity;
 }
 
 struct MotionObj
@@ -797,36 +797,39 @@ struct MotionObj
     u8 flags;
     s16 motionStart;
     s16 motionSpeed;
-    s16 motionProgress;
-    s32 index;
-    s32 tgtX;
+    s16 motionProgress; /* how much of index one frame of motion_step covers */
+    s32 index;          /* motion left to the target: 0 = arrived */
+    s32 tgtX;           /* where the motion ends */
     s32 tgtY;
     s32 tgtH;
 };
 
+/* One frame of a straight-line motion: moves x, y and h the fraction step / index of the way to the
+   target (step = motionProgress, at most what's left) and takes step off index. Returns 1 once the
+   target is reached, else 0. */
 u32 motion_step(struct MotionObj *m)
 {
-    s32 index = m->index;
+    s32 left = m->index;
     s32 dx = m->tgtX - m->x;
     s32 dy = m->tgtY - m->y;
     s32 dh = m->tgtH - m->h;
     s32 step = m->motionProgress;
 
-    if (index < step)
+    if (left < step)
     {
-        step = index;
+        step = left;
     }
     if (dx != 0)
     {
-        m->x += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * step, index);
+        m->x += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * step, left);
     }
     if (dy != 0)
     {
-        m->y += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * step, index);
+        m->y += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * step, left);
     }
     if (dh != 0)
     {
-        m->h += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dh * step, index);
+        m->h += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dh * step, left);
     }
     m->index -= step;
     if (m->index != 0)
@@ -838,74 +841,57 @@ u32 motion_step(struct MotionObj *m)
 
 ASM_FUNC("asm/code_08084DB4/start_motion.s", void start_motion(void))
 
-NONMATCH("asm/code_08084DB4/unknown_code_0808645c.s", u32 unknown_code_0808645c(u8 *obj))
+static inline s32 move_obj_height(struct MoveObj *o, s32 tm)
 {
-    struct MoveObj *o = (struct MoveObj *)obj;
-    s32 tm;
-    s32 inv;
-    s32 k;
-    s32 x;
-    s32 a;
-    s32 b;
     s32 h;
-    s32 u;
-    s32 nu;
-    s32 bh;
 
-    o->timer = o->timer - o->rate;
-    if ((s16)o->timer > 0)
-    {
-        tm = (s16)o->timer;
-        o->posX = o->baseX - ((s16)o->velX * tm) / 0x1000;
-        o->posY = o->baseY - ((s16)o->velY * tm) / 0x1000;
-        if (o->phase != 0)
-        {
-            bh = o->baseH;
-            inv = 0x4000 - tm;
-            u = o->unk98;
-            if (u < 0)
-            {
-                a = (o->phase * (0x4000 - inv)) / 0x4000 - u;
-                b = o->phase - u;
-                h = bh - (u * u) / 0x100 - (b * b) / 0x100 + (a * a) / 0x100;
-            }
-            else
-            {
-                x = (o->phase * inv) / 0x4000 - u;
-                h = bh - (x * x) / 0x100;
-            }
-        }
-        else
-        {
-            h = o->baseH - ((s16)o->velH * tm) / 0x1000;
-        }
-        o->posH = h;
-        return 0;
-    }
-    o->posX = o->baseX;
-    o->posY = o->baseY;
     if (o->phase != 0)
     {
-        u = o->unk98;
-        bh = o->baseH;
+        s32 inv = 0x4000 - tm;
+        s32 u = o->unk98;
+        s32 bh = o->baseH;
+
         if (u < 0)
         {
-            nu = -u;
-            b = o->phase - u;
-            h = bh - (u * u) / 0x100 - (b * b) / 0x100 + (nu * nu) / 0x100;
+            s32 a = (o->phase * (0x4000 - inv)) / 0x4000 - u;
+            s32 b = o->phase - u;
+
+            h = bh - (u * u) / 0x100 - (b * b) / 0x100 + (a * a) / 0x100;
         }
         else
         {
-            x = (o->phase << 14) / 0x4000 - u;
+            s32 x = (o->phase * inv) / 0x4000 - u;
+
             h = bh - (x * x) / 0x100;
         }
     }
     else
     {
-        h = o->baseH;
+        h = o->baseH - ((s16)o->velH * tm) / 0x1000;
     }
-    o->posH = h;
-    o->timer = 0;
+    return h;
+}
+
+// Steps an object's glide onto its base point: timer counts down by rate (from 0x4000), and the
+// position is base - vel * timer / 0x1000, the height on an arc if phase is set (move_obj_height).
+// Returns 1 once the timer runs out and the object sits on the base point, 0 while still moving.
+u32 unknown_code_0808645c(u8 *obj)
+{
+    struct MoveObj *mover = (struct MoveObj *)obj;
+    s32 remaining;
+
+    mover->timer = mover->timer - mover->rate;
+    if ((s16)mover->timer > 0)
+    {
+        remaining = (s16)mover->timer;
+        mover->posX = mover->baseX - ((s16)mover->velX * remaining) / 0x1000;
+        mover->posY = mover->baseY - ((s16)mover->velY * remaining) / 0x1000;
+        mover->posH = move_obj_height(mover, remaining);
+        return 0;
+    }
+    mover->posX = mover->baseX;
+    mover->posY = mover->baseY;
+    mover->posH = move_obj_height(mover, 0);
+    mover->timer = 0;
     return 1;
 }
-END_NONMATCH

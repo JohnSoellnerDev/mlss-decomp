@@ -48,275 +48,312 @@ void oam_list_rows_b(u32 model, u32 h);
 void offset_words_camera(s32 *x, s32 *y, s32 *z, u32 w);
 void oam_place_points(u32 *slot, u32 h, s32 x, s32 y, s32 z, u32 a, u32 b);
 
+/*
+ * Effect update: six sprites whose offsets (8.8 fixed point) are scaled by a
+ * zoom that grows by a decaying velocity (2/3 per frame), rotated by a fixed
+ * yaw (angle 32) and pitch (angle 64), then drawn around the object
+ * (mirrored in X when flag 0x80 is set).
+ */
 void obj_zoom_model6_tilt45_4b38(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     struct ObjRecord *rec;
     s32 zoom;
-    s32 step;
-    u32 *words;
-    u32 h;
-    u32 saved;
+    s32 zoomVel;
+    u32 *state;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 x1;
-    s32 z1;
-    s32 x2;
-    s32 z2;
-    s32 t;
-    s32 pos;
-    s32 y1;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 scaledX;
+    s32 scaledZ;
+    s32 yawX;
+    s32 yawZ;
+    s32 tmp;
+    s32 ofs;
+    s32 scaledY;
 
-    words = obj->data;
-    zoom = *words++;
-    step = *words++;
+    state = obj->data;
+    zoom = *state++;
+    zoomVel = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 6; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[32] / 0x40);
-        z2 = (t - (gSineTable[32] / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = ((z2 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
+
+        /* scale the offset by zoom / 256 */
+        scaledX = (offX * zoom) / 0x100;
+        pt.x = scaledX;
+        scaledY = (pt.y * zoom) / 0x100;
+        pt.y = scaledY;
+        scaledZ = (pt.z * zoom) / 0x100;
+        pt.z = scaledZ;
+
+        /* yaw: rotate in the X/Z plane */
+        tmp = scaledZ;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        yawZ = (tmp - (gSineTable[32] / 0x40) * scaledX) / 0x100;
+        pt.z = yawZ;
+        yawX = (scaledX * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * scaledZ) / 0x100;
+        pt.x = yawX;
+
+        /* pitch: rotate in the Y/Z plane */
+        tmp = scaledY;
+        tmp = tmp * (gCosineTable[64] / 0x40);
+        pt.y = (tmp - (gSineTable[64] / 0x40) * yawZ) / 0x100;
+        pt.z = ((yawZ * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * scaledY)) / 0x100;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            ofs >>= 8;
+            pt.x = tmp - ofs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            ofs >>= 8;
+            pt.x = tmp + ofs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += step;
-    step = (step * 2) / 3;
-    words = obj->data;
-    *words++ = zoom;
-    *words = step;
+    zoom += zoomVel;
+    zoomVel = (zoomVel * 2) / 3;
+    state = obj->data;
+    *state++ = zoom;
+    *state = zoomVel;
 }
 
+/*
+ * Effect update: eight sprites whose offsets (8.8 fixed point) are scaled by a
+ * zoom that grows by a velocity decaying to 2/3 each frame, rotated by a fixed
+ * yaw (angle 32, 45 degrees) and pitch (angle 64), then drawn around the
+ * object (mirrored in X when flag 0x80 is set).
+ */
 void obj_zoom_model8_tilt45_4d74(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     struct ObjRecord *rec;
     s32 zoom;
-    s32 step;
-    u32 *words;
-    u32 h;
-    u32 saved;
+    s32 zoomVel;
+    u32 *state;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 x1;
-    s32 z1;
-    s32 x2;
-    s32 z2;
-    s32 t;
-    s32 pos;
-    s32 y1;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 scaledX;
+    s32 scaledZ;
+    s32 yawX;
+    s32 yawZ;
+    s32 tmp;
+    s32 ofs;
+    s32 scaledY;
 
-    words = obj->data;
-    zoom = *words++;
-    step = *words++;
+    state = obj->data;
+    zoom = *state++;
+    zoomVel = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 8; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[32] / 0x40);
-        z2 = (t - (gSineTable[32] / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = ((z2 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
+
+        /* scale the offset by zoom / 256 */
+        scaledX = (offX * zoom) / 0x100;
+        pt.x = scaledX;
+        scaledY = (pt.y * zoom) / 0x100;
+        pt.y = scaledY;
+        scaledZ = (pt.z * zoom) / 0x100;
+        pt.z = scaledZ;
+
+        /* yaw: rotate in the X/Z plane */
+        tmp = scaledZ;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        yawZ = (tmp - (gSineTable[32] / 0x40) * scaledX) / 0x100;
+        pt.z = yawZ;
+        yawX = (scaledX * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * scaledZ) / 0x100;
+        pt.x = yawX;
+
+        /* pitch: rotate in the Y/Z plane */
+        tmp = scaledY;
+        tmp = tmp * (gCosineTable[64] / 0x40);
+        pt.y = (tmp - (gSineTable[64] / 0x40) * yawZ) / 0x100;
+        pt.z = ((yawZ * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * scaledY)) / 0x100;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            ofs >>= 8;
+            pt.x = tmp - ofs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            ofs >>= 8;
+            pt.x = tmp + ofs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += step;
-    step = (step * 2) / 3;
-    words = obj->data;
-    *words++ = zoom;
-    *words = step;
+    zoom += zoomVel;
+    zoomVel = (zoomVel * 2) / 3;
+    state = obj->data;
+    *state++ = zoom;
+    *state = zoomVel;
 }
 
+/*
+ * Effect update: eight sprites whose offsets (8.8 fixed point) are scaled by a
+ * zoom that grows by a velocity decaying to 2/3 each frame, rotated by a fixed
+ * yaw (angle 32, 45 degrees) and pitch (angle 64), then drawn around the
+ * object (mirrored in X when flag 0x80 is set). Same code as
+ * obj_zoom_model8_tilt45_4d74.
+ */
 void obj_zoom_model8_tilt45_4fb0(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     struct ObjRecord *rec;
     s32 zoom;
-    s32 step;
-    u32 *words;
-    u32 h;
-    u32 saved;
+    s32 zoomVel;
+    u32 *state;
+    u32 rowCount;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 x1;
-    s32 z1;
-    s32 x2;
-    s32 z2;
-    s32 t;
-    s32 pos;
-    s32 y1;
+    s32 *py;
+    s32 *pz;
+    u32 *pmodel;
+    s32 offX;
+    s32 scaledX;
+    s32 scaledZ;
+    s32 yawX;
+    s32 yawZ;
+    s32 tmp;
+    s32 ofs;
+    s32 scaledY;
 
-    words = obj->data;
-    zoom = *words++;
-    step = *words++;
+    state = obj->data;
+    zoom = *state++;
+    zoomVel = *state++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    rowCount = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, rowCount);
+    py = &pt.y;
+    pz = &pt.z;
+    pmodel = &pt.model;
     for (i = 0; i < 8; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
-        x1 = (vx * zoom) / 0x100;
-        l.x = x1;
-        y1 = (l.y * zoom) / 0x100;
-        l.y = y1;
-        z1 = (l.z * zoom) / 0x100;
-        l.z = z1;
-        t = z1;
-        t = t * (gCosineTable[32] / 0x40);
-        z2 = (t - (gSineTable[32] / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (gCosineTable[64] / 0x40);
-        l.y = (t - (gSineTable[64] / 0x40) * z2) / 0x100;
-        l.z = ((z2 * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * y1)) / 0x100;
+        offX = *state++;
+        pt.x = offX;
+        pt.y = *state++;
+        pt.z = *state++;
+
+        /* scale the offset by zoom / 256 */
+        scaledX = (offX * zoom) / 0x100;
+        pt.x = scaledX;
+        scaledY = (pt.y * zoom) / 0x100;
+        pt.y = scaledY;
+        scaledZ = (pt.z * zoom) / 0x100;
+        pt.z = scaledZ;
+
+        /* yaw: rotate in the X/Z plane */
+        tmp = scaledZ;
+        tmp = tmp * (gCosineTable[32] / 0x40);
+        yawZ = (tmp - (gSineTable[32] / 0x40) * scaledX) / 0x100;
+        pt.z = yawZ;
+        yawX = (scaledX * (gCosineTable[32] / 0x40) + (gSineTable[32] / 0x40) * scaledZ) / 0x100;
+        pt.x = yawX;
+
+        /* pitch: rotate in the Y/Z plane */
+        tmp = scaledY;
+        tmp = tmp * (gCosineTable[64] / 0x40);
+        pt.y = (tmp - (gSineTable[64] / 0x40) * yawZ) / 0x100;
+        pt.z = ((yawZ * (gCosineTable[64] / 0x40)) + ((gSineTable[64] / 0x40) * scaledY)) / 0x100;
 
         if (obj->flags & 0x80) {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t - pos;
+            ofs >>= 8;
+            pt.x = tmp - ofs;
         } else {
-            t = obj->posX;
-            pos = x2;
-            if (pos < 0) {
-                pos += 0xFF;
+            tmp = obj->posX;
+            ofs = yawX;
+            if (ofs < 0) {
+                ofs += 0xFF;
             }
-            pos >>= 8;
-            l.x = t + pos;
+            ofs >>= 8;
+            pt.x = tmp + ofs;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, py, pz, 0);
+        oam_place_points(pmodel, rowCount, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += step;
-    step = (step * 2) / 3;
-    words = obj->data;
-    *words++ = zoom;
-    *words = step;
+    zoom += zoomVel;
+    zoomVel = (zoomVel * 2) / 3;
+    state = obj->data;
+    *state++ = zoom;
+    *state = zoomVel;
 }

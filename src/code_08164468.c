@@ -91,37 +91,62 @@ union SprPos
     s16 xy[2];
 };
 
+// A text window that prints its text one character a frame (obj_dialog_step).
 struct DialogObj
 {
-    union SprPos *sprite;
+    union SprPos *sprite; // the "more" arrow, or the cursor of a choice
     u8 filler4[0x4];
-    s32 unk8;
+    s32 unk8;             // +8..+0x1C: the text run (struct Voice)
     s32 unkC;
-    const u8 *text;
-    u8 unk14;
-    u8 unk15;
+    const u8 *text;       // the next character or DLG_* code
+    u8 unk14;             // pen x in the window
+    u8 unk15;             // pen y in the window
     u8 filler16[0x2];
     s32 unk18;
     s32 unk1C;
     u8 filler20[0x8];
-    s32 unk28;
-    s32 unk2C;
-    s32 unk30;
-    s32 unk34;
+    s32 unk28;            // window x in pixels
+    s32 unk2C;            // window y in pixels
+    s32 unk30;            // window size in tiles: the "more" arrow's x uses it,
+    s32 unk34;            // its y uses this, and so does DLG_ALIGN (for the line's width)
     u8 filler38[0x14];
-    void (*unk4C)(void *);
+    void (*unk4C)(void *); // the frame drawing routine (frame_9slice_tiles), for a new page
     u8 filler50[0x8];
-    const u8 *unk58;
-    s32 unk5C;
-    u32 state;
-    s32 count;
-    s32 idx;
-    s32 maxIdx;
-    s32 pos[4][2];
+    const u8 *unk58;      // where DLG_END goes on after a DLG_BRANCH, NULL for the real end
+    s32 unk5C;            // frames to wait before the next character
+    u32 state;            // DIALOG_*
+    s32 count;            // choices placed so far (DLG_CHOICE)
+    s32 idx;              // the choice the cursor is on
+    s32 maxIdx;           // the choice the cursor starts on
+    s32 pos[4][2];        // where the cursor goes for each choice
     u8 filler90[0x10];
-    u16 soundOn;
-    s16 soundId;
+    u16 soundOn;          // the typing sound is playing
+    s16 soundId;          // the typing sound
 };
+
+// DialogObj.state
+#define DIALOG_PRINTING 0 // a character a frame
+#define DIALOG_DONE     1
+#define DIALOG_WAIT_KEY 2 // the "more" arrow shows until A
+#define DIALOG_CHOOSE   3 // the cursor moves between the choices
+#define DIALOG_FAST     4 // A was pressed: everything up to the next stop at once
+
+// Text codes: 0xFF00 | code (any other character prints).
+#define DLG_CODE_MASK 0xFFE0
+#define DLG_CODE      0xFF00
+#define DLG_CHAR      0  // (not a code)
+#define DLG_PAGE      1  // clear the window and start again at the top
+#define DLG_FAST      3  // print the rest up to the next stop at once
+#define DLG_CHOICE    4  // a choice starts here
+#define DLG_END       10
+#define DLG_ALIGN     11 // + byte: the line is left-aligned (0), centred (1) or right-aligned (2)
+#define DLG_WAIT      12 // + byte: frames to wait
+#define DLG_BRANCH    13 // + byte: goes to one of two texts (by whether the byte is 0), then back
+#define DLG_STOP      17 // + byte: wait for A (byte 1: another arrow), or let the player choose
+
+// What obj_dialog_step returns, besides the choice (1 for the first).
+#define DIALOG_BUSY   (-1)
+#define DIALOG_CANCEL 999 // B on a choice
 
 extern const u8 gTweenGroupVtable[];
 extern const u8 gClassEad8[];
@@ -205,21 +230,23 @@ void obj_set_child_table(struct Obj *obj)
     child->unk40 = 0;
 }
 
+/* Shows the last three decimal digits of value on three digit sprites: each digit (0-9) is
+ * loaded as that sprite's animation, hundreds on obj->unk8, tens on obj->unk4, ones on obj->unk0. */
 void obj_load_scaled_anims(struct Obj *obj, u32 value)
 {
     s32 (*div)(s32, s32);
-    s32 (*scale)(s32, s32);
-    s32 anim;
+    s32 (*mod)(s32, s32);
+    s32 digit;
 
     div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
-    scale = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424);
-    anim = div(scale(value, 0x3E8), 0x64);
-    obj_load_record(obj->unk8->unk10, anim, 0, 0, 0);
-    anim = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(
-        MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 0x64), 0xA);
-    obj_load_record(obj->unk4->unk10, anim, 0, 0, 0);
-    anim = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 0xA);
-    obj_load_record(((struct Obj *)obj->unk0)->unk10, anim, 0, 0, 0);
+    mod = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424);
+    digit = div(mod(value, 1000), 100);
+    obj_load_record(obj->unk8->unk10, digit, 0, 0, 0);
+    digit = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(
+        MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 100), 10);
+    obj_load_record(obj->unk4->unk10, digit, 0, 0, 0);
+    digit = MATH_ROUTINE(s32 (*)(s32, s32), iwram_math_08199424)(value, 10);
+    obj_load_record(((struct Obj *)obj->unk0)->unk10, digit, 0, 0, 0);
 }
 
 void obj_init_children_sprites(struct Obj *obj)
@@ -272,24 +299,28 @@ void obj_run_children_free(struct Obj *obj, u32 flags)
 }
 
 /* only three branch targets differ: the original keeps the jumps to the shared "done" flag */
-NONMATCH("asm/code_08164468/obj_triples_done.s", u32 obj_triples_done(struct Obj *obj))
+u32 obj_triples_done(struct Obj *obj)
 {
-    s32 g;
-    s32 j;
-
+    s32 g, j;
     for (g = 0; g < 2; g++)
-    {
         for (j = 0; j < 3; j++)
         {
-            if (!child_is_done(((struct Triples *)obj)->kids[g][j]))
+            struct Obj *child = ((struct Triples *)obj)->kids[g][j];
+            u32 done, state;
+            if (!child->unk44)
+                goto finished;
+            state = child->unk40;
+            done = 0;
+            if (state == 1)
             {
-                return 0;
+finished:
+                done = 1;
             }
+            if (!done)
+                return 0;
         }
-    }
     return 1;
 }
-END_NONMATCH
 
 /* point a child at a script and restart it */
 static inline void child_set_script(struct Obj *child, const u8 *script)
@@ -412,28 +443,31 @@ void obj_init_single(struct Obj *obj)
     child->unk40 = 0;
 }
 
-NONMATCH("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_done(struct Obj *obj))
+void obj_wait_children_done(struct Obj *obj)
 {
     struct Obj **slot;
-    u32 count;
+    u32 count, done, state;
     s32 i;
-
     if (obj->unk0 == 0)
-    {
         return;
-    }
     if (obj->unk0 != 1)
-    {
         return;
-    }
     count = 0;
     slot = (struct Obj **)&obj->unk4;
     for (i = 0; i < 3; i++)
     {
-        if (child_finished(slot[i]) != 0)
+        struct Obj *child = slot[i];
+        if (!child->unk44)
+            goto finished;
+        state = child->unk40;
+        done = 0;
+        if (state == 1)
         {
-            count++;
+finished:
+            done = 1;
         }
+        if (done)
+            count++;
         else
         {
             obj_script_step(slot[i]);
@@ -441,27 +475,21 @@ NONMATCH("asm/code_08164468/obj_wait_children_done.s", void obj_wait_children_do
         }
     }
     if (count == 3)
-    {
         obj->unk0 = 0;
-    }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08164468/obj_run_children3_free.s", void obj_run_children3_free(struct Obj *obj, u32 flags))
+void obj_run_children3_free(struct Obj *obj, u32 flags)
 {
-    struct Obj **slot = (struct Obj **)&obj->unk4;
-    struct Obj **end = slot + 3;
-
-    while (slot < end)
-    {
-        obj_run_behavior(*slot++);
-    }
-    if ((flags & 1) != 0)
-    {
-        heap_free_b(obj);
-    }
+  register struct Obj *parent asm("r5");
+  register struct Obj **slot asm("r4") = (struct Obj **) (&obj->unk4);
+  obj_run_behavior(obj->unk4);
+  obj_run_behavior(slot[1]);
+  obj_run_behavior((struct Obj *) obj->unkC);
+  if (flags & 1)
+  {
+    heap_free_b(obj);
+  }
 }
-END_NONMATCH
 
 void obj_list_update_pos(struct ObjList *head, u32 camX, u32 camY)
 {
@@ -1048,116 +1076,161 @@ void obj_release_tiles(void *obj);
 void voice_setup_params(void *voice, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h, u32 i);
 void voice_set_data_ptr(void *voice, u32 a, u32 b, void *ptr);
 void obj_flush_tiles(void *obj);
+
+/* The window setup code indexes a DialogObj as an array of s32 words. */
+enum DialogWord
+{
+    WIN_SPRITE = 0,         /* the "more" arrow / choice cursor */
+    WIN_VOICE = 2,          /* +8: the text run (struct Voice) */
+    WIN_FRAME = 8,          /* +0x20: the frame's tile block, drawn by WIN_FRAME_ROUTINE */
+    WIN_X = 10,             /* window x in pixels */
+    WIN_Y = 11,             /* window y in pixels */
+    WIN_W = 12,             /* window width in tiles */
+    WIN_H = 13,             /* window height in tiles */
+    WIN_FRAME_ROUTINE = 19, /* frame_9slice_tiles, copied to RAM */
+    WIN_SCROLL_X = 20,      /* s16 *: the BG x offset that puts the window at WIN_X */
+    WIN_SCROLL_Y = 21,      /* s16 *: the BG y offset that puts the window at WIN_Y */
+    WIN_BRANCH_RET = 22,    /* DialogObj.unk58 */
+    WIN_WAIT = 23,          /* DialogObj.unk5C */
+    WIN_STATE = 24,
+    WIN_COUNT = 25,
+    WIN_IDX = 26,
+    WIN_MAX_IDX = 27,
+};
+
+/* Windows stay 4 px inside the 240x160 screen. */
+#define WIN_MARGIN 4
+#define WIN_MAX_RIGHT  (240 - WIN_MARGIN)
+#define WIN_MAX_BOTTOM (160 - WIN_MARGIN)
+
+/*
+ * Lays a frameless window out for a text block: src[0] is the width and src[1] the height in
+ * tiles, the text follows at src + 2. The window is kept on screen, the dialog state is reset
+ * and the BG is scrolled so the window shows at (x, y). Unlike win_set_layout, no frame is drawn.
+ */
 void window_layout_plain(s32 *win, u8 *src, s32 x, s32 y)
 {
     obj_release_tiles(win);
-    win[10] = x;
-    if (x < 4)
+    win[WIN_X] = x;
+    if (x < WIN_MARGIN)
     {
-        win[10] = 4;
+        win[WIN_X] = WIN_MARGIN;
     }
-    win[11] = y;
-    if (y < 4)
+    win[WIN_Y] = y;
+    if (y < WIN_MARGIN)
     {
-        win[11] = 4;
+        win[WIN_Y] = WIN_MARGIN;
     }
-    win[12] = src[0];
-    win[13] = src[1];
-    if (win[10] + (win[12] << 3) > 0xEC)
+    win[WIN_W] = src[0];
+    win[WIN_H] = src[1];
+    if (win[WIN_X] + (win[WIN_W] << 3) > WIN_MAX_RIGHT)
     {
-        win[10] = 0xEC - (win[12] << 3);
+        win[WIN_X] = WIN_MAX_RIGHT - (win[WIN_W] << 3);
     }
-    if (win[11] + (win[13] << 3) > 0x9C)
+    if (win[WIN_Y] + (win[WIN_H] << 3) > WIN_MAX_BOTTOM)
     {
-        win[11] = 0x9C - (win[13] << 3);
+        win[WIN_Y] = WIN_MAX_BOTTOM - (win[WIN_H] << 3);
     }
-    voice_setup_params(win + 2, win[8], 0x20, 0xC, (((0x20 - win[12]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 0);
-    voice_set_data_ptr(win + 2, 0, 6, src + 2);
-    win[23] = 0;
-    win[22] = 0;
-    win[25] = 0;
-    win[26] = 0;
-    win[27] = 0;
-    win[24] = 0;
-    obj_release_slots((void *)win[0]);
-    *(s16 *)win[20] = -(s16)win[10];
-    *(s16 *)win[21] = -(s16)win[11];
+    voice_setup_params(win + WIN_VOICE, win[WIN_FRAME], 0x20, 0xC,
+                       (((0x20 - win[WIN_W]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 0);
+    voice_set_data_ptr(win + WIN_VOICE, 0, 6, src + 2);
+    win[WIN_WAIT] = 0;
+    win[WIN_BRANCH_RET] = 0;
+    win[WIN_COUNT] = 0;
+    win[WIN_IDX] = 0;
+    win[WIN_MAX_IDX] = 0;
+    win[WIN_STATE] = 0;
+    obj_release_slots((void *)win[WIN_SPRITE]);
+    *(s16 *)win[WIN_SCROLL_X] = -(s16)win[WIN_X];
+    *(s16 *)win[WIN_SCROLL_Y] = -(s16)win[WIN_Y];
     obj_flush_tiles(win);
 }
 
 extern void frame_9slice_tiles(void);
+extern void frame_9slice_tiles_routine(void);
 
-NONMATCH("asm/code_08164468/win_set_layout.s", void win_set_layout(s32 *win, u8 *src, s32 x, s32 y))
+/*
+ * Lays a text window out for a text block: src[0] is the text width (the window gets 4 tiles
+ * more, 3-30 tiles), src[1] the line height (+2, 3-12 tiles), the text follows at src + 2.
+ * The window is kept on screen, its frame is redrawn, the dialog state is reset and the BG
+ * is scrolled so the window shows at (x, y).
+ */
+void win_set_layout(s32 *win, u8 *src, s32 x, s32 y)
 {
     s32 w;
     s32 h;
-    s32 style;
+    s32 lines;
 
     obj_release_tiles(win);
-    win[10] = x;
-    if (x < 4)
+    win[WIN_X] = x;
+    if (x < WIN_MARGIN)
     {
-        win[10] = 4;
+        win[WIN_X] = WIN_MARGIN;
     }
-    win[11] = y;
-    if (y < 4)
+    win[WIN_Y] = y;
+    if (y < WIN_MARGIN)
     {
-        win[11] = 4;
+        win[WIN_Y] = WIN_MARGIN;
     }
     w = src[0] + 4;
     if (w > 3)
     {
-        if (w > 0x1E)
+        if (w > 30)
         {
-            w = 0x1E;
+            w = 30;
         }
     }
     else
     {
         w = 3;
     }
-    win[12] = w;
-    style = src[1];
-    if (style != 2 && style != 4 && style != 5)
+    win[WIN_W] = w;
+    lines = src[1];
+    // Both branches are the same; the original has the test.
+    if (lines == 2 || lines == 4 || lines == 5 || lines + 1 > 12)
     {
-        h = style + 1;
+        h = lines + 2;
     }
-    h = style + 2;
+    else
+    {
+        h = lines + 2;
+    }
     if (h > 3)
     {
-        if (h > 0xC)
+        if (h > 12)
         {
-            h = 0xC;
+            h = 12;
         }
     }
     else
     {
         h = 3;
     }
-    win[13] = h;
-    if (win[10] + (win[12] << 3) > 0xEC)
+    win[WIN_H] = h;
+    if (win[WIN_X] + (win[WIN_W] << 3) > WIN_MAX_RIGHT)
     {
-        win[10] = 0xEC - (win[12] << 3);
+        win[WIN_X] = WIN_MAX_RIGHT - (win[WIN_W] << 3);
     }
-    if (win[11] + (win[13] << 3) > 0x9C)
+    if (win[WIN_Y] + (win[WIN_H] << 3) > WIN_MAX_BOTTOM)
     {
-        win[11] = 0x9C - (win[13] << 3);
+        win[WIN_Y] = WIN_MAX_BOTTOM - (win[WIN_H] << 3);
     }
-    voice_setup_params(win + 2, win[8], 0x20, 0xC, (((0x20 - win[12]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 2);
-    voice_set_data_ptr(win + 2, 0, 6, src + 2);
-    ((void (*)(void *))(win[19] + ((u32)frame_9slice_tiles - (u32)frame_9slice_tiles)))((u8 *)win + 0x20);
-    win[23] = 0;
-    win[22] = 0;
-    win[25] = 0;
-    win[26] = 0;
-    win[27] = 0;
-    win[24] = 0;
-    obj_release_slots((void *)win[0]);
-    *(s16 *)win[20] = -(s16)win[10];
-    *(s16 *)win[21] = -(s16)win[11];
+    voice_setup_params(win + WIN_VOICE, win[WIN_FRAME], 0x20, 0xC,
+                       (((0x20 - win[WIN_W]) << 27) + 0xC000000U) >> 24, 0, 0, 6, 1, 2);
+    voice_set_data_ptr(win + WIN_VOICE, 0, 6, src + 2);
+    // Calls the RAM copy of frame_9slice_tiles_routine.
+    ((void (*)(void *))(win[WIN_FRAME_ROUTINE] + ((u32)frame_9slice_tiles_routine - (u32)frame_9slice_tiles)))((u8 *)win + 0x20);
+    win[WIN_WAIT] = 0;
+    win[WIN_BRANCH_RET] = 0;
+    win[WIN_COUNT] = 0;
+    win[WIN_IDX] = 0;
+    win[WIN_MAX_IDX] = 0;
+    win[WIN_STATE] = 0;
+    obj_release_slots((void *)win[WIN_SPRITE]);
+    *(s16 *)win[WIN_SCROLL_X] = -(s16)win[WIN_X];
+    *(s16 *)win[WIN_SCROLL_Y] = -(s16)win[WIN_Y];
     obj_flush_tiles(win);
 }
-END_NONMATCH
 
 void win_set_layout(s32 *win, u8 *src, s32 x, s32 y);
 ASM_FUNC("asm/code_08164468/win_draw_text.s", void win_draw_text(void))
@@ -1165,8 +1238,13 @@ ASM_FUNC("asm/code_08164468/win_draw_text.s", void win_draw_text(void))
 struct DlgInput
 {
     u8 filler0[2];
-    u16 keys;
+    u16 keys; // newly pressed
 };
+
+#define DLG_KEY_A          0x01
+#define DLG_KEY_B          0x02
+#define DLG_KEYS_PREVIOUS  0x60 // left, up
+#define DLG_KEYS_NEXT      0x90 // right, down
 
 /* text voice state embedded in the dialog object at +8 */
 struct Voice
@@ -1188,235 +1266,240 @@ void sound_stop_song(u32 song);
 void mem_copy_fast(void *dst, void *src, u32 len);
 u32 layout_text_run();
 
-u32 obj_dialog_step(struct DialogObj *obj)
+/* One frame of a text window: prints the next character (all of them up to the next stop once
+   A is pressed), with the typing sound, and runs the text codes (DLG_*). Returns DIALOG_BUSY
+   while it runs, 0 once the text has ended, and after a choice the chosen one (1 for the
+   first) or DIALOG_CANCEL for B. */
+u32 obj_dialog_step(struct DialogObj *win)
 {
     struct DlgInput *input = (struct DlgInput *)gUnk_03000374;
-    s32 cmd; /* text command code, then its byte argument */
+    s32 c; /* the character or text code, then a code's byte argument */
 
     while (1)
     {
-        switch (obj->state)
+        switch (win->state)
         {
-        case 0:
-        case 4:
-            if (obj->unk5C != 0)
+        case DIALOG_PRINTING:
+        case DIALOG_FAST:
+            if (win->unk5C != 0)
             {
-                if ((input->keys & 1) == 0)
+                if ((input->keys & DLG_KEY_A) == 0)
                 {
-                    obj->unk5C--;
-                    return -1;
+                    win->unk5C--;
+                    return DIALOG_BUSY;
                 }
-                obj->unk5C = 0;
-                obj->state = 4;
+                win->unk5C = 0;
+                win->state = DIALOG_FAST;
             }
             {
-                u32 k;
+                u32 code;
 
-                cmd = (u16)track_run((u8 *)obj + 8);
-                if (cmd == 0)
+                c = (u16)track_run((u8 *)win + 8);
+                if (c == 0)
                 {
-                    obj_release_slots(obj->sprite);
-                    obj->state = 1;
+                    obj_release_slots(win->sprite);
+                    win->state = DIALOG_DONE;
                     continue;
                 }
-                k = ((cmd & 0xFFE0) == 0xFF00) ? (cmd & 0x1F) : 0;
-                switch (k)
+                code = ((c & DLG_CODE_MASK) == DLG_CODE) ? (c & 0x1F) : DLG_CHAR;
+                switch (code)
                 {
-                case 0:
-                    if (obj->state == 4)
+                case DLG_CHAR:
+                    if (win->state == DIALOG_FAST)
                     {
                         continue;
                     }
-                    if (input->keys & 1)
+                    if (input->keys & DLG_KEY_A)
                     {
-                        obj->state = 4;
+                        win->state = DIALOG_FAST;
                     }
-                    if (obj->soundOn == 0)
+                    if (win->soundOn == 0)
                     {
-                        set_slot_value(obj->soundId, -1);
-                        obj->soundOn = 1;
+                        set_slot_value(win->soundId, -1);
+                        win->soundOn = 1;
                     }
-                    obj->unk5C = 1;
-                    return -1;
-                case 1:
-                    obj_release_slots(obj->sprite);
-                    ((void (*)(void *))((u32)obj->unk4C + ((u32)frame_9slice_tiles_routine - (u32)frame_9slice_tiles)))((u8 *)obj + 0x20);
-                    obj->unk14 = 0xC;
-                    obj->unk15 = 0x14;
-                    obj->unk5C = 0;
-                    obj->unk58 = 0;
-                    obj->count = 0;
-                    obj->idx = obj->maxIdx;
-                    obj->text++;
-                    obj->state = 0;
-                    return -1;
-                case 3:
-                    obj->state = 4;
+                    win->unk5C = 1;
+                    return DIALOG_BUSY;
+                case DLG_PAGE:
+                    obj_release_slots(win->sprite);
+                    ((void (*)(void *))((u32)win->unk4C + ((u32)frame_9slice_tiles_routine - (u32)frame_9slice_tiles)))((u8 *)win + 0x20);
+                    win->unk14 = 0xC;
+                    win->unk15 = 0x14;
+                    win->unk5C = 0;
+                    win->unk58 = 0;
+                    win->count = 0;
+                    win->idx = win->maxIdx;
+                    win->text++;
+                    win->state = DIALOG_PRINTING;
+                    return DIALOG_BUSY;
+                case DLG_FAST:
+                    win->state = DIALOG_FAST;
                     continue;
-                case 4:
-                    obj->pos[obj->count][0] = obj->unk28 + obj->unk14 + 0xB;
-                    obj->pos[obj->count][1] = obj->unk2C + obj->unk15 - 7;
-                    if (obj->count == 0)
+                case DLG_CHOICE:
+                    win->pos[win->count][0] = win->unk28 + win->unk14 + 0xB;
+                    win->pos[win->count][1] = win->unk2C + win->unk15 - 7;
+                    if (win->count == 0)
                     {
-                        if (obj->soundOn != 0)
+                        if (win->soundOn != 0)
                         {
-                            sound_stop_song(obj->soundId);
-                            obj->soundOn = 0;
+                            sound_stop_song(win->soundId);
+                            win->soundOn = 0;
                         }
                     }
-                    if (obj->count == obj->maxIdx)
+                    if (win->count == win->maxIdx)
                     {
-                        obj_load_record(obj->sprite, 0, -1, 0, 0);
-                        sprite_update_cd0(obj->sprite);
-                        obj->sprite->xy[0] = obj->pos[obj->count][0];
-                        obj->sprite->xy[1] = obj->pos[obj->count][1];
+                        obj_load_record(win->sprite, 0, -1, 0, 0);
+                        sprite_update_cd0(win->sprite);
+                        win->sprite->xy[0] = win->pos[win->count][0];
+                        win->sprite->xy[1] = win->pos[win->count][1];
                     }
-                    obj->count++;
+                    win->count++;
                     continue;
-                case 10:
-                    if (obj->soundOn != 0)
+                case DLG_END:
+                    if (win->soundOn != 0)
                     {
-                        sound_stop_song(obj->soundId);
-                        obj->soundOn = 0;
+                        sound_stop_song(win->soundId);
+                        win->soundOn = 0;
                     }
-                    if (obj->unk58 == 0)
+                    if (win->unk58 == 0)
                     {
-                        obj_release_slots(obj->sprite);
-                        obj->state = 1;
-                        return -1;
+                        obj_release_slots(win->sprite);
+                        win->state = DIALOG_DONE;
+                        return DIALOG_BUSY;
                     }
-                    obj->text = obj->unk58;
-                    obj->unk58 = 0;
+                    win->text = win->unk58;
+                    win->unk58 = 0;
                     continue;
-                case 11:
+                case DLG_ALIGN:
                 {
-                    struct Voice voice;
+                    struct Voice run;
                     s32 x;
-                    s32 w;
+                    s32 width;
 
-                    cmd = *obj->text;
-                    obj->text++;
-                    mem_copy_fast(&voice, (u8 *)obj + 8, 0x14);
-                    w = layout_text_run(voice, 0) & 0xFFFF;
+                    c = *win->text;
+                    win->text++;
+                    mem_copy_fast(&run, (u8 *)win + 8, 0x14);
+                    width = layout_text_run(run, 0) & 0xFFFF;
                     x = 0;
-                    switch (cmd)
+                    switch (c)
                     {
                     case 0:
                         x = 9;
                         break;
                     case 1:
-                        x = ((((obj->unk34 - 1) << 19) >> 16) - w + 0xA) >> 1;
+                        x = ((((win->unk34 - 1) << 19) >> 16) - width + 0xA) >> 1;
                         break;
                     case 2:
-                        x = (((obj->unk34 - 1) << 16) >> 13) - w - 4;
+                        x = (((win->unk34 - 1) << 16) >> 13) - width - 4;
                         break;
                     }
-                    voice_set_data_ptr((u8 *)obj + 8, 0, (u8)x, (void *)obj->text);
+                    voice_set_data_ptr((u8 *)win + 8, 0, (u8)x, (void *)win->text);
                     continue;
                 }
-                case 12:
-                    obj->unk5C = *obj->text;
-                    obj->text++;
-                    if (obj->soundOn != 0)
+                case DLG_WAIT:
+                    win->unk5C = *win->text;
+                    win->text++;
+                    if (win->soundOn != 0)
                     {
-                        sound_stop_song(obj->soundId);
-                        obj->soundOn = 0;
+                        sound_stop_song(win->soundId);
+                        win->soundOn = 0;
                     }
                     continue;
-                case 13:
+                case DLG_BRANCH:
                 {
-                    cmd = *obj->text;
+                    c = *win->text;
 
-                    obj->text++;
-                    obj->unk58 = obj->text;
-                    if (cmd != 0)
+                    win->text++;
+                    win->unk58 = win->text;
+                    if (c != 0)
                     {
-                        obj->text = gDialogJumpTargetFlagNonzero;
+                        win->text = gDialogJumpTargetFlagNonzero;
                     }
                     else
                     {
-                        obj->text = gDialogJumpTargetFlagZero;
+                        win->text = gDialogJumpTargetFlagZero;
                     }
                     continue;
                 }
-                case 17:
-                    if (obj->count != 0)
+                case DLG_STOP:
+                    if (win->count != 0)
                     {
-                        obj->state = 3;
-                        obj->text++;
-                        return -1;
+                        win->state = DIALOG_CHOOSE;
+                        win->text++;
+                        return DIALOG_BUSY;
                     }
-                    if (obj->soundOn != 0)
+                    if (win->soundOn != 0)
                     {
-                        sound_stop_song(obj->soundId);
-                        obj->soundOn = 0;
+                        sound_stop_song(win->soundId);
+                        win->soundOn = 0;
                     }
-                    if (*obj->text == 1)
+                    if (*win->text == 1)
                     {
-                        obj_load_record(obj->sprite, 6, -1, 0, 0);
+                        obj_load_record(win->sprite, 6, -1, 0, 0);
                     }
                     else
                     {
-                        obj_load_record(obj->sprite, 1, -1, 0, 0);
+                        obj_load_record(win->sprite, 1, -1, 0, 0);
                     }
-                    sprite_update_cd0(obj->sprite);
-                    obj->sprite->xy[0] = obj->unk28 + (obj->unk30 << 3) - 8;
-                    obj->sprite->xy[1] = obj->unk2C + (obj->unk34 << 3) - 8;
-                    obj->state = 2;
-                    obj->text++;
-                    return -1;
+                    sprite_update_cd0(win->sprite);
+                    // the arrow goes in the window's bottom right corner
+                    win->sprite->xy[0] = win->unk28 + (win->unk30 << 3) - 8;
+                    win->sprite->xy[1] = win->unk2C + (win->unk34 << 3) - 8;
+                    win->state = DIALOG_WAIT_KEY;
+                    win->text++;
+                    return DIALOG_BUSY;
                 default:
-                    obj_release_slots(obj->sprite);
-                    obj->state = 1;
-                    return -1;
+                    obj_release_slots(win->sprite);
+                    win->state = DIALOG_DONE;
+                    return DIALOG_BUSY;
                 }
             }
             break;
-        case 2:
-            if (input->keys & 1)
+        case DIALOG_WAIT_KEY:
+            if (input->keys & DLG_KEY_A)
             {
-                obj_release_slots(obj->sprite);
-                obj->state = 0;
+                obj_release_slots(win->sprite);
+                win->state = DIALOG_PRINTING;
                 continue;
             }
-            return -1;
-        case 3:
-            if (input->keys & 0x60)
+            return DIALOG_BUSY;
+        case DIALOG_CHOOSE:
+            if (input->keys & DLG_KEYS_PREVIOUS)
             {
-                obj->idx--;
-                if (obj->idx < 0)
+                win->idx--;
+                if (win->idx < 0)
                 {
-                    obj->idx = obj->count - 1;
+                    win->idx = win->count - 1;
                 }
                 set_slot_value(0x4E, -1);
             }
-            else if (input->keys & 0x90)
+            else if (input->keys & DLG_KEYS_NEXT)
             {
-                obj->idx++;
-                if (obj->idx >= obj->count)
+                win->idx++;
+                if (win->idx >= win->count)
                 {
-                    obj->idx = 0;
+                    win->idx = 0;
                 }
                 set_slot_value(0x4E, -1);
             }
-            obj->sprite->xy[0] = obj->pos[obj->idx][0];
-            obj->sprite->xy[1] = obj->pos[obj->idx][1];
-            if (input->keys & 1)
+            win->sprite->xy[0] = win->pos[win->idx][0];
+            win->sprite->xy[1] = win->pos[win->idx][1];
+            if (input->keys & DLG_KEY_A)
             {
                 set_slot_value(0x60, -1);
-                obj_release_slots(obj->sprite);
-                obj->state = 0;
-                return obj->idx + 1;
+                obj_release_slots(win->sprite);
+                win->state = DIALOG_PRINTING;
+                return win->idx + 1;
             }
-            if (input->keys & 2)
+            if (input->keys & DLG_KEY_B)
             {
                 set_slot_value(0x60, -1);
-                obj_release_slots(obj->sprite);
-                obj->state = 0;
-                return 0x3E7;
+                obj_release_slots(win->sprite);
+                win->state = DIALOG_PRINTING;
+                return DIALOG_CANCEL;
             }
-            return -1;
-        case 1:
+            return DIALOG_BUSY;
+        case DIALOG_DONE:
         default:
             return 0;
         }

@@ -193,14 +193,20 @@ struct Flags78Bits
     u8 kind : 3;
 };
 
+/*
+ * When the pose's event flag (8) is set: spawn object 0x4138 at (-37, -1, +38) pixels from the base,
+ * put it at the head of this object's child list and hand it the owner, childValue, the state
+ * parameters and spawn count (its target is the spawn point, in pixels). This object then plays
+ * action 15 once and waits in obj_pose_active_idle_arrive.
+ */
 void move_states_obj_pose_active_spawn_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
 
     if (obj->pose->flags & 8)
     {
-        child = obj_spawn(obj->data, 0x4138, obj->baseX / 0x100 - 0x25, obj->baseY / 0x100 - 1,
-                          obj->baseH / 0x100 + 0x26, ((u32)obj->pose->byte11 << 25) >> 31, 1);
+        child = obj_spawn(obj->data, 0x4138, obj->baseX / 0x100 - 37, obj->baseY / 0x100 - 1,
+                          obj->baseH / 0x100 + 38, ((u32)obj->pose->byte11 << 25) >> 31, 1);
         child->child = obj->child;
         obj->child = child;
         ((struct Flags78Bits *)&child->dir)->kind = 1;
@@ -216,14 +222,14 @@ void move_states_obj_pose_active_spawn_child(struct ActorObj *obj)
         child->paramA0 = obj->paramA0;
         child->paramA4 = obj->paramA4;
         child->spawnLeft = obj->spawnLeft;
-        child->targetX = obj->baseX / 0x100 - 0x25;
+        child->targetX = obj->baseX / 0x100 - 37;
         child->targetY = obj->baseY / 0x100 - 1;
-        child->targetH = obj->baseH / 0x100 + 0x26;
+        child->targetH = obj->baseH / 0x100 + 38;
         child->byte74 = 0xFF;
         sprite_set_action(child, 0, 0, 0);
         child->timer = 2;
         obj->childValue = 0;
-        sprite_set_action(obj, 0xF, 0, 0);
+        sprite_set_action(obj, 15, 0, 0);
         ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
         obj->state = obj_pose_active_idle_arrive;
     }

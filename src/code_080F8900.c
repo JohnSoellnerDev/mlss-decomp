@@ -113,11 +113,98 @@ static inline u8 rd_cur(u8 *owner)
     return rd_state(owner)[0x9A0];
 }
 
+// Script command opcodes, the byte at +0xA7 of a command record; record_dispatch
+// runs them. Names follow their handlers.
+enum RecordCmd
+{
+    RCMD_RESET_CURSOR = 0x00,
+    RCMD_RESTORE_OBJ_WORD0 = 0x01,
+    RCMD_SET_OBJ_WORD0_SAVED = 0x02,
+    RCMD_SET_OBJ_WORD9C_FLAG = 0x03,
+    RCMD_SET_VALUE = 0x04,
+    RCMD_SET_NEXT_FLAG4 = 0x05,
+    RCMD_FIND_RECORD = 0x06,
+    RCMD_RESET_NEXT_RECORD = 0x07,
+    RCMD_OBJ_SETUP_GLOBAL = 0x09,
+    RCMD_START_MOVE = 0x0D,
+    RCMD_OBJECT_OP_CUR = 0x10,
+    RCMD_SET_POS_FOR_CURRENT = 0x11,
+    RCMD_OBJ_OP_AE49 = 0x12,
+    RCMD_SET_OBJ_FLAGS_LIST2 = 0x13,
+    RCMD_SET_OBJECT_FLAGS_LIST = 0x14,
+    RCMD_DRAW_TEXT_ITEM_RAW = 0x15,
+    RCMD_DRAW_TEXT_ITEM = 0x16,
+    RCMD_PLACE_SPRITE = 0x17,
+    RCMD_BRANCH_IF_STATE_BIT = 0x18,
+    RCMD_MAP_RECTS = 0x19,
+    RCMD_BUMP_OR_BRANCH = 0x1A,
+    RCMD_COPY_IF_SLOT_BIT = 0x1C,
+    RCMD_STORE_IF_TEXT_BYTE = 0x1D,
+    RCMD_SET_VAR_FROM_TEXT_BYTE = 0x1E,
+    RCMD_SET_TEXT_WINDOW_32 = 0x1F,
+    RCMD_CLEAR_LIST_ENTRY = 0x20,
+    RCMD_AUX_ENTRY = 0x21,
+    RCMD_BRANCH_IF_LIST_ENTRY = 0x22,
+    RCMD_SLOT_TARGET = 0x23,
+    RCMD_SET_SLOT_PARAM = 0x24,
+    RCMD_SLOT_VALUE = 0x25,
+    RCMD_SET_RAMP0_IF_ZERO = 0x26,
+    RCMD_CUR_OBJ_BBF8 = 0x27,
+    RCMD_SET_CUR_OBJ_29 = 0x28,
+    RCMD_SET_CUR_OBJ_26_27 = 0x29,
+    RCMD_APPLY_OBJ_MODE = 0x2A,
+    RCMD_STORE_OBJ_BYTE_TO_VAR = 0x2B,
+    RCMD_LIST_TOGGLE = 0x2C,
+    RCMD_LATCH_WHEN_READY = 0x2F,
+    RCMD_UPDATE_OBJ_COUNTERS = 0x31,
+    RCMD_SET_OBJ_FLAG = 0x32,
+    RCMD_STORE_OBJ_FIELD = 0x33,
+    RCMD_UPDATE_AND_STORE = 0x34,
+    RCMD_READ_STORE = 0x35,
+    RCMD_BINARY_OP = 0x36,
+    RCMD_SET_SHADOW_BITS = 0x37,
+    RCMD_SET_KEY_MODE_BITS = 0x38,
+    RCMD_SET_VAR_FROM_KEY_GROUP = 0x39,
+    RCMD_SET_VAR_FROM_KEYS = 0x3A,
+    RCMD_COPY_ON_KEY_MATCH_B = 0x3B,
+    RCMD_COPY_ON_KEY_MATCH_A = 0x3C,
+    RCMD_CALL_B0C0 = 0x3D,
+    RCMD_COPY_IF_CMP_MATCH = 0x3F,
+    RCMD_RANDOM_OBJ_PLACEMENT = 0x41,
+    RCMD_PICK_RANDOM_ENTRY = 0x42,
+    RCMD_PUSH_OBJ_ENTRY = 0x43,
+    RCMD_POP_OBJ_ENTRY = 0x44,
+    RCMD_COUNTER_STEP_AND_BRANCH = 0x45,
+    RCMD_SET_OBJ_WORD_98 = 0x46,
+    RCMD_SET_OBJ_IF_CMP = 0x47,
+    RCMD_DISPATCH_OBJ_MODE_CALL = 0x48,
+    RCMD_REQUEST_IF_IDLE = 0x49,
+    RCMD_SET_VAR_LANG = 0x4A,
+    RCMD_SLOT_VALUE_BY_KIND = 0x4D,
+    RCMD_SLOT_OP = 0x4E,
+    RCMD_SET_SLOT_FLAG = 0x4F,
+    RCMD_SLOT_FIELD = 0x50,
+    RCMD_START_MOVE_LIST = 0x51,
+    RCMD_SET_POSITION = 0x52,
+    RCMD_PLACE_OBJ_FLAGS3 = 0x53,
+    RCMD_PLACE_OBJ_SYNC = 0x54,
+    RCMD_PLACE_OBJECT = 0x55,
+    RCMD_PLACE_SLOT_FLAGS = 0x56,
+    RCMD_SET_KEY_IGNORE_MASK = 0x57,
+    RCMD_PUSH_HANDLE = 0x58,
+    RCMD_LATCH_WHEN_FREE = 0x59,
+    RCMD_SET_MODE_1 = 0x5A,
+    RCMD_LIST_MODE = 0x5B,
+};
+
 
 struct OwnerObj
 {
-    u8 filler0[0x2C];
+    u8 filler0[0x20];
+    u8 *textEntries[2]; /* text holders made by create_text_entry */
+    void *slotTable;    /* init_obj_slot_table, see setup_bg_entry */
     u8 *state;
+    u8 *bgEntry;        /* the text entry setup_bg_entry gave a BG layer */
 };
 
 struct SlotTable
@@ -132,9 +219,9 @@ struct SlotEntry
     u16 unk6;
     u16 unk8;
     u16 unkA;
-    u8 filler0C;
+    u8 objIndex; /* the slot object (0-11) the sprite follows while `follow` is set */
     u8 count0D;
-    u8 filler0E;
+    u8 follow;
     u8 flag0F;
 };
 
@@ -246,6 +333,35 @@ struct NodeFlags1F
     u8 f6 : 2;
 };
 
+struct SlotObjectEntry
+{
+    u8 *node;
+    u8 unk04[0xB];
+    u8 spriteByte20; /* copy of the sprite's byte 0x20 (default 0x10) */
+    u16 : 3;
+    u16 spriteBits0 : 2; /* copies of the four 2-bit fields of the sprite's byte 0x1F (default 1) */
+    u16 spriteBits2 : 2;
+    u16 spriteBits4 : 2;
+    u16 spriteBits6 : 2;
+    u16 spriteAttr0E; /* copy of the sprite's halfword 0x0E (default 0x8000) */
+    s32 xFix; /* position, 8.8 fixed point */
+    s32 yFix;
+    u8 filler1C[0x3A - 0x1C];
+    u16 scale;
+    u8 flags3C;
+    u8 unk3D;
+    u8 filler3E[0x40 - 0x3E];
+};
+
+struct SlotObjectFlags
+{
+    u16 : 3;
+    u16 f3 : 2;
+    u16 f5 : 2;
+    u16 f7 : 2;
+    u16 f9 : 2;
+};
+
 u32 cmd_slot_flag_20(void *obj, u32 unused, u32 *p)
 {
     u8 *entry = ((struct WorldSlotTable *)gWorld)->slots[p[1]];
@@ -272,43 +388,45 @@ struct Lo7Bits
     u8 bit7 : 1;
 };
 
-NONMATCH("asm/code_080F8900/cmd_slot_set_fields.s", u32 cmd_slot_set_fields(struct OwnerObj *obj, u32 unused, u32 *p))
+u32 cmd_slot_set_fields(struct OwnerObj *obj, u32 unused, u32 *p)
 {
-    u8 *entry = ((struct WorldSlotTable *)gWorld)->slots[*p++];
-    u32 v = *p++;
-    u8 low;
-    u32 hi;
-    u8 *flags;
-
-    *(u16 *)(entry + 0xD0) = v;
-    low = *p++;
-    flags = entry + 0xD4;
-    ((struct Lo7Bits *)flags)->lo7 = low;
-    hi = *p;
-    *(u16 *)(entry + 0xD2) = hi;
-    ((struct Lo7Bits *)flags)->bit7 = 1;
-    return 1;
+  u8 *entry = ((struct WorldSlotTable *) gWorld)->slots[*(p++)];
+  long v = *(p++);
+  u8 low;
+  u32 hi;
+  u16 *new_var;
+  u32 new_var2;
+  u8 *flags;
+  *((u16 *) (entry + 0xD0)) = v;
+  new_var2 = (0, *p);
+  hi = new_var2;
+  ;
+  flags = entry + 0xD4;
+  ((struct Lo7Bits *) flags)->lo7 = (*(p++)) & 0x7F;
+  hi = (0, *p);
+  *(new_var = (u16 *) (entry + 0xD2)) = hi;
+  ((struct Lo7Bits *) flags)->bit7 = 1;
+  return 1;
 }
-END_NONMATCH
 
-NONMATCH("asm/code_080F8900/obj_slot_set_fields.s", u32 obj_slot_set_fields(struct OwnerObj *obj, u8 *node, u32 *p))
+u32 obj_slot_set_fields(struct OwnerObj *obj, u8 *node, u32 *p)
 {
     u8 *entry = ((struct WorldSlotTable *)gWorld)->slots[((u32)node[0xFD] << 28) >> 28];
     u32 v = *p++;
-    u8 low;
+    u32 low;
     u32 hi;
     u8 *flags;
 
     *(u16 *)(entry + 0xD0) = v;
-    low = *p++;
+    low = *p;
+    hi = low;
     flags = entry + 0xD4;
-    ((struct Lo7Bits *)flags)->lo7 = low;
+    ((struct Lo7Bits *)flags)->lo7 = *p++ & 0x7F;
     hi = *p;
     *(u16 *)(entry + 0xD2) = hi;
     ((struct Lo7Bits *)flags)->bit7 = 1;
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_call_cf0(void *obj, u32 unused, s32 *p)
 {
@@ -336,34 +454,31 @@ u32 cmd_call_cf0(void *obj, u32 unused, s32 *p)
     return 1;
 }
 
-NONMATCH("asm/code_080F8900/cmd_obj_chain.s", u32 cmd_obj_chain(struct OwnerObj *obj, u8 *dst, u32 *p))
+u32 cmd_obj_chain(struct OwnerObj *obj, u8 *dst, u32 *p)
 {
-    u32 bitv = 0x200;
-
     switch (p[0])
     {
     case 0:
     {
         u8 *node = ((struct WorldSlotTable *)gWorld)->slots[((u32)dst[0xFD] << 28) >> 28] + 8;
+        register u16 *flags asm("r2");
+        register u16 oldFlags asm("r1");
+        register u32 bitv asm("r3");
+        register u32 result asm("r0");
 
         while (node != 0)
         {
             if (*(u32 *)(node + 0x4C) != 0)
-            {
                 break;
-            }
             node = *(u8 **)node;
         }
         if (node == 0)
-        {
             return 1;
-        }
-        {
-            u16 *flags = (u16 *)(dst + 0xA0);
-
-
-            *flags = *flags | bitv;
-        }
+        flags = (u16 *)(dst + 0xA0);
+        oldFlags = *flags;
+        bitv = 0x200;
+        result = bitv | oldFlags;
+        *flags = result;
         break;
     }
     case 1:
@@ -380,7 +495,6 @@ NONMATCH("asm/code_080F8900/cmd_obj_chain.s", u32 cmd_obj_chain(struct OwnerObj 
     }
     return 0;
 }
-END_NONMATCH
 
 u32 cmd_world_flag_2b4(void *obj, u32 unused, u32 *p)
 {
@@ -639,10 +753,10 @@ u32 cmd_world_flag_2f8(void *obj, u32 unused, u32 *p)
     return 1;
 }
 
-NONMATCH("asm/code_080F8900/cmd_slot_refresh.s", u32 cmd_slot_refresh(struct OwnerObj *obj, u32 unused, s16 *p))
+u32 cmd_slot_refresh(struct OwnerObj *obj, u32 unused, s16 *p)
 {
     u8 *entry;
-    s32 idx;
+    register s32 idx asm("r4");
 
     refresh_slot_view(obj, p[0]);
     slot_reload_record(obj, p[0], p[2]);
@@ -650,16 +764,24 @@ NONMATCH("asm/code_080F8900/cmd_slot_refresh.s", u32 cmd_slot_refresh(struct Own
     idx = *(s32 *)p;
     if (idx < 8)
     {
-        entry = ((struct WorldSlotTable *)gWorld)->slots[idx] + 8;
+        struct WorldSlotTable *world = (struct WorldSlotTable *)gWorld;
+        register u8 *offset asm("r1") = (u8 *)(idx * sizeof(u8 *));
+        register u32 slots asm("r0");
+        slots = (u32)world->slots;
+        slots += (u32)offset;
+        entry = *(u8 **)slots + 8;
     }
     else
     {
-        entry = (u8 *)(((struct WorkRec *)gWorkBuf) + idx) + 0x300;
+        register u32 offset asm("r0");
+        u8 **work = (u8 **)&gWorkBuf;
+        offset = sizeof(struct WorkRec) * idx;
+        offset += (u32)*work;
+        entry = (u8 *)offset + 0x300;
     }
     ((u8 *)*(u8 **)(entry + 8))[0x12] |= 0x10;
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_slot_shift_pos(struct OwnerObj *obj, u32 unused, s32 *p)
 {
@@ -699,32 +821,34 @@ u32 cmd_slot_resync_pos(struct OwnerObj *obj, u32 unused, s16 *p)
     return 0;
 }
 
-NONMATCH("asm/code_080F8900/cmd_slot_flag_copy.s", u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p))
+u32 cmd_slot_flag_copy(struct OwnerObj *obj, u32 *dst, u32 *p)
 {
     u32 zero = 0;
-    s32 idx;
+    register s32 idx asm("r3") = p[0];
     u8 *entry;
 
-    idx = p[0];
     if (idx < 8)
     {
-        entry = ((struct WorldSlotTable *)gWorld)->slots[idx] + 8;
+        struct WorldSlotTable *world = (struct WorldSlotTable *)gWorld;
+        register u32 offset asm("r1") = idx * sizeof(u8 *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        entry = *(u8 **)slots + 8;
     }
     else
     {
-        entry = (u8 *)(((struct WorkRec *)gWorkBuf) + idx) + 0x300;
+        register u32 offset asm("r0");
+        u8 **work = (u8 **)&gWorkBuf;
+        offset = sizeof(struct WorkRec) * idx;
+        offset += (u32)*work;
+        entry = (u8 *)offset + 0x300;
     }
     if (*(u32 *)(entry + 0x94) == 0)
-    {
         zero = 1;
-    }
     if (zero != p[1])
-    {
         *dst = p[2];
-    }
     return 1;
 }
-END_NONMATCH
 
 u32 cmd_slot_set_stream(struct OwnerObj *obj, u8 *node, u32 *p)
 {
@@ -932,29 +1056,33 @@ u32 cmd_part_shift(struct OwnerObj *obj, u32 unused, u32 *p)
     return 1;
 }
 
-NONMATCH("asm/code_080F8900/cmd_find_part_copy.s", u32 cmd_find_part_copy(struct OwnerObj *obj, u32 *dst, u32 *p, u8 key))
+u32 cmd_find_part_copy(struct OwnerObj *obj, u32 *dst, u32 *p, u8 key)
 {
     u8 *part = obj->state + 0x700;
-    s16 count = 0x10;
+    u32 start = 16;
+    s16 remaining;
 
     if (p[0] == 0)
     {
-        part += p[1] << 8;
-        count = 1;
+        part += p[1] * 0x100;
+        start = 1;
     }
-    while (count > 0)
+    remaining = start;
+    if (remaining != 0)
     {
-        if ((*(u16 *)(part + 0xA0) & 1) && part[0xA4] == key)
+        do
         {
-            dst[0] = dst[5];
-            return 0;
-        }
-        part += 0x100;
-        count--;
+            if ((*(u16 *)(part + 0xA0) & 1) != 0 && part[0xA4] == key)
+            {
+                dst[0] = dst[5];
+                return 0;
+            }
+            remaining--;
+            part += 0x100;
+        } while (remaining > 0);
     }
     return 1;
 }
-END_NONMATCH
 
 u32 slot_find_max_key(void *unused0, s32 threshold);
 u32 slot_find_min_key(void *unused0, s32 threshold);
@@ -1002,24 +1130,30 @@ u32 cmd_node_stream(struct OwnerObj *obj, u8 *node)
     return 1;
 }
 
-NONMATCH("asm/code_080F8900/cmd_slot_clear_flag2.s", void cmd_slot_clear_flag2(struct OwnerObj *obj, u8 *node, u8 idx))
+void cmd_slot_clear_flag2(struct OwnerObj *obj, u8 *node, u8 idx)
 {
     u8 *entry;
+    register u32 slot asm("r2") = idx;
 
-    if (idx < 8)
+    if (slot < 8)
     {
-        entry = ((struct WorldSlotTable *)gWorld)->slots[idx] + 8;
+        struct WorldSlotTable *world = (struct WorldSlotTable *)gWorld;
+        register u32 offset asm("r1") = slot * sizeof(u8 *);
+        register u32 slots asm("r0") = (u32)world->slots;
+        slots += offset;
+        entry = *(u8 **)slots + 8;
     }
     else
     {
-        entry = (u8 *)(((struct WorkRec *)gWorkBuf) + idx) + 0x300;
+        register u32 offset asm("r0");
+        u8 **work = (u8 **)&gWorkBuf;
+        offset = sizeof(struct WorkRec) * slot;
+        offset += (u32)*work;
+        entry = (u8 *)offset + 0x300;
     }
     if (*(u32 *)(entry + 0x80) == 0)
-    {
         *(u16 *)(node + 0xA0) &= 0xFFFD;
-    }
 }
-END_NONMATCH
 
 static inline s32 part_scan_stop(u8 *part, u8 *node, s32 b, s32 cnt)
 {
@@ -1066,26 +1200,30 @@ void slot_clear_flag800_if_idle(struct OwnerObj *obj, u8 *node)
     }
 }
 
-void setup_bg_entry(struct OwnerObj *obj, u8 idx, u8 layer, u8 pal, u32 arg5, u16 arg6, u16 arg7, u8 arg8)
+/* Gives the owner's text entry idx (see create_text_entry) a BG layer (layer, pal, gfx, bgArg,
+ * mode 2, state at state+0x1790) and makes it the owner's bgEntry, after setting gCurObj's
+ * halfword 0x20 (curWord20) and the 4-bit field at 0x28 (curMid4). Then gives the owner a fresh
+ * slot table. */
+void setup_bg_entry(struct OwnerObj *obj, u8 idx, u8 layer, u8 pal, u32 gfx, u16 bgArg, u16 curWord20, u8 curMid4)
 {
     u8 *state = obj->state;
-    u8 *global = gCurObj;
-    u8 **table;
-    u8 *tile;
-    u8 *block;
+    u8 *cur = gCurObj;
+    u8 **entries;
+    u8 *entry;
+    u8 *mem;
     u32 zero;
     s32 off;
 
     zero = 0;
-    *(u16 *)(global + 0x20) = arg7;
-    ((struct CurFlags28 *)(global + 0x28))->mid4 = arg8;
+    *(u16 *)(cur + 0x20) = curWord20;
+    ((struct CurFlags28 *)(cur + 0x28))->mid4 = curMid4;
     off = idx << 2;
-    table = (u8 **)((u8 *)obj + 0x20);
-    tile = *(u8 **)((u8 *)table + off);
-    *(u8 **)((u8 *)obj + 0x30) = tile;
-    flags_vars_setup_bg_layer(tile, layer, pal, (void *)arg5, 2, arg6, state + 0x1790, (void *)zero, (void *)zero);
-    block = heap_alloc2(4, 0, gLayerEntryTag, 0);
-    *(void **)((u8 *)obj + 0x28) = init_obj_slot_table(block);
+    entries = obj->textEntries;
+    entry = *(u8 **)((u8 *)entries + off);
+    obj->bgEntry = entry;
+    flags_vars_setup_bg_layer(entry, layer, pal, (void *)gfx, 2, bgArg, state + 0x1790, (void *)zero, (void *)zero);
+    mem = heap_alloc2(4, 0, gLayerEntryTag, 0);
+    obj->slotTable = init_obj_slot_table(mem);
 }
 
 void set_mark_callbacks(void);
@@ -1244,72 +1382,154 @@ void heap_free_owner(struct HeapOwner *obj, u32 flags)
     }
 }
 
-void owner_tick_records(u8 *owner);
+struct Owner;
+struct ScriptThread;
+void owner_tick_records(struct Owner *owner);
 void release_obj_131c(void *p);
-void tick_obj_timer(u8 *ctx, u8 *rec);
-void toggle_on_motion_done(u8 *owner, u8 *rec, u8 slot);
-void tick_slot_timer(u8 *owner, u8 *rec, u8 slot);
-u32 run_record(struct OwnerObj *owner, u8 *rec);
+void tick_obj_timer(void *ctx, struct ScriptThread *thread);
+void toggle_on_motion_done(struct Owner *owner, struct ScriptThread *thread, u8 slot);
+void tick_slot_timer(struct Owner *owner, struct ScriptThread *thread, u8 slot);
+// Flags of a script thread (+0xA0). run_record runs a thread only while THREAD_ACTIVE is set;
+// owner_tick_records counts the waits down.
+enum ScriptThreadFlags
+{
+    THREAD_ACTIVE = 0x01,
+    THREAD_WAIT_TWEEN = 0x02,      /* until its slot object's tween ends (toggle_on_motion_done) */
+    THREAD_PAUSED = 0x04,
+    THREAD_RESUME_CALLER = 0x08,   /* unpause thread `caller` when the script ends (record_advance) */
+    THREAD_WAIT_TIMER = 0x10,      /* until waitTimer runs out (tick_obj_timer) */
+    THREAD_WAIT_SLOT_TIMER = 0x20, /* until its slot object's animation timer ends (tick_slot_timer) */
+    THREAD_UNK80 = 0x80,           /* like THREAD_PAUSED, stops a slot thread's waits counting down */
+};
+
+struct ScriptThread
+{
+    u32 pc;      /* next command */
+    u32 end;     /* end of the script */
+    u32 nextPc;  /* script queued to run once this one ends (0: none) */
+    u32 nextEnd;
+    u8 filler10[0x9C - 0x10];
+    u32 waitTimer; /* frames left of a THREAD_WAIT_TIMER or THREAD_WAIT_SLOT_TIMER wait */
+    u16 flags;     /* enum ScriptThreadFlags */
+    u16 nextFlags; /* flags of the queued script */
+    u8 caller;     /* thread to unpause, with THREAD_RESUME_CALLER */
+    u8 nextCaller;
+    u8 fillerA6[0xA8 - 0xA6];
+};
+
+// A script owner's state: thread 0 runs the main script, threads 1-12 one slot object each.
+struct OwnerState
+{
+    struct ScriptThread threads[13];
+    u8 filler888[0x908 - 0x888];
+    u8 vars[0x994 - 0x908]; /* script variables (rd_vars) */
+    u32 curSlot; /* slot of the thread being run (a script variable) */
+    u8 bgArg998[4]; /* given to flags_vars_setup_bg_layer by owner_init_entry */
+    u8 params[4];   /* rd_params */
+    u8 cur9A0;   /* thread being run */
+    u8 mode9A1;
+    u8 busy9A2;
+    u8 flags9A3; /* bit 0: the owner keeps its own 12 slot objects */
+};
+
+struct TextLayer
+{
+    u8 filler0[0x1B2];
+    u8 busy; /* nonzero while text_layer_step has work to do */
+};
+
+struct TextEntry
+{
+    u32 unk0;
+    struct TextLayer *layer;
+};
+
+struct ObjList
+{
+    u8 filler0[0x158];
+    struct SlotObjectEntry *slots; /* 12 slot objects */
+};
+
+// A script owner (struct Owner in code_080FB4E0.c): the object list, the slot table of the
+// text box's sprites (aux), the script state and the text entry.
+struct Owner
+{
+    u8 filler0[0x14];
+    struct ObjList *list;
+    u32 type;
+    u8 unk1C[0x20 - 0x1C]; /* handed to tick_obj_timer, which ignores it */
+    struct SlotTable *aux;
+    struct OwnerState *state;
+    struct TextEntry *entry;
+};
+
+u32 run_record(struct Owner *owner, struct ScriptThread *thread);
 u8 text_layer_step(u8 *owner);
 u32 slot_countdown(struct SlotTable *table, u8 idx);
 void update_slot_bounds(struct SlotTable *table, u8 idx);
-void owner_step(struct OwnerObj *owner)
+// Runs one frame of a script owner: counts its threads' waits down, runs the main thread unless it
+// is paused or waiting on a timer, then every slot thread that isn't paused or waiting (curSlot tells
+// the script whose it is), and steps the text layer. When the owner keeps its own slot objects, each
+// of the 4 text box sprites that follows one is moved onto it (raised by its unk3D).
+void owner_step(struct Owner *owner)
 {
-    u8 *state = *(u8 **)((u8 *)owner + 0x24);
-    u8 *cnt = state + 0x9A0;
-    u8 *end;
+    struct OwnerState *state = owner->state;
+    u8 *cur = &state->cur9A0;
+    struct ScriptThread *thread;
+    struct ScriptThread *end;
     struct SlotEntry *entry;
     s16 i;
 
-    ((struct OwnerFlag9A2 *)(state + 0x9A2))->b0 = 0;
-    owner_tick_records((u8 *)owner);
-    *cnt = 0;
-    if ((*(u16 *)(state + 0xA0) & 0x14) == 0)
+    ((struct OwnerFlag9A2 *)&state->busy9A2)->b0 = 0;
+    owner_tick_records(owner);
+    *cur = 0;
+    thread = state->threads;
+    if ((thread->flags & (THREAD_PAUSED | THREAD_WAIT_TIMER)) == 0)
     {
-        run_record(owner, state);
+        run_record(owner, thread);
     }
-    *cnt = *cnt + 1;
-    state += 0xA8;
-    end = state + (0xFC << 3);
-    while (state != end)
+    *cur = *cur + 1;
+    thread++;
+    end = thread + 12;
+    while (thread != end)
     {
-        if ((*(u16 *)(state + 0xA0) & 0x36) == 0)
+        if ((thread->flags & (THREAD_WAIT_TWEEN | THREAD_PAUSED | THREAD_WAIT_TIMER | THREAD_WAIT_SLOT_TIMER)) == 0)
         {
-            *(u32 *)(*(u8 **)((u8 *)owner + 0x24) + 0x994) = *cnt - 1;
-            run_record(owner, state);
+            owner->state->curSlot = *cur - 1;
+            run_record(owner, thread);
         }
-        state += 0xA8;
-        *cnt = *cnt + 1;
+        thread++;
+        *cur = *cur + 1;
     }
-    if (*(u8 *)(*(u8 **)(*(u8 **)((u8 *)owner + 0x28) + 4) + 0x1B2) != 0)
+    if (owner->entry->layer->busy != 0)
     {
-        *(u8 *)(*(u8 **)(*(u8 **)((u8 *)owner + 0x28) + 4) + 0x1B2) = text_layer_step(*(u8 **)((u8 *)owner + 0x28));
+        owner->entry->layer->busy = text_layer_step((u8 *)owner->entry);
     }
-    if ((*(u8 *)(*(u8 **)((u8 *)owner + 0x24) + 0x9A3) & 1) != 0)
+    if ((owner->state->flags9A3 & 1) != 0)
     {
         i = 0;
-        entry = (struct SlotEntry *)(*(struct SlotTable **)((u8 *)owner + 0x20))->entries;
+        entry = (struct SlotEntry *)owner->aux->entries;
         do
         {
-            if ((u8)slot_countdown(*(struct SlotTable **)((u8 *)owner + 0x20), (u8)i) != 0)
+            if ((u8)slot_countdown(owner->aux, (u8)i) != 0)
             {
-                if (entry->filler0E != 0)
+                if (entry->follow != 0)
                 {
-                    u8 *src = *(u8 **)(*(u8 **)((u8 *)owner + 0x14) + 0x158) + (entry->filler0C << 6);
-                    s32 v = *(s32 *)(src + 0x14);
+                    struct SlotObjectEntry *obj = &owner->list->slots[entry->objIndex];
+                    s32 v = obj->xFix;
                     if (v < 0)
                     {
                         v += 0xFF;
                     }
                     entry->unk8 = v >> 8;
-                    v = *(s32 *)(src + 0x18);
+                    v = obj->yFix;
                     if (v < 0)
                     {
                         v += 0xFF;
                     }
-                    entry->unkA = (v >> 8) - src[0x3D];
+                    entry->unkA = (v >> 8) - obj->unk3D;
                 }
-                update_slot_bounds(*(struct SlotTable **)((u8 *)owner + 0x20), (u8)i);
+                update_slot_bounds(owner->aux, (u8)i);
             }
             i++;
             entry++;
@@ -1338,20 +1558,24 @@ struct Bit0Byte
     u8 rest : 7;
 };
 
-u32 owner_init_entry(u8 *owner, u8 kind, u8 arg2, u32 arg3, u32 arg5, u32 arg6, u16 arg7, u32 arg8, u8 arg9, u8 keep_slots)
+/* Sets up the owner's text entry: a text holder (VRAM destination vramAddr, textSize bytes, mode 0xA)
+ * at owner+0x28 with its BG layer (layer, pal, gfx), and a fresh slot table at owner+0x20. Unless
+ * keep_slots is set, the state is marked fresh and the 12 0x40-byte slots are reset (cleared, scale
+ * 0x100, enabled). Returns the holder's record chain. */
+u32 owner_init_entry(u8 *owner, u8 layer, u8 pal, u32 vramAddr, u32 textSize, u32 gfx, u16 bgArg, u32 curWord20, u8 curMid4, u8 keep_slots)
 {
     u8 *state = *(u8 **)(owner + 0x24);
-    u8 *global = gCurObj;
+    u8 *cur = gCurObj;
     u32 zero;
     s32 fresh;
-    u8 *block;
+    u8 *holder;
 
     zero = 0;
-    *(u16 *)(global + 0x20) = arg8;
-    ((struct CurFlags28 *)(global + 0x28))->mid4 = arg9;
-    block = init_text_obj(heap_alloc2(8, 0, gOwnerEntryTag, 0), arg3, arg5, 0xA);
-    *(u8 **)(owner + 0x28) = block;
-    flags_vars_setup_bg_layer(block, kind, arg2, (void *)arg6, 2, arg7, state + 0x998, (void *)zero, (void *)zero);
+    *(u16 *)(cur + 0x20) = curWord20;
+    ((struct CurFlags28 *)(cur + 0x28))->mid4 = curMid4;
+    holder = init_text_obj(heap_alloc2(8, 0, gOwnerEntryTag, 0), vramAddr, textSize, 0xA);
+    *(u8 **)(owner + 0x28) = holder;
+    flags_vars_setup_bg_layer(holder, layer, pal, (void *)gfx, 2, bgArg, state + 0x998, (void *)zero, (void *)zero);
     ((struct Bit1Byte *)(*(u8 **)(*(u8 **)(owner + 0x28) + 4) + 0x1B8))->bit1 = 0;
     *(void **)(owner + 0x20) = init_slot_table(heap_alloc2(4, 0, gOwnerAuxTag, 0));
     {
@@ -1385,78 +1609,111 @@ u32 owner_init_entry(u8 *owner, u8 kind, u8 arg2, u32 arg3, u32 arg5, u32 arg6, 
     return load_u32(*(u8 **)(owner + 0x28));
 }
 
-void owner_tick_records(u8 *owner)
+/* Counts a script owner's thread waits down by one frame: the main thread's timer, then for each of
+ * the 12 slot threads that isn't paused, its tween, slot animation timer and timer waits. */
+void owner_tick_records(struct Owner *owner)
 {
-    s16 count;
-    u8 *rec;
-    u8 *flags;
+    s16 i;
+    struct ScriptThread *thread;
+    u16 *flags;
 
-    count = 1;
-    rec = *(u8 **)(owner + 0x24);
+    i = 1;
+    thread = owner->state->threads;
     do
     {
-        if ((*(u16 *)(rec + 0xA0) & 0x10) != 0)
+        if ((thread->flags & THREAD_WAIT_TIMER) != 0)
         {
-            tick_obj_timer(owner + 0x1C, rec);
+            tick_obj_timer(owner->unk1C, thread);
         }
-        count--;
-        rec += 0xA8;
-    } while (count > 0);
-    count = 0;
-    flags = rec + 0xA0;
+        i--;
+        thread++;
+    } while (i > 0);
+    i = 0;
+    flags = &thread->flags;
     do
     {
-        if ((*(u16 *)flags & 0x84) == 0)
+        if ((*flags & (THREAD_UNK80 | THREAD_PAUSED)) == 0)
         {
-            if ((*(u16 *)flags & 2) != 0)
+            if ((*flags & THREAD_WAIT_TWEEN) != 0)
             {
-                toggle_on_motion_done(owner, rec, count);
+                toggle_on_motion_done(owner, thread, i);
             }
-            if ((*(u16 *)flags & 0x20) != 0)
+            if ((*flags & THREAD_WAIT_SLOT_TIMER) != 0)
             {
-                tick_slot_timer(owner, rec, count);
+                tick_slot_timer(owner, thread, i);
             }
-            if ((*(u16 *)flags & 0x10) != 0)
+            if ((*flags & THREAD_WAIT_TIMER) != 0)
             {
-                tick_obj_timer(owner + 0x1C, rec);
+                tick_obj_timer(owner->unk1C, thread);
             }
         }
-        count++;
-        flags += 0xA8;
-        rec += 0xA8;
-    } while (count <= 11);
+        i++;
+        flags += sizeof(struct ScriptThread) / sizeof(u16);
+        thread++;
+    } while (i <= 11);
 }
 
-void owner_reset(u8 *owner)
+/* Resets a script owner: when it keeps its own 12 slot objects, destroys each one's sprite node
+ * (release_obj_131c) and resets the slot (scale 0x100, enabled); then clears the params and the
+ * script variables (through curSlot and bgArg998) and the mode. */
+void owner_reset(struct Owner *owner)
 {
-    u8 *base;
+    u8 *slot;
     s16 count;
-    u16 v;
+    u16 scale;
 
-    if ((*(u8 **)(owner + 0x24))[0x9A3] & 1)
+    if (owner->state->flags9A3 & 1)
     {
-        count = 0xC;
-        base = *(u8 **)(*(u8 **)(owner + 0x14) + 0x158);
+        count = 12;
+        slot = (u8 *)owner->list->slots;
         do
         {
-            if (*(u32 *)base != 0)
+            if (*(u32 *)slot != 0)
             {
-                release_obj_131c(*(void **)base);
-                *(u32 *)base = 0;
-                v = 0x100;
-                *(u16 *)(base + 0x3A) = v;
-                base[0x3C] |= 1;
+                release_obj_131c(*(void **)slot);
+                *(u32 *)slot = 0;
+                scale = 0x100;
+                *(u16 *)(slot + 0x3A) = scale;
+                slot[0x3C] |= 1;
             }
-            base += 0x40;
+            slot += 0x40;
             count--;
         } while (count > 0);
     }
-    gMemRoutines(0, *(u8 **)(owner + 0x24) + 0x99C, 4);
-    gMemRoutines(0, *(u8 **)(owner + 0x24) + 0x908, 0x94);
-    (*(u8 **)(owner + 0x24))[0x9A1] = 0;
+    gMemRoutines(0, owner->state->params, sizeof(owner->state->params));
+    gMemRoutines(0, owner->state->vars, 0x99C - 0x908);
+    owner->state->mode9A1 = 0;
 }
 
-ASM_FUNC("asm/code_080F8900/slot_load_object.s", void slot_load_object(u8 *owner, u32 index))
+/* Saves the settings of a slot's sprite (halfword 0x0E, byte 0x20 and the four 2-bit fields of byte
+ * 0x1F) in its slot entry, or the defaults when the slot has no sprite yet, so that they survive the
+ * sprite being set up again; slot_store_object writes them back. */
+void slot_load_object(struct Owner *owner, u32 index)
+{
+    u32 shifted = index << 24;
+    struct SlotObjectEntry **slots = &owner->list->slots;
+    struct SlotObjectEntry *entry = (struct SlotObjectEntry *)((u8 *)*slots + (shifted >> 18));
+    u8 *sprite = entry->node;
+
+    if (sprite != NULL)
+    {
+        entry->spriteAttr0E = *(u16 *)(sprite + 0xE);
+        entry->spriteByte20 = sprite[0x20];
+        entry->spriteBits0 = ((u32)sprite[0x1F] << 30) >> 30;
+        entry->spriteBits2 = ((u32)sprite[0x1F] << 28) >> 30;
+        entry->spriteBits4 = ((u32)sprite[0x1F] << 26) >> 30;
+        entry->spriteBits6 = (u32)sprite[0x1F] >> 6;
+    }
+    else
+    {
+        entry->spriteAttr0E = 0x8000;
+        entry->spriteByte20 = 0x10;
+        entry->spriteBits6 = 1;
+        entry->spriteBits4 = 1;
+        entry->spriteBits2 = 1;
+        entry->spriteBits0 = 1;
+    }
+}
 
 void slot_store_object(void *owner, u32 idx)
 {
@@ -1476,289 +1733,304 @@ void slot_store_object(void *owner, u32 idx)
     ((struct NodeFlags1F *)(node + 0x1F))->f6 = ((u32)entry[0x11] << 29) >> 30;
 }
 
-NONMATCH("asm/code_080F8900/record_advance.s", u32 record_advance(u8 *owner, u8 *rec))
+/* Called for a thread that may have reached the end of its script. Returns 0 while it hasn't, or when
+ * a queued script was started in its place (the thread waits on nothing else). Otherwise the thread
+ * stops (flags 0, unless it still waits on something) and 1 is returned. At the end it unpauses its
+ * caller if THREAD_RESUME_CALLER asks for it; the main thread ending also clears mode9A1 unless it's 1. */
+u32 record_advance(struct Owner *owner, struct ScriptThread *thread)
 {
-    u8 *state;
+    struct OwnerState *state;
     u16 *flags;
-    u32 rest;
+    register u32 waits asm("r4");
 
-    if (*(u32 *)rec != *(u32 *)(rec + 4))
+    if (thread->pc != thread->end)
     {
         return 0;
     }
-    flags = (u16 *)(rec + 0xA0);
-    if ((*flags & 8) != 0)
+    flags = &thread->flags;
+    if ((*flags & THREAD_RESUME_CALLER) != 0)
     {
-        u8 *other = *(u8 **)(owner + 0x24) + rec[0xA4] * 0xA8;
+        u8 *caller = (u8 *)owner->state + thread->caller * 0xA8;
 
-        *(u16 *)(other + 0xA0) &= 0xFFFB;
+        ((struct ScriptThread *)caller)->flags &= 0xFFFB;
         *flags &= 0xFFF7;
     }
-    rest = *flags & ~1;
-    if (rest == 0)
+    waits = *flags & ~THREAD_ACTIVE;
+    if (waits == 0)
     {
-        if (*(u32 *)(rec + 8) != 0)
+        if (thread->nextPc != 0)
         {
-            *(u32 *)rec = *(u32 *)(rec + 8);
-            *(u32 *)(rec + 4) = *(u32 *)(rec + 0xC);
-            *flags = *(u16 *)(rec + 0xA2);
-            rec[0xA4] = rec[0xA5];
-            *(u32 *)(rec + 0xC) = rest;
-            *(u32 *)(rec + 8) = rest;
-            *(u16 *)(rec + 0xA2) = rest;
-            rec[0xA5] = 0;
+            /* start the queued script and empty the queue (waits is 0 here); the raw u16 access
+             * to nextFlags keeps the original's register use */
+            register u8 *nextCaller asm("r12");
+            u8 zero;
+            u16 nextFlags;
+
+            thread->pc = thread->nextPc;
+            thread->end = thread->nextEnd;
+            nextFlags = *(u16 *)((u8 *)thread + 0xA2);
+            zero = 0;
+            *flags = nextFlags;
+            nextCaller = &thread->nextCaller;
+            thread->caller = *nextCaller;
+            thread->nextEnd = waits;
+            thread->nextPc = waits;
+            *(u16 *)((u8 *)thread + 0xA2) = waits;
+            *nextCaller = zero;
             return 0;
         }
-        *flags = rest;
+        *flags = 0;
     }
-    state = *(u8 **)(owner + 0x24);
-    if (state[0x9A0] == 0 && state[0x9A1] != 1)
+    state = owner->state;
+    if (state->cur9A0 == 0 && state->mode9A1 != 1)
     {
-        state[0x9A1] = 0;
+        state->mode9A1 = 0;
     }
     return 1;
 }
-END_NONMATCH
 
-u32 record_dispatch(u8 *owner, u8 *rec, u32 *scratch)
+// Runs the decoded command of a script record (opcode at +0xA7, arguments in args) by
+// calling its handler. Returns the handler's result: 0 stops the record for this frame,
+// nonzero keeps running it. Unknown opcodes are skipped (1).
+u32 record_dispatch(u8 *owner, u8 *rec, u32 *args)
 {
     u32 result;
 
     switch (rec[0xA7])
     {
-    case 0x00:
+    case RCMD_RESET_CURSOR:
         result = reset_cursor(rd_ctx(owner), rec);
         break;
-    case 0x01:
+    case RCMD_RESTORE_OBJ_WORD0:
         result = restore_obj_word0(rd_ctx(owner), rec);
         break;
-    case 0x02:
-        result = set_obj_word0_saved(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_OBJ_WORD0_SAVED:
+        result = set_obj_word0_saved(rd_ctx(owner), rec, args);
         break;
-    case 0x03:
-        result = set_obj_word9c_flag(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_OBJ_WORD9C_FLAG:
+        result = set_obj_word9c_flag(rd_ctx(owner), rec, args);
         break;
-    case 0x04:
-        result = cmd_set_value(owner, rec, scratch, rd_cur(owner));
+    case RCMD_SET_VALUE:
+        result = cmd_set_value(owner, rec, args, rd_cur(owner));
         break;
-    case 0x05:
-        result = cmd_set_next_flag4(owner, rec, scratch);
+    case RCMD_SET_NEXT_FLAG4:
+        result = cmd_set_next_flag4(owner, rec, args);
         break;
-    case 0x06:
-        result = cmd_find_record(owner, rec, scratch, rd_cur(owner));
+    case RCMD_FIND_RECORD:
+        result = cmd_find_record(owner, rec, args, rd_cur(owner));
         break;
-    case 0x07:
-        result = cmd_reset_next_record(owner, rec, scratch);
+    case RCMD_RESET_NEXT_RECORD:
+        result = cmd_reset_next_record(owner, rec, args);
         break;
-    case 0x09:
-        result = cmd_obj_setup_global(owner, rec, scratch);
+    case RCMD_OBJ_SETUP_GLOBAL:
+        result = cmd_obj_setup_global(owner, rec, args);
         break;
-    case 0x0D:
-        result = cmd_start_move(owner, rec, scratch);
+    case RCMD_START_MOVE:
+        result = cmd_start_move(owner, rec, args);
         break;
-    case 0x10:
-        result = cmd_object_op_cur(owner, rec, scratch);
+    case RCMD_OBJECT_OP_CUR:
+        result = cmd_object_op_cur(owner, rec, args);
         break;
-    case 0x11:
-        result = cmd_set_pos_for_current(owner, rec, scratch);
+    case RCMD_SET_POS_FOR_CURRENT:
+        result = cmd_set_pos_for_current(owner, rec, args);
         break;
-    case 0x12:
-        result = cmd_obj_op_ae49(owner, rec, scratch);
+    case RCMD_OBJ_OP_AE49:
+        result = cmd_obj_op_ae49(owner, rec, args);
         break;
-    case 0x13:
-        result = cmd_set_obj_flags_list2(owner, rec, scratch);
+    case RCMD_SET_OBJ_FLAGS_LIST2:
+        result = cmd_set_obj_flags_list2(owner, rec, args);
         break;
-    case 0x14:
-        result = cmd_set_object_flags_list(owner, rec, scratch);
+    case RCMD_SET_OBJECT_FLAGS_LIST:
+        result = cmd_set_object_flags_list(owner, rec, args);
         break;
-    case 0x15:
-        result = draw_text_item_raw(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_DRAW_TEXT_ITEM_RAW:
+        result = draw_text_item_raw(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x17:
-        result = cmd_place_sprite(owner, rd_entry(owner), rec, scratch);
+    case RCMD_PLACE_SPRITE:
+        result = cmd_place_sprite(owner, rd_entry(owner), rec, args);
         break;
-    case 0x16:
-        result = draw_text_item(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_DRAW_TEXT_ITEM:
+        result = draw_text_item(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x18:
-        result = branch_if_state_bit(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_BRANCH_IF_STATE_BIT:
+        result = branch_if_state_bit(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x19:
-        result = map_rects_cmd(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_MAP_RECTS:
+        result = map_rects_cmd(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x1A:
-        result = bump_or_branch_record(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_BUMP_OR_BRANCH:
+        result = bump_or_branch_record(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x1F:
-        result = set_text_window_32(rd_ctx(owner), rd_entry(owner), scratch);
+    case RCMD_SET_TEXT_WINDOW_32:
+        result = set_text_window_32(rd_ctx(owner), rd_entry(owner), args);
         break;
-    case 0x23:
-        result = slot_target_cmd(rd_ctx(owner), rec, scratch);
+    case RCMD_SLOT_TARGET:
+        result = slot_target_cmd(rd_ctx(owner), rec, args);
         break;
-    case 0x24:
-        result = set_slot_param(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_SLOT_PARAM:
+        result = set_slot_param(rd_ctx(owner), rec, args);
         break;
-    case 0x25:
-        result = slot_value_cmd(rd_ctx(owner), rec, scratch);
+    case RCMD_SLOT_VALUE:
+        result = slot_value_cmd(rd_ctx(owner), rec, args);
         break;
-    case 0x26:
-        result = set_ramp0_if_zero(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_RAMP0_IF_ZERO:
+        result = set_ramp0_if_zero(rd_ctx(owner), rec, args);
         break;
-    case 0x1C:
-        result = copy_if_slot_bit(rd_ctx(owner), rd_entry(owner), rec, scratch);
+    case RCMD_COPY_IF_SLOT_BIT:
+        result = copy_if_slot_bit(rd_ctx(owner), rd_entry(owner), rec, args);
         break;
-    case 0x1D:
-        result = store_if_text_byte(rd_ctx(owner), rec, scratch);
+    case RCMD_STORE_IF_TEXT_BYTE:
+        result = store_if_text_byte(rd_ctx(owner), rec, args);
         break;
-    case 0x1E:
-        result = set_var_from_text_byte(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_SET_VAR_FROM_TEXT_BYTE:
+        result = set_var_from_text_byte(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x20:
-        result = clear_list_entry(rd_ctx(owner), rd_aux(owner), rec, scratch);
+    case RCMD_CLEAR_LIST_ENTRY:
+        result = clear_list_entry(rd_ctx(owner), rd_aux(owner), rec, args);
         break;
-    case 0x21:
-        result = cmd_aux_entry(owner, rec, scratch);
+    case RCMD_AUX_ENTRY:
+        result = cmd_aux_entry(owner, rec, args);
         break;
-    case 0x22:
-        result = branch_if_list_entry(rd_ctx(owner), rd_aux(owner), rec, scratch);
+    case RCMD_BRANCH_IF_LIST_ENTRY:
+        result = branch_if_list_entry(rd_ctx(owner), rd_aux(owner), rec, args);
         break;
-    case 0x27:
-        result = cur_obj_bbf8(rd_ctx(owner), rec, scratch);
+    case RCMD_CUR_OBJ_BBF8:
+        result = cur_obj_bbf8(rd_ctx(owner), rec, args);
         break;
-    case 0x28:
-        result = set_cur_obj_29(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_CUR_OBJ_29:
+        result = set_cur_obj_29(rd_ctx(owner), rec, args);
         break;
-    case 0x29:
-        result = set_cur_obj_26_27(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_CUR_OBJ_26_27:
+        result = set_cur_obj_26_27(rd_ctx(owner), rec, args);
         break;
-    case 0x2A:
-        result = apply_obj_mode(rd_ctx(owner), rec, scratch);
+    case RCMD_APPLY_OBJ_MODE:
+        result = apply_obj_mode(rd_ctx(owner), rec, args);
         break;
-    case 0x2B:
-        result = store_obj_byte_to_var(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_STORE_OBJ_BYTE_TO_VAR:
+        result = store_obj_byte_to_var(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x2C:
-        result = cmd_list_toggle(owner, rec, scratch);
+    case RCMD_LIST_TOGGLE:
+        result = cmd_list_toggle(owner, rec, args);
         break;
-    case 0x2F:
+    case RCMD_LATCH_WHEN_READY:
         result = cmd_latch_when_ready(owner, rec);
         break;
-    case 0x31:
-        result = update_obj_counters(rd_ctx(owner), rec, scratch);
+    case RCMD_UPDATE_OBJ_COUNTERS:
+        result = update_obj_counters(rd_ctx(owner), rec, args);
         break;
-    case 0x32:
-        result = set_obj_flag(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_OBJ_FLAG:
+        result = set_obj_flag(rd_ctx(owner), rec, args);
         break;
-    case 0x33:
-        result = cmd_store_obj_field(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_STORE_OBJ_FIELD:
+        result = cmd_store_obj_field(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x34:
-        result = cmd_update_and_store(rd_ctx(owner), (u32)rec, scratch, (u32)rd_vars(owner));
+    case RCMD_UPDATE_AND_STORE:
+        result = cmd_update_and_store(rd_ctx(owner), (u32)rec, args, (u32)rd_vars(owner));
         break;
-    case 0x35:
-        result = cmd_read_store(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_READ_STORE:
+        result = cmd_read_store(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x36:
-        result = binary_op_and_set_var(rd_ctx(owner), rec, scratch, rd_vars(owner), rd_params(owner), 0);
+    case RCMD_BINARY_OP:
+        result = binary_op_and_set_var(rd_ctx(owner), rec, args, rd_vars(owner), rd_params(owner), 0);
         break;
-    case 0x37:
-        result = set_shadow_bits(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_SHADOW_BITS:
+        result = set_shadow_bits(rd_ctx(owner), rec, args);
         break;
-    case 0x39:
-        result = set_var_from_key_group(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_SET_VAR_FROM_KEY_GROUP:
+        result = set_var_from_key_group(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x3A:
-        result = set_var_from_keys(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_SET_VAR_FROM_KEYS:
+        result = set_var_from_keys(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x3B:
-        result = copy_on_key_match_b(rd_ctx(owner), rec, scratch);
+    case RCMD_COPY_ON_KEY_MATCH_B:
+        result = copy_on_key_match_b(rd_ctx(owner), rec, args);
         break;
-    case 0x3C:
-        result = copy_on_key_match_a(rd_ctx(owner), rec, scratch);
+    case RCMD_COPY_ON_KEY_MATCH_A:
+        result = copy_on_key_match_a(rd_ctx(owner), rec, args);
         break;
-    case 0x38:
-        result = set_key_mode_bits(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_KEY_MODE_BITS:
+        result = set_key_mode_bits(rd_ctx(owner), rec, args);
         break;
-    case 0x3D:
-        result = call_b0c0(rd_ctx(owner), rec, scratch);
+    case RCMD_CALL_B0C0:
+        result = call_b0c0(rd_ctx(owner), rec, args);
         break;
-    case 0x3F:
-        result = copy_if_cmp_match(rd_ctx(owner), rec, scratch);
+    case RCMD_COPY_IF_CMP_MATCH:
+        result = copy_if_cmp_match(rd_ctx(owner), rec, args);
         break;
-    case 0x41:
-        result = random_obj_placement(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_RANDOM_OBJ_PLACEMENT:
+        result = random_obj_placement(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x42:
-        result = pick_random_entry(rd_ctx(owner), rec, scratch);
+    case RCMD_PICK_RANDOM_ENTRY:
+        result = pick_random_entry(rd_ctx(owner), rec, args);
         break;
-    case 0x43:
-        result = push_obj_entry(rd_ctx(owner), rec, scratch);
+    case RCMD_PUSH_OBJ_ENTRY:
+        result = push_obj_entry(rd_ctx(owner), rec, args);
         break;
-    case 0x46:
-        result = set_obj_word_98(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_OBJ_WORD_98:
+        result = set_obj_word_98(rd_ctx(owner), rec, args);
         break;
-    case 0x44:
+    case RCMD_POP_OBJ_ENTRY:
         result = pop_obj_entry(rd_ctx(owner), rec);
         break;
-    case 0x45:
-        result = counter_step_and_branch(rd_ctx(owner), rec, scratch);
+    case RCMD_COUNTER_STEP_AND_BRANCH:
+        result = counter_step_and_branch(rd_ctx(owner), rec, args);
         break;
-    case 0x47:
-        result = set_obj_if_cmp(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_OBJ_IF_CMP:
+        result = set_obj_if_cmp(rd_ctx(owner), rec, args);
         break;
-    case 0x48:
-        result = dispatch_obj_mode_call(rd_ctx(owner), rec, scratch);
+    case RCMD_DISPATCH_OBJ_MODE_CALL:
+        result = dispatch_obj_mode_call(rd_ctx(owner), rec, args);
         break;
-    case 0x49:
-        result = request_if_idle(rd_ctx(owner), rec, scratch);
+    case RCMD_REQUEST_IF_IDLE:
+        result = request_if_idle(rd_ctx(owner), rec, args);
         break;
-    case 0x4A:
-        result = cmd_set_var_lang(rd_ctx(owner), rec, scratch, rd_vars(owner));
+    case RCMD_SET_VAR_LANG:
+        result = cmd_set_var_lang(rd_ctx(owner), rec, args, rd_vars(owner));
         break;
-    case 0x4D:
-        result = cmd_slot_value_by_kind(owner, rec, scratch);
+    case RCMD_SLOT_VALUE_BY_KIND:
+        result = cmd_slot_value_by_kind(owner, rec, args);
         break;
-    case 0x4E:
-        result = cmd_slot_op(owner, rec, scratch);
+    case RCMD_SLOT_OP:
+        result = cmd_slot_op(owner, rec, args);
         break;
-    case 0x4F:
-        result = cmd_set_slot_flag(owner, rec, scratch);
+    case RCMD_SET_SLOT_FLAG:
+        result = cmd_set_slot_flag(owner, rec, args);
         break;
-    case 0x50:
-        result = cmd_slot_field(owner, rec, scratch);
+    case RCMD_SLOT_FIELD:
+        result = cmd_slot_field(owner, rec, args);
         break;
-    case 0x51:
-        result = cmd_start_move_list(owner, rec, scratch);
+    case RCMD_START_MOVE_LIST:
+        result = cmd_start_move_list(owner, rec, args);
         break;
-    case 0x52:
-        result = cmd_set_position(owner, rec, scratch);
+    case RCMD_SET_POSITION:
+        result = cmd_set_position(owner, rec, args);
         break;
-    case 0x53:
-        result = cmd_place_obj_flags3(owner, rec, scratch);
+    case RCMD_PLACE_OBJ_FLAGS3:
+        result = cmd_place_obj_flags3(owner, rec, args);
         break;
-    case 0x54:
-        result = cmd_place_obj_sync(owner, rec, scratch);
+    case RCMD_PLACE_OBJ_SYNC:
+        result = cmd_place_obj_sync(owner, rec, args);
         break;
-    case 0x55:
-        result = cmd_place_object(owner, rec, scratch);
+    case RCMD_PLACE_OBJECT:
+        result = cmd_place_object(owner, rec, args);
         break;
-    case 0x56:
-        result = cmd_place_slot_flags(owner, rec, scratch);
+    case RCMD_PLACE_SLOT_FLAGS:
+        result = cmd_place_slot_flags(owner, rec, args);
         break;
-    case 0x57:
-        result = set_key_ignore_mask(rd_ctx(owner), rec, scratch);
+    case RCMD_SET_KEY_IGNORE_MASK:
+        result = set_key_ignore_mask(rd_ctx(owner), rec, args);
         break;
-    case 0x58:
-        result = cmd_push_handle(owner, rec, scratch);
+    case RCMD_PUSH_HANDLE:
+        result = cmd_push_handle(owner, rec, args);
         break;
-    case 0x59:
+    case RCMD_LATCH_WHEN_FREE:
         result = cmd_latch_when_free(owner, rec);
         break;
-    case 0x5A:
-        result = cmd_set_mode_1(owner, rec, scratch);
+    case RCMD_SET_MODE_1:
+        result = cmd_set_mode_1(owner, rec, args);
         break;
-    case 0x5B:
-        result = cmd_list_mode(owner, rec, scratch);
+    case RCMD_LIST_MODE:
+        result = cmd_list_mode(owner, rec, args);
         break;
     default:
         goto invalid;

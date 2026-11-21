@@ -742,10 +742,14 @@ void timer_then_release_part(struct WaveObj *obj)
     }
 }
 
+/* Once the pose's flags bit 3 is set: spawns object 0x40B5 at the base point, mirrored like
+   this one (pose unk11 bit 6), as obj->link; it takes over unk74 and unk75 - 1, gets flags bit 3
+   and no state of its own. Both play action 2 (this one with sprite 0x40B4), the pose held by
+   world slot 0 (the word at its +0x10) is detached, and start_move_to_part_target follows. */
 void spawn_child_and_arm(struct WaveObj *obj)
 {
     struct WaveObj *child;
-    u8 *flags;
+    u8 *childFlags;
 
     if (obj->pose->flags & 8)
     {
@@ -753,8 +757,8 @@ void spawn_child_and_arm(struct WaveObj *obj)
         obj->link = (struct WavePart *)child;
         child->unk74 = obj->unk74;
         child->unk75 = obj->unk75 - 1;
-        flags = &child->flags;
-        *flags |= 8;
+        childFlags = &child->flags;
+        *childFlags |= 8;
         child->state = 0;
         sprite_set_action(obj, 2, 0x40B4, 0);
         sprite_set_action(obj->link, 2, 0, 0);

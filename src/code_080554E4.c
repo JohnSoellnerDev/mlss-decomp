@@ -401,52 +401,51 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080554E4/map_obj_draw_obj_setup_sprites.s", void map_obj_draw_obj_setup_sprites(struct SceneObj *obj, u32 count))
 
-NONMATCH("asm/code_080554E4/hblank_scroll_table_dma.s", void hblank_scroll_table_dma(void))
+void hblank_scroll_table_dma(void)
 {
     s32 *st;
     u16 *dst;
     s32 group;
     u8 filled;
-    s32 v;
-    u32 value;
-    u8 end;
+    u16 value;
+    register u32 end asm("r3");
+    u8 *base;
     vu16 *bg1;
     vu32 *dma;
 
-    st = (s32 *)gUnk_03000DA0;
+    st = gUnk_03000DA0;
     st[0] -= 0x40;
     st[1] -= 0x80;
     st[2] -= 0x40;
     st[3] -= 0x20;
     filled = 0;
-    dst = (u16 *)((u8 *)st + 0x14);
+    dst = (u16 *)(st + 5);
     group = 0;
     do
     {
-        v = *(s32 *)((u8 *)gUnk_03000DA0 + (group << 2));
-        if (v < 0)
-            v += 0xFF;
-        value = ((u32)v << 8) >> 16;
-        end = gScrollGroupEnd[group];
-        group++;
-        if (filled <= end)
+        do
         {
-            do
-            {
-                *dst = value;
-                filled++;
-                dst++;
-            } while (filled <= end);
+            u8 *tbl = gUnk_03000DA0;
+
+            value = *(s32 *)(tbl + (group << 2)) / 0x100;
+            end = gScrollGroupEnd[group];
+        } while (0);
+        group++;
+        while (filled <= end)
+        {
+            *dst = value;
+            filled++;
+            dst++;
         }
     } while (group <= 4);
     bg1 = (vu16 *)0x04000014;
-    *bg1 = *(u16 *)(((u8 *)gUnk_03000DA0) + 0x14);
+    base = gUnk_03000DA0;
+    *bg1 = *(u16 *)(base + 0x14);
     dma = (vu32 *)0x040000B0;
     *(vu16 *)0x040000BA = 0;
-    dma[0] = (u32)(((u8 *)gUnk_03000DA0) + 0x16);
+    dma[0] = (u32)(base + 0x16);
     dma[1] = (u32)bg1;
     dma[2] = 0xA2400001;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080554E4/map_scene_update.s", void map_scene_update(void))

@@ -244,14 +244,19 @@ NONMATCH("asm/code_08071CC8/spawn_slot_sprite.s", void spawn_slot_sprite(struct 
 }
 END_NONMATCH
 
+/* After spawn_slot_sprite threw the slot-0 object, waits for its result (param4 of gWorld->slots[0],
+   0 while it is still flying). 1: plays action 7 (0x40B4) on the actor and on what it carries, and
+   remove_child_and_move drops it once that animation ends. Anything else: drops what it carries at
+   once, plays action 2 (0x40B3) and moves back to its part's target (phase is the target height)
+   at speed 0x200, then waits in wait_for_index. */
 void handle_group_mode(struct WaveObj *obj)
 {
-    s32 mode = gWorld->slots[0]->param4;
+    s32 result = gWorld->slots[0]->param4;
     u8 *flags;
 
-    if (mode != 0)
+    if (result != 0)
     {
-        if (mode == 1)
+        if (result == 1)
         {
             sprite_set_action(obj, 7, 0x40B4, 0);
             sprite_set_action(obj->link, 7, 0, 0);
@@ -274,20 +279,24 @@ void handle_group_mode(struct WaveObj *obj)
     }
 }
 
+/* Arc step of the object spawn_slot_sprite throws: over param0 frames, x goes linearly from dx
+   (whole pixels) by param4, and the height follows a parabola that starts and ends at dh and peaks
+   0x40 pixels higher halfway (select is the negative curvature). dy counts down alongside.
+   On landing: action 0 (0x40AA), counter 2, then waits in wait_for_index. */
 void move_by_velocity(struct WaveObj *obj)
 {
-    s32 remaining;
-    s32 square;
-    s32 scaled;
-    s32 term;
+    s32 fromMid;
+    s32 fromMidSq;
+    s32 drop;
+    s32 peakH;
 
     obj->dy--;
     obj->x = (obj->param4 * obj->timer) / obj->param0 + (obj->dx << 8);
-    remaining = obj->timer - (((s32)(obj->param0 + ((u32)obj->param0 >> 31))) >> 1);
-    square = remaining * remaining;
-    scaled = obj->select * square;
-    term = (obj->dh << 8) + 0x4000;
-    obj->h = scaled + term;
+    fromMid = obj->timer - obj->param0 / 2;
+    fromMidSq = fromMid * fromMid;
+    drop = obj->select * fromMidSq;
+    peakH = (obj->dh << 8) + 0x4000;
+    obj->h = drop + peakH;
     obj->timer++;
     if (obj->timer >= obj->param0)
     {
@@ -336,6 +345,10 @@ void wait_timer_then_place(struct WaveObj *obj)
     }
 }
 
+/* Hit callback (cb58) of the thrown object: takes it off the object list and puts it at the
+   position of the one it hit (obj->owner), deals the hit (partner_link_update), plays sound 0x55
+   (set_slot_value is song play), draws it 2 layers in front of the target, spawns effect 0x21E1 and
+   bounces it up (speed 0x300 in param0, gravity 0x33 in param4) with accelerate_height. */
 u32 obj_setup_and_place(struct WaveObj *obj)
 {
     obj_list_remove(obj);
@@ -347,8 +360,8 @@ u32 obj_setup_and_place(struct WaveObj *obj)
     obj->unk75 = obj->owner->unk75 - 2;
     sprite_set_action(obj, 3, 0x40AE, 0);
     effect_spawn_at(0x21E1, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-    obj->param0 = 0x300;
-    obj->param4 = 0x33;
+    obj->param0 = 0x300; /* upward speed */
+    obj->param4 = 0x33;  /* gravity */
     obj->counter = 1;
     obj->state = accelerate_height;
     return 0;

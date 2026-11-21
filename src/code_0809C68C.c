@@ -191,6 +191,15 @@ void *sprite_node_take(void);
 void *sprite_node_alloc(s32 x, s32 y, s32 h);
 void orbit_parts_falling(struct ActorBody *body);
 void pose_update_b(struct ActorBody *body);
+
+/* Pushes a new sprite part, placed at the body's target, onto the front of its part list. */
+static inline void body_push_part(struct ActorBody *body)
+{
+    struct SpriteNode *node = sprite_node_alloc(body->targetX, body->targetY, body->targetZ);
+    struct SpriteNode *head = body->parts;
+    node->next = head;
+    body->parts = node;
+}
 void set_focus_pos_b(struct ActorBody *body);
 void set_focus_pos_c(struct ActorBody *body);
 void free_data_done(struct ActorBody *body);
@@ -232,16 +241,20 @@ void release_fx_a(struct ActorBody *body)
     }
 }
 
+/* Puts the body 256 px right of the focus object's last x, 120 px up (z), and, while its data has
+   an effect, sends it at speed 0x140 to (focus x + 210, focus y + 124) at height 60. Plays sounds
+   0x88 and 0x8D (set_slot_value), then waits in fx_only_b. */
 void set_focus_pos_b(struct ActorBody *body)
 {
     s32 x;
     s32 y;
-    s32 v;
-    s32 minusOne;
+    s32 startX;
+    s32 keepVolume;
 
-    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
-    body->x = v;
-    body->targetX = v;
+    /* positions are 24.8 fixed point */
+    startX = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
+    body->x = startX;
+    body->targetX = startX;
     body->z = 0x7800;
     body->targetZ = 0x7800;
     if (body->data->effect != 0)
@@ -251,9 +264,9 @@ void set_focus_pos_b(struct ActorBody *body)
         place_targets(body, x, y, 0x3C, -1);
         set_motion_start(body, 0x140);
     }
-    minusOne = -1;
-    set_slot_value(0x88, minusOne);
-    set_slot_value(0x8D, minusOne);
+    keepVolume = -1;
+    set_slot_value(0x88, keepVolume);
+    set_slot_value(0x8D, keepVolume);
     body->state = fx_only_b;
 }
 
@@ -280,16 +293,20 @@ void release_fx_b(struct ActorBody *body)
     }
 }
 
+/* Puts the body 256 px right of the focus object's last x, 120 px up (z), and, while its data has
+   an effect, sends it at speed 0xC0 to (focus x + 217, focus y + 108) at height 60. Plays sounds
+   0x88 and 0x8D (set_slot_value), then flies on in fx_only_a. */
 void set_focus_pos_c(struct ActorBody *body)
 {
     s32 x;
     s32 y;
-    s32 v;
-    s32 minusOne;
+    s32 startX;
+    s32 keepVolume;
 
-    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
-    body->x = v;
-    body->targetX = v;
+    /* positions are 24.8 fixed point */
+    startX = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
+    body->x = startX;
+    body->targetX = startX;
     body->z = 0x7800;
     body->targetZ = 0x7800;
     if (body->data->effect != 0)
@@ -299,9 +316,9 @@ void set_focus_pos_c(struct ActorBody *body)
         place_targets(body, x, y, 0x3C, -1);
         set_motion_start(body, 0xC0);
     }
-    minusOne = -1;
-    set_slot_value(0x88, minusOne);
-    set_slot_value(0x8D, minusOne);
+    keepVolume = -1;
+    set_slot_value(0x88, keepVolume);
+    set_slot_value(0x8D, keepVolume);
     body->state = fx_only_a;
 }
 
@@ -507,30 +524,32 @@ void remove_when_expired(struct ActorBody *body)
     }
 }
 
+/* Spawns the five linked parts of this actor (object types 0x40EA-0x40EE, in order), each with
+ * flags bits 0 and 3 set and an index 1 to 5 below the actor's own. */
 void spawn_five_children(struct ActorBody *body)
 {
-    struct ActorBody *child;
+    struct ActorBody *part;
 
-    child = obj_spawn_linked(body, 0x40EA, 0);
-    child->flags |= 1;
-    child->flags |= 8;
-    child->index = body->index - 1;
-    child = obj_spawn_linked(body, 0x40EB, 0);
-    child->flags |= 1;
-    child->flags |= 8;
-    child->index = body->index - 2;
-    child = obj_spawn_linked(body, 0x40EC, 0);
-    child->flags |= 1;
-    child->flags |= 8;
-    child->index = body->index - 3;
-    child = obj_spawn_linked(body, 0x40ED, 0);
-    child->flags |= 1;
-    child->flags |= 8;
-    child->index = body->index - 4;
-    child = obj_spawn_linked(body, 0x40EE, 0);
-    child->flags |= 1;
-    child->flags |= 8;
-    child->index = body->index - 5;
+    part = obj_spawn_linked(body, 0x40EA, NULL);
+    part->flags |= 1;
+    part->flags |= 8;
+    part->index = body->index - 1;
+    part = obj_spawn_linked(body, 0x40EB, NULL);
+    part->flags |= 1;
+    part->flags |= 8;
+    part->index = body->index - 2;
+    part = obj_spawn_linked(body, 0x40EC, NULL);
+    part->flags |= 1;
+    part->flags |= 8;
+    part->index = body->index - 3;
+    part = obj_spawn_linked(body, 0x40ED, NULL);
+    part->flags |= 1;
+    part->flags |= 8;
+    part->index = body->index - 4;
+    part = obj_spawn_linked(body, 0x40EE, NULL);
+    part->flags |= 1;
+    part->flags |= 8;
+    part->index = body->index - 5;
 }
 
 NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct ActorBody *body))
@@ -609,11 +628,16 @@ NONMATCH("asm/code_0809C68C/start_child_chain.s", void start_child_chain(struct 
 END_NONMATCH
 
 void set_motion_speed_aux(struct ActorBody *body, u32 speed, u32 arg);
+/* State after place_beside_partner: runs the body's motion, dropping effect 0xE89 at its position
+   every 7 frames (link counts them). Once the motion is done (flags bit 5) it joins the object
+   list with approach_contact / approach_slot as handlers and vspeed 0xFE00; if its data has an
+   effect it then moves on to the world focus's x (same row and height) at speed 0x100. Goes on
+   to draw_while_group_busy. */
 void float_above_focus(struct ActorBody *body)
 {
     s32 focusX;
-    s32 x;
-    s32 dx;
+    s32 destX;
+    s32 toFocus;
 
     step_motion(body);
     if (body->link++ > 5)
@@ -629,10 +653,11 @@ void float_above_focus(struct ActorBody *body)
         body->vspeed = 0xFE00;
         if (body->data->effect != 0)
         {
+            /* positions are 24.8 fixed point */
             focusX = (s16)obj_last_x(world_focus(gWorld));
-            dx = focusX - body->targetX / 0x100;
-            x = body->targetX / 0x100 + dx;
-            place_targets(body, x, body->targetY / 0x100, body->targetZ / 0x100, -1);
+            toFocus = focusX - body->targetX / 0x100;
+            destX = body->targetX / 0x100 + toFocus;
+            place_targets(body, destX, body->targetY / 0x100, body->targetZ / 0x100, -1);
             set_motion_speed_aux(body, 0x100, 0xC);
         }
         body->state = draw_while_group_busy;
@@ -761,11 +786,13 @@ void anim_stop_if_sprite_active(struct ActorBody *body)
     }
 }
 
+/* Once the sprite's animation flag (bit 3) is set: plays sounds 0x8B and 0x8C, switches to action 7,
+   spawns effect 0x1E47 at the target, and spawns a child (art 0x410C) just left of it that is
+   pushed onto the body's child list, gets its own sprite node, the body's partner and five parts,
+   and starts falling (orbit_parts_falling). The body itself goes on to pose_update_b. */
 void float_parts_spawn_part_child(struct ActorBody *body)
 {
     struct ActorBody *child;
-    struct SpriteNode *node;
-    struct SpriteNode *head;
 
     if (body->sprite->flags & 8)
     {
@@ -776,7 +803,7 @@ void float_parts_spawn_part_child(struct ActorBody *body)
         child = obj_spawn(body->data, 0x410C, body->targetX / 0x100 - 0x15, body->targetY / 0x100 + 1, body->targetZ / 0x100, 1, 1);
         child->child = body->child;
         body->child = child;
-        *((u8 *)child + 0x79) |= 1;
+        *((u8 *)child + 0x79) |= 1; /* child->flags */
         child->timeLink = 0;
         child->node = sprite_node_take();
         child->node->sprite = child->sprite;
@@ -786,26 +813,11 @@ void float_parts_spawn_part_child(struct ActorBody *body)
         child->baseX = child->x;
         child->baseY = child->y;
         child->vspeed = 0x14;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = child->parts;
-        node->next = head;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = child->parts;
-        node->next = head;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = child->parts;
-        node->next = head;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = child->parts;
-        node->next = head;
-        child->parts = node;
-        node = sprite_node_alloc(child->targetX, child->targetY, child->targetZ);
-        head = child->parts;
-        node->next = head;
-        child->parts = node;
+        body_push_part(child);
+        body_push_part(child);
+        body_push_part(child);
+        body_push_part(child);
+        body_push_part(child);
         child->state = orbit_parts_falling;
         body->state = pose_update_b;
     }

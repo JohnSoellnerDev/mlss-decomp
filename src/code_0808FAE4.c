@@ -202,6 +202,10 @@ void hold_orbit_finish_if_pose_visible_d(struct HoldActor *obj);
 void hold_orbit_finish_if_pose_visible_e(struct HoldActor *obj);
 void finish_if_pose_visible_f(struct HoldActor *obj);
 
+/* Buttons let go before the charge finished: winds animation 0x2025 back down, one step a frame,
+ * showing frame 2, 1, then 0 (only frames the wind-up got to, pose->count), the pose held between
+ * steps. When the steps run out it takes action 4 at frame time 0xC0 / 4 and goes on to
+ * hold_release. */
 void orbit_wait_c(struct HoldActor *obj)
 {
     obj->state = orbit_wait_c;
@@ -243,18 +247,23 @@ void orbit_wait_c(struct HoldActor *obj)
     obj->step--;
 }
 
+/* Waits while the buttons are held. On release it starts orbit a: the child starts half a turn
+ * round at angle speed -0x1CC and obj goes on to hold_orbit_circle_a. Held for more than 0x63
+ * frames the move fails: kind 0x1E waits there unless world mode has 1 in its upper nibble (then
+ * action 4 with pose result 0xC0 / 4), any other kind takes action 5; both go on to hold_release.
+ * Past 0x31 frames the pose's hold bit is cleared. */
 void hold_wait_a(struct HoldActor *obj)
 {
     struct HoldActor *child;
-    u32 keys;
+    u32 held;
 
     if (obj->action & 0x38)
     {
         end_action(obj);
         return;
     }
-    keys = gSys.held & obj->buttons;
-    if (keys == 0)
+    held = gSys.held & obj->buttons;
+    if (held == 0)
     {
         obj->timer = 1;
         child = obj->child;
@@ -263,7 +272,7 @@ void hold_wait_a(struct HoldActor *obj)
         sprite_set_action(obj, 2, 0, 0);
         ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
         obj->state = hold_orbit_circle_a;
-        obj->step = keys;
+        obj->step = held;
         return;
     }
     if ((s16)obj->step > 0x63)
@@ -297,11 +306,14 @@ void hold_wait_a(struct HoldActor *obj)
     obj->step++;
 }
 
+/* One frame of orbit a: swings the child around a circle of radius 22 above obj's base point
+ * (angle += childSpeed, the speed bent towards obj's facing), steps obj's animation 0x2025
+ * through frames 1-5, and at step 7 releases the child and goes on to orbit_end_wait_a. */
 void hold_orbit_circle_a(struct HoldActor *obj)
 {
     struct HoldActor *child;
-    u32 idx;
-    s32 base;
+    u32 tableIdx;
+    s32 centerH;
 
     if (obj->action & 0x38)
     {
@@ -311,9 +323,9 @@ void hold_orbit_circle_a(struct HoldActor *obj)
     child = obj->child;
     ((struct ActionBits *)&child->action)->mode = 1;
     child->childAngle += child->childSpeed;
-    child->childX = obj->baseX + 22 * (gCosineTable[idx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->childAngle, 0x168) & 0xFF] / 64);
-    base = obj->baseH + 0x1600;
-    child->height = base + 22 * (gSineTable[idx] / 64);
+    child->childX = obj->baseX + 22 * (gCosineTable[tableIdx = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(child->childAngle, 360) & 0xFF] / 64);
+    centerH = obj->baseH + 0x1600;
+    child->height = centerH + 22 * (gSineTable[tableIdx] / 64);
     if (obj->pose->turn & 0x40)
     {
         child->childSpeed += 0xC00;
@@ -361,6 +373,9 @@ void hold_orbit_circle_a(struct HoldActor *obj)
     }
 }
 
+/* Start of hold orbit a: spawns the child the actor holds at its base position (action mode 3, hit
+ * box x -10/8, y -10/10, h -3/3, animation gAnim284, on_arrive when it lands), plays sound 0x7C and
+ * runs the wind-up, orbit_start_a, from step 0. */
 void hold_orbit_spawn_orbit_child_a(struct HoldActor *obj)
 {
     struct HoldActor *child;
@@ -368,11 +383,11 @@ void hold_orbit_spawn_orbit_child_a(struct HoldActor *obj)
     child = obj_spawn(obj->data, 0, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, 0, 1);
     obj->child = child;
     ((struct ActionBits *)&child->action)->mode = 3;
-    child->unk44 = 0xF6;
+    child->unk44 = -10;
     child->unk45 = 8;
-    child->unk46 = 0xF6;
-    child->unk47 = 0xA;
-    child->unk48 = 0xFD;
+    child->unk46 = -10;
+    child->unk47 = 10;
+    child->unk48 = -3;
     child->unk49 = 3;
     ((struct FlagsPhase *)&child->flags)->phase = 2;
     child->targetX = obj->baseX;

@@ -10,6 +10,8 @@ struct ActorPose
     u8 cmd;
 };
 
+#define POSE_FLAG_ANIM_DONE 0x08 /* ActorPose.flags: the current animation has finished */
+
 struct Flags79Bits
 {
     u8 low5 : 5;
@@ -174,17 +176,22 @@ void obj_walk_by_side(struct ActorObj *obj);
 void obj_pose_action15(struct ActorObj *obj);
 void obj_fall_and_launch(struct ActorObj *obj);
 
+/* Actor state: once the animation has finished and the timer runs out, flags this as the last
+   round (targetX = 1, read by actor_link_partner_then_step), clears slot 0x119, plays the finishing
+   action on the actor and its child (0xB, or 0x13 for the paramA8 variant), starts the matching
+   effect (kept in gUnk_03000E3C) and moves on to actor_countdown_release_child, with
+   actor_link_partner_then_step as the partner-contact handler. */
 void actor_finish_child_effect_b(struct ActorObj *obj)
 {
-    u32 id;
+    u32 effectId;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_FLAG_ANIM_DONE)
     {
-        s32 t = obj->timer;
+        s32 timer = obj->timer;
 
-        t--;
-        obj->timer = t;
-        if ((t << 16) <= 0)
+        timer--;
+        obj->timer = timer;
+        if ((timer << 16) <= 0)
         {
             obj->targetX = 1;
             set_slot_value(0x119, -1);
@@ -192,15 +199,15 @@ void actor_finish_child_effect_b(struct ActorObj *obj)
             {
                 sprite_set_action(obj, 0xB, 0, 0);
                 sprite_set_action(obj->child, 0xB, 0, 0);
-                id = 0x1569;
+                effectId = 0x1569;
             }
             else
             {
                 sprite_set_action(obj, 0x13, 0, 0);
                 sprite_set_action(obj->child, 0x13, 0, 0);
-                id = 0x15D3;
+                effectId = 0x15D3;
             }
-            gUnk_03000E3C = effect_from_table_obj(obj, id);
+            gUnk_03000E3C = effect_from_table_obj(obj, effectId);
             obj->handler58 = (void (*)(struct ActorObj *))actor_link_partner_then_step;
             obj->state = actor_countdown_release_child;
         }
@@ -338,51 +345,69 @@ u32 actor_wait_for_slot(struct ActorObj *obj, u32 slot)
     return result;
 }
 
+/* gWorld->partners[0..5]: the party slots before the two heroes (6 and 7); actor body 8 bytes in */
+#define PARTY_SLOT_COUNT 6
+#define HERO_SLOT_A 6
+#define HERO_SLOT_B 7
+#define PARTNER_BODY_OFFSET 8
+/* mode bits (bits 1-2) at this offset of a partners[] entry; partner_link_update only hits
+ * PARTNER_MODE_1 and PARTNER_MODE_SHAKEN */
+#define PARTNER_MODE_OFFSET 0x7E
+#define PARTNER_MODE_MASK 6
+#define PARTNER_MODE_1 (1 << 1)
+#define PARTNER_MODE_SHAKEN (2 << 1) /* knocked by the landing in actor_arc_move_step */
+
+/* Impact of the actor's attack: spawns effect 0x1C19 at its owner's part, plays sound 0x40, hits
+ * each of the two heroes that is in PARTNER_MODE_1 (partner_link_update), then removes itself. */
 u32 actor_unlink_partners_and_release(struct ActorObj *obj)
 {
     struct ActorPart *part;
-    u8 *cand;
-    u8 *pa;
-    u8 *cand2;
-    u8 *pb;
+    u8 *entryA;
+    u8 *heroA;
+    u8 *entryB;
+    u8 *heroB;
 
     part = obj->owner->part;
     effect_spawn_at(0x1C19, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
     set_slot_value(0x40, -1);
-    cand = gWorld->partners[6];
-    pa = cand + 8;
-    cand2 = gWorld->partners[7];
-    pb = cand2 + 8;
-    if ((cand[0x7E] & 6) == 2)
+    entryA = gWorld->partners[HERO_SLOT_A];
+    heroA = entryA + PARTNER_BODY_OFFSET;
+    entryB = gWorld->partners[HERO_SLOT_B];
+    heroB = entryB + PARTNER_BODY_OFFSET;
+    if ((entryA[PARTNER_MODE_OFFSET] & PARTNER_MODE_MASK) == PARTNER_MODE_1)
     {
-        partner_link_update(obj, (u32)pa, 0xFF);
+        partner_link_update(obj, (u32)heroA, 0xFF);
     }
-    if ((cand2[0x7E] & 6) == 2)
+    if ((entryB[PARTNER_MODE_OFFSET] & PARTNER_MODE_MASK) == PARTNER_MODE_1)
     {
-        partner_link_update(obj, (u32)pb, 0xFF);
+        partner_link_update(obj, (u32)heroB, 0xFF);
     }
     obj->state = 0;
     obj_release(obj);
     return 0;
 }
 
+/*
+ * Counts targetX down (actor_arc_move_step sets it to 30 on landing); at zero, every party
+ * member the landing knocked returns to its idle action (or just stops), and the actor goes away.
+ */
 void actor_countdown_release_partners(struct ActorObj *obj)
 {
-    u8 *p;
+    u8 *entry;
     struct ActorObj *partner;
     s32 i;
-    s32 j;
-    s32 t;
+    s32 odd;
+    s32 countdown;
 
-    t = obj->targetX - 1;
-    obj->targetX = t;
-    if (t <= 0)
+    countdown = obj->targetX - 1;
+    obj->targetX = countdown;
+    if (countdown <= 0)
     {
-        for (i = 0; i < 6; i += 2)
+        for (i = 0; i < PARTY_SLOT_COUNT; i += 2)
         {
-            p = gWorld->partners[i];
-            partner = (struct ActorObj *)(p + 8);
-            if ((p[0x7E] & 6) == 4)
+            entry = gWorld->partners[i];
+            partner = (struct ActorObj *)(entry + PARTNER_BODY_OFFSET);
+            if ((entry[PARTNER_MODE_OFFSET] & PARTNER_MODE_MASK) == PARTNER_MODE_SHAKEN)
             {
                 if (partner->part->unkF6 != 0)
                 {
@@ -393,10 +418,10 @@ void actor_countdown_release_partners(struct ActorObj *obj)
                     obj_stop(partner);
                 }
             }
-            j = i + 1;
-            p = gWorld->partners[j];
-            partner = (struct ActorObj *)(p + 8);
-            if ((p[0x7E] & 6) == 4)
+            odd = i + 1;
+            entry = gWorld->partners[odd];
+            partner = (struct ActorObj *)(entry + PARTNER_BODY_OFFSET);
+            if ((entry[PARTNER_MODE_OFFSET] & PARTNER_MODE_MASK) == PARTNER_MODE_SHAKEN)
             {
                 if (partner->part->unkF6 != 0)
                 {

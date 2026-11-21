@@ -1,24 +1,25 @@
 #include "global.h"
 #include "ram_routines.h"
 
+/* The actor's animated sprite, stepped by sprite_step_e6a0. */
 struct Pose
 {
     u8 filler0[0x11];
     u8 dir;
-    u8 flags;
+    u8 flags;           /* see struct PoseMode */
     u8 filler13[0x20 - 0x13];
-    u8 result;
+    u8 result;          /* animation speed per step */
     u8 filler21[0x23 - 0x21];
-    u8 count;
+    u8 count;           /* current frame of the animation */
 };
 
 struct PoseMode
 {
     u8 filler0[0x12];
     u8 unk12_0 : 1;
-    u8 mode : 2;
-    u8 unk12_3 : 1;
-    u8 hold : 1;
+    u8 mode : 2;        /* at the animation's end: 0 loop, 1 hold the last frame, 2 stop */
+    u8 unk12_3 : 1;     /* set when the animation has reached its end */
+    u8 hold : 1;        /* freezes the animation on its current frame */
     u8 unk12_5 : 3;
 };
 
@@ -168,6 +169,12 @@ void charge_release_start_jump_arc_d(struct Actor *obj);
 void timer_start_jump_c(struct Actor *obj);
 void timer_start_jump_d(struct Actor *obj);
 
+/*
+ * Charge wind-up: while the actor's buttons stay held, step counts up and shows charge frames 0-3
+ * of animation 0x2054 every 3 steps. At step 12 the charge is complete (action 1) and
+ * hold_decay_hold_idle_b takes over; letting go earlier hands step * 3 to
+ * hold_decay_hold_release_a, which rewinds the animation. Any action bits end the action.
+ */
 void hold_decay_hold_step_a(struct Actor *obj)
 {
     u32 action;
@@ -199,6 +206,7 @@ void hold_decay_hold_step_a(struct Actor *obj)
     {
         if ((gSys.held & obj->buttons) == 0)
         {
+            /* let go early: rewind the charge */
             obj->step = obj->step * 3;
             obj->state = hold_decay_hold_release_a;
             return;
@@ -206,6 +214,7 @@ void hold_decay_hold_step_a(struct Actor *obj)
     }
     else
     {
+        /* fully charged */
         sprite_set_action(obj, 1, 0, 0);
         ((struct PoseMode *)obj->pose)->mode = 0;
         obj->step = action;
@@ -215,6 +224,12 @@ void hold_decay_hold_step_a(struct Actor *obj)
     obj->step++;
 }
 
+/*
+ * The button was let go before the charge finished (hold_decay_hold_step_a tripled step): counts
+ * step down by 3 a frame, rewinding the charge animation (0x2054) through frames 2, 1, 0. Once
+ * step drops below 0, plays action 4 once (held on its last frame) and ends the action when it
+ * is done (hold_decay_end_action_if_busy).
+ */
 void hold_decay_hold_release_a(struct Actor *obj)
 {
     u32 action;
@@ -260,22 +275,26 @@ void hold_decay_hold_release_a(struct Actor *obj)
     obj->step -= 3;
 }
 
+/* Variant b, holding: while the actor's buttons stay held, counts obj->step up (the pose stops
+ * holding after step 0x1D). Letting go waits 10-14 frames in hold_decay_timer_start_orbit_b.
+ * Held past step 0x2C the move ends: data kind 0x1E waits until gWorld[9]'s high nibble is 1 and
+ * then plays action 4 (result 0xC0 / 12), any other kind plays action 5. */
 void hold_decay_hold_idle_b(struct Actor *obj)
 {
-    u32 pressed;
+    u32 held;
     if (obj->action & 0x38)
     {
         end_action(obj);
         return;
     }
-    pressed = gSys.held & obj->buttons;
-    if (pressed == 0)
+    held = gSys.held & obj->buttons;
+    if (held == 0)
     {
         obj->timer = rand_below(5, mt19937_next()) + 10;
         sprite_set_action(obj, 6, 0, 0);
         ((struct PoseMode *)obj->pose)->mode = 0;
         obj->state = hold_decay_timer_start_orbit_b;
-        obj->step = pressed;
+        obj->step = held;
         return;
     }
     if (obj->step > 0x2C)
@@ -312,12 +331,15 @@ void hold_decay_hold_idle_b(struct Actor *obj)
     }
 }
 
+/* One frame of orbit b: swings the child around a circle of radius 24 above obj's base point
+ * (angle += angleSpeed, speed bent towards obj's facing), steps obj's animation 0x2054 through
+ * frames 1-5, and at step 9 releases the child and goes on to step_end_action_23. */
 void hold_decay_orbit_step_b(struct Actor *obj)
 {
     struct Actor *child;
-    u32 idx;
-    s32 h;
-    const s16 *table;
+    u32 tableIdx;
+    s32 centerH;
+    const s16 *cosTable;
 
     if (obj->action & 0x38)
     {
@@ -327,11 +349,11 @@ void hold_decay_orbit_step_b(struct Actor *obj)
     child = obj->child;
     ((struct ActionBits *)child)->mode = 1;
     child->angle += child->angleSpeed;
-    idx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
-    table = gCosineTable;
-    child->x = obj->baseX + (table[idx & 0xFF] / 64) * 24;
-    h = obj->baseH + 0x1A00;
-    child->h = h + (gSineTable[idx & 0xFF] / 64) * 24;
+    tableIdx = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(child->angle, 360);
+    cosTable = gCosineTable;
+    child->x = obj->baseX + (cosTable[tableIdx & 0xFF] / 64) * 24;
+    centerH = obj->baseH + 0x1A00;
+    child->h = centerH + (gSineTable[tableIdx & 0xFF] / 64) * 24;
     if (obj->pose->dir & 0x40)
         child->angleSpeed += 0x998;
     else
@@ -707,64 +729,72 @@ void hold_decay_finish_if_pose_visible_b(struct Actor *obj)
     }
 }
 
+/* Jump set-up for the party member in slot -1 (gParty entry 0; called by
+ * dispatch_slot_random_jump_a): animation gAnim278, copies the member's u16 at +0x2A into
+ * data->slotValue and waits a random 4..9 frames in action 4 (hold_decay_jump_timer_arc_d)
+ * before the jump (hold_decay_start_jump_arc_d, speed -0x58). dh = (sqrt(0x6E1E40) - 0x58) / 2. */
 u32 random_jump_c(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *member;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt_fn)(u32);
 
     obj->anim = gAnim278;
-    base = gParty;
+    member = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(6, mt19937_next()) + 4;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(member + 0x2A);
+    delay = rand_below(6, mt19937_next()) + 4;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
-        ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        ((struct PoseMode *)obj->pose)->mode = 0; /* loop the wait animation */
+        obj->timer = delay;
         obj->state = hold_decay_jump_timer_arc_d;
     }
     else
     {
         obj->state = hold_decay_start_jump_arc_d;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x006E1E40) - 0x58) / 2;
+    sqrt_fn = (s32 (*)(u32))gMathRoutines; /* iwram_sqrt's copy */
+    obj->dh = (sqrt_fn(0x006E1E40) - 0x58) / 2;
     return 1;
 }
 
+/* Jump set-up for the party member in slot -2 (gParty entry 1, 0x3C bytes each; called by
+ * dispatch_slot_random_jump_a): animation gAnim374, copies the member's u16 at +0x2A into
+ * data->slotValue and waits a random 5..15 frames in action 4 (hold_decay_jump_timer_arc_c)
+ * before the jump (hold_decay_start_jump_arc_c, speed -0x48). dh = (sqrt(0x5A1440) - 0x48) / 2. */
 u32 random_jump_d(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *member;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt_fn)(u32);
 
     obj->anim = gAnim374;
-    base = gParty;
-    base += 0x3C;
+    member = gParty;
+    member += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(11, mt19937_next()) + 5;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(member + 0x2A);
+    delay = rand_below(11, mt19937_next()) + 5;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
-        ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        ((struct PoseMode *)obj->pose)->mode = 0; /* loop the wait animation */
+        obj->timer = delay;
         obj->state = hold_decay_jump_timer_arc_c;
     }
     else
     {
         obj->state = hold_decay_start_jump_arc_c;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x005A1440) - 0x48) / 2;
+    sqrt_fn = (s32 (*)(u32))gMathRoutines; /* iwram_sqrt's copy */
+    obj->dh = (sqrt_fn(0x005A1440) - 0x48) / 2;
     return 1;
 }
 
@@ -906,64 +936,72 @@ void hold_decay_finish_if_pose_visible_d(struct Actor *obj)
     }
 }
 
+/* Jump set-up for the party member in slot -1 (gParty entry 0; called by
+ * dispatch_slot_random_jump_b): animation gAnim278, copies the member's u16 at +0x2A into
+ * data->slotValue and waits a random 7..11 frames in action 4 (hold_decay_jump_timer_arc_f)
+ * before the jump (hold_decay_start_jump_arc_f, speed -0x58). dh = (sqrt(0x6E1E40) - 0x58) / 2. */
 u32 random_jump_e(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *member;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt_fn)(u32);
 
     obj->anim = gAnim278;
-    base = gParty;
+    member = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(5, mt19937_next()) + 7;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(member + 0x2A);
+    delay = rand_below(5, mt19937_next()) + 7;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
-        ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        ((struct PoseMode *)obj->pose)->mode = 0; /* loop the wait animation */
+        obj->timer = delay;
         obj->state = hold_decay_jump_timer_arc_f;
     }
     else
     {
         obj->state = hold_decay_start_jump_arc_f;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x006E1E40) - 0x58) / 2;
+    sqrt_fn = (s32 (*)(u32))gMathRoutines; /* iwram_sqrt's copy */
+    obj->dh = (sqrt_fn(0x006E1E40) - 0x58) / 2;
     return 1;
 }
 
+/* Starts the jump of the hero in slot -2 (party entry 1; random_jump_e does entry 0): copies the
+   party entry's u16 at 0x2A into data->slotValue, then waits a random 5-15 frames in action 4
+   (hold_decay_jump_timer_arc_e) before hold_decay_start_jump_arc_e jumps off at speed -0x48.
+   dh gets (sqrt(0x5A1440) - 0x48) / 2, using the RAM copy of the square root routine. */
 u32 random_jump_f(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *party;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt)(u32);
 
     obj->anim = gAnim374;
-    base = gParty;
-    base += 0x3C;
+    party = gParty;
+    party += 0x3C; /* entry 1 */
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(11, mt19937_next()) + 5;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(party + 0x2A);
+    delay = rand_below(11, mt19937_next()) + 5;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
         ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        obj->timer = delay;
         obj->state = hold_decay_jump_timer_arc_e;
     }
     else
     {
         obj->state = hold_decay_start_jump_arc_e;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x005A1440) - 0x48) / 2;
+    sqrt = (s32 (*)(u32))gMathRoutines;
+    obj->dh = (sqrt(0x005A1440) - 0x48) / 2;
     return 1;
 }
 
@@ -1105,64 +1143,72 @@ void charge_release_finish_if_pose_visible_d(struct Actor *obj)
     }
 }
 
+/* Jump set-up for the party member in slot -1 (gParty entry 0; called by
+ * dispatch_slot_random_pause_jump): animation gAnim278, copies the member's u16 at +0x2A into
+ * data->slotValue and waits a random 2..5 frames in action 4 (timer_start_jump_d) before the
+ * jump (charge_release_start_jump_arc_d, speed -0x58). dh = (sqrt(0x6E1E40) - 0x58) / 2. */
 u32 random_pause_jump_c(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *member;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt_fn)(u32);
 
     obj->anim = gAnim278;
-    base = gParty;
+    member = gParty;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(4, mt19937_next()) + 2;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(member + 0x2A);
+    delay = rand_below(4, mt19937_next()) + 2;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x2000, 0);
-        ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        ((struct PoseMode *)obj->pose)->mode = 0; /* loop the wait animation */
+        obj->timer = delay;
         obj->state = timer_start_jump_d;
     }
     else
     {
         obj->state = charge_release_start_jump_arc_d;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x006E1E40) - 0x58) / 2;
+    sqrt_fn = (s32 (*)(u32))gMathRoutines; /* iwram_sqrt's copy */
+    obj->dh = (sqrt_fn(0x006E1E40) - 0x58) / 2;
     return 1;
 }
 
+/* Jump set-up for the party member in slot -2 (gParty entry 1, 0x3C bytes each; called by
+ * dispatch_slot_random_pause_jump): animation gAnim374, copies the member's u16 at +0x2A into
+ * data->slotValue and waits a random 5..15 frames in action 4 (timer_start_jump_c) before the
+ * jump (charge_release_start_jump_arc_c, speed -0x48). dh = (sqrt(0x5A1440) - 0x48) / 2. */
 u32 random_pause_jump_d(struct Actor *obj)
 {
-    s32 timer;
-    u8 *base;
+    s32 delay;
+    u8 *member;
     struct Data *data;
-    s32 (*fn)(u32);
+    s32 (*sqrt_fn)(u32);
 
     obj->anim = gAnim374;
-    base = gParty;
-    base += 0x3C;
+    member = gParty;
+    member += 0x3C;
     obj->unk77_6 = 0;
     obj->unk77_5 = 0;
     data = obj->data;
-    data->slotValue = *(u16 *)(base + 0x2A);
-    timer = rand_below(11, mt19937_next()) + 5;
-    if (timer != 0)
+    data->slotValue = *(u16 *)(member + 0x2A);
+    delay = rand_below(11, mt19937_next()) + 5;
+    if (delay != 0)
     {
         sprite_set_action(obj, 4, 0x204D, 0);
-        ((struct PoseMode *)obj->pose)->mode = 0;
-        obj->timer = timer;
+        ((struct PoseMode *)obj->pose)->mode = 0; /* loop the wait animation */
+        obj->timer = delay;
         obj->state = timer_start_jump_c;
     }
     else
     {
         obj->state = charge_release_start_jump_arc_c;
     }
-    fn = (s32 (*)(u32))gMathRoutines;
-    obj->dh = (fn(0x005A1440) - 0x48) / 2;
+    sqrt_fn = (s32 (*)(u32))gMathRoutines; /* iwram_sqrt's copy */
+    obj->dh = (sqrt_fn(0x005A1440) - 0x48) / 2;
     return 1;
 }
 

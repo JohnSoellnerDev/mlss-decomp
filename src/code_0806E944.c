@@ -61,14 +61,14 @@ struct ActorObj
     s32 targetY;
     s32 phase;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 side;
-    u16 timer;
-    s16 dx;
-    s16 dy;
-    s16 dh;
+    s32 param9C;  /* jump arc: (negative) curvature of the height parabola */
+    s32 paramA0;  /* jump arc: flight time in frames */
+    s32 paramA4;  /* jump arc: x distance to cover (24.8) */
+    s32 side;     /* jump arc: y distance to cover (24.8) */
+    u16 timer;    /* jump arc: frames flown */
+    s16 dx;       /* jump arc: start x in pixels */
+    s16 dy;       /* jump arc: start y in pixels */
+    s16 dh;       /* jump arc: start height in pixels */
 };
 
 struct ActorModeBits
@@ -147,18 +147,21 @@ struct ActorCands
 
 extern struct ActorCands *gWorld;
 
+/* One frame of the jump set up by obj_arc_start: x and y move linearly from the start over
+ * paramA0 frames, the height follows a parabola peaking 0x28 px above the start at half time.
+ * obj->kind (the shadow/second part) follows. Past the peak, landing (height <= 0) ends the jump. */
 void obj_arc_step(struct ActorObj *obj)
 {
     s32 x;
     s32 h;
-    s32 t;
+    s32 peakH;
 
     x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posX = x;
     obj->posY = (obj->side * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
     h = (((s16)obj->timer - obj->paramA0 / 2) * ((s16)obj->timer - obj->paramA0 / 2)) * obj->param9C;
-    t = (obj->dh << 8) + 0x2800;
-    h += t;
+    peakH = (obj->dh << 8) + 0x2800;
+    h += peakH;
     obj->posH = h;
     obj->kind->posX = x;
     obj->kind->posY = obj->posY;
@@ -173,24 +176,31 @@ void obj_arc_step(struct ActorObj *obj)
     }
 }
 
+/*
+ * Launches obj on a parabolic jump from where it stands to its part's target: spawns the take-off
+ * effect, picks the jump animation (param9C chooses the variant), copies the owner's layer bytes,
+ * then sets up obj_arc_step. dx/dy/dh hold the start in pixels, paramA4/side the distance to cover,
+ * paramA0 the flight time (one frame per 2.5 pixels) and param9C the (negative) curvature that makes
+ * the arc peak 0x28 pixels above the start at half time.
+ */
 void obj_arc_start(struct ActorObj *obj)
 {
-    u8 *flags;
+    u8 *kindFlags;
     struct ActorPart *part;
-    s32 *p9c;
-    s32 *phase;
+    s32 *curvature;
+    s32 *targetH;
     s32 *targetX;
     s32 *targetY;
-    s32 dist;
-    s32 half;
-    s32 hh;
-    s32 ax;
-    s32 ay;
+    s32 duration;
+    s32 halfTime;
+    s32 steepness;
+    s32 spanX;
+    s32 spanY;
 
     effect_spawn_at(0x1FCF, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100 - 0x30, obj);
     sprite_entry_update(obj->kind->pose);
-    flags = &obj->kind->flags;
-    *flags |= 8;
+    kindFlags = &obj->kind->flags;
+    *kindFlags |= 8;
     if (obj->param9C == 0)
     {
         sprite_set_action(obj, 0, 0x4112, 0);
@@ -208,35 +218,40 @@ void obj_arc_start(struct ActorObj *obj)
     obj->kind->byte74 = obj->owner->byte74;
     obj->byte75 = obj->owner->byte75;
     obj->kind->byte75 = obj->owner->byte75 + 1;
+
+    /* start 0x30 pixels lower, but not below the ground */
     obj->posH -= 0x3000;
     if (obj->posH < 0)
     {
         obj->posH = 0;
     }
+
     targetX = &obj->targetX;
     part = obj->part;
     *targetX = part->targetX;
     targetY = &obj->targetY;
     *targetY = part->targetY;
-    phase = &obj->phase;
-    *phase = part->targetH;
+    targetH = &obj->phase;
+    *targetH = part->targetH;
+
     obj->dx = obj->posX / 0x100;
     obj->dy = obj->posY / 0x100;
     obj->dh = obj->posH / 0x100;
-    ax = *targetX - (obj->dx << 8);
-    ay = *targetY - (obj->dy << 8);
-    dist = ((s32 (*)(s32))gMathRoutines)(ax * ax + ay * ay) / 0x280;
-    half = dist / 2;
-    hh = 0x2800 / (half * half);
-    if (hh == 1)
+    spanX = *targetX - (obj->dx << 8);
+    spanY = *targetY - (obj->dy << 8);
+    /* gMathRoutines starts with the integer square root */
+    duration = ((s32 (*)(s32))gMathRoutines)(spanX * spanX + spanY * spanY) / 0x280;
+    halfTime = duration / 2;
+    steepness = 0x2800 / (halfTime * halfTime);
+    if (steepness == 1)
     {
-        hh = 2;
+        steepness = 2;
     }
-    p9c = &obj->param9C;
-    *p9c = -hh;
-    obj->paramA0 = dist;
-    obj->paramA4 = ax;
-    obj->side = ay;
+    curvature = &obj->param9C;
+    *curvature = -steepness;
+    obj->paramA0 = duration;
+    obj->paramA4 = spanX;
+    obj->side = spanY;
     obj->timer = 0;
     obj->state = obj_arc_step;
 }
@@ -269,9 +284,16 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
+/*
+ * Once obj's pose is done and its timer has run out: takes obj off the active list, hands the
+ * owner back to actor_side_walk_idle (after its handler68), plays action 6, spawns effect 0x1EC0 and
+ * a companion object 0x4111 (kept in obj->kind) at the owner's part, which copies obj's layer bytes
+ * and flag bits and removes itself when its pose ends. obj then moves to 0x40 pixels right of the
+ * part and waits in obj_idle_when_active.
+ */
 void obj_wait_then_spawn_child(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *companion;
 
     if (obj->pose->flags & 8)
     {
@@ -288,20 +310,24 @@ void obj_wait_then_spawn_child(struct ActorObj *obj)
         sprite_set_action(obj, 6, 0, 0);
         effect_spawn_at(0x1EC0, obj->owner->part->targetX / 0x100, obj->owner->part->targetY / 0x100,
                         obj->owner->part->targetH / 0x100, obj);
-        child = obj_spawn(obj->part, 0x4111, obj->owner->part->targetX / 0x100, obj->owner->part->targetY / 0x100,
-                          obj->owner->part->targetH / 0x100, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        obj->kind = child;
-        child->byte74 = obj->byte74;
-        child->byte75 = obj->byte75;
-        ((struct ActorFlagBits *)&child->flags)->bit0 = 1;
-        child->state = obj_finish_if_active;
-        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
-        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
-        child->handler68 = on_arrive;
-        child->unk6C = obj->unk6C;
-        child->owner = obj->owner;
-        gUnk_03000E3C = effect_from_table_obj(child, 0x173E);
-        child->handler60 = 0;
+        /* pose->unk11 bit 6 is passed on as the spawn's facing */
+        companion = obj_spawn(obj->part, 0x4111, obj->owner->part->targetX / 0x100,
+                              obj->owner->part->targetY / 0x100, obj->owner->part->targetH / 0x100,
+                              ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->kind = companion;
+        companion->byte74 = obj->byte74;
+        companion->byte75 = obj->byte75;
+        ((struct ActorFlagBits *)&companion->flags)->bit0 = 1;
+        companion->state = obj_finish_if_active;
+        ((struct ObjFlags77 *)companion)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)companion)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        companion->handler68 = on_arrive;
+        companion->unk6C = obj->unk6C;
+        companion->owner = obj->owner;
+        gUnk_03000E3C = effect_from_table_obj(companion, 0x173E);
+        companion->handler60 = 0;
+
+        /* walk to 0x40 pixels right of the owner's part */
         obj->targetX = obj->owner->part->targetX + 0x4000;
         obj->targetY = obj->owner->part->targetY;
         obj->phase = obj->baseH;

@@ -9,6 +9,8 @@ struct HeroSprite
     u8 flags;
 };
 
+#define HERO_SPRITE_ANIM_DONE 8 // HeroSprite.flags: the current animation has finished
+
 struct SpriteMirrorBits
 {
     u8 unk0 : 6;
@@ -55,11 +57,11 @@ struct HeroData
     s16 slot;
     u8 filler0EE[0xF4 - 0xEE];
     u8 effect;
-    s16 cursorX;
-    s16 cursorY;
+    s16 cursorX;  // HP
+    s16 cursorY;  // max HP
     u8 filler0FA[0xFC - 0xFA];
-    s16 cursorX2;
-    s16 cursorY2;
+    s16 cursorX2; // SP
+    s16 cursorY2; // max SP
     u8 filler100[0x110 - 0x100];
     u8 partBits;
     u8 filler111[0x114 - 0x111];
@@ -143,16 +145,46 @@ struct Hero
     struct HeroBody body;
 };
 
+// The item being used in battle.
 struct ActionEntry
 {
-    u8 type;
+    u8 type;   // ITEM_TYPE_*
     u8 filler1;
     u8 kind;
     u8 filler3[0x05 - 0x03];
     u8 switchByte;
     u8 filler6[0x08 - 0x06];
-    u16 menuKind;
+    u16 menuKind; // amount: points, or one of AMOUNT_* (see menu_cursor_pos)
 };
+
+// ActionEntry.type
+#define ITEM_TYPE_HP      1  // restores HP
+#define ITEM_TYPE_CURE    2  // cures every status ailment
+#define ITEM_TYPE_SP      11 // restores SP
+#define ITEM_TYPE_HP_SP   12 // restores both
+#define ITEM_TYPE_BOOST_A 13 // raises a stat for a while (anim_set_motion_a)
+#define ITEM_TYPE_BOOST_B 14 // raises a stat for a while (anim_set_motion_b)
+
+// menu_cursor_pos(points, max, amount) adds amount to points, at most max, or for these amounts
+// sets them to a part of max (rounded up).
+#define AMOUNT_FULL    0xFFFF
+#define AMOUNT_HALF    0xFFFE
+#define AMOUNT_QUARTER 0xFFFD
+
+// HeroData.slot of the brothers: ~ their index (in World.list and the byte table at World + 0x34E)
+#define SLOT_HERO_A -1
+#define SLOT_HERO_B -2
+
+// HeroBody.mode bits 1-2
+#define HERO_MODE_MASK     6
+#define HERO_MODE_ON_FIELD (1 << 1) // standing in battle, can be targeted
+
+// HeroData.input: statuses that keep a brother from reacting
+#define HERO_CANT_ACT 0x300
+
+// sprite_set_action animation sets of the brothers
+#define ANIM_SET_HERO_A 0x2022
+#define ANIM_SET_HERO_B 0x2051
 
 struct PartBitsFlags
 {
@@ -194,6 +226,8 @@ struct World
     u8 input;
     u8 filler2C1[0x2DC - 0x2C1];
     struct ActionEntry *curEntry;
+    u8 filler2E0[0x34E - 0x2E0];
+    u8 heroEffect[2]; // per hero (~HeroData.slot): index into gEffectCodeTable
 };
 
 extern struct World *gWorld;
@@ -276,6 +310,10 @@ void visible_action_2000(struct HeroBody *body)
     }
 }
 
+/* Links the body to the partner that touched it (lookup_part sets body->partner first): flags the
+ * world as moving, runs the body's leave callback (keeping its partner and anim), puts it back on the
+ * object list with the partner's contact handlers, resets its jump, rate and side, and waits in
+ * partner_wait_after_connect. Returns 1. */
 u32 actor_init_linked(struct HeroBody *body)
 {
     struct HeroBody *partner;
@@ -316,14 +354,19 @@ u32 actor_init_linked(struct HeroBody *body)
     return 1;
 }
 
+// Picks a random partner among the world's six bodies: one in mode 4, not this body, and lower
+// than its candidateLimit (in px), each with the same chance (reservoir sampling). Heads to the
+// partner's target, or 100 px right of its own target when there is none, at the current rate,
+// which then grows by 0x4C up to 0x380. Starts action 0xA and waits 10 frames in partner_move_a.
 void pick_random_partner(struct HeroBody *body)
 {
     struct HeroBody *partner = 0;
     struct HeroBody *candidate;
     s32 count = 0;
     s32 slot;
-    s32 index;
+    s32 next;
 
+    /* two list slots per pass */
     for (slot = 0; slot < 6; slot += 2)
     {
         candidate = &gWorld->list[slot]->body;
@@ -331,6 +374,7 @@ void pick_random_partner(struct HeroBody *body)
         {
             if (candidate->posZ < ((s32)body->candidateLimit << 8))
             {
+                /* keep the count-th candidate with chance 1/count */
                 count++;
                 if (rand_below(count, mt19937_next()) == 0)
                 {
@@ -338,8 +382,8 @@ void pick_random_partner(struct HeroBody *body)
                 }
             }
         }
-        index = slot + 1;
-        candidate = &gWorld->list[index]->body;
+        next = slot + 1;
+        candidate = &gWorld->list[next]->body;
         if ((candidate->mode & 6) == 4 && candidate != body)
         {
             if (candidate->posZ < ((s32)body->candidateLimit << 8))
@@ -359,7 +403,7 @@ void pick_random_partner(struct HeroBody *body)
     }
     else
     {
-        place_targets(body, body->targetX / 0x100 + 0x64, body->targetY / 0x100, 0, -1);
+        place_targets(body, body->targetX / 0x100 + 100, body->targetY / 0x100, 0, -1);
     }
     set_motion_start(body, body->rate);
     body->rate += 0x4C;
@@ -373,17 +417,22 @@ void pick_random_partner(struct HeroBody *body)
     body->state = partner_move_a;
 }
 
+// Flies toward the partner chosen by pick_random_partner, leaving trail effect 0x1CF0
+// every 10 frames, and stops once it leaves the screen vertically. When it hits the
+// partner it shows the hit (effect 0x1D00) and bounces back toward hero A or B (switching
+// to the other hero when that one is in mode 2), 0x4C faster (up to 0x380) and mirrored,
+// then keeps flying in move_until_offscreen.
 void partner_move_a(struct HeroBody *body)
 {
-    struct HeroBody *hero_a;
-    struct HeroBody *hero_b;
+    struct HeroBody *heroA;
+    struct HeroBody *heroB;
     struct HeroBody *partner;
     struct World *world = gWorld;
-    s32 y;
-    u16 saved;
+    s32 screenY;
+    u16 savedC8;
 
-    hero_a = &world->heroA->body;
-    hero_b = &world->heroB->body;
+    heroA = &world->heroA->body;
+    heroB = &world->heroB->body;
     partner = body->partner;
 
     step_motion_d(body);
@@ -392,8 +441,8 @@ void partner_move_a(struct HeroBody *body)
         effect_spawn_at(0x1CF0, body->posX / 0x100, body->posY / 0x100, body->posZ / 0x100, body);
         body->timer = 10;
     }
-    y = body->sprite->screenY;
-    if (y + body->edgeTop <= 0 || y + body->edgeBottom > 0xEF)
+    screenY = body->sprite->screenY;
+    if (screenY + body->edgeTop <= 0 || screenY + body->edgeBottom > 0xEF)
     {
         body->state = 0;
         ((struct WorldFlagBits *)&gWorld->flags)->moving = 0;
@@ -403,25 +452,25 @@ void partner_move_a(struct HeroBody *body)
     {
         return;
     }
-    saved = body->unkC8;
+    savedC8 = body->unkC8;
     sprite_objects_obj_show_at(body, partner, (body->link << 1) + 6);
-    body->unkC8 = saved;
+    body->unkC8 = savedC8;
     effect_spawn_at(0x1D00, body->posX / 0x100, body->posY / 0x100, body->posZ / 0x100, body);
     if (body->side == 0)
     {
-        if ((hero_b->mode & 6) == 2)
+        if ((heroB->mode & 6) == 2)
         {
             body->side = 1;
         }
     }
     else
     {
-        if ((hero_a->mode & 6) == 2)
+        if ((heroA->mode & 6) == 2)
         {
             body->side = 0;
         }
     }
-    partner = (body->side == 0) ? hero_a : hero_b;
+    partner = (body->side == 0) ? heroA : heroB;
     body->partner = partner;
     if (partner != 0)
     {
@@ -790,17 +839,25 @@ NONMATCH("asm/code_0809583C/pair_choose_partner.s", void pair_choose_partner(str
 }
 END_NONMATCH
 
+/*
+ * Advances the body's state stack; when its step ends (flag 0x20), sends every child in its
+ * chain jumping onto the child's partner (or onto this body when that is the partner): a
+ * target 4 right and 8 below the partner's target plus its offset, an arc height from the
+ * partner's height (its Z offset for a hero's own body, else its frame box height) and its
+ * target Z. Each later child in the chain gets a larger handle value, then waits in
+ * partner_step_wait.
+ */
 void partner_chase_pair_step(struct HeroBody *body)
 {
     struct HeroBody *child;
     struct HeroBody *partner;
-    s32 i;
+    s32 order;
     s32 height;
 
     state_stack_advance_progress(body);
     if (body->flags79 & 0x20)
     {
-        i = 0;
+        order = 0;
         child = body->child;
         if (child != NULL)
         {
@@ -812,6 +869,7 @@ void partner_chase_pair_step(struct HeroBody *body)
                     if ((child->mode & 6) == 2 || (child->mode & 6) == 4)
                     {
                         place_targets(child, body->targetX / 0x100 + body->ofsX + 4, body->targetY / 0x100 + body->ofsY, body->targetZ / 0x100 + body->ofsZ - 8, -1);
+                        /* a hero's own body (embedded at Hero + 8) uses its Z offset */
                         if (body == (struct HeroBody *)((u8 *)body->data + 8))
                         {
                             height = body->ofsZ;
@@ -847,7 +905,8 @@ void partner_chase_pair_step(struct HeroBody *body)
                         set_motion_offsets(child, 0x480);
                     }
                 }
-                child->handle = MATH_ROUTINE(s32 (*)(s32, s32, s32), iwram_div)((s16)child->handle << 14, 0x4000 - i++ * (s16)child->handle * 18, 1);
+                /* handle / (1 - order * handle * 18 / 0x4000), 1.14 fixed point */
+                child->handle = MATH_ROUTINE(s32 (*)(s32, s32, s32), iwram_div)((s16)child->handle << 14, 0x4000 - order++ * (s16)child->handle * 18, 1);
                 child->state = partner_step_wait;
                 child = child->child;
             } while (child != NULL);
@@ -856,16 +915,19 @@ void partner_chase_pair_step(struct HeroBody *body)
     }
 }
 
+/* Moves the used item (body) on towards the brother it is for; when it arrives it plays sound
+   0x9F, its sprite is detached, the target (if he can react and is on the field) plays his
+   catch action 8, and the item goes on to take effect in state_partner_action8. */
 void partner_step_wait(struct HeroBody *body)
 {
     struct World **world = &gWorld;
     struct HeroBody *hero_a;
-    struct HeroBody *partner;
+    struct HeroBody *target;
     s32 action;
     s32 kind;
 
     hero_a = &(*world)->heroA->body;
-    partner = body->partner;
+    target = body->partner;
     step_motion(body);
     if (body->flags79 & 0x20)
     {
@@ -881,90 +943,94 @@ void partner_step_wait(struct HeroBody *body)
             break;
         }
         obj_detach_active(body->sprite);
-        if ((partner->data->input & 0x300) == 0 && (partner->mode & 6) == 2)
+        if ((target->data->input & HERO_CANT_ACT) == 0 && (target->mode & HERO_MODE_MASK) == HERO_MODE_ON_FIELD)
         {
-            action = 0x2051;
-            if (partner == hero_a)
+            action = ANIM_SET_HERO_B;
+            if (target == hero_a)
             {
-                action -= 0x2F;
+                action -= ANIM_SET_HERO_B - ANIM_SET_HERO_A;
             }
-            sprite_set_action(partner, 8, action, 0);
-            ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+            sprite_set_action(target, 8, action, 0);
+            ((struct SpriteModeBits *)&target->sprite->flags)->mode = 1;
         }
         body->state = state_partner_action8;
     }
 }
 
+/* Once the used item (body) reaches the brother it is for: the user stops his throwing pose, the
+   target cheers (if he can), the item's effect appears on him and the item takes effect: HP or
+   SP restored with the points popping up, ailments cured, or a stat raised for 200 frames. */
 void state_partner_action8(struct HeroBody *body)
 {
     struct HeroBody *hero_a = &gWorld->heroA->body;
-    struct HeroBody *partner = body->partner;
-    struct HeroBody *data_body;
+    struct HeroBody *target = body->partner;
+    struct HeroBody *user;
     s32 action;
-    s32 cursor;
+    s32 points;
     u16 effect;
     const u16 *effects;
     u8 *table;
     s32 index;
 
-    if (partner->sprite->flags & 8)
+    if (target->sprite->flags & 8)
     {
-        data_body = &((struct Hero *)body->data)->body;
-        if (((struct ActionModeBits *)&data_body->mode)->mode == 1 ||
-            ((struct ActionModeBits *)&data_body->mode)->mode == 2)
+        user = &((struct Hero *)body->data)->body;
+        if (((struct ActionModeBits *)&user->mode)->mode == 1 ||
+            ((struct ActionModeBits *)&user->mode)->mode == 2)
         {
-            sprite_set_action(data_body, -1, -1, 0);
-            ((struct SpriteModeBits *)&data_body->sprite->flags)->mode = 0;
+            sprite_set_action(user, -1, -1, 0);
+            ((struct SpriteModeBits *)&user->sprite->flags)->mode = 0;
         }
 
-        if ((partner->data->input & 0x300) == 0)
+        if ((target->data->input & 0x300) == 0)
         {
-            switch (gWorld->curEntry->type - 1)
+            switch (gWorld->curEntry->type)
             {
-            case 0:
-            case 10:
-            case 11:
-                if (partner->data->slot == -1)
+            case ITEM_TYPE_HP:
+            case ITEM_TYPE_SP:
+            case ITEM_TYPE_HP_SP:
+                if (target->data->slot == SLOT_HERO_A)
                 {
                     set_slot_value(0xEB, -1);
                 }
-                if (partner->data->slot == -2)
+                if (target->data->slot == SLOT_HERO_B)
                 {
                     set_slot_value(0xFD, -1);
                 }
-                if (((struct ActionModeBits *)&partner->mode)->mode == 1)
+                if (((struct ActionModeBits *)&target->mode)->mode == 1)
                 {
+                    // the same action in each brother's animation set
                     action = 0x2051;
-                    if (partner == hero_a)
+                    if (target == hero_a)
                     {
                         action -= 0x2F;
                     }
-                    sprite_set_action(partner, 0xB, action, 0);
-                    ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+                    sprite_set_action(target, 0xB, action, 0);
+                    ((struct SpriteModeBits *)&target->sprite->flags)->mode = 1;
                 }
                 break;
-            case 1:
-                if (partner->data->slot == -1)
+            case ITEM_TYPE_CURE:
+                if (target->data->slot == SLOT_HERO_A)
                 {
                     set_slot_value(0xEB, -1);
                 }
-                if (partner->data->slot == -2)
+                if (target->data->slot == SLOT_HERO_B)
                 {
                     set_slot_value(0xFD, -1);
                 }
                 break;
-            case 12:
-            case 13:
+            case ITEM_TYPE_BOOST_A:
+            case ITEM_TYPE_BOOST_B:
                 set_slot_value(0x9C, -1);
-                if (((struct ActionModeBits *)&partner->mode)->mode == 1)
+                if (((struct ActionModeBits *)&target->mode)->mode == 1)
                 {
                     action = 0x2051;
-                    if (partner == hero_a)
+                    if (target == hero_a)
                     {
                         action -= 0x2F;
                     }
-                    sprite_set_action(partner, 0xA, action, 0);
-                    ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
+                    sprite_set_action(target, 0xA, action, 0);
+                    ((struct SpriteModeBits *)&target->sprite->flags)->mode = 1;
                 }
                 break;
             default:
@@ -976,57 +1042,57 @@ void state_partner_action8(struct HeroBody *body)
         index = ~gWorld->parts->slot;
         table = (u8 *)gWorld + 0x34E;
         effect = effects[table[index]];
-        effect_spawn_at(effect, partner->posX / 0x100, partner->posY / 0x100 + 2,
-                        partner->posZ / 0x100 - 2, partner);
+        effect_spawn_at(effect, target->posX / 0x100, target->posY / 0x100 + 2,
+                        target->posZ / 0x100 - 2, target);
 
-        switch (gWorld->curEntry->type - 1)
+        switch (gWorld->curEntry->type)
         {
-        case 0:
-            cursor = menu_cursor_pos(partner->data->cursorX, partner->data->cursorY,
+        case ITEM_TYPE_HP:
+            points = menu_cursor_pos(target->data->cursorX, target->data->cursorY,
                                      gWorld->curEntry->menuKind);
-            popup_digit_spawn(cursor - partner->data->cursorX, partner->targetX / 0x100,
-                              partner->targetY / 0x100, (s8)partner->ofsZ, 1);
-            partner->data->cursorX = cursor;
+            popup_digit_spawn(points - target->data->cursorX, target->targetX / 0x100,
+                              target->targetY / 0x100, (s8)target->ofsZ, 1);
+            target->data->cursorX = points;
             break;
-        case 1:
-            anim_stop_mode(partner->data);
-            anim_bit100_release(partner->data);
-            anim_end_mode(partner->data);
-            anim_bit8_scale10a(partner->data);
-            anim_bit20_scale10c(partner->data);
-            anim_bit80_scale11c(partner->data);
-            anim_clear_high_bits(partner->data);
+        case ITEM_TYPE_CURE:
+            anim_stop_mode(target->data);
+            anim_bit100_release(target->data);
+            anim_end_mode(target->data);
+            anim_bit8_scale10a(target->data);
+            anim_bit20_scale10c(target->data);
+            anim_bit80_scale11c(target->data);
+            anim_clear_high_bits(target->data);
             break;
-        case 10:
-            cursor = menu_cursor_pos(partner->data->cursorX2, partner->data->cursorY2,
+        case ITEM_TYPE_SP:
+            points = menu_cursor_pos(target->data->cursorX2, target->data->cursorY2,
                                      gWorld->curEntry->menuKind);
-            popup_digit_spawn(cursor - partner->data->cursorX2, partner->targetX / 0x100,
-                              partner->targetY / 0x100, (s8)partner->ofsZ, 1);
-            partner->data->cursorX2 = cursor;
+            popup_digit_spawn(points - target->data->cursorX2, target->targetX / 0x100,
+                              target->targetY / 0x100, (s8)target->ofsZ, 1);
+            target->data->cursorX2 = points;
             break;
-        case 11:
-            cursor = menu_cursor_pos(partner->data->cursorX2, partner->data->cursorY2,
+        case ITEM_TYPE_HP_SP:
+            points = menu_cursor_pos(target->data->cursorX2, target->data->cursorY2,
                                      gWorld->curEntry->menuKind);
-            popup_digit_spawn(cursor - partner->data->cursorX2, partner->targetX / 0x100 - 0xC,
-                              partner->targetY / 0x100 - 4, (s8)partner->ofsZ, 1);
-            partner->data->cursorX2 = cursor;
-            cursor = menu_cursor_pos(partner->data->cursorX, partner->data->cursorY,
+            popup_digit_spawn(points - target->data->cursorX2, target->targetX / 0x100 - 0xC,
+                              target->targetY / 0x100 - 4, (s8)target->ofsZ, 1);
+            target->data->cursorX2 = points;
+            points = menu_cursor_pos(target->data->cursorX, target->data->cursorY,
                                      gWorld->curEntry->menuKind);
-            popup_digit_spawn(cursor - partner->data->cursorX, partner->targetX / 0x100 + 0xC,
-                              partner->targetY / 0x100 + 4, (s8)partner->ofsZ, 1);
-            partner->data->cursorX = cursor;
+            popup_digit_spawn(points - target->data->cursorX, target->targetX / 0x100 + 0xC,
+                              target->targetY / 0x100 + 4, (s8)target->ofsZ, 1);
+            target->data->cursorX = points;
             break;
-        case 12:
-            effect_spawn_at(0xCB, partner->posX / 0x100, partner->posY / 0x100 + 2,
-                            partner->posZ / 0x100 - 2, partner);
-            anim_set_motion_a(partner->data, (u16)(gWorld->curEntry->menuKind + 0x100), 0xC8);
-            anim_bit400_step(partner->data, 0xC8);
+        case ITEM_TYPE_BOOST_A:
+            effect_spawn_at(0xCB, target->posX / 0x100, target->posY / 0x100 + 2,
+                            target->posZ / 0x100 - 2, target);
+            anim_set_motion_a(target->data, (u16)(gWorld->curEntry->menuKind + 0x100), 200);
+            anim_bit400_step(target->data, 200);
             break;
-        case 13:
-            effect_spawn_at(0xCB, partner->posX / 0x100, partner->posY / 0x100 + 2,
-                            partner->posZ / 0x100 - 2, partner);
-            anim_set_motion_b(partner->data, (u16)(gWorld->curEntry->menuKind + 0x100), 0xC8);
-            anim_chance_start(partner->data, 0xC8);
+        case ITEM_TYPE_BOOST_B:
+            effect_spawn_at(0xCB, target->posX / 0x100, target->posY / 0x100 + 2,
+                            target->posZ / 0x100 - 2, target);
+            anim_set_motion_b(target->data, (u16)(gWorld->curEntry->menuKind + 0x100), 200);
+            anim_chance_start(target->data, 200);
             break;
         default:
             obj_release(body);
@@ -1036,18 +1102,22 @@ void state_partner_action8(struct HeroBody *body)
     }
 }
 
+/* Starts a hero's jump over to its partner's side: re-poses it (pose 3) if it is on the field, jumps
+   it (speed 0x400, 0x28 px high) to (0x36, 0x5C) px when the partner is hero A, else to (0x28, 0x7C),
+   plays the jump sound 0x2B and waits for the landing in step_motion_arrive. */
 void hero_start_move(struct HeroBody *body)
 {
     struct HeroBody *hero_a = &gWorld->heroA->body;
     struct HeroBody *partner = body->partner;
     s32 action;
 
-    if ((body->mode & 6) == 2)
+    if ((body->mode & HERO_MODE_MASK) == HERO_MODE_ON_FIELD)
     {
-        action = 0x2068;
+        // the same action in each brother's animation set
+        action = ANIM_SET_HERO_B + 0x17;
         if (body == hero_a)
         {
-            action -= 0x2F;
+            action -= ANIM_SET_HERO_B - ANIM_SET_HERO_A;
         }
         sprite_set_action(body, 3, action, 0);
         ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
@@ -1086,32 +1156,41 @@ void step_motion_arrive(struct HeroBody *body)
     }
 }
 
-void child_visible_check(struct HeroBody *body)
+/* Once the item's (child's) appearing animation has finished: plays sound 0x9F, gives the user
+   (body) its pose 5 if it is on the field, the brother it is for (partner) its pose 1 and the item
+   its flight animation, then the item flies to him (child_launch) and the user goes on to
+   pose_switch. */
+void child_visible_check(struct HeroBody *user)
 {
     struct HeroBody *hero_a = &gWorld->heroA->body;
     s32 action;
 
-    if (body->child->sprite->flags & 8)
+    if (user->child->sprite->flags & HERO_SPRITE_ANIM_DONE)
     {
         set_slot_value(0x9F, -1);
-        if ((body->mode & 6) == 2)
+        if ((user->mode & HERO_MODE_MASK) == HERO_MODE_ON_FIELD)
         {
-            action = 0x2052;
-            if (body == hero_a)
+            // the same action in each brother's animation set
+            action = ANIM_SET_HERO_B + 1;
+            if (user == hero_a)
             {
-                action -= 0x2F;
+                action -= ANIM_SET_HERO_B - ANIM_SET_HERO_A;
             }
-            sprite_set_action(body, 5, action, 0);
-            ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
+            sprite_set_action(user, 5, action, 0);
+            ((struct SpriteModeBits *)&user->sprite->flags)->mode = 1;
         }
-        sprite_set_action(body->partner, 1, body == hero_a ? 0x2023 + 0x2F : 0x2023, 0);
-        ((struct SpriteModeBits *)&body->partner->sprite->flags)->mode = 1;
-        sprite_set_action(body->child, 1, 0x208C, 0);
-        body->child->state = child_launch;
-        body->state = pose_switch;
+        // the partner is the other brother: it uses the other animation set
+        sprite_set_action(user->partner, 1, user == hero_a ? ANIM_SET_HERO_B + 1 : ANIM_SET_HERO_A + 1, 0);
+        ((struct SpriteModeBits *)&user->partner->sprite->flags)->mode = 1;
+        sprite_set_action(user->child, 1, 0x208C, 0);
+        user->child->state = child_launch;
+        user->state = pose_switch;
     }
 }
 
+/* Once the hero's animation ends: plays sound 0x2B, re-poses it (pose 6) if it is in mode 2, and
+   swaps the two heroes' spots: hero A starts at (0x28, 0x7C) px and moves to (0x36, 0x5C), the other
+   hero the other way round. Then it waits for the move to end (wait_motion_end). */
 void pose_switch(struct HeroBody *body)
 {
     struct HeroBody *hero_a = &gWorld->heroA->body;
@@ -1140,52 +1219,56 @@ void pose_switch(struct HeroBody *body)
     }
 }
 
-void child_launch(struct HeroBody *body)
+/* State of the item object thrown at a hero (set by child_visible_check): once its animation
+   ends, plays the acting hero's effect on the target, poses the target (pose 2), removes the
+   item and has the target wait 0x18 frames before the item takes effect (menu_cursor_follow). */
+void child_launch(struct HeroBody *item)
 {
     struct World *world = gWorld;
     struct HeroBody *hero_a = &world->heroA->body;
-    struct HeroBody *partner = body->partner;
+    struct HeroBody *target = item->partner;
     s32 action;
-    s32 index;
+    s32 heroIndex;
     const u16 *effects;
-    u8 *table;
+    u8 *heroEffect;
     u16 effect;
 
-    if (body->sprite->flags & 8)
+    if (item->sprite->flags & 8)
     {
         effects = gEffectCodeTable;
-        index = ~world->parts->slot;
-        table = (u8 *)world + 0x34E;
-        effect = effects[table[index]];
-        effect_spawn_at(effect, partner->posX / 0x100, partner->posY / 0x100 + 2, partner->posZ / 0x100 - 2, partner);
+        heroIndex = ~world->parts->slot;
+        heroEffect = world->heroEffect;
+        effect = effects[heroEffect[heroIndex]];
+        effect_spawn_at(effect, target->posX / 0x100, target->posY / 0x100 + 2, target->posZ / 0x100 - 2, target);
         action = 0x2052;
-        if (partner == hero_a)
+        if (target == hero_a)
         {
             action -= 0x2F;
         }
-        sprite_set_action(partner, 2, action, 0);
-        ((struct SpriteModeBits *)&partner->sprite->flags)->mode = 1;
-        obj_release(body);
-        partner->step = 0x18;
-        partner->state = menu_cursor_follow;
+        sprite_set_action(target, 2, action, 0);
+        ((struct SpriteModeBits *)&target->sprite->flags)->mode = 1;
+        obj_release(item);
+        target->step = 0x18;
+        target->state = menu_cursor_follow;
     }
 }
 
 s32 menu_cursor_pos(s32 x, s32 y, u32 n);
+// After the hero's wait (step) runs out: applies the item in use to its HP (with AMOUNT_FULL, to SP as
+// well), puts its battle part back in its slot (keeping its home spot and partBits bit 7), plays
+// sound 0x2B and sends the hero back to its place in the line-up (land_at_target_height).
 void menu_cursor_follow(struct HeroBody *body)
 {
-    s16 *cursor;
+    s16 *points;
     struct HeroBody *hero_a;
     struct HeroData *data;
-    struct ActionEntry *entry;
-    s32 argX;
-    s32 argY;
-    s32 bit7;
-    s32 limitX;
-    s32 height;
-    s32 ground;
-    s32 place_x;
-    s32 place_y;
+    struct ActionEntry *item;
+    s32 savedBit7;
+    s32 homeX;
+    s32 homeY;
+    s32 homeH;
+    s32 placeX;
+    s32 placeY;
 
     hero_a = &gWorld->heroA->body;
     if (body->step > 0)
@@ -1194,36 +1277,38 @@ void menu_cursor_follow(struct HeroBody *body)
         return;
     }
     data = body->data;
-    entry = gWorld->curEntry;
-    if (entry->menuKind == 0xFFFF)
+    item = gWorld->curEntry;
+    if (item->menuKind == AMOUNT_FULL)
     {
-        cursor = &data->cursorX;
-        *cursor = menu_cursor_pos(*cursor, data->cursorY, entry->menuKind);
-        cursor = &data->cursorX2;
-        *cursor = menu_cursor_pos(*cursor, data->cursorY2, gWorld->curEntry->menuKind);
+        points = &data->cursorX;
+        *points = menu_cursor_pos(*points, data->cursorY, item->menuKind);
+        points = &data->cursorX2;
+        *points = menu_cursor_pos(*points, data->cursorY2, gWorld->curEntry->menuKind);
     }
     else
     {
-        cursor = &data->cursorX;
-        *cursor = menu_cursor_pos(*cursor, data->cursorY, entry->menuKind);
+        points = &data->cursorX;
+        *points = menu_cursor_pos(*points, data->cursorY, item->menuKind);
     }
 
-    bit7 = data->partBits >> 7;
-    limitX = data->targetX;
-    height = data->targetY;
-    ground = data->targetH;
+    // place_part_in_slot resets these, so keep them across the call.
+    savedBit7 = data->partBits >> 7;
+    homeX = data->targetX;
+    homeY = data->targetY;
+    homeH = data->targetH;
     place_part_in_slot(data->effect, data->slot, body->targetX / 0x100, body->targetY / 0x100, body->targetZ / 0x100, 0, 1);
-    data->targetX = limitX;
-    data->targetY = height;
-    data->targetH = ground;
-    ((struct PartBitsFlags *)&data->partBits)->bit7 = bit7;
+    data->targetX = homeX;
+    data->targetY = homeY;
+    data->targetH = homeH;
+    ((struct PartBitsFlags *)&data->partBits)->bit7 = savedBit7;
+
     ((struct WorldInputBits *)&gWorld->input)->lo2 = 0;
     set_slot_value(0x2B, -1);
     sprite_set_action(body, 5, -1, 0);
     ((struct SpriteModeBits *)&body->sprite->flags)->mode = 1;
-    place_x = (body == hero_a) ? 0x36 : 0x28;
-    place_y = (body == hero_a) ? 0x5C : 0x7C;
-    place_targets(body, place_x, place_y, 0, 0x100);
+    placeX = (body == hero_a) ? 0x36 : 0x28;
+    placeY = (body == hero_a) ? 0x5C : 0x7C;
+    place_targets(body, placeX, placeY, 0, 0x100);
     set_step_and_offsets(body, 0x300, 0x20);
     body->state = land_at_target_height;
 }

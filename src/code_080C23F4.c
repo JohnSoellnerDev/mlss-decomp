@@ -151,6 +151,12 @@ struct KeyState
     u16 pressed;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroBody.flags bit set once the body's current motion has finished. */
+#define HERO_FLAG_MOTION_DONE 0x20
+
 extern struct World *gWorld;
 extern u8 *gParty;
 extern struct KeyState gSys;
@@ -328,13 +334,17 @@ static inline void frames_full(struct HeroBody *a, struct HeroBody *b, struct He
     }
 }
 
-NONMATCH("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_finish(struct HeroBody *body))
+/* Steps hero A's motion. When it passes the point wideHi / wideLo of the way (0x4000 = all of it),
+   hero A starts action 6; when the motion has finished, action 8 and effect 0x33 at its position,
+   and the state goes on with hero_a_sprite_active_anim8_to_2520. */
+void hero_a_wide_step_finish(struct HeroBody *body)
 {
     struct Hero *hero_a;
     struct HeroBody *body_a;
     struct HeroData *data;
-    s32 stepDone;
-    s32 quotient;
+    s32 passed;
+    register s32 point asm("r2");
+    s32 progress;
     u32 lo;
     u32 hi;
 
@@ -343,18 +353,20 @@ NONMATCH("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_fi
     step_motion(body_a);
     lo = body_a->wideLo;
     hi = body_a->wideHi;
-    quotient = MATH_ROUTINE(s32 (*)(u32, u32), iwram_div)(hi << 14, lo);
-    if (body_a->step > quotient)
-        stepDone = 0;
-    else
+    point = MATH_ROUTINE(s32 (*)(u32, u32), iwram_div)(hi << 14, lo);
+    /* this frame's step went from at most point to at least point */
+    if (body_a->step <= point)
     {
-        stepDone = 1;
-        if (body_a->progress < quotient)
-            stepDone = 0;
+        progress = body_a->progress;
+        passed = 1;
+        if (progress >= point)
+            goto done;
     }
-    if (stepDone)
+    passed = 0;
+done:
+    if (passed)
     {
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             data = body_a->data;
             if (data->poseIndex == -1)
@@ -364,9 +376,9 @@ NONMATCH("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_fi
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
         }
     }
-    if ((body_a->flags & 0x20) != 0)
+    if ((body_a->flags & HERO_FLAG_MOTION_DONE) != 0)
     {
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             sprite_set_action(body_a, 8, 0x2000, 0);
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
@@ -375,8 +387,11 @@ NONMATCH("asm/code_080C23F4/hero_a_wide_step_finish.s", void hero_a_wide_step_fi
         body->state = hero_a_sprite_active_anim8_to_2520;
     }
 }
-END_NONMATCH
 
+// State callback (body is unused): once hero A's sprite has flag 8 set, both heroes (A first, each
+// only in body mode 2 or 4) are put at their data's target (8.8 fixed point), start moving at
+// speed 0x400, take the standing action (0x2002 unposed, 0x204F posed) facing along their span,
+// and hand over to finish_rebuild_checked.
 void hero_pair_place_and_finish(struct HeroBody *body)
 {
     struct Hero *hero_a;
@@ -399,6 +414,7 @@ void hero_pair_place_and_finish(struct HeroBody *body)
     body_b = &hero_b->body;
     if ((body_a->sprite->flags & 8) != 0)
     {
+        // Hero A: place at the target and start moving.
         if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
         {
             data = body_a->data;
@@ -417,6 +433,7 @@ void hero_pair_place_and_finish(struct HeroBody *body)
             place_targets(body_a, x, y, h, -1);
             set_motion_start(body_a, 0x400);
         }
+        // Standing action, mirrored when span.a >= span.b.
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             if (body_a->data->poseIndex == -1)
@@ -438,6 +455,8 @@ void hero_pair_place_and_finish(struct HeroBody *body)
             body_a->state = 0;
             enter_finish_rebuild(body_a);
         }
+
+        // Hero B: the same.
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             data = body_b->data;
@@ -480,6 +499,8 @@ void hero_pair_place_and_finish(struct HeroBody *body)
     }
 }
 
+/* Hero B (if it is active on the field) takes action 2 (0x2063) with sprite mode 1 and starts a new
+   progress over 2 frames (rate 0x4000 / 2); the state goes on with hero_b_active_set_a_step_rate. */
 void hero_b_set_step_rate_and_release(struct HeroBody *body)
 {
     struct Hero *hero_b;
@@ -487,12 +508,12 @@ void hero_b_set_step_rate_and_release(struct HeroBody *body)
 
     hero_b = gWorld->heroB;
     body_b = &hero_b->body;
-    if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(hero_b->body.mode))
     {
         sprite_set_action(body_b, 2, 0x2063, 0);
         ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
     }
-    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    if (HERO_MODE_ACTIVE(body_b->mode))
     {
         body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 2);
         body_b->progress = 0;
@@ -501,6 +522,9 @@ void hero_b_set_step_rate_and_release(struct HeroBody *body)
     body->state = hero_b_active_set_a_step_rate;
 }
 
+/* Steps hero B's progress; once it has finished, sets slot 0x7C (set_slot_value), restarts an
+   active hero A's progress over 24 frames (rate 0x4000 / 0x18), keeps the low 12 bits of A's
+   timer and goes on with hero_a_step_c2850. */
 void hero_b_active_set_a_step_rate(struct HeroBody *body)
 {
     struct Hero *hero_a;
@@ -513,10 +537,10 @@ void hero_b_active_set_a_step_rate(struct HeroBody *body)
     hero_b = gWorld->heroB;
     body_b = &hero_b->body;
     state_stack_advance_progress(body_b);
-    if ((hero_b->body.flags & 0x20) != 0)
+    if ((hero_b->body.flags & HERO_FLAG_MOTION_DONE) != 0)
     {
         set_slot_value(0x7C, -1);
-        if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_a->body.mode))
         {
             body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x18);
             body_a->progress = 0;

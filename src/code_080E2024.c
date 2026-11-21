@@ -119,63 +119,50 @@ void sprite_set_action(void *obj, u32 a, u32 b, u32 c);
 void effect_spawn_at(u16 cmd, s16 b, s16 c, s16 d, void *owner);
 void release_or_update_rec(struct StreamObj *obj);
 
-NONMATCH("asm/code_080E2024/fall_and_bounce.s", void fall_and_bounce(struct PosObj *obj, struct FallParams *params))
+void fall_and_bounce(struct PosObj *obj, struct FallParams *params)
 {
     s32 y;
-    u16 vy;
-    s32 limit;
-    s32 reversed;
+    s32 vy;
+    u16 limit;
 
-    obj->x = obj->x + obj->vx;
+    obj->x += obj->vx;
     y = obj->y + obj->vy;
     obj->y = y;
-    obj->z = obj->z + obj->vz;
-    vy = params->gravity + (u16)obj->vy;
+    obj->z += obj->vz;
+    {
+        register u32 gravity asm("r0") = params->gravity;
+        vy = gravity + (u16)obj->vy;
+    }
     obj->vy = vy;
-    if (y < 0)
+    if (y >= 0)
     {
-        return;
-    }
-    limit = params->limit;
-    if ((s16)vy < params->limit)
-    {
-        obj->bounce = 0;
-        return;
-    }
-    reversed = -obj->vy;
-    reversed = reversed * 3;
-    if (reversed < 0)
-    {
-        reversed += 3;
-    }
-    reversed >>= 2;
-    obj->vy = limit + reversed;
-    obj->y = 0;
-}
-END_NONMATCH
-
-NONMATCH("asm/code_080E2024/advance_z.s", void advance_z(struct PosObj *obj, struct FallParams *params))
-{
-    s32 z;
-    s32 vz;
-    vz = obj->vz;
-    z = obj->z;
-    z += vz;
-    obj->z = z;
-    if (vz < 0)
-    {
-        if (z >= -32768)
+        s32 speed = (s16)vy;
+        limit = params->limit;
+        if (speed < params->limit)
         {
-            return;
+            obj->bounce = 0;
+        }
+        else
+        {
+            obj->vy = limit + (-obj->vy * 3) / 4;
+            obj->y = 0;
         }
     }
-    else if ((params->limit << 8) >= z)
-    {
-        return;
-    }
-    obj->bounce = 0;
 }
-END_NONMATCH
+
+void advance_z(struct PosObj *obj, struct FallParams *params)
+{
+    obj->z += obj->vz;
+    if (obj->vz < 0)
+    {
+        if (obj->z < -32768)
+            obj->bounce = 0;
+    }
+    else if ((params->limit << 8) < obj->z)
+    {
+        obj->bounce = 0;
+    }
+}
 
 void move_record_by_table(struct StreamObj *obj, u32 step, u32 shape)
 {
@@ -764,34 +751,39 @@ struct CellObj *unknown_thumb_080e3738(struct CellObj *obj, u32 kind, u32 data, 
     return obj;
 }
 
-NONMATCH("asm/code_080E2024/sub_080E377C.s", void sub_080E377C(void))
+// Sets up BG2 as a text layer (tiles at char base 1, tilemap at screen base 30, scrolled down 8
+// lines): builds its 32x21 tilemap from gTileBlock5x2Table with every entry in palette bank 8,
+// queues the map to VRAM 0x0600F000, loads gPaletteGrayPink into BG palette bank 8 and marks every
+// palette for upload.
+void sub_080E377C(void)
 {
-    u16 *shadow;
+    // the shadows of BG2CNT (gUnk_0200000C), BG2HOFS and BG2VOFS
+    register vu16 *bgReg asm("r1");
     s32 i;
     u8 *sys;
-    u16 ff;
-    u8 *root;
-    u8 *base;
+    u16 allBanks;
+    u8 *work;
+    u8 *map;
     u32 off;
 
-    shadow = &gUnk_0200000C;
-    *shadow = 0x1E04;
-    shadow += 6;
-    *shadow = 0;
-    shadow++;
-    *shadow = 8;
+    bgReg = &gUnk_0200000C;
+    *bgReg = BGCNT_SCREENBASE(30) | BGCNT_CHARBASE(1) | BGCNT_PRIORITY(0);
+    bgReg += 6;
+    *bgReg = 0;
+    bgReg++;
+    *bgReg = 8;
+    // two tilemap entries per word
     for (i = 0; i < 0x150; i++)
     {
-        root = gWorkBuf;
+        work = gWorkBuf;
         off = i * 4;
-        base = root + 0x5470;
-        *(u32 *)(base + off) = gTileBlock5x2Table[i] + 0x80008000;
+        map = work + 0x5470;
+        *(u32 *)(map + off) = gTileBlock5x2Table[i] + (((u32)TILEMAP_PALETTE(8) << 16) | TILEMAP_PALETTE(8));
     }
-    dma_copy_or_queue(gWorkBuf + 0x5470, (void *)0x0600F000, 0x540, 0x20, 0);
+    dma_copy_or_queue(gWorkBuf + 0x5470, (void *)(VRAM + 0xF000), 0x540, 0x20, 0);
     MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(gPaletteGrayPink, gUnk_02000180, 0x20);
     sys = gSys;
-    ff = 0xFFFF;
-    *(u16 *)(sys + 2) = ff;
-    *(s32 *)(sys + 0x884) = -1;
+    allBanks = 0xFFFF;
+    *(u16 *)(sys + 2) = allBanks;
+    *(s32 *)(sys + 0x884) = -1; /* reload every palette */
 }
-END_NONMATCH

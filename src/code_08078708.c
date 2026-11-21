@@ -1,5 +1,6 @@
 #include "global.h"
 #include "ram_routines.h"
+#include "pair_shot.h"
 
 struct ScrollNode
 {
@@ -166,9 +167,6 @@ extern u8 gSys[];
 extern u32 gUnk_03000F64;
 extern s32 gLinkOffsetX[];
 extern s32 gLinkOffsetH[];
-extern s32 gUnk_03000EB0[];
-extern s32 gUnk_03000EB8[];
-extern s32 gUnk_03000EC0[];
 
 extern void (*gUnk_03000ED4)(struct SpriteObj *);
 extern void (*gUnk_03000ED8)(struct SpriteObj *);
@@ -273,55 +271,60 @@ END_NONMATCH
 s32 update_positions_to_target(struct SpriteObj *obj);
 void link_actor_if_free(struct SpriteObj *obj);
 void ramp_values_then_remove(struct SpriteObj *obj);
+// State of a fired pair shot (mode: which hero it flies at, unkA0: the PairShotPattern): moves
+// it on, then spawns a second 0x4025 at the shot's target that takes over the shot's index,
+// pattern, owner and child list and checks for 30 frames whether its hero is hit
+// (link_actor_if_free); for a shot that flies past its hero, it sets the new object's unk10 to
+// 0x10000. The shot then runs ramp_values_then_remove for 40 frames.
 void spawn_child_4025_adopt(struct SpriteObj *obj)
 {
-    struct SpriteObj *part;
-    struct SpriteObj *partBody;
-    struct SpriteObj *child;
+    struct SpriteObj *parent;
+    struct SpriteObj *parentBody;
+    struct SpriteObj *hitCheck;
 
     obj->timer2 += 0x400;
     update_positions_to_target(obj);
-    part = obj->mainObj;
-    partBody = (struct SpriteObj *)((u8 *)part + 8);
-    child = obj_spawn(part, 0x4025, gUnk_03000EB0[obj->mode] / 0x100, gUnk_03000EB8[obj->mode] / 0x100,
-                      gUnk_03000EC0[obj->mode] / 0x100, 0, 1);
-    sprite_set_action(child, 1, 0, 0);
-    child->unk74 = 0xFF;
+    parent = obj->mainObj;
+    parentBody = (struct SpriteObj *)((u8 *)parent + 8);
+    hitCheck = obj_spawn(parent, 0x4025, gUnk_03000EB0[obj->mode] / 0x100, gUnk_03000EB8[obj->mode] / 0x100,
+                         gUnk_03000EC0[obj->mode] / 0x100, 0, 1);
+    sprite_set_action(hitCheck, 1, 0, 0);
+    hitCheck->unk74 = 0xFF;
     {
-        u32 flags = child->flags79;
+        u32 flags = hitCheck->flags79;
 
-        child->flags79 = flags | 1;
+        hitCheck->flags79 = flags | 1;
     }
     {
-        u32 flags = child->flags76;
+        u32 flags = hitCheck->flags76;
 
-        child->flags76 = flags | 6;
+        hitCheck->flags76 = flags | 6;
     }
-    child->owner = partBody->owner;
-    child->unk6C = partBody->unk6C;
-    ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
-    ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
-    ((struct EntryBits12 *)&child->entry->flags)->b12 = 0;
-    child->callback = link_actor_if_free;
-    child->timer = 0x1E;
-    child->child = obj->child;
-    child->mode = obj->mode;
-    child->unkA0 = obj->unkA0;
-    child->child = obj->child;
-    obj->child = child;
-    obj->timer = 0x28;
+    hitCheck->owner = parentBody->owner;
+    hitCheck->unk6C = parentBody->unk6C;
+    ((struct ObjFlags77 *)hitCheck)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+    ((struct ObjFlags77 *)hitCheck)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+    ((struct EntryBits12 *)&hitCheck->entry->flags)->b12 = 0;
+    hitCheck->callback = link_actor_if_free;
+    hitCheck->timer = 30;
+    hitCheck->child = obj->child;
+    hitCheck->mode = obj->mode;
+    hitCheck->unkA0 = obj->unkA0;
+    hitCheck->child = obj->child;
+    obj->child = hitCheck;
+    obj->timer = 40;
     if (obj->mode == 0)
     {
-        if (obj->unkA0 == 0 || obj->unkA0 == 2)
-            child->unk10 = 0x10000;
+        if (obj->unkA0 == PAIR_SHOT_PAST_A || obj->unkA0 == PAIR_SHOT_PAST_BOTH)
+            hitCheck->unk10 = 0x10000;
     }
     else
     {
         switch (obj->unkA0)
         {
-        case 1:
-        case 2:
-            child->unk10 = 0x10000;
+        case PAIR_SHOT_PAST_B:
+        case PAIR_SHOT_PAST_BOTH:
+            hitCheck->unk10 = 0x10000;
             break;
         }
     }
@@ -333,85 +336,95 @@ static inline s32 scale_by_18(s32 h)
     return ((h << 3) + h) << 1;
 }
 
+/* State of a pair shot after it hit: keeps moving it on and counts its timer down; over the last
+ * 18 frames it shrinks the impact sprite to nothing by writing its OAM affine matrix (in the
+ * current half of the shadow OAM at gSys + 0x80) as the shot's base matrix (gUnk_03000EC8:
+ * PA/PD, gUnk_03000ECC: PB/-PC) times 18 / timer, and releases the shot on its last frame. */
 void ramp_values_then_remove(struct SpriteObj *obj)
 {
-    s32 t;
-    s32 resX;
-    s32 resY;
-    u32 link;
+    s32 left;
+    s32 pa;
+    s32 pb;
+    u32 bufOffset;
     u16 *oam;
-    s32 negY;
+    s32 pc;
 
     update_positions_to_target(obj);
-    t = obj->timer - 1;
-    obj->timer = t;
-    if ((s16)t <= 18)
+    left = obj->timer - 1;
+    obj->timer = left;
+    if ((s16)left <= 18)
     {
-        resX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000EC8[obj->mode]), (s16)obj->timer);
-        resY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000ECC[obj->mode]), (s16)obj->timer);
-        link = (((u32)gSys[0x888] << 28) >> 31) << 10;
-        oam = (u16 *)(gSys + 0x80 + link + (((u32)obj->desc->order << 27) >> 22));
+        pa = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000EC8[obj->mode]), (s16)obj->timer);
+        pb = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scale_by_18(gUnk_03000ECC[obj->mode]), (s16)obj->timer);
+        /* gSys[0x888] bit 3 picks the shadow OAM half; each affine group is 0x20 bytes */
+        bufOffset = (((u32)gSys[0x888] << 28) >> 31) << 10;
+        oam = (u16 *)(gSys + 0x80 + bufOffset + (((u32)obj->desc->order << 27) >> 22));
         (void)*(volatile u16 *)&oam[3];
-        oam[3] = resX;
+        oam[3] = pa;
         (void)*(volatile u16 *)&oam[7];
-        oam[7] = resY;
-        negY = -resY;
+        oam[7] = pb;
+        pc = -pb;
         (void)*(volatile u16 *)&oam[11];
-        oam[11] = negY;
+        oam[11] = pc;
         (void)*(volatile u16 *)&oam[15];
-        oam[15] = resX;
+        oam[15] = pa;
         if ((s16)obj->timer == 1)
             obj_release(obj);
     }
 }
+/* State of the hit check a pair shot spawns (spawn_child_4025_adopt), for `timer` frames: hits
+ * its hero (world slot 6 for mode 0, slot 7 for mode 1) through partner_link_update unless the
+ * hero's flags7E bit 7 is set. A shot that flies past its hero (PairShotPattern) hits only a hero
+ * higher than 0x1000 (jumped into it), any other shot only a hero on the ground (height 0).
+ * Releases itself once the timer runs out. */
 void link_actor_if_free(struct SpriteObj *obj)
 {
-    struct SpriteObj *linkA;
-    struct SpriteObj *linkB;
-    struct SpriteObj *actorA;
-    struct SpriteObj *actorB;
-    struct SpriteObj *partner;
-    s32 a0;
-    s32 t;
+    struct SpriteObj *heroA;
+    struct SpriteObj *heroB;
+    struct SpriteObj *bodyA;
+    struct SpriteObj *bodyB;
+    s32 pattern;
+    s32 left;
 
-    linkA = gWorld->slots[6];
-    actorA = (struct SpriteObj *)((u8 *)linkA + 8);
-    linkB = gWorld->slots[7];
-    actorB = (struct SpriteObj *)((u8 *)linkB + 8);
+    heroA = gWorld->slots[6];
+    bodyA = (struct SpriteObj *)((u8 *)heroA + 8);
+    heroB = gWorld->slots[7];
+    bodyB = (struct SpriteObj *)((u8 *)heroB + 8);
     if (obj->mode == 0)
     {
-        a0 = obj->unkA0;
-        if (a0 == 0 || a0 == 2)
+        pattern = obj->unkA0;
+        if (pattern == PAIR_SHOT_PAST_A || pattern == PAIR_SHOT_PAST_BOTH)
         {
-            if ((linkA->flags7E & 0x80) || actorA->unk18 <= 0x1000)
-                goto timer;
-            partner_link_update(obj, actorA, 0xFF);
-            goto timer;
+            if ((heroA->flags7E & 0x80) || bodyA->unk18 <= 0x1000)
+                goto count_down;
+            partner_link_update(obj, bodyA, 0xFF);
+            goto count_down;
         }
-        if ((linkA->flags7E & 0x80) || actorA->unk18 != 0)
-            goto timer;
-        partner_link_update(obj, actorA, 0xFF);
-        goto timer;
+        if ((heroA->flags7E & 0x80) || bodyA->unk18 != 0)
+            goto count_down;
+        partner_link_update(obj, bodyA, 0xFF);
+        goto count_down;
     }
-    a0 = obj->unkA0;
-    switch (a0)
+    pattern = obj->unkA0;
+    switch (pattern)
     {
-    case 1:
-    case 2:
-        if ((linkB->flags7E & 0x80) || actorB->unk18 <= 0x1000)
-            goto timer;
-        partner_link_update(obj, actorB, 0xFF);
-        goto timer;
+    case PAIR_SHOT_PAST_B:
+    case PAIR_SHOT_PAST_BOTH:
+        if ((heroB->flags7E & 0x80) || bodyB->unk18 <= 0x1000)
+            goto count_down;
+        partner_link_update(obj, bodyB, 0xFF);
+        goto count_down;
     default:
-        goto out_of_range;
+        goto hits_on_ground;
     }
-out_of_range:
-    if (!(actorB->flags76 & 0x80) && actorB->unk18 == 0)
-        partner_link_update(obj, actorB, 0xFF);
-timer:
-    t = obj->timer;
-    obj->timer = t - 1;
-    if ((s16)t <= 0)
+hits_on_ground:
+    /* bodyB->flags76 is the same byte as heroB->flags7E */
+    if (!(bodyB->flags76 & 0x80) && bodyB->unk18 == 0)
+        partner_link_update(obj, bodyB, 0xFF);
+count_down:
+    left = obj->timer;
+    obj->timer = left - 1;
+    if ((s16)left <= 0)
         obj_release(obj);
 }
 
@@ -421,18 +434,24 @@ u32 lookup_slot(struct SpriteObj *obj, u32 slot);
 s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot);
 s32 actor_link_anim_minus1(void);
 void init_timer_slot(struct SpriteObj *obj);
-NONMATCH("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_child(struct SpriteObj *obj))
+/* Once the object's animation is done (entry flag 8): starts action 0x14, spawns effect 0x29DB at
+ * it and spawns child 0x402B (0x10 to the left, 2 below and 0x50 above it, mirrored like it). The
+ * child starts moving (speed 0x200) to the owner's main object's target (0xD8/0xDC) at height
+ * 0xC000 and goes on with init_timer_slot; then sets slot 0x86 and goes on with
+ * anim0_clear_cb_if_active_c. */
+void set_anim_14_spawn_child(struct SpriteObj *obj)
 {
     struct SpriteObj *child;
 
     if (obj->entry->flags & 8)
     {
         sprite_set_action(obj, 0x14, 0, 0);
+        /* unk38/unk3C/unk40: position, 24.8 fixed point; entry->unk11 bit 6: mirrored */
         effect_spawn_at(0x29DB, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
         child = obj_spawn(obj->mainObj, 0x402B, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
                           obj->unk40 / 0x100 + 0x50, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
         obj->child = child;
-        child->flags78 = (child->flags78 & 0x1F) | 0x80;
+        ((struct EntryBit4 *)&child->flags78)->high3 = 4;
         ((struct ObjFlags77 *)child)->bit6 = 0;
         ((struct ObjFlags77 *)child)->bit5 = 0;
         child->unk68 = on_arrive;
@@ -441,14 +460,11 @@ NONMATCH("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_c
         obj_list_push_default(child);
         child->unk58 = (void *)actor_link_anim_minus1;
         child->unk60 = (void (*)(struct SpriteObj *))slot_step_or_remove;
+        /* where the child flies to */
         child->unk84 = obj->owner->mainObj->unkD8;
         child->unk88 = obj->owner->mainObj->unkDC;
         child->unk8C = 0xC000;
-        {
-            u32 flags = child->flags79;
-
-            child->flags79 = flags | 0x20;
-        }
+        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
         child->unk7C = 0x200;
         child->unk7A = 0;
         start_motion(child);
@@ -459,99 +475,110 @@ NONMATCH("asm/code_08078708/set_anim_14_spawn_child.s", void set_anim_14_spawn_c
         obj->callback = anim0_clear_cb_if_active_c;
     }
 }
-END_NONMATCH
 
-void tick_mode_and_remove_when_low(struct SpriteObj *obj)
+/* Falling state of the shot set_anim_14_spawn_child spawns: every 16 frames (unk8C) puts effect
+ * 0x29E8 on the ground below it, speeds its fall (mode, +0x4C a frame up to 0x200) and lowers it
+ * (unk18). Once it is down to 0x20 it hits: the owner's partner link is applied with the main
+ * object's unk124 cut by 51/256 for each time it was knocked back (unkB2, at least 0), then
+ * unk124 goes back to 0x100, sound 0x3B and effect 0x2A0C play and it is removed next frame. */
+void tick_mode_and_remove_when_low(struct SpriteObj *shot)
 {
     s32 count;
-    s32 scaled;
+    s32 cut;
 
-    count = obj->unk8C - 1;
-    obj->unk8C = count;
+    count = shot->unk8C - 1;
+    shot->unk8C = count;
     if (count <= 0)
     {
-        effect_spawn_at(0x29E8, obj->unk38 / 0x100, obj->unk3C / 0x100, 0, obj);
-        obj->unk8C = 0x10;
+        effect_spawn_at(0x29E8, shot->unk38 / 0x100, shot->unk3C / 0x100, 0, shot);
+        shot->unk8C = 0x10;
     }
-    obj->mode += 0x4C;
-    if ((s32)obj->mode > 0x200)
+    shot->mode += 0x4C;
+    if ((s32)shot->mode > 0x200)
     {
-        obj->mode = 0x200;
+        shot->mode = 0x200;
     }
-    obj->unk18 = obj->unk18 - obj->mode;
-    if ((s32)obj->unk18 <= 0x2000)
+    shot->unk18 = shot->unk18 - shot->mode;
+    if ((s32)shot->unk18 <= 0x2000)
     {
-        obj_list_remove(obj);
-        scaled = ((s32)obj->unkB2 << 1) + obj->unkB2;
-        scaled = scaled + (scaled << 4);
-        if (scaled <= 0x100)
+        obj_list_remove(shot);
+        /* cut = hits * 51 */
+        cut = ((s32)shot->unkB2 << 1) + shot->unkB2;
+        cut = cut + (cut << 4);
+        if (cut <= 0x100)
         {
-            obj->mainObj->unk124 = 0x100 - scaled;
+            shot->mainObj->unk124 = 0x100 - cut;
         }
         else
         {
-            obj->mainObj->unk124 = 0;
+            shot->mainObj->unk124 = 0;
         }
-        partner_link_update(obj, obj->owner, 0xFF);
+        partner_link_update(shot, shot->owner, 0xFF);
         set_slot_value(0x3B, -1);
-        obj->mainObj->unk124 = 0x100;
-        effect_spawn_at(0x2A0C, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
-        obj->callback = remove_object_b;
+        shot->mainObj->unk124 = 0x100;
+        effect_spawn_at(0x2A0C, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
+        shot->callback = remove_object_b;
     }
 }
 
-NONMATCH("asm/code_08078708/slot_step_or_remove.s", s32 slot_step_or_remove(struct SpriteObj *obj, u32 slot))
+/*
+ * Hit handler (unk60) of the shot set_anim_14_spawn_child spawns. lookup_slot decides whether the
+ * hero that touched it faces it; if not, its result (1 or -1) is returned unchanged. Otherwise the
+ * hero knocks the shot back up (vertical speed -0x700, falling in tick_mode_and_remove_when_low)
+ * with spark 0x29F1. Once the hit timer has run out, each hit also counts in unkB2 and shrinks the
+ * shot (sprites 0x402C, 0x402D, 0x402E); the fourth one bursts it (effect 0x2A32, sound 0x3B)
+ * and releases it, returning 0. Returns -1 while it lives on.
+ */
+s32 slot_step_or_remove(struct SpriteObj *shot, u32 hero)
 {
-    s32 found;
+    s32 result;
     s32 t;
-    s32 phase;
-    u32 kind;
 
-    found = lookup_slot(obj, slot);
-    if (found != 0)
-        return found;
-    t = obj->timer - 1;
-    obj->timer = t;
+    result = lookup_slot(shot, hero);
+    if (result != 0)
+        return result;
+    t = shot->timer - 1;
+    shot->timer = t;
     if ((s16)t <= 0)
     {
-        obj->timer = 1;
-        obj->unkB2++;
-        phase = (s16)obj->timer2;
-        switch (phase)
+        shot->timer = 1;
+        shot->unkB2++;
+        switch ((s16)shot->timer2)
         {
         case 0:
-            kind = 0x402C;
+            sprite_set_action(shot, 0, 0x402C, 0);
+            effect_spawn_at(0x29F1, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
             break;
         case 1:
-            kind = 0x402D;
+            sprite_set_action(shot, 0, 0x402D, 0);
+            effect_spawn_at(0x29F1, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
             break;
         case 2:
-            kind = 0x402E;
+            sprite_set_action(shot, 0, 0x402E, 0);
+            effect_spawn_at(0x29F1, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
             break;
         default:
-            goto none;
+            effect_spawn_at(0x2A32, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
+            obj_release(shot);
+            set_slot_value(0x3B, -1);
+            return 0;
         }
-        sprite_set_action(obj, 0, kind, 0);
-        effect_spawn_at(0x29F1, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
-        obj->timer2++;
-        goto tail;
-    none:
-        effect_spawn_at(0x2A32, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
-        obj_release(obj);
-        set_slot_value(0x3B, -1);
-        return 0;
+        shot->timer2++;
     }
     else
     {
-        effect_spawn_at(0x29F1, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
+        effect_spawn_at(0x29F1, shot->unk38 / 0x100, shot->unk3C / 0x100, shot->unk40 / 0x100, shot);
     }
-tail:
-    obj->mode = 0xFFFFF900;
-    obj->callback = tick_mode_and_remove_when_low;
+    shot->mode = -0x700;
+    shot->callback = tick_mode_and_remove_when_low;
     return -1;
 }
-END_NONMATCH
 
+/* Every 0x50 frames (mode counts the frames down) while volleys are left (timer, set to 6 by
+ * anim16_timer6_mode0): plays sound 0xD5, spawns effect 0x2A61 at the object and spawns child
+ * 0x402F (0x10 to the left, 2 below and 0x30 above it, mirrored like it), pushed onto the object's
+ * child list, which goes on with set_anim1_mode4. With none left: starts action 0x17 and goes on
+ * with anim0_clear_cb_if_active_b. */
 void timer_spawn_child_402f(struct SpriteObj *obj)
 {
     s32 t;
@@ -567,12 +594,13 @@ void timer_spawn_child_402f(struct SpriteObj *obj)
         if ((s16)t >= 0)
         {
             set_slot_value(0xD5, -1);
+            /* unk38/unk3C/unk40: position, 24.8 fixed point; entry->unk11 bit 6: mirrored */
             effect_spawn_at(0x2A61, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
             child = obj_spawn(obj->mainObj, 0x402F, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
                               obj->unk40 / 0x100 + 0x30, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
             child->child = obj->child;
             obj->child = child;
-            child->flags78 = (child->flags78 & 0x1F) | 0x20;
+            ((struct EntryBit4 *)&child->flags78)->high3 = 1;
             ((struct ObjFlags77 *)child)->bit6 = 0;
             ((struct ObjFlags77 *)child)->bit5 = 0;
             child->unk68 = on_arrive;
@@ -591,10 +619,14 @@ void timer_spawn_child_402f(struct SpriteObj *obj)
     }
 }
 
+// Counts mode down. At zero: while timer is left, plays action 2 and picks a new random spot
+// (random_spawn_pos); when timer runs out, picks one of the two heroes (world slots 6/7), starting
+// at a random one and taking the first whose child has unkF6 set (hero 0 if none in 3 tries),
+// plays action 3 + hero and snaps to that hero (snap_to_world_slot). Plays sound slot 0x119 either way.
 void pick_side_random_then_anim(struct SpriteObj *obj)
 {
     u8 tries;
-    u8 parity;
+    u8 hero;
 
     if ((s32)--obj->mode <= 0)
     {
@@ -607,29 +639,23 @@ void pick_side_random_then_anim(struct SpriteObj *obj)
         else
         {
             tries = 0;
-            parity = mt19937_next() & 1;
-            goto body;
-        check:
+            hero = mt19937_next() & 1;
+            do
+            {
+                tries = (u8)(tries + 1);
+                hero = (u8)(hero + 1);
+                hero &= 1;
+            } while (gWorld->slots[hero + 6]->child->unkF6 == 0 && tries <= 2);
             if (tries > 2)
-                goto side0;
-        body:
-            tries = (u8)(tries + 1);
-            parity = (u8)(parity + 1);
-            parity &= 1;
-            if (gWorld->slots[parity + 6]->child->unkF6 == 0)
-                goto check;
-            if (tries <= 2)
-                goto store;
-        side0:
-            parity = 0;
-        store:
-            obj->phase = parity;
-            sprite_set_action(obj, parity + 3, 0, 0);
+                hero = 0;
+            obj->phase = hero;
+            sprite_set_action(obj, hero + 3, 0, 0);
             obj->callback = snap_to_world_slot;
         }
         set_slot_value(0x119, -1);
     }
-}u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
+}
+u32 destroy_sprite_entry(struct SpriteEntry *ent, u32 kind);
 u32 slot_place_and_move(struct SpriteObj *obj, u32 other);
 void set_pose_halfword_and_link(struct SpriteObj *obj);
 void scroll_queue_and_cull(struct SpriteObj *obj);
@@ -763,10 +789,16 @@ END_NONMATCH
 
 void remove_object(struct SpriteObj *obj);
 void resolve_contact_action(void *owner, void *obj, s32 a, s32 b, u32 code);
+/*
+ * Each frame of the shot's flight (slot_place_and_move aimed it at gUnk_03000F60): leaves trail
+ * effect 0x2A86 every 8 frames and spins the sprite. When the move ends it hits the target
+ * (resolve_contact_action, code 0x13 or 0x12 depending on the shooter's slot), plays sound 0xCC,
+ * spawns impact effect 0x2A76 and removes itself.
+ */
 void set_pose_halfword_and_link(struct SpriteObj *obj)
 {
-    struct SpriteObj *partner;
-    u8 *pa;
+    struct SpriteObj *target;
+    u8 *shooter;
 
     obj->timer--;
     if ((s16)obj->timer <= 0)
@@ -774,15 +806,15 @@ void set_pose_halfword_and_link(struct SpriteObj *obj)
         effect_spawn_at(0x2A86, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
         obj->timer = 8;
     }
-    obj->entry->unkC += 0x1200;
+    obj->entry->unkC += 0x1200; /* rotation */
     if (obj->target == 0)
     {
-        pa = (u8 *)gWorld->slots[gUnk_03000F68 + 6] + 8;
+        shooter = (u8 *)gWorld->slots[gUnk_03000F68 + 6] + 8;
         if (gUnk_03000F60 != NULL)
         {
-            partner = gUnk_03000F60;
-            resolve_contact_action(pa, partner, partner->unk10 / 0x100, partner->unk18 / 0x100,
-                                   (((struct SpriteObj *)pa)->mainObj->unkEC != -1) ? 0x13 : 0x12);
+            target = gUnk_03000F60;
+            resolve_contact_action(shooter, target, target->unk10 / 0x100, target->unk18 / 0x100,
+                                   (((struct SpriteObj *)shooter)->mainObj->unkEC != -1) ? 0x13 : 0x12);
         }
         set_slot_value(0xCC, -1);
         effect_spawn_at(0x2A76, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
@@ -792,18 +824,24 @@ void set_pose_halfword_and_link(struct SpriteObj *obj)
 
 void finish_when_no_target(struct SpriteObj *obj);
 void anim0_clear_cb_if_active(struct SpriteObj *obj);
+/*
+ * Once the current animation ends (entry flag 8): action 0x10, sound 0x114 and effect 0x2A94, then
+ * spawns object 0x4028 16 px left of, 2 px behind and 64 px above this one as its first child. The
+ * child moves (speed 0x300) to one of two spots picked at random; the pick stays in gUnk_03000F6C
+ * (0: 120,128 / 1: 112,96, both at height 40) and chooses the animations that follow.
+ */
 void set_anim_10_spawn_child_random(struct SpriteObj *obj)
 {
     struct SpriteObj *child;
-    u32 rnd;
+    u32 side;
 
     if (obj->entry->flags & 8)
     {
         sprite_set_action(obj, 0x10, 0, 0);
         set_slot_value(0x114, -1);
         effect_spawn_at(0x2A94, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
-        child = obj_spawn(obj->mainObj, 0x4028, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 2,
-                          obj->unk40 / 0x100 + 0x40, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+        child = obj_spawn(obj->mainObj, 0x4028, obj->unk38 / 0x100 - 16, obj->unk3C / 0x100 + 2,
+                          obj->unk40 / 0x100 + 64, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
         child->child = obj->child;
         obj->child = child;
         ((struct Flags79Bit0 *)&child->flags79)->bit0 = 1;
@@ -814,9 +852,9 @@ void set_anim_10_spawn_child_random(struct SpriteObj *obj)
         child->unk68 = on_arrive;
         child->unk6C = obj->unk6C;
         child->owner = obj->owner;
-        rnd = mt19937_next() & 1;
-        gUnk_03000F6C = rnd;
-        if (rnd == 0)
+        side = mt19937_next() & 1;
+        gUnk_03000F6C = side;
+        if (side == 0)
         {
             child->unk84 = 0x7800;
             child->unk88 = 0x8000;
@@ -836,7 +874,7 @@ void set_anim_10_spawn_child_random(struct SpriteObj *obj)
     }
 }
 
-NONMATCH("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target(struct SpriteObj *obj))
+void finish_when_no_target(struct SpriteObj *obj)
 {
     if (obj->target == 0)
     {
@@ -844,46 +882,47 @@ NONMATCH("asm/code_08078708/finish_when_no_target.s", void finish_when_no_target
         sprite_set_action(obj, 0, 0x4029, 0);
         ((struct Flags79Bit0 *)&obj->flags79)->bit0 = 0;
         obj->flags78 = (obj->flags78 & 0x1F) | 0x20;
-        (void)*(volatile u32 *)&gUnk_03000F6C;
-        obj->unk18 = 0x1800;
+        if (gUnk_03000F6C == 0)
+            obj->unk18 = 0x1800;
+        else
+            obj->unk18 = 0x1800;
         obj->callback = 0;
         gUnk_03000ED0 = 1;
         set_slot_value(0x55, -1);
     }
 }
-END_NONMATCH
 
-NONMATCH("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_until_timer_done(struct SpriteObj *obj))
+/* Once the current animation has finished: back to action 0 (sprite 0x4029) and one hop fewer
+ * (unkA0). While hops are left it switches sides (mode) and moves at speed 0x300 to that side's
+ * point, 24 px up: side 0 (120, 128) px, side 1 (112, 96) px; sound 0xD7, then
+ * set_cb_if_no_target waits for the arrival. With no hops left the object stops (no callback). */
+void toggle_mode_until_timer_done(struct SpriteObj *obj)
 {
-    s32 t;
-    s32 y;
-    s32 *pos;
+    s32 hopsLeft;
 
     if (obj->entry->flags & 8)
     {
         sprite_set_action(obj, 0, 0x4029, 0);
-        t = obj->unkA0 - 1;
-        obj->unkA0 = t;
-        if (t > 0)
+        hopsLeft = obj->unkA0 - 1;
+        obj->unkA0 = hopsLeft;
+        if (hopsLeft > 0)
         {
             obj->mode = (obj->mode + 1) & 1;
             if (obj->mode == 0)
             {
                 obj->unk84 = 0x7800;
-                pos = &obj->unk88;
-                y = 0x8000;
+                obj->unk88 = 0x8000;
+                obj->unk8C = 0x1800;
             }
             else
             {
                 obj->unk84 = 0x7000;
-                pos = &obj->unk88;
-                y = 0x6000;
+                obj->unk88 = 0x6000;
+                obj->unk8C = 0x1800;
             }
-            *pos = y;
-            pos = &obj->unk8C;
-            *pos = 0x1800;
+            /* unk84/88/8C are an absolute point, not an offset */
             ((struct Flags79Bits *)&obj->flags79)->bit5 = 1;
-            obj->unk7C = 0x300;
+            obj->unk7C = 0x300; /* speed */
             obj->unk7A = 0;
             start_motion(obj);
             obj->callback = set_cb_if_no_target;
@@ -895,36 +934,43 @@ NONMATCH("asm/code_08078708/toggle_mode_until_timer_done.s", void toggle_mode_un
         }
     }
 }
-END_NONMATCH
 void start_anim1_if_no_target(struct SpriteObj *obj);
-NONMATCH("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_moving(struct SpriteObj *obj))
+/*
+ * Spawns object 0x4059 16 px left of, 4 px behind and 56 px above this one as its first child and
+ * sends it (speed 0x400) to the ground at spot `phase` of a line of spots from (64, 80) px, each
+ * 4.8 px further left and 11.2 px further down; on side 1 (gUnk_03000F6C) the line runs backwards
+ * (5 - phase). On arrival the child plays action 1 (start_anim1_if_no_target).
+ */
+void spawn_child_4059_moving(struct SpriteObj *obj)
 {
-    s32 kx = 0xFFFFFB34;
-    s32 phase;
-    s32 vx;
-    s32 vy;
+    s32 stepX;
+    s32 stepY;
+    s32 spot;
+    s32 destX;
+    s32 destY;
     struct SpriteObj *child;
 
-    phase = obj->phase;
+    spot = obj->phase;
     if (gUnk_03000F6C != 0)
-        phase = 5 - phase;
-    vx = phase * kx + 0x4000;
-    vy = phase * 0xB33 + 0x5000;
-    child = obj_spawn(obj->mainObj, 0x4059, obj->unk38 / 0x100 - 0x10, obj->unk3C / 0x100 + 4,
-                      obj->unk40 / 0x100 + 0x38, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
+    {
+        spot = 5 - spot;
+    }
+    stepX = -0x4CC;
+    stepY = 0xB33;
+    destX = (stepX * spot) + 0x4000;
+    destY = spot;
+    destY = (destY * stepY) + 0x5000;
+    child = obj_spawn(obj->mainObj, 0x4059, (obj->unk38 / 0x100) - 16, (obj->unk3C / 0x100) + 4,
+                      (obj->unk40 / 0x100) + 56, ((struct PoseBits6 *)&obj->entry->unk11)->bit6, 1);
     child->child = obj->child;
     obj->child = child;
-    child->flags78 = (child->flags78 & 0x1F) | 0x20;
+    ((struct EntryBit4 *)&child->flags78)->high3 = 1;
     child->unk74 = obj->unk74;
     child->callback = start_anim1_if_no_target;
-    child->unk84 = vx;
-    child->unk88 = vy;
+    child->unk84 = destX;
+    child->unk88 = destY;
     child->unk8C = 0;
-    {
-        u32 flags = child->flags79;
-
-        child->flags79 = flags | 0x20;
-    }
+    ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
     child->unk7C = 0x400;
     child->unk7A = 0;
     start_motion(child);
@@ -935,8 +981,13 @@ NONMATCH("asm/code_08078708/spawn_child_4059_moving.s", void spawn_child_4059_mo
     child->owner = obj->owner;
     obj_list_push_default(child);
 }
-END_NONMATCH
 
+/*
+ * Once the current animation ends: plays action 0x11 and waits in mode_counter_tick. Its child (if
+ * any) flies at speed 0x300 to 28 px right of the owner's main object (unk84/88/8C: destination,
+ * flags79 bit 5: moving); timer2 says whether that object has a slot (unkEC != -1), and on arrival
+ * the child goes on with start_timer_anim4. With no child the callback is cleared.
+ */
 void start_child_at_main(struct SpriteObj *obj)
 {
     if (obj->entry->flags & 8)
@@ -973,11 +1024,11 @@ void start_child_at_main(struct SpriteObj *obj)
     }
 }
 
-NONMATCH("asm/code_08078708/timer_reset_pos_and_cb.s", void timer_reset_pos_and_cb(struct SpriteObj *obj))
+/* After `timer` more animation loops at the owner's main object: leaves the active object list,
+ * goes back to action 0 and flies (speed 0x300) back to the side spot it came from, 24 px up
+ * (side gUnk_03000F6C: 0 = (120, 128) px, 1 = (112, 96) px); end_without_target waits for the arrival. */
+void timer_reset_pos_and_cb(struct SpriteObj *obj)
 {
-    s32 y;
-    s32 *pos;
-
     if (obj->entry->flags & 8)
     {
         obj->timer--;
@@ -988,27 +1039,24 @@ NONMATCH("asm/code_08078708/timer_reset_pos_and_cb.s", void timer_reset_pos_and_
             if (gUnk_03000F6C == 0)
             {
                 obj->unk84 = 0x7800;
-                pos = &obj->unk88;
-                y = 0x8000;
+                obj->unk88 = 0x8000;
+                obj->unk8C = 0x1800;
             }
             else
             {
                 obj->unk84 = 0x7000;
-                pos = &obj->unk88;
-                y = 0x6000;
+                obj->unk88 = 0x6000;
+                obj->unk8C = 0x1800;
             }
-            *pos = y;
-            pos = &obj->unk8C;
-            *pos = 0x1800;
+            /* unk84/88/8C are an absolute point, not an offset */
             ((struct Flags79Bits *)&obj->flags79)->bit5 = 1;
-            obj->unk7C = 0x300;
+            obj->unk7C = 0x300; /* speed */
             obj->unk7A = 0;
             start_motion(obj);
             obj->callback = end_without_target;
         }
     }
 }
-END_NONMATCH
 
 void end_without_target(struct SpriteObj *obj)
 {

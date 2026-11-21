@@ -39,6 +39,14 @@ struct ActorModeBits
     u8 high : 1;
 };
 
+// ActorPose.byte11
+struct PoseMirrorBits
+{
+    u8 low6 : 6;
+    u8 mirror : 1;  // the sprite faces the other way
+    u8 high : 1;
+};
+
 struct Flags78Bits
 {
     u8 low5 : 5;
@@ -302,16 +310,21 @@ NONMATCH("asm/code_080DD204/obj_timed_spawn_child.s", void obj_timed_spawn_child
 }
 END_NONMATCH
 
-NONMATCH("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce_or_finish(struct ActorObj *obj))
+/* One frame of the fall: adds dhStep to the height offset and places obj at its base point plus the
+ * offsets. While the timer runs it counts down; when it runs out and lookup_slot finds nothing, obj
+ * bounces back (X offset halved and reversed, Y and height offsets cleared), gives its child a timer of
+ * 8 and floats off in obj_float_offscreen_finish with action 0. Otherwise, once it falls to the ground
+ * it stops sound 0x117 and is released. */
+void obj_timed_bounce_or_finish(struct ActorObj *obj)
 {
-    u16 *dhp = (u16 *)&obj->dh;
-    s16 *dyp = &obj->dy;
-    s16 *dxp = &obj->dx;
+    register s16 *dx asm("r5") = &obj->dx;
+    s16 *dy = &obj->dy;
+    register s16 *dh asm("r6") = &obj->dh;
 
-    *dhp = *dhp + obj->dhStep;
-    obj->posX = obj->baseX + *dxp;
-    obj->posY = obj->baseY + *dyp;
-    obj->posH = obj->baseH + (s16)*dhp;
+    *dh += obj->dhStep;
+    obj->posX = obj->baseX + *dx;
+    obj->posY = obj->baseY + *dy;
+    obj->posH = obj->baseH + *dh;
     if ((s16)obj->timer > 0)
     {
         obj->timer = obj->timer - 1;
@@ -321,10 +334,10 @@ NONMATCH("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce
             {
                 return;
             }
-            obj->dx = -obj->dx / 2;
-            obj->dy = 0;
-            obj->dh = 0;
-            if (obj->child != 0)
+            *dx = -*dx / 2;
+            *dy = 0;
+            *dh = 0;
+            if (obj->child != NULL)
             {
                 obj->child->timer = 8;
             }
@@ -345,25 +358,29 @@ NONMATCH("asm/code_080DD204/obj_timed_bounce_or_finish.s", void obj_timed_bounce
     sound_stop_song(0x117);
     obj_release(obj);
 }
-END_NONMATCH
 
+/* One frame of the drop: slows the X/Y offsets to 253/256, adds dhStep to the height offset and
+ * places obj at its base point plus the offsets. Once the height offset is no longer positive it
+ * spawns a child (0x4138) beside the base point, facing like obj, that falls to obj's owner (with
+ * obj's childValue, owner, params and spawn count), and obj plays action 0xF and settles in
+ * obj_settle_step_land_slot69. */
 void obj_drop_land_spawn_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    s32 t;
+    s32 scaled;
 
-    t = obj->dx * 253;
-    if (t < 0)
+    scaled = obj->dx * 253;
+    if (scaled < 0)
     {
-        t += 0xFF;
+        scaled += 0xFF;
     }
-    obj->dx = t >> 8;
-    t = obj->dy * 253;
-    if (t < 0)
+    obj->dx = scaled >> 8;
+    scaled = obj->dy * 253;
+    if (scaled < 0)
     {
-        t += 0xFF;
+        scaled += 0xFF;
     }
-    obj->dy = t >> 8;
+    obj->dy = scaled >> 8;
     obj->dh = obj->dh + obj->dhStep;
     obj->posX = obj->baseX + obj->dx;
     obj->posY = obj->baseY + obj->dy;
@@ -372,6 +389,7 @@ void obj_drop_land_spawn_child(struct ActorObj *obj)
     {
         return;
     }
+    // the last argument but one is the pose's mirror bit (PoseMirrorBits.mirror)
     child = obj_spawn(obj->data, 0x4138, obj->baseX / 0x100 - 0x25, obj->baseY / 0x100 - 1,
                       obj->baseH / 0x100 + 0x26, ((u32)obj->pose->byte11 << 25) >> 31, 1);
     child->child = obj->child;
@@ -398,33 +416,37 @@ void obj_drop_land_spawn_child(struct ActorObj *obj)
     obj->state = obj_settle_step_land_slot69;
 }
 
+/* One frame of the settle after obj_drop_land_spawn_child: slows the X/Y offsets to 253/256, adds
+ * dhStep to the height offset and places obj at its base point plus the offsets. Once it is no longer
+ * rising and has come down to its part's target height, it lands there, sets slot 0x69 to -1, plays
+ * action 0 and arrives (on_arrive). */
 void obj_settle_step_land_slot69(struct ActorObj *obj)
 {
-    s32 dxt = obj->dx * 253;
-    s32 dyt;
-    s32 h;
+    s32 scaledX = obj->dx * 253;
+    s32 scaledY;
+    s32 height;
 
-    if (dxt < 0)
+    if (scaledX < 0)
     {
-        dxt += 0xFF;
+        scaledX += 0xFF;
     }
-    obj->dx = dxt >> 8;
-    dyt = obj->dy * 253;
-    if (dyt < 0)
+    obj->dx = scaledX >> 8;
+    scaledY = obj->dy * 253;
+    if (scaledY < 0)
     {
-        dyt += 0xFF;
+        scaledY += 0xFF;
     }
-    obj->dy = dyt >> 8;
+    obj->dy = scaledY >> 8;
     obj->dh = obj->dh + obj->dhStep;
     obj->posX = obj->baseX + obj->dx;
     obj->posY = obj->baseY + obj->dy;
-    h = obj->baseH + obj->dh;
-    obj->posH = h;
+    height = obj->baseH + obj->dh;
+    obj->posH = height;
     if (obj->dh > 0)
     {
         return;
     }
-    if (h > obj->data->targetH)
+    if (height > obj->data->targetH)
     {
         return;
     }
@@ -434,16 +456,23 @@ void obj_settle_step_land_slot69(struct ActorObj *obj)
     on_arrive(obj);
 }
 
-NONMATCH("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spawn_fx_then_finish(struct ActorObj *obj))
+/* Falling state set by obj_begin_fall_to_owner: adds dhStep to the height offset and places obj at
+   its base point plus the offsets, leaving an afterimage every third frame (a copy of its sprite,
+   effect 0x417E, that fx_task_tick_release frees after 10 frames). Once it is no longer rising and
+   has come down to the ground height, it lands there, stops sound 0x117 and releases itself. */
+void obj_fall_spawn_fx_then_finish(struct ActorObj *obj)
 {
-    s16 *dxp = &obj->dx;
-    void *fx;
+    register s16 *dx asm("r3") = &obj->dx;
+    s32 zero = 0;
+    register s16 *dy asm("r2") = &obj->dy;
+    register s16 *dh asm("r4") = &obj->dh;
+    void *ghost;
     struct FxTask *task;
 
-    obj->dh = obj->dh + obj->dhStep;
-    obj->posX = obj->baseX + *dxp;
-    obj->posY = obj->baseY + obj->dy;
-    obj->posH = obj->baseH + obj->dh;
+    *dh += obj->dhStep;
+    obj->posX = obj->baseX + *dx;
+    obj->posY = obj->baseY + *dy;
+    obj->posH = obj->baseH + *dh;
     if ((s16)obj->timer > 0)
     {
         obj->timer = obj->timer - 1;
@@ -451,21 +480,22 @@ NONMATCH("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spaw
     else
     {
         obj->timer = 2;
-        fx = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
-        obj_load_record(fx, 0, -1, 0, 0);
-        sprite_update_cd0(fx);
-        obj_load_record(fx, 0, obj->pose->record23, 0, 0);
-        ((struct FxRec *)fx)->unk0 = ((struct FxRec *)obj->pose)->unk0;
-        ((struct FxRec *)fx)->unk2 = ((struct FxRec *)obj->pose)->unk2;
-        ((struct FxRec *)fx)->unkE = ((struct FxRec *)obj->pose)->unkE;
-        ((struct FxBit12 *)fx)->bit4 = 1;
-        ((struct FxBits1F *)fx)->a = ((struct FxBits1F *)obj->pose)->a;
-        ((struct FxBits1F *)fx)->b = ((struct FxBits1F *)obj->pose)->b;
-        ((struct FxBits1F *)fx)->c = ((struct FxBits1F *)obj->pose)->c;
-        ((struct FxBits1F *)fx)->d = ((struct FxBits1F *)obj->pose)->d;
-        task = task_create_list_4c(fx_task_tick_release, fx);
-        task->counter = 0;
-        task->unk18 = 0;
+        // Afterimage: a sprite showing the object's current frame where the object is.
+        ghost = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
+        obj_load_record(ghost, 0, -1, 0, zero);
+        sprite_update_cd0(ghost);
+        obj_load_record(ghost, 0, obj->pose->record23, 0, zero);
+        ((struct FxRec *)ghost)->unk0 = ((struct FxRec *)obj->pose)->unk0;
+        ((struct FxRec *)ghost)->unk2 = ((struct FxRec *)obj->pose)->unk2;
+        ((struct FxRec *)ghost)->unkE = ((struct FxRec *)obj->pose)->unkE;
+        ((struct FxBit12 *)ghost)->bit4 = 1;
+        ((struct FxBits1F *)ghost)->a = ((struct FxBits1F *)obj->pose)->a;
+        ((struct FxBits1F *)ghost)->b = ((struct FxBits1F *)obj->pose)->b;
+        ((struct FxBits1F *)ghost)->c = ((struct FxBits1F *)obj->pose)->c;
+        ((struct FxBits1F *)ghost)->d = ((struct FxBits1F *)obj->pose)->d;
+        task = task_create_list_4c(fx_task_tick_release, ghost);
+        task->counter = zero;
+        task->unk18 = zero;
     }
     if ((s16)obj->dh > 0)
     {
@@ -479,23 +509,26 @@ NONMATCH("asm/code_080DD204/obj_fall_spawn_fx_then_finish.s", void obj_fall_spaw
     sound_stop_song(0x117);
     obj_release(obj);
 }
-END_NONMATCH
 
+/* Knocked-away state (set by obj_slot_found_recoil): the object flies on in x and falls (gravity
+   0x5E a frame), leaving an afterimage every third frame: a copy of its sprite (same screen
+   position, attributes and frame, effect 0x417E) that a task frees after 10 frames. Once it has
+   left the screen on the left or at the bottom, it stops sound 0x117 and releases itself. */
 void obj_fall_spawn_fx_offscreen(struct ActorObj *obj)
 {
-    s32 sx;
-    s32 sy;
-    s32 sh;
-    void *fx;
+    s32 screenX;
+    s32 screenY;
+    s32 screenH;
+    void *ghost;
     struct FxTask *task;
 
     obj->posX = obj->baseX + obj->dx;
     obj->posH = obj->baseH + obj->dh;
     obj->dh = obj->dh - 0x5E;
-    sx = obj->posX / 0x100;
-    sy = obj->posY / 0x100;
-    sh = obj->posH / 0x100;
-    offset_three_words_camera(&sx, &sy, &sh, 0);
+    screenX = obj->posX / 0x100;
+    screenY = obj->posY / 0x100;
+    screenH = obj->posH / 0x100;
+    offset_three_words_camera(&screenX, &screenY, &screenH, 0);
     if ((s16)obj->timer > 0)
     {
         obj->timer = obj->timer - 1;
@@ -503,23 +536,25 @@ void obj_fall_spawn_fx_offscreen(struct ActorObj *obj)
     else
     {
         obj->timer = 2;
-        fx = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
-        obj_load_record(fx, 0, -1, 0, 0);
-        sprite_update_cd0(fx);
-        obj_load_record(fx, 0, obj->pose->record23, 0, 0);
-        ((struct FxRec *)fx)->unk0 = ((struct FxRec *)obj->pose)->unk0;
-        ((struct FxRec *)fx)->unk2 = ((struct FxRec *)obj->pose)->unk2;
-        ((struct FxRec *)fx)->unkE = ((struct FxRec *)obj->pose)->unkE;
-        ((struct FxBit12 *)fx)->bit4 = 1;
-        ((struct FxBits1F *)fx)->a = ((struct FxBits1F *)obj->pose)->a;
-        ((struct FxBits1F *)fx)->b = ((struct FxBits1F *)obj->pose)->b;
-        ((struct FxBits1F *)fx)->c = ((struct FxBits1F *)obj->pose)->c;
-        ((struct FxBits1F *)fx)->d = ((struct FxBits1F *)obj->pose)->d;
-        task = task_create_list_4c(fx_task_tick_release, fx);
+        // Afterimage: a sprite showing the object's current frame where the object is.
+        ghost = create_obj_de4(0, 0x417E, 1, -1, -1, -1, -1);
+        obj_load_record(ghost, 0, -1, 0, 0);
+        sprite_update_cd0(ghost);
+        obj_load_record(ghost, 0, obj->pose->record23, 0, 0);
+        ((struct FxRec *)ghost)->unk0 = ((struct FxRec *)obj->pose)->unk0;
+        ((struct FxRec *)ghost)->unk2 = ((struct FxRec *)obj->pose)->unk2;
+        ((struct FxRec *)ghost)->unkE = ((struct FxRec *)obj->pose)->unkE;
+        ((struct FxBit12 *)ghost)->bit4 = 1;
+        ((struct FxBits1F *)ghost)->a = ((struct FxBits1F *)obj->pose)->a;
+        ((struct FxBits1F *)ghost)->b = ((struct FxBits1F *)obj->pose)->b;
+        ((struct FxBits1F *)ghost)->c = ((struct FxBits1F *)obj->pose)->c;
+        ((struct FxBits1F *)ghost)->d = ((struct FxBits1F *)obj->pose)->d;
+        // fx_task_tick_release frees it after 10 frames.
+        task = task_create_list_4c(fx_task_tick_release, ghost);
         task->counter = 0;
         task->unk18 = 0;
     }
-    if (sx < -0x10 || sy > 0x110)
+    if (screenX < -0x10 || screenY > 0x110)
     {
         sound_stop_song(0x117);
         obj_release(obj);

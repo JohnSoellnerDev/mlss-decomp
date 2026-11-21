@@ -336,9 +336,14 @@ void parts_obj_pose_active_timer_action_d(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation has finished: play action 4 with effect 0x1079 and launch a 0x40F1
+   projectile from in front of the object. Variant 0 (param9C) is half size, plays sound 0x113 and
+   checks for a hit through handler5C; variant 1 is full size, plays 0x114 and checks through
+   handler60. The projectile flies towards the owner's target along a straight line
+   (obj_slide_step_then_cull), starting from its spawn point (paramA0/paramA4). */
 void obj_spawn_part_sprite(struct ActorObj *obj)
 {
-    struct ActorObj *child;
+    struct ActorObj *shot;
 
     if (obj->pose->flags & 8)
     {
@@ -348,43 +353,43 @@ void obj_spawn_part_sprite(struct ActorObj *obj)
         if (obj->param9C == 0)
         {
             set_slot_value(0x113, -1);
-            child = obj_spawn(obj->part, 0x40F1, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
-                              obj->baseH / 0x100 + 0xA, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-            ((struct PoseScale *)child->pose)->scaleX = 0x80;
-            ((struct PoseScale *)child->pose)->scaleY = 0x80;
-            obj->child = child;
-            obj_child_flags(obj, child, 0x20);
-            child->handler68 = on_arrive;
-            child->unk6C = obj->unk6C;
-            child->owner = obj->owner;
-            obj_list_push_default(child);
-            child->handler5C = (void (*)(struct ActorObj *))obj_query_part_then_state;
+            shot = obj_spawn(obj->part, 0x40F1, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                             obj->baseH / 0x100 + 0xA, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+            ((struct PoseScale *)shot->pose)->scaleX = 0x80;
+            ((struct PoseScale *)shot->pose)->scaleY = 0x80;
+            obj->child = shot;
+            obj_child_flags(obj, shot, 0x20);
+            shot->handler68 = on_arrive;
+            shot->unk6C = obj->unk6C;
+            shot->owner = obj->owner;
+            obj_list_push_default(shot);
+            shot->handler5C = (void (*)(struct ActorObj *))obj_query_part_then_state;
         }
         else
         {
             set_slot_value(0x114, -1);
-            child = obj_spawn(obj->part, 0x40F1, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
-                              obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-            ((struct PoseScale *)child->pose)->scaleX = 0x100;
-            ((struct PoseScale *)child->pose)->scaleY = 0x100;
-            obj->child = child;
-            obj_child_flags(obj, child, 0x20);
-            child->handler68 = on_arrive;
-            child->unk6C = obj->unk6C;
-            child->owner = obj->owner;
-            obj_list_push_default(child);
-            child->handler60 = (void (*)(struct ActorObj *))obj_lookup_slot_then_state;
+            shot = obj_spawn(obj->part, 0x40F1, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                             obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+            ((struct PoseScale *)shot->pose)->scaleX = 0x100;
+            ((struct PoseScale *)shot->pose)->scaleY = 0x100;
+            obj->child = shot;
+            obj_child_flags(obj, shot, 0x20);
+            shot->handler68 = on_arrive;
+            shot->unk6C = obj->unk6C;
+            shot->owner = obj->owner;
+            obj_list_push_default(shot);
+            shot->handler60 = (void (*)(struct ActorObj *))obj_lookup_slot_then_state;
         }
-        child->tag = obj->tag;
-        child->timer = 0;
-        sprite_set_action(child, 1, 0, 0);
-        child->dx = 1;
-        child->targetX = obj->owner->part->targetX - child->baseX;
-        child->targetY = obj->owner->part->targetY - child->baseY;
-        child->param9C = obj->param9C;
-        child->paramA0 = child->baseX;
-        child->paramA4 = child->baseY;
-        child->state = obj_slide_step_then_cull;
+        shot->tag = obj->tag;
+        shot->timer = 0;
+        sprite_set_action(shot, 1, 0, 0);
+        shot->dx = 1;
+        shot->targetX = obj->owner->part->targetX - shot->baseX;
+        shot->targetY = obj->owner->part->targetY - shot->baseY;
+        shot->param9C = obj->param9C;
+        shot->paramA0 = shot->baseX;
+        shot->paramA4 = shot->baseY;
+        shot->state = obj_slide_step_then_cull;
         obj->state = obj_pose_active_action0_next;
     }
 }
@@ -415,49 +420,58 @@ void obj_slide_step_then_cull(struct ActorObj *obj)
         obj_release(obj);
 }
 
+/*
+ * Once obj's pose is done, throws a spinning projectile (object 0x40F2) from just in front of obj
+ * at the owner's part: the child flies a parabola (obj_update_position_timer) from its spawn point to
+ * 8 pixels right of the part's target, one frame per pixel of distance, peaking 0x40 pixels above
+ * the start at half time, and is released when it lands. obj then waits in obj_pose_active_stop.
+ */
 void parts_obj_spawn_child_launch(struct ActorObj *obj)
 {
-    struct ActorObj *child;
-    s32 deltaX;
-    s32 deltaY;
+    struct ActorObj *shot;
+    s32 spanX;
+    s32 spanY;
     s32 root;
-    s32 dist;
-    s32 half;
-    s32 speed;
+    s32 duration;
+    s32 halfTime;
+    s32 steepness;
 
     if (obj->pose->flags & 8)
     {
         sprite_set_action(obj, 7, 0, 0);
-        child = obj_spawn(obj->part, 0x40F2, obj->baseX / 0x100 - 9, obj->baseY / 0x100,
-                          obj->baseH / 0x100 + 0xF, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
-        obj->child = child;
-        obj_child_flags(obj, child, 0x20);
-        child->handler68 = on_arrive;
-        child->unk6C = obj->unk6C;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->handler60 = (void (*)(struct ActorObj *))obj_slot_check_action1;
-        child->tag = obj->tag;
-        child->targetX = obj->owner->part->targetX + 0x800;
-        child->targetY = obj->owner->part->targetY;
-        child->targetH = child->baseH;
-        child->dx = child->baseX / 0x100;
-        child->dy = child->baseY / 0x100;
-        child->dh = child->baseH / 0x100;
-        deltaX = child->targetX - ((s32)child->dx << 8);
-        deltaY = child->targetY - ((s32)child->dy << 8);
-        root = ((s32 (*)(s32))gMathRoutines)(deltaX * deltaX + deltaY * deltaY);
-        dist = root / 0x100;
-        half = dist / 2;
-        speed = 0x4000 / (half * half);
-        if (speed == 1)
-            speed = 2;
-        child->param9C = -speed;
-        child->paramA0 = dist;
-        child->paramA4 = deltaX;
-        child->paramA8 = deltaY;
-        child->timer = 0;
-        child->state = obj_update_position_timer;
+        shot = obj_spawn(obj->part, 0x40F2, obj->baseX / 0x100 - 9, obj->baseY / 0x100,
+                         obj->baseH / 0x100 + 0xF, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
+        obj->child = shot;
+        obj_child_flags(obj, shot, 0x20);
+        shot->handler68 = on_arrive;
+        shot->unk6C = obj->unk6C;
+        shot->owner = obj->owner;
+        obj_list_push_default(shot);
+        shot->handler60 = (void (*)(struct ActorObj *))obj_slot_check_action1;
+        shot->tag = obj->tag;
+
+        /* aim at the owner's part; dx/dy/dh keep the start in pixels */
+        shot->targetX = obj->owner->part->targetX + 0x800;
+        shot->targetY = obj->owner->part->targetY;
+        shot->targetH = shot->baseH;
+        shot->dx = shot->baseX / 0x100;
+        shot->dy = shot->baseY / 0x100;
+        shot->dh = shot->baseH / 0x100;
+        spanX = shot->targetX - ((s32)shot->dx << 8);
+        spanY = shot->targetY - ((s32)shot->dy << 8);
+        /* gMathRoutines starts with the integer square root */
+        root = ((s32 (*)(s32))gMathRoutines)(spanX * spanX + spanY * spanY);
+        duration = root / 0x100;
+        halfTime = duration / 2;
+        steepness = 0x4000 / (halfTime * halfTime);
+        if (steepness == 1)
+            steepness = 2;
+        shot->param9C = -steepness; /* curvature of the arc */
+        shot->paramA0 = duration;
+        shot->paramA4 = spanX;
+        shot->paramA8 = spanY;
+        shot->timer = 0;
+        shot->state = obj_update_position_timer;
         set_slot_value(0x128, -1);
         obj->state = obj_pose_active_stop;
     }

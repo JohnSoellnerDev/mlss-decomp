@@ -1,5 +1,6 @@
 #include "global.h"
 #include "ram_routines.h"
+#include "tile_window.h"
 
 struct PartObj
 {
@@ -87,9 +88,9 @@ void unknown_code_08084032(struct PartObj *obj, s32 x, s32 y);
 struct SysBase
 {
     u8 filler0[2];
-    u16 unk2;
+    u16 unk2;      /* palette banks to upload: one bit per 32-byte bank (bit 8 = BG bank 8) */
     u8 filler4[0x888 - 4];
-    u8 flags888;
+    u8 flags888;   /* bits 1-2 set: use the alternate palettes */
 };
 
 struct PoseBits11
@@ -584,13 +585,17 @@ s32 to_bcd(s32 value)
     return bcd;
 }
 
-s32 unknown_code_08084840(s32 value, void (*out)(s32, s32, u32), u32 a2)
+/* Writes `value` (not negative) in decimal, most significant digit first: calls
+   put_digit(position, digit, arg) for each digit, position counting down to 0 for the ones
+   digit. Returns the number of digits. */
+s32 unknown_code_08084840(s32 value, void (*put_digit)(s32, s32, u32), u32 arg)
 {
     s32 count = 1;
     s32 place = 10;
     s32 digits;
-    s32 q;
+    s32 digit;
 
+    // count the digits; place ends at 10^digits
     if (value > 9)
     {
         do
@@ -603,10 +608,10 @@ s32 unknown_code_08084840(s32 value, void (*out)(s32, s32, u32), u32 a2)
     while (count != 0)
     {
         value *= 10;
-        q = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(value, place);
-        value -= q * place;
+        digit = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(value, place);
+        value -= digit * place;
         count--;
-        out(count, q, a2);
+        put_digit(count, digit, arg);
     }
     return digits;
 }
@@ -829,32 +834,62 @@ struct PartObj *spawn_obj_by_id(u16 id, u32 variant, u32 attr, u32 mode)
 
 
 
-ASM_FUNC("asm/code_080835B0/init_sprite_object.s", struct PartObj *init_sprite_object(struct PartObj *obj))
+// Sets up a window tilemap manager: allocates and clears its RAM tilemap, clears the tile
+// slots and threads the span and node pools onto their free lists.
+struct PartObj *init_sprite_object(struct PartObj *obj)
+{
+    s32 i;
+    u8 *tilemap;
+    struct SpanNode *spans;
+    struct TileWindow *win = (void *)obj;
 
+    tilemap = heap_alloc_raw(1, TILE_WINDOW_MAP_SIZE, gSpriteObjectTag);
+    win->tilemap = (u16 *)tilemap;
+    MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, tilemap, TILE_WINDOW_MAP_SIZE);
+    MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)win, sizeof(win->slots));
+    win->dirtySpans = 0;
+    spans = win->freeSpans = win->spanPool;
+    for (i = TILE_WINDOW_SPAN_COUNT - 2; i >= 0; i--)
+        win->spanPool[i].next = &win->spanPool[i + 1];
+    spans[TILE_WINDOW_SPAN_COUNT - 1].next = 0;
+    win->unk27C = 0;
+    win->freeNodes = win->nodePool;
+    for (i = TILE_WINDOW_NODE_COUNT - 2; i >= 0; i--)
+        win->nodePool[i].next = &win->nodePool[i + 1];
+    win->nodePool[TILE_WINDOW_NODE_COUNT - 1].next = 0;
+    return (struct PartObj *)win;
+}
+
+/* Clears BG VRAM (0x06004000-0x0600CFFF and the tilemap at 0x0600F000), queues gMapTable
+ * archive entry gGlyphIndexTable[0] (0x2C0 bytes of tiles) to 0x06008000, copies the six
+ * palettes of entry [9] (or [10] when the alternate palettes are on) into BG palette banks
+ * 8-13 (gUnk_02000180) and marks those banks for upload. */
 void load_vram_tiles(void)
 {
-    u32 idx;
-    u32 *entry;
+    u32 archiveIndex;
+    u32 *entryOfs;
     void (*copy)(u8 *, u8 *, u32);
-    u32 row;
+    u32 indexOfs;
     u32 flags;
-    u32 mask;
+    u32 altPalette;
 
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x06004000, 0x9000);
     MEM_ROUTINE(void (*)(u32, u8 *, u32), iwram_fill)(0, (u8 *)0x0600F000, 0x1000);
-    idx = *(u16 *)gGlyphIndexTable;
-    entry = gMapTable + idx;
-    queue_display_entry(2, (u8 *)gMapTable + *entry, (u8 *)0x06008000, 0x2C0, 0, 0);
+    archiveIndex = *(u16 *)gGlyphIndexTable;
+    entryOfs = gMapTable + archiveIndex;
+    queue_display_entry(2, (u8 *)gMapTable + *entryOfs, (u8 *)0x06008000, 0x2C0, 0, 0);
+
     copy = MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy);
     flags = ((struct SysBase *)gSys)->flags888;
-    mask = 6;
-    mask &= flags;
-    row = 0x12;
-    if (mask != 0)
-        row = 0x14;
-    idx = *(u16 *)(gGlyphIndexTable + row);
-    entry = gMapTable + idx;
-    copy((u8 *)gMapTable + *entry, gUnk_02000180, 0xC0);
-    ((struct SysBase *)gSys)->unk2 |= 0x3F00;
+    altPalette = 6;
+    altPalette &= flags;
+    /* byte offset into gGlyphIndexTable: entry 9, or 10 for the alternate palettes */
+    indexOfs = 0x12;
+    if (altPalette != 0)
+        indexOfs = 0x14;
+    archiveIndex = *(u16 *)(gGlyphIndexTable + indexOfs);
+    entryOfs = gMapTable + archiveIndex;
+    copy((u8 *)gMapTable + *entryOfs, gUnk_02000180, 0xC0);
+    ((struct SysBase *)gSys)->unk2 |= 0x3F00; /* BG palette banks 8-13 */
 }
 

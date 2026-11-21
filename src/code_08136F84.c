@@ -178,13 +178,14 @@ struct Vec3 *vec3_xform_inplace(struct Vec3 *v, struct Mat4 *m)
     return v;
 }
 
+/* Scales v to unit length in Q8 (length 0x100): v = v * (0x10000 / |v|) / 0x100. */
 void vec3_normalize_q24(struct Vec3 *v)
 {
-    s32 inv = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x10000, MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(v->x * v->x + v->y * v->y + v->z * v->z));
+    s32 invLength = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x10000, MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(v->x * v->x + v->y * v->y + v->z * v->z));
 
-    v->x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->x * inv, 0x100);
-    v->y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->y * inv, 0x100);
-    v->z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->z * inv, 0x100);
+    v->x = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->x * invLength, 0x100);
+    v->y = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->y * invLength, 0x100);
+    v->z = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(v->z * invLength, 0x100);
 }
 
 s32 vec3_length(struct Vec3 *v)

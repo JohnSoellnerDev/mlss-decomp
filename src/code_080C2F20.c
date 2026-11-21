@@ -167,6 +167,12 @@ void find_frame_entry(struct HeroBody *body, u32 index);
 void hero_a_place_on_partner_offset(struct HeroBody *body);
 void hero_a_step_sprite_anim5_to_3754(struct HeroBody *body);
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroSprite.flags bit set when the current animation has finished. */
+#define HERO_SPRITE_ANIM_DONE 8
+
 struct WorldModeBits
 {
     u8 lo4 : 4;
@@ -192,26 +198,29 @@ static inline u32 world_mode_bit2(void)
     return (((struct WorldMode2Bits *)&gWorld->modeByte)->g23 & ~2) != 0;
 }
 
+/* Once hero B's animation has finished: sound 0xAF, an active hero B plays action 0xB (0x2063), and
+   an active hero A gets a fresh step of 10 frames (rate 0x4000 / 10, progress 0). Hero A's step marks
+   (timer bits 12-15) are cleared and hero_a_step_window_2fec runs the step. */
 void hero_b_visible_anim_b_rate_a(struct HeroBody *body)
 {
-    struct HeroBody *body_a = &gWorld->heroA->body;
-    struct HeroBody *body_b = &gWorld->heroB->body;
+    struct HeroBody *a = &gWorld->heroA->body;
+    struct HeroBody *b = &gWorld->heroB->body;
 
-    if ((body_b->sprite->flags & 8) != 0)
+    if ((b->sprite->flags & HERO_SPRITE_ANIM_DONE) != 0)
     {
         set_slot_value(0xAF, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(b->mode))
         {
-            sprite_set_action(body_b, 0xB, 0x2063, 0);
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+            sprite_set_action(b, 0xB, 0x2063, 0);
+            ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 1;
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(a->mode))
         {
-            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xA);
-            body_a->progress = 0;
-            ((struct HeroFlagBits *)&body_a->flags)->active = 0;
+            a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0xA);
+            a->progress = 0;
+            ((struct HeroFlagBits *)&a->flags)->active = 0;
         }
-        body_a->timer = body_a->timer & 0xFFF;
+        a->timer = a->timer & 0xFFF;
         body->state = hero_a_step_window_2fec;
     }
 }

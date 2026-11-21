@@ -426,17 +426,23 @@ NONMATCH("asm/code_081348C4/obj_pick_follow_mode.s", u32 obj_pick_follow_mode(st
 END_NONMATCH
 
 void obj_list_push_default(struct AppearObj *obj);
+/*
+ * Motion state set up by obj_pick_follow_mode (modes 0 and 1): the object flies along the line from
+ * its start point (unkA4, unkA8) through the target point (unk84, unk88), moving unk9C per frame in x.
+ * Past x = -32 px it turns round and flies back; back at the start it leaves the list, stops and
+ * silences its sound (0xDB). Every 8 frames it drops a trail effect.
+ */
 void appear_motion_obj_fall_step(struct AppearObj *obj)
 {
-    s32 div;
-    s32 mul;
-    s32 wait;
+    s32 lineDx;
+    s32 lineDy;
+    s32 effectTimer;
 
-    div = obj->unkA4 - obj->unk84;
-    mul = obj->unkA8 - obj->unk88;
-    wait = obj->unkAC - 1;
-    obj->unkAC = wait;
-    if ((wait << 16) <= 0)
+    lineDx = obj->unkA4 - obj->unk84;
+    lineDy = obj->unkA8 - obj->unk88;
+    effectTimer = obj->unkAC - 1;
+    obj->unkAC = effectTimer;
+    if ((effectTimer << 16) <= 0)
     {
         if (obj->unk98 > 0x8000)
         {
@@ -448,33 +454,46 @@ void appear_motion_obj_fall_step(struct AppearObj *obj)
         }
         obj->unkAC = 8;
     }
+
+    /* x moves at constant speed, y follows the line */
     obj->unk10 -= obj->unk9C;
-    obj->unk14 = mul * (obj->unk10 - obj->unkA4) / div + obj->unkA8;
+    obj->unk14 = lineDy * (obj->unk10 - obj->unkA4) / lineDx + obj->unkA8;
+
     if (obj->unk10 / 0x100 < -0x20)
     {
+        /* off the left edge: turn round */
         obj_list_remove(obj);
         obj->unk9C = -obj->unk9C;
         obj_list_push_default(obj);
     }
     else if (obj->unk10 > obj->unkA4)
     {
+        /* back where it started: done */
         obj_list_remove(obj);
         obj->unk4C = 0;
         sound_stop_song(0xDB);
     }
 }
 
+/*
+ * Motion state set up by obj_pick_follow_mode (mode 2): the object circles the
+ * point between the two heroes (unk84, unk88), radius unk8C px in x and 16 px
+ * in y. Its angle (unk98, 0x100 per sine-table step) moves unk9C per frame;
+ * after a full turn either way it leaves the list, stops and silences its
+ * sound (0xDB). Every 8 frames it drops a trail effect (0x27A9 once past half
+ * a turn, 0x27B2 before).
+ */
 void appear_motion_obj_orbit_step(struct AppearObj *obj)
 {
-    s32 idx;
+    s32 angle;
     s32 cos;
     s32 sin;
-    s32 wait;
+    s32 trailTimer;
 
-    idx = (obj->unk98 / 0x100) & 0xFF;
-    wait = obj->unkAC - 1;
-    obj->unkAC = wait;
-    if ((wait << 16) <= 0)
+    angle = (obj->unk98 / 0x100) & 0xFF;
+    trailTimer = obj->unkAC - 1;
+    obj->unkAC = trailTimer;
+    if ((trailTimer << 16) <= 0)
     {
         if (obj->unk98 > 0x8000)
         {
@@ -486,11 +505,12 @@ void appear_motion_obj_orbit_step(struct AppearObj *obj)
         }
         obj->unkAC = 8;
     }
-    cos = gCosineTable[idx];
+    cos = gCosineTable[angle];
     obj->unk10 = (cos / 0x40) * obj->unk8C + obj->unk84;
-    sin = gSineTable[idx];
+    sin = gSineTable[angle];
     obj->unk14 = (sin / 0x40) * 0x10 + obj->unk88;
     obj->unk98 += obj->unk9C;
+    /* the angle left -0x10000 .. 0x10000: a full turn is done */
     if ((u32)(obj->unk98 + 0x10000) > 0x20000)
     {
         obj_list_remove(obj);
@@ -501,17 +521,24 @@ void appear_motion_obj_orbit_step(struct AppearObj *obj)
 
 void obj_list_remove(struct AppearObj *obj);
 void sound_stop_song(u32 song);
+/*
+ * Motion state set up by obj_pick_follow_mode (mode 3), like appear_motion_obj_orbit_step but
+ * around the fixed point (84, 108) px: radius unk84 px in x (its start x minus 84) and 32 px in
+ * y. Its angle (unk98, 0x100 per sine-table step) moves unk9C per frame; after a full turn
+ * either way it leaves the list, stops and silences its sound (0xDB). Every 8 frames it drops a
+ * trail effect (0x27A9 once past half a turn, 0x27B2 before).
+ */
 void obj_orbit_step_fixed(struct AppearObj *obj)
 {
-    s32 idx;
+    s32 angle;
     s32 cos;
     s32 sin;
-    s32 wait;
+    s32 trailTimer;
 
-    idx = (obj->unk98 / 0x100) & 0xFF;
-    wait = obj->unkAC - 1;
-    obj->unkAC = wait;
-    if ((wait << 16) <= 0)
+    angle = (obj->unk98 / 0x100) & 0xFF;
+    trailTimer = obj->unkAC - 1;
+    obj->unkAC = trailTimer;
+    if ((trailTimer << 16) <= 0)
     {
         if (obj->unk98 > 0x8000)
         {
@@ -523,45 +550,50 @@ void obj_orbit_step_fixed(struct AppearObj *obj)
         }
         obj->unkAC = 8;
     }
-    cos = gCosineTable[idx];
-    obj->unk10 = (cos / 0x40) * obj->unk84 + 0x5400;
-    sin = gSineTable[idx];
-    obj->unk14 = (sin / 0x40) * 0x20 + 0x6C00;
+    cos = gCosineTable[angle];
+    obj->unk10 = (cos / 0x40) * obj->unk84 + (84 << 8);
+    sin = gSineTable[angle];
+    obj->unk14 = (sin / 0x40) * 0x20 + (108 << 8);
     obj->unk98 += obj->unk9C;
+    /* the angle left -0x10000 .. 0x10000: a full turn is done */
     if ((u32)(obj->unk98 + 0x10000) > 0x20000)
     {
         obj_list_remove(obj);
-        obj->unk4C = 0;
+        obj->unk4C = NULL;
         sound_stop_song(0xDB);
     }
 }
 
+/* One frame of the straight move obj_integrate_and_speed sets up: moves the position (unk10/14/18)
+ * the fraction step / remaining of the way to the target (unk84/88/8C), where remaining (unk80) is
+ * the distance still to go and step (unk7E) the distance per frame, then counts remaining down.
+ * Returns 1 once there was no distance left at the start of the frame. */
 s32 obj_step_toward_target_081350A0(struct AppearObj *obj)
 {
-    s32 index = obj->unk80;
+    s32 remaining = obj->unk80;
     s32 dx = obj->unk84 - obj->unk10;
     s32 dy = obj->unk88 - obj->unk14;
     s32 dh = obj->unk8C - obj->unk18;
     s32 step = obj->unk7E;
 
-    if (index < step)
+    if (remaining < step)
     {
-        step = index;
+        step = remaining;
     }
     if (dx != 0)
     {
-        obj->unk10 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * step, index);
+        obj->unk10 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dx * step, remaining);
     }
     if (dy != 0)
     {
-        obj->unk14 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * step, index);
+        obj->unk14 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dy * step, remaining);
     }
     if (dh != 0)
     {
-        obj->unk18 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dh * step, index);
+        obj->unk18 += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(dh * step, remaining);
     }
     obj->unk80 -= step;
-    if (index != 0)
+    if (remaining != 0)
     {
         return 0;
     }
@@ -697,46 +729,37 @@ struct RecFlags11
     u8 bit7 : 1;
 };
 
-NONMATCH("asm/code_081348C4/anim_update_frame.s", void anim_update_frame(struct AnimSub *sub))
+void anim_update_frame(struct AnimSub *sub)
 {
-    u8 *table;
-    u8 *bytes;
-    s32 idx;
-    u32 flag;
-    u32 sub_index;
-    u8 b;
+    u8 *table = (u8 *)sub->unk14;
 
-    table = (u8 *)sub->unk14;
     if (table != NULL)
     {
-        bytes = (u8 *)sub->unk10;
-        if (bytes != NULL)
+        u8 *bytes = (u8 *)sub->unk10;
+
+        if (bytes != NULL && (*((s8 *)sub + 0x1C) != *((s8 *)sub + 0x1D) || (sub->unk1E >> 8) != (sub->unk20 >> 8)))
         {
-            if (*((s8 *)sub + 0x1C) != *((s8 *)sub + 0x1D) || (sub->unk1E >> 8) != (sub->unk20 >> 8))
+            s32 idx = *((s8 *)sub + 0x1C);
+
+            if (idx <= 3)
             {
-                idx = *((s8 *)sub + 0x1C);
-                if (idx <= 3)
+                if (idx >= 0)
                 {
-                    if (idx >= 0)
-                    {
-                        b = *(bytes + (sub->unk1E >> 8));
-                        flag = b >> 7;
-                        sub_index = (b & 0x7F) + table[idx];
-                        obj_load_record(sub->unk08, sub_index, 0, sub->unk38, sub->unk3C);
-                        ((struct RecFlags11 *)sub->unk08)->bit6 = flag;
-                        if (*((s8 *)sub + 0x1C) == 0)
-                        {
-                            sub->unk23 = 1;
-                        }
-                    }
+                    register u32 b asm("r3") = bytes[sub->unk1E >> 8];
+                    u32 record = 0x7F & b;
+                    u32 flag = b >> 7;
+
+                    obj_load_record(sub->unk08, record + table[idx], 0, sub->unk38, sub->unk3C);
+                    ((struct RecFlags11 *)sub->unk08)->bit6 = flag;
+                    if (*((s8 *)sub + 0x1C) == 0)
+                        sub->unk23 = 1;
                 }
-                *((u8 *)sub + 0x1D) = *((u8 *)sub + 0x1C);
-                sub->unk20 = sub->unk1E;
             }
+            *((u8 *)sub + 0x1D) = *((u8 *)sub + 0x1C);
+            sub->unk20 = sub->unk1E;
         }
     }
 }
-END_NONMATCH
 
 void anim_place_record(struct AnimSub *sub, s32 off_x, s32 off_y)
 {
@@ -937,60 +960,27 @@ static inline void item_load_record(struct ItemObj *item, s32 record, s32 b, u32
     obj_load_record(item, record, b, c, d);
 }
 
-NONMATCH("asm/code_081348C4/obj_zone_update.s", void obj_zone_update(struct AnimSub *sub))
+void obj_zone_update(struct AnimSub *sub)
 {
-    s32 zone;
-    s32 t;
-    s32 z;
-
-    if (sub->unk0C != NULL)
-    {
-        zone = 0;
-        z = sub->unk34;
-        if (z < gZoneTable[0])
-        {
-            t = gZoneTable[1];
-            if (sub->unk0C->unk21 != t)
-            {
-                item_load_record(sub->unk0C, t, -1, 0, 0);
-            }
-            sprite_update_cd0(sub->unk0C);
-        }
-        else
-        {
-            zone = 1;
-            if (z < gZoneTable[2])
-            {
-                t = gZoneTable[3];
-            }
-            else
-            {
-                zone = 2;
-                if (z >= gZoneTable[4])
-                {
-                    zone = 3;
-                }
-                else
-                {
-                    t = gZoneTable[5];
-                }
-            }
-            if (zone != 3)
-            {
-                if (sub->unk0C->unk21 != t)
-                {
-                    item_load_record(sub->unk0C, t, -1, 0, 0);
-                }
-                sprite_update_cd0(sub->unk0C);
-            }
-        }
-        if (zone > 2)
-        {
-            obj_release_slots(sub->unk0C);
-        }
-    }
+ typeof(sub->unk0C) obj = sub->unk0C;
+ if (obj != NULL) {
+  s32 zone = 0;
+  const s32 *table = gZoneTable;
+  s32 z = sub->unk34;
+  register s32 flags asm("r5") = 0;
+  if (z < table[0]) {
+   if (obj->unk21 != table[1]) item_load_record(obj, table[1], -1, 0, 0);
+   sprite_update_cd0(sub->unk0C);
+  } else if ((zone = 1), z < table[2]) {
+   if (obj->unk21 != table[3]) item_load_record(obj, table[3], -1, 0, flags);
+   sprite_update_cd0(sub->unk0C);
+  } else if ((zone = 2), z < table[4]) {
+   if (obj->unk21 != table[5]) item_load_record(obj, table[5], -1, 0, flags);
+   sprite_update_cd0(sub->unk0C);
+  } else zone = 3;
+  if (zone > 2) obj_release_slots(sub->unk0C);
+ }
 }
-END_NONMATCH
 
 u32 anim_refresh(struct AnimSub *sub)
 {

@@ -188,6 +188,11 @@ void obj_start_wave_left(struct ActorObj *obj)
 }
 
 
+/* State set by obj_start_wave_left: the object glides left along the straight line from its start
+   pixel (dx, dy) to its owner's spot (slope paramA8 / paramA4), bobbing around height 0xE00 on a
+   wave whose phase is targetH (8.8, 0x100 per cycle). It moves faster (and the wave runs faster) in
+   the first half of each cycle. Once it is 32 px off the left edge it leaves the object list,
+   reappears at x = 256 on its own spot's row and goes on to obj_wave_left_to_target. */
 void obj_wave_left(struct ActorObj *obj)
 {
     obj->posH = 0xE00 - (gSineTable[((obj->targetH / 0x100) - 0x40) & 0xFF] / 0x40) * 2;
@@ -201,6 +206,7 @@ void obj_wave_left(struct ActorObj *obj)
         obj->posX += -0x133;
         obj->targetH += 0x300;
     }
+    /* positions are 24.8 fixed point */
     obj->posY = obj->paramA8 * (obj->posX - (obj->dx << 8)) / obj->paramA4 + (obj->dy << 8);
     obj->pose->phase = obj->targetH;
     if (obj->posX / 0x100 <= -0x20)
@@ -214,6 +220,10 @@ void obj_wave_left(struct ActorObj *obj)
 }
 
 
+/* State set by obj_wave_left once the object has come back in from the right edge: it glides left
+ * along its own spot's row, bobbing around height 0xE00 on the same wave (phase targetH, 8.8,
+ * 0x100 per cycle; faster in the first half of each cycle). Once it reaches its part's target x it
+ * snaps onto it and goes on to obj_wave_rise_stop. */
 void obj_wave_left_to_target(struct ActorObj *obj)
 {
     obj->posH = 0xE00 - (gSineTable[((obj->targetH / 0x100) - 0x40) & 0xFF] / 0x40) * 2;
@@ -256,6 +266,11 @@ void obj_wave_rise_stop(struct ActorObj *obj)
 }
 
 
+/* State set by obj_lookup_slot_start: the mirror of obj_wave_left. The object glides right along
+   the straight line from its start pixel (dx, dy) to its own spot (paramA4, paramA8 is the span),
+   bobbing around height 0xE00 on a wave whose phase targetH now runs backwards. It moves faster in
+   the first half of each cycle and, once it reaches its spot, snaps onto it and goes on to
+   obj_wave_fall_stop. */
 void obj_wave_right(struct ActorObj *obj)
 {
     obj->posH = 0xE00 - (gSineTable[((obj->targetH / 0x100) - 0x40) & 0xFF] / 0x40) * 2;
@@ -269,6 +284,7 @@ void obj_wave_right(struct ActorObj *obj)
         obj->posX += 0x400;
         obj->targetH += -0x900;
     }
+    /* y follows the line: spanY * (x - startX) / spanX + startY, all 24.8 fixed point */
     obj->posY = obj->paramA8 * (obj->posX - (obj->dx << 8)) / obj->paramA4 + (obj->dy << 8);
     obj->pose->phase = obj->targetH;
     if (obj->posX >= obj->part->targetX)
@@ -299,10 +315,13 @@ void obj_wave_fall_stop(struct ActorObj *obj)
 }
 
 
+/* Falls under gravity (param9C is the vertical speed, paramA0 the gravity). On landing it plays
+   action 3, then heads for a spot 64 px right of its owner, on the row of one of the two heroes
+   picked at random, plays sound 0xA7 and goes on to obj_setup_part_motion. */
 void obj_land_random_target(struct ActorObj *obj)
 {
-    struct ActorObj *candA;
-    struct ActorObj *candB;
+    struct ActorObj *heroA;
+    struct ActorObj *heroB;
 
     obj->posH += obj->param9C;
     obj->param9C -= obj->paramA0;
@@ -310,15 +329,16 @@ void obj_land_random_target(struct ActorObj *obj)
     {
         obj->posH = 0;
         sprite_set_action(obj, 3, 0x40E7, 0);
-        candA = (struct ActorObj *)(gWorld->partners[6] + 8);
-        candB = (struct ActorObj *)(gWorld->partners[7] + 8);
+        /* gWorld->partners[6] and [7] are the two heroes; their actor body sits 8 bytes in */
+        heroA = (struct ActorObj *)(gWorld->partners[6] + 8);
+        heroB = (struct ActorObj *)(gWorld->partners[7] + 8);
         if (mt19937_next() & 1)
         {
-            obj->targetY = candA->part->targetY;
+            obj->targetY = heroA->part->targetY;
         }
         else
         {
-            obj->targetY = candB->part->targetY;
+            obj->targetY = heroB->part->targetY;
         }
         obj->targetX = obj->owner->part->targetX + 0x4000;
         obj->targetH = obj->baseH;
@@ -376,32 +396,36 @@ void obj_timer_to_move(struct ActorObj *obj)
 }
 
 
+/* Plays action 0x19 and sets up a jump from where the obj is to the fixed point (0x70, 0x68) for
+   obj_move_by_path: one frame per 2.5 pixels of ground distance, and a height arc factor that peaks
+   0x30 pixels above the start halfway through (at least 2 in size). param9C is kept in targetH
+   until the obj lands. */
 void obj_launch_to_target(struct ActorObj *obj)
 {
     s32 distX;
     s32 distY;
-    s32 flight;
-    s32 half;
-    s32 vy;
+    s32 frames;
+    s32 halfFrames;
+    s32 arcFactor;
 
     sprite_set_action(obj, 0x19, 0, 0);
     obj->targetH = obj->param9C;
-    obj->targetX = 0x7000;
-    obj->targetY = 0x6800;
+    obj->targetX = 0x70 << 8;
+    obj->targetY = 0x68 << 8;
     obj->dx = obj->posX / 0x100;
     obj->dy = obj->posY / 0x100;
     obj->dh = obj->posH / 0x100;
     distX = obj->targetX - (obj->dx << 8);
     distY = obj->targetY - (obj->dy << 8);
-    flight = (s32)MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(distX * distX + distY * distY) / 0x280;
-    half = flight / 2;
-    vy = 0x3000 / (half * half);
-    if (vy == 1)
+    frames = (s32)MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(distX * distX + distY * distY) / 0x280; /* 2.5 px per frame */
+    halfFrames = frames / 2;
+    arcFactor = 0x3000 / (halfFrames * halfFrames);
+    if (arcFactor == 1)
     {
-        vy = 2;
+        arcFactor = 2;
     }
-    obj->param9C = -vy;
-    obj->paramA0 = flight;
+    obj->param9C = -arcFactor;
+    obj->paramA0 = frames;
     obj->paramA4 = distX;
     obj->paramA8 = distY;
     obj->timer = 0;

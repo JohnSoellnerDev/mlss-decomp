@@ -200,10 +200,17 @@ void obj_wait_then_slide_and_finish(struct ActorObj *obj);
 void obj_move_step_c(struct ActorObj *obj);
 void obj_wait_then_state_5619(struct ActorObj *obj);
 
+/*
+ * Once the object's current animation has finished: play its throw action (6, or 0xA when
+ * paramA0 is set), spawn the projectile sprite 0x40F6 in front of it, which inherits the
+ * object's flags, owner and tag, and send it flying along a line (dx, dy is its slope):
+ * towards the owner's target position with a wait first (paramA0 == 0), or towards
+ * X = 0x40 at speed 0x480 otherwise. Plays sound 0x117 (set_slot_value queues the song).
+ */
 void parts_obj_spawn_child_b(struct ActorObj *obj)
 {
-    struct ActorObj *child;
-    s32 a0;
+    struct ActorObj *shot;
+    s32 variant;
 
     if (obj->pose->flags & 8)
     {
@@ -217,39 +224,39 @@ void parts_obj_spawn_child_b(struct ActorObj *obj)
         }
         ((struct PoseBits *)&obj->pose->flags)->mode = 1;
         obj->timer = 0;
-        child = obj_spawn(obj->part, 0x40F6, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
-                          obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
-        obj->child = child;
-        ((struct Flags78Bits *)&child->flags78)->kind = 1;
-        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
-        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
-        child->handler68 = on_arrive;
-        child->unk6C = obj->unk6C;
-        child->owner = obj->owner;
-        obj_list_push_default(child);
-        child->tag = obj->tag;
-        a0 = obj->paramA0;
-        if (a0 == 0)
+        shot = obj_spawn(obj->part, 0x40F6, obj->baseX / 0x100 - 0x10, obj->baseY / 0x100 + 2,
+                         obj->baseH / 0x100 + 0x20, ((u32)obj->pose->unk11 << 25) >> 31, 1);
+        obj->child = shot;
+        ((struct Flags78Bits *)&shot->flags78)->kind = 1;
+        ((struct ObjFlags77 *)shot)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
+        ((struct ObjFlags77 *)shot)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        shot->handler68 = on_arrive;
+        shot->unk6C = obj->unk6C;
+        shot->owner = obj->owner;
+        obj_list_push_default(shot);
+        shot->tag = obj->tag;
+        variant = obj->paramA0;
+        if (variant == 0)
         {
-            child->dx = (child->baseX - obj->owner->part->targetX) / 0x100;
-            child->dy = (child->baseY - obj->owner->part->targetY) / 0x100;
-            child->targetX = child->baseX;
-            child->targetY = child->baseY;
-            child->param9C = 0x500;
-            child->timer = a0;
-            child->paramA0 = 0x500;
-            child->state = obj_wait_then_slide_and_finish;
+            shot->dx = (shot->baseX - obj->owner->part->targetX) / 0x100;
+            shot->dy = (shot->baseY - obj->owner->part->targetY) / 0x100;
+            shot->targetX = shot->baseX;
+            shot->targetY = shot->baseY;
+            shot->param9C = 0x500;
+            shot->timer = variant;
+            shot->paramA0 = 0x500;
+            shot->state = obj_wait_then_slide_and_finish;
             set_slot_value(0x117, -1);
         }
         else
         {
-            sprite_set_action(child, 1, 0, 0);
-            child->dx = (child->baseX - 0x4000) / 0x100;
-            child->dy = (child->baseY - obj->owner->part->targetY) / 0x100;
-            child->targetX = child->baseX;
-            child->targetY = child->baseY;
-            child->param9C = 0x480;
-            child->state = obj_move_step_c;
+            sprite_set_action(shot, 1, 0, 0);
+            shot->dx = (shot->baseX - 0x4000) / 0x100;
+            shot->dy = (shot->baseY - obj->owner->part->targetY) / 0x100;
+            shot->targetX = shot->baseX;
+            shot->targetY = shot->baseY;
+            shot->param9C = 0x480;
+            shot->state = obj_move_step_c;
             set_slot_value(0x117, -1);
         }
         obj->state = obj_wait_then_state_5619;

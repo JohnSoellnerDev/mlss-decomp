@@ -57,7 +57,7 @@ struct WaveObj
     u32 index;
     s32 targetX;
     s32 targetY;
-    s32 phase;
+    s32 targetH;    /* start_motion's target height; while throwing, the launches still to come */
     u8 filler90[0x9C - 0x90];
     s32 counter;
     s32 param0;
@@ -175,6 +175,10 @@ void popup_digit_spawn(s32 a, s32 b, s32 c, s32 d, u32 e);
 void anim_bit1_chance(void *part, u32 chance);
 u32 query_or_arm_wait(struct WaveObj *obj);
 
+/* State after a launch (random_launch_step), once the animation has finished and the timer has run
+ * out: with launches left it winds up again (action 0x25) and launches the next one; after the last
+ * one it plays action 0x28 and moves at speed 0x180 back to its part's target point, which
+ * obj_index_wait_end waits out. targetH counts the launches until it becomes the target height. */
 void obj_counter_next_target(struct WaveObj *obj)
 {
     void (*next)(struct WaveObj *);
@@ -185,16 +189,16 @@ void obj_counter_next_target(struct WaveObj *obj)
         obj->timer--;
         if (obj->timer <= 0)
         {
-            obj->phase--;
-            if (obj->phase <= 0)
+            obj->targetH--;
+            if (obj->targetH <= 0)
             {
                 sprite_set_action(obj, 0x28, 0, 0);
                 obj->targetX = obj->part->targetX;
                 obj->targetY = obj->part->targetY;
-                obj->phase = obj->part->targetH;
+                obj->targetH = obj->part->targetH;
                 obj->motionSpeed = 0x180;
                 flags = &obj->flags;
-                *flags |= 0x20;
+                *flags |= 0x20; /* start_motion: targetX/Y/H are a position, not an offset */
                 obj->motionStart = 0;
                 start_motion(obj);
                 next = obj_index_wait_end;
@@ -209,16 +213,20 @@ void obj_counter_next_target(struct WaveObj *obj)
     }
 }
 
+/* One frame of a bouncing hop: x and y go linearly from the hop's start (dx, dy) by (param4,
+ * select) over param0 frames, the height follows a parabola (counter * frames-from-middle squared,
+ * peaking targetY above dh). Gone once it is 32 pixels past the left edge; landing (height back
+ * to 0 after the middle) starts the next hop from the base point. */
 void obj_move_by_velocity_b(struct WaveObj *obj)
 {
-    s32 dt;
+    s32 fromMiddle;
 
     obj->x = (obj->param4 * obj->timer) / obj->param0 + (obj->dx << 8);
     obj->y = (obj->select * obj->timer) / obj->param0 + (obj->dy << 8);
-    dt = obj->timer - obj->param0 / 2;
-    obj->h = (dt * dt) * obj->counter + obj->targetY + (obj->dh << 8);
+    fromMiddle = obj->timer - obj->param0 / 2;
+    obj->h = (fromMiddle * fromMiddle) * obj->counter + obj->targetY + (obj->dh << 8);
     obj->timer++;
-    if (obj->x / 0x100 < -0x20)
+    if (obj->x / 0x100 < -32)
     {
         obj_release(obj);
     }

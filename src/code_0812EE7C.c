@@ -27,6 +27,26 @@ struct MenuSub
     void *sub20;
 };
 
+struct MenuList
+{
+    u8 filler0[0x40];
+    u8 *items40;   /* ids of the entries: items, then gRowTable rows, then gRowTableC rows */
+    u8 filler44[0xA8 - 0x44];
+    u16 countA8;   /* number of entries */
+    u16 firstAA;   /* number of items (the first entries) */
+    u16 countAC;   /* number of gRowTableC rows (the last entries) */
+    u16 countAE;   /* number of gRowTable rows (after the items) */
+    u16 valueB0;   /* menu_item_value of the entry under the cursor */
+    u8 fillerB2[0xB4 - 0xB2];
+    u16 indexB4;   /* index byte of the entry under the cursor */
+    u16 kindB6;    /* kind of the entry under the cursor (3 for items and gRowTableC rows) */
+    u8 fillerB8[0xC4 - 0xB8];
+    u8 cursorC4;   /* bits 0-6: entry under the cursor */
+};
+
+extern u8 gItemTable[];
+extern const u8 gRowTable[];
+extern const u8 gRowTableC[];
 extern const u8 gSubCallbacks[];
 extern const u8 gScreenTagOpen[];
 extern u8 gSys[];
@@ -47,7 +67,39 @@ ASM_FUNC("asm/code_0812EE7C/menu_redraw_step.s", void menu_redraw_step(struct Vi
 
 ASM_FUNC("asm/code_0812EE7C/menu_item_value.s", u32 menu_item_value(void *menu, u32 amount, u32 index, u32 kind, u32 flag))
 
-ASM_FUNC("asm/code_0812EE7C/menu_cursor_update.s", void menu_cursor_update(void))
+u32 menu_item_value(void *menu, u32 amount, u32 index, u32 kind, u32 flag);
+// Looks up the entry under the cursor (an item, a gRowTable row or a gRowTableC row, in that order
+// in the list), stores its kind and index byte, and caches its menu_item_value for display.
+void menu_cursor_update(struct MenuList *menu)
+{
+    if ((menu->cursorC4 & 0x7F) < menu->firstAA)
+    {
+        const u8 *items;
+
+        menu->kindB6 = 3;
+        items = gItemTable;
+        menu->indexB4 = items[menu->items40[menu->cursorC4 & 0x7F] * 16 + 3];
+    }
+    else if (menu->firstAA <= (menu->cursorC4 & 0x7F) && (menu->cursorC4 & 0x7F) < menu->firstAA + menu->countAE
+             && menu->countAE != 0)
+    {
+        const u8 *rows;
+
+        rows = gRowTable;
+        menu->kindB6 = rows[menu->items40[menu->cursorC4 & 0x7F] * 20 + 0x11];
+        menu->indexB4 = rows[menu->items40[menu->cursorC4 & 0x7F] * 20 + 0xE];
+    }
+    else if (menu->firstAA + menu->countAE <= (menu->cursorC4 & 0x7F) && (menu->cursorC4 & 0x7F) < menu->countA8
+             && menu->countAC != 0)
+    {
+        const u8 *rows;
+
+        menu->kindB6 = 3;
+        rows = gRowTableC;
+        menu->indexB4 = rows[menu->items40[menu->cursorC4 & 0x7F] * 20 + 0xE];
+    }
+    menu->valueB0 = menu_item_value(menu, 0, (u8)menu->indexB4, (u8)menu->kindB6, 1);
+}
 
 ASM_FUNC("asm/code_0812EE7C/menu_list_build.s", void menu_list_build(void))
 

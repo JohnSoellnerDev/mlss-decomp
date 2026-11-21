@@ -65,12 +65,12 @@ struct ActorObj
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
+    s32 param9C; /* arc: height change per frame squared from its middle (8.8) */
+    s32 paramA0; /* arc: frames it lasts */
+    s32 paramA4; /* arc: x distance covered (8.8) */
+    s32 paramA8; /* arc: y distance covered (8.8) */
     u16 timer;
-    s16 dx;
+    s16 dx; /* arc: start x, y and height in pixels */
     s16 dy;
     s16 dh;
 };
@@ -136,22 +136,26 @@ void map_obj_spawn_child(struct ActorObj *obj);
 void obj_timer_down_action7_then_idle(struct ActorObj *obj);
 void obj_arc_step_timer(struct ActorObj *obj);
 
+/* One frame of a jump along an arc: x and y go linearly from the start point by (paramA4,
+ * paramA8) over paramA0 frames, the height follows a parabola around its middle frame. When the
+ * arc is over it plays sound 0xD8, lands (action 6, effect 0x120A at the base point) and waits 18
+ * frames in obj_timer_down_action7_then_idle. */
 void obj_arc_step_timer(struct ActorObj *obj)
 {
     s32 hOffset = 0x1000;
-    s32 t;
-    s32 t2;
+    s32 fromMiddle;
+    s32 fromMiddleSq;
 
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
-    t = (s16)obj->timer - obj->paramA0 / 2;
-    t2 = t * t;
-    obj->posH = obj->param9C * t2 + ((s16)obj->dh * 0x100 + hOffset);
+    fromMiddle = (s16)obj->timer - obj->paramA0 / 2;
+    fromMiddleSq = fromMiddle * fromMiddle;
+    obj->posH = obj->param9C * fromMiddleSq + ((s16)obj->dh * 0x100 + hOffset);
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {
         set_slot_value(0xD8, -1);
-        obj->timer = 0x12;
+        obj->timer = 18;
         sprite_set_action(obj, 6, 0, 0);
         effect_spawn_at(0x120A, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
         obj->state = obj_timer_down_action7_then_idle;

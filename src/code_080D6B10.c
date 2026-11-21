@@ -139,6 +139,9 @@ struct World
     struct HeroLayer *layers;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
 extern struct World *gWorld;
 extern u8 *gParty;
 extern struct KeyState gSys;
@@ -175,12 +178,14 @@ void enter_finish_rebuild(struct HeroBody *body);
 void resolve_contact_action(struct HeroBody *body, struct HeroBody *partner, u32 a, u32 b, const u8 *cb);
 void hero_pair_active_place_a_finish(struct HeroBody *body);
 
+/* Plays sound 0x15E, starts action 8 on hero B (0x2066) and on its child (0x2095), releases the
+ * child and spawns effect 0x69F at hero B's position, then waits in hero_b_start_step_14th. */
 void hero_b_remove_child_fx(struct HeroBody *body)
 {
     struct HeroBody *body_b = &gWorld->heroB->body;
 
-    set_slot_value(0x15E, -1);
-    if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+    set_slot_value(0x15E, -1); /* plays sound 0x15E */
+    if (HERO_MODE_ACTIVE(body_b->mode))
     {
         sprite_set_action(body_b, 8, 0x2066, 0);
         ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
@@ -211,61 +216,68 @@ void hero_b_start_step_14th(struct HeroBody *body)
     }
 }
 
+// Hero B's hit: once its motion has finished (flags bit 5), every list entry in mode 4
+// that isn't shielded (data->flags110 bit 5) takes the contact action, counted in hero B's
+// count, with a popup (effect 0) where the target shows one. Then hero B and its child
+// play action 9 and hero B starts a 32-step motion before hero_b_active_anim_place.
 void hero_b_link_list_objs(struct HeroBody *body)
 {
-    struct HeroBody *body_b = &gWorld->heroB->body;
-    struct HeroBody *list_body;
+    struct HeroBody *heroB = &gWorld->heroB->body;
+    struct HeroBody *target;
     s32 i;
 
-    state_stack_advance_progress(body_b);
-    if ((body_b->flags & 0x20) != 0)
+    state_stack_advance_progress(heroB);
+    if ((heroB->flags & 0x20) != 0)
     {
         for (i = 0; i < 6; i++)
         {
-            list_body = &gWorld->list[i]->body;
-            if ((list_body->mode & 6) == 4)
+            target = &gWorld->list[i]->body;
+            if ((target->mode & 6) == 4)
             {
-                if ((list_body->data->flags110 & 0x20) == 0)
+                if ((target->data->flags110 & 0x20) == 0)
                 {
-                    ((struct HeroCcBits *)&body_b->cc)->low = 0x55;
-                    body_b->scale = 0xC0;
-                    resolve_contact_action(body_b, list_body, 0, 0, gRoom149Layer1 + 0x30D);
-                    body_b->count++;
-                    if (list_body->data->displayTimer > 0 || (list_body->data->flags111 & 2) != 0)
-                        effect_spawn_at(0, list_body->targetX / 0x100 + list_body->ofsX,
-                                        list_body->targetY / 0x100 + list_body->ofsY, 0, list_body);
+                    ((struct HeroCcBits *)&heroB->cc)->low = 0x55;
+                    heroB->scale = 0xC0;
+                    resolve_contact_action(heroB, target, 0, 0, gRoom149Layer1 + 0x30D);
+                    heroB->count++;
+                    if (target->data->displayTimer > 0 || (target->data->flags111 & 2) != 0)
+                        effect_spawn_at(0, target->targetX / 0x100 + target->ofsX,
+                                        target->targetY / 0x100 + target->ofsY, 0, target);
                 }
             }
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((heroB->mode & 6) == 2 || (heroB->mode & 6) == 4)
         {
-            sprite_set_action(body_b, 9, 0x2066, 0);
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+            sprite_set_action(heroB, 9, 0x2066, 0);
+            ((struct HeroSpriteBits *)&heroB->sprite->flags)->mode = 0;
         }
-        if (body_b->child != 0)
+        if (heroB->child != 0)
         {
-            sprite_set_action(body_b->child, 9, 0x2095, 0);
-            ((struct HeroSpriteBits *)&body_b->child->sprite->flags)->mode = 0;
+            sprite_set_action(heroB->child, 9, 0x2095, 0);
+            ((struct HeroSpriteBits *)&heroB->child->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((heroB->mode & 6) == 2 || (heroB->mode & 6) == 4)
         {
-            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x20);
-            body_b->progress = 0;
-            ((struct HeroFlagBits *)&body_b->flags)->active = 0;
+            heroB->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x20);
+            heroB->progress = 0;
+            ((struct HeroFlagBits *)&heroB->flags)->active = 0;
         }
         body->state = hero_b_active_anim_place;
     }
 }
 
+/* Pair-move state: advances hero B's motion. When it ends (flag 0x20) and B is on the field, B takes
+   action 5 (art 0x2000, or 0x204D with a pose) and moves 0x28 pixels left of its own target spot,
+   2 units above its target height, at speed 0x600; then hero_pair_active_place_both takes over. */
 void hero_b_active_anim_place(struct HeroBody *body)
 {
-    struct Hero *hero = gWorld->heroB;
-    struct HeroBody *body_b = &hero->body;
+    struct Hero *hero_b = gWorld->heroB;
+    struct HeroBody *body_b = &hero_b->body;
 
     state_stack_advance_progress(body_b);
-    if ((hero->body.flags & 0x20) != 0)
+    if ((hero_b->body.flags & 0x20) != 0)
     {
-        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
         {
             if (body_b->data->poseIndex == -1)
                 sprite_set_action(body_b, 5, 0x2000, 0);
@@ -284,7 +296,9 @@ void hero_b_active_anim_place(struct HeroBody *body)
     }
 }
 
-void hero_pair_active_place_both(struct HeroBody *body)
+// Steps hero B's motion; once it has arrived, puts both heroes back on their home
+// positions in their idle pose (facing by their span) and lets each finish its turn.
+void hero_pair_active_place_both(struct HeroBody *self)
 {
     struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
@@ -293,10 +307,13 @@ void hero_pair_active_place_both(struct HeroBody *body)
     struct HeroData *data;
 
     step_motion(body_b);
+    /* flags bit 5: the motion has finished */
     if ((body_b->flags & 0x20) != 0)
     {
         set_slot_value(0x2E, -1);
         set_slot_value(0x53, -1);
+
+        /* Hero A: back home, idle pose, done. */
         if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
         {
             data = body_a->data;
@@ -328,6 +345,8 @@ void hero_pair_active_place_both(struct HeroBody *body)
             body_a->state = 0;
             enter_finish_rebuild(body_a);
         }
+
+        /* Hero B: the same. */
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             data = body_b->data;
@@ -362,14 +381,17 @@ void hero_pair_active_place_both(struct HeroBody *body)
     }
 }
 
+// Sets the top two bits of the world's mode byte, then (when hero A is in mode 2 or 4) sends
+// hero A 30 px back from its target point at speed 0x300 in its idle pose, facing right, and
+// lets it finish its turn. Hero B copies positions next (hero_b_copy_pos).
 void hero_a_mode_place_finish(struct HeroBody *body)
 {
     struct HeroBody *body_a;
-    s32 mode;
+    s32 worldMode;
 
-    mode = gWorld->modeByte;
-    mode |= 0xC0;
-    gWorld->modeByte = mode;
+    worldMode = gWorld->modeByte;
+    worldMode |= 0xC0;
+    gWorld->modeByte = worldMode;
     body_a = &gWorld->heroA->body;
     if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
     {
@@ -388,6 +410,7 @@ void hero_a_mode_place_finish(struct HeroBody *body)
             s16 *span;
             s32 mirror;
 
+            /* face by its span: mirrored unless span.a < span.b */
             sprite = body_a->sprite;
             mirror = 0;
             span = &body_a->span.a;
@@ -406,20 +429,23 @@ void hero_a_mode_place_finish(struct HeroBody *body)
     body->state = hero_b_copy_pos;
 }
 
+/* Waits until hero A has finished its turn (no state left). Then plays sound 0x2E, starts hero B's
+   timed progress over 32 frames and hero A's action 0x2024 (each only if that hero can still act),
+   and moves on to hero_b_step_window_d72e4. */
 void hero_b_start_step32_then_next(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
-    u32 zero = (u32)body_a->state;
+    u32 stateA = (u32)body_a->state;
 
-    if (zero == 0)
+    if (stateA == 0)
     {
         set_slot_value(0x2E, -1);
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x20);
-            body_b->progress = zero;
+            body_b->progress = stateA; /* 0 */
             ((struct HeroFlagBits *)&body_b->flags)->active = 0;
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)

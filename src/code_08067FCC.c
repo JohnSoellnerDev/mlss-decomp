@@ -59,12 +59,12 @@ struct Actor
     s32 targetY;
     s32 targetH;
     u8 filler90[0x9C - 0x90];
-    s32 param9C;
-    s32 paramA0;
-    s32 paramA4;
-    s32 paramA8;
-    u16 timer;
-    u16 dx;
+    s32 param9C;    // arc flight: height curve (negative); else a mode / spin value
+    s32 paramA0;    // arc flight: its length in frames
+    s32 paramA4;    // arc flight: x distance to the target (8.8)
+    s32 paramA8;    // arc flight: y distance to the target (8.8)
+    u16 timer;      // arc flight: frames flown
+    u16 dx;         // arc flight: start x, y, h in whole units
     s16 dy;
     s16 dh;
 };
@@ -177,16 +177,20 @@ void obj_wait_free_action2_arc(struct Actor *obj);
 void obj_pose_then_spawn_arc(struct Actor *obj);
 void obj_spawn_child_412b(struct Actor *obj);
 
+// Flies the object back along its arc (see obj_spawn_arc_child), one frame per call with the
+// timer counting down: x and y go linearly from the start toward the target, the height follows
+// the parabola param9C * (timer - duration / 2)^2 on top of the start height + 0x30. Past the
+// start it plays action 7 and waits in wait_for_index.
 void obj_drift_step(struct Actor *obj)
 {
     obj->x = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dx << 8);
     obj->y = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + ((s16)obj->dy << 8);
     {
-        s32 offset = (s16)obj->timer - obj->paramA0 / 2;
-        s32 sq = offset * offset;
-        s32 curve = obj->param9C * sq;
-        s32 dhTerm = ((s16)obj->dh << 8) + 0x3000;
-        obj->h = curve + dhTerm;
+        s32 fromPeak = (s16)obj->timer - obj->paramA0 / 2;
+        s32 fromPeakSq = fromPeak * fromPeak;
+        s32 drop = obj->param9C * fromPeakSq;
+        s32 peakH = ((s16)obj->dh << 8) + 0x3000;
+        obj->h = drop + peakH;
     }
     obj->timer--;
     if ((s16)obj->timer < 0)
@@ -343,15 +347,19 @@ void obj_fall_bounce_step(struct Actor *obj)
     }
 }
 
+// Once the object's animation ends (pose flag 8): plays action 4 and effect 0x1092 and throws
+// a child object 0x4106 to 0x36 units right of its owner's target. The child flies along a
+// parabola (obj_child_arc_land) that lasts one frame per 2 units of distance and peaks 0x30
+// units high, spinning by the object's param9C each frame.
 void obj_spawn_arc_child(struct Actor *obj)
 {
     struct Actor *child;
-    s32 ddx;
-    s32 ddy;
-    s32 len;
-    s32 q;
+    s32 dx;
+    s32 dy;
+    s32 dist;
+    s32 duration;
     s32 half;
-    s32 d;
+    s32 curve;
 
     if (obj->pose->flags & 8)
     {
@@ -369,29 +377,33 @@ void obj_spawn_arc_child(struct Actor *obj)
         child->cb60 = obj_owner_check_place;
         child->tag = obj->tag;
         child->timer = 0;
+
+        // Start (dx, dy, dh, whole units) and target (8.8 fixed point) of the flight.
         child->targetX = obj->owner->data->targetX + 0x3600;
         child->targetY = obj->owner->data->targetY;
         child->targetH = child->baseH;
         child->dx = child->baseX / 0x100;
         child->dy = child->baseY / 0x100;
         child->dh = child->baseH / 0x100;
-        ddx = child->targetX - ((s16)child->dx << 8);
-        ddy = child->targetY - (child->dy << 8);
-        len = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(ddx * ddx + ddy * ddy);
-        q = len / 0x200;
-        half = q / 2;
-        d = 0x3000 / (half * half);
-        if (d == 1)
+        dx = child->targetX - ((s16)child->dx << 8);
+        dy = child->targetY - (child->dy << 8);
+        dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
+
+        // Height = 0x30 - curve * (timer - duration / 2)^2, so curve = 0x30 / half^2.
+        duration = dist / 0x200;
+        half = duration / 2;
+        curve = 0x3000 / (half * half);
+        if (curve == 1)
         {
-            d = 2;
+            curve = 2;
         }
-        child->param9C = -d;
-        child->paramA0 = q;
-        child->paramA4 = ddx;
-        child->paramA8 = ddy;
+        child->param9C = -curve;
+        child->paramA0 = duration;
+        child->paramA4 = dx;
+        child->paramA8 = dy;
         child->timer = 0;
         child->state = obj_child_arc_land;
-        child->targetH = obj->param9C;
+        child->targetH = obj->param9C; // spin per frame while in flight
         set_slot_value(0x57, -1);
         obj->state = obj_idle_when_pose_active;
     }

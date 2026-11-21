@@ -204,14 +204,17 @@ u32 sprite_state_step_b(struct ActorObj *obj)
     return 1;
 }
 
+/* Counts the timer down; when it runs out, starts a sway around the base position along the line to
+ * the owner's target: the phase (dx) runs from +0x200 down to -0x200 by a step (dy) that gets smaller
+ * the farther away the owner's target is (about 2 + distance / 0x80 frames). */
 void obj_timer_compute_step(struct ActorObj *obj)
 {
-    struct ActorPart *data;
-    s32 dX;
-    s32 dY;
-    s32 dH;
-    s32 dist;
-    s32 t;
+    struct ActorPart *ownerData;
+    s32 quarterX;
+    s32 quarterY;
+    s32 quarterH;
+    s32 quarterDist;
+    s32 span;
 
     obj->timer--;
     if ((s16)obj->timer < 0)
@@ -219,33 +222,39 @@ void obj_timer_compute_step(struct ActorObj *obj)
         obj->targetX = obj->baseX;
         obj->targetY = obj->baseY;
         obj->targetH = obj->baseH;
-        data = obj->owner->data;
-        dX = (data->targetX - obj->baseX) / 4;
-        dY = (data->targetY - obj->baseY) / 4;
-        dH = (data->targetH - obj->baseH) / 4;
-        dist = ((s32 (*)(s32))gMathRoutines)(dX * dX + dY * dY + dH * dH);
-        t = (dist << 3) + (obj->dx = 0x200);
-        obj->dy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((t >> 1) + 0xFFFC0000, t);
+        ownerData = obj->owner->data;
+        quarterX = (ownerData->targetX - obj->baseX) / 4;
+        quarterY = (ownerData->targetY - obj->baseY) / 4;
+        quarterH = (ownerData->targetH - obj->baseH) / 4;
+        /* gMathRoutines starts with the integer square root */
+        quarterDist = ((s32 (*)(s32))gMathRoutines)(quarterX * quarterX + quarterY * quarterY + quarterH * quarterH);
+        span = (quarterDist << 3) + (obj->dx = 0x200);
+        /* rounded -0x40000 / span */
+        obj->dy = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((span >> 1) - 0x40000, span);
         obj->savedState = actor_return_to_base_steps;
         sprite_set_action(obj, 5, 0, 0);
         obj->state = move_states_obj_move_toward_target;
     }
 }
 
+/* The sway obj_timer_compute_step starts: advances the offset (dx) by its step (dy) and places
+ * the object that far from its base position along the line to the owner's target (8.8 units);
+ * once the offset has run down to -0x200, plays action 6 and hands over to
+ * obj_pose_active_release_move. */
 void move_states_obj_move_toward_target(struct ActorObj *obj)
 {
     s16 x;
     s16 y;
     s16 h;
-    struct ActorPart *data;
-    s16 *dx = &obj->dx;
+    struct ActorPart *ownerData;
+    s16 *offset = &obj->dx;
 
-    *dx = *dx + obj->dy;
-    move_step(&x, &y, &h, (data = obj->owner->data)->targetX - obj->targetX, data->targetY - obj->targetY, obj->owner->data->targetH - obj->targetH, *dx);
+    *offset = *offset + obj->dy;
+    move_step(&x, &y, &h, (ownerData = obj->owner->data)->targetX - obj->targetX, ownerData->targetY - obj->targetY, obj->owner->data->targetH - obj->targetH, *offset);
     obj->posX = obj->baseX + x;
     obj->posY = obj->baseY + y;
     obj->posH = obj->baseH + h;
-    if (*dx <= -0x200)
+    if (*offset <= -0x200)
     {
         sprite_set_action(obj, 6, 0, 0);
         ((struct ActorPoseFlagBits *)&obj->pose->flags)->mode = 1;
@@ -497,6 +506,10 @@ void obj_screen_cull_step(struct ActorObj *obj)
     }
 }
 
+/* Drops the object towards its base point: the x/y offsets lose 3/256 each frame, the height
+   offset moves by dhStep. Once it is down to the base height it fires its aimed shot pair
+   (obj_spawn_aimed_child_pair), takes action 0xC and keeps falling to the ground in
+   obj_drop_clamp_to_limit. */
 void obj_drop_land_stop(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0xFD / 0x100;

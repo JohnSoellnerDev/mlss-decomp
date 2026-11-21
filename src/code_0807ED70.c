@@ -101,6 +101,10 @@ struct SpriteObj
     u8 flags77;
 };
 
+/* The hero a body sprite belongs to, as an index into gWorld->partsA/partsB: the s16 hero index at
+   ring + 0xEC (-1 Mario, -2 Luigi) + 2, so Luigi's parts are at 0 and Mario's at 1. */
+#define HERO_PART_SLOT(obj) (*(s16 *)((u8 *)(obj)->ring + 0xEC) + 2)
+
 struct TaskData
 {
     u8 filler0[0x04];
@@ -476,11 +480,14 @@ tail_b:
 }
 END_NONMATCH
 
+/* Frees the part sprites set_body_part attached to obj's hero (gWorld->partsA and partsB at
+   HERO_PART_SLOT), each with obj_bind_slots, flags13 bits 2-3 cleared, list_push_active and
+   release_obj_131c, and clears their entries. */
 void obj_free_parts(struct SpriteObj *obj)
 {
     struct SpriteObj *part;
 
-    part = gWorld->partsA[*(s16 *)((u8 *)obj->ring + 0xEC) + 2];
+    part = gWorld->partsA[HERO_PART_SLOT(obj)];
     if (part != NULL)
     {
         obj_bind_slots(part);
@@ -488,9 +495,9 @@ void obj_free_parts(struct SpriteObj *obj)
         ((struct Bits13 *)&part->flags13)->bit3 = 0;
         list_push_active(part);
         release_obj_131c(part);
-        gWorld->partsA[*(s16 *)((u8 *)obj->ring + 0xEC) + 2] = NULL;
+        gWorld->partsA[HERO_PART_SLOT(obj)] = NULL;
     }
-    part = gWorld->partsB[*(s16 *)((u8 *)obj->ring + 0xEC) + 2];
+    part = gWorld->partsB[HERO_PART_SLOT(obj)];
     if (part != NULL)
     {
         obj_bind_slots(part);
@@ -498,7 +505,7 @@ void obj_free_parts(struct SpriteObj *obj)
         ((struct Bits13 *)&part->flags13)->bit3 = 0;
         list_push_active(part);
         release_obj_131c(part);
-        gWorld->partsB[*(s16 *)((u8 *)obj->ring + 0xEC) + 2] = NULL;
+        gWorld->partsB[HERO_PART_SLOT(obj)] = NULL;
     }
 }
 
@@ -691,42 +698,61 @@ NONMATCH("asm/code_0807ED70/hero_select_index.s", u32 hero_select_index(void))
 }
 END_NONMATCH
 
-struct ShowRec
+/* A body as apply_partner_effect sees the one taking the hit. */
+struct HitBody
 {
     u8 filler0[0x10];
-    s32 posY;
-    u8 filler14[0x18 - 0x14];
     s32 posX;
+    u8 filler14[0x18 - 0x14];
+    s32 posZ;
     u8 filler1C[0xB8 - 0x1C];
-    u16 unkB8;
+    u16 hitEffect;   /* effect shown for the hit; apply_partner_effect sets it from the attacker */
     u8 fillerBA[0xC3 - 0xBA];
-    s8 offY;
+    s8 hitOffsetX;   /* where on the body hits land, in pixels from posX/posZ */
     u8 fillerC4;
-    s8 offX;
+    s8 hitOffsetZ;
 };
 
+/* What a body's data pointer (+0x28) points at for something that can be defeated. */
+struct HitOwner
+{
+    u8 filler0[0x08];
+    struct HitBody body;  /* its main body */
+    u8 fillerD0[0xF6 - 0xD0];
+    s16 hp;               /* apply_partner_effect subtracts the damage, clamped to 0 */
+    s16 maxHp;
+    u8 fillerFA[0x111 - 0xFA];
+    u8 status;            /* bit 1: already being stopped (obj_stop) */
+};
+
+#define HIT_EFFECT_DEFAULT 0x193
+
 void obj_stop(void *obj);
+/* Deals `strength` damage from a to b (scaled, subtracted from b's owner's HP) and records the hit on b. */
 void apply_partner_effect(void *a, void *b, u32 strength, s32 c, s32 x, s32 z, s32 d);
 
-s32 sprite_objects_obj_show_at(void *target, struct SpriteObj *obj, u32 arg)
+/* Hits `victim` (or, when it has no sprite record, its owner's main body) for `damage` from
+   `attacker` via apply_partner_effect, at the body's hit point. Once the owner's HP is down to 0
+   and it isn't being stopped already, obj_stop()s it and returns -1; otherwise returns 0. */
+s32 sprite_objects_obj_show_at(void *attacker, struct SpriteObj *victim, u32 damage)
 {
-    void *ring;
-    struct ShowRec *rec;
+    struct HitOwner *owner;
+    struct HitBody *body;
 
-    rec = (struct ShowRec *)obj;
-    ring = obj->ring;
-    if (ring == NULL)
+    body = (struct HitBody *)victim;
+    owner = victim->ring;
+    if (owner == NULL)
         return 0;
-    if (obj->record == NULL)
-        rec = (struct ShowRec *)((u8 *)ring + 8);
-    apply_partner_effect(target, rec, arg, 0, rec->posY / 0x100 + rec->offY,
-                         rec->posX / 0x100 + rec->offX, 0);
-    rec->unkB8 = 0x193;
-    if (*((u8 *)ring + 0x111) & 2)
+    if (victim->record == NULL)
+        body = &owner->body;
+    apply_partner_effect(attacker, body, damage, 0, body->posX / 0x100 + body->hitOffsetX,
+                         body->posZ / 0x100 + body->hitOffsetZ, 0);
+    body->hitEffect = HIT_EFFECT_DEFAULT;
+    if (owner->status & 2)
         return 0;
-    if (*(s16 *)((u8 *)ring + 0xF6) != 0)
+    if (owner->hp != 0)
         return 0;
-    obj_stop((u8 *)ring + 8);
+    obj_stop(&owner->body);
     return -1;
 }
 
@@ -1178,62 +1204,35 @@ static inline s32 slot_entry_kind(u8 *ent)
     return *(s16 *)(ent + 0xEC);
 }
 
-NONMATCH("asm/code_0807ED70/find_slot_by_kind.s", s32 find_slot_by_kind(s32 kind))
+/* Returns the index of the first of the world's 6 enemy parts (gWorld + 0x58) that is in use
+   (slot mode 0-2 in the slot flags), whose sprite record has flag 0x20 set and whose kind (+0xEC)
+   is `kind` (any kind when `kind` is negative), or -1 if there is none. */
+s32 find_slot_by_kind(s32 kind)
 {
-    struct SlotGroupObjs *objs;
-    struct SlotGroupFlags *flags;
-    u8 *ent;
-    s32 group;
-    s32 index;
-    struct SpriteState *st;
-    u8 *table;
+    struct SpriteState *world;
+    u8 **parts;
+    u8 *slotFlags;
+    u8 *part;
+    s32 i;
 
-    st = gWorld;
-    group = 0;
-    table = st->slotFlags;
-    objs = (struct SlotGroupObjs *)((u8 *)st + 0x58);
-    flags = (struct SlotGroupFlags *)(table + 8);
-    do
+    world = gWorld;
+    i = 0;
+    /* 4 bytes of flags per slot; the mode sits in byte 2 */
+    slotFlags = world->slotFlags + 8;
+    parts = (u8 **)((u8 *)world + 0x58);
+    for (i = 0; i < 6; i++)
     {
-        if ((u8)((struct SlotFlags *)&flags->flagsA)->kind <= 2)
+        if ((u8)((struct SlotFlags *)&slotFlags[i * 4 + 2])->kind <= 2)
         {
-            ent = objs->a;
-            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
+            part = parts[i];
+            if ((slot_entry_record(part)->flags12 & 0x20) != 0)
             {
                 if (kind < 0)
-                    return group;
-                if (slot_entry_kind(ent) == kind)
-                    return group;
+                    return i;
+                if (slot_entry_kind(part) == kind)
+                    return i;
             }
         }
-        index = group + 1;
-        if ((u8)((struct SlotFlags *)&flags->flagsB)->kind <= 2)
-        {
-            ent = objs->b;
-            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
-            {
-                if (kind < 0)
-                    return index;
-                if (slot_entry_kind(ent) == kind)
-                    return index;
-            }
-        }
-        index = group + 2;
-        if ((u8)((struct SlotFlags *)&flags->flagsC)->kind <= 2)
-        {
-            ent = objs->c;
-            if ((slot_entry_record(ent)->flags12 & 0x20) != 0)
-            {
-                if (kind < 0)
-                    return index;
-                if (slot_entry_kind(ent) == kind)
-                    return index;
-            }
-        }
-        objs++;
-        flags++;
-        group += 3;
-    } while (group < 6);
+    }
     return -1;
 }
-END_NONMATCH

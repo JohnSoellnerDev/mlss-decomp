@@ -72,11 +72,11 @@ struct SpriteHead
     u8 filler0E0[0xEC - 0xE0];
     u8 unkEC;
     u8 filler0ED[0xF6 - 0xED];
-    s16 timerF6;
+    s16 timerF6;         /* HP: 0 knocks the object out */
     u8 filler0F8[0x108 - 0xF8];
     s16 size108;
     u8 filler10A[0x111 - 0x10A];
-    u8 flags111;
+    u8 flags111;         /* bit 0: being knocked out (task_release_obj), cleared when it's done */
 };
 
 struct MapObj
@@ -122,10 +122,11 @@ struct SpriteLo2Bits
     u8 lo2 : 2;
 };
 
-struct SpriteBit4Bits
+/* gWorld->unkB as bits */
+struct WorldUnpackBits
 {
-    u8 lo4 : 4;
-    u8 bit4 : 1;
+    u8 unk0 : 4;
+    u8 unpackBusy : 1; /* gUnk_03000C88 still holds decompression jobs */
 };
 
 struct SpriteBit2Bits
@@ -134,20 +135,32 @@ struct SpriteBit2Bits
     u8 bit2 : 1;
 };
 
+/* The low byte of DispEntry.tileInfo */
 struct DispKindBits
 {
     u8 kind : 2;
     u8 rest : 6;
 };
 
+/* Copy modes in DispEntry.tileInfo bits 0-1 */
+#define UPLOAD_NONE 0 /* unpacked straight into VRAM */
+#define UPLOAD_CPU  1
+#define UPLOAD_DMA  2
+
+/*
+ * A tile upload: packed graphics are decompressed into unpackBuf, then
+ * copied to dstAddr. A stack in gWorkBuf + 0x3668, gWorld->uploadTop
+ * points at the top entry.
+ */
 struct DispEntry
 {
-    u16 head;
-    u16 arg2;
-    u32 val;
-    u32 flag8;
-    void *ptr;
-    u32 value;
+    u16 tileInfo;        /* bits 0-1: copy mode, bits 2-15: size in 0x20-byte tiles */
+    u16 srcOffset;       /* where in unpackBuf the copy starts */
+    u32 dstAddr;
+    /* From here on a decompression job, as submitted with table_register */
+    u32 unpackState;     /* 0 unpacked, 1 to submit, 2 submitted */
+    void *packedSrc;
+    u32 unpackBuf;
     u8 filler14[4];
 };
 
@@ -161,18 +174,18 @@ struct SpriteState
     u8 filler0E[2];
     u8 unk10;
     u8 filler11[0x12 - 0x11];
-    u16 unk12;
+    u16 objPalDirty;     /* OBJ palettes the fader changed, one bit each */
     u8 filler14[0x58 - 0x14];
     struct SpritePart *part58[6];
     u8 filler70[0x1F0 - 0x70];
-    u32 unk1F0;
+    u32 defaultUnpackBuf;
     struct ListEntry *list1F4;
-    struct DispEntry *list1F8;
+    struct DispEntry *uploadTop;
     u8 filler1FC[0x200 - 0x1FC];
     void *unk200[8];
     u8 filler220[0x244 - 0x220];
     void *unk244;
-    void *unk248;
+    void *palFade;       /* screen fader; its working palette is at +0x1C */
     u8 filler24C[0x2BE - 0x24C];
     u8 unk2BE;
     u8 unk2BF;
@@ -232,6 +245,13 @@ u8 *create_obj_de4(u32 a, u32 b, u32 c, s32 d, s32 e, s32 f, s32 g);
 void obj_load_record(u8 *obj, u32 a, s32 b, u32 c, u32 flag);
 void task_free_blocks(struct SpriteTask *task);
 u16 *load_table_value(s32 *count, u16 code);
+
+/* Resource ids (lookup_or_alloc_14b8): bits 12-15 pick the bank ((id >> 12) - 1), bits 0-11 the entry. */
+#define RES_BANK_MASK 0xF000
+/* Banks whose resources aren't preloaded with lookup_or_alloc_14b8. */
+#define RES_BANK_PRELOADS(bank) ((bank) != 0x2000 && (bank) != 0xB000 && (bank) != 0x4000 && (bank) != 0x7000)
+/* In a preload list: ends the resource groups; single resource ids follow. */
+#define PRELOAD_GROUPS_END 0xFFFF
 extern u16 gEffectCodeTable[];
 extern u16 gSpriteLoadList[];
 extern u8 *gWorkBuf;
@@ -273,98 +293,118 @@ static inline void show_part_scaled(struct SpriteObj *obj, s32 index)
     }
 }
 
+/*
+ * Task state: plays action 3 with animation 0x2054 (0x2025 when bit 0 of
+ * gWorld->unk2BE is clear) and spawns effect 0x1E0 on the object. Each of the six
+ * parts in gWorld->part58 whose mode is 2 is scaled to the object's size (120%, or
+ * 140% when the object's head->unkEC isn't -1; see show_part_scaled) and redrawn.
+ * Then waits 30 frames in state_start_wait.
+ */
 void state_show_and_scale(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
-    s32 flag;
+    s32 variant;
     s32 anim;
-    s32 slot;
+    s32 part;
 
-    flag = gWorld->unk2BE & 1;
+    variant = gWorld->unk2BE & 1;
     anim = 0x2054;
-    if (flag == 0)
+    if (variant == 0)
     {
         anim -= 0x2F;
     }
     sprite_set_action(obj, 3, anim, 0);
     ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
     effect_spawn_at(0x1E0, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100, obj);
-    for (slot = 0; slot <= 5; slot += 2)
+    /* parts 0-5, two at a time */
+    for (part = 0; part <= 5; part += 2)
     {
-        show_part_scaled(obj, slot);
-        show_part_scaled(obj, slot + 1);
+        show_part_scaled(obj, part);
+        show_part_scaled(obj, part + 1);
     }
     task->timer = 0x1E;
     task->next = state_start_wait;
 }
 
 void state_start_motion(struct SpriteTask *task);
+/*
+ * The object takes a random hit: 1-3 damage (doubled while gWorld->unkD bit 0 is set) comes off
+ * its HP (head->timerF6, not below 0) and pops up as a number above it. It shows the hurt pose
+ * and starts hopping back home (head->unkD8/unkDC) in 4 hops, this one a quarter of the way;
+ * state_timed_motion makes the rest.
+ */
 void state_random_step(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
-    s32 speed;
-    s32 left;
-    s32 first;
-    s32 second;
-    s32 code;
-    s16 *timer;
+    s32 damage;
+    s32 hpLeft;
+    s32 hopX;
+    s32 hopY;
+    s32 anim;
+    s16 *hp;
     s32 three;
-    s32 *pD8;
-    s32 (*fn)(s32, s32);
+    s32 *homeX;
+    s32 (*div)(s32, s32);
 
     sprite_sum_parts(obj);
-    speed = rand_below(3, mt19937_next()) + 1;
+    damage = rand_below(3, mt19937_next()) + 1;
     if (gWorld->unkD & 1)
     {
-        speed <<= 1;
+        damage <<= 1;
     }
-    timer = &obj->head->timerF6;
-    if (*timer <= speed)
+    hp = &obj->head->timerF6;
+    if (*hp <= damage)
     {
-        left = 0;
+        hpLeft = 0;
     }
     else
     {
-        left = (u16)*timer - speed;
+        hpLeft = (u16)*hp - damage;
     }
-    *timer = left;
-    number_popup(speed, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100 + obj->unkC5, 1, 0xB, 0);
-    code = gActionCodes[5];
+    *hp = hpLeft;
+    number_popup(damage, obj->unk38 / 0x100, obj->unk3C / 0x100, obj->unk40 / 0x100 + obj->unkC5, 1, 0xB, 0);
+    anim = gActionCodes[5];
     if ((1 & gWorld->unk2BE) != 0)
     {
-        code++;
+        anim++;
     }
-    sprite_set_action(obj, 0, code, 0);
+    sprite_set_action(obj, 0, anim, 0);
     ((struct SpriteRecordBits *)&obj->record->unk12)->mode = 0;
     task->timer = 4;
-    fn = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
-    pD8 = &obj->head->unkD8;
+    /* first hop: (home + 3 * position) / 4 */
+    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+    homeX = &obj->head->unkD8;
     three = 3;
-    first = fn((*pD8 + obj->unk38 * three) / 0x100, 4);
-    second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * three) / 0x100, 4);
-    place_targets(obj, first, second, 0, 0x100);
+    hopX = div((*homeX + obj->unk38 * three) / 0x100, 4);
+    hopY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * three) / 0x100, 4);
+    place_targets(obj, hopX, hopY, 0, 0x100);
     set_step_and_offsets(obj, 0x700, obj->unk40 / 0x100 + 0x18);
     task->timer--;
     task->next = state_start_motion;
 }
 
 
+/* Task state after state_random_step: once the current hop has landed, hop again 1/n of the way
+   from the object's position (unk38/unk3C) back home (head->unkD8/unkDC), n being the hops left
+   in task->timer, each hop peaking 0x14 above the current height. With no hops left it waits 20
+   frames in state_wait_arrival. */
 void state_timed_motion(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
-    s32 timer;
-    s32 first;
-    s32 second;
+    s32 hopsLeft;
+    s32 hopX;
+    s32 hopY;
     if ((u8)step_motion(obj) != 0)
     {
         return;
     }
     if ((s16)task->timer != 0)
     {
-        timer = (s16)task->timer;
-        first = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkD8 + obj->unk38 * (timer - 1)) / 0x100, timer);
-        second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * (timer - 1)) / 0x100, timer);
-        place_targets(obj, first, second, 0, 0x100);
+        hopsLeft = (s16)task->timer;
+        /* (home + position * (n - 1)) / n, in whole pixels */
+        hopX = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkD8 + obj->unk38 * (hopsLeft - 1)) / 0x100, hopsLeft);
+        hopY = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)((obj->head->unkDC + obj->unk3C * (hopsLeft - 1)) / 0x100, hopsLeft);
+        place_targets(obj, hopX, hopY, 0, 0x100);
         set_step_and_offsets(obj, 0x700, obj->unk40 / 0x100 + 0x14);
         task->timer--;
     }
@@ -375,32 +415,39 @@ void state_timed_motion(struct SpriteTask *task)
     }
 }
 
+/*
+ * Task state after the last hop home (state_timed_motion). An object whose HP (head->timerF6) is 0
+ * is knocked out: flags111 bit 0 is set, task_release_obj sends it away, gWorld->unk2C0 gets 1 in
+ * its low two bits and, in bit 2, the inverse of bit 0 of head->unkEC, and the task waits in
+ * state_wait_flag for the knock-out to finish. Otherwise it waits task->timer frames, puts the
+ * object back in its idle pose (action 0) and goes on with state_set_flags_and_run.
+ */
 void state_wait_arrival(struct SpriteTask *task)
 {
     struct SpriteObj *obj = task->obj;
     struct SpriteHead *head = obj->head;
-    s32 timer = head->timerF6;
+    s32 hp = head->timerF6;
     struct SpriteState *world;
-    u8 bit;
+    u8 notOdd;
 
-    if (timer == 0)
+    if (hp == 0)
     {
         head->flags111 |= 1;
         task_create_list_4c(task_release_obj, (u32)obj);
         task->next = state_wait_flag;
-        task->timer = timer;
+        task->timer = hp;
         ((struct SpriteLo2Bits *)&gWorld->unk2C0)->lo2 = 1;
         world = gWorld;
-        bit = ~obj->head->unkEC & 1;
-        ((struct SpriteBit2Bits *)&world->unk2C0)->bit2 = bit;
+        notOdd = ~obj->head->unkEC & 1;
+        ((struct SpriteBit2Bits *)&world->unk2C0)->bit2 = notOdd;
     }
     else
     {
-        u16 t = task->timer;
+        u16 framesLeft = task->timer;
 
         if ((s16)task->timer > 0)
         {
-            task->timer = t - 1;
+            task->timer = framesLeft - 1;
         }
         else
         {
@@ -634,17 +681,17 @@ void draw_fixed_labels(void)
     ensure_code_entry(0x2089);
 }
 
-NONMATCH("asm/code_08081DA4/sprite_load_tables.s", void sprite_load_tables(void))
+void sprite_load_tables(void)
 {
-    u8 *info = gWorld->unk2DC;
-    u16 *row;
+    u32 idx;
     u16 *list;
     u16 entry;
 
-    ensure_code_entry(info[2] + 0x4188);
-    row = gEffectCodeTable + gWorld->unk349;
-    load_table_entries(row[0]);
-    load_table_entries(row[0]);
+    idx = gWorld->unk2DC[2];
+    ensure_code_entry(idx + 0x4188);
+    idx = gWorld->unk349;
+    load_table_entries(gEffectCodeTable[idx]);
+    load_table_entries(gEffectCodeTable[idx]);
     list = gSpriteLoadList;
     if (list == 0)
     {
@@ -680,7 +727,6 @@ NONMATCH("asm/code_08081DA4/sprite_load_tables.s", void sprite_load_tables(void)
         ensure_code_entry(entry);
     }
 }
-END_NONMATCH
 
 void run_slot_script(s32 index)
 {
@@ -754,10 +800,13 @@ void state_spawn_object(struct SpriteTask *task)
 }
 
 void state_spawn_object(struct SpriteTask *task);
+/* Task state: once nothing is busy, spawns eight 0x2084 objects into gWorld->unk200, creates the
+   scene object from resource 0x7000 (loading its record) as gWorld->unk0, and goes on to
+   state_spawn_object, which swaps it for 0x2091. */
 void state_fill_table_and_spawn(struct SpriteTask *task)
 {
     s32 i;
-    u8 *obj;
+    u8 *sceneObj;
 
     if (!(u8)is_state_busy())
     {
@@ -765,9 +814,9 @@ void state_fill_table_and_spawn(struct SpriteTask *task)
         {
             gWorld->unk200[i] = spawn_obj_by_id(0x2084, 0, 2, 1);
         }
-        obj = create_obj_de4(0, 0x7000, 0, -1, -1, -1, -1);
-        obj_load_record(obj, 0, -1, 0, 0);
-        gWorld->unk0 = obj;
+        sceneObj = create_obj_de4(0, 0x7000, 0, -1, -1, -1, -1);
+        obj_load_record(sceneObj, 0, -1, 0, 0);
+        gWorld->unk0 = sceneObj;
         task->next = state_spawn_object;
     }
 }
@@ -949,98 +998,108 @@ void state_wait_mode_bit1(struct SpriteTask *task)
 
 ASM_FUNC("asm/code_08081DA4/init_sprite_pools.s", void init_sprite_pools(void))
 
+/*
+ * Once a frame: while the screen fader runs, copies the OBJ palettes it changed
+ * into gUnk_02000280 (the OBJ palette shadow), then handles the top tile upload
+ * (starts its decompression, or copies the unpacked tiles to VRAM and pops it),
+ * and sets unpackBusy while gUnk_03000C88 still holds decompression jobs.
+ */
 void refresh_sprite_display(void)
 {
-    u32 mask;
-    u8 *dst;
-    u8 *src;
-    u16 *keys;
+    u32 dirty;
+    u8 *palDst;
+    u8 *palSrc;
+    u16 *palMask;
     u8 *sys;
-    struct DispEntry *ent;
-    s32 kind;
-    s32 code;
+    struct DispEntry *upload;
+    s32 state;
+    s32 mode;
     s32 i;
 
-    if ((u8)sub_obj_running(gWorld->unk248) != 0)
+    if ((u8)sub_obj_running(gWorld->palFade) != 0)
     {
         sys = gSys;
-        keys = (u16 *)(sys + 0x884);
-        mask = keys[1];
-        mask &= *(u16 *)sys;
-        mask &= gWorld->unk12;
-        dst = gUnk_02000280;
-        src = *(u8 **)((u8 *)gWorld->unk248 + 0x1C) + 0x200;
-        if (mask != 0)
+        palMask = (u16 *)(sys + 0x884);
+        dirty = palMask[1];          /* OBJ half of the palette mask */
+        dirty &= *(u16 *)sys;        /* OBJ palettes enabled */
+        dirty &= gWorld->objPalDirty;
+        palDst = gUnk_02000280;
+        /* the fader's working palette: BG at +0, OBJ at +0x200 */
+        palSrc = *(u8 **)((u8 *)gWorld->palFade + 0x1C) + 0x200;
+        if (dirty != 0)
         {
             do
             {
-                if ((mask & 1) != 0)
+                if ((dirty & 1) != 0)
                 {
-                    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(dst, src, 0x20);
+                    MEM_ROUTINE(void (*)(u8 *, u8 *, u32), iwram_copy)(palDst, palSrc, 0x20);
                 }
-                mask >>= 1;
-                dst += 0x20;
-                src += 0x20;
-            } while (mask != 0);
+                dirty >>= 1;
+                palDst += 0x20;
+                palSrc += 0x20;
+            } while (dirty != 0);
         }
     }
-    gWorld->unk12 = 0;
-    ent = gWorld->list1F8;
-    if (ent != 0)
+    gWorld->objPalDirty = 0;
+    upload = gWorld->uploadTop;
+    if (upload != 0)
     {
-        kind = ent->flag8;
-        if (kind != 0)
+        state = upload->unpackState;
+        if (state != 0)
         {
-            if (kind == 1)
+            if (state == 1)
             {
-                table_register((u8 *)ent + 8);
+                table_register((u8 *)upload + 8);
             }
         }
         else
         {
-            code = (((u32)*(u8 *)ent) << 30) >> 30;
-            switch (code)
+            mode = (((u32)*(u8 *)upload) << 30) >> 30;
+            switch (mode)
             {
-            case 1:
-                MEM_ROUTINE(void (*)(u8 *, u32, s32), iwram_copy)((u8 *)ent->value + ent->arg2, ent->val, (((s16)ent->head) >> 2) << 5);
+            case UPLOAD_CPU:
+                MEM_ROUTINE(void (*)(u8 *, u32, s32), iwram_copy)((u8 *)upload->unpackBuf + upload->srcOffset, upload->dstAddr, (((s16)upload->tileInfo) >> 2) << 5);
                 break;
-            case 2:
-                dma_copy_or_queue((u8 *)ent->value + ent->arg2, (void *)ent->val, (((s16)ent->head) >> 2) << 5, 0x20, kind);
+            case UPLOAD_DMA: /* at the next VBlank */
+                dma_copy_or_queue((u8 *)upload->unpackBuf + upload->srcOffset, (void *)upload->dstAddr, (((s16)upload->tileInfo) >> 2) << 5, 0x20, state);
                 break;
-            case 0:
+            case UPLOAD_NONE:
                 break;
             }
-            if (ent == (struct DispEntry *)(gWorkBuf + 0x3668))
+            if (upload == (struct DispEntry *)(gWorkBuf + 0x3668))
             {
-                gWorld->list1F8 = 0;
+                gWorld->uploadTop = 0;
             }
             else
             {
-                gWorld->list1F8 = gWorld->list1F8 - 1;
+                gWorld->uploadTop = gWorld->uploadTop - 1;
             }
         }
     }
-    ((struct SpriteBit4Bits *)&gWorld->unkB)->bit4 = 0;
+    ((struct WorldUnpackBits *)&gWorld->unkB)->unpackBusy = 0;
     for (i = 0; i < 0x20; i++)
     {
         if (gUnk_03000C88[i] != 0)
         {
-            ((struct SpriteBit4Bits *)&gWorld->unkB)->bit4 = 1;
+            ((struct WorldUnpackBits *)&gWorld->unkB)->unpackBusy = 1;
             break;
         }
     }
 }
 
+/* Preloads the resources of a 0-terminated u16 list: first group codes (each a counted list of
+ * resource ids, load_table_value) up to PRELOAD_GROUPS_END, then single resource ids. Every id that
+ * isn't 0 and whose bank preloads goes through lookup_or_alloc_14b8. */
 void unknown_code_08082f54(u16 *list)
 {
     s32 count;
     s32 stop;
     s32 none;
     u32 mask;
-    u32 kind;
-    u16 *table;
+    u32 bank;
+    u16 *group;
     u16 code;
-    u16 item;
+    u16 id;
 
     if (list == 0)
     {
@@ -1052,25 +1111,25 @@ void unknown_code_08082f54(u16 *list)
     {
         return;
     }
-    if (code != 0xFFFF)
+    if (code != PRELOAD_GROUPS_END)
     {
         none = -1;
-        stop = 0xFFFF;
+        stop = PRELOAD_GROUPS_END;
         do
         {
-            table = load_table_value(&count, code);
+            group = load_table_value(&count, code);
             count--;
             while (count != none)
             {
-                item = table[count];
-                if (item != 0)
+                id = group[count];
+                if (id != 0)
                 {
-                    mask = 0xF000;
-                    kind = mask & item;
+                    mask = RES_BANK_MASK;
+                    bank = mask & id;
 
-                    if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
+                    if (RES_BANK_PRELOADS(bank))
                     {
-                        lookup_or_alloc_14b8(0, item, -1, 1);
+                        lookup_or_alloc_14b8(0, id, -1, 1);
                     }
                 }
                 count--;
@@ -1085,76 +1144,81 @@ void unknown_code_08082f54(u16 *list)
     }
     for (;;)
     {
-        item = *list;
+        id = *list;
         list++;
-        if (item == 0)
+        if (id == 0)
         {
             return;
         }
         {
-            mask = 0xF000;
-            kind = mask & item;
+            mask = RES_BANK_MASK;
+            bank = mask & id;
 
-            if (kind != 0x2000 && kind != 0xB000 && kind != 0x4000 && kind != 0x7000)
+            if (RES_BANK_PRELOADS(bank))
             {
-                lookup_or_alloc_14b8(0, item, -1, 1);
+                lookup_or_alloc_14b8(0, id, -1, 1);
             }
         }
     }
 }
 
-void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b)
+/* Pushes a tile upload onto the stack at gWorkBuf + 0x3668 (gWorld->uploadTop): `packed` is
+   decompressed into `unpackBuf` (0: gWorld->defaultUnpackBuf; with UPLOAD_NONE straight into
+   `dst`), then copied from srcOffset on to `dst` with copy mode `mode`. `size` is the size in
+   bytes, or negative to take it from the packed data's header. */
+void queue_display_entry(u32 mode, void *packed, void *dst, u32 size, u32 unpackBuf, u32 srcOffset)
 {
-    struct DispEntry **slot;
-    struct DispEntry *cur;
+    struct DispEntry **top;
+    struct DispEntry *next;
     struct DispEntry *ent;
-    u32 len;
-    u32 idx;
-    u16 low;
+    u32 tiles;
+    u32 sizeBits;
+    u16 tileInfo;
 
-    slot = &gWorld->list1F8;
-    cur = *slot;
-    if (cur != 0)
+    top = &gWorld->uploadTop;
+    next = *top;
+    if (next != 0)
     {
-        cur = cur + 1;
+        next = next + 1;
     }
     else
     {
-        cur = (struct DispEntry *)(gWorkBuf + 0x3668);
+        next = (struct DispEntry *)(gWorkBuf + 0x3668);
     }
-    *slot = cur;
-    ent = gWorld->list1F8;
-    ((struct DispKindBits *)ent)->kind = kind;
-    ent->val = (u32)dst;
-    ent->arg2 = b;
+    *top = next;
+    ent = gWorld->uploadTop;
+    ((struct DispKindBits *)ent)->kind = mode;
+    ent->dstAddr = (u32)dst;
+    ent->srcOffset = srcOffset;
     if ((s32)size < 0)
     {
-        len = read_varlen_plus1(text) >> 5;
+        tiles = read_varlen_plus1(packed) >> 5;
     }
     else
     {
-        len = size >> 5;
+        tiles = size >> 5;
     }
-    idx = len << 2;
-    low = (ent->head & 3) | idx;
-    ent->head = low;
-    ent->ptr = text;
-    if (kind != 0)
+    /* size in 0x20-byte tiles goes in bits 2-15, next to the copy mode */
+    sizeBits = tiles << 2;
+    tileInfo = (ent->tileInfo & 3) | sizeBits;
+    ent->tileInfo = tileInfo;
+    ent->packedSrc = packed;
+    if (mode != UPLOAD_NONE)
     {
-        if (a == 0)
+        if (unpackBuf == 0)
         {
-            ent->value = gWorld->unk1F0;
+            ent->unpackBuf = gWorld->defaultUnpackBuf;
         }
         else
         {
-            ent->value = a;
+            ent->unpackBuf = unpackBuf;
         }
     }
     else
     {
-        ent->value = (u32)dst;
+        ent->unpackBuf = (u32)dst;
     }
-    ent->flag8 = 1;
+    ent->unpackState = 1; /* to submit */
 }
 
 void load_table_entries(u32 code)

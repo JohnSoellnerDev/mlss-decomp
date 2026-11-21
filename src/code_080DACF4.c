@@ -213,12 +213,16 @@ static inline void copy_flags77_bits(struct ActorObj *obj, struct ActorObj *chil
     ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
 }
 
+// Once the pose's animation has finished (flags bit 3), throws child object 0x4138 from
+// the object's hand at its owner's target: the child gets a jump velocity aimed at that
+// point (0x0A units in front, 4 below) and falls until it lands (anim_steps_obj_fall_step).
+// The object plays action 3 and sound 0x117, then waits in obj_pose_update_if_active_c.
 void obj_spawn_child_part(struct ActorObj *obj)
 {
-    s32 hOfs = 4;
-    s32 xOfs = 0xA;
+    s32 aimHOfs = 4;
+    s32 aimXOfs = 0xA;
     struct ActorObj *child;
-    struct ActorPart *part;
+    struct ActorPart *target;
 
     if (obj->pose->flags & 0x08)
     {
@@ -239,12 +243,14 @@ void obj_spawn_child_part(struct ActorObj *obj)
         child->unkA8 = obj->unkA8;
         child->byte74 = 0xFF;
         sprite_set_action(child, 0, 0, 0);
+
+        // The child lands at the height of the owner's target and flies there.
         child->ground = obj->owner->data->targetH;
-        part = obj->owner->data;
+        target = obj->owner->data;
         child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
-                                      part->targetX - (child->baseX - xOfs),
-                                      part->targetY - child->baseY,
-                                      child->ground - (child->baseH - hOfs),
+                                      target->targetX - (child->baseX - aimXOfs),
+                                      target->targetY - child->baseY,
+                                      child->ground - (child->baseH - aimHOfs),
                                       0x5C00, 0x466, 0x100, 0);
         obj->childValue = 0;
         sprite_set_action(obj, 3, 0, 0);
@@ -274,13 +280,18 @@ void anim_steps_obj_fall_step(struct ActorObj *obj)
     }
 }
 
+// Jump step that throws a child: the object moves by its offsets (dx, dy damped by 0xFD/0x100,
+// dh pulled by dhStep each frame), and at the top of the jump (dh <= 0) it throws a child
+// object 0x4138 at its owner's target. The child gets a jump velocity aimed at that point
+// (0x0A units in front, 4 units below) and falls until it lands; the object plays action 5
+// and keeps falling (obj_damp_step_limit).
 void obj_damp_and_spawn_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
     struct ActorPart *part;
     s32 *ground;
-    s32 hOfs = 4;
-    s32 xOfs = 0xA;
+    s32 aimHOfs = 4;
+    s32 aimXOfs = 0xA;
 
     obj->dx = obj->dx * 0xFD / 0x100;
     obj->dy = obj->dy * 0xFD / 0x100;
@@ -308,13 +319,15 @@ void obj_damp_and_spawn_child(struct ActorObj *obj)
         child->unkA8 = obj->unkA8;
         child->byte74 = 0xFF;
         sprite_set_action(child, 0, 0, 0);
+
+        // The child lands at the height of the owner's target and flies there.
         ground = &child->ground;
         part = obj->owner->data;
         *ground = part->targetH;
         child->dhStep = jump_velocity(&child->dx, &child->dy, &child->dh,
-                                      part->targetX - (child->baseX - xOfs),
+                                      part->targetX - (child->baseX - aimXOfs),
                                       part->targetY - child->baseY,
-                                      child->ground - (child->baseH - hOfs),
+                                      child->ground - (child->baseH - aimHOfs),
                                       0x5C00, 0x466, 0x100, 0);
         obj->childValue = 0;
         sprite_set_action(obj, 5, 0, 0);

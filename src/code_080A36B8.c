@@ -109,6 +109,12 @@ struct World
     struct Hero *heroB;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroBody.flags bit set by state_stack_advance_progress once progress passes 0x3FFF. */
+#define HERO_FLAG_PROGRESS_DONE 0x20
+
 extern struct World *gWorld;
 extern u8 *gParty;
 extern u8 gSys[];
@@ -182,24 +188,28 @@ void hero_a_begin_step_sprite(struct HeroBody *body)
     }
 }
 
+/* State of hero A's sequence: advances the progress of hero A's body; once it is done, sets
+ * flag 0x40000000 on both heroes, plays sound 0x7C and, while the body is active, starts sprite
+ * action 0x2024 and a new progress over 20 frames (0x4000 / 20 per frame). Clears the top 4 bits
+ * of its timer and moves on to hero_a_step_with_input. */
 void hero_a_begin_slow_step(struct HeroBody *body)
 {
     struct Hero *hero = gWorld->heroA;
     struct HeroBody *body_a = &hero->body;
 
     state_stack_advance_progress(body_a);
-    if ((hero->body.flags & 0x20) != 0)
+    if ((hero->body.flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         set_cur_flags_both(0x40000000);
-        set_slot_value(0x7C, -1);
-        if ((hero->body.mode & 6) == 2 || (hero->body.mode & 6) == 4)
+        set_slot_value(0x7C, -1); /* plays sound 0x7C */
+        if (HERO_MODE_ACTIVE(hero->body.mode))
         {
             sprite_set_action(body_a, 1, 0x2024, 0);
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
-            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x14);
+            body_a->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 20);
             body_a->progress = 0;
             ((struct HeroFlagBits *)&body_a->flags)->active = 0;
         }

@@ -117,6 +117,12 @@ struct HeroBody
     u8 cc;
 };
 
+/* Bits 1-2 of HeroBody.mode are 1 or 2: the body is drawn, so its sprite can be animated. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroSprite.flags bit 3: the current animation has finished. */
+#define HERO_SPRITE_ANIM_DONE 8
+
 struct Hero
 {
     u8 filler0[0x08];
@@ -174,6 +180,12 @@ void hero_b_pose_anim(struct HeroBody *body);
 void noop_state_080acec0(struct HeroBody *body);
 void hero_b_on_object(struct HeroBody *body);
 
+/*
+ * Once hero A's animation has finished (sound 0x53), sends hero B and then hero A back to
+ * their home positions (data->target) at speed 0x400, each in its standing pose (0x2002, or
+ * 0x204F when it has a pose index) facing the way its span says, and leaves both waiting in
+ * enter_finish_rebuild for the walk to end.
+ */
 void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -186,16 +198,18 @@ void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
     struct HeroSpan *span;
     s32 flip;
 
-    if ((body_a->sprite->flags & 8) != 0)
+    if ((body_a->sprite->flags & HERO_SPRITE_ANIM_DONE) != 0)
     {
         set_slot_value(0x53, -1);
-        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+
+        /* hero B */
+        if (HERO_MODE_ACTIVE(hero_b->body.mode))
         {
             data = body_b->data;
             place_targets(body_b, data->targetX / 0x100, data->targetY / 0x100, data->targetH / 0x100, -1);
             set_motion_start(body_b, 0x400);
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             if (body_b->data->poseIndex == -1)
                 sprite_set_action(body_b, 0, 0x2002, 0);
@@ -211,18 +225,20 @@ void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
             }
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             body_b->state = 0;
             enter_finish_rebuild(body_b);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+
+        /* hero A */
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             data = body_a->data;
             place_targets(body_a, data->targetX / 0x100, data->targetY / 0x100, data->targetH / 0x100, -1);
             set_motion_start(body_a, 0x400);
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             if (body_a->data->poseIndex == -1)
                 sprite_set_action(body_a, 0, 0x2002, 0);
@@ -238,7 +254,7 @@ void active_targets_hero_pair_place_finish_b(struct HeroBody *body)
             }
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 0;
         }
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             body_a->state = 0;
             enter_finish_rebuild(body_a);

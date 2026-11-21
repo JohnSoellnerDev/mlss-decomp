@@ -22,6 +22,16 @@ struct ItemRec
     u8 filler2[14];
 };
 
+struct DropRoll
+{
+    u32 chance : 2;
+    u32 item1 : 4;
+    u32 amount1 : 7;
+    u32 item2 : 4;
+    u32 amount2 : 7;
+    u32 rest : 8;
+};
+
 extern const u8 gDropRollTable[];
 extern u8 gItemTable[];
 u32 mt19937_next(void);
@@ -106,6 +116,7 @@ extern const u8 gScreenBgPalette[];
 extern u8 gUnk_02000080[];
 extern u8 gUnk_0200000A[];
 
+/* gSys + 0x2A: the keys newly pressed this frame (A_BUTTON, DPAD_UP, ...) */
 struct SysKeys2A
 {
     u8 filler0[0x2A];
@@ -118,20 +129,21 @@ struct SysBgDirty
     u16 unk2;
 };
 
+/* A palette test screen (a task; screen_obj_setup, screen_obj_update). */
 struct ScreenObj
 {
     u8 filler0[0x18];
-    void *unk18;
-    void *unk1C;
-    u16 unk20;
+    void *unk18;                /* class: gScreenObjClass */
+    void *unk1C;                /* its sprite object */
+    u16 unk20;                  /* 1 while palette unk47 is loaded into slot 0 */
     u16 unk22;
     u16 unk24;
     u8 filler26[0x46 - 0x26];
-    u8 unk46;
-    u8 unk47;
+    u8 unk46;                   /* cursor: palette 0-7 to load */
+    u8 unk47;                   /* the palette that was loaded */
     u8 filler48[0x4C - 0x48];
-    struct ScreenChild *unk4C;
-    void *unk50;
+    struct ScreenChild *unk4C;  /* child task, toggled by B */
+    void *unk50;                /* its struct MenuTable (sprite / palette slots) */
 };
 
 struct ScreenChild
@@ -142,23 +154,21 @@ struct ScreenChild
     u8 unk1C;
 };
 
-struct TextBlock
+/* One hero's record in gParty (Mario, then Luigi), as in code_080E9020. */
+struct PartyHero
 {
     u8 filler0[0xE];
-    u16 unkE;
-    u8 filler10[0x12 - 0x10];
-    u16 unk12;
-    u16 unk14;
-    u8 filler16[0x18 - 0x16];
-    u16 unk18;
-    u8 filler1A[0x4A - 0x1A];
-    u16 unk4A;
-    u8 filler4C[0x4E - 0x4C];
-    u16 unk4E;
-    u16 unk50;
-    u8 filler52[0x54 - 0x52];
-    u16 unk54;
+    u16 hp;
+    u8 filler10[2];
+    u16 hpMax;
+    u16 bp;
+    u8 filler16[2];
+    u16 bpMax;
+    u8 filler1A[0x3C - 0x1A];
 };
+
+#define PARTY_MARIO 0
+#define PARTY_LUIGI 1
 
 void cpu_set(const void *src, void *dst, u32 ctl);
 
@@ -317,75 +327,79 @@ NONMATCH("asm/code_081171F8/screen_obj_setup.s", struct ScreenObj *screen_obj_se
 END_NONMATCH
 
 void obj_toggle_1c(struct MenuObj *obj);
-void screen_obj_update(struct ScreenObj *obj)
+/* Per-frame input of the palette test screen: Up/Down move the cursor over palettes 0-7, A loads the
+   selected one into slot 0 of the screen's MenuTable (sprite_alloc) or frees it again
+   (menu_entry_refresh), R fades the palettes to black over 8 frames, B toggles the child task and
+   Start closes the screen (as screen_obj_release does). */
+void screen_obj_update(struct ScreenObj *screen)
 {
-    u8 *cell;
-    s32 value;
+    u8 *cursor;
+    s32 index;
 
-    if (((struct SysKeys2A *)gSys)->keys & 0x40)
+    if (((struct SysKeys2A *)gSys)->keys & DPAD_UP)
     {
-        cell = &obj->unk46;
-        value = *cell;
-        if (value == 7)
+        cursor = &screen->unk46;
+        index = *cursor;
+        if (index == 7)
         {
-            goto cell_done;
+            goto cursor_done;
         }
-        value = value + 1;
-        goto cell_store;
+        index = index + 1;
+        goto cursor_store;
     }
-    if (((struct SysKeys2A *)gSys)->keys & 0x80)
+    if (((struct SysKeys2A *)gSys)->keys & DPAD_DOWN)
     {
-        cell = &obj->unk46;
-        value = *cell;
-        if (value == 0)
+        cursor = &screen->unk46;
+        index = *cursor;
+        if (index == 0)
         {
-            goto cell_done;
+            goto cursor_done;
         }
-        value = value - 1;
+        index = index - 1;
     }
     else
     {
-        goto cell_done;
+        goto cursor_done;
     }
-cell_store:
-    *cell = value;
-cell_done:
-    if (((struct SysKeys2A *)gSys)->keys & 1)
+cursor_store:
+    *cursor = index;
+cursor_done:
+    if (((struct SysKeys2A *)gSys)->keys & A_BUTTON)
     {
-        if (obj->unk20 == 0)
+        if (screen->unk20 == 0)
         {
-            sprite_alloc(obj->unk50, 0, obj->unk46, 0xFF, 0xFFFF, 0xFFFF);
-            obj->unk47 = obj->unk46;
+            sprite_alloc(screen->unk50, 0, screen->unk46, 0xFF, 0xFFFF, 0xFFFF);
+            screen->unk47 = screen->unk46;
         }
         else
         {
-            menu_entry_refresh(obj->unk50, 0, 1);
+            menu_entry_refresh(screen->unk50, 0, 1);
         }
-        obj->unk20 ^= 1;
+        screen->unk20 ^= 1;
     }
-    if (((struct SysKeys2A *)gSys)->keys & 0x100)
+    if (((struct SysKeys2A *)gSys)->keys & R_BUTTON)
     {
-        sub_08115F54(obj->unk50, 4, 0, 8, 0x7FFF, 0xFFFF, 0, 0);
+        sub_08115F54(screen->unk50, 4, 0, 8, 0x7FFF, 0xFFFF, 0, 0);
     }
-    if (((struct SysKeys2A *)gSys)->keys & 2)
+    if (((struct SysKeys2A *)gSys)->keys & B_BUTTON)
     {
-        obj_toggle_1c((struct MenuObj *)obj->unk4C);
+        obj_toggle_1c((struct MenuObj *)screen->unk4C);
     }
-    if (((struct SysKeys2A *)gSys)->keys & 8)
+    if (((struct SysKeys2A *)gSys)->keys & START_BUTTON)
     {
-        if (obj != 0)
+        if (screen != 0)
         {
-            obj->unk18 = gScreenObjClass;
+            screen->unk18 = gScreenObjClass;
             run_pending_obj_callbacks();
-            if (obj->unk50 != 0)
+            if (screen->unk50 != 0)
             {
-                menu_obj_free((struct MenuTable *)obj->unk50, 3);
+                menu_obj_free((struct MenuTable *)screen->unk50, 3);
             }
-            if (obj->unk4C != 0)
+            if (screen->unk4C != 0)
             {
-                task_remove(obj->unk4C, 3);
+                task_remove(screen->unk4C, 3);
             }
-            task_remove(obj, 3);
+            task_remove(screen, 3);
         }
     }
 }
@@ -437,137 +451,132 @@ struct MenuObj *screen_child_init(struct MenuObj *obj, u8 kind, u32 data)
     return obj;
 }
 
-NONMATCH("asm/code_081171F8/drop_roll.s", u32 drop_roll(u16 index, u8 kind, u8 flag))
+/* Rolls what a hit block drops and gives it. The block's gDropRollTable entry (struct DropRoll
+ * layout) holds two drops (reward kind, amount). Blocks of kind 0x10 and 0x20 give the first
+ * drop when bro is 0 and the second otherwise; other blocks give the first one when a roll of
+ * 0-3 is at most the entry's chance, the second one else. Kinds above 7 are given without an
+ * amount. Returns what the block shows in bits 0-3 (mapped from the reward kind), bit 4 set and
+ * the amount in bits 5-11. */
+u32 drop_roll(u16 index, u8 blockKind, u8 bro)
 {
-    const u8 *tab;
     const u8 *entry;
-    const u8 *look;
     struct ItemRec *items;
-    u32 item;
+    u32 drop;
     u32 amount;
-    u32 amountRaw;
-    u32 raw;
-    u32 roll;
-    u32 low;
-    u8 chance;
+    u32 count;
+    u32 packed;
+    u8 roll;
 
-    item = index;
-    if (kind == 0x10)
+    if (blockKind == 0x10 || blockKind == 0x20)
     {
-        goto lookup;
+        if (bro == 0)
+        {
+            u32 tab = (u32)gDropRollTable;
+            const u8 *look = (const u8 *)(index * 4 + tab);
+            drop = ((u32)look[0] << 26) >> 28;
+            amount = ((u32)*(u16 *)look << 19) >> 25;
+        }
+        else
+        {
+            u32 tab = (u32)gDropRollTable;
+            const u8 *look = (const u8 *)(index * 4 + tab);
+            drop = (*(u32 *)look << 15) >> 28;
+            amount = look[2] >> 1;
+        }
     }
-    if (kind != 0x20)
+    else
     {
-        goto random;
+        u32 tab;
+        roll = rand_below(4, mt19937_next());
+        tab = (u32)gDropRollTable;
+        entry = (const u8 *)(index * 4 + tab);
+        /* DropRoll.chance */
+        if (roll <= ((u32)entry[0] << 30) >> 30)
+        {
+            /* DropRoll.item1, amount1 */
+            drop = ((u32)entry[0] << 26) >> 28;
+            amount = ((u32)*(u16 *)entry << 19) >> 25;
+        }
+        else
+        {
+            /* DropRoll.item2, amount2 */
+            drop = (*(u32 *)entry << 15) >> 28;
+            amount = entry[2] >> 1;
+        }
     }
-lookup:
-    if (flag != 0)
-    {
-        goto lookupWord;
-    }
-    look = gDropRollTable + (item << 2);
-    item = ((u32)look[0] << 26) >> 28;
-    raw = *(u16 *)look;
-    goto halfAmount;
-lookupWord:
-    look = gDropRollTable + (item << 2);
-    item = (*(u32 *)look << 15) >> 28;
-    raw = look[2];
-    goto wordAmount;
-random:
-    roll = mt19937_next();
-    chance = rand_below(4, roll);
-    entry = gDropRollTable + (item << 2);
-    low = entry[0];
-    if (chance > ((low << 30) >> 30))
-    {
-        goto randWord;
-    }
-    item = (low << 26) >> 28;
-    raw = *(u16 *)entry;
-halfAmount:
-    amount = (raw << 19) >> 25;
-    goto joinAmount;
-randWord:
-    item = (*(u32 *)entry << 15) >> 28;
-    raw = entry[2];
-wordAmount:
-    amount = raw >> 1;
-joinAmount:
-    amountRaw = amount;
-    if (item > 7)
-    {
+    count = amount;
+    if (drop > 7)
         amount = 0;
-    }
-    if (item != 0)
-    {
-        give_reward(item, amount, 1);
-    }
-    switch (item)
+    if (drop != 0)
+        give_reward(drop, amount, 1);
+    /* from here on, drop is what the block shows */
+    switch (drop)
     {
     case 0:
-        item = 0;
+        drop = 0;
         break;
     case 2:
-        item = 4;
+        drop = 4;
         break;
     case 4:
         items = (struct ItemRec *)gItemTable;
-        item = items[amount].unk1;
+        drop = items[amount].unk1;
         break;
     case 5:
-        item = 5;
+        drop = 5;
         break;
     case 3:
-        item = amount + 0xC;
+        drop = amount + 0xC;
         break;
     case 8:
-        item = 1;
+        drop = 1;
         break;
     case 9:
-        item = 2;
+        drop = 2;
         break;
     case 1:
     case 12:
-        item = 3;
+        drop = 3;
         break;
     default:
         break;
     }
-    raw = (amountRaw << 5) | 0x10;
-    item &= 0xF;
-    return item | raw;
+    packed = (count << 5) | 0x10;
+    drop &= 0xF;
+    return drop | packed;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/build_menu_list.s", void build_menu_list(void))
 
+/* Picks the hero who needs HP most: of the heroes who are hurt but not knocked out (0 < hp < hpMax),
+   returns the one with the lower share of HP left (PARTY_LUIGI only when his is strictly lower),
+   or 0xFF when neither is. */
 u32 text_block_state(void)
 {
-    struct TextBlock *block;
-    s32 span;
-    s32 scaled;
-    s32 second;
+    struct PartyHero *heroes;
+    s32 marioPercent;
+    s32 luigiScaled;
+    s32 luigiPercent;
 
-    block = (struct TextBlock *)gParty;
-    if (block->unkE == 0 || block->unkE == block->unk12)
+    heroes = (struct PartyHero *)gParty;
+    if (heroes[PARTY_MARIO].hp == 0 || heroes[PARTY_MARIO].hp == heroes[PARTY_MARIO].hpMax)
     {
-        if (block->unk4A == 0 || block->unk4A == block->unk4E)
+        if (heroes[PARTY_LUIGI].hp == 0 || heroes[PARTY_LUIGI].hp == heroes[PARTY_LUIGI].hpMax)
         {
             return 0xFF;
         }
-        return 1;
+        return PARTY_LUIGI;
     }
-    if (block->unk4A == 0 || block->unk4A == block->unk4E)
+    if (heroes[PARTY_LUIGI].hp == 0 || heroes[PARTY_LUIGI].hp == heroes[PARTY_LUIGI].hpMax)
     {
-        return 0;
+        return PARTY_MARIO;
     }
-    span = block->unkE * 100;
-    span = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(span, block->unk12);
-    block = (struct TextBlock *)gParty;
-    scaled = block->unk4A * 100;
-    second = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(scaled, block->unk4E);
-    return span > second;
+    marioPercent = heroes[PARTY_MARIO].hp * 100;
+    marioPercent = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(marioPercent, heroes[PARTY_MARIO].hpMax);
+    heroes = (struct PartyHero *)gParty;
+    luigiScaled = heroes[PARTY_LUIGI].hp * 100;
+    luigiPercent = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(luigiScaled, heroes[PARTY_LUIGI].hpMax);
+    return marioPercent > luigiPercent;
 }
 
 
@@ -577,300 +586,284 @@ u32 text_block_state(void);
 u32 text_block_busy(void);
 ASM_FUNC("asm/code_081171F8/text_slot_status.s", void text_slot_status(void))
 
-struct TextRec
+// Raise cur toward range: by step, or to a quarter, half or all of range for the special steps.
+static inline s32 text_step(s32 cur, s32 range, s32 step)
 {
-    u8 filler0[0xE];
-    u16 count;
-    u16 unk10;
-    u16 limit;
-    u16 unk14;
-    u16 unk16;
-    u16 unk18;
-    u16 unk1A;
-    u16 unk1C;
-    u16 unk1E;
-    u16 unk20;
-    u16 unk22;
-    u16 unk24;
-    u16 unk26;
-    u16 unk28;
-};
-
-struct ItemSlotRec
-{
-    u8 kind;
-    u8 filler1[7];
-    u16 step;
-};
-
-static inline u32 text_step(u32 cur, u32 range, u32 step)
-{
-    u32 mask;
-
-    if (step == 0xFFFE)
+    switch (step)
     {
-        cur = range >> 1;
-        mask = 1;
-    }
-    else if (step > 0xFFFE)
-    {
-        if (step == 0xFFFF)
-        {
-            return range;
-        }
-        cur += step;
-        if ((s32)range < (s32)cur)
-        {
-            cur = range;
-        }
-        return cur;
-    }
-    else if (step == 0xFFFD)
-    {
+    case 0xFFFD:
         cur = range >> 2;
-        mask = 3;
-    }
-    else
-    {
+        if (range & 3)
+            cur++;
+        break;
+    case 0xFFFE:
+        cur = range >> 1;
+        if (range & 1)
+            cur++;
+        break;
+    default:
         cur += step;
-        if ((s32)range < (s32)cur)
-        {
+        if (cur > range)
             cur = range;
-        }
-        return cur;
-    }
-    if ((range & mask) != 0)
-    {
-        cur += 1;
+        break;
+    case 0xFFFF:
+        cur = range;
+        break;
     }
     return cur;
 }
 
-static inline void text_cap_add(u16 *p, u32 step)
+// The same, reading the current value through a pointer.
+static inline s32 text_raise(u16 *p, s32 range, s32 step)
 {
-    u16 v = *p + step;
+    s32 cur = *p;
 
-    *p = v;
-    if (v > 0x3E6)
+    switch (step)
     {
-        *p = 0x3E7;
+    case 0xFFFD:
+        cur = range >> 2;
+        if (range & 3)
+            cur++;
+        break;
+    case 0xFFFE:
+        cur = range >> 1;
+        if (range & 1)
+            cur++;
+        break;
+    default:
+        cur += step;
+        if (range >= cur)
+            break;
+    case 0xFFFF:
+        cur = range;
+        break;
     }
+    return cur;
 }
 
-static inline u32 text_done_at(u8 *state)
+// A bro's stats in gParty (0x3C bytes each; 0: Mario, 1: Luigi). The first of each
+// max/stat pair is the bro's own value, the second the one in effect (assumed); the
+// four stats after BP are assumed to follow the game's order POW, DEF, SPEED, STACHE.
+struct BroStats
 {
-    *state = *state - 1;
-    return 1;
-}
+    u8 filler0[0xE];
+    u16 hp;
+    u16 maxHpBase;
+    u16 maxHp;
+    u16 bp;
+    u16 maxBpBase;
+    u16 maxBp;
+    u16 powBase;
+    u16 pow;
+    u16 defBase;
+    u16 def;
+    u16 speedBase;
+    u16 speed;
+    u16 stacheBase;
+    u16 stache;
+    u8 filler2A[0x3C - 0x2A];
+};
 
-static inline u32 text_done(u8 id)
+struct BroStatsBlock
 {
-    return text_done_at(gParty + 0x8A + id);
-}
+    struct BroStats bro[3];
+};
 
-NONMATCH("asm/code_081171F8/text_slot_set.s", u32 text_slot_set(u8 id, u8 mode, u8 value))
+#define BRO(i) (((struct BroStatsBlock *)gParty)->bro[i])
+
+#define STAT_MAX 999
+
+// The item counts in gParty, indexed by item id. 0xFF: the item can't be used.
+struct ItemCounts
 {
-    u8 *st;
-    struct ItemSlotRec *rec = (struct ItemSlotRec *)(gItemTable + (id << 4));
-    struct TextRec *block;
-    struct TextRec *slot;
-    u32 index;
-    u32 off;
-    u32 c;
-    u8 state;
+    u8 filler0[0x8A];
+    u8 count[1];
+};
 
-    st = gParty + 0x8A;
-    st += id;
-    state = *st;
-    if (state == 0xFF)
-    {
+// An entry of gItemTable (16 bytes per item id).
+struct ItemDef
+{
+    u8 kind; // enum ItemKind
+    u8 filler1[7];
+    u16 amount; // or ITEM_AMOUNT_QUARTER/HALF/FULL for restoring items
+    u8 fillerA[6];
+};
+
+#define ITEM_AMOUNT_QUARTER 0xFFFD
+#define ITEM_AMOUNT_HALF 0xFFFE
+#define ITEM_AMOUNT_FULL 0xFFFF
+
+#define ITEM_TARGET_BOTH 0xFD // text_slot_set target: both bros
+#define ITEM_STAT_NONE 0xFF   // text_slot_set stat: none chosen
+
+// What an item does when used (text_slot_set).
+enum ItemKind
+{
+    ITEM_KIND_HEAL_HP = 1,
+    ITEM_KIND_REVIVE = 3,          // only on a bro with 0 HP
+    ITEM_KIND_RAISE_MAX_HP = 4,
+    ITEM_KIND_RAISE_DEF = 5,
+    ITEM_KIND_RAISE_STACHE = 6,
+    ITEM_KIND_RAISE_MAX_BP = 7,
+    ITEM_KIND_RAISE_POW = 8,
+    ITEM_KIND_RAISE_SPEED = 9,
+    ITEM_KIND_RAISE_CHOSEN = 0xA,  // raises the stat the player picks (kind 4 + stat)
+    ITEM_KIND_HEAL_BP = 11,
+    ITEM_KIND_HEAL_HP_BP = 12,
+};
+
+// Uses one of item `id` on bro `target` (or both, ITEM_TARGET_BOTH): restores HP/BP,
+// revives, or raises a stat (by amount, up to STAT_MAX), `stat` picking the stat for
+// ITEM_KIND_RAISE_CHOSEN. Returns 1 and takes the item if it was used, 0 if not.
+// Note: raising max BP clamps maxBpBase twice and never maxBp (original behaviour).
+u32 text_slot_set(u8 id, u8 target, u8 stat)
+{
+    struct ItemDef *item = (struct ItemDef *)(gItemTable + (id << 4));
+    u8 kind;
+
+    if (((struct ItemCounts *)gParty)->count[id] == 0xFF)
         return 0;
-    }
-    if (state == 0)
-    {
+    if (((struct ItemCounts *)gParty)->count[id] == 0)
         return 0;
-    }
 
-    if (rec->kind != 0xA)
+    if (item->kind == ITEM_KIND_RAISE_CHOSEN)
     {
-        index = rec->kind;
+        if (stat != ITEM_STAT_NONE)
+            kind = stat + ITEM_KIND_RAISE_MAX_HP;
+        else
+            return 0;
     }
     else
     {
-        if (value == 0xFF)
-        {
-            return 0;
-        }
-        index = (u8)(value + 4);
-    }
-    index = index - 1;
-    if (index > 0xB)
-    {
-        return text_done_at(st);
+        kind = item->kind;
     }
 
-    switch (index)
+    switch (kind)
     {
-    case 0:
-        if (mode == 0xFD)
+    case ITEM_KIND_HEAL_HP:
+        if (target == ITEM_TARGET_BOTH)
         {
-            block = (struct TextRec *)gParty;
-            c = block->count;
-            if (c != 0)
-            {
-                if (block->limit > c)
-                {
-                    block->count = text_step(c, block->limit, rec->step);
-                }
-            }
-            block = (struct TextRec *)(gParty + 0x3C);
-            c = block->count;
-            if (c == 0)
-            {
-                return text_done_at(st);
-            }
-            if (!(block->limit > c))
-            {
-                return text_done_at(st);
-            }
-            block->count = text_step(c, block->limit, rec->step);
-            return text_done_at(st);
+            if (BRO(0).hp != 0 && BRO(0).maxHp > BRO(0).hp)
+                BRO(0).hp = text_raise(&BRO(0).hp, BRO(0).maxHp, item->amount);
+            if (BRO(1).hp == 0)
+                break;
+            if (BRO(1).hp == 1)
+                kind = 0;
+            if (!(BRO(1).maxHp > BRO(1).hp))
+                break;
+            BRO(1).hp = text_raise(&BRO(1).hp, BRO(1).maxHp, item->amount);
+            break;
         }
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        c = slot->count;
-        if (c == 0)
-        {
+        if (BRO(target).hp == 0)
             return 0;
-        }
-        if (!(slot->limit > c))
-        {
+        if (!(BRO(target).maxHp > BRO(target).hp))
             return 0;
-        }
-        slot->count = text_step(c, slot->limit, rec->step);
-        return text_done_at(st);
-    case 2:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->count != 0)
-        {
+        BRO(target).hp = text_raise(&BRO(target).hp, BRO(target).maxHp, item->amount);
+        break;
+    case ITEM_KIND_HEAL_BP:
+        if (!(BRO(target).maxBp > BRO(target).bp))
             return 0;
-        }
-        slot->count = text_step(slot->count, slot->limit, rec->step);
-        return text_done_at(st);
-    case 3:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk10 > 0x3E6)
-        {
+        BRO(target).bp = text_raise(&BRO(target).bp, BRO(target).maxBp, item->amount);
+        break;
+    case ITEM_KIND_HEAL_HP_BP:
+        if (BRO(target).hp == 0
+            || (BRO(target).maxHp <= BRO(target).hp && BRO(target).maxBp <= BRO(target).bp))
             return 0;
-        }
-        text_cap_add(&slot->unk10, rec->step);
-        text_cap_add(&slot->limit, rec->step);
-        return text_done_at(st);
-    case 4:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk1E > 0x3E6)
-        {
+        if (BRO(target).maxHp > BRO(target).hp)
+            BRO(target).hp = text_raise(&BRO(target).hp, BRO(target).maxHp, item->amount);
+        if (BRO(target).maxBp > BRO(target).bp)
+            BRO(target).bp = text_raise(&BRO(target).bp, BRO(target).maxBp, item->amount);
+        break;
+    case ITEM_KIND_REVIVE:
+        if (BRO(target).hp != 0)
             return 0;
-        }
-        text_cap_add(&slot->unk1E, rec->step);
-        text_cap_add(&slot->unk20, rec->step);
-        return text_done_at(st);
-    case 5:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk26 > 0x3E6)
-        {
+        BRO(target).hp = text_raise(&BRO(target).hp, BRO(target).maxHp, item->amount);
+        break;
+    case ITEM_KIND_RAISE_MAX_HP:
+        if (BRO(target).maxHpBase >= STAT_MAX)
             return 0;
-        }
-        text_cap_add(&slot->unk26, rec->step);
-        text_cap_add(&slot->unk28, rec->step);
-        return text_done_at(st);
-    case 6:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk16 > 0x3E6)
-        {
+        BRO(target).maxHpBase += item->amount;
+        if (BRO(target).maxHpBase >= STAT_MAX)
+            BRO(target).maxHpBase = STAT_MAX;
+        BRO(target).maxHp += item->amount;
+        if (BRO(target).maxHp >= STAT_MAX)
+            BRO(target).maxHp = STAT_MAX;
+        break;
+    case ITEM_KIND_RAISE_DEF:
+        if (BRO(target).defBase >= STAT_MAX)
             return 0;
-        }
-        text_cap_add(&slot->unk16, rec->step);
-        slot->unk18 = slot->unk18 + rec->step;
-        if (slot->unk16 > 0x3E6)
-        {
-            slot->unk16 = 0x3E7;
-        }
-        return text_done_at(st);
-    case 7:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk1A > 0x3E6)
-        {
+        BRO(target).defBase += item->amount;
+        if (BRO(target).defBase >= STAT_MAX)
+            BRO(target).defBase = STAT_MAX;
+        BRO(target).def += item->amount;
+        if (BRO(target).def >= STAT_MAX)
+            BRO(target).def = STAT_MAX;
+        break;
+    case ITEM_KIND_RAISE_STACHE:
+        if (BRO(target).stacheBase >= STAT_MAX)
             return 0;
-        }
-        text_cap_add(&slot->unk1A, rec->step);
-        text_cap_add(&slot->unk1C, rec->step);
-        return text_done_at(st);
-    case 8:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->unk22 > 0x3E6)
-        {
+        BRO(target).stacheBase += item->amount;
+        if (BRO(target).stacheBase >= STAT_MAX)
+            BRO(target).stacheBase = STAT_MAX;
+        BRO(target).stache += item->amount;
+        if (BRO(target).stache >= STAT_MAX)
+            BRO(target).stache = STAT_MAX;
+        break;
+    case ITEM_KIND_RAISE_MAX_BP:
+        if (BRO(target).maxBpBase >= STAT_MAX)
             return 0;
-        }
-        text_cap_add(&slot->unk22, rec->step);
-        text_cap_add(&slot->unk24, rec->step);
-        return text_done_at(st);
-    case 10:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (!(slot->unk18 > slot->unk14))
-        {
+        BRO(target).maxBpBase += item->amount;
+        if (BRO(target).maxBpBase >= STAT_MAX)
+            BRO(target).maxBpBase = STAT_MAX;
+        BRO(target).maxBp += item->amount;
+        if (BRO(target).maxBpBase >= STAT_MAX)
+            BRO(target).maxBpBase = STAT_MAX;
+        break;
+    case ITEM_KIND_RAISE_POW:
+        if (BRO(target).powBase >= STAT_MAX)
             return 0;
-        }
-        slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
-        return text_done_at(st);
-    case 11:
-        off = ((u32)mode << 4) - mode;
-        off <<= 2;
-        slot = (struct TextRec *)(gParty + off);
-        if (slot->count == 0)
-        {
+        BRO(target).powBase += item->amount;
+        if (BRO(target).powBase >= STAT_MAX)
+            BRO(target).powBase = STAT_MAX;
+        BRO(target).pow += item->amount;
+        if (BRO(target).pow >= STAT_MAX)
+            BRO(target).pow = STAT_MAX;
+        break;
+    case ITEM_KIND_RAISE_SPEED:
+        if (BRO(target).speedBase >= STAT_MAX)
             return 0;
-        }
-        if (slot->limit > slot->count)
-        {
-            slot->count = text_step(slot->count, slot->limit, rec->step);
-        }
-        else if (!(slot->unk18 > slot->unk14))
-        {
-            return 0;
-        }
-        if (!(slot->unk18 > slot->unk14))
-        {
-            return text_done_at(st);
-        }
-        slot->unk14 = text_step(slot->unk14, slot->unk18, rec->step);
-        return text_done_at(st);
-    default:
-        return text_done_at(st);
+        BRO(target).speedBase += item->amount;
+        if (BRO(target).speedBase >= STAT_MAX)
+            BRO(target).speedBase = STAT_MAX;
+        BRO(target).speed += item->amount;
+        if (BRO(target).speed >= STAT_MAX)
+            BRO(target).speed = STAT_MAX;
+        break;
     }
+    ((struct ItemCounts *)gParty)->count[id]--;
+    return 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_081171F8/char_menu_cell.s", void char_menu_cell(void))
 
 ASM_FUNC("asm/code_081171F8/char_menu_list.s", void char_menu_list(void))
+
+#define BRO_RECORD_SIZE 0x3C // one bro's record in gParty
+
+// A bro's three gear slots in his gParty record: each holds a row id of its gear table, or
+// GEAR_NONE. recalc_char_stats adds the gear's stat bonuses to the bro's stats.
+#define BRO_GEAR_SLOT_0 0x32 // a row of gRowTable (GEAR_ROW_SIZE bytes)
+#define BRO_GEAR_SLOT_1 0x31 // a row of gRowTableC (GEAR_ROW_SIZE bytes)
+#define BRO_GEAR_SLOT_2 0x33 // a row of gRowTable8 (GEAR8_ROW_SIZE bytes)
+#define GEAR_NONE 0xFF
+
+// A gRowTable / gRowTableC row has two stat bonuses: a stat kind byte (0x64-0x67 picks the stat,
+// see recalc_char_stats) followed by the u16 amount 2 bytes on.
+#define GEAR_ROW_SIZE 20
+#define GEAR_ROW_BONUS1_STAT 6
+#define GEAR_ROW_BONUS2_STAT 10
+#define GEAR8_ROW_SIZE 8
+#define GEAR8_ROW_BONUS_STAT 4 // a gRowTable8 row's only stat bonus
 
 u8 unknown_thumb_081188a4(u8 kind, u8 idx)
 {
@@ -914,58 +907,66 @@ u8 unknown_thumb_081188a4(u8 kind, u8 idx)
     return result;
 }
 
-NONMATCH("asm/code_081171F8/sub_0811891C.s", u8 sub_0811891C(u8 kind, u8 idx))
+// Returns the stat kind of the second stat bonus of the gear bro `bro` wears in gear slot `slot`
+// (0: BRO_GEAR_SLOT_0, 1: BRO_GEAR_SLOT_1, 2: BRO_GEAR_SLOT_2, whose rows have only one bonus), or
+// GEAR_NONE when the slot is empty. unknown_thumb_081188a4 returns the first bonus's.
+u8 sub_0811891C(u8 slot, u8 bro)
 {
-    u8 result;
-    u8 *base;
-    u8 *field;
+    u8 statKind;
+    u8 *record;
+    u8 *gear;
     const u8 *table;
 
-    switch (kind)
+    switch (slot)
     {
     case 0:
-        base = gParty;
-        base += idx * 0x3C;
-        field = base;
-        field += 0x32;
-        if (*field == 0xFF)
+        record = gParty;
+        record += bro * BRO_RECORD_SIZE;
+        gear = record;
+        gear += BRO_GEAR_SLOT_0;
+        if (*gear == GEAR_NONE)
         {
-            result = 0xFF;
+            statKind = GEAR_NONE;
             break;
         }
         table = gRowTable;
-        result = table[*field * 20 + 10];
+        statKind = table[*gear * GEAR_ROW_SIZE + GEAR_ROW_BONUS2_STAT];
         break;
     case 1:
-        base = gParty;
-        base += idx * 0x3C;
-        field = base;
-        field += 0x31;
-        if (*field == 0xFF)
+        record = gParty;
+        record += bro * BRO_RECORD_SIZE;
+        gear = record;
+        gear += BRO_GEAR_SLOT_1;
+        if (*gear == GEAR_NONE)
         {
-            result = 0xFF;
+            statKind = GEAR_NONE;
             break;
         }
         table = gRowTableC;
-        result = table[*field * 20 + 10];
+        statKind = table[*gear * GEAR_ROW_SIZE + GEAR_ROW_BONUS2_STAT];
         break;
     case 2:
-        base = gParty;
-        base += idx * 0x3C;
-        field = base;
-        field += 0x33;
-        if (*field == 0xFF)
+    {
+        u8 *party = gParty;
+        u8 *gear2;
+
+        party += bro * BRO_RECORD_SIZE;
+        gear2 = party + BRO_GEAR_SLOT_2;
+        if (*gear2 == GEAR_NONE)
         {
-            result = 0xFF;
+            statKind = GEAR_NONE;
             break;
         }
-        table = gRowTable8;
-        result = table[*field * 8 + 4];
+        {
+            const u8 *rows = gRowTable8;
+
+            statKind = rows[*gear2 * GEAR8_ROW_SIZE + GEAR8_ROW_BONUS_STAT];
+        }
         break;
     }
-    return result;
+    }
+    return statKind;
 }
-END_NONMATCH
 
 s32 menu_cursor_pos(s32 pos, s32 max, s32 step)
 {

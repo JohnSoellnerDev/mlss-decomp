@@ -51,9 +51,18 @@ struct KeyRam
 {
     u8 filler0[0x2A];
     u16 held;
+    u8 filler2C[0x8C0 - 0x2C];
+    u8 lang8C0;
 };
 
 extern struct KeyRam gSys;
+
+// The BG tilemap obj_draw_counter draws in (VRAM screen block 14, 32 cells a row). Its rows from
+// 20 on are off screen and hold the pieces it copies: the digits 0-9 (2 cells high) at
+// (16..25, 20), and the label in each language at the rows gLanguageRowOffsets gives.
+#define COUNTER_MAP_WIDTH 32
+#define COUNTER_MAP ((u16 *)(VRAM + 0x7000))
+#define COUNTER_MAP_CELL(x, y) (COUNTER_MAP + (y) * COUNTER_MAP_WIDTH + (x))
 
 void obj_destroy_sprites(void *obj, u32 arg);
 void task_remove(void *node, u32 kind);
@@ -453,7 +462,61 @@ struct EffectObj *init_vt_08cdebf0(struct EffectObj *obj, u8 kind)
     return obj;
 }
 
-ASM_FUNC("asm/code_0816E57C/obj_draw_counter.s", void obj_draw_counter(void))
+// Draws the counter (obj->unk6C, 0-999) on the BG tilemap: the current language's 4x2-cell label
+// at (23, 0) and the three digits, each 1x2 cells, at (25, 2), (26, 2) and (27, 2). Sets byte 0x74.
+void obj_draw_counter(struct EffectObj *obj)
+{
+    u16 *label;
+    u16 *dst;
+    u16 *digitTile;
+    u16 *pos;
+    s32 n;
+    s32 digit;
+
+    *((u8 *)obj + 0x74) = 1;
+    label = COUNTER_MAP + gLanguageRowOffsets[gSys.lang8C0] * COUNTER_MAP_WIDTH;
+    dst = COUNTER_MAP_CELL(23, 0);
+    dst[0] = label[0];
+    dst[1] = label[1];
+    dst[2] = label[2];
+    dst[3] = label[3];
+    *COUNTER_MAP_CELL(23, 1) = label[COUNTER_MAP_WIDTH + 0];
+    *COUNTER_MAP_CELL(24, 1) = label[COUNTER_MAP_WIDTH + 1];
+    *COUNTER_MAP_CELL(25, 1) = label[COUNTER_MAP_WIDTH + 2];
+    *COUNTER_MAP_CELL(26, 1) = label[COUNTER_MAP_WIDTH + 3];
+
+    // hundreds
+    n = obj->unk6C;
+    digit = 0;
+    while (n > 99)
+    {
+        n -= 100;
+        digit++;
+    }
+    digitTile = COUNTER_MAP + digit;
+    digitTile += 20 * COUNTER_MAP_WIDTH + 16;
+    pos = COUNTER_MAP_CELL(25, 2);
+    pos[0] = digitTile[0];
+    pos[COUNTER_MAP_WIDTH] = digitTile[COUNTER_MAP_WIDTH];
+    // tens
+    digit = 0;
+    while (n > 9)
+    {
+        n -= 10;
+        digit++;
+    }
+    digitTile = COUNTER_MAP + digit;
+    digitTile += 20 * COUNTER_MAP_WIDTH + 16;
+    pos = COUNTER_MAP_CELL(26, 2);
+    pos[0] = digitTile[0];
+    pos[COUNTER_MAP_WIDTH] = digitTile[COUNTER_MAP_WIDTH];
+    // ones
+    digitTile = COUNTER_MAP + n;
+    digitTile += 20 * COUNTER_MAP_WIDTH + 16;
+    pos = COUNTER_MAP_CELL(27, 2);
+    pos[0] = digitTile[0];
+    pos[COUNTER_MAP_WIDTH] = digitTile[COUNTER_MAP_WIDTH];
+}
 
 void obj_restore_counter_tiles(struct EffectObj *obj)
 {

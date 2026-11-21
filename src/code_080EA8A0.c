@@ -143,13 +143,49 @@ struct KeyMatchRecord
     u32 value;
 };
 
-struct BinOpCmd
+/* Operators of the script's binary-op command. */
+enum BinaryOp
 {
-    s16 index;
+    BINOP_NONE,
+    BINOP_ADD,
+    BINOP_SUB,
+    BINOP_MUL,
+    BINOP_DIV,
+    BINOP_MOD,
+    BINOP_SHL,
+    BINOP_SHR,
+    BINOP_AND,
+    BINOP_OR,
+    BINOP_XOR,
+    BINOP_LOGICAL_NOT,
+    BINOP_BITWISE_NOT
+};
+
+/* Operators of the script's conditions (compare_op): true when `a OP b` holds. 6 and 7 are
+   never true. */
+enum CompareOp
+{
+    CMP_EQ,           /* a == b */
+    CMP_NE,           /* a != b */
+    CMP_LT,           /* a < b, signed */
+    CMP_GT,           /* a > b, signed */
+    CMP_LE,           /* a <= b, signed */
+    CMP_GE,           /* a >= b, signed */
+    CMP_OR = 8,       /* a or b is nonzero */
+    CMP_AND,          /* a and b share a bit */
+    CMP_XOR,          /* a and b differ */
+    CMP_LOGICAL_NOT,  /* a is 0 (b unused) */
+    CMP_BITWISE_NOT   /* ~a is nonzero, a isn't 0xFFFFFFFF (b unused) */
+};
+
+/* Arguments of the binary-op command: var = value OP operand. */
+struct BinaryOpArgs
+{
+    s16 var;
     u8 filler2[2];
     u32 op;
-    u32 a;
-    u32 b;
+    u32 value;
+    u32 operand;
 };
 
 extern u8 *gUnk_03000FB8;
@@ -187,7 +223,69 @@ void serial_clear_phase(void);
 void serial_enter_phase_1(void);
 void give_reward(u32 item, u32 amount, u32 flag);
 
-ASM_FUNC("asm/code_080EA8A0/set_obj_flag.s", void set_obj_flag(void))
+/* Script command: set or clear one of a hero's 9 per-hero flags. args: 0 (anything else does
+   nothing), 1 to clear or 0 to set, index 0-8 for Mario or 9-17 for Luigi. Index i is bit i % 3
+   of 6-bit set i / 3. The three sets lie just before the open0-2/done0-2 sets of PartyHero
+   (code_0807ED70.c), which use the same index layout. */
+u32 set_obj_flag(void *ctx, void *unused, u32 *args)
+{
+  struct
+  {
+    u8 filler0[7];
+    u8 low2 : 2;
+    u8 set0 : 6;
+    u16 set1 : 6;
+    u16 set2 : 6;
+  } *hero;
+  u16 clear;
+  s32 index;
+  s16 flag;
+  u16 bitInSet;
+  u32 bits;
+  if ((*(args++)) == 0)
+  {
+    hero = (void *) gParty;
+    clear = *(args++);
+    index = (u16) *args;
+    if ((s16) index > 8)
+    {
+      hero = (void *) (((u8 *) hero) + 0x3C); /* Luigi's record */
+      index = (s16) index - 9;
+      index = (u16) index;
+    }
+    flag = index;
+    if (flag <= 2)
+    {
+      if (clear)
+      {
+        hero->set0 &= ~(1 << flag);
+      }
+      else
+      {
+        bits = hero->set0;
+        bits |= 1 << flag;
+        hero->set0 = bits;
+      }
+    }
+    else if (flag <= 5)
+    {
+      bitInSet = flag - 3;
+      if (clear)
+        hero->set1 &= ~(1 << ((s16) bitInSet));
+      else
+        hero->set1 |= 1 << ((s16) bitInSet);
+    }
+    else
+    {
+      bitInSet = flag - 6;
+      if (clear)
+        hero->set2 &= ~(1 << ((s16) bitInSet));
+      else
+        hero->set2 |= 1 << ((s16) bitInSet);
+    }
+  }
+  return 1;
+}
 
 NONMATCH("asm/code_080EA8A0/cmd_update_and_store.s", u32 cmd_update_and_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid))
 {
@@ -366,47 +464,52 @@ NONMATCH("asm/code_080EA8A0/cmd_update_and_store.s", u32 cmd_update_and_store(vo
 }
 END_NONMATCH
 
-u32 cmd_read_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid)
+/* Script command: reads a party inventory value into script variable args[0]. args[1] is 0xFF
+   for the coins (the u16 at gParty + 0x88), else kind << 7 | slot: kinds 1-4 and 6 are count
+   tables at gParty + 0xBA, 0xF2, 0xAA, 0x8A and 0x12A, kind 5 the bit flags at gParty + 0xB2.
+   A count of 0xFF (empty) reads as 0. */
+u32 cmd_read_store(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
 {
     u32 value;
-    u32 index = *cmd++;
+    u32 varIndex = *args++;
 
-    if (*cmd == 0xFF)
+    if (*args == 0xFF)
     {
         value = *(u16 *)(gParty + 0x88);
     }
     else
     {
-        switch (((s32)*cmd >> 7) - 1)
+        switch (((s32)*args >> 7) - 1)
         {
         case 0:
-            value = gParty[0xBA + (*cmd & 0x7F)];
+            value = gParty[0xBA + (*args & 0x7F)];
             break;
         case 1:
-            value = gParty[0xF2 + (*cmd & 0x7F)];
+            value = gParty[0xF2 + (*args & 0x7F)];
             break;
         case 3:
-            value = gParty[0x8A + (*cmd & 0x7F)];
+            value = gParty[0x8A + (*args & 0x7F)];
             break;
         case 2:
-            value = gParty[0xAA + (*cmd & 0x7F)];
+            value = gParty[0xAA + (*args & 0x7F)];
             break;
         case 5:
-            value = gParty[0x12A + (*cmd & 0x7F)];
+            value = gParty[0x12A + (*args & 0x7F)];
             break;
         case 4:
         {
-            s32 bits = *cmd;
-            s32 pos;
-            u32 byte;
+            s32 item = *args;
+            s32 rounded;
+            u32 flagByte;
 
-            byte = gParty[0xB2 + ((bits & 0x7F) >> 3)];
-            pos = bits;
-            if (bits < 0)
+            /* bit (item % 8) of byte (item & 0x7F) / 8 */
+            flagByte = gParty[0xB2 + ((item & 0x7F) >> 3)];
+            rounded = item;
+            if (item < 0)
             {
-                pos = bits + 7;
+                rounded = item + 7;
             }
-            value = ((s32)byte >> (bits - ((pos >> 3) << 3))) & 1;
+            value = ((s32)flagByte >> (item - ((rounded >> 3) << 3))) & 1;
             break;
         }
         }
@@ -415,7 +518,7 @@ u32 cmd_read_store(void *ctx, struct ScriptObj *obj, u32 *cmd, u32 mid)
             value = 0;
         }
     }
-    set_var(mid, (u8 *)obj + 0x18, 0, 0, (s16)index, value);
+    set_var(mid, (u8 *)obj + 0x18, 0, 0, (s16)varIndex, value);
     return 1;
 }
 
@@ -590,56 +693,59 @@ u32 direction_octant(void *ctx, s32 x0, s32 y0, s32 x1, s32 y1)
     return (t >> 5) & 7;
 }
 
-void unpack_stream_values(void *ctx, u32 *stream, u32 *out_a, u32 *out_b, u32 *out_c)
+/* Turns a script command's direction and distance (args[0], args[1]) into an X/Y/Z offset:
+   directions 0-7 go clockwise from -Y (0 = -Y, 2 = +X, 4 = +Y, 6 = -X, odd ones diagonal),
+   8 is +Z and 9 is -Z. A nonzero args[2] scales the offset by 16. ctx isn't used. */
+void unpack_stream_values(void *ctx, u32 *args, u32 *outX, u32 *outY, u32 *outZ)
 {
-    u32 sel;
+    u32 direction;
 
-    *out_c = 0;
-    *out_b = 0;
-    *out_a = 0;
-    sel = *stream++;
-    switch (sel)
+    *outZ = 0;
+    *outY = 0;
+    *outX = 0;
+    direction = *args++;
+    switch (direction)
     {
     case 0:
-        *out_b = -*stream;
+        *outY = -*args;
         break;
     case 1:
-        *out_a = *stream;
-        *out_b = -*stream;
+        *outX = *args;
+        *outY = -*args;
         break;
     case 2:
-        *out_a = *stream;
+        *outX = *args;
         break;
     case 3:
-        *out_a = *stream;
-        *out_b = *stream;
+        *outX = *args;
+        *outY = *args;
         break;
     case 4:
-        *out_b = *stream;
+        *outY = *args;
         break;
     case 5:
-        *out_a = -*stream;
-        *out_b = *stream;
+        *outX = -*args;
+        *outY = *args;
         break;
     case 6:
-        *out_a = -*stream;
+        *outX = -*args;
         break;
     case 7:
-        *out_a = -*stream;
-        *out_b = -*stream;
+        *outX = -*args;
+        *outY = -*args;
         break;
     case 8:
-        *out_c = *stream;
+        *outZ = *args;
         break;
     case 9:
-        *out_c = -*stream;
+        *outZ = -*args;
         break;
     }
-    if (stream[1] != 0)
+    if (args[1] != 0)
     {
-        *out_a = *out_a << 4;
-        *out_b = *out_b << 4;
-        *out_c = *out_c << 4;
+        *outX = *outX << 4;
+        *outY = *outY << 4;
+        *outZ = *outZ << 4;
     }
 }
 
@@ -654,31 +760,32 @@ void tick_obj_timer(void *ctx, struct ScriptObj *obj)
     }
 }
 
+/* Evaluates a script condition: whether `a OP b` holds for the CompareOp op (1 or 0). */
 u32 compare_op(void *ctx, u32 op, u32 a, u32 b)
 {
     switch ((u8)op)
     {
-    case 0:
+    case CMP_EQ:
         return a == b;
-    case 1:
+    case CMP_NE:
         return a != b;
-    case 2:
+    case CMP_LT:
         return (s32)a < (s32)b;
-    case 3:
+    case CMP_GT:
         return (s32)a > (s32)b;
-    case 4:
+    case CMP_LE:
         return (s32)a <= (s32)b;
-    case 5:
+    case CMP_GE:
         return (s32)a >= (s32)b;
-    case 8:
+    case CMP_OR:
         return (a | b) != 0;
-    case 9:
+    case CMP_AND:
         return (a & b) != 0;
-    case 10:
+    case CMP_XOR:
         return (a ^ b) != 0;
-    case 11:
+    case CMP_LOGICAL_NOT:
         return a == 0;
-    case 12:
+    case CMP_BITWISE_NOT:
         return ~a != 0;
     }
     return 0;
@@ -949,50 +1056,52 @@ u32 copy_if_cmp_match(void *ctx, u32 *out, struct CmpMatchRecord *rec)
     return 1;
 }
 
-u32 binary_op_and_set_var(void *unused, u8 *obj, struct BinOpCmd *cmd, u32 a, void *b, u32 c)
+/* Script command: applies args->op to args->value and args->operand, keeps the result in args->value
+ * and stores it in script variable args->var. */
+u32 binary_op_and_set_var(void *ctx, u8 *obj, struct BinaryOpArgs *args, u32 vars, void *flagsA, u32 flagsB)
 {
-    switch (cmd->op)
+    switch (args->op)
     {
-    case 0:
+    case BINOP_NONE:
         break;
-    case 1:
-        cmd->a = cmd->a + cmd->b;
+    case BINOP_ADD:
+        args->value = args->value + args->operand;
         break;
-    case 2:
-        cmd->a = cmd->a - cmd->b;
+    case BINOP_SUB:
+        args->value = args->value - args->operand;
         break;
-    case 3:
-        cmd->a = cmd->a * cmd->b;
+    case BINOP_MUL:
+        args->value = args->value * args->operand;
         break;
-    case 4:
-        cmd->a = (s32)cmd->a / (s32)cmd->b;
+    case BINOP_DIV:
+        args->value = (s32)args->value / (s32)args->operand;
         break;
-    case 5:
-        cmd->a = (s32)cmd->a % (s32)cmd->b;
+    case BINOP_MOD:
+        args->value = (s32)args->value % (s32)args->operand;
         break;
-    case 6:
-        cmd->a = cmd->a << cmd->b;
+    case BINOP_SHL:
+        args->value = args->value << args->operand;
         break;
-    case 7:
-        cmd->a = (s32)cmd->a >> cmd->b;
+    case BINOP_SHR:
+        args->value = (s32)args->value >> args->operand;
         break;
-    case 8:
-        cmd->a = cmd->a & cmd->b;
+    case BINOP_AND:
+        args->value = args->value & args->operand;
         break;
-    case 9:
-        cmd->a = cmd->a | cmd->b;
+    case BINOP_OR:
+        args->value = args->value | args->operand;
         break;
-    case 10:
-        cmd->a = cmd->a ^ cmd->b;
+    case BINOP_XOR:
+        args->value = args->value ^ args->operand;
         break;
-    case 11:
-        cmd->a = cmd->a == 0;
+    case BINOP_LOGICAL_NOT:
+        args->value = args->value == 0;
         break;
-    case 12:
-        cmd->a = ~cmd->a;
+    case BINOP_BITWISE_NOT:
+        args->value = ~args->value;
         break;
     }
-    set_var(a, obj + 0x18, b, c, cmd->index, cmd->a);
+    set_var(vars, obj + 0x18, flagsA, flagsB, args->var, args->value);
     return 1;
 }
 
@@ -1021,22 +1130,25 @@ u32 cmd_store_obj_field(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
     return 1;
 }
 
-u32 store_obj_byte_to_var(void *ctx, struct ScriptObj *obj, u32 *args, u32 mid)
+/* Script command: stores one field of the timer gCurObj (see timer_set_time) in script variable
+   args[0]; args[1] picks it: 0 hours (0x22), 1 minutes (0x23), 2 hundredths (0x25), 3 the third
+   value timer_set_time got (0x24). Returns 1 (go on). */
+u32 store_obj_byte_to_var(void *ctx, struct ScriptObj *obj, u32 *args, u32 vars)
 {
-    s32 mode = args[1];
-    switch (mode)
+    s32 field = args[1];
+    switch (field)
     {
     case 0:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x22));
+        set_var(vars, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x22));
         break;
     case 1:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x23));
+        set_var(vars, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x23));
         break;
     case 2:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x25));
+        set_var(vars, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x25));
         break;
     case 3:
-        set_var(mid, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x24));
+        set_var(vars, (u8 *)obj + 0x18, 0, 0, *(s16 *)args, *(s8 *)(gCurObj + 0x24));
         break;
     }
     return 1;

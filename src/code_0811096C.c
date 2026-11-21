@@ -52,6 +52,9 @@ struct ActionRecord
     u8 unk23;
 };
 
+/* ActionRecord.flags: the current animation has finished. */
+#define ACTION_RECORD_ANIM_DONE 0x08
+
 struct ActionFlagBits
 {
     u8 bit0 : 1;
@@ -441,6 +444,10 @@ void wait_move_then_action_4_b(struct ActionObj *obj)
     }
 }
 
+/* Once the current animation ends: plays action 3 and sets up an arc (arc_step) to the fixed point
+ * (120, 108) px at height 64 px. The arc takes distance / 2 px steps; its height curve is
+ * dz / steps^2 (at least 2, made positive), its direction the offset in whole pixels. Starts
+ * sound 0x8A. */
 void start_move_to_fixed_target(struct ActionObj *obj)
 {
     s32 dx;
@@ -448,10 +455,10 @@ void start_move_to_fixed_target(struct ActionObj *obj)
     s32 dz;
     s32 dist;
     s32 steps;
-    s32 q;
+    s32 curve;
     s32 *level;
 
-    if (obj->record->flags & 8)
+    if (obj->record->flags & ACTION_RECORD_ANIM_DONE)
     {
         sprite_set_action(obj, 3, 0, 0);
         obj->targetX = 0x7800;
@@ -462,104 +469,112 @@ void start_move_to_fixed_target(struct ActionObj *obj)
         dz = obj->targetZ - obj->baseZ;
         dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy + dz * dz);
         steps = dist / 0x200;
-        q = dz / (steps * steps);
+        curve = dz / (steps * steps);
         level = &obj->level;
-        if (q <= 1)
+        if (curve <= 1)
         {
-            if (q < 0)
+            if (curve < 0)
             {
-                q = -q;
+                curve = -curve;
             }
             else
             {
-                q = 2;
+                curve = 2;
             }
         }
-        *level = q;
+        *level = curve;
         obj->dirX = dx / 0x100;
         obj->dirY = dy / 0x100;
         obj->steps = steps;
         obj->counter = 0;
-        set_slot_value(0x8A, -1);
+        set_slot_value(0x8A, -1); /* plays sound 0x8A */
         obj->state = arc_step;
     }
 }
 
+/* Flies the object from its part's position toward the fixed point set up by
+ * start_move_to_fixed_target: x/y move linearly by dir * counter / steps px, the height rises by
+ * counter^2 * level. After `steps` frames it snaps to the target, plays action 4 (owner's part kind
+ * -1) or 0x15, swaps sound 0x8A for 0x88 and hovers for 0x40 frames in ease_step. */
 void arc_step(struct ActionObj *obj)
 {
-    s32 kind;
-    s32 anim;
-    s32 counter;
+    s32 ownerKind;
+    s32 action;
+    s32 frame;
 
     obj->posX = ((obj->dirX * obj->counter) << 8) / obj->steps + obj->part->targetX;
     obj->posY = ((obj->dirY * obj->counter) << 8) / obj->steps + obj->part->targetY;
     obj->posZ = (obj->counter * obj->counter) * obj->level + obj->part->targetZ;
-    counter = (u16)obj->counter;
-    counter = counter + 1;
-    obj->counter = counter;
-    if ((s16)counter > obj->steps)
+    frame = (u16)obj->counter;
+    frame = frame + 1;
+    obj->counter = frame;
+    if ((s16)frame > obj->steps)
     {
-        kind = -obj->owner->part->kind;
-        anim = 4;
-        if (kind != 1)
+        ownerKind = -obj->owner->part->kind;
+        action = 4;
+        if (ownerKind != 1)
         {
-            anim = 0x15;
+            action = 0x15;
         }
-        sprite_set_action(obj, anim, 0, 0);
+        sprite_set_action(obj, action, 0, 0);
         obj->posX = obj->targetX;
         obj->posY = obj->targetY;
         obj->posZ = obj->targetZ;
-        obj->counter = 0x40;
+        obj->counter = 0x40; /* hover frames */
         sound_stop_song(0x8A);
-        set_slot_value(0x88, -1);
+        set_slot_value(0x88, -1); /* plays sound 0x88 */
         obj->state = ease_step;
     }
 }
 
+/* Hovers after arc_step: bobs the height along the sine table for `counter` frames (0x40), then
+ * aims at the owner's part: start (unk1C/unk1E) and target positions, the per-step direction, the
+ * step count (distance / 0x100) and the height curve (height / steps^2, at least 2), starts action 5
+ * with the link callbacks and 3 effects every 4 frames, and swaps sound 0x88 for 0x10F. */
 void ease_step(struct ActionObj *obj)
 {
-    struct ActionPart *part;
+    struct ActionPart *dest;
     s32 counter;
-    s32 z;
+    s32 height;
     s32 dx;
     s32 dy;
     s32 dist;
     s32 steps;
-    s32 q;
+    s32 curve;
     s32 *level;
 
-    z = obj->baseZ + gSineTable[(obj->counter * 4) & 0xFF] / 0x100;
-    obj->baseZ = z;
-    obj->posZ = z;
+    height = obj->baseZ + gSineTable[(obj->counter * 4) & 0xFF] / 0x100;
+    obj->baseZ = height;
+    obj->posZ = height;
     counter = (u16)obj->counter;
     counter = counter - 1;
     obj->counter = counter;
     if ((s16)counter == 0)
     {
-        part = obj->owner->part;
-        obj->targetX = part->targetX;
-        obj->targetY = part->targetY;
-        obj->targetZ = part->targetZ;
+        dest = obj->owner->part;
+        obj->targetX = dest->targetX;
+        obj->targetY = dest->targetY;
+        obj->targetZ = dest->targetZ;
         obj->unk1C = obj->baseX;
         obj->unk1E = obj->baseY;
         dx = obj->targetX - obj->baseX;
         dy = obj->targetY - obj->baseY;
         dist = MATH_ROUTINE(s32 (*)(s32), iwram_sqrt)(dx * dx + dy * dy);
         steps = dist / 0x100;
-        q = obj->baseZ / (steps * steps);
+        curve = obj->baseZ / (steps * steps);
         level = &obj->level;
-        if (q <= 1)
+        if (curve <= 1)
         {
-            if (q < 0)
+            if (curve < 0)
             {
-                q = -q;
+                curve = -curve;
             }
             else
             {
-                q = 2;
+                curve = 2;
             }
         }
-        *level = q;
+        *level = curve;
         obj->dirX = dx / 0x100;
         obj->dirY = dy / 0x100;
         obj->steps = steps;

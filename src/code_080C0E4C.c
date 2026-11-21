@@ -186,15 +186,15 @@ void hero_b_anim_c_then_clear(struct HeroBody *body);
 void hero_a_wait_visible_anim_24(struct HeroBody *body);
 void hero_b_active_fx(struct HeroBody *body);
 
+/* Once hero A's sprite is visible, walks hero A back to its home spot (its data's target, in 1/256
+   pixels), gives it its idle action facing along its span, and clears its state to enter the finish
+   rebuild. */
 void hero_a_visible_place_finish(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
-    s32 tx;
-    s32 ty;
-    s32 th;
     s32 x;
     s32 y;
     s32 h;
@@ -204,18 +204,9 @@ void hero_a_visible_place_finish(struct HeroBody *body)
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             data = body_a->data;
-            tx = data->targetX;
-            if (tx < 0)
-                tx += 0xFF;
-            x = tx >> 8;
-            ty = data->targetY;
-            if (ty < 0)
-                ty += 0xFF;
-            y = ty >> 8;
-            th = data->targetH;
-            if (th < 0)
-                th += 0xFF;
-            h = th >> 8;
+            x = data->targetX / 0x100;
+            y = data->targetY / 0x100;
+            h = data->targetH / 0x100;
             place_targets(body_a, x, y, h, -1);
             set_motion_start(body_a, 0x400);
         }
@@ -237,12 +228,15 @@ void hero_a_visible_place_finish(struct HeroBody *body)
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
-            body_a->state = 0;
+            body_a->state = NULL;
             enter_finish_rebuild(body_a);
         }
     }
 }
 
+/* Steps hero B's motion. When it ends, the partner link is released and each hero in turn walks back
+   to its home spot (its data's target, in 1/256 pixels), takes its idle action facing along its span,
+   and clears its state to enter the finish rebuild. */
 void hero_b_active_place_and_finish(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
@@ -252,9 +246,6 @@ void hero_b_active_place_and_finish(struct HeroBody *body)
     struct HeroData *data;
     struct HeroSprite *sprite;
     struct HeroSpan *span;
-    s32 tx;
-    s32 ty;
-    s32 th;
     s32 x;
     s32 y;
     s32 h;
@@ -267,18 +258,9 @@ void hero_b_active_place_and_finish(struct HeroBody *body)
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
             data = body_b->data;
-            tx = data->targetX;
-            if (tx < 0)
-                tx += 0xFF;
-            x = tx >> 8;
-            ty = data->targetY;
-            if (ty < 0)
-                ty += 0xFF;
-            y = ty >> 8;
-            th = data->targetH;
-            if (th < 0)
-                th += 0xFF;
-            h = th >> 8;
+            x = data->targetX / 0x100;
+            y = data->targetY / 0x100;
+            h = data->targetH / 0x100;
             place_targets(body_b, x, y, h, -1);
             set_motion_start(body_b, 0x400);
         }
@@ -300,24 +282,15 @@ void hero_b_active_place_and_finish(struct HeroBody *body)
         }
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
-            body_b->state = 0;
+            body_b->state = NULL;
             enter_finish_rebuild(body_b);
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
             data = body_a->data;
-            tx = data->targetX;
-            if (tx < 0)
-                tx += 0xFF;
-            x = tx >> 8;
-            ty = data->targetY;
-            if (ty < 0)
-                ty += 0xFF;
-            y = ty >> 8;
-            th = data->targetH;
-            if (th < 0)
-                th += 0xFF;
-            h = th >> 8;
+            x = data->targetX / 0x100;
+            y = data->targetY / 0x100;
+            h = data->targetH / 0x100;
             place_targets(body_a, x, y, h, -1);
             set_motion_start(body_a, 0x400);
         }
@@ -339,7 +312,7 @@ void hero_b_active_place_and_finish(struct HeroBody *body)
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
         {
-            body_a->state = 0;
+            body_a->state = NULL;
             enter_finish_rebuild(body_a);
         }
     }

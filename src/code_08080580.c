@@ -30,10 +30,11 @@ struct TaskNode
     u16 timer;
 };
 
+/* A part's graphics info; tileBlockList is its list in the tile-block list table (load_table_entries). */
 struct PartTable
 {
     u8 filler0[2];
-    u16 index;
+    u16 tileBlockList;
 };
 
 struct SpritePart
@@ -108,7 +109,7 @@ struct TaskState
     u8 filler88[0x1C0 - 0x88];
     u16 *unk1C0[8];
     u8 filler1E0[0x1F4 - 0x1E0];
-    u32 unk1F4;
+    void *loadedBlocks; /* top of the loaded tile-block stack (gWorkBuf + 0x3660, growing down); NULL until set */
     u8 filler1F8[0x244 - 0x1F8];
     void *unk244;
     u32 unk248;
@@ -266,15 +267,18 @@ extern u8 gUnk_020003C0[];
 void queue_display_entry(u32 kind, void *text, void *dst, u32 size, u32 a, u32 b);
 void state_run_handler(void);
 
-NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(u32 mode))
+/* Counts the world's 8 battle parts whose mode (bits 1-2 of byte 0x7E: 1 = on the field, so
+   targetable) is `mode`, leaving out those with flag 0x20 of flags110 set (skipped by every
+   targeting loop as well). */
+u32 count_parts_with_mode(u32 mode)
 {
     u32 count = 0;
-    struct SpritePart **list = gWorld->parts;
+    struct TaskState *world = gWorld;
     s32 i;
 
     for (i = 0; i < 8; i++)
     {
-        struct SpritePart *part = list[i];
+        struct SpritePart *part = world->parts[i];
 
         if (((((u32)part->mode << 29) >> 30) == mode) && (part->flags110 & 0x20) == 0)
         {
@@ -283,7 +287,6 @@ NONMATCH("asm/code_08080580/count_parts_with_mode.s", u32 count_parts_with_mode(
     }
     return count;
 }
-END_NONMATCH
 
 void list_splice_pair(struct RingNode *head_a, struct RingNode *head_b)
 {
@@ -1040,60 +1043,67 @@ static inline u8 *task_pick_table(void)
     return (u8 *)gTaskPickTable;
 }
 
+/* Task step: once the state isn't busy, frees the sub-object's block, sets up the script owner
+ * (unk244) again (two text entries in BG VRAM at 0x06004020 and 0x060082C0, its bg entry, flags2BF
+ * bit 5 cleared), restarts it with word +4 of the gTaskPickTable entry picked earlier
+ * (unk2B6, 0x20 bytes each) and moves the task on to state_clear_mode_bit. */
 void task_free_blocks(struct TaskNode *task)
 {
-    s32 kc = 4;
-    u8 idle = is_state_busy();
+    s32 paramOffset = 4;
+    u8 busy = is_state_busy();
 
-    if (idle == 0)
+    if (busy == 0)
     {
-        struct TaskState **pw = &gWorld;
+        struct TaskState **world = &gWorld;
 
-        release_block((*pw)->sub0->inner48->block8);
-        set_flags_2_3((*pw)->unk244);
-        *(u32 *)((*pw)->unk250 + 0x280) = create_text_entry((*pw)->unk244, 0, 0x06004020, 0x3FE0, 0xC);
-        *(u32 *)((*pw)->unk250 + 0x284) = create_text_entry((*pw)->unk244, 1, 0x060082C0, 0x3D40, 0xC);
-        setup_bg_entry((*pw)->unk244, 0, 2, 0xF, *(u32 *)((*pw)->unk250 + 0x288), idle, 0x7000, 0xF);
-        ((struct TwBit5 *)&(*pw)->flags2BF)->b5 = 0;
-        reset_root_params((*pw)->unk244, *(u32 *)(task_pick_table() + kc + ((*pw)->unk2B6 << 5)));
+        release_block((*world)->sub0->inner48->block8);
+        set_flags_2_3((*world)->unk244);
+        *(u32 *)((*world)->unk250 + 0x280) = create_text_entry((*world)->unk244, 0, 0x06004020, 0x3FE0, 0xC);
+        *(u32 *)((*world)->unk250 + 0x284) = create_text_entry((*world)->unk244, 1, 0x060082C0, 0x3D40, 0xC);
+        setup_bg_entry((*world)->unk244, 0, 2, 0xF, *(u32 *)((*world)->unk250 + 0x288), busy, 0x7000, 0xF);
+        ((struct TwBit5 *)&(*world)->flags2BF)->b5 = 0;
+        reset_root_params((*world)->unk244, *(u32 *)(task_pick_table() + paramOffset + ((*world)->unk2B6 << 5)));
         task->fn = (void *)state_clear_mode_bit;
     }
 }
 
+// Once the state isn't busy: takes parts[6] or parts[7] (by bit 0 of unk2BE) as the task's object
+// when its mode is 1, then hands the task to the state handler chosen by unk2BA (0-5). With no
+// object, index 0 or an index out of range it runs state_set_flags_and_run and waits for the owner.
 void task_state_machine(struct TaskNode *task)
 {
-    u8 idle = is_state_busy();
+    u8 busy = is_state_busy();
 
-    if (idle == 0)
+    if (busy == 0)
     {
-        struct SpritePart *sel;
-        u8 *cand;
+        struct SpritePart *part;
+        u8 *partObj;
         struct SpriteObj *obj;
-        u8 index;
-        u32 value;
-        u32 *slot;
+        u8 stateIndex;
+        u32 animValue;
+        u32 *animSlot;
 
         ((struct Lo2Bits *)&gWorld->unkA)->lo2 = 1;
-        task->obj = (void *)(u32)idle;
-        sel = (gWorld->unk2BE & 1) == 0 ? gWorld->parts[6] : gWorld->parts[7];
-        cand = (u8 *)sel + 8;
-        if (((struct RecBits *)&sel->mode)->mode == 1)
+        task->obj = (void *)(u32)busy; /* NULL */
+        part = (gWorld->unk2BE & 1) == 0 ? gWorld->parts[6] : gWorld->parts[7];
+        partObj = (u8 *)part + 8;
+        if (((struct RecBits *)&part->mode)->mode == 1)
         {
-            task->obj = cand;
+            task->obj = partObj;
         }
         obj = task->obj;
         if (obj == 0)
         {
             goto wait_entry;
         }
-        index = gWorld->unk2BA;
-        if (index > 5)
+        stateIndex = gWorld->unk2BA;
+        if (stateIndex > 5)
         {
             goto default_entry;
         }
         else
         {
-            switch (index)
+            switch (stateIndex)
             {
             case 0:
             wait_entry:
@@ -1102,8 +1112,8 @@ void task_state_machine(struct TaskNode *task)
                 task_create_list_4c(owner_wait_entry, 0);
                 break;
             case 1:
-                slot = &obj->unk9C;
-                value = 0;
+                animSlot = &obj->unk9C;
+                animValue = 0;
                 goto anim_store;
             case 2:
                 task->fn = (void *)state_show_and_scale;
@@ -1113,10 +1123,10 @@ void task_state_machine(struct TaskNode *task)
                 task->fn = (void *)state_random_step;
                 break;
             case 5:
-                slot = &obj->unk9C;
-                value = 1;
+                animSlot = &obj->unk9C;
+                animValue = 1;
             anim_store:
-                *slot = value;
+                *animSlot = animValue;
                 task->fn = (void *)state_set_anim_and_draw;
                 break;
             case 4:
@@ -1132,39 +1142,42 @@ default_entry:
     task_create_list_4c(owner_wait_entry, 0);
 }
 
+/* Loads tile-block list 0x17B, then the list of every active world part (run_slot_script in
+   code_08081DA4.c, inlined here and unrolled by two): parts 0-5 whose mode ((mode >> 1) & 3)
+   is 1 or 2 and that have graphics info, once the loaded-block stack has been set up. */
 void sprite_load_active_tables(void)
 {
-    s32 i;
+    s32 partIndex;
 
     load_table_entries(0x17B);
-    for (i = 0; i <= 7; i += 2)
+    for (partIndex = 0; partIndex <= 7; partIndex += 2)
     {
-        if (gWorld->unk1F4 != 0 && i >= 0 && i <= 5)
+        if (gWorld->loadedBlocks != 0 && partIndex >= 0 && partIndex <= 5)
         {
-            struct SpritePart *part = gWorld->parts[i];
-            u8 m = part->mode & 6;
+            struct SpritePart *part = gWorld->parts[partIndex];
+            u8 mode = part->mode & 6;
 
-            if (m == 4 || m == 2)
+            if (mode == 4 || mode == 2)
             {
                 if (part->table != 0)
                 {
-                    load_table_entries(part->table->index);
+                    load_table_entries(part->table->tileBlockList);
                 }
             }
         }
         {
-            s32 j = i + 1;
+            s32 nextIndex = partIndex + 1;
 
-            if (gWorld->unk1F4 != 0 && j >= 0 && j <= 5)
+            if (gWorld->loadedBlocks != 0 && nextIndex >= 0 && nextIndex <= 5)
             {
-                struct SpritePart *part = gWorld->parts[j];
-                u8 m = part->mode & 6;
+                struct SpritePart *part = gWorld->parts[nextIndex];
+                u8 mode = part->mode & 6;
 
-                if (m == 4 || m == 2)
+                if (mode == 4 || mode == 2)
                 {
                     if (part->table != 0)
                     {
-                        load_table_entries(part->table->index);
+                        load_table_entries(part->table->tileBlockList);
                     }
                 }
             }
@@ -1172,6 +1185,8 @@ void sprite_load_active_tables(void)
     }
 }
 
+/* Centers obj on the world's six parts that are in mode 4 ((mode & 6) == 4): x and y become their
+   average position, z the highest top among them (pose z plus the part's unkCD pixels). */
 void sprite_sum_parts(struct SpriteObj *obj)
 {
     s32 sumX = 0;
@@ -1187,14 +1202,14 @@ void sprite_sum_parts(struct SpriteObj *obj)
 
         if ((part->mode & 6) == 4)
         {
-            s32 h;
+            s32 partTop;
 
             sumX += pose->posX;
             sumY += pose->posY;
-            h = pose->posZ + ((s32)part->unkCD << 8);
-            if (top < h)
+            partTop = pose->posZ + ((s32)part->unkCD << 8);
+            if (top < partTop)
             {
-                top = h;
+                top = partTop;
             }
             count++;
         }

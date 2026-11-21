@@ -80,19 +80,34 @@ struct ClassVt
     u8 filler0[8];
     s16 thisOffset;
     u16 filler0A;
-    void (*fn0C)(void *self, u32 mode);
+    void (*destroy)(void *self, u32 flags); /* flags bit 0: free the object too */
 };
 
+/* An object in the scene's pool: its class table sits at 0x30. */
 struct PoolEntry
 {
     u8 filler0[0x30];
     struct ClassVt *table;
 };
 
+/* The transition scene (code_081599D8 HblankFxState, code_0815E288 TransScene). */
 struct GameVars
 {
-    u8 filler0[0x1898];
-    struct PoolEntry *unk1898[0x100];
+    u8 filler0[0x1C];
+    u8 tileBufs[3][0x824];      /* tile buffer sets (code_081612F0 TileObj) */
+    u8 filler1888[0x1898 - 0x1888];
+    struct PoolEntry *objects[0x100];
+    struct CamChar *heroA;      /* the lead character (code_0815CA80 LEAD_CHAR) */
+    struct CamChar *heroB;      /* the second character */
+    u8 filler1CA0[0x1CA4 - 0x1CA0];
+    s32 scrollX;                /* BG1 scroll (camera), 24.8 fixed point */
+    s32 scrollY;
+    u8 filler1CAC[0x1E88 - 0x1CAC];
+    void *banner;               /* five-part banner (obj_release_children_5) */
+    void *group9;               /* nine more sprites (obj_release_children_9) */
+    void *window;               /* text window (window_destroy) */
+    u8 filler1E94[0x1EA2 - 0x1E94];
+    u8 level;                   /* index into gSceneLayerSetupTable */
 };
 
 extern u8 gClassE7a0[];
@@ -168,6 +183,16 @@ extern const u8 gSpawnTagDenc[];
 extern const u8 gSpawnTagLamp[];
 extern const u8 gSpawnTagFlam[];
 
+/* States of the class-E7e0 dropping object (obj_cmd_follow_a). */
+enum DropState
+{
+    DROP_STATE_IDLE,    /* inactive, nothing to do */
+    DROP_STATE_WAIT,    /* hangs until the lead character comes near */
+    DROP_STATE_FALL,    /* short wind-up, then falls under gravity */
+    DROP_STATE_LANDED,  /* landing sprite shown for a moment */
+    DROP_STATE_DONE     /* landed and settled */
+};
+
 struct KlassInit
 {
     u8 filler0[0x10];
@@ -178,54 +203,61 @@ struct KlassInit
 
 ASM_FUNC("asm/code_0815B1DC/scene_init_objects.s", void scene_init_objects(void))
 
-void scene_free_objects(struct GameVars *game)
+/* Frees everything the transition scene owns: each pooled object through its class's
+   destructor, then the banner, the nine-sprite group, the text window and the three tile
+   buffer sets' tiles. */
+void scene_free_objects(struct GameVars *scene)
 {
-    struct PoolEntry *entry;
+    struct PoolEntry *obj;
     struct ClassVt *table;
     void **slot;
     s32 i;
 
     for (i = 0; i < 0x100; i++)
     {
-        entry = game->unk1898[i];
-        if (entry != 0)
+        obj = scene->objects[i];
+        if (obj != 0)
         {
-            table = entry->table;
-            table->fn0C((u8 *)entry + table->thisOffset, 3);
+            table = obj->table;
+            table->destroy((u8 *)obj + table->thisOffset, 3);
         }
-        game->unk1898[i] = 0;
+        scene->objects[i] = 0;
     }
 
-    slot = (void **)((u8 *)game + 0x1E88);
+    slot = &scene->banner;
     if (*slot != 0)
     {
         obj_release_children_5(*slot, 3);
         *slot = 0;
     }
-    slot = (void **)((u8 *)game + 0x1E8C);
+    slot = &scene->group9;
     if (*slot != 0)
     {
         obj_release_children_9(*slot, 3);
         *slot = 0;
     }
-    slot = (void **)((u8 *)game + 0x1E90);
+    slot = &scene->window;
     if (*slot != 0)
     {
         window_destroy(*slot, 3);
         *slot = 0;
     }
-    obj_free_tile_bufs((u8 *)game + 0x1C);
-    obj_free_tile_bufs((u8 *)game + 0x840);
-    obj_free_tile_bufs((u8 *)game + 0x1064);
+    obj_free_tile_bufs(scene->tileBufs[0]);
+    obj_free_tile_bufs(scene->tileBufs[1]);
+    obj_free_tile_bufs(scene->tileBufs[2]);
 }
 
 ASM_FUNC("asm/code_0815B1DC/transition_scene_step.s", void transition_scene_step(void))
 
-void camera_follow_chars(u8 *game)
+/* Centres the scene's camera (BG1 scroll) between the two characters: 120 px left of and 140 px
+   above their midpoint, kept within 0..(level width - 1) * 256 px horizontally (the level's
+   gSceneLayerSetupTable entry gives its width in 256 px units) and 0..96 px vertically. */
+void camera_follow_chars(struct GameVars *scene)
 {
-    u32 *pa = (u32 *)(game + 0x1C98);
-    u32 *pb;
-    s32 *camX;
+    /* the character slots are read as words, so they are read again after the scroll store */
+    u32 *heroA = (u32 *)&scene->heroA;
+    u32 *heroB;
+    s32 *scrollX;
     u32 a;
     u32 b;
     s32 ax;
@@ -234,108 +266,115 @@ void camera_follow_chars(u8 *game)
     s32 y;
     s32 dx;
 
-    a = *pa;
-    pb = (u32 *)(game + 0x1C9C);
-    b = *pb;
+    a = *heroA;
+    heroB = (u32 *)&scene->heroB;
+    b = *heroB;
     ax = ((struct CamChar *)a)->x;
     bx = ((struct CamChar *)b)->x;
     dx = ax - bx;
-    *(s32 *)(game + 0x1CA4) = bx + dx / 2 - 0x7800;
-    camX = (s32 *)(game + 0x1CA4);
-    *(s32 *)(game + 0x1CA8) = (((struct CamChar *)*pb)->y + ((struct CamChar *)*pa)->y) / 2 - 0x8C00;
+    /* positions are 24.8 fixed point */
+    scene->scrollX = bx + dx / 2 - 0x7800;
+    scrollX = &scene->scrollX;
+    scene->scrollY = (((struct CamChar *)*heroB)->y + ((struct CamChar *)*heroA)->y) / 2 - 0x8C00;
 
-    x = *camX;
+    x = *scrollX;
     if (x < 0)
     {
-        *camX = 0;
+        *scrollX = 0;
     }
     else
     {
-        s32 xs = x >> 8;
-        s32 limit = gSceneLayerSetupTable[game[0x1EA2]].unk18 - 1;
-        if (xs >= (limit << 8))
+        s32 xPixels = x >> 8;
+        s32 lastBlock = gSceneLayerSetupTable[scene->level].unk18 - 1;
+        if (xPixels >= (lastBlock << 8))
         {
-            *camX = limit << 16;
+            *scrollX = lastBlock << 16;
         }
     }
 
-    y = *(s32 *)(game + 0x1CA8);
+    y = scene->scrollY;
     if (y < 0)
     {
-        *(s32 *)(game + 0x1CA8) = 0;
+        scene->scrollY = 0;
     }
     else if ((y >> 8) > 0x5F)
     {
-        *(s32 *)(game + 0x1CA8) = 0x6000;
+        scene->scrollY = 0x6000;
     }
 }
 
-void *obj_spawn_by_kind(void *game, u8 *spec)
+/*
+ * Allocates and constructs the scene object a placement record asks for (its kind is
+ * record[0xC]); each kind has its own size, heap tag and constructor. Returns the new
+ * object, or NULL for an unknown kind (3, 10).
+ */
+void *obj_spawn_by_kind(void *game, u8 *record)
 {
     struct ClassObj *obj;
-    struct KlassInit *k;
-    const u8 *tag;
+    struct KlassInit *klass;
+    const u8 *heapTag;
 
-    switch (spec[0xC])
+    switch (record[0xC])
     {
     case 0:
-        tag = gHeapTagSpawnE8e0A;
+        heapTag = gHeapTagSpawnE8e0A;
         goto spawn_e8e0;
     case 1:
-        tag = gHeapTagSpawnE8e0B;
+        heapTag = gHeapTagSpawnE8e0B;
     spawn_e8e0:
-        obj = set_class_e8e0_ex(heap_alloc2(0x48, 1, tag, 0), spec, 0);
-        k = (struct KlassInit *)obj->klass;
-        k->fn14((u8 *)obj + k->thisOffset10, 0, 0, 0, 1);
+        obj = set_class_e8e0_ex(heap_alloc2(0x48, 1, heapTag, 0), record, 0);
+        klass = (struct KlassInit *)obj->klass;
+        klass->fn14((u8 *)obj + klass->thisOffset10, 0, 0, 0, 1);
         return obj;
     case 2:
-        obj = (struct ClassObj *)obj_init_e8a0(heap_alloc2(0x44, 1, gHeapTagSpawnE8a0, 0), spec, 0);
+        obj = (struct ClassObj *)obj_init_e8a0(heap_alloc2(0x44, 1, gHeapTagSpawnE8a0, 0), record, 0);
         return obj;
     case 4:
-        obj = set_class_e820_ex(heap_alloc2(0x40, 1, gHeapTagSpawnE820, 0), spec, 0);
+        obj = set_class_e820_ex(heap_alloc2(0x40, 1, gHeapTagSpawnE820, 0), record, 0);
         obj_finish_sprites(obj);
         return obj;
     case 5:
-        obj = (struct ClassObj *)set_class_e7e0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7e0, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e7e0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7e0, 0), record, 0);
         return obj;
     case 6:
-        obj = (struct ClassObj *)set_class_e7a0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7a0, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e7a0_ex(heap_alloc2(0x44, 1, gHeapTagSpawnE7a0, 0), record, 0);
         return obj;
     case 7:
-        obj = (struct ClassObj *)set_class_e760_ex(heap_alloc2(0x3C, 1, gSpawnTagKoum, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e760_ex(heap_alloc2(0x3C, 1, gSpawnTagKoum, 0), record, 0);
         return obj;
     case 9:
-        obj = (struct ClassObj *)set_class_e720_ex(heap_alloc2(0x3C, 1, gSpawnTagKoub, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e720_ex(heap_alloc2(0x3C, 1, gSpawnTagKoub, 0), record, 0);
         return obj;
     case 8:
-        obj = (struct ClassObj *)set_class_e6e0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e6e0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), record, 0);
         return obj;
     case 16:
-        obj = (struct ClassObj *)set_class_e6a0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), spec, 0);
+        /* shares kind 8's heap tag */
+        obj = (struct ClassObj *)set_class_e6a0_ex(heap_alloc2(0x38, 1, gSpawnTagCoin, 0), record, 0);
         return obj;
     case 11:
-        obj = (struct ClassObj *)set_class_e660_ex(heap_alloc2(0x38, 1, gSpawnTagCgoa, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e660_ex(heap_alloc2(0x38, 1, gSpawnTagCgoa, 0), record, 0);
         return obj;
     case 12:
-        obj = (struct ClassObj *)obj_init_e620(heap_alloc2(0x3C, 1, gSpawnTagJump, 0), spec, 0);
+        obj = (struct ClassObj *)obj_init_e620(heap_alloc2(0x3C, 1, gSpawnTagJump, 0), record, 0);
         return obj;
     case 13:
-        obj = (struct ClassObj *)set_class_e5e0_ex(heap_alloc2(0x38, 1, gSpawnTagJumb, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e5e0_ex(heap_alloc2(0x38, 1, gSpawnTagJumb, 0), record, 0);
         return obj;
     case 14:
-        obj = (struct ClassObj *)set_class_e5a0_ex(heap_alloc2(0x38, 1, gSpawnTagPuku, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e5a0_ex(heap_alloc2(0x38, 1, gSpawnTagPuku, 0), record, 0);
         return obj;
     case 17:
-        obj = (struct ClassObj *)set_class_e520_ex(heap_alloc2(0x40, 1, gSpawnTagDenc, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e520_ex(heap_alloc2(0x40, 1, gSpawnTagDenc, 0), record, 0);
         return obj;
     case 15:
-        obj = (struct ClassObj *)set_class_e560_ex(heap_alloc2(0x3C, 1, gSpawnTagLamp, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e560_ex(heap_alloc2(0x3C, 1, gSpawnTagLamp, 0), record, 0);
         return obj;
     case 18:
-        obj = (struct ClassObj *)set_class_e4e0_ex(heap_alloc2(0x38, 1, gSpawnTagFlam, 0), spec, 0);
+        obj = (struct ClassObj *)set_class_e4e0_ex(heap_alloc2(0x38, 1, gSpawnTagFlam, 0), record, 0);
         return obj;
     default:
-        return 0;
+        return NULL;
     }
 }
 
@@ -399,110 +438,122 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0815B1DC/obj_step_by_state.s", u32 obj_step_by_state(struct ClassObj *obj, u32 view, s16 speed, u32 cmd_arg))
 
-struct ClassObj *set_class_e7e0_ex(struct ClassObj *obj, void *rec, u16 idx)
+/* Constructor of the dropping object (scene object kind 5, class E7e0, commands in obj_cmd_follow_a):
+ * sets it up from its placement record, idle, and gives it two hidden child sprites: the hanging
+ * marker (record 0x1C, counter byte2C, on the object's layer byte2D - 1) and the landing sprite
+ * (record 0x1B). Returns obj. */
+struct ClassObj *set_class_e7e0_ex(struct ClassObj *obj, void *record, u16 classIdx)
 {
-    u32 fl;
+    u32 flags;
 
-    obj_init_from_record(obj, rec);
+    obj_init_from_record(obj, record);
     obj->klass = gClassE7e0;
-    obj->classIdx = idx;
-    obj->state = 0;
+    obj->classIdx = classIdx;
+    obj->state = DROP_STATE_IDLE;
     obj->timer = 0;
     obj->angle = 0;
     obj->childB = 0;
     obj->childA = 0;
     obj_create_sprite(obj, 0);
+
     obj->childA = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
     obj_load_record(obj->childA, 0x1C, -1, 0, 0);
     sprite_update_cd0(obj->childA);
-    obj->childA->flags12 |= 0x20;
+    obj->childA->flags12 |= 0x20; /* hidden until armed */
     obj->childA->counter = obj->byte2C;
     obj->childA->lo2 = obj->byte2D - 1;
     obj->childA->b2 = obj->byte2D - 1;
     obj->childA->b4 = obj->byte2D - 1;
     obj->childA->b6 = obj->byte2D - 1;
+
     obj->childB = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
     obj_load_record(obj->childB, 0x1B, -1, 0, 0);
     sprite_update_cd0(obj->childB);
-    fl = obj->childB->flags12;
-    obj->childB->flags12 = fl | 0x20;
+    flags = obj->childB->flags12;
+    obj->childB->flags12 = flags | 0x20; /* hidden until it lands */
     return obj;
 }
 
-u32 obj_cmd_follow_a(struct ClassObj *obj, u32 view, u16 speed, u32 cmd_arg, u8 mode)
+/* Command handler of the dropping object (class E7e0): command 3 arms it, 4 disarms it, and any
+ * other command except 1 and 2 updates it. Once armed it hangs until the lead character is within
+ * 0x82 pixels, then falls under gravity; on hitting the ground it plays sound 0x44, shakes the
+ * camera and shows its landing sprite for 20 frames. Always returns 0. */
+u32 obj_cmd_follow_a(struct ClassObj *obj, u32 ground, u16 gravity, u32 cmd_arg, u8 cmd)
 {
-    struct ObjClassVt *cls;
+    struct ObjClassVt *klass;
     struct SpriteObj *sprite;
-    u8 *b2d;
-    s32 dx;
-    s32 spd;
+    u8 *layer;
+    s32 dist_to_lead;
+    s32 fall_accel;
 
-    switch (mode)
+    switch (cmd)
     {
     case 3:
-        cls = (struct ObjClassVt *)obj->klass;
-        ((void (*)(void *))cls->fn34)((u8 *)obj + cls->thisOffset30);
-        ((struct Bits12 *)obj->childA)->bit5 = 0;
-        obj->state = 1;
+        klass = (struct ObjClassVt *)obj->klass;
+        ((void (*)(void *))klass->fn34)((u8 *)obj + klass->thisOffset30);
+        ((struct Bits12 *)obj->childA)->bit5 = 0; /* show the hanging marker */
+        obj->state = DROP_STATE_WAIT;
         break;
     case 4:
         obj_release_sprite(obj);
-        obj->state = 0;
+        obj->state = DROP_STATE_IDLE;
         break;
     case 1:
     case 2:
         break;
     default:
-        obj->angle = (s32)((s16)view_coord(view, obj->posX) << 8);
+        /* obj->angle holds the ground height under the object here (24.8 fixed point) */
+        obj->angle = (s32)((s16)view_coord(ground, obj->posX) << 8);
         switch (obj->state)
         {
-        case 0:
-        case 4:
+        case DROP_STATE_IDLE:
+        case DROP_STATE_DONE:
             break;
-        case 1:
-            dx = obj->posX - ((struct CamChar *)*(u32 *)(gUnk_03001020 + 0x1C98))->x;
-            if (dx <= 0x81FF)
+        case DROP_STATE_WAIT:
+            dist_to_lead = obj->posX - ((struct CamChar *)*(u32 *)(gUnk_03001020 + 0x1C98))->x;
+            if (dist_to_lead <= 0x81FF)
             {
                 obj->timer = 0xF;
                 obj_set_sprite_kind(obj, 0x19);
-                obj->state = 2;
+                obj->state = DROP_STATE_FALL;
                 break;
             }
             ((struct Bits12 *)obj->childA)->bit5 = 0;
             obj->childA->counter = 10;
             obj->childA->lo2 = obj_get_sprite(obj)->lo2 - 1;
             break;
-        case 2:
+        case DROP_STATE_FALL:
             obj->timer--;
             if ((s16)obj->timer > 0)
                 break;
             obj_set_sprite_kind(obj, 0x1A);
             obj->unk14 += obj->unk1C;
-            spd = (s16)speed;
-            obj->vy += spd + obj->unk20;
+            fall_accel = (s16)gravity;
+            obj->vy += fall_accel + obj->unk20;
             obj->posX += (s16)obj->unk14;
             obj->posY += (s16)obj->vy;
             if (obj->posY > (s32)obj->angle)
             {
+                /* landed: hide the marker, play the thud, show the landing sprite */
                 ((struct Bits12 *)obj->childA)->bit5 = 1;
                 set_slot_value(0x44, -1);
                 sprite = obj_get_sprite(obj);
-                b2d = &obj->byte2D;
-                sprite->lo2 = *b2d - 1;
-                obj_get_sprite(obj)->b2 = *b2d - 1;
-                obj_get_sprite(obj)->b4 = *b2d - 1;
+                layer = &obj->byte2D;
+                sprite->lo2 = *layer - 1;
+                obj_get_sprite(obj)->b2 = *layer - 1;
+                obj_get_sprite(obj)->b4 = *layer - 1;
                 ((struct Bits12 *)obj->childB)->bit5 = 0;
                 cam_start_wobble(*(void **)(gUnk_03001020 + 0x1CBC), (s16)obj->vy);
                 obj->timer = 0x14;
-                obj->state = 3;
+                obj->state = DROP_STATE_LANDED;
             }
             break;
-        case 3:
+        case DROP_STATE_LANDED:
             obj->timer--;
             if ((s16)obj->timer > 0)
                 break;
             ((struct Bits12 *)obj->childB)->bit5 = 1;
-            obj->state = 4;
+            obj->state = DROP_STATE_DONE;
             break;
         }
         break;
@@ -510,16 +561,20 @@ u32 obj_cmd_follow_a(struct ClassObj *obj, u32 view, u16 speed, u32 cmd_arg, u8 
     return 0;
 }
 
-struct ClassObj *set_class_e7a0_ex(struct ClassObj *obj, void *rec, u16 idx)
+/* Constructor of scene object kind 6 (class E7a0): sets it up from its placement record, idle, and
+ * gives it two hidden child sprites: record 0x20 (counter 0, on layer 2) and the landing sprite
+ * (record 0x1B), like the dropping object's set_class_e7e0_ex. Returns obj. */
+struct ClassObj *set_class_e7a0_ex(struct ClassObj *obj, void *record, u16 classIdx)
 {
-    obj_init_from_record(obj, rec);
+    obj_init_from_record(obj, record);
     obj->klass = gClassE7a0;
-    obj->classIdx = idx;
+    obj->classIdx = classIdx;
     obj->state = 0;
     obj->timer = 0;
     obj->childB = 0;
     obj->childA = 0;
     obj_finish_sprites_c0(obj);
+
     obj->childA = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
     obj_load_record(obj->childA, 0x20, -1, 0, 0);
     sprite_update_cd0(obj->childA);
@@ -527,13 +582,14 @@ struct ClassObj *set_class_e7a0_ex(struct ClassObj *obj, void *rec, u16 idx)
     obj->childA->lo2 = 2;
     obj->childA->b2 = 2;
     obj->childA->b4 = 2;
-    obj->childA->flags12 |= 0x20;
+    obj->childA->flags12 |= 0x20; /* hidden */
+
     obj->childB = create_obj_de4(4, 0x5008, 0, -1, -1, -1, -1);
     obj_load_record(obj->childB, 0x1B, -1, 0, 0);
     sprite_update_cd0(obj->childB);
     {
-        u32 fl = obj->childB->flags12;
-        obj->childB->flags12 = fl | 0x20;
+        u32 flags = obj->childB->flags12;
+        obj->childB->flags12 = flags | 0x20; /* hidden */
     }
     return obj;
 }

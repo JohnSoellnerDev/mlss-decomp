@@ -601,35 +601,39 @@ NONMATCH("asm/code_081272CC/update_entry_flags.s", void update_entry_flags(struc
 }
 END_NONMATCH
 
+/* Per-frame draw of the save screen once its menu (obj->unk14) is past its setup states:
+ * redraw the box if asked, draw the selected slot's two bro values when that slot holds a save,
+ * run the object list and the IWRAM sprite routines, then the slot rows, appending to the
+ * OAM write cursor at gSys+0x880. */
 void update_screen(struct SaveScreen *obj)
 {
     u32 sysBase = (u32)gSys;
-    u32 *oamPtr = (u32 *)(sysBase + 0x880);
-    u32 oam = *oamPtr;
-    struct SaveScreen *sub = (struct SaveScreen *)obj->unk14;
-    if (sub->unk0 > 3)
+    u32 *oamCursor = (u32 *)(sysBase + 0x880);
+    u32 oam = *oamCursor;
+    struct SaveScreen *menu = (struct SaveScreen *)obj->unk14;
+    if (menu->unk0 > 3)
     {
-        u8 flags;
-        s8 sel;
-        if (sub->unkEE != 0)
-            obj_redraw_box(sub);
-        flags = sub->unkF1;
-        sel = sub->unkFA;
-        if ((flags >> sel) & 1)
+        u8 usedSlots;
+        s8 slot;
+        if (menu->unkEE != 0)
+            obj_redraw_box(menu);
+        usedSlots = menu->unkF1;
+        slot = menu->unkFA;
+        if ((usedSlots >> slot) & 1)
         {
-            u8 *entry = (u8 *)sub + sel * 0x1C;
-            u8 a1 = entry[0x114];
-            u8 a2 = entry[0x115];
-            u8 *f3 = &sub->unkF3;
-            oam = draw_two_values((void *)oam, a1, a2, (1 << sel) & *f3);
+            u8 *info = (u8 *)menu + slot * 0x1C;
+            u8 value0 = info[0x114];
+            u8 value1 = info[0x115];
+            u8 *secondShown = &menu->unkF3;
+            oam = draw_two_values((void *)oam, value0, value1, (1 << slot) & *secondShown);
         }
         update_obj_list();
         obj_list_pass_0a8c();
         ((void (*)(void *, void *))gUnk_03000D48)(((struct ObjList *)gUnk_0203FFB8)->unk3C,
             (u8 *)((struct ObjList *)gUnk_0203FFB8)->unk3C + 0xA14);
         oam = ((u32 (*)(void *, u32))gUnk_03000D4C)(((struct ObjList *)gUnk_0203FFB8)->unk3C, oam);
-        oam = draw_list_rows(sub, oam);
-        *oamPtr = oam;
+        oam = draw_list_rows(menu, oam);
+        *oamCursor = oam;
     }
 }
 

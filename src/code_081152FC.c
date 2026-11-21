@@ -118,32 +118,38 @@ struct MenuTable
 {
     u8 filler0[0x18];
     const void *vtable;
-    void *buf1C;
-    void *buf20;
-    u8 count24;
+    void *buf1C;     /* 0x400 bytes: copy of both palette shadows (BG, then OBJ) */
+    void *buf20;     /* 0x258 bytes: RAM copy of the code at menu_obj_routine */
+    u8 count24;      /* number of struct TableEntry in entries2C */
     u8 filler25[0x28 - 0x25];
     u32 flags28;
-    void *entries2C;
-    u16 unk30;
-    u8 unk32;
+    void *entries2C; /* count24 struct TableEntry */
+    /* Palette fade (started by sub_08115F54, drawn with obj_draw_tile_rows): */
+    u16 unk30;  /* fade colour (BGR555) */
+    u8 unk32;   /* PALETTE_FADE_* flags */
     u8 filler33;
-    u16 unk34;
-    u16 unk36;
-    u16 unk38;
+    u16 unk34;  /* fade length in frames, nonzero while a fade runs */
+    u16 unk36;  /* BG palette rows to fade (bit n = row n) */
+    u16 unk38;  /* OBJ palette rows to fade (bit n = row n) */
     u8 filler3A[0x3C - 0x3A];
-    s32 unk3C;
-    s32 unk40;
+    s32 unk3C;  /* extra 0xA0 colours to fade: source */
+    s32 unk40;  /* extra 0xA0 colours to fade: destination */
     u16 unk44;
-    u16 unk46;
-    u8 unk48;
+    u16 unk46;  /* fade length / 16 */
+    u8 unk48;   /* level step per update: 1 (towards the colour) or 0xFF (away from it) */
     u8 filler49;
-    u16 unk4A;
+    u16 unk4A;  /* fade level: 0 = original colours, unk34 = all fade colour */
     u16 u4C;
     u8 filler4E[0x50 - 0x4E];
-    void *unk50;
+    void *unk50; /* the three entry points of the routines in buf20: buf20 + 0, + 0x88, + 0x13C */
     void *unk54;
     void *unk58;
 };
+
+/* MenuTable.unk32: palette fade flags. */
+#define PALETTE_FADE_NO_OBJ 1 /* no OBJ rows to fade */
+#define PALETTE_FADE_NO_BG  2 /* no BG rows to fade */
+#define PALETTE_FADE_OUT    4 /* fade from the colours to the fade colour (else from the colour back) */
 
 extern struct MenuWorld *gWorld;
 extern u16 gSys[];
@@ -167,30 +173,33 @@ struct EntryRef
     u16 id;
 };
 
+/* One sprite slot of a MenuTable (obj->entries2C[count24]); filled by sprite_alloc,
+ * cleared by menu_entry_refresh. */
 struct TableEntry
 {
-    u8 byte0;
-    u8 byte1;
-    u8 byte2;
-    u8 used3;
+    u8 byte0;     /* struct TableBits0 */
+    u8 byte1;     /* struct TableNib: lo4 = palette row, hi4 = second palette row */
+    u8 byte2;     /* struct TableNib: lo4 = alternate palette row */
+    u8 used3;     /* nonzero while the slot holds a sprite */
     u8 byte4;
     u8 byte5;
     u16 unk6;
     u16 unk8;
     u8 filler0A[0xC - 0xA];
-    void *tiles0C;
-    void *buf10;
-    void *buf14;
+    void *tiles0C; /* the 16 colours (0x20 bytes) the palette row held before the sprite took it */
+    void *buf10;   /* alternate palette (0x20 bytes) when mid3 & 6 */
+    void *buf14;   /* second alternate palette (0x20 bytes), may be NULL */
     u8 byte18;
     u8 byte19;
     u8 filler1A[0x1C - 0x1A];
 };
 
+/* TableEntry.byte0 */
 struct TableBits0
 {
-    u8 lo2 : 2;
-    u8 bit2 : 1;
-    u8 mid3 : 3;
+    u8 lo2 : 2;  /* slot state, 0 = free */
+    u8 bit2 : 1; /* 1: OBJ palette, 0: BG palette */
+    u8 mid3 : 3; /* palette mode; bits 1-2 set: the slot has alternate palettes */
     u8 hi2 : 2;
 };
 
@@ -199,6 +208,20 @@ struct TableNib
     u8 lo4 : 4;
     u8 hi4 : 4;
 };
+
+struct TableBits0Packed
+{
+    u8 lo2 : 2;
+    u8 bit2 : 1;
+    u8 mid3 : 3;
+    u8 hi2 : 2;
+} __attribute__((packed));
+
+struct TableNibPacked
+{
+    u8 lo4 : 4;
+    u8 hi4 : 4;
+} __attribute__((packed));
 
 extern const struct EntryRef *const gEntryLookup0[];
 extern const struct EntryRef *const gEntryLookup1[];
@@ -381,54 +404,61 @@ static inline void menu_obj_release(struct MenuObj *obj)
     }
 }
 
+/*
+ * Per-frame update of a three-entry menu. state1D: 0 = choosing, 1 = waiting for the fade-out
+ * started by entry 0, 2 = closing and opening the menu object. In state 0, A picks the entry under
+ * cursor1C (0: fade out first, 1: open the small screen, 2: open the large screen), SELECT closes the
+ * menu, and up/down move the cursor with wrap-around. sub_08115F54 starts a palette fade (mode 4 =
+ * fade out) on the fader in child24; sub_obj_running returns 0 once it has finished.
+ */
 void menu_obj_step(struct MenuObj *obj)
 {
-    u16 keys;
-    s32 cursor;
-    s32 t;
-    void *node;
-    s32 m;
+    u16 pressed;
+    s32 choice;
+    s32 moved;
+    void *screen;
+    s32 select;
 
     switch (obj->state1D) {
     case 0:
-        keys = gSys[0x2A / 2];
-        if ((keys & 1) != 0) {
-            cursor = *(s8 *)&obj->cursor1C;
-            switch (cursor) {
+        pressed = ((struct SysPad *)gSys)->keys;
+        if ((pressed & A_BUTTON) != 0) {
+            choice = *(s8 *)&obj->cursor1C;
+            switch (choice) {
             case 0:
                 obj->state1D = 1;
-                sub_08115F54((struct MenuTable *)obj->child24, 4, 0, 0x10, 0x7FFF, 0xFFFF, cursor, cursor);
+                sub_08115F54((struct MenuTable *)obj->child24, 4, 0, 0x10, 0x7FFF, 0xFFFF, choice, choice);
                 break;
             case 1:
                 menu_obj_release(obj);
-                node = heap_alloc2(0x54, 0, gMenuDescSmall, 0);
-                screen_obj_setup(node, 8, gMenuDescSmall);
+                screen = heap_alloc2(0x54, 0, gMenuDescSmall, 0);
+                screen_obj_setup(screen, 8, gMenuDescSmall);
                 break;
             case 2:
                 menu_obj_release(obj);
-                node = heap_alloc2(0x164, 0, gMenuDescLarge, 0);
-                open_screen(node, 8, gMenuDescLarge, 0xFFFF);
+                screen = heap_alloc2(0x164, 0, gMenuDescLarge, 0);
+                open_screen(screen, 8, gMenuDescLarge, 0xFFFF);
                 break;
             }
             break;
         }
-        m = 4;
-        m &= keys;
-        if (m != 0) {
+        select = SELECT_BUTTON;
+        select &= pressed;
+        if (select != 0) {
             menu_obj_release(obj);
             break;
         }
-        if ((((struct SysPad *)gSys)->repeat & 0x40) != 0) {
-            t = obj->cursor1C - 1;
-            obj->cursor1C = t;
-            if ((t << 24) < 0) {
+        if ((((struct SysPad *)gSys)->repeat & DPAD_UP) != 0) {
+            moved = obj->cursor1C - 1;
+            obj->cursor1C = moved;
+            if ((moved << 24) < 0) {
                 obj->cursor1C = 2;
             }
         }
-        if ((((struct SysPad *)gSys)->repeat & 0x80) != 0) {
-            t = obj->cursor1C + 1;
-            obj->cursor1C = t;
-            if ((s8)t > 2) {
+        if ((((struct SysPad *)gSys)->repeat & DPAD_DOWN) != 0) {
+            moved = obj->cursor1C + 1;
+            obj->cursor1C = moved;
+            if ((s8)moved > 2) {
                 obj->cursor1C = 0;
             }
         }
@@ -486,28 +516,31 @@ struct MenuObj *sub_081158A0(struct MenuObj *obj, u8 kind, const void *tag)
     return obj;
 }
 
-struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u8 flag)
+/* Sets up a palette manager task: inserts it as task `kind`, allocates the palette backup (buf1C) and a
+   RAM copy of the routines at menu_obj_routine (buf20, entry points in unk50/54/58), and
+   `entryCount` zeroed struct TableEntry slots; no fade is running afterwards. */
+struct MenuTable *menu_obj_init(struct MenuTable *obj, u8 kind, const u8 *tag, u8 entryCount)
 {
-    u32 entries;
+    u32 entryWords;
     u16 zero;
     u16 *src = &zero;
     u8 count;
 
-    count = flag;
+    count = entryCount;
     task_insert(obj, kind, tag);
     obj->vtable = gMenuTableVtable;
     obj->buf1C = heap_alloc(0x400, 0, gMenuObjBufTag, 0);
     obj->buf20 = heap_alloc(0x258, 0, gMenuObjBuf2Tag, 0);
-    cpu_set(menu_obj_routine, obj->buf20, 0x04000096);
+    cpu_set(menu_obj_routine, obj->buf20, 0x04000096); /* 0x96 words */
     obj->unk50 = obj->buf20;
     obj->unk54 = (u8 *)obj->buf20 + 0x88;
     obj->unk58 = (u8 *)obj->buf20 + 0x13C;
     obj->count24 = count;
     obj->flags28 = 0;
-    entries = (count << 3) - count;
-    obj->entries2C = heap_alloc(entries << 2, 0, gMenuObjTableTag, 0);
+    entryWords = (count << 3) - count; /* sizeof(struct TableEntry) / 4 per entry */
+    obj->entries2C = heap_alloc(entryWords << 2, 0, gMenuObjTableTag, 0);
     zero = 0;
-    cpu_set(src, obj->entries2C, ((entries << 1) & 0x001FFFFF) | 0x01000000);
+    cpu_set(src, obj->entries2C, ((entryWords << 1) & 0x001FFFFF) | 0x01000000); /* fill halfwords with 0 */
     obj->unk32 = 0;
     obj->unk30 = 0;
     obj->unk34 = 0;
@@ -678,184 +711,197 @@ static inline struct TableEntry *menu_entry_at(struct MenuTable *obj, u32 offset
     return (struct TableEntry *)(offset + (u32)obj->entries2C);
 }
 
-NONMATCH("asm/code_081152FC/menu_entry_refresh.s", u32 menu_entry_refresh(struct MenuTable *obj, u8 index, u8 show))
+/* Frees sprite slot `slotIndex` of `obj` (the counterpart of sprite_alloc): releases its palette
+ * row bit in flags28, optionally copies the row's saved colours back into the palette buffer and
+ * marks the row dirty (gSys[0]: OBJ rows, gSys[1]: BG rows), frees its palette copies and clears
+ * the slot. Returns 0 if the slot was already empty, 1 otherwise. */
+u32 menu_entry_refresh(struct MenuTable *obj, u8 slotIndex, u8 restorePalette)
 {
-    u32 bit;
-    u32 t;
-    u32 low;
-    struct TableEntry *table;
-    u32 offset;
-    u32 off2;
-    struct TableEntry *e;
+    u32 paletteBit;
+    u32 palMode;
+    u32 hasAltPalettes;
+    struct TableEntry *entries;
+    u32 slotOffset;
+    u32 clearOffset;
+    struct TableEntry *slot;
+    struct TableEntry *clearEntries;
 
-    table = obj->entries2C;
-    offset = ((index << 3) - index) << 2;
-    e = (struct TableEntry *)(offset + (u32)table);
-    if (e->used3 == 0) {
+    entries = obj->entries2C;
+    slotOffset = ((slotIndex << 3) - slotIndex) << 2; /* slotIndex * sizeof(struct TableEntry) */
+    slot = (struct TableEntry *)(slotOffset + (u32)entries);
+    if (slot->used3 == 0) {
         return 0;
     }
-    bit = (1 << (((u32)e->byte1 << 28) >> 28)) << ((((u32)e->byte0 << 29) >> 31) << 4);
-    obj->flags28 ^= bit;
-    obj->u4C = ((((u32)e->byte0 << 29) >> 31) << 8) + (((u32)e->byte1 << 28) >> 24);
-    if (show != 0) {
-        cpu_set(menu_entry_at(obj, offset)->tiles0C, gUnk_02000080 + (obj->u4C << 1), 0x04000008);
-        e = menu_entry_at(obj, offset);
-        if ((e->byte0 & 4) != 0) {
-            gSys[0] |= 1 << (((u32)e->byte1 << 28) >> 28);
+    paletteBit = (1 << ((struct TableNibPacked *)&slot->byte1)->lo4) << (((struct TableBits0Packed *)&slot->byte0)->bit2 << 4);
+    obj->flags28 ^= paletteBit;
+    /* first colour of the palette row: BG rows 0-15, OBJ rows 16-31 */
+    obj->u4C = (((struct TableBits0Packed *)&slot->byte0)->bit2 << 8) + (((struct TableNibPacked *)&slot->byte1)->lo4 << 4);
+    if (restorePalette != 0) {
+        cpu_set(menu_entry_at(obj, slotOffset)->tiles0C, gUnk_02000080 + (obj->u4C << 1), 0x04000008);
+        slot = menu_entry_at(obj, slotOffset);
+        if (((struct TableBits0Packed *)&slot->byte0)->bit2) {
+            gSys[0] |= 1 << ((struct TableNibPacked *)&slot->byte1)->lo4;
         } else {
-            gSys[1] |= 1 << (((u32)e->byte1 << 28) >> 28);
+            gSys[1] |= 1 << ((struct TableNibPacked *)&slot->byte1)->lo4;
         }
     }
-    table = obj->entries2C;
-    offset = ((index << 3) - index) << 2;
-    e = (struct TableEntry *)(offset + (u32)table);
-    t = ((u32)e->byte0 << 26) >> 29;
-    low = 6;
-    low &= t;
-    if (low != 0) {
-        if (e->buf14 != 0) {
-            heap_free_a(e->buf14);
+    entries = obj->entries2C;
+    slotOffset = ((slotIndex << 3) - slotIndex) << 2;
+    slot = (struct TableEntry *)(slotOffset + (u32)entries);
+    palMode = ((struct TableBits0Packed *)&slot->byte0)->mid3;
+    hasAltPalettes = 6;
+    hasAltPalettes &= palMode;
+    if (hasAltPalettes != 0) {
+        if (slot->buf14 != 0) {
+            heap_free_a(slot->buf14);
         }
-        if (menu_entry_at(obj, offset)->buf10 != 0) {
-            heap_free_a(menu_entry_at(obj, offset)->buf10);
+        if (menu_entry_at(obj, slotOffset)->buf10 != 0) {
+            heap_free_a(menu_entry_at(obj, slotOffset)->buf10);
         }
     }
-    table = obj->entries2C;
-    off2 = ((index << 3) - index) << 2;
-    if (((struct TableEntry *)(off2 + (u32)table))->tiles0C != 0) {
-        heap_free_a(((struct TableEntry *)(off2 + (u32)table))->tiles0C);
+    clearEntries = obj->entries2C;
+    clearOffset = ((slotIndex << 3) - slotIndex) << 2;
+    if (((struct TableEntry *)(clearOffset + (u32)clearEntries))->tiles0C != 0) {
+        heap_free_a(((struct TableEntry *)(clearOffset + (u32)clearEntries))->tiles0C);
     }
-    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->lo2 = 0;
-    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->bit2 = 0;
-    ((struct TableBits0 *)&menu_entry_at(obj, off2)->byte0)->mid3 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte1)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte1)->hi4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte2)->lo4 = 0;
-    menu_entry_at(obj, off2)->used3 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte4)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte4)->hi4 = 0;
-    menu_entry_at(obj, off2)->byte5 = 0;
-    menu_entry_at(obj, off2)->unk6 = 0;
-    menu_entry_at(obj, off2)->unk8 = 0;
-    menu_entry_at(obj, off2)->byte18 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte19)->lo4 = 0;
-    ((struct TableNib *)&menu_entry_at(obj, off2)->byte19)->hi4 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, clearOffset)->byte0)->lo2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, clearOffset)->byte0)->bit2 = 0;
+    ((struct TableBits0 *)&menu_entry_at(obj, clearOffset)->byte0)->mid3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte1)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte1)->hi4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte2)->lo4 = 0;
+    menu_entry_at(obj, clearOffset)->used3 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte4)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte4)->hi4 = 0;
+    menu_entry_at(obj, clearOffset)->byte5 = 0;
+    menu_entry_at(obj, clearOffset)->unk6 = 0;
+    menu_entry_at(obj, clearOffset)->unk8 = 0;
+    menu_entry_at(obj, clearOffset)->byte18 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte19)->lo4 = 0;
+    ((struct TableNib *)&menu_entry_at(obj, clearOffset)->byte19)->hi4 = 0;
     return 1;
 }
-END_NONMATCH
 
-void sub_08115F54(struct MenuTable *obj, u8 mode, u16 pos, u32 speed, u32 arg5, u32 arg6, s32 arg7, s32 arg8)
+/* Starts a palette fade on `obj` unless one is running: the BG rows in bgRows and the OBJ rows in
+ * objRows (plus 0xA0 colours from extraSrc to extraDst, when both are set) blend towards `colour`
+ * over `frames` frames (flags & PALETTE_FADE_OUT), or start as `colour` and blend back. Both
+ * palette shadows (gUnk_02000080: BG rows, gUnk_02000280: OBJ rows) are saved in buf1C first. */
+void sub_08115F54(struct MenuTable *obj, u8 mode, u16 colour, u32 frames, u32 bgRows, u32 objRows, s32 extraSrc, s32 extraDst)
 {
     u8 *flags;
-    u16 v36;
-    u16 v38;
-    u16 speed16;
-    u32 scale;
+    u16 bgMask;
+    u16 objMask;
+    u16 length;
+    u32 framesHi;
 
-    scale = speed << 16;
-    speed16 = scale >> 16;
-    v36 = arg5;
-    v38 = arg6;
+    framesHi = frames << 16;
+    length = framesHi >> 16;
+    bgMask = bgRows;
+    objMask = objRows;
     if (obj->unk34 != 0) {
         return;
     }
     obj->unk32 = mode;
     flags = &obj->unk32;
-    if (v38 == 0) {
-        *flags = mode | 1;
+    if (objMask == 0) {
+        *flags = mode | PALETTE_FADE_NO_OBJ;
     }
-    if (v36 == 0) {
-        *flags |= 2;
+    if (bgMask == 0) {
+        *flags |= PALETTE_FADE_NO_BG;
     }
     obj->unk44 = 0;
-    obj->unk30 = pos;
-    obj->unk34 = speed16;
-    obj->unk46 = scale >> 20;
-    if ((*flags & 4) != 0) {
+    obj->unk30 = colour;
+    obj->unk34 = length;
+    obj->unk46 = framesHi >> 20;
+    if ((*flags & PALETTE_FADE_OUT) != 0) {
         obj->unk48 = 1;
         obj->unk4A = 0;
     } else {
         obj->unk48 = 0xFF;
-        obj->unk4A = speed16;
+        obj->unk4A = length;
     }
-    obj->unk36 = v36;
-    obj->unk38 = v38;
-    obj->unk3C = arg7;
-    obj->unk40 = arg8;
+    obj->unk36 = bgMask;
+    obj->unk38 = objMask;
+    obj->unk3C = extraSrc;
+    obj->unk40 = extraDst;
     cpu_set(gUnk_02000080, obj->buf1C, 0x04000100);
-    if ((*flags & 4) != 0) {
+    if ((*flags & PALETTE_FADE_OUT) != 0) {
         return;
     }
-    obj_draw_tile_rows(obj, 0, gUnk_02000080, 0, obj->unk36, pos, 1);
-    obj_draw_tile_rows(obj, 0, gUnk_02000280, 0, obj->unk38, pos, 1);
+    /* fading back in: fill the rows with the fade colour now, and mark them for upload */
+    obj_draw_tile_rows(obj, 0, gUnk_02000080, 0, obj->unk36, colour, 1);
+    obj_draw_tile_rows(obj, 0, gUnk_02000280, 0, obj->unk38, colour, 1);
     gSys[1] |= obj->unk36;
     gSys[0] |= obj->unk38;
 }
 
+/* Looks up a graphic key (bits 12-15: bank + 1, bits 0-11: id) in the lookup table of its bank and
+   returns its code, (table number << 12) | index in that table, or 0xFFFF when no entry of the
+   table has that id. The first argument (gWorld->table248 at the call) is not used. */
 u32 find_entry_code(u32 unused, u32 key)
 {
-    const struct EntryRef *const *base;
+    const struct EntryRef *const *entries;
     u32 shifted = key << 16;
     u16 id = shifted >> 16;
-    u16 sel = (shifted >> 28) - 1;
+    u16 bank = (shifted >> 28) - 1;
     s32 count;
     u32 table;
     s32 i;
 
-    switch (sel) {
+    switch (bank) {
     case 3:
-        base = gEntryLookup0;
+        entries = gEntryLookup0;
         count = 0x30;
         table = 0;
         break;
     case 1:
-        base = gEntryLookup1;
+        entries = gEntryLookup1;
         count = 0x1A;
         table = 1;
         break;
     case 10:
-        base = gEntryLookup9;
+        entries = gEntryLookup9;
         count = 1;
         table = 9;
         break;
     case 2:
-        base = gEntryLookup2;
+        entries = gEntryLookup2;
         count = 9;
         table = 2;
         break;
     case 7:
-        base = gEntryLookup7;
+        entries = gEntryLookup7;
         count = 0xB;
         table = 7;
         break;
     case 8:
-        base = gEntryLookup8;
+        entries = gEntryLookup8;
         count = 1;
         table = 8;
         break;
     case 0:
-        base = gEntryLookup3;
+        entries = gEntryLookup3;
         count = 1;
         table = 3;
         break;
     case 9:
-        base = gEntryLookupA;
+        entries = gEntryLookupA;
         count = 2;
         table = 0xA;
         break;
     case 4:
-        base = gEntryLookup6;
+        entries = gEntryLookup6;
         count = 1;
         table = 6;
         break;
     default:
-        base = 0;
+        entries = NULL;
         count = 0;
         table = 0;
         break;
     }
     for (i = 0; i < count; i++) {
-        if (base[i]->id == id) {
+        if (entries[i]->id == id) {
             return (u16)((table << 12) | i);
         }
     }

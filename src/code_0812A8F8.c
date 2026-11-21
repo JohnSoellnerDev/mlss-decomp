@@ -1,6 +1,9 @@
 #include "global.h"
 #include "ram_routines.h"
 
+#define KEYS_ALL 0x3FF /* all 10 GBA buttons */
+
+/* Key input settings at gUnk_03000388 (also used as a byte array by other files). */
 struct KeyBlock
 {
     u8 filler0[8];
@@ -58,6 +61,14 @@ struct ObjLists
 {
     u8 filler0[0x3C];
     void *head3C;
+};
+
+struct SysView
+{
+    u8 filler0[0x880];
+    void *oam880;
+    u8 filler884[0x888 - 0x884];
+    u8 flags888;
 };
 
 struct StatusView
@@ -166,7 +177,52 @@ ASM_FUNC("asm/code_0812A8F8/status_view_redraw.s", void status_view_redraw(struc
 
 ASM_FUNC("asm/code_0812A8F8/window_state_update.s", void window_state_update(void))
 
-ASM_FUNC("asm/code_0812A8F8/status_screen_update.s", void status_screen_update(void))
+/* Per-frame draw of the status screen once its view is past state 4: redraws the view when
+ * unk67 asks for it and, unless gSys flags888 bit 4 holds drawing back, draws the two values
+ * (the party's when unkB1 is set, else the view's own; skipped when flagsB0 bit 0 is set),
+ * the object list (through the IWRAM routines at gUnk_03000D48 and gUnk_03000D4C) and the
+ * member panel into OAM, then stores the new OAM write position in gSys. */
+void status_screen_update(struct StatusCtx *ctx)
+{
+    struct StatusView *view = ctx->view14;
+    void *oam = ((struct SysView *)gSys)->oam880;
+
+    if (view->state0 > 4)
+    {
+        if (view->unk67 != 0)
+            status_view_redraw(view);
+        if (!(((struct SysView *)gSys)->flags888 & 0x10))
+        {
+            if (!(view->flagsB0 & 1))
+            {
+                u8 first;
+                u8 second;
+                void *next;
+
+                if (view->unkB1 != 0)
+                {
+                    first = gParty[0x30];
+                    second = gParty[0x6C];
+                    next = draw_two_values(oam, first, second, 2 & view->flagsAF);
+                }
+                else
+                {
+                    first = view->unk84;
+                    second = view->unk85;
+                    next = draw_two_values(oam, first, second, 1 & view->flagsAF);
+                }
+                oam = next;
+            }
+            update_obj_list();
+            obj_list_pass_0a8c();
+            ((void (*)(void *, void *))gUnk_03000D48)(((struct ObjLists *)gUnk_0203FFB8)->head3C,
+                (u8 *)((struct ObjLists *)gUnk_0203FFB8)->head3C + 0xA14);
+            oam = ((void *(*)(void *, void *))gUnk_03000D4C)(((struct ObjLists *)gUnk_0203FFB8)->head3C, oam);
+            oam = member_panel_draw(view, oam);
+            ((struct SysView *)gSys)->oam880 = oam;
+        }
+    }
+}
 
 u32 sub_0812B634(struct MenuObj *obj)
 {
@@ -224,49 +280,58 @@ void *sub_0812B730(void *obj, u8 kind)
     return obj;
 }
 
+/* Constructor of a menu screen task: inserts it, blanks the display, saves the key input settings
+ * (enabled keys, repeat delay and rate) and switches to all keys with repeat 10/8, stores the two
+ * flag bytes, and creates its sub-task, menu object and animation record (both children point
+ * back at the screen). menu_screen_destroy is its destructor. */
 struct MenuObj *menu_screen_init(struct MenuObj *obj, u8 prio, const void *tag, u32 flagsBD, u32 flagsBE)
 {
-    struct SubObj *sub;
-    struct SubObj *subB;
+    struct SubObj *subTask;
+    struct SubObj *menuBlock;
     struct KeyBlock *keys;
-    u16 mask;
+    u16 enabledKeys;
 
     task_insert(obj, prio, tag);
     obj->cb18 = gScreenCallbacks;
-    *(u16 *)0x02000000 = 0;
-    *(u16 *)0x02000050 = 0;
+    REG_BUF_DISPCNT = 0;
+    REG_BUF_BLDCNT = 0;
     keys = (struct KeyBlock *)gUnk_03000388;
     obj->keys3C = keys;
-    mask = keys->enableMask3C;
-    obj->keyMask8E = ((u32)mask << 22) >> 22;
-    keys->enableMask3C = mask | 0x3FF;
+    enabledKeys = keys->enableMask3C;
+    obj->keyMask8E = ((u32)enabledKeys << 22) >> 22;
+    keys->enableMask3C = enabledKeys | KEYS_ALL;
     obj->repeatDelay90 = obj->keys3C->repeatDelay8;
     obj->repeatRate91 = obj->keys3C->repeatRate9;
-    obj->keys3C->repeatDelay8 = 0xA;
+    obj->keys3C->repeatDelay8 = 10;
     obj->keys3C->repeatRate9 = 8;
     obj->flagsBD = flagsBD;
     obj->flagsBE = flagsBE;
-    sub = heap_alloc2(0x1C, 0, gScreenTagTask, 1);
-    task_insert(sub, 8, gScreenTagTask);
-    ((struct SubObj *)sub)->cb18 = gSubCallbacks;
-    obj->sub1C = sub;
-    subB = heap_alloc2(0x5C, 0, gScreenTagMenu, 1);
-    obj->sub20 = menu_obj_init(subB, 8, gScreenTagMenu, 8);
+    subTask = heap_alloc2(0x1C, 0, gScreenTagTask, 1);
+    task_insert(subTask, 8, gScreenTagTask);
+    subTask->cb18 = gSubCallbacks;
+    obj->sub1C = subTask;
+    menuBlock = heap_alloc2(0x5C, 0, gScreenTagMenu, 1);
+    obj->sub20 = menu_obj_init(menuBlock, 8, gScreenTagMenu, 8);
     obj->anim28 = clear_anim_record(heap_alloc2(0x10, 0, gScreenTagAnim, 1));
     obj->sub1C->owner14 = obj;
     obj->sub20->owner14 = obj;
     return obj;
 }
 
-void menu_screen_destroy(struct MenuObj *obj, u32 arg)
+/* Tears down a screen made by menu_screen_init: clears the display, window and blend shadow
+   registers (EWRAM 0x02000000 mirrors the I/O registers), cancels the DMA to 0x0600D000, runs the
+   pending object callbacks, destroys the owner and frees the screen's buffers (which ones depends
+   on flagsBD and flagsBE bit 0), its anim record, menu object and sub-task, then removes the
+   screen task itself with `mode`. */
+void menu_screen_destroy(struct MenuObj *obj, u32 mode)
 {
-    void *tail;
+    void *last;
 
     obj->cb18 = gScreenCallbacks;
-    *(u16 *)0x02000000 = 0;
-    *(u16 *)0x02000048 = 0;
-    *(u16 *)0x0200004A = 0;
-    *(u16 *)0x02000050 = 0;
+    *(u16 *)0x02000000 = 0; /* DISPCNT */
+    *(u16 *)0x02000048 = 0; /* WININ */
+    *(u16 *)0x0200004A = 0; /* WINOUT */
+    *(u16 *)0x02000050 = 0; /* BLDCNT */
     dma_cancel_request(0x0600D000);
     run_pending_obj_callbacks();
     if (obj->owner24 != 0)
@@ -287,14 +352,14 @@ void menu_screen_destroy(struct MenuObj *obj, u32 arg)
         {
             heap_free_a(obj->unk54);
         }
-        tail = obj->unk40;
-    }
-    else
-    {
-        if ((obj->flagsBE & 1) == 0)
+        last = obj->unk40;
+        if (last != 0)
         {
-            goto third;
+            heap_free_a(last);
         }
+    }
+    else if (obj->flagsBE & 1)
+    {
         if (obj->unk50 != 0)
         {
             heap_free_a(obj->unk50);
@@ -307,24 +372,24 @@ void menu_screen_destroy(struct MenuObj *obj, u32 arg)
         {
             heap_free_a(obj->unk48);
         }
-        tail = obj->unk44;
+        last = obj->unk44;
+        if (last != 0)
+        {
+            heap_free_a(last);
+        }
     }
-    if (tail != 0)
+    else
     {
-        heap_free_a(tail);
+        if (obj->unk58 != 0)
+        {
+            heap_free_a(obj->unk58);
+        }
+        last = obj->unk40;
+        if (last != 0)
+        {
+            heap_free_a(last);
+        }
     }
-    goto rest;
-third:
-    if (obj->unk58 != 0)
-    {
-        heap_free_a(obj->unk58);
-    }
-    tail = obj->unk40;
-    if (tail != 0)
-    {
-        heap_free_a(tail);
-    }
-rest:
     heap_free_b(obj->anim28);
     obj->anim28 = 0;
     if (obj->sub20 != 0)
@@ -337,7 +402,7 @@ rest:
         task_remove(obj->sub1C, 3);
     }
     obj->sub1C = 0;
-    task_remove(obj, arg);
+    task_remove(obj, mode);
 }
 
 ASM_FUNC("asm/code_0812A8F8/menu_screen_state_step.s", void menu_screen_state_step(void))

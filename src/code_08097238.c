@@ -87,7 +87,7 @@ struct Actor
     u16 scale;
     u16 phase;
     u8 filler80[0x92 - 0x80];
-    s16 unk92;
+    s16 arcHeight; /* peak of the jump arc to the target, read by set_motion_offsets */
     s32 speedLo;
     s32 speedHi;
     s32 time;
@@ -100,6 +100,27 @@ struct Actor
     u8 offY;
     u8 offZ;
 };
+
+// Actor.flags79: the motion has finished (state_stack_advance_progress went past 0x3FFF).
+#define ACTOR_MOTION_DONE 0x20
+
+// Animations heroA and heroB play when they go back to hero_random_walk (sprite_set_action mode 1).
+#define HERO_A_WALK_ANIM 0x2027
+#define HERO_B_WALK_ANIM 0x2056
+
+// Sound played (set_slot_value queues it) when a hero goes back to hero_random_walk.
+#define SOUND_PAIR_END 0x3F
+
+// Pair motion tuning in the work buffer: a motion lasts PAIR_FRAMES_BASE plus 0-2 times
+// PAIR_FRAMES_STEP frames and drops PAIR_PARTICLE_COUNT falling particles.
+#define PAIR_FRAMES_BASE (*(s32 *)(gWorkBuf + 0x5480))
+#define PAIR_FRAMES_STEP (*(s32 *)(gWorkBuf + 0x5484))
+#define PAIR_PARTICLE_COUNT (*(s32 *)(gWorkBuf + 0x5488))
+
+// Actor.handle for a motion of `frames` frames: the progress added per frame, 0x4000 being the
+// whole motion (see state_stack_advance_progress). Evaluates `frames` twice.
+#define MOTION_RATE(frames) \
+    ((frames) != 0 ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, (frames)) : 0x4000)
 
 struct SysKeys3E
 {
@@ -219,16 +240,19 @@ static inline void child_place(struct Actor *child, struct Actor *src, struct Ac
     }
     offZ += partner->targetZ / 0x100;
     offZ += MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(0x640, (offZ * offZ) / 0x40 + 0x28);
-    child->unk92 = offZ;
+    child->arcHeight = offZ;
     set_motion_offsets(child, 0x480);
 }
 
+// Waits for the pair's motion to finish, then releases the last actor of the child chain and sends
+// every other child to its next pose: each one is placed relative to its partner (to this actor when
+// it is the partner) and left to child_hold_settle. This actor's state ends there.
 void pair_children_end(struct Actor *obj)
 {
     struct Actor *child;
 
     state_stack_advance_progress(obj);
-    if (obj->flags79 & 0x20) {
+    if (obj->flags79 & ACTOR_MOTION_DONE) {
         struct Actor *last = obj->child;
 
         while (last->child != 0) {
@@ -482,11 +506,15 @@ u32 pair_begin_setup(struct Actor *obj)
 
 ASM_FUNC("asm/code_08097238/state_pair_setup_motion.s", void state_pair_setup_motion(struct Actor *obj))
 
+/* Ends a hero's pair move: sets hero A's (0x2027) or hero B's (0x2056) action, sets its pose mode to
+   1 and, when the hero is in mode 2 or 4, sends it to its target position (whole pixels, plus its
+   offsets, 10 to the right for the World.unk7C hero and 14 for the other), 14 pixels up, at speed
+   0x200. Then sets slot 0x2B and waits in hero_motion_done. */
 void pair_end_heroes(struct Actor *obj)
 {
     struct Actor *heroA = &gWorld->heroA->body;
     struct Actor *heroB = &gWorld->heroB->body;
-    struct Hero *hero;
+    struct Hero *hero7C;
     u8 mode;
 
     if (obj == heroA) {
@@ -496,13 +524,13 @@ void pair_end_heroes(struct Actor *obj)
         sprite_set_action(obj, 1, 0x2056, 0);
     }
     obj->pose->mode = 1;
-    hero = gWorld->unk7C;
-    if (obj == &hero->body) {
-        mode = hero->body.flags76 & 6;
+    hero7C = gWorld->unk7C;
+    if (obj == &hero7C->body) {
+        mode = hero7C->body.flags76 & 6;
         if (mode == 2 || mode == 4) {
-            place_targets(obj, obj->targetX / 0x100 + (s8)hero->body.offX + 10,
-                          obj->targetY / 0x100 + (s8)hero->body.offY, 0, -1);
-            hero->body.unk92 = obj->targetZ / 0x100 + 0xe;
+            place_targets(obj, obj->targetX / 0x100 + (s8)hero7C->body.offX + 10,
+                          obj->targetY / 0x100 + (s8)hero7C->body.offY, 0, -1);
+            hero7C->body.arcHeight = obj->targetZ / 0x100 + 0xe;
             set_motion_offsets(obj, 0x200);
         }
     } else {
@@ -510,7 +538,7 @@ void pair_end_heroes(struct Actor *obj)
         if (mode == 2 || mode == 4) {
             place_targets(obj, obj->targetX / 0x100 + (s8)obj->offX + 0xe,
                           obj->targetY / 0x100 + (s8)obj->offY, 0, -1);
-            obj->unk92 = obj->targetZ / 0x100 + 0xe;
+            obj->arcHeight = obj->targetZ / 0x100 + 0xe;
             set_motion_offsets(obj, 0x200);
         }
     }
@@ -550,10 +578,12 @@ static inline void *walk_focus(void)
 
 ASM_FUNC("asm/code_08097238/hero_random_walk.s", void hero_random_walk(struct Actor *obj))
 
+// Ends a hero's pair move: frees its parts, plays action 3 and, for flags76 modes 2 and 4,
+// restarts its motion with a random duration (MOTION_RATE draws the random duration twice:
+// once for the zero check, once for the division). Then counts down the falling particles.
 void pair_finish_handle(struct Actor *obj)
 {
-    s32 n;
-    u8 bits;
+    u8 mode;
 
     obj_free_parts(obj);
     if (obj == &gWorld->heroA->body)
@@ -566,31 +596,33 @@ void pair_finish_handle(struct Actor *obj)
     }
     obj->pose->mode = 1;
     set_slot_value(0x2e, -1);
-    bits = obj->flags76 & 6;
-    if (bits == 2 || bits == 4)
+    mode = obj->flags76 & 6;
+    if (mode == 2 || mode == 4)
     {
-        n = rand_below(3, mt19937_next());
-        obj->handle = *(s32 *)(gWorkBuf + 0x5480) + n * *(s32 *)(gWorkBuf + 0x5484) != 0
-            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + rand_below(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
-            : 0x4000;
+        obj->handle = MOTION_RATE(PAIR_FRAMES_BASE + rand_below(3, mt19937_next()) * PAIR_FRAMES_STEP);
         obj->phase = 0;
-        *((s8 *)obj + 0x79) &= -0x21;
+        *(s8 *)&obj->flags79 &= ~ACTOR_MOTION_DONE;
     }
     obj->clock = 0;
-    obj->repeats = *(s32 *)(gWorkBuf + 0x5488);
+    obj->repeats = PAIR_PARTICLE_COUNT;
     obj->state = pair_repeat_countdown;
 }
 
-static inline void slot_action_one(struct Actor *obj, u32 action)
+// Plays animation `anim` on the hero's sprite (sprite_set_action mode 1).
+static inline void hero_play_anim(struct Actor *obj, u32 anim)
 {
-    sprite_set_action(obj, 1, action, 0);
+    sprite_set_action(obj, 1, anim, 0);
 }
 
-static inline void slot_set_minus_one(u32 id)
+// Plays sound `id` at the current volume.
+static inline void play_sound(u32 id)
 {
     set_slot_value(id, -1);
 }
 
+// State after pair_finish_handle: runs the motion, dropping a coin (spawn_fall_particle) every
+// 2-5 frames until `repeats` runs out. When the motion is done, hands the partner (if it is
+// walking) to pair_finish_handle, and sends this hero back to hero_random_walk.
 void pair_repeat_countdown(struct Actor *obj)
 {
     struct Actor *heroA = &gWorld->heroA->body;
@@ -604,7 +636,7 @@ void pair_repeat_countdown(struct Actor *obj)
             spawn_fall_particle(obj);
         }
     }
-    if (obj->flags79 & 0x20) {
+    if (obj->flags79 & ACTOR_MOTION_DONE) {
         if (obj == heroA && heroB->state == hero_random_walk) {
             heroB->state = pair_finish_handle;
         }
@@ -616,10 +648,10 @@ void pair_repeat_countdown(struct Actor *obj)
             struct Actor *curB = &gWorld->heroB->body;
 
             if (obj == curA) {
-                slot_action_one(obj, 0x2027);
+                hero_play_anim(obj, HERO_A_WALK_ANIM);
             }
             if (obj == curB) {
-                slot_action_one(obj, 0x2056);
+                hero_play_anim(obj, HERO_B_WALK_ANIM);
             }
         }
         obj->pose->mode = 0;
@@ -627,22 +659,20 @@ void pair_repeat_countdown(struct Actor *obj)
         obj->clock = 0;
         obj->handle = 0;
         obj->state = hero_random_walk;
-        slot_set_minus_one(0x3F);
+        play_sound(SOUND_PAIR_END);
     }
 }
 
+// When the actor is in pair mode 2 or 4 (flags76 & 6), starts a new motion lasting
+// PAIR_FRAMES_BASE plus 0-2 times PAIR_FRAMES_STEP frames; then waits in pair_switch_wait.
 void start_random_handle(struct Actor *obj)
 {
-    u8 bits = obj->flags76 & 6;
+    u8 mode = obj->flags76 & 6;
 
-    if (bits == 2 || bits == 4) {
-        s32 n = rand_below(3, mt19937_next());
-
-        obj->handle = *(s32 *)(gWorkBuf + 0x5480) + n * *(s32 *)(gWorkBuf + 0x5484) != 0
-            ? MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, *(s32 *)(gWorkBuf + 0x5480) + rand_below(3, mt19937_next()) * *(s32 *)(gWorkBuf + 0x5484))
-            : 0x4000;
+    if (mode == 2 || mode == 4) {
+        obj->handle = MOTION_RATE(PAIR_FRAMES_BASE + rand_below(3, mt19937_next()) * PAIR_FRAMES_STEP);
         obj->phase = 0;
-        *((s8 *)obj + 0x79) &= -0x21;
+        *(s8 *)&obj->flags79 &= ~ACTOR_MOTION_DONE;
     }
     obj->state = pair_switch_wait;
 }
@@ -652,57 +682,69 @@ u32 mt19937_next(void);
 extern u8 *gWorkBuf;
 struct SpriteNode *sprite_node_release(struct SpriteNode *node);
 
-NONMATCH("asm/code_08097238/sprite_nodes_fall.s", void sprite_nodes_fall(struct Actor *obj))
+void sprite_nodes_fall(struct Actor *obj)
 {
-    struct SpriteNode *link = obj->slots->head;
-    struct SpriteNode *node;
+  s32 z;
+  struct SpriteNode *link = obj->slots->head;
+  struct SpriteNode *node;
+  next:
+  node = link->next;
 
-    for (node = link->next; node != 0; node = link->next) {
-        s32 z;
-
-        node->x += node->vx;
-        node->y += node->vy;
-        z = node->z += (s16)node->vz;
-        node->vz -= 0x66;
-        if (z > 0) {
-            link = node;
-        } else {
-            node->z = 0;
-            node->vx /= 2;
-            node->vy /= 2;
-            node->vz = -(s16)node->vz / 2;
-            if ((s16)node->vz <= 0xFF) {
-                link->next = sprite_node_release(node);
-            }
-        }
-    }
+  if (node == 0)
+  {
+    return;
+  }
+  node->x += node->vx;
+  node->y += node->vy;
+  z = (node->z += (s16) node->vz);
+  node->vz -= 0x66;
+  if (((z - 1) + 1) > 0)
+  {
+    link = node;
+    goto next;
+  }
+  node->z = 0;
+  node->vx /= 2;
+  node->vy /= 2;
+  node->vz = (-((s16) node->vz)) / 2;
+  if (((s16) node->vz) <= 0xFF)
+  {
+    node->z = 0;
+    link->next = sprite_node_release(node);
+  }
+  goto next;
 }
-END_NONMATCH
 
 struct SpriteNode *sprite_node_alloc_default(void);
 
+/*
+ * Drops one coin: if the party has any coins left (the u16 at gParty + 0x88), takes one and throws
+ * a coin sprite out from 6 px right of obj's target point, at its height offset minus 0x16: x speed
+ * 0x180-0x2FF, y speed -0x4C..0x4C, rising at 0x280-0x3FF (sprite_nodes_fall makes it fall and
+ * bounce). The coin joins the list of obj's child, and the coin sound (0x2C) plays.
+ */
 void spawn_fall_particle(struct Actor *obj)
 {
     s32 speedBase = 0x180;
-    u16 *counter = (u16 *)(gParty + 0x88);
+    u16 *coins = (u16 *)(gParty + 0x88);
 
-    if (*counter != 0) {
-        struct SpriteNode *node;
-        struct SpriteNode *sentinel;
+    if (*coins != 0) {
+        struct SpriteNode *coin;
+        struct SpriteNode *head;
 
-        (*counter)--;
-        node = sprite_node_alloc_default();
-        node->x = obj->targetX + 0x600;
-        node->y = obj->targetY;
-        node->z = obj->targetZ + ((s8)obj->offZ - 0x16) * 0x100;
-        node->vx = rand_below(speedBase, mt19937_next());
-        node->vx += speedBase;
-        node->vy = 0x4C - rand_below(0x99, mt19937_next());
-        node->vz = rand_below(speedBase, mt19937_next());
-        node->vz += 0x280;
-        sentinel = obj->child->slots->head;
-        node->next = sentinel->next;
-        sentinel->next = node;
+        (*coins)--;
+        coin = sprite_node_alloc_default();
+        coin->x = obj->targetX + 0x600;
+        coin->y = obj->targetY;
+        coin->z = obj->targetZ + ((s8)obj->offZ - 0x16) * 0x100;
+        coin->vx = rand_below(speedBase, mt19937_next());
+        coin->vx += speedBase;
+        coin->vy = 0x4C - rand_below(0x99, mt19937_next());
+        coin->vz = rand_below(speedBase, mt19937_next());
+        coin->vz += 0x280;
+        head = obj->child->slots->head;
+        coin->next = head->next;
+        head->next = coin;
         set_slot_value(0x2C, -1);
     }
 }
@@ -883,11 +925,15 @@ END_NONMATCH
 void place_targets(struct Actor *obj, s32 x, s32 y, s32 z, s32 w);
 void set_motion_offsets(struct Actor *obj, u32 value);
 void end_hero_follow(struct Actor *obj);
+/* Ends a hero's follow move: sets hero A's (0x2027) or hero B's (0x2056) action and pose mode 1; when
+   the hero is in mode 2 or 4, it jumps to its target (whole pixels plus its offsets, 10 to the right
+   for the World.unk7C hero and 14 for the other) with an arc 14 pixels high, at speed 0x200. Then
+   waits in end_hero_follow. */
 void follow_focus_settle(struct Actor *obj)
 {
     struct Actor *heroA = &gWorld->heroA->body;
     struct Actor *heroB = &gWorld->heroB->body;
-    struct Actor *focus;
+    struct Actor *hero7C;
     s32 mode;
 
     if (obj == heroA) {
@@ -897,29 +943,29 @@ void follow_focus_settle(struct Actor *obj)
         sprite_set_action(obj, 1, 0x2056, 0);
     }
     obj->pose->mode = 1;
-    focus = &gWorld->unk7C->body;
-    if (obj == focus) {
-        mode = focus->flags76 & 6;
+    hero7C = &gWorld->unk7C->body;
+    if (obj == hero7C) {
+        mode = hero7C->flags76 & 6;
         if (mode == 2 || mode == 4) {
-            s32 col = obj->targetX / 0x100 + (s8)focus->offX + 10;
-            s32 row = obj->targetY / 0x100 + (s8)focus->offY;
-            s16 z;
+            s32 x = obj->targetX / 0x100 + (s8)hero7C->offX + 10;
+            s32 y = obj->targetY / 0x100 + (s8)hero7C->offY;
+            s16 height;
 
-            place_targets(obj, col, row, 0, -1);
-            z = obj->targetZ / 0x100 + 14;
-            *(s16 *)((u8 *)focus + 0x92) = z;
+            place_targets(obj, x, y, 0, -1);
+            height = obj->targetZ / 0x100 + 14;
+            hero7C->arcHeight = height;
             set_motion_offsets(obj, 0x200);
         }
     } else {
         mode = obj->flags76 & 6;
         if (mode == 2 || mode == 4) {
-            s32 col = obj->targetX / 0x100 + (s8)obj->offX + 14;
-            s32 row = obj->targetY / 0x100 + (s8)obj->offY;
-            s16 z;
+            s32 x = obj->targetX / 0x100 + (s8)obj->offX + 14;
+            s32 y = obj->targetY / 0x100 + (s8)obj->offY;
+            s16 height;
 
-            place_targets(obj, col, row, 0, -1);
-            z = obj->targetZ / 0x100 + 14;
-            *(s16 *)((u8 *)obj + 0x92) = z;
+            place_targets(obj, x, y, 0, -1);
+            height = obj->targetZ / 0x100 + 14;
+            obj->arcHeight = height;
             set_motion_offsets(obj, 0x200);
         }
     }

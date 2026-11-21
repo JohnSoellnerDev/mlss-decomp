@@ -32,14 +32,14 @@ struct BodyData
     u8 fillerEE[0xF6 - 0xEE];
     s16 unkF6;
     u8 fillerF8[0x102 - 0xF8];
-    s16 unk102;
-    s16 unk104;
+    s16 pow;          /* attack */
+    s16 defense;      /* subtracted in the damage formula */
     u8 filler106[0x10A - 0x106];
-    u16 unk10A;
-    u16 unk10C;
+    u16 powScale;     /* attack multiplier, 0x100 = 1.0 */
+    u16 defScale;     /* defense multiplier, 0x100 = 1.0 */
     u8 unk10E[0x113 - 0x10E];
     u8 unk113;
-    u32 unk114;
+    u32 damageScale;  /* damage multiplier, 0x100 = 1.0; only used above 1.0 */
 };
 
 struct Body
@@ -147,130 +147,137 @@ extern void *sprite_node_take(void);
 extern void *sprite_node_alloc(s32 x, s32 y, s32 z);
 extern void start_timed_motion_if_free(struct Body *body);
 
-s32 contact_effect(struct Body *body, struct Body *other, s32 arg)
+/* Hit from `attacker` on `target`: if query_contact reports a hit (0), the damage is
+   (pow * 0.4 * powScale - defense * 0.2 * defScale) / 2, times the attacker's damageScale when that is
+   above 1.0, and at least 1. It's dealt through apply_partner_effect at the attacker's position, and the
+   target is stunned for 8 frames. Returns query_contact's result. */
+s32 contact_effect(struct Body *target, struct Body *attacker, s32 arg)
 {
-    s32 contact = query_contact(body, other, arg);
+    s32 contact = query_contact(target, attacker, arg);
 
     if (contact == 0)
     {
-        struct BodyData *otherData = other->data;
-        s32 otherWord = otherData->unk114;
-        s32 otherW = otherData->unk102;
-        u16 otherH = otherData->unk10A;
-        struct BodyData *bodyData = body->data;
-        s32 bodyW = bodyData->unk104;
-        u16 bodyH = bodyData->unk10C;
-        s32 otherProd;
-        s32 strength;
-        s32 bodyScale;
+        struct BodyData *attackerData = attacker->data;
+        s32 damageScale = attackerData->damageScale;
+        s32 pow = attackerData->pow;
+        u16 powScale = attackerData->powScale;
+        struct BodyData *targetData = target->data;
+        s32 defense = targetData->defense;
+        u16 defScale = targetData->defScale;
+        s32 product;
+        s32 damage;
+        s32 defensePart;
 
-        strength = otherW * 0x66;
-        otherProd = strength * otherH;
-        if (otherProd < 0)
+        damage = pow * 0x66;
+        product = damage * powScale;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength = otherProd >> 8;
-        bodyScale = bodyW * 3;
-        bodyScale = bodyScale + (bodyScale << 4);
-        otherProd = bodyH * bodyScale;
-        if (otherProd < 0)
+        damage = product >> 8;
+        defensePart = defense * 3;
+        defensePart = defensePart + (defensePart << 4);
+        product = defScale * defensePart;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength -= otherProd >> 8;
-        strength /= 2;
-        if (otherWord > 0x100)
+        damage -= product >> 8;
+        damage /= 2;
+        if (damageScale > 0x100)
         {
-            s32 scaled = otherWord * strength;
+            s32 scaled = damageScale * damage;
 
-            strength = scaled;
-            if (strength < 0)
+            damage = scaled;
+            if (damage < 0)
             {
-                scaled = strength + 0xFFFF;
+                scaled = damage + 0xFFFF;
             }
-            strength = scaled >> 16;
+            damage = scaled >> 16;
         }
         else
         {
-            s32 scaled = strength;
+            s32 scaled = damage;
 
-            if (strength < 0)
+            if (damage < 0)
             {
                 scaled += 0xFF;
             }
-            strength = scaled >> 8;
+            damage = scaled >> 8;
         }
-        if (strength <= 1)
+        if (damage <= 1)
         {
-            strength = 1;
+            damage = 1;
         }
-        apply_partner_effect(other, body, strength, 0, other->posX / 0x100, other->posZ / 0x100, 0);
-        reset_to_counter_state(body);
-        body->counter = 8;
+        apply_partner_effect(attacker, target, damage, 0, attacker->posX / 0x100, attacker->posZ / 0x100, 0);
+        reset_to_counter_state(target);
+        target->counter = 8;
     }
     return contact;
 }
 
+/* Contact handler: when other hits body (lookup_slot returns 0), deals other's damage to body:
+   (pow * 0.4 * powScale - defense * 0.2 * defScale) / 2, times other's damageScale when it's above
+   1.0, at least 1. Then body goes back to its counter state for 8 frames. Returns lookup_slot's result. */
 s32 slot_contact_effect(struct Body *body, struct Body *other)
 {
     s32 slot = lookup_slot(body, other);
 
     if (slot == 0)
     {
-        struct BodyData *otherData = other->data;
-        s32 otherWord = otherData->unk114;
-        s32 otherW = otherData->unk102;
-        u16 otherH = otherData->unk10A;
-        struct BodyData *bodyData = body->data;
-        s32 bodyW = bodyData->unk104;
-        u16 bodyH = bodyData->unk10C;
-        s32 otherProd;
-        s32 strength;
-        s32 bodyScale;
+        struct BodyData *attacker = other->data;
+        s32 damageScale = attacker->damageScale;
+        s32 pow = attacker->pow;
+        u16 powScale = attacker->powScale;
+        struct BodyData *defender = body->data;
+        s32 defense = defender->defense;
+        u16 defScale = defender->defScale;
+        s32 product;
+        s32 damage;
+        s32 defense51;
 
-        strength = otherW * 0x66;
-        otherProd = strength * otherH;
-        if (otherProd < 0)
+        damage = pow * 0x66;
+        product = damage * powScale;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength = otherProd >> 8;
-        bodyScale = bodyW * 3;
-        bodyScale = bodyScale + (bodyScale << 4);
-        otherProd = bodyH * bodyScale;
-        if (otherProd < 0)
+        damage = product >> 8;
+        defense51 = defense * 3;
+        defense51 = defense51 + (defense51 << 4);
+        product = defScale * defense51;
+        if (product < 0)
         {
-            otherProd += 0xFF;
+            product += 0xFF;
         }
-        strength -= otherProd >> 8;
-        strength /= 2;
-        if (otherWord > 0x100)
+        damage -= product >> 8;
+        damage /= 2;
+        if (damageScale > 0x100)
         {
-            s32 scaled = otherWord * strength;
+            s32 scaled = damageScale * damage;
 
-            strength = scaled;
-            if (strength < 0)
+            damage = scaled;
+            if (damage < 0)
             {
-                scaled = strength + 0xFFFF;
+                scaled = damage + 0xFFFF;
             }
-            strength = scaled >> 16;
+            damage = scaled >> 16;
         }
         else
         {
-            s32 scaled = strength;
+            s32 scaled = damage;
 
-            if (strength < 0)
+            if (damage < 0)
             {
                 scaled += 0xFF;
             }
-            strength = scaled >> 8;
+            damage = scaled >> 8;
         }
-        if (strength <= 1)
+        if (damage <= 1)
         {
-            strength = 1;
+            damage = 1;
         }
-        apply_partner_effect(other, body, strength, 0, other->posX / 0x100, other->posZ / 0x100, 0);
+        apply_partner_effect(other, body, damage, 0, other->posX / 0x100, other->posZ / 0x100, 0);
         reset_to_counter_state(body);
         body->counter = 8;
     }
@@ -392,62 +399,67 @@ void anim_by_partner_pose(struct Body *body)
     body->state = (void *)spawn_child_part;
 }
 
+// Picks where effect 0x2622 appears relative to the body (landX/Y/Z, in pixels) from its object
+// type 0x4018-0x401E, then plays action 3 with sprite mode 1 and waits in anim4_with_effect_rate.
 void anim_by_sprite_key(struct Body *body)
 {
     struct Sprite *sprite = body->sprite;
-    u32 key = sprite->key16 | ((((u32)sprite->b1E << 28) >> 16) + 0x1000);
-    s32 bits;
-    s32 flags;
+    /* object type: key16 with bank (b1E & 0xF) + 1 in bits 12-15 */
+    u32 type = sprite->key16 | ((((u32)sprite->b1E << 28) >> 16) + 0x1000);
+    s32 newFlags;
+    s32 oldFlags;
     struct Sprite *spr;
 
-    if (key == 0x4018)
+    if (type == 0x4018)
     {
         body->landX = -1;
         body->landY = 1;
         body->landZ = 0x18;
     }
-    else if (key == 0x401A)
+    else if (type == 0x401A)
     {
         body->landX = -1;
         body->landY = 1;
         body->landZ = 0x13;
     }
-    else if (key == 0x401E)
+    else if (type == 0x401E)
     {
         body->landX = -3;
         body->landY = 1;
         body->landZ = 0x13;
     }
-    else if (key == 0x401D)
+    else if (type == 0x401D)
     {
         body->landX = -2;
         body->landY = 1;
         body->landZ = 0x1A;
     }
-    else if (key == 0x401C)
+    else if (type == 0x401C)
     {
         body->landX = -4;
         body->landY = 1;
         body->landZ = 0x16;
     }
-    else if (key == 0x4019)
+    else if (type == 0x4019)
     {
         body->landX = -3;
         body->landY = 1;
         body->landZ = 0x16;
     }
-    else if (key == 0x401B)
+    else if (type == 0x401B)
     {
         body->landX = -5;
         body->landY = 1;
         body->landZ = 0x15;
     }
     sprite_set_action(body, 3, 0, 0);
+
+    /* sprite mode (flags bits 1-2) = 1 */
     spr = body->sprite;
-    flags = spr->flags;
-    bits = -7;
-    bits &= flags;
-    bits |= 2;
-    spr->flags = bits;
+    oldFlags = spr->flags;
+    newFlags = ~6;
+    newFlags &= oldFlags;
+    newFlags |= 2;
+    spr->flags = newFlags;
     body->state = (void *)anim4_with_effect_rate;
 }

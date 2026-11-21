@@ -115,6 +115,9 @@ struct ObjFlags77
     u8 bit7 : 1;
 };
 
+/* ActorPose.flags: the current animation has ended */
+#define POSE_FLAG_ANIM_END 8
+
 struct Flags79Bit0
 {
     u8 bit0 : 1;
@@ -299,31 +302,30 @@ void actor_side_action_when_active(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_0806BCCC/actor_side_action_timer8_child.s", void actor_side_action_timer8_child(struct ActorObj *obj))
+void actor_side_action_timer8_child(struct ActorObj *obj)
 {
-    s32 action;
-    u32 t;
-
-    t = 8;
     if (obj->pose->flags & 8)
     {
         if (obj->paramA8 == 0)
         {
-            action = obj->paramA4;
-            action += 2;
+            sprite_set_action(obj, obj->paramA4 + 2, 0, 0);
+            obj->timer = 8;
+            obj->state = obj_spawn_child_by_slot;
         }
         else
         {
-            action = obj->paramA4;
-            action += 5;
+            sprite_set_action(obj, obj->paramA4 + 5, 0, 0);
+            obj->timer = 8;
+            obj->state = obj_spawn_child_by_slot;
         }
-        sprite_set_action(obj, action, 0, 0);
-        obj->timer = t;
-        obj->state = obj_spawn_child_by_slot;
     }
 }
-END_NONMATCH
 
+/*
+ * When the pose's event flag (8) is set: play action 4, sound 0x86 and effect 0x1C07, then spawn
+ * object 0x40D3 just above this one and send it (speed 0x400) to 128 pixels above the owner's
+ * part target. The child shares this object's owner, tag and flag bits; this object then idles.
+ */
 void actor_spawn_motion_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -337,8 +339,7 @@ void actor_spawn_motion_child(struct ActorObj *obj)
                           obj->baseH / 0x100 + 0x20, ((struct PoseBits6 *)&obj->pose->unk11)->bit6, 1);
         obj->child = child;
         ((struct Flags78Bits *)&child->flags78)->kind = 6;
-        ((struct ObjFlags77 *)child)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
-        ((struct ObjFlags77 *)child)->bit5 = ((struct ObjFlags77 *)obj)->bit5;
+        copy_flags77_bits(obj, child);
         child->handler68 = on_arrive;
         child->unk6C = obj->unk6C;
         child->owner = obj->owner;
@@ -378,14 +379,18 @@ void actor_retarget_to_owner_part(struct ActorObj *obj)
     }
 }
 
+// Plans a jump from the actor's base position (dx, dy, dh, in px) to its part's target: one step
+// per 5 px of ground distance (paramA0), the X/Y distance to cover (paramA4, paramA8), and the
+// parabola's curvature (param9C, negative) so the height peaks 0x38 px up halfway and is back at dh
+// on landing. actor_arc_move_step then runs the jump.
 void actor_plan_arc_path(struct ActorObj *obj)
 {
-    s32 dirX;
-    s32 dirY;
+    s32 deltaX;
+    s32 deltaY;
     s32 dist;
     s32 steps;
-    s32 half;
-    s32 speed;
+    s32 halfSteps;
+    s32 curve;
 
     obj->targetX = obj->part->targetX;
     obj->targetY = obj->part->targetY;
@@ -393,82 +398,87 @@ void actor_plan_arc_path(struct ActorObj *obj)
     obj->dx = obj->baseX / 0x100;
     obj->dy = obj->baseY / 0x100;
     obj->dh = obj->baseH / 0x100;
-    dirX = obj->targetX - (obj->dx << 8);
-    dirY = obj->targetY - (obj->dy << 8);
-    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(dirX * dirX + dirY * dirY);
+    deltaX = obj->targetX - (obj->dx << 8);
+    deltaY = obj->targetY - (obj->dy << 8);
+    dist = MATH_ROUTINE(u32 (*)(u32), iwram_sqrt)(deltaX * deltaX + deltaY * deltaY);
     steps = dist / 0x500;
-    half = steps / 2;
-    speed = 0x3800 / (half * half);
-    if (speed == 1)
+    halfSteps = steps / 2;
+    curve = 0x3800 / (halfSteps * halfSteps);
+    if (curve == 1)
     {
-        speed = 2;
+        curve = 2;
     }
-    obj->param9C = -speed;
+    obj->param9C = -curve;
     obj->paramA0 = steps;
-    obj->paramA4 = dirX;
-    obj->paramA8 = dirY;
+    obj->paramA4 = deltaX;
+    obj->paramA8 = deltaY;
     obj->timer = 0;
     obj->state = actor_arc_move_step;
 }
 
+// One frame of the jump planned by actor_plan_arc_path: X/Y move linearly from the
+// start point (dx, dy) by (paramA4, paramA8) over paramA0 steps, and the height follows a
+// parabola peaking 0x38 above dh. On landing it spawns the impact effect at the part's
+// target, makes every partner in state 4 react to the hit, then counts down 30 frames in
+// actor_countdown_release_partners. set_slot_value(0x40, -1) plays sound 0x40.
 void actor_arc_move_step(struct ActorObj *obj)
 {
-    s32 centered;
-    s32 sq;
-    s32 arc;
-    s32 off;
+    s32 fromApex;
+    s32 fromApexSq;
+    s32 rise;
+    s32 apexHeight;
     s32 slot;
-    s32 none;
-    s32 next;
-    u32 kind;
-    s32 *targetXp;
-    struct ActorObj *partActor;
+    s32 noSlot;
+    s32 odd;
+    u32 contactKind;
+    s32 *countdown;
+    struct ActorObj *partObj;
     struct ActorPart *part;
-    struct ActorObj *actor;
-    u8 *node;
-    s32 pair;
+    struct ActorObj *partner;
+    u8 *entry;
+    s32 i;
 
     obj->posX = (obj->paramA4 * (s16)obj->timer) / obj->paramA0 + (obj->dx << 8);
     obj->posY = (obj->paramA8 * (s16)obj->timer) / obj->paramA0 + (obj->dy << 8);
-    centered = (s16)obj->timer - obj->paramA0 / 2;
-    sq = centered * centered;
-    arc = obj->param9C * sq;
-    off = (obj->dh << 8) + 0x3800;
-    obj->posH = arc + off;
+    fromApex = (s16)obj->timer - obj->paramA0 / 2;
+    fromApexSq = fromApex * fromApex;
+    rise = obj->param9C * fromApexSq;
+    apexHeight = (obj->dh << 8) + 0x3800;
+    obj->posH = rise + apexHeight;
     obj->timer++;
     if ((s16)obj->timer > obj->paramA0)
     {
         part = obj->part;
         effect_spawn_at(0x1C19, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, obj);
-        partActor = (struct ActorObj *)((u8 *)obj->part + 8);
+        partObj = (struct ActorObj *)((u8 *)obj->part + 8);
         slot = obj->owner->part->slot;
-        none = -1;
-        kind = 0x12;
-        if (slot != none)
+        noSlot = -1;
+        contactKind = 0x12;
+        if (slot != noSlot)
         {
-            kind = 0x13;
+            contactKind = 0x13;
         }
-        pair = 0;
-        targetXp = &obj->targetX;
-        for (; pair < 6; pair += 2)
+        i = 0;
+        countdown = &obj->targetX;
+        for (; i < 6; i += 2)
         {
-            node = gWorld->partners[pair];
-            actor = (struct ActorObj *)(node + 8);
-            if ((node[0x7E] & 6) == 4)
+            entry = gWorld->partners[i];
+            partner = (struct ActorObj *)(entry + 8);
+            if ((entry[0x7E] & 6) == 4)
             {
-                resolve_contact_action(partActor->owner, actor, actor->posX / 0x100, actor->posH / 0x100, kind);
-                sprite_set_action(actor, 1, 0, 0);
+                resolve_contact_action(partObj->owner, partner, partner->posX / 0x100, partner->posH / 0x100, contactKind);
+                sprite_set_action(partner, 1, 0, 0);
             }
-            next = pair + 1;
-            node = gWorld->partners[next];
-            actor = (struct ActorObj *)(node + 8);
-            if ((node[0x7E] & 6) == 4)
+            odd = i + 1;
+            entry = gWorld->partners[odd];
+            partner = (struct ActorObj *)(entry + 8);
+            if ((entry[0x7E] & 6) == 4)
             {
-                resolve_contact_action(partActor->owner, actor, actor->posX / 0x100, actor->posH / 0x100, kind);
-                sprite_set_action(actor, 1, 0, 0);
+                resolve_contact_action(partObj->owner, partner, partner->posX / 0x100, partner->posH / 0x100, contactKind);
+                sprite_set_action(partner, 1, 0, 0);
             }
         }
-        *targetXp = 0x1E;
+        *countdown = 30;
         obj->state = actor_countdown_release_partners;
         ((struct Flags79Bits *)&obj->pose->flags)->bit5 = 1;
         obj->posX = 0x12C00;
@@ -503,6 +513,12 @@ void actor_effect_then_wait_index(struct ActorObj *obj)
     }
 }
 
+/*
+ * State: each time the animation ends, counts the timer down; at 0 plays action 7 (0xF in the
+ * paramA8 variant) and spawns object 0x40D0 at the base with the pose's facing. The child gets
+ * flags79 bit 0, this object's flags77 bits 5-6, on_arrive as its arrival handler, unk6C and the
+ * owner, and a counter one higher than this one's. Then goes to actor_action8_or_10_timer.
+ */
 void actor_spawn_counted_child(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -529,18 +545,23 @@ void actor_spawn_counted_child(struct ActorObj *obj)
     }
 }
 
+/* State: each time the animation ends, counts the timer down; at 0 clears flags77 bit 5 and
+ * targetX, plays sound 0x119, puts this object and its child on action 9 (0x11 in the paramA8
+ * variant), starts effect 0x1534 (0x159E) into gUnk_03000E3C, and goes on to
+ * actor_action_a_or_12_child with actor_link_partner_then_step as its contact handler. */
 void actor_finish_with_child_effect(struct ActorObj *obj)
 {
-    u32 id;
+    u32 effectId;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_FLAG_ANIM_END)
     {
-        s32 t = obj->timer;
+        s32 timer = obj->timer;
 
-        t--;
-        obj->timer = t;
-        if ((t << 16) <= 0)
+        timer--;
+        obj->timer = timer;
+        if ((timer << 16) <= 0)
         {
+            /* the original rewrites bit 6 with itself */
             ((struct ObjFlags77 *)obj)->bit6 = ((struct ObjFlags77 *)obj)->bit6;
             ((struct ObjFlags77 *)obj)->bit5 = 0;
             obj->targetX = 0;
@@ -549,15 +570,15 @@ void actor_finish_with_child_effect(struct ActorObj *obj)
             {
                 sprite_set_action(obj, 9, 0, 0);
                 sprite_set_action(obj->child, 9, 0, 0);
-                id = 0x1534;
+                effectId = 0x1534;
             }
             else
             {
                 sprite_set_action(obj, 0x11, 0, 0);
                 sprite_set_action(obj->child, 0x11, 0, 0);
-                id = 0x159E;
+                effectId = 0x159E;
             }
-            gUnk_03000E3C = effect_from_table_obj(obj, id);
+            gUnk_03000E3C = effect_from_table_obj(obj, effectId);
             obj->handler58 = (void (*)(struct ActorObj *))actor_link_partner_then_step;
             obj->state = actor_action_a_or_12_child;
         }

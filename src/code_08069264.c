@@ -201,11 +201,15 @@ void actor_wait_then_action_d(struct ActorObj *obj)
     }
 }
 
+/* Variant 0 (paramA8 == 0) hops: targetH is its vertical speed here (0x300 from
+   actor_wait_ready_then_jump, less 0x80 a frame) until it lands at height 0; variant 1 just waits
+   for its animation to end. Then it plays action 3, starts a move (speed 0x199) to 0x40 px right of
+   its owner's part target, plays sound slot 0x81 and goes on in actor_start_countdown. */
 void actor_drop_to_ground(struct ActorObj *obj)
 {
-    s32 mode = obj->paramA8;
+    s32 variant = obj->paramA8;
 
-    if (mode != 0)
+    if (variant != 0)
     {
         if (!(obj->pose->flags & 8))
             return;
@@ -216,7 +220,7 @@ void actor_drop_to_ground(struct ActorObj *obj)
         obj->targetH -= 0x80;
         if (obj->posH > 0)
             return;
-        obj->posH = mode;
+        obj->posH = variant;
     }
     sprite_set_action(obj, 3, 0, 0);
     obj->targetX = obj->owner->part->targetX + 0x4000;

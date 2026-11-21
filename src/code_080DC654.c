@@ -180,104 +180,118 @@ void obj_screen_cull_step(struct ActorObj *obj);
 void obj_drop_land_stop(struct ActorObj *obj);
 void obj_drop_clamp_to_limit(struct ActorObj *obj);
 
+/*
+ * State: clears world flag 0, plays action 2 and mirrors the sprite, then on a coin flip
+ * (rand_below(1) is 0 or 1) either goes on to obj_random_move_b, or starts a move at speed 0x400
+ * to the right, to the point at screen X 0x110 (just off the right edge) at the data's height and
+ * depth, and goes on to obj_wait_index_release_data.
+ */
 void obj_random_move_start(struct ActorObj *obj)
 {
     struct ActorPart *data;
     u8 *flags;
-    s32 x;
-    s32 y;
-    s32 h;
+    s32 screenX;
+    s32 screenY;
+    s32 screenH;
     s32 v;
-    s32 n;
-    s32 roll;
+    s32 dist;
+    s32 coin;
     struct ActorPose *pose;
-    s32 pflags;
-    s32 bit;
+    s32 poseFlags;
+    s32 mirror;
     s32 cleared;
 
     set_world_flag0(0);
     sprite_set_action(obj, 2, 0, 0);
+    /* toggle the sprite's mirror bit (byte11 bit 6) */
     pose = obj->pose;
-    pflags = pose->byte11;
-    bit = ((u32)pflags << 25) >> 31;
-    bit = bit ^ 1;
-    bit = bit << 6;
-    cleared = -0x41 & pflags;
-    cleared = cleared | bit;
+    poseFlags = pose->byte11;
+    mirror = ((u32)poseFlags << 25) >> 31;
+    mirror = mirror ^ 1;
+    mirror = mirror << 6;
+    cleared = -0x41 & poseFlags;
+    cleared = cleared | mirror;
     pose->byte11 = cleared;
     set_slot_value(0x82, -1);
-    roll = rand_below(1, mt19937_next());
-    if (roll != 0)
+    coin = rand_below(1, mt19937_next());
+    if (coin != 0)
     {
         obj->state = obj_random_move_b;
     }
     else
     {
+        /* the data's target, in pixels, on the screen */
         data = obj->data;
         v = data->targetX;
         if (v < 0)
         {
             v += 0xff;
         }
-        x = v >> 8;
+        screenX = v >> 8;
         v = data->targetY;
         if (v < 0)
         {
             v += 0xff;
         }
-        y = v >> 8;
+        screenY = v >> 8;
         v = data->targetH;
         if (v < 0)
         {
             v += 0xff;
         }
-        h = v >> 8;
-        offset_three_words_camera(&x, &y, &h, 0);
-        n = 0x110 - x;
-        obj->targetX = obj->data->targetX + n * 0x100;
+        screenH = v >> 8;
+        offset_three_words_camera(&screenX, &screenY, &screenH, 0);
+        dist = 0x110 - screenX;
+        obj->targetX = obj->data->targetX + dist * 0x100;
         obj->targetY = obj->data->targetY;
         obj->targetH = obj->data->targetH;
         flags = &obj->flags;
         *flags |= 0x20;
         obj->motionSpeed = 0x400;
-        obj->motionStart = roll;
+        obj->motionStart = coin;
         start_motion(obj);
         obj->state = obj_wait_index_release_data;
     }
 }
 
+/*
+ * State: starts a move at speed 0x400 to a random point to the right of the data's target, at most as
+ * far as the screen's right edge (screen X 0xF0), at the data's height and depth, and goes on to
+ * obj_wait_index_then_slot84.
+ */
 void obj_random_move_b(struct ActorObj *obj)
 {
     struct ActorPart *data;
     u8 *flags;
-    s32 x;
-    s32 y;
-    s32 h;
+    s32 screenX;
+    s32 screenY;
+    s32 screenH;
     s32 v;
-    s32 n;
+    s32 maxDist;
 
+    /* the data's target, in pixels, on the screen */
     data = obj->data;
     v = data->targetX;
     if (v < 0)
     {
         v += 0xff;
     }
-    x = v >> 8;
+    screenX = v >> 8;
     v = data->targetY;
     if (v < 0)
     {
         v += 0xff;
     }
-    y = v >> 8;
+    screenY = v >> 8;
     v = data->targetH;
     if (v < 0)
     {
         v += 0xff;
     }
-    h = v >> 8;
-    offset_three_words_camera(&x, &y, &h, 0);
-    n = 0xf0 - x;
-    obj->targetX = obj->data->targetX + rand_below(n, mt19937_next()) * 0x100;
+    screenH = v >> 8;
+    offset_three_words_camera(&screenX, &screenY, &screenH, 0);
+    maxDist = 0xf0 - screenX;
+    obj->targetX = obj->data->targetX + rand_below(maxDist, mt19937_next()) * 0x100;
     obj->targetY = obj->data->targetY;
     obj->targetH = obj->data->targetH;
     flags = &obj->flags;
@@ -288,41 +302,45 @@ void obj_random_move_b(struct ActorObj *obj)
     obj->state = obj_wait_index_then_slot84;
 }
 
+/* Waits until the timer goes negative, then starts a move at speed 0x400 to the right, to the point
+ * at screen X 0x110 (just off the right edge) at the data's height and depth, plays action 2 and
+ * goes on to obj_wait_index_release_data. */
 void obj_wait_then_move_screen(struct ActorObj *obj)
 {
     struct ActorPart *data;
     u8 *flags;
-    s32 x;
-    s32 y;
-    s32 h;
+    s32 screenX;
+    s32 screenY;
+    s32 screenH;
     s32 v;
-    s32 n;
+    s32 dist;
 
     obj->timer--;
     if ((s16)obj->timer < 0)
     {
+        /* the data's target, in pixels, on the screen */
         data = obj->data;
         v = data->targetX;
         if (v < 0)
         {
             v += 0xff;
         }
-        x = v >> 8;
+        screenX = v >> 8;
         v = data->targetY;
         if (v < 0)
         {
             v += 0xff;
         }
-        y = v >> 8;
+        screenY = v >> 8;
         v = data->targetH;
         if (v < 0)
         {
             v += 0xff;
         }
-        h = v >> 8;
-        offset_three_words_camera(&x, &y, &h, 0);
-        n = 0x110 - x;
-        obj->targetX = obj->data->targetX + n * 0x100;
+        screenH = v >> 8;
+        offset_three_words_camera(&screenX, &screenY, &screenH, 0);
+        dist = 0x110 - screenX;
+        obj->targetX = obj->data->targetX + dist * 0x100;
         obj->targetY = obj->data->targetY;
         obj->targetH = obj->data->targetH;
         flags = &obj->flags;

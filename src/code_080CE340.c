@@ -154,6 +154,15 @@ struct World
     void *trackedObj;
 };
 
+/* Body mode bits 1-2: 2 or 4 means the body is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* HeroBody.flags bit set by step_motion / state_stack_advance_progress once progress passes 0x3FFF. */
+#define HERO_FLAG_PROGRESS_DONE 0x20
+
+/* HeroBody.rate that takes progress from 0 to 0x4000 in `frames` frames. */
+#define HERO_RATE_FRAMES(frames) MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, frames)
+
 extern struct World *gWorld;
 extern u8 *gParty;
 
@@ -189,6 +198,9 @@ static inline void *tracked_obj(void)
     return gWorld->trackedObj;
 }
 
+/* Moves hero A's child until its motion is done. Then sound 0x9C plays and an active child jumps
+   (height 0x28, offsets 0x500) to hero B's spot: 6 px right of hero B's target plus its offsets, at
+   height 0xC. hero_a_child_fade_b_step30 takes over. */
 void hero_a_child_place_on_b(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
@@ -197,10 +209,10 @@ void hero_a_child_place_on_b(struct HeroBody *body)
     struct HeroBody *child;
 
     step_motion(body_a->child);
-    if ((body_a->child->flags & 0x20) != 0)
+    if ((body_a->child->flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         set_slot_value(0x9C, -1);
-        if ((body_a->child->mode & 6) == 2 || (body_a->child->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->child->mode))
         {
             place_targets(body_a->child, body_b->targetX / 0x100 + body_b->ofsX + 6,
                           body_b->targetY / 0x100 + body_b->ofsY, 0xC, -1);
@@ -213,27 +225,30 @@ void hero_a_child_place_on_b(struct HeroBody *body)
     }
 }
 
+/* Moves hero A's child (jumping onto hero B) until its motion is done. Then the child stops its
+   action and is drawn one priority step in front of hero B (unk75), sound 0x104 plays, hero B plays
+   action 0 (sprite 0x2065) and restarts its progress over 30 frames, and hero_b_follow_tracked takes over. */
 void hero_a_child_fade_b_step30(struct HeroBody *body)
 {
     struct HeroBody *body_a = &gWorld->heroA->body;
     struct HeroBody *body_b = &gWorld->heroB->body;
 
     step_motion(body_a->child);
-    if ((body_a->child->flags & 0x20) != 0)
+    if ((body_a->child->flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         sprite_set_action(body_a->child, 0, 0, 0);
         ((struct HeroChildFlagBits *)&body_a->child->flags)->bit0 = 0;
         ((struct HeroSpriteBits *)&body_a->child->sprite->flags)->mode = 0;
         body_a->child->unk75 = body_b->unk75 - 1;
         set_slot_value(0x104, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 0, 0x2065, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            body_b->rate = MATH_ROUTINE(u32 (*)(u32, u32), iwram_div)(0x4000, 0x1E);
+            body_b->rate = HERO_RATE_FRAMES(0x1E);
             body_b->progress = 0;
             ((struct HeroFlagBits *)&body_b->flags)->active = 0;
         }
@@ -241,6 +256,10 @@ void hero_a_child_fade_b_step30(struct HeroBody *body)
     }
 }
 
+/* Waits out hero B's 30-frame progress window (started by hero_a_child_fade_b_step30). Then sound
+   0xA7 plays, hero B plays action 1 (sprite 0x2065) and walks at speed 0x380 to 16 px left of the
+   tracked object's last position (its sprite's y offset added), and hero_b_child_follow_partner
+   takes over. */
 void hero_b_follow_tracked(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
@@ -249,19 +268,19 @@ void hero_b_follow_tracked(struct HeroBody *body)
     s32 y;
 
     state_stack_advance_progress(body_b);
-    if ((body_b->flags & 0x20) != 0)
+    if ((body_b->flags & HERO_FLAG_PROGRESS_DONE) != 0)
     {
         set_slot_value(0xA7, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 1, 0x2065, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            s32 offY = body_b->sprite->ofsY;
+            s32 offsetY = body_b->sprite->ofsY;
             x = (s16)obj_last_x(tracked_obj()) - 0x10;
-            y = (s16)obj_last_y(tracked_obj()) + offY;
+            y = (s16)obj_last_y(tracked_obj()) + offsetY;
             place_targets(body_b, x, y, 0, -1);
             set_motion_start(body_b, 0x380);
         }

@@ -60,6 +60,8 @@ struct ActorBody
     s32 x;
     s32 y;
     s32 z;
+    /* wander_step's shot timers. timerA and timerB: shots left at hero A / hero B (high byte) and
+     * frames to the next one (low byte); timerC: frames to the next untargeted shot. */
     s16 timerA;
     s16 timerB;
     s16 timerC;
@@ -119,6 +121,12 @@ struct World
 };
 
 extern struct World *gWorld;
+
+/* ActorBody.flags: set by state_stack_advance_progress once the motion has finished */
+#define ACTOR_FLAG_MOTION_DONE 0x20
+
+/* the art (sprite set) of the strike attach_to_heroes drops on each hero */
+#define ART_HERO_STRIKE 0x40C2
 
 void obj_release(void *obj);
 void release_object(void *obj);
@@ -323,34 +331,37 @@ void start_anim10(struct ActorBody *body)
     }
 }
 
+/* Once the caster's motion has finished: plays effect 0x11F0 at its position and drops a strike
+ * (ART_HERO_STRIKE, starting in rise_stop_b) on each hero whose mode is 2, making that hero the
+ * caster's partner; then waits for the strikes to end (wait_child_idle). */
 void attach_to_heroes(struct ActorBody *body)
 {
     struct Hero *heroA = gWorld->heroA;
     struct ActorBody *bodyA = &heroA->body;
     struct Hero *heroB = gWorld->heroB;
     struct ActorBody *bodyB = &heroB->body;
-    struct ActorBody *child;
-    void (*fn)(struct ActorBody *body);
+    struct ActorBody *strike;
+    void (*firstState)(struct ActorBody *body);
 
     state_stack_advance_progress(body);
-    if (body->flags & 0x20)
+    if (body->flags & ACTOR_FLAG_MOTION_DONE)
     {
         effect_spawn_at(0x11F0, body->x / 0x100, body->y / 0x100, body->z / 0x100, body);
         if ((heroA->body.mode & 6) == 2)
         {
             body->partner = bodyA;
-            child = obj_spawn_linked(body, 0x40C2, bodyA);
-            fn = rise_stop_b;
-            child->state = fn;
-            fn(child);
+            strike = obj_spawn_linked(body, ART_HERO_STRIKE, bodyA);
+            firstState = rise_stop_b;
+            strike->state = firstState;
+            firstState(strike);
         }
         if ((heroB->body.mode & 6) == 2)
         {
             body->partner = bodyB;
-            child = obj_spawn_linked(body, 0x40C2, bodyB);
-            fn = rise_stop_b;
-            child->state = fn;
-            fn(child);
+            strike = obj_spawn_linked(body, ART_HERO_STRIKE, bodyB);
+            firstState = rise_stop_b;
+            strike->state = firstState;
+            firstState(strike);
         }
         body->state = wait_child_idle;
     }
@@ -463,12 +474,16 @@ void start_anim9(struct ActorBody *body)
     }
 }
 
+/* Once the sprite's animation has ended, detaches it and sets up wander_step's barrage: a shot
+ * period of 70-89 frames, hero A's first shot a random part of it away and hero B's half a period
+ * after that, each with 3 + rand_below(1) shots, and the first untargeted shot in 35-49 frames.
+ * If the data has an effect, the handle is reset to 0x4000 / 0x20 and the active bit cleared. */
 void start_wander_timers(struct ActorBody *body)
 {
-    s32 a;
-    s32 b;
+    s32 period;
+    s32 phase;
     s32 half;
-    s32 temp;
+    s32 phaseB;
 
     if (body->sprite->flags & 0x8)
     {
@@ -479,34 +494,38 @@ void start_wander_timers(struct ActorBody *body)
             body->handleB = 0;
             ((struct ActorFlagBits *)&body->flags)->active = 0;
         }
-        a = rand_below(0x14, mt19937_next()) + 0x46;
-        b = rand_below(a, mt19937_next());
-        body->timerA = ((rand_below(1, mt19937_next()) + 3) << 8) | (a - b);
-        half = a / 2;
-        temp = b - half;
-        if (b < half)
+        period = rand_below(20, mt19937_next()) + 70;
+        phase = rand_below(period, mt19937_next());
+        body->timerA = ((rand_below(1, mt19937_next()) + 3) << 8) | (period - phase);
+        half = period / 2;
+        phaseB = phase - half;
+        if (phase < half)
         {
-            temp = b + half;
+            phaseB = phase + half;
         }
-        b = temp;
-        body->timerB = ((rand_below(1, mt19937_next()) + 3) << 8) | (a - b);
-        body->timerC = rand_below(0xF, mt19937_next()) + 0x23;
+        phase = phaseB;
+        body->timerB = ((rand_below(1, mt19937_next()) + 3) << 8) | (period - phase);
+        body->timerC = rand_below(15, mt19937_next()) + 35;
         body->state = wander_step;
     }
 }
 
+/* Each frame of the barrage: counts down the shot timers and, when one runs out, launches a projectile
+   (art 0x40C4) that flies in from the right at hero A, at hero B or at no one (set_focus_pos_a/b/c),
+   pushing the untargeted shot back by 35-49 frames. Once all shots are spent it waits for them to end
+   (free_data_done). */
 void wander_step(struct ActorBody *body)
 {
-    struct ActorBody *bodyA;
-    struct ActorBody *bodyB;
-    struct ActorBody *child;
-    void (*fn)(struct ActorBody *body);
-    s32 t;
-    s32 bump;
-    u16 raw;
+    struct ActorBody *heroA;
+    struct ActorBody *heroB;
+    struct ActorBody *shot;
+    void (*launch)(struct ActorBody *body);
+    s32 frames;
+    s32 delay;
+    u16 rawFrames;
 
-    bodyA = &gWorld->heroA->body;
-    bodyB = &gWorld->heroB->body;
+    heroA = &gWorld->heroA->body;
+    heroB = &gWorld->heroB->body;
     state_stack_advance_progress(body);
     if (body->flags & 0x20)
     {
@@ -517,15 +536,15 @@ void wander_step(struct ActorBody *body)
         else if (body->timerA & 0xFF00)
         {
             body->timerA = body->timerA - 0x100;
-            bump = rand_below(0x14, mt19937_next()) + 0x46;
-            body->timerA = bump + body->timerA;
-            bump = rand_below(0xF, mt19937_next()) + 0x23;
-            body->timerC = bump + body->timerC;
-            body->partner = bodyA;
-            child = obj_spawn_linked(body, 0x40C4, 0);
-            fn = set_focus_pos_a;
-            child->state = fn;
-            fn(child);
+            delay = rand_below(20, mt19937_next()) + 70;
+            body->timerA = delay + body->timerA;
+            delay = rand_below(15, mt19937_next()) + 35;
+            body->timerC = delay + body->timerC;
+            body->partner = heroA;
+            shot = obj_spawn_linked(body, 0x40C4, 0);
+            launch = set_focus_pos_a;
+            shot->state = launch;
+            launch(shot);
         }
         if ((u8)body->timerB != 0)
         {
@@ -534,31 +553,31 @@ void wander_step(struct ActorBody *body)
         else if (body->timerB & 0xFF00)
         {
             body->timerB = body->timerB - 0x100;
-            bump = rand_below(0x14, mt19937_next()) + 0x46;
-            body->timerB = bump + body->timerB;
-            bump = rand_below(0xF, mt19937_next()) + 0x23;
-            body->timerC = bump + body->timerC;
-            body->partner = bodyB;
-            child = obj_spawn_linked(body, 0x40C4, 0);
-            fn = set_focus_pos_b;
-            child->state = fn;
-            fn(child);
+            delay = rand_below(20, mt19937_next()) + 70;
+            body->timerB = delay + body->timerB;
+            delay = rand_below(15, mt19937_next()) + 35;
+            body->timerC = delay + body->timerC;
+            body->partner = heroB;
+            shot = obj_spawn_linked(body, 0x40C4, 0);
+            launch = set_focus_pos_b;
+            shot->state = launch;
+            launch(shot);
         }
-        raw = body->timerC;
-        t = body->timerC;
-        if (t != 0)
+        rawFrames = body->timerC;
+        frames = body->timerC;
+        if (frames != 0)
         {
-            body->timerC = raw - 1;
+            body->timerC = rawFrames - 1;
         }
         else if (body->timerA != 0 && body->timerB != 0)
         {
-            bump = rand_below(0xF, mt19937_next()) + 0x23;
-            body->timerC = bump + body->timerC;
-            body->partner = 0;
-            child = obj_spawn_linked(body, 0x40C4, 0);
-            fn = set_focus_pos_c;
-            child->state = fn;
-            fn(child);
+            delay = rand_below(15, mt19937_next()) + 35;
+            body->timerC = delay + body->timerC;
+            body->partner = NULL;
+            shot = obj_spawn_linked(body, 0x40C4, 0);
+            launch = set_focus_pos_c;
+            shot->state = launch;
+            launch(shot);
         }
         if ((body->timerA | body->timerB | body->timerC) == 0)
         {
@@ -567,28 +586,32 @@ void wander_step(struct ActorBody *body)
     }
 }
 
+/* First state of a barrage shot aimed at hero A (spawned by wander_step): puts the shot 256 px right
+ * of the camera (gWorld->focus) at height 120, flies it towards hero A's lane (camera + 224, 92,
+ * height 60) when the data has an effect, plays sounds 0x88 and 0x8D (set_slot_value) and goes on to
+ * the next leg (fx_only_c). */
 void set_focus_pos_a(struct ActorBody *body)
 {
-    s32 x;
-    s32 y;
-    s32 v;
-    s32 minusOne;
+    s32 destX;
+    s32 destY;
+    s32 startX;
+    s32 keepVolume;
 
-    v = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
-    body->x = v;
-    body->targetX = v;
+    startX = (s16)obj_last_x(gWorld->focus) * 0x100 + 0x10000;
+    body->x = startX;
+    body->targetX = startX;
     body->z = 0x7800;
     body->targetZ = 0x7800;
     body->unk78 = (body->unk78 & 0x1F) | 0x20;
     if (body->data->effect != 0)
     {
-        x = (s16)obj_last_x(gWorld->focus) + 0xE0;
-        y = (s16)obj_last_y(gWorld->focus) + 0x5C;
-        place_targets(body, x, y, 0x3C, -1);
+        destX = (s16)obj_last_x(gWorld->focus) + 0xE0;
+        destY = (s16)obj_last_y(gWorld->focus) + 0x5C;
+        place_targets(body, destX, destY, 0x3C, -1);
         set_motion_start(body, 0x140);
     }
-    minusOne = -1;
-    set_slot_value(0x88, minusOne);
-    set_slot_value(0x8D, minusOne);
+    keepVolume = -1;
+    set_slot_value(0x88, keepVolume);
+    set_slot_value(0x8D, keepVolume);
     body->state = fx_only_c;
 }

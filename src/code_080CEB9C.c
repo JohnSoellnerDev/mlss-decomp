@@ -490,29 +490,33 @@ after_zero:
     body->state = hero_b_follow_tracked_place;
 }
 
+/* Advances hero B's motion until it's done (flags bit 5). Then plays sound 0xA7 and, if hero B is in
+   mode 2 or 4, gives it sprite action 0x2065 and starts it (speed 0x380) toward 16 pixels left of
+   the tracked object's last position, its Y shifted by hero B's own Y; then moves on to
+   hero_b_match_partner. */
 void hero_b_follow_tracked_place(struct HeroBody *body)
 {
-    struct Hero *hero_b = gWorld->heroB;
-    struct HeroBody *body_b = &hero_b->body;
+    struct Hero *heroB = gWorld->heroB;
+    struct HeroBody *bodyB = &heroB->body;
     s32 x;
     s32 y;
 
-    state_stack_advance_progress(body_b);
-    if ((body_b->flags & 0x20) != 0)
+    state_stack_advance_progress(bodyB);
+    if ((bodyB->flags & 0x20) != 0)
     {
         set_slot_value(0xA7, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
-            sprite_set_action(body_b, 1, 0x2065, 0);
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
+            sprite_set_action(bodyB, 1, 0x2065, 0);
+            ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
-            s32 offY = body_b->posY / 0x100;
+            s32 ownY = bodyB->posY / 0x100;
             x = (s16)obj_last_x(tracked_obj()) - 0x10;
-            y = (s16)obj_last_y(tracked_obj()) + offY;
-            place_targets(body_b, x, y, 0, -1);
-            set_motion_start(body_b, 0x380);
+            y = (s16)obj_last_y(tracked_obj()) + ownY;
+            place_targets(bodyB, x, y, 0, -1);
+            set_motion_start(bodyB, 0x380);
         }
         body->state = hero_b_match_partner;
     }

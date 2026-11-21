@@ -158,7 +158,32 @@ struct KeyState
 
 extern struct KeyState gSys;
 
+#define KEY_A 1
+#define KEY_B 2
+
 extern struct World *gWorld;
+
+// World.flags: slow everything down while a timed press is due.
+#define WORLD_SLOW_TIMING 8
+
+// HeroBody.flags: the hero's motion has finished.
+#define HERO_MOTION_DONE 0x20
+
+// The top four bits of HeroBody.timer hold the result of a timed button press.
+#define TIMING_PENDING 0
+#define TIMING_MISSED  1
+#define TIMING_HIT     2
+#define TIMING_RESULT(timer) (((timer) >> 12) & 0xF)
+#define WITH_TIMING_RESULT(timer, result) (((timer) & 0xFFF) | ((result) << 12))
+
+// HeroBody.progress at which a jump lands.
+#define STEP_LANDING 0x4000
+
+// HeroSprite.flags: the current animation has finished.
+#define HERO_SPRITE_ANIM_DONE 8
+
+// HeroBody.mode: the hero is in play (bits 1-2 are 1 or 2).
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
 
 void state_stack_advance_progress(struct HeroBody *body);
 void sprite_set_action(struct HeroBody *obj, u32 action, u32 arg, u32 extra);
@@ -224,6 +249,8 @@ void hero_a_step_16_b_idle(struct HeroBody *body)
     }
 }
 
+// Steps hero A's motion; once it has finished, plays sound slot 0x65 and starts each hero in play
+// on action 0 (A: 0x2032, B: 0x2061) with sprite mode 1, then goes on to hero_b_place_from_a.
 void hero_a_active_anims(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -231,15 +258,15 @@ void hero_a_active_anims(struct HeroBody *body)
     struct HeroBody *body_b = &gWorld->heroB->body;
 
     state_stack_advance_progress(body_a);
-    if ((hero_a->body.flags & 0x20) != 0)
+    if ((hero_a->body.flags & HERO_MOTION_DONE) != 0)
     {
         set_slot_value(0x65, -1);
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_a->mode))
         {
             sprite_set_action(body_a, 0, 0x2032, 0);
             ((struct HeroSpriteBits *)&body_a->sprite->flags)->mode = 1;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 0, 0x2061, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
@@ -248,39 +275,30 @@ void hero_a_active_anims(struct HeroBody *body)
     }
 }
 
+// Once hero B's animation ends: if B is in play, it moves (speed 0x200) to 12 px right of hero A's
+// target (A's sprite offsets added); then B's timed-press result is cleared and the body goes on
+// to hero_b_step_end_d354.
 void hero_b_place_from_a(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
     struct HeroBody *body_a = &hero_a->body;
     struct Hero *hero_b = gWorld->heroB;
     struct HeroBody *body_b = &hero_b->body;
-    s32 tx;
-    s32 ty;
-    s32 tz;
     s32 x;
     s32 y;
     s32 z;
 
-    if ((body_b->sprite->flags & 8) != 0)
+    if ((body_b->sprite->flags & HERO_SPRITE_ANIM_DONE) != 0)
     {
-        if ((hero_b->body.mode & 6) == 2 || (hero_b->body.mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(hero_b->body.mode))
         {
-            tx = body_a->targetX;
-            if (tx < 0)
-                tx += 0xFF;
-            x = (tx >> 8) + body_a->ofsX + 0xC;
-            ty = body_a->targetY;
-            if (ty < 0)
-                ty += 0xFF;
-            y = (ty >> 8) + body_a->ofsY;
-            tz = body_a->targetZ;
-            if (tz < 0)
-                tz += 0xFF;
-            z = tz >> 8;
+            x = body_a->targetX / 0x100 + body_a->ofsX + 0xC;
+            y = body_a->targetY / 0x100 + body_a->ofsY;
+            z = body_a->targetZ / 0x100;
             place_targets(body_b, x, y, z, -1);
             set_motion_start(body_b, 0x200);
         }
-        body_b->timer = body_b->timer & 0xFFF;
+        body_b->timer = WITH_TIMING_RESULT(body_b->timer, TIMING_PENDING);
         body->state = hero_b_step_end_d354;
     }
 }
@@ -412,124 +430,131 @@ static inline void frames_full(struct HeroBody *a, struct HeroBody *b, struct He
     }
 }
 
-/* Hero B steps towards the end of the step: frame values at the marks before the end, a body part
-   and pose for hero A on the A key, the timer mode at the end, then regroup or the next state. */
+/* Hero B's jump with a timed press of A: seven frames before the landing the game slows down
+   (with WORLD_SLOW_TIMING) and the prompt appears; from six frames before to four after it the
+   A icon shows over hero A and A is a hit. Any press outside that window, B, or no press at all
+   is a miss. A hit regroups the pair at the landing; after a miss hero B moves on to the
+   tracked object. */
 void hero_b_step_end_d354(struct HeroBody *body)
 {
-    struct HeroBody *a;
-    struct HeroBody *b;
+    struct HeroBody *heroA;
+    struct HeroBody *heroB;
     struct HeroBody *partner;
-    s32 end;
-    s32 full;
+    s32 windowEnd;
+    s32 landing;
     s32 rate;
-    s32 lead;
-    s32 leadPart;
-    void (*fn)(struct HeroBody *);
+    s32 promptStart;
+    s32 windowStart;
+    void (*next)(struct HeroBody *);
 
-    a = &gWorld->heroA->body;
-    b = &gWorld->heroB->body;
+    heroA = &gWorld->heroA->body;
+    heroB = &gWorld->heroB->body;
     partner = body->partner;
-    end = 0x4000;
-    full = 0x4000;
-    step_motion(b);
-    rate = b->rate;
-    lead = end + rate * -7;
-    leadPart = end - (((rate << 1) + rate) << 1);
-    end += rate << 2;
+    windowEnd = STEP_LANDING;
+    landing = STEP_LANDING;
+    step_motion(heroB);
+    rate = heroB->rate;
+    promptStart = windowEnd + rate * -7;
+    windowStart = windowEnd - (((rate << 1) + rate) << 1);
+    windowEnd += rate << 2;
 
-    if (b->progress < end)
+    if (heroB->progress < windowEnd)
     {
-        ((struct HeroFlagBits *)&b->flags)->active = 0;
+        ((struct HeroFlagBits *)&heroB->flags)->active = 0;
     }
 
-    /* the timer mode is the top four bits of the timer */
-    if (((b->timer >> 12) & 0xF) != 0)
-        goto after_zero;
+    if (TIMING_RESULT(heroB->timer) != TIMING_PENDING)
+        goto judged;
 
-    if (step_reached(b, lead))
+    if (step_reached(heroB, promptStart))
     {
-        if ((gWorld->flags & 8) != 0)
-            frames_slow(a, b, partner);
+        if ((gWorld->flags & WORLD_SLOW_TIMING) != 0)
+            frames_slow(heroA, heroB, partner);
         else
-            frames_full(a, b, partner);
+            frames_full(heroA, heroB, partner);
         sprite_objects_draw_obj_tiles(0x4C, 0xC);
     }
 
-    if (step_in_window(b, leadPart, end))
+    if (step_in_window(heroB, windowStart, windowEnd))
     {
-        set_body_part(a, 1, 0, -0x28, 2);
-        if ((gSys.held & 1) != 0)
+        set_body_part(heroA, 1, 0, -0x28, 2);
+        if ((gSys.held & KEY_A) != 0)
         {
-            body_set_pose(3, a, 0x18, -0x18);
-            b->timer = (b->timer & 0xFFF) | 0x2000;
+            body_set_pose(3, heroA, 0x18, -0x18);
+            heroB->timer = WITH_TIMING_RESULT(heroB->timer, TIMING_HIT);
         }
     }
 
-    if (((b->timer >> 12) & 0xF) != 0)
-        goto after_zero;
+    if (TIMING_RESULT(heroB->timer) != TIMING_PENDING)
+        goto judged;
 
-    if (step_reached(b, end))
+    /* the window has passed without a press */
+    if (step_reached(heroB, windowEnd))
     {
         world_mode_or1();
-        b->timer = (b->timer & 0xFFF) | 0x1000;
-        if ((gWorld->flags & 8) != 0)
-            frames_full(a, b, partner);
+        heroB->timer = WITH_TIMING_RESULT(heroB->timer, TIMING_MISSED);
+        if ((gWorld->flags & WORLD_SLOW_TIMING) != 0)
+            frames_full(heroA, heroB, partner);
         else
-            frames_full(a, b, partner);
+            frames_full(heroA, heroB, partner);
         display_flush();
-        obj_free_parts(a);
-        goto after_zero;
+        obj_free_parts(heroA);
+        goto judged;
     }
 
-    if (b->progress > end)
-        goto after_zero;
+    if (heroB->progress > windowEnd)
+        goto judged;
 
-    if ((gSys.held & 1) == 0)
-        if ((gSys.held & 3) == 0)
-            goto after_zero;
+    /* a press too early, or B */
+    if ((gSys.held & KEY_A) == 0)
+        if ((gSys.held & (KEY_A | KEY_B)) == 0)
+            goto judged;
 
     world_mode_or1();
     if ((((struct HeroWorldModeBits *)&gWorld->modeByte)->m2 & ~1) != 0)
-        goto after_zero;
+        goto judged;
 
-    b->timer = (b->timer & 0xFFF) | 0x1000;
-    if ((gWorld->flags & 8) != 0)
-        frames_full(a, b, partner);
+    heroB->timer = WITH_TIMING_RESULT(heroB->timer, TIMING_MISSED);
+    if ((gWorld->flags & WORLD_SLOW_TIMING) != 0)
+        frames_full(heroA, heroB, partner);
     else
-        frames_full(a, b, partner);
+        frames_full(heroA, heroB, partner);
     display_flush();
-    obj_free_parts(a);
-    body_set_pose(6, a, 0x18, -0x18);
+    obj_free_parts(heroA);
+    body_set_pose(6, heroA, 0x18, -0x18);
 
-after_zero:
+judged:
     {
-        s32 tmode = (b->timer >> 12) & 0xF;
-        if (tmode != 0 && step_in_window(b, full, end) && tmode > 1)
+        s32 result = TIMING_RESULT(heroB->timer);
+        if (result != TIMING_PENDING && step_in_window(heroB, landing, windowEnd) && result > TIMING_MISSED)
         {
-            b->timer &= 0xFFF;
-            fn = pair_regroup;
-            body->state = fn;
-            fn(body);
+            heroB->timer &= 0xFFF;
+            next = pair_regroup;
+            body->state = next;
+            next(body);
             return;
         }
     }
 
-    if ((b->flags & 0x20) == 0)
+    if ((heroB->flags & HERO_MOTION_DONE) == 0)
         return;
 
-    if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+    if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
     {
-        sprite_set_action(a, 6, 0x2032, 0);
-        ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
+        sprite_set_action(heroA, 6, 0x2032, 0);
+        ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 1;
     }
-    if ((b->mode & 6) == 2 || (b->mode & 6) == 4)
+    if ((heroB->mode & 6) == 2 || (heroB->mode & 6) == 4)
     {
-        sprite_set_action(b, 7, 0x2061, 0);
-        ((struct HeroSpriteBits *)&b->sprite->flags)->mode = 0;
+        sprite_set_action(heroB, 7, 0x2061, 0);
+        ((struct HeroSpriteBits *)&heroB->sprite->flags)->mode = 0;
     }
     body->state = hero_b_follow_tracked_object;
 }
 
+/* Waits for hero B's animation to finish, then moves B 16 px left, starts animation 0x2061 on it and sends
+   it toward 24 px left of the tracked object's last position (at its sprite's y offset, 40 px up), then
+   continues in hero_b_enter_side. */
 void hero_b_follow_tracked_object(struct HeroBody *body)
 {
     struct Hero *hero_b = gWorld->heroB;
@@ -537,23 +562,23 @@ void hero_b_follow_tracked_object(struct HeroBody *body)
     s32 x;
     s32 y;
 
-    if ((body_b->sprite->flags & 8) != 0)
+    if ((body_b->sprite->flags & HERO_SPRITE_ANIM_DONE) != 0)
     {
         s32 moved = body_b->x - 0x1000;
         body_b->x = moved;
         body_b->targetX = moved;
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
             sprite_set_action(body_b, 8, 0x2061, 0);
             ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 0;
         }
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(body_b->mode))
         {
-            s32 offY = body_b->sprite->ofsY;
+            s32 spriteOfsY = body_b->sprite->ofsY;
             x = (s16)obj_last_x(tracked_obj()) - 0x18;
-            y = (s16)obj_last_y(tracked_obj()) + offY;
+            y = (s16)obj_last_y(tracked_obj()) + spriteOfsY;
             place_targets(body_b, x, y, 0, -1);
-            { u16 h = 0x28; body_b->height = h; }
+            { u16 height = 0x28; body_b->height = height; }
             set_motion_offsets(body_b, 0x600);
         }
         body->state = hero_b_enter_side;

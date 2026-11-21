@@ -154,60 +154,59 @@ void hero_pair_pose_a_anim(struct HeroBody *body);
 void hero_b_step_window_a568(struct HeroBody *body);
 void enter_finish_rebuild(struct HeroBody *body);
 
-NONMATCH("asm/code_080C9F58/hero_a_step_range_pose_fx.s", void hero_a_step_range_pose_fx(struct HeroBody *body))
+// State step for hero A: moves along its motion. Once the progress passes the point
+// motionY / motionX (0x4000 = whole step) it switches to action 6, and when the motion ends
+// (flags bit 5) it clears slot 0x2E, switches to action 8, spawns effect 0x33 at its position
+// and the next state is hero_pair_pose_a_anim.
+void hero_a_step_range_pose_fx(struct HeroBody *body)
 {
     struct Hero *hero;
-    struct HeroBody *hbody;
-    s32 inRange;
+    struct HeroBody *heroBody;
+    s32 reached;
+    register s32 turnPoint asm("r2");
     s32 progress;
-    s32 lo;
-    s32 hi;
-    s32 ratio;
+    s32 motionX;
+    s32 motionY;
 
     hero = gWorld->heroA;
-    hbody = &hero->body;
-    step_motion(hbody);
-    lo = hero->body.motionX;
-    hi = hero->body.motionY;
-    ratio = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(hi << 14, lo);
-    if (hero->body.step > ratio)
+    heroBody = &hero->body;
+    step_motion(heroBody);
+    motionX = hero->body.motionX;
+    motionY = hero->body.motionY;
+    turnPoint = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(motionY << 14, motionX);
+    if (hero->body.step <= turnPoint)
     {
-        goto out_of_range;
+        progress = hero->body.progress;
+        reached = 1;
+        if (progress >= turnPoint)
+            goto done;
     }
-    progress = hero->body.progress;
-    inRange = 1;
-    if (progress >= ratio)
+    reached = 0;
+done:
+    if (reached)
     {
-        goto in_range_done;
-    }
-out_of_range:
-    inRange = 0;
-in_range_done:
-    if (inRange)
-    {
-        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        if ((heroBody->mode & 6) == 2 || (heroBody->mode & 6) == 4)
         {
-            if (hbody->data->poseIndex == -1)
+            if (heroBody->data->poseIndex == -1)
             {
-                sprite_set_action(hbody, 6, 0x2000, 0);
+                sprite_set_action(heroBody, 6, 0x2000, 0);
             }
             else
             {
-                sprite_set_action(hbody, 6, 0x204D, 0);
+                sprite_set_action(heroBody, 6, 0x204D, 0);
             }
-            ((struct HeroSpriteBits *)&hbody->sprite->flags)->mode = 1;
+            ((struct HeroSpriteBits *)&heroBody->sprite->flags)->mode = 1;
         }
     }
-    if (hbody->flags & 0x20)
+    if (heroBody->flags & 0x20)
     {
         set_slot_value(0x2E, -1);
-        if ((hbody->mode & 6) == 2 || (hbody->mode & 6) == 4)
+        if ((heroBody->mode & 6) == 2 || (heroBody->mode & 6) == 4)
         {
-            sprite_set_action(hbody, 8, 0x2000, 0);
-            ((struct HeroSpriteBits *)&hbody->sprite->flags)->mode = 1;
+            sprite_set_action(heroBody, 8, 0x2000, 0);
+            ((struct HeroSpriteBits *)&heroBody->sprite->flags)->mode = 1;
         }
-        effect_spawn_at(0x33, hbody->posX / 0x100, hbody->posY / 0x100, hbody->posZ / 0x100, hbody);
+        effect_spawn_at(0x33, heroBody->posX / 0x100, heroBody->posY / 0x100, heroBody->posZ / 0x100, heroBody);
         body->state = hero_pair_pose_a_anim;
     }
 }
-END_NONMATCH

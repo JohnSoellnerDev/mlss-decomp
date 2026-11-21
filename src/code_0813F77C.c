@@ -82,7 +82,7 @@ struct Enemy
     u8 filler1C[0x24 - 0x1C];
     u8 unk24;
     u8 filler25[0x54 - 0x25];
-    u8 unk54;
+    u8 unk54;           // its own index in Owner.party
     u8 filler55[0x198 - 0x55];
     EnemyFn state;
     EnemyFn unk19C;
@@ -102,10 +102,10 @@ struct Enemy
     s32 homeX;
     s32 homeY;
     u8 filler1E4[0x20C - 0x1E4];
-    u8 unk20C;
+    u8 unk20C;          // bit 0: active (obj_set_active)
     u8 unk20D;
     u8 unk20E;
-    u8 unk20F;
+    u8 unk20F;          // bit 1: sprite linked (obj_set_sprite_link)
     u8 filler210[0x214 - 0x210];
     u8 unk214;
     u8 filler215[0x216 - 0x215];
@@ -115,7 +115,11 @@ struct Enemy
     s16 vy;
     u8 filler246[0x248 - 0x246];
     s32 accel;
-    u8 filler24C[0x290 - 0x24C];
+    u8 filler24C[0x272 - 0x24C];
+    u16 width;
+    u16 unk274;
+    u16 height;
+    u8 filler278[0x290 - 0x278];
     u8 *map;
     struct Sprite *sprite;
     u8 filler298[0x2D4 - 0x298];
@@ -163,12 +167,16 @@ ASM_FUNC("asm/code_0813F77C/enemy_hop_land_on_partner.s", void enemy_hop_land_on
 
 ASM_FUNC("asm/code_0813F77C/enemy_hop_land_next.s", void enemy_hop_land_next(void))
 
-void enemy_hop_prepare_fall(u32 r0, struct Enemy *ent, EnemyFn *out)
+// Starts the enemy's fall after a hop: movement mode 1 with its falling cell (the movement cell
+// + 4), the falling flag (0x33E bit 3), the record's sprite value for its index (rec + 0x44), a
+// fall time picked at random from the record's 4 (rec + 0x48), the record's starting fall speed
+// (rec + 0x4C) and acceleration (rec + 0x54); then falls in enemy_hop_fall_then_next.
+void enemy_hop_prepare_fall(u32 owner, struct Enemy *ent, EnemyFn *out)
 {
     u8 *rec;
     struct Sprite *sprite;
     u32 cell;
-    s32 idx;
+    s32 pick;
 
     rec = ent->rec;
     ((struct Mode3 *)&ent->unk214)->mode = 1;
@@ -177,45 +185,52 @@ void enemy_hop_prepare_fall(u32 r0, struct Enemy *ent, EnemyFn *out)
     ((struct Bit3 *)&ent->unk33E)->bit3 = 1;
     sprite = ent->sprite;
     sprite->unk20 = rec[ent->index + 0x44];
-    idx = rand_below(4, mt19937_next());
-    ent->timerB = ent->rec[idx + 0x48];
+    pick = rand_below(4, mt19937_next());
+    ent->timerB = ent->rec[pick + 0x48];
     ent->zspeed = *(u16 *)(ent->rec + 0x4C);
     ent->accel = ent->rec[0x54];
     *out = enemy_hop_fall_then_next;
 }
 
+// Starts the enemy moving straight up or down to 0x3000 above the floor of the tile it is on (the
+// tile's upper floor when it has one), at one of the record's 4 speeds (rec + 0x58, picked at
+// random), with movement mode 4 and its movement cell; then goes on to enemy_after_fall_check_box.
 void enemy_hop_fall_to_tile(u32 r0, struct Enemy *ent, EnemyFn *out)
 {
     u8 zero = 0;
-    s32 h0;
-    s32 h1;
-    s32 h2;
-    s32 idx;
+    s32 floorH;
+    s32 layerTop;
+    s32 upperFloorH;
+    s32 pick;
     u16 speed;
     u32 cell;
 
-    obj_probe_tile_heights(ent, ent->x / 0x1000, ent->y / 0x1000, &h0, &h1, &h2);
-    if (h2 != -1)
+    obj_probe_tile_heights(ent, ent->x / 0x1000, ent->y / 0x1000, &floorH, &layerTop, &upperFloorH);
+    if (upperFloorH != -1)
     {
-        h0 = h2;
+        floorH = upperFloorH;
     }
-    idx = rand_below(4, mt19937_next());
-    speed = ((u16 *)(ent->rec + 0x58))[idx];
-    start_move_to_3d(ent, ent->x, ent->y, h0 + 0x3000, speed, zero);
+    pick = rand_below(4, mt19937_next());
+    speed = ((u16 *)(ent->rec + 0x58))[pick];
+    start_move_to_3d(ent, ent->x, ent->y, floorH + 0x3000, speed, zero);
     ((struct Mode3 *)&ent->unk214)->mode = 4;
     cell = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
     obj_set_cell_coord(ent, cell, 0);
     *out = enemy_after_fall_check_box;
 }
 
+// Turns the enemy toward its home (0xFF when it is already there) and starts moving it home at
+// one of the record's 4 speeds (rec + 0x64, picked at random), with movement mode 4, its
+// movement cell and the record's sprite value for its index; then waits in enemy_wait_after_step_c.
 void enemy_hop_return_home(u32 r0, struct Enemy *ent, EnemyFn *out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    // rec, index and homeX/homeY read through ent + 0x58, as the original does.
+    u8 *base58 = (u8 *)ent + 0x58;
     u8 *rec;
     s32 dx;
     s32 dy;
     u32 facing;
-    s32 idx;
+    s32 pick;
     u16 speed;
     u8 zero;
     u32 cell;
@@ -233,13 +248,13 @@ void enemy_hop_return_home(u32 r0, struct Enemy *ent, EnemyFn *out)
     }
     zero = 0;
     ent->angle = facing;
-    idx = rand_below(4, mt19937_next());
-    speed = ((u16 *)(*(u8 **)(ai + 0x158) + 0x64))[idx];
-    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
+    pick = rand_below(4, mt19937_next());
+    speed = ((u16 *)(*(u8 **)(base58 + 0x158) + 0x64))[pick];
+    start_move_to(ent, *(s32 *)(base58 + 0x184), *(s32 *)(base58 + 0x188), speed, zero);
     ((struct Mode3 *)&ent->unk214)->mode = 4;
     cell = gFrameAttrTable[((((u32)ent->unk216 << 28) >> 30) << 4) + (((u32)ent->unk24 << 29) >> 29) + 8];
     obj_set_cell_coord(ent, cell, 0);
-    ent->sprite->unk20 = rec[*(u16 *)(ai + 0x178) + 0x60];
+    ent->sprite->unk20 = rec[*(u16 *)(base58 + 0x178) + 0x60];
     *out = enemy_wait_after_step_c;
 }
 
@@ -311,60 +326,56 @@ common:
     return 1;
 }
 
-NONMATCH("asm/code_0813F77C/enemy_hop_face_partner.s", void enemy_hop_face_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out))
+// Starts a hop toward the partner: picks the active party member (or, if none is active, the one
+// flags208 bit 1 selects), turns the enemy's cell to the quarter of the 8-way direction toward it,
+// sets the rise target to the record's hop height (rec + 0x24, whole units) above the current
+// height, and hands over to enemy_fall_step with movement mode 1.
+void enemy_hop_face_partner(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
-    u8 found;
-    s32 idx;
-    u8 *rec;
+    u8 *rec = ent->rec;
+    u8 activeIdx;
     struct Enemy *partner;
-    s32 (*div)(s32, s32);
+    s32 (*divide)(s32, s32);
     s32 dx;
     s32 dy;
-    s32 dir;
-    u8 cell;
+    s32 dir8;
 
-    if (find_active_entry(owner, &found) != 0)
-    {
-        idx = found;
-    }
+    // The party slots are indexed by byte offset, as the original does.
+    if (find_active_entry(owner, &activeIdx) != 0)
+        partner = *(struct Enemy **)((u8 *)owner + activeIdx * 4 + 0x28);
     else
-    {
-        idx = ((u32)owner->flags208 << 30) >> 31;
-    }
-    partner = *(struct Enemy **)((u8 *)owner + idx * 4 + 0x28);
-    rec = ent->rec;
-    div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
+        partner = *(struct Enemy **)((u8 *)owner + (((u32)owner->flags208 << 30) >> 31) * 4 + 0x28);
+    divide = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
     dx = partner->x - ent->x;
     dy = partner->y - ent->y;
-    if ((dx | dy) != 0)
-    {
-        dir = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
-    }
+    if (dx | dy)
+        dir8 = ((s32)((u16)angle_of_vector16(dx, dy) + 0x1000) >> 13) & 7;
     else
-    {
-        dir = -1;
-    }
-    cell = div(dir, 2);
-    obj_set_cell_coord(ent, cell, 0);
+        dir8 = -1;
+    obj_set_cell_coord(ent, (u8)divide(dir8, 2), 0);
     ent->tgtZ = ent->z + ent->dz + (*(u16 *)(rec + 0x24) << 12);
     ent->sprite->unk20 = 0x10;
     ((struct Mode3 *)&ent->unk214)->mode = 1;
     *out = enemy_fall_step;
 }
-END_NONMATCH
 
+// Sets an enemy up to jump off its sibling, the party member its sensor names (signed byte 0xA:
+// an offset from the enemy's own party index). It clears 0x33E bit 4 and unlinks its sprite. With
+// the sibling inactive the enemy is switched off too; otherwise it sets 0x20F bit 2, clears 0x20D
+// bit 2 and waits (enemy_sibling_noop_state) to run its jump in enemy_run_move.
 void enemy_group_sibling_setup(struct Owner *owner, struct Enemy *ent)
 {
     struct Enemy *sibling;
     u16 *sensor;
-    u32 group;
-    s32 span;
+    u32 selfIdx;
+    s32 siblingOffset;
 
     ((struct Bit4 *)&ent->unk33E)->bit4 = 0;
     sensor = ent->sensor;
-    group = ent->unk54;
-    span = (s8)((u8 *)sensor)[0xA];
-    sibling = *(struct Enemy **)((span << 2) + ((group << 2) + (u32)owner) + 0x28);
+    selfIdx = ent->unk54;
+    siblingOffset = (s8)((u8 *)sensor)[0xA];
+    // owner->party[selfIdx + siblingOffset]
+    sibling = *(struct Enemy **)((siblingOffset << 2) + ((selfIdx << 2) + (u32)owner) + 0x28);
     if ((sibling->unk20C & 1) == 0)
     {
         obj_set_sprite_link(ent, 0);
@@ -380,6 +391,11 @@ void enemy_group_sibling_setup(struct Owner *owner, struct Enemy *ent)
     }
 }
 
+// Run step of an enemy jumping off its sibling. While it still has frames to run, a step that
+// would carry it into one of its sensor's blocking boxes (sensor byte 0xB of them) is taken
+// back and the run stops. The run also stops on a blocking tile (flag 0x80) at its leading
+// corner. It then moves in X/Y and in Z (z_approach); once it has landed, it goes back to
+// cell 0 and enemy_kick_after_probe picks what comes next.
 void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
     ByteArg zero = { 0 };
@@ -387,32 +403,33 @@ void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
     s16 box[8];
     u8 k;
     u16 *sensor;
-    s32 outA;
-    s32 outB;
-    s32 outC;
-    s32 xNext;
-    s32 yNext;
+    s32 tileA;
+    s32 tileB;
+    s32 tileC;
+    s32 nextX;
+    s32 nextY;
     s32 (*div)(s32, s32);
-    s32 half;
+    s32 halfWidth;
     s32 cornerDx;
-    s32 offsetY;
+    s32 cornerDy;
     s32 cornerX;
     s32 cornerY;
     u8 *tile;
-    u8 approached;
-    u16 vxr;
+    u8 stillMoving;
+    u16 vxBits;
 
     sensor = ent->sensor;
-    xNext = ent->x + ent->vx;
-    yNext = ent->y + ent->vy;
+    nextX = ent->x + ent->vx;
+    nextY = ent->y + ent->vy;
     if (ent->frames != 0)
     {
+        // Box k: [0] left, [1] right, [2] bottom, [3] top, in whole units.
         for (k = 0; k < ((u8 *)sensor)[0xB]; k++)
         {
             obj_box_to_stack(box, ent, 0x22, (((u32)k << 19) + 0xC0000) >> 16);
             if (!(ent->x >= (box[0] << 8) && ent->x <= (box[1] << 8) && ent->y >= (box[3] << 8) && ent->y <= (box[2] << 8)))
             {
-                if (xNext >= (box[0] << 8) && xNext <= (box[1] << 8) && yNext >= (box[3] << 8) && yNext <= (box[2] << 8))
+                if (nextX >= (box[0] << 8) && nextX <= (box[1] << 8) && nextY >= (box[3] << 8) && nextY <= (box[2] << 8))
                 {
                     ent->x -= ent->vx;
                     ent->y -= ent->vy;
@@ -421,34 +438,36 @@ void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
             }
         }
     }
+
+    // The corner of the collision box that leads in the direction of motion.
     div = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div);
-    half = div(*(u16 *)((u8 *)ent + 0x272), 2);
+    halfWidth = div(ent->width, 2);
     if (ent->vx <= 0)
     {
         cornerDx = 0;
         if (ent->vx < 0)
         {
-            cornerDx = -half;
+            cornerDx = -halfWidth;
         }
     }
     else
     {
-        cornerDx = half;
+        cornerDx = halfWidth;
     }
     if (ent->vy <= 0)
     {
-        offsetY = -*(u16 *)((u8 *)ent + 0x276);
+        cornerDy = -ent->height;
     }
     else
     {
-        offsetY = 0;
+        cornerDy = 0;
     }
     cornerX = ent->x + ent->vx + cornerDx;
-    cornerY = ent->y + ent->vy + offsetY;
-    vxr = *(u16 *)((u8 *)ent + 0x242);
-    if ((vxr | *(u16 *)((u8 *)ent + 0x244)) != 0)
+    cornerY = ent->y + ent->vy + cornerDy;
+    vxBits = *(u16 *)&ent->vx;
+    if ((vxBits | *(u16 *)&ent->vy) != 0)
     {
-        tile = tile_query(ent->map, cornerX, cornerY, &outA, &outB, &outC, zero, one);
+        tile = tile_query(ent->map, cornerX, cornerY, &tileA, &tileB, &tileC, zero, one);
         if ((*tile & 0x80) != 0)
         {
             ent->vx = 0;
@@ -456,8 +475,8 @@ void enemy_run_move(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
         }
     }
     step_pos_xy_plain(ent);
-    approached = z_approach(ent);
-    if (approached == 0)
+    stillMoving = z_approach(ent);
+    if (stillMoving == 0)
     {
         ((struct Bit6 *)&ent->unk20D)->bit6 = 1;
         ((struct Bit2 *)&ent->unk20E)->bit2 = 0;
@@ -507,12 +526,15 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_0813F77C/enemy_run_until_contact.s", void enemy_run_until_contact(void))
 
+// Starts an enemy's approach on its partner: picks one of the record's four rise heights and
+// speeds at random and starts the Z move, turns to face the active party member (or the leader
+// when none is active), and hands over to enemy_approach_partner.
 void enemy_start_approach(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
 {
     u8 found;
-    u16 ix;
-    u8 *rc;
-    u32 pidx;
+    u16 choice;
+    u8 *rec;
+    u32 partnerIdx;
     u8 *entry;
     u16 speed;
     s32 z;
@@ -526,21 +548,22 @@ void enemy_start_approach(struct Owner *owner, struct Enemy *ent, EnemyFn *out)
     ((struct Bit6 *)&ent->unk20D)->bit6 = 0;
     ((struct Bit2 *)&ent->unk20F)->bit2 = 1;
     ent->index = rand_below(4, mt19937_next());
-    ix = ent->index;
-    rc = ent->rec;
-    entry = (u8 *)((u32)(ix * 2) + (u32)rc);
+    choice = ent->index;
+    rec = ent->rec;
+    // rec + 0x22: u16 rise heights[4], rec + 0x2A: u16 rise speeds[4].
+    entry = (u8 *)((u32)(choice * 2) + (u32)rec);
     speed = *(u16 *)(entry + 0x2A);
     z = ent->z + ent->dz + *(u16 *)(entry + 0x22);
     start_z_move(ent, z, speed, 0, 0);
     if (find_active_entry(owner, &found) != 0)
     {
-        pidx = found;
+        partnerIdx = found;
     }
     else
     {
-        pidx = ((u32)owner->flags208 << 30) >> 31;
+        partnerIdx = ((u32)owner->flags208 << 30) >> 31;
     }
-    partner = *(struct Enemy **)((u8 *)owner + pidx * 4 + 0x28);
+    partner = *(struct Enemy **)((u8 *)owner + partnerIdx * 4 + 0x28);
     dx = partner->x - ent->x;
     dy = partner->y - ent->y;
     if ((dx | dy) != 0)

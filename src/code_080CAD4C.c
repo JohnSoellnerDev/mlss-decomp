@@ -121,12 +121,12 @@ struct HeroBody
     u16 height;
     u32 unk94;
     u32 unk98;
-    s32 unk9C;
-    u32 link;
+    s32 unk9C;      /* hero A in the pair slides: frames left before it ends */
+    u32 link;       /* ... and the cursor art shown over hero B while it aims (0: none) */
     u8 filler0A4[0xAC - 0xA4];
     s16 step;
-    u16 timer;
-    s16 jitterY;
+    u16 timer;      /* hero A in the pair slides: X velocity (s16, 1/256 px a frame) */
+    s16 jitterY;    /* ... and Y velocity */
     u8 filler0B2[0xC3 - 0xB2];
     s8 ofsX;
     s8 ofsY;
@@ -186,40 +186,52 @@ void set_body_part(struct HeroBody *body, u32 art, s32 x, s32 y, u32 extra);
 void obj_free_parts(struct HeroBody *body);
 void display_flush(void);
 
+/*
+ * State: hero A's sprite grows back to full size (scale 0x100) by 0x10 a frame while hero B rises
+ * a pixel a frame; once A is full size, B is back at Z 0. Then, in body modes 2 and 4, A starts
+ * moving (from rest, accelerating by 0x33) to the partner's target plus its offsets, sound 0x8C
+ * plays (sound_play: set_slot_value queues the song) and the state goes on to hero_pair_follow_ae14.
+ */
 void hero_pair_z_step_place_partner(struct HeroBody *body)
 {
     struct World *world = gWorld;
-    struct HeroBody *body_a = &world->heroA->body;
-    struct HeroBody *body_b = &world->heroB->body;
+    struct HeroBody *heroA = &world->heroA->body;
+    struct HeroBody *heroB = &world->heroB->body;
     struct HeroBody *partner = body->partner;
-    u16 scale = body_a->sprite->scale;
+    u16 scale = heroA->sprite->scale;
 
-    if ((s16)body_a->sprite->scale <= 0xFF)
+    if ((s16)heroA->sprite->scale <= 0xFF)
     {
-        body_a->sprite->scale = scale + 0x10;
-        body_b->posZ += 0x100;
-        if ((s16)body_a->sprite->scale > 0x100)
+        heroA->sprite->scale = scale + 0x10;
+        heroB->posZ += 0x100; /* 1 pixel */
+        if ((s16)heroA->sprite->scale > 0x100)
         {
-            body_a->sprite->scale = 0x100;
-            body_b->posZ = 0;
+            heroA->sprite->scale = 0x100;
+            heroB->posZ = 0;
         }
     }
     else
     {
-        if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            s32 x = partner->targetX / 0x100 + partner->ofsX;
-            s32 y = partner->targetY / 0x100 + partner->ofsY;
-            place_targets(body_a, x, y, 0, -1);
-            set_motion_speed_aux(body_a, 0, 0x33);
+            s32 destX = partner->targetX / 0x100 + partner->ofsX;
+            s32 destY = partner->targetY / 0x100 + partner->ofsY;
+            place_targets(heroA, destX, destY, 0, -1);
+            set_motion_speed_aux(heroA, 0, 0x33);
         }
-        set_slot_value(0x8C, -1);
+        set_slot_value(0x8C, -1); /* play sound 0x8C at the current volume */
         body->state = hero_pair_follow_ae14;
     }
 }
 
 ASM_FUNC("asm/code_080CAD4C/hero_pair_follow_ae14.s", void hero_pair_follow_ae14(struct HeroBody *body))
 
+/*
+ * State: hero A slides with hero B on top of it, its velocity decaying to 90% a frame. While a
+ * cursor is shown over B, B aims (hero_pair_find_partner); a press of A, B or the D-pad hides the
+ * cursor and makes B's target A's. When the slide's frames run out the cursor goes and, in body
+ * modes 2 and 4, the state goes on to hero_pair_z_step_place_partner.
+ */
 void hero_a_jitter_apply_partner(struct HeroBody *body)
 {
     struct World *world = gWorld;
@@ -230,6 +242,7 @@ void hero_a_jitter_apply_partner(struct HeroBody *body)
     {
         set_body_part(body_b, body_a->link, 0, -0x30, 0);
     }
+    /* timer and jitterY are the slide's X and Y velocity */
     body_a->timer = (s16)body_a->timer * 0xE6 / 0x100;
     body_a->jitterY = body_a->jitterY * 0xE6 / 0x100;
     body_a->posX += (s16)body_a->timer;
@@ -239,7 +252,7 @@ void hero_a_jitter_apply_partner(struct HeroBody *body)
     if (body_a->link != 0)
     {
         hero_pair_find_partner(body_b);
-        if ((gSys.held & 0xF3) != 0)
+        if ((gSys.held & 0xF3) != 0) /* A, B or the D-pad */
         {
             body_a->link = 0;
             if (body_a->partner != body_b->partner)
@@ -266,19 +279,25 @@ void hero_a_jitter_apply_partner(struct HeroBody *body)
 }
 
 
+// Slides hero A, with hero B on top of it, along X: the velocity decays to 90% a frame, but
+// while 10% of the distance from A's target + 0x3C pixels to the partner's target is further
+// left, it moves half way there. Once A is down to under a pixel a frame it plays action 4
+// (0x2035) on A and action 8 (0x2053) on B, restarts B's motion (rate 0x4000 / 14), keeps B's
+// timer to 12 bits and goes on to hero_b_step_window_cb508. Actions only play in body modes 2
+// and 4.
 void hero_a_jitter_dx_step_anim(struct HeroBody *body)
 {
     struct World *world = gWorld;
     struct HeroBody *body_a = &world->heroA->body;
     struct HeroBody *body_b = &world->heroB->body;
     struct HeroBody *partner = body->partner;
-    s32 target_a = body_a->targetX + 0x3C00;
-    s32 leftover = (partner->targetX - target_a) * 25 / 0x100;
+    s32 stopX = body_a->targetX + 0x3C00;
+    s32 pull = (partner->targetX - stopX) * 25 / 0x100;
 
     body_a->timer = (s16)body_a->timer * 0xE6 / 0x100;
-    if (leftover < (s16)body_a->timer)
+    if (pull < (s16)body_a->timer)
     {
-        body_a->timer = ((s16)body_a->timer + leftover) / 2;
+        body_a->timer = ((s16)body_a->timer + pull) / 2;
     }
     body_a->posX += (s16)body_a->timer;
     body_b->posX = body_a->posX;
@@ -296,7 +315,7 @@ void hero_a_jitter_dx_step_anim(struct HeroBody *body)
         }
         if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
         {
-            body_b->rate = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(0x4000, 0xE);
+            body_b->rate = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(0x4000, 14);
             body_b->progress = 0;
             ((struct HeroFlagBits *)&body_b->flags)->active = 0;
         }
@@ -308,63 +327,68 @@ void hero_a_jitter_dx_step_anim(struct HeroBody *body)
 
 ASM_FUNC("asm/code_080CAD4C/hero_b_step_window_cb508.s", void hero_b_step_window_cb508(struct HeroBody *body))
 
-NONMATCH("asm/code_080CAD4C/hero_b_step_in_range_pose_fx.s", void hero_b_step_in_range_pose_fx(struct HeroBody *body))
+// Moves hero B on along its motion. Once the motion's progress reaches the point
+// (unk98 << 14) / unk94 (with step not past it) it plays action 6; when the motion ends it
+// plays sound 0x2E and action 8, spawns effect 0x33 at hero B and goes on to
+// hero_b_sprite_active_place_finish. The actions are only played in body modes 2 and 4.
+void hero_b_step_in_range_pose_fx(struct HeroBody *body)
 {
-    struct Hero *hero_b = gWorld->heroB;
-    struct HeroBody *body_b = &hero_b->body;
-    s32 lo;
-    u32 hi;
-    s32 ratio;
-    s32 in_range;
+    register struct Hero *heroB asm("r5");
+    struct HeroBody *bodyB;
+    s32 reached;
+    register s32 point asm("r2");
+    s32 progress;
+    s32 whole;
+    s32 part;
 
-    step_motion(body_b);
-    lo = ((struct HeroRange *)hero_b)->pairLo;
-    hi = ((struct HeroRange *)hero_b)->pairHi;
-    ratio = MATH_ROUTINE(u32 (*)(s32, s32), iwram_div)(hi << 14, lo);
-    if (((struct HeroRange *)hero_b)->hi > ratio)
+    heroB = gWorld->heroB;
+    bodyB = &heroB->body;
+    step_motion(bodyB);
+    whole = heroB->body.unk94;
+    part = heroB->body.unk98;
+    point = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(part << 14, whole);
+    if (heroB->body.step <= point)
     {
-        in_range = 0;
+        register s16 *progressp asm("r0") = &heroB->body.progress;
+
+        progress = *progressp;
+        reached = 1;
+        if (progress >= point)
+            goto reached_done;
     }
-    else
+    reached = 0;
+reached_done:
+    if (reached)
     {
-        in_range = 1;
-        if (((struct HeroRange *)hero_b)->lo < ratio)
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
-            in_range = 0;
-        }
-    }
-    if (in_range)
-    {
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
-        {
-            if (body_b->data->poseIndex == -1)
+            if (bodyB->data->poseIndex == -1)
             {
-                sprite_set_action(body_b, 6, 0x2000, 0);
+                sprite_set_action(bodyB, 6, 0x2000, 0);
             }
             else
             {
-                sprite_set_action(body_b, 6, 0x204D, 0);
+                sprite_set_action(bodyB, 6, 0x204D, 0);
             }
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+            ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 1;
         }
     }
-    if ((body_b->flags & 0x20) != 0)
+    if (bodyB->flags & 0x20)
     {
         set_slot_value(0x2E, -1);
-        if ((body_b->mode & 6) == 2 || (body_b->mode & 6) == 4)
+        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
-            if (body_b->data->poseIndex == -1)
+            if (bodyB->data->poseIndex == -1)
             {
-                sprite_set_action(body_b, 8, 0x2000, 0);
+                sprite_set_action(bodyB, 8, 0x2000, 0);
             }
             else
             {
-                sprite_set_action(body_b, 8, 0x204D, 0);
+                sprite_set_action(bodyB, 8, 0x204D, 0);
             }
-            ((struct HeroSpriteBits *)&body_b->sprite->flags)->mode = 1;
+            ((struct HeroSpriteBits *)&bodyB->sprite->flags)->mode = 1;
         }
-        effect_spawn_at(0x33, body_b->posX / 0x100, body_b->posY / 0x100, body_b->posZ / 0x100, body_b);
+        effect_spawn_at(0x33, bodyB->posX / 0x100, bodyB->posY / 0x100, bodyB->posZ / 0x100, bodyB);
         body->state = hero_b_sprite_active_place_finish;
     }
 }
-END_NONMATCH

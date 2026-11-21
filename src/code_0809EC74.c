@@ -25,10 +25,12 @@ struct BodyData
     s32 posY;
     s32 posZ;
     u8 filler4C[0xD8 - 0x4C];
+    /* limitX, height, targetH: the home spot (x, y, height), 24.8 fixed point */
     s32 limitX;
     s32 height;
     s32 targetH;
     u8 fillerE4[0xEC - 0xE4];
+    /* -1 / -2: first / second of a pair of BodyData 0x130 bytes apart; 0: empty */
     s16 pose;
     u8 fillerEE[0xF6 - 0xEE];
     s16 unkF6;
@@ -208,40 +210,44 @@ void stop_anim_when_shown(struct Body *body)
     }
 }
 
+/* The partner's data is one of a pair (0x130 bytes apart). Sends the body (speed 0x600) to 2 below
+   and unkA4 pixels beside the middle of the pair's home spots when both are filled, or to the one
+   filled entry's position, at the partner's home height; then starts action 0xF and goes on with
+   start_timed_motion_if_free. */
 void move_between_poses(struct Body *body)
 {
     struct Body *partner = body->partner;
     struct BodyData *data = partner->data;
-    struct BodyData *a;
-    struct BodyData *b;
+    struct BodyData *second;
+    struct BodyData *first;
 
     if (data->pose == -1)
     {
-        b = data;
-        a = (struct BodyData *)((u8 *)data + 0x130);
+        first = data;
+        second = (struct BodyData *)((u8 *)data + 0x130);
     }
     else if (data->pose == -2)
     {
-        b = (struct BodyData *)((u8 *)data - 0x130);
-        a = data;
+        first = (struct BodyData *)((u8 *)data - 0x130);
+        second = data;
     }
-    if (b->pose != 0)
+    if (first->pose != 0)
     {
-        if (a->pose != 0)
+        if (second->pose != 0)
         {
-            body->landX = (b->limitX + a->limitX) / 2 + body->unkA4 * 0x100;
-            body->landY = (b->height + a->height) / 2 + 0x200;
+            body->landX = (first->limitX + second->limitX) / 2 + body->unkA4 * 0x100;
+            body->landY = (first->height + second->height) / 2 + 0x200;
         }
         else
         {
-            body->landX = b->posX + body->unkA4 * 0x100;
-            body->landY = b->posY + 0x200;
+            body->landX = first->posX + body->unkA4 * 0x100;
+            body->landY = first->posY + 0x200;
         }
     }
     else
     {
-        body->landX = a->posX + body->unkA4 * 0x100;
-        body->landY = a->posY + 0x200;
+        body->landX = second->posX + body->unkA4 * 0x100;
+        body->landY = second->posY + 0x200;
     }
     body->landZ = partner->data->targetH;
     *((u8 *)body + 0x79) |= 0x20;
@@ -326,33 +332,38 @@ NONMATCH("asm/code_0809EC74/spawn_child_part.s", void spawn_child_part(struct Bo
 }
 END_NONMATCH
 
+/* One frame of a part's jump toward the partner's home spot: adds the acceleration jumpDY to the
+   speed jumpDX and places the body that far (move_step) from its target position, in the direction
+   of the partner's home spot seen from 0x500 above the data's position. Once the speed has come down
+   to -unk9C (the launch speed, negated) it lands: the body inside the data (at +8) takes over unk6C,
+   plays action 0x13 and waits in set_state_when_shown, and this part is released. */
 void companion_jump_land_step_toward_partner(struct Body *body)
 {
-    struct BodyData *group = body->data;
+    struct BodyData *data = body->data;
     struct Body *partner = body->partner;
     s16 *speed = &body->jumpDX;
-    s16 x;
-    s16 y;
-    s16 z;
-    s32 zOffset = 0x500;
+    s16 offsetX;
+    s16 offsetY;
+    s16 offsetZ;
+    s32 aimHeight = 0x500;
 
     *speed += body->jumpDY;
-    move_step(&x, &y, &z,
-              partner->data->limitX - group->posX,
-              partner->data->height - group->posY,
-              partner->data->targetH - (group->posZ + zOffset),
+    move_step(&offsetX, &offsetY, &offsetZ,
+              partner->data->limitX - data->posX,
+              partner->data->height - data->posY,
+              partner->data->targetH - (data->posZ + aimHeight),
               *speed);
-    body->posX = body->targetX + x;
-    body->posY = body->targetY + y;
-    body->posZ = body->targetZ + z;
+    body->posX = body->targetX + offsetX;
+    body->posY = body->targetY + offsetY;
+    body->posZ = body->targetZ + offsetZ;
     if (*speed <= -body->unk9C)
     {
-        struct Body *gbody = (struct Body *)((u8 *)group + 8);
+        struct Body *owner = (struct Body *)((u8 *)data + 8);
 
-        gbody->state = (void *)set_state_when_shown;
-        gbody->unk68 = (void *)on_arrive;
-        gbody->unk6C = body->unk6C;
-        sprite_set_action(gbody, 0x13, 0, 0);
+        owner->state = (void *)set_state_when_shown;
+        owner->unk68 = (void *)on_arrive;
+        owner->unk6C = body->unk6C;
+        sprite_set_action(owner, 0x13, 0, 0);
         body->unk6C = 0;
         obj_release(body);
     }

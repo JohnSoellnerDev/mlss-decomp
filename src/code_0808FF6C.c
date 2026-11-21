@@ -202,31 +202,35 @@ void hold_orbit_finish_if_pose_visible_d(struct HoldActor *obj);
 void hold_orbit_finish_if_pose_visible_e(struct HoldActor *obj);
 void finish_if_pose_visible_f(struct HoldActor *obj);
 
-NONMATCH("asm/code_0808FF6C/orbit_start_a.s", void orbit_start_a(struct HoldActor *obj))
+/* Charge while the actor's button is held: ends the action if any of action bits 3-5 is set;
+   otherwise steps through frames 0-3 of animation 0x2054 (one every 2 frames). Let go before step 8
+   and it goes to hold_countdown_a; held to step 8, it switches to action 1 and waits in
+   hold_wait_b. Each frame it keeps the pose held and advances step. */
+void orbit_start_a(struct HoldActor *obj)
 {
-    s32 mode;
+    u32 interrupt;
+    s16 *step;
 
     obj->state = orbit_start_a;
-    mode = obj->action & 0x38;
-    if (mode != 0)
+    interrupt = obj->action & 0x38;
+    if (interrupt != 0)
     {
         end_action(obj);
         return;
     }
-    if ((s16)obj->step == 0)
-    {
+    step = (s16 *)&obj->step;
+    if (*step == 0)
         sprite_set_action(obj, 0, 0x2054, 0);
-    }
-    if ((s16)obj->step == 2)
-    {
+    if (*step == 2)
         sprite_set_action(obj, 0, 0x2054, 1);
-    }
-    if ((s16)obj->step == 4)
-    {
+    if (*step == 4)
         sprite_set_action(obj, 0, 0x2054, 2);
-    }
-    if ((s16)obj->step == 6)
+    if (*step == 6)
     {
+        s32 absStep = *step; /* computed but unused */
+
+        if (absStep < 0)
+            absStep = -absStep;
         sprite_set_action(obj, 0, 0x2054, 3);
     }
     if ((s16)obj->step != 8)
@@ -240,10 +244,9 @@ NONMATCH("asm/code_0808FF6C/orbit_start_a.s", void orbit_start_a(struct HoldActo
     else
     {
         sprite_set_action(obj, 1, 0, 0);
-        obj->step = mode;
+        obj->step = interrupt;
         obj->state = hold_wait_b;
     }
     ((struct PoseHoldBit *)&obj->pose->flags)->hold = 1;
     obj->step++;
 }
-END_NONMATCH

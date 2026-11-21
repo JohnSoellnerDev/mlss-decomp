@@ -138,6 +138,24 @@ struct AnimTask
     u16 timer;
 };
 
+/* AnimObj.bits: the battle statuses a figure has, set by the anim_* functions anim_dispatch picks. */
+enum AnimStatusBits
+{
+    ANIM_STATUS_BIT1 = 0x0001,     /* bits 0-1: one of two exclusive statuses (anim_bit1_chance) */
+    ANIM_STATUS_BIT2 = 0x0002,     /* (anim_bit2_chance) */
+    ANIM_STATUS_MOTION_A = 0x000C, /* 4: raised, 8: lowered, by factor10A (anim_set_motion_a) */
+    ANIM_STATUS_MOTION_B = 0x0030, /* 0x10: raised, 0x20: lowered, by factor10C (anim_set_motion_b) */
+    ANIM_STATUS_MOTION_C = 0x00C0, /* 0x40: raised, 0x80: lowered, by factor11C (anim_set_motion_c) */
+    ANIM_STATUS_BIT100 = 0x0100,   /* 0x100 and 0x200 exclude each other */
+    ANIM_STATUS_BIT200 = 0x0200,
+    ANIM_STATUS_BIT400 = 0x0400,   /* 0x400 and 0x800 exclude each other */
+    ANIM_STATUS_BIT800 = 0x0800,   /* (anim_chance_start) */
+    ANIM_STATUS_BIT1000 = 0x1000,  /* bits 12-15: rolled by anim_roll_bit* */
+    ANIM_STATUS_BIT2000 = 0x2000,
+    ANIM_STATUS_BIT4000 = 0x4000,
+    ANIM_STATUS_BIT8000 = 0x8000
+};
+
 void set_slot_value(u32 id, s32 value);
 void *find_lowest_order_pose(u8 *pic);
 void sprite_set_action(void *obj, u32 action, u32 arg, u32 extra);
@@ -171,57 +189,60 @@ s32 anim_roll_bit2000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit4000(struct AnimObj *obj, s32 chance);
 s32 anim_roll_bit8000(struct AnimObj *obj, s32 chance);
 
-s32 anim_dispatch(struct AnimObj *obj, u32 flags, s32 value, u32 extra)
+/* Inflicts the first status the mask asks for (in this order, C before B) and returns what its
+ * anim_* function returns (1: it took hold), or 0 when the mask names none. value is the hit
+ * chance in percent, or the factor for the anim_set_motion_* ones, whose chance is extra. */
+s32 anim_dispatch(struct AnimObj *obj, u32 mask, s32 value, u32 extra)
 {
-    if (flags & 1)
+    if (mask & ANIM_STATUS_BIT1)
     {
         return anim_bit1_chance(obj, value);
     }
-    if (flags & 2)
+    if (mask & ANIM_STATUS_BIT2)
     {
         return anim_bit2_chance(obj, value);
     }
-    if (flags & 0xC)
+    if (mask & ANIM_STATUS_MOTION_A)
     {
         return anim_set_motion_a(obj, value, extra);
     }
-    if (flags & 0xC0)
+    if (mask & ANIM_STATUS_MOTION_C)
     {
         return anim_set_motion_c(obj, value, extra);
     }
-    if (flags & 0x30)
+    if (mask & ANIM_STATUS_MOTION_B)
     {
         return anim_set_motion_b(obj, value, extra);
     }
-    if (flags & 0x100)
+    if (mask & ANIM_STATUS_BIT100)
     {
         return anim_bit100_step(obj, value);
     }
-    if (flags & 0x200)
+    if (mask & ANIM_STATUS_BIT200)
     {
         return anim_bit200_step(obj, value);
     }
-    if (flags & 0x400)
+    if (mask & ANIM_STATUS_BIT400)
     {
         return anim_bit400_step(obj, value);
     }
-    if (flags & 0x800)
+    if (mask & ANIM_STATUS_BIT800)
     {
         return anim_chance_start(obj, value);
     }
-    if (flags & 0x1000)
+    if (mask & ANIM_STATUS_BIT1000)
     {
         return anim_roll_bit1000(obj, value);
     }
-    if (flags & 0x2000)
+    if (mask & ANIM_STATUS_BIT2000)
     {
         return anim_roll_bit2000(obj, value);
     }
-    if (flags & 0x4000)
+    if (mask & ANIM_STATUS_BIT4000)
     {
         return anim_roll_bit4000(obj, value);
     }
-    if (flags & 0x8000)
+    if (mask & ANIM_STATUS_BIT8000)
     {
         return anim_roll_bit8000(obj, value);
     }
@@ -230,142 +251,154 @@ s32 anim_dispatch(struct AnimObj *obj, u32 flags, s32 value, u32 extra)
 
 ASM_FUNC("asm/code_08108AC8/anim_copy_state.s", void anim_copy_state(void))
 
-s32 anim_bit1_chance(struct AnimObj *obj, s32 value)
+/* Tries to inflict status bit 1 (it replaces bit 2) with a chance in percent; returns 1 when it
+ * takes hold. A hero (index < 0, gParty record ~index) loses 30 points of chance with gear 0xF in
+ * record byte 0x37 and 60 with gear 0x11. An enemy is immune when its resistance class
+ * (part[0x1C] bits 2-3) has a 0% entry in gPoseChancePct, is always hit at 100%, and otherwise
+ * loses a third of the missing percent; without a 0x100/0x200 status it also gets unk128 = 0xFF
+ * and unk126 = 1. */
+s32 anim_bit1_chance(struct AnimObj *obj, s32 chance)
 {
     u8 *party;
-    u8 *entry;
-    s32 actor;
-    u8 kind;
-    s32 left;
+    u8 *member;
+    s32 hero;
+    u8 gear;
+    s32 resist;
     s32 roll;
-    s32 ok;
+    s32 hit;
 
-    if (obj->bits & 1)
+    if (obj->bits & ANIM_STATUS_BIT1)
     {
         return 0;
     }
     if (obj->index < 0)
     {
         party = gParty;
-        actor = ~obj->index;
-        entry = party + (((actor << 4) - actor) << 2);
-        kind = entry[0x37];
-        if (kind != 0xF)
+        hero = ~obj->index;
+        member = party + (((hero << 4) - hero) << 2);
+        gear = member[0x37];
+        if (gear != 0xF)
         {
-            if (kind == 0x11)
+            if (gear == 0x11)
             {
-                value -= 0x3C;
+                chance -= 60;
             }
         }
         else
         {
-            value -= 0x1E;
+            chance -= 30;
         }
         roll = rand_below(100, mt19937_next());
-        if (value < roll)
+        if (chance < roll)
         {
             return 0;
         }
     }
     else
     {
-        left = 100 - gPoseChancePct[(obj->part[0x1C] >> 2) & 3];
-        if (left == 100)
+        resist = 100 - gPoseChancePct[(obj->part[0x1C] >> 2) & 3];
+        if (resist == 100)
         {
             return 0;
         }
-        if (left != 0)
+        if (resist != 0)
         {
-            s32 margin = value - left / 3;
+            s32 adjusted = chance - resist / 3;
 
             roll = rand_below(100, mt19937_next());
-            ok = 1;
-            if (margin < roll)
+            hit = 1;
+            if (adjusted < roll)
             {
-                ok = 0;
+                hit = 0;
             }
-            if (ok == 0)
+            if (hit == 0)
             {
                 return 0;
             }
         }
-        if ((obj->bits & 0x300) == 0)
+        if ((obj->bits & (ANIM_STATUS_BIT100 | ANIM_STATUS_BIT200)) == 0)
         {
             obj->unk128 = 0xFF;
             obj->unk126 = 1;
         }
     }
-    obj->bits = (obj->bits & 0xFFFC) | 1;
+    obj->bits = (obj->bits & ~(ANIM_STATUS_BIT1 | ANIM_STATUS_BIT2) & 0xFFFF) | ANIM_STATUS_BIT1;
     ((struct AnimFlags77 *)&obj->unk120)->low3 = 4;
     return 1;
 }
 
-s32 anim_bit2_chance(struct AnimObj *obj, s32 value)
+/* Tries to inflict status bit 2 (it replaces bit 1) with a chance in percent; returns 1 when it
+ * takes hold. Same rules as anim_bit1_chance: a hero (index < 0, gParty record ~index) loses 30
+ * points of chance with gear 0xF in record byte 0x37 and 60 with gear 0x11. An enemy is immune
+ * when its resistance class (part[0x1C] bits 2-3) has a 0% entry in gPoseChancePct, is always
+ * hit at 100%, and otherwise loses a third of the missing percent; without a 0x100/0x200 status
+ * it also gets unk128 = 0xFF and unk126 = 1. */
+s32 anim_bit2_chance(struct AnimObj *obj, s32 chance)
 {
     u8 *party;
-    u8 *entry;
-    s32 actor;
-    u8 kind;
-    s32 left;
+    u8 *member;
+    s32 hero;
+    u8 gear;
+    s32 resist;
     s32 roll;
-    s32 ok;
+    s32 hit;
 
-    if (obj->bits & 2)
+    if (obj->bits & ANIM_STATUS_BIT2)
     {
         return 0;
     }
     if (obj->index < 0)
     {
         party = gParty;
-        actor = ~obj->index;
-        entry = party + (((actor << 4) - actor) << 2);
-        kind = entry[0x37];
-        if (kind != 0xF)
+        hero = ~obj->index;
+        member = party + (((hero << 4) - hero) << 2);
+        gear = member[0x37];
+        if (gear != 0xF)
         {
-            if (kind == 0x11)
+            if (gear == 0x11)
             {
-                value -= 0x3C;
+                chance -= 60;
             }
         }
         else
         {
-            value -= 0x1E;
+            chance -= 30;
         }
         roll = rand_below(100, mt19937_next());
-        if (value < roll)
+        if (chance < roll)
         {
             return 0;
         }
     }
     else
     {
-        left = 100 - gPoseChancePct[(obj->part[0x1C] >> 2) & 3];
-        if (left == 100)
+        resist = 100 - gPoseChancePct[(obj->part[0x1C] >> 2) & 3];
+        if (resist == 100)
         {
             return 0;
         }
-        if (left != 0)
+        if (resist != 0)
         {
-            s32 margin = value - left / 3;
+            s32 adjusted = chance - resist / 3;
 
             roll = rand_below(100, mt19937_next());
-            ok = 1;
-            if (margin < roll)
+            hit = 1;
+            if (adjusted < roll)
             {
-                ok = 0;
+                hit = 0;
             }
-            if (ok == 0)
+            if (hit == 0)
             {
                 return 0;
             }
         }
-        if ((obj->bits & 0x300) == 0)
+        if ((obj->bits & (ANIM_STATUS_BIT100 | ANIM_STATUS_BIT200)) == 0)
         {
             obj->unk128 = 0xFF;
             obj->unk126 = 1;
         }
     }
-    obj->bits = (obj->bits & 0xFFFC) | 2;
+    obj->bits = (obj->bits & ~(ANIM_STATUS_BIT1 | ANIM_STATUS_BIT2) & 0xFFFF) | ANIM_STATUS_BIT2;
     ((struct AnimFlags77 *)&obj->unk120)->low3 = 0;
     return 1;
 }

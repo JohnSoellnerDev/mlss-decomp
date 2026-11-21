@@ -226,26 +226,30 @@ u8 point_in_box(s16 *bounds, struct Partner *obj, s32 zMaxIn, s32 zMinIn);
 
 ASM_FUNC("asm/code_08149500/bump_attack_enemy_move_3d_step.s", void bump_attack_enemy_move_3d_step(void))
 
-void enemy_place_body_quadrant(struct Enemy *ent)
+/* Puts the object `part` next to the enemy it is linked to (part->body), on the side that enemy
+ * faces: gFrameAttrTable turns its facing (unk24 bits 0-2) into a quarter, 0 up, 1 right,
+ * 2 down, 3 left. Up is part->unk276 above it; the heights are above the enemy's own (posZ +
+ * unk18), 0x900 up/down, 0xF00 at the sides. */
+void enemy_place_body_quadrant(struct Enemy *part)
 {
-    struct Enemy *body;
-    u8 v;
+    struct Enemy *carrier;
+    u8 quarter;
 
-    body = ent->body;
-    v = gFrameAttrTable[((((u32)body->unk216 << 28) >> 30) << 4) + (((u32)body->unk24 << 29) >> 29) + 8];
-    switch (v)
+    carrier = part->body;
+    quarter = gFrameAttrTable[((((u32)carrier->unk216 << 28) >> 30) << 4) + (((u32)carrier->unk24 << 29) >> 29) + 8];
+    switch (quarter)
     {
     case 0:
-        obj_set_or_add_pos(ent, body->posX, body->posY - ent->unk276, body->posZ + body->unk18 + 0x900, 1, 0);
+        obj_set_or_add_pos(part, carrier->posX, carrier->posY - part->unk276, carrier->posZ + carrier->unk18 + 0x900, 1, 0);
         break;
     case 1:
-        obj_set_or_add_pos(ent, body->posX + 0xA00, body->posY + 0x500, body->posZ + body->unk18 + 0xF00, 1, 0);
+        obj_set_or_add_pos(part, carrier->posX + 0xA00, carrier->posY + 0x500, carrier->posZ + carrier->unk18 + 0xF00, 1, 0);
         break;
     case 2:
-        obj_set_or_add_pos(ent, body->posX, body->posY + 0x300, body->posZ + body->unk18 + 0x900, 1, 0);
+        obj_set_or_add_pos(part, carrier->posX, carrier->posY + 0x300, carrier->posZ + carrier->unk18 + 0x900, 1, 0);
         break;
     case 3:
-        obj_set_or_add_pos(ent, body->posX - 0xA00, body->posY + 0x500, body->posZ + body->unk18 + 0xF00, 1, 0);
+        obj_set_or_add_pos(part, carrier->posX - 0xA00, carrier->posY + 0x500, carrier->posZ + carrier->unk18 + 0xF00, 1, 0);
         break;
     }
 }
@@ -469,51 +473,66 @@ void enemy_check_axis(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     }
 }
 
+/*
+ * Enemy state: lunges at a bro. Picks a random entry (0-3) of the enemy's parameter table at +0x100
+ * for the speed and one of the two values at +0x130 for the kick, aims at the active bro (or the one
+ * owner->unk208 bit 1 names) through collide_react with the table's x/y offsets at +0x140, rises by
+ * sensor[5] pixels along z, takes the entry's sprite value from +0x108, clears the landing flag
+ * (+0x1D6 bit 0) and moves on to enemy_fall_landing_step.
+ */
 void enemy_move_axis(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
     u8 *ai;
-    u8 *tbl;
+    u8 *params;
     s16 *sensor;
-    u32 value;
-    u32 part;
-    u32 sensorVal;
-    u8 idx;
-    u8 pick;
-    struct Partner *target;
+    u32 speed;
+    u32 kick;
+    u32 rise;
+    u8 activeIdx;
+    u8 broIdx;
+    struct Partner *bro;
 
     ai = (u8 *)ent + 0x58;
-    tbl = (u8 *)ent + 0x100;
+    params = (u8 *)ent + 0x100;
     sensor = ent->sensor;
     ent->index = rand_below(4, mt19937_next());
-    value = *(u16 *)(tbl + ent->index * 2);
-    part = *(u16 *)(tbl + rand_below(2, mt19937_next()) * 2 + 0x30);
-    sensorVal = (u16)sensor[5];
-    if (find_active_entry(owner, &idx) != 0)
+    speed = *(u16 *)(params + ent->index * 2);
+    kick = *(u16 *)(params + rand_below(2, mt19937_next()) * 2 + 0x30);
+    rise = (u16)sensor[5];
+    if (find_active_entry(owner, &activeIdx) != 0)
     {
-        pick = idx;
+        broIdx = activeIdx;
     }
     else
     {
-        pick = (((u32)owner->unk208) << 30) >> 31;
+        broIdx = (((u32)owner->unk208) << 30) >> 31;
     }
-    target = *(struct Partner **)((u8 *)owner + pick * 4 + 0x28);
-    collide_react(owner, ent, target, part, value, (s8)tbl[0x40], (s8)tbl[0x41], 0x22, 0);
-    start_axis_move(ent, ent->posZ + (sensorVal << 8), ent->runLeft, 0);
+    /* owner->party[broIdx] */
+    bro = *(struct Partner **)((u8 *)owner + broIdx * 4 + 0x28);
+    collide_react(owner, ent, bro, kick, speed, (s8)params[0x40], (s8)params[0x41], 0x22, 0);
+    start_axis_move(ent, ent->posZ + (rise << 8), ent->runLeft, 0);
     obj_set_cell_coord(ent, 0, 2);
     ((struct Mode3 *)&ent->unk214)->mode = 1;
     ((struct Mode3 *)&ent->unk24)->mode = 0;
-    ent->sprite->unk20 = *(u16 *)(tbl + *(u16 *)(ai + 0x178) * 2 + 8);
+    /* ai + 0x178 is ent->index */
+    ent->sprite->unk20 = *(u16 *)(params + *(u16 *)(ai + 0x178) * 2 + 8);
     ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
     *stateOut = (u32)enemy_fall_landing_step;
 }
 
+/*
+ * Enemy state after enemy_move_axis: until the landing flag (+0x1D6 bit 0) is set, steps the lunge
+ * (step_pos_xyz); when it ends, sets the floor height (sensor[4] pixels) and the fall speed (the
+ * picked entry's u16 at params + 0x28) and sets the flag. Then drops the height unk18 by zspeed
+ * each frame; on reaching the floor it either lunges again or hops to its partner, at random.
+ */
 void enemy_fall_landing_step(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
-    u8 *tbl;
+    u8 *params;
     s16 *sensor;
-    u8 done;
+    u8 moving;
 
-    tbl = (u8 *)ent + 0x100;
+    params = (u8 *)ent + 0x100;
     sensor = ent->sensor;
     if (((struct Flags8 *)&ent->unk1D6)->bit0 == 0)
     {
@@ -521,11 +540,12 @@ void enemy_fall_landing_step(struct Owner *owner, struct Enemy *ent, u32 *stateO
         {
             ((struct Mode3 *)&ent->unk214)->mode = 0;
         }
-        done = step_pos_xyz(ent);
-        if (done == 0)
+        moving = step_pos_xyz(ent);
+        if (moving == 0)
         {
+            /* unk2D4: floor height, 24.8 fixed point */
             ent->unk2D4 = (u16)sensor[4] << 8;
-            ent->zspeed = *(u16 *)(tbl + ent->index * 2 + 0x28);
+            ent->zspeed = *(u16 *)(params + ent->index * 2 + 0x28);
             ((struct Mode3 *)&ent->unk214)->mode = 1;
             ((struct Mode3 *)&ent->unk24)->mode = 0;
             ((struct Flags8 *)&ent->unk1D6)->bit0 = 1;
@@ -555,11 +575,18 @@ void enemy_fall_landing_step(struct Owner *owner, struct Enemy *ent, u32 *stateO
 
 ASM_FUNC("asm/code_08149500/enemy_hop_to_partner.s", void enemy_hop_to_partner(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 
+/*
+ * Enemy state: like enemy_fall_landing_step, but the fall speed comes from the record
+ * (rec + 0x32, one u16 per index) and it always goes back to enemy_move_axis. Until the
+ * landing flag (+0x1D6 bit 0) is set, steps the lunge (step_pos_xyz); when it ends, sets the
+ * floor height (sensor[4] pixels) and the fall speed and sets the flag. Then drops the height
+ * unk18 by zspeed each frame until it reaches the floor.
+ */
 void enemy_state_step_xyz(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
     struct Record *rec;
     s16 *sensor;
-    u8 done;
+    u8 moving;
 
     rec = ent->rec;
     sensor = ent->sensor;
@@ -569,9 +596,10 @@ void enemy_state_step_xyz(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
         {
             ((struct Mode3 *)&ent->unk214)->mode = 0;
         }
-        done = step_pos_xyz(ent);
-        if (done == 0)
+        moving = step_pos_xyz(ent);
+        if (moving == 0)
         {
+            /* unk2D4: floor height, 24.8 fixed point */
             ent->unk2D4 = (u16)sensor[4] << 8;
             ent->zspeed = *(u16 *)((u8 *)rec + ent->index * 2 + 0x32);
             ((struct Mode3 *)&ent->unk214)->mode = 1;
@@ -594,23 +622,28 @@ void enemy_state_step_xyz(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     }
 }
 
+/* Per-frame enemy update: draws the sprite with 0x40 while unk1D8 bit 1 is set (0x20 otherwise),
+ * refreshes the "bro inside the enemy's box" bit 0 (set_box_flag_1d8), sets bit 1 when a bro has
+ * state 4 (bro 0 only while bits 1 and 2 are clear) and a bro is active, clears it again once both
+ * bros are at height 0, then runs the current state handler (unk1A0[0], the Ai's slot 0x148). */
 void enemy_update_draw_flags(struct Owner *owner, struct Enemy *ent)
 {
     u8 *ai;
-    struct Sprite *spr;
+    struct Sprite *sprite;
     u8 *flags;
-    u8 idx;
-    u8 *slot;
+    u8 broIdx;
+    u8 *stateSlot;
 
     ai = (u8 *)ent + 0x58;
-    spr = ent->sprite;
+    sprite = ent->sprite;
     flags = (u8 *)&ent->unk1D8;
-    spr->unk20 = (*flags << 30) >> 31 ? 0x40 : 0x20;
+    sprite->unk20 = (*flags << 30) >> 31 ? 0x40 : 0x20;
     set_box_flag_1d8(owner, ent, (u32 *)ent->unk1A0);
     if ((((*flags << 29) >> 31) == 0 && ((*flags << 30) >> 31) == 0 && owner->party[0]->unk4 == 4) || owner->party[1]->unk4 == 4)
     {
-        if (find_active_entry(owner, &idx) != 0)
+        if (find_active_entry(owner, &broIdx) != 0)
         {
+            /* ai + 0x180 is ent->unk1D8 */
             ((struct Flags8 *)(ai + 0x180))->bit1 = 1;
         }
     }
@@ -618,8 +651,8 @@ void enemy_update_draw_flags(struct Owner *owner, struct Enemy *ent)
     {
         ((struct Flags8 *)(ai + 0x180))->bit1 = 0;
     }
-    slot = ai + 0x148;
-    ((void (*)(struct Owner *, struct Enemy *, u8 *))(*(void **)slot))(owner, ent, slot);
+    stateSlot = ai + 0x148;
+    ((void (*)(struct Owner *, struct Enemy *, u8 *))(*(void **)stateSlot))(owner, ent, stateSlot);
 }
 
 void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
@@ -654,38 +687,49 @@ void set_box_flag_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
     }
 }
 
+/* Enemy state: starts a slow fall (1 px a frame, sprite mode 4). It remembers its current height
+   (posZ + unk18) in unk2C4 and picks where the fall ends (unk2D4, compared with posZ + unk18): with
+   a 3% chance at height 0x1800, otherwise 0x2400 (36 px) below where it is now. Clears the landing
+   flag (+0x1D6 bit 0), sets bit 1 and goes on in fall_landing_active. */
 void enemy_start_fall(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
- u8 *ai = (u8 *)ent + 0x58;
- u8 dice[2];
- u8 *roll;
- s32 threshold;
- ent->unk2C4 = ent->posZ + ent->unk18;
- dice[0] = 3;
- roll = &dice[1];
- *roll = rand_below(0x64, mt19937_next());
- threshold = (s8)*(volatile u8 *)dice;
- if ((s8)*(volatile u8 *)roll - threshold < 0)
-  ent->unk2D4 = 0x1800;
- else
-  ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
- ent->zspeed = 0x100;
- ((struct Mode3 *)&ent->unk214)->mode = 4;
- ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
- ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
- *stateOut = (u32)fall_landing_active;
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 chance[2];
+    u8 *roll;
+    s32 percent;
+
+    ent->unk2C4 = ent->posZ + ent->unk18;
+    chance[0] = 3; /* percent */
+    roll = &chance[1];
+    *roll = rand_below(100, mt19937_next());
+    percent = (s8)*(volatile u8 *)chance;
+    if ((s8)*(volatile u8 *)roll - percent < 0)
+        ent->unk2D4 = 0x1800;
+    else
+        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+    ent->zspeed = 0x100;
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    /* ai + 0x17E is ent->unk1D6 */
+    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+    *stateOut = (u32)fall_landing_active;
 }
 
+/* Enemy state: drop the height by zspeed each frame. When the enemy touches something
+ * (unk24 bits 15-16), or comes within 0x2D00 of the active bro's height, pick the next state:
+ * chase that bro (enemy_seek_partner_axis) if unk1D8 bit 0 (the bro is inside the enemy's box,
+ * see set_box_flag_1d8) and bit 1 are both set, otherwise wander (start_axis_wander_alt).
+ * With no active bro the in-box flag is cleared and the fall goes on. */
 void fall_landing_pick_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
-    u8 idx;
-    struct Partner *entry;
+    u8 broIdx;
+    struct Partner *bro;
 
     ent->unk18 = ent->unk18 - ent->zspeed;
     if ((*(u32 *)&ent->unk24 & 0x18000) != 0)
     {
         if ((((u32)*(u8 *)&ent->unk1D8) << 31) != 0 && (s32)(((u32)*(u8 *)&ent->unk1D8) << 30) < 0
-            && find_active_entry(owner, &idx) != 0)
+            && find_active_entry(owner, &broIdx) != 0)
         {
             *stateOut = (u32)enemy_seek_partner_axis;
             return;
@@ -693,13 +737,14 @@ void fall_landing_pick_1d8(struct Owner *owner, struct Enemy *ent, u32 *stateOut
         *stateOut = (u32)start_axis_wander_alt;
         return;
     }
-    if (find_active_entry(owner, &idx) == 0)
+    if (find_active_entry(owner, &broIdx) == 0)
     {
         ((struct Flags8 *)&ent->unk1D8)->bit0 = 0;
         return;
     }
-    entry = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
-    if (ent->posZ + ent->unk18 > entry->posZ + entry->unk18 + 0x2D00)
+    /* owner->party[broIdx] */
+    bro = *(struct Partner **)((u8 *)owner + broIdx * 4 + 0x28);
+    if (ent->posZ + ent->unk18 > bro->posZ + bro->unk18 + 0x2D00)
     {
         return;
     }
@@ -799,26 +844,32 @@ NONMATCH("asm/code_08149500/enemy_check_owner_box.s", void enemy_check_owner_box
 }
 END_NONMATCH
 
+/* Enemy state: enemy_start_fall, but the fall goes on in fall_landing. Starts a slow fall (1 px a
+   frame, sprite mode 4), remembers its current height (posZ + unk18) in unk2C4 and picks where the
+   fall ends (unk2D4): with a 3% chance at height 0x1800, otherwise 0x2400 (36 px) below where it is
+   now. Clears the landing flag (+0x1D6 bit 0) and sets bit 1. */
 void enemy_start_fall_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
- u8 *ai = (u8 *)ent + 0x58;
- u8 dice[2];
- u8 *roll;
- s32 threshold;
- ent->unk2C4 = ent->posZ + ent->unk18;
- dice[0] = 3;
- roll = &dice[1];
- *roll = rand_below(0x64, mt19937_next());
- threshold = (s8)*(volatile u8 *)dice;
- if ((s8)*(volatile u8 *)roll - threshold < 0)
-  ent->unk2D4 = 0x1800;
- else
-  ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
- ent->zspeed = 0x100;
- ((struct Mode3 *)&ent->unk214)->mode = 4;
- ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
- ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
- *stateOut = (u32)fall_landing;
+    u8 *ai = (u8 *)ent + 0x58;
+    u8 chance[2];
+    u8 *roll;
+    s32 percent;
+
+    ent->unk2C4 = ent->posZ + ent->unk18;
+    chance[0] = 3; /* percent */
+    roll = &chance[1];
+    *roll = rand_below(100, mt19937_next());
+    percent = (s8)*(volatile u8 *)chance;
+    if ((s8)*(volatile u8 *)roll - percent < 0)
+        ent->unk2D4 = 0x1800;
+    else
+        ent->unk2D4 = ent->posZ + ent->unk18 - 0x2400;
+    ent->zspeed = 0x100;
+    ((struct Mode3 *)&ent->unk214)->mode = 4;
+    /* ai + 0x17E is ent->unk1D6 */
+    ((struct Flags8 *)(ai + 0x17E))->bit0 = 0;
+    ((struct Flags8 *)(ai + 0x17E))->bit1 = 1;
+    *stateOut = (u32)fall_landing;
 }
 
 NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_partner_axis_alt(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
@@ -861,38 +912,46 @@ NONMATCH("asm/code_08149500/enemy_seek_partner_axis_alt.s", void enemy_seek_part
     }
 }
 END_NONMATCH
+
+/* Returns whether the active party member is within the enemy's reach: needs unk1D8 bit 0 (a member
+ * is in its zone, set_box_flag_1d8) and bit 1, then checks the member against a box around the
+ * enemy reaching sensor[8]/[9]/[10]/[11] tiles left/up/right/down. */
 u8 entry_box_check(struct Owner *owner, struct Enemy *ent)
 {
     s16 *sensor;
     s16 box[8];
-    u8 idx;
-    struct Partner *entry;
-    s16 px;
-    s16 py;
+    u8 slot;
+    struct Partner *member;
+    s16 x;
+    s16 y;
 
     sensor = ent->sensor;
-    if ((((u32)*(u8 *)&ent->unk1D8) << 31) == 0)
+    if ((((u32)*(u8 *)&ent->unk1D8) << 31) == 0) /* bit 0 clear */
     {
         return 0;
     }
-    if (find_active_entry(owner, &idx) == 0)
+    if (find_active_entry(owner, &slot) == 0)
     {
         return 0;
     }
-    if ((s32)(((u32)*(u8 *)&ent->unk1D8) << 30) >= 0)
+    if ((s32)(((u32)*(u8 *)&ent->unk1D8) << 30) >= 0) /* bit 1 clear */
     {
         return 0;
     }
-    entry = *(struct Partner **)((u8 *)owner + idx * 4 + 0x28);
-    px = ent->posX / 0x100;
-    py = ent->posY / 0x100;
-    box[0] = px - sensor[8] * 0x10;
-    box[3] = py - sensor[9] * 0x10;
-    box[1] = px + sensor[10] * 0x10;
-    box[2] = py + sensor[11] * 0x10;
-    return (u8)point_in_box(box, entry, 0x7FFF, 0) == 1;
+    member = *(struct Partner **)((u8 *)owner + slot * 4 + 0x28); /* owner->party[slot] */
+    x = ent->posX / 0x100;
+    y = ent->posY / 0x100;
+    box[0] = x - sensor[8] * 0x10;  /* left */
+    box[3] = y - sensor[9] * 0x10;  /* top */
+    box[1] = x + sensor[10] * 0x10; /* right */
+    box[2] = y + sensor[11] * 0x10; /* bottom */
+    return (u8)point_in_box(box, member, 0x7FFF, 0) == 1;
 }
 
+/* Enemy state: the enemy appears. Picks one of its record's 4 variants (index 0-3) at random, links
+ * and shows its sprite (sprite mode 1, movement mode 1) with animation record 1, stepped once, and
+ * the variant's sprite value from the record's first 4 bytes; clears flags 0x20C bits 5-7, sets
+ * 0x1D6 bit 4, and goes on to enemy_follow_or_hop with start_handler_acfd as its handler. */
 void enemy_pick_entry_sprite(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
     struct Record *rec;
@@ -915,31 +974,37 @@ void enemy_pick_entry_sprite(struct Owner *owner, struct Enemy *ent, u32 *stateO
 
 ASM_FUNC("asm/code_08149500/enemy_follow_or_hop.s", void enemy_follow_or_hop(struct Owner *owner, struct Enemy *ent, u32 *stateOut))
 
+/* Enemy state: start a fall onto a bro. Takes the active bro (or the one owner->unk208 bit 1
+ * names), remembers the enemy's current height (posZ + unk18) in unk2C4, aims the fall at sensor[4]
+ * pixels above that bro's posZ (unk2D4), takes the fall speed from the picked variant's u16 at
+ * rec + 0x14, sets movement mode 4 and goes on to behavior_fall_step. */
 void enemy_aim_at_entry(struct Owner *owner, struct Enemy *ent, u32 *stateOut)
 {
     u8 *ai;
     struct Record *rec;
     s16 *sensor;
-    u8 idx;
-    u8 pick;
-    u32 shifted;
-    struct Partner *entry;
+    u8 activeIdx;
+    u8 broIdx;
+    u32 aboveBro;
+    struct Partner *bro;
 
     ai = (u8 *)ent + 0x58;
     rec = ent->rec;
     sensor = ent->sensor;
-    if (find_active_entry(owner, &idx) != 0)
+    if (find_active_entry(owner, &activeIdx) != 0)
     {
-        pick = idx;
+        broIdx = activeIdx;
     }
     else
     {
-        pick = (((u32)owner->unk208) << 30) >> 31;
+        broIdx = (((u32)owner->unk208) << 30) >> 31;
     }
-    entry = *(struct Partner **)((u8 *)owner + pick * 4 + 0x28);
+    /* owner->party[broIdx] */
+    bro = *(struct Partner **)((u8 *)owner + broIdx * 4 + 0x28);
     ent->unk2C4 = ent->posZ + ent->unk18;
-    shifted = (u16)sensor[4];
-    ent->unk2D4 = entry->posZ + (shifted << 8);
+    aboveBro = (u16)sensor[4];
+    ent->unk2D4 = bro->posZ + (aboveBro << 8);
+    /* ai + 0x178 is ent->index */
     ent->zspeed = *(u16 *)((u8 *)rec + *(u16 *)(ai + 0x178) * 2 + 0x14);
     ((struct Mode3 *)&ent->unk214)->mode = 4;
     *stateOut = (u32)behavior_fall_step;

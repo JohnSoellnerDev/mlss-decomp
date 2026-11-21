@@ -11,11 +11,23 @@ struct ActorPose
     u8 unk21;
 };
 
+/* ActorPose.flags; bit 3 (8) is set when the animation has reached its end */
 struct PoseFlagBits
 {
     u8 bit0 : 1;
-    u8 mode : 2;
+    u8 mode : 2; /* at the animation's end: 0 loop, 1 hold the last frame, 2 stop */
     u8 high : 5;
+};
+
+/* ActorPose.flags: the animation has reached its end */
+#define POSE_ANIM_DONE 8
+
+/* ActorPose.unk11 */
+struct PoseFacingBits
+{
+    u8 low6 : 6;
+    u8 mirrored : 1; /* facing the other way */
+    u8 high : 1;
 };
 
 struct Flags79Bits
@@ -207,10 +219,14 @@ void pose_update_if_visible_g(struct ActorObj *obj);
 void remove_if_no_index(struct ActorObj *obj);
 void obj_list_push_arg(struct ActorObj *obj, u32 arg);
 
+/* Once the current animation has finished: sets owner-state flag 0x40000000 (both copies), plays
+ * action 6 (looping) and sound 0x9D, and spawns object 0x405A at the actor's position, facing the
+ * same way, as its child. The child plays action 0 and holds its last frame, with tag 0xFF;
+ * await_child_pose then waits for it. */
 void spawn_child_405a(struct ActorObj *obj)
 {
-    s32 mode_clear;
-    struct ActorPart *rec;
+    s32 clearMode;
+    struct ActorPart *part;
 
     if (obj->pose->flags & 8)
     {
@@ -218,20 +234,24 @@ void spawn_child_405a(struct ActorObj *obj)
         sprite_set_action(obj, 6, 0, 0);
         set_slot_value(0x9D, -1);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
-        mode_clear = ~6;
-        rec = obj->part;
-        obj->child = obj_spawn(rec, 0x405A, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100,
+        clearMode = ~6;
+        part = obj->part;
+        /* bit 6 of pose->unk11: facing (mirrored) */
+        obj->child = obj_spawn(part, 0x405A, obj->posX / 0x100, obj->posY / 0x100, obj->posH / 0x100,
                                ((u32)obj->pose->unk11 << 25) >> 31, 1);
         sprite_set_action(obj->child, 0, 0, 0);
-        obj->child->pose->flags = (obj->child->pose->flags & mode_clear) | 2;
+        /* mode 1: hold the last frame */
+        obj->child->pose->flags = (obj->child->pose->flags & clearMode) | 2;
         obj->child->tag = 0xFF;
         obj->state = await_child_pose;
     }
 }
 
+/* Once the current animation has finished: releases the child, plays sound 0x6C and moves (speed 0x200)
+   to the part's target, playing action 2 (looping) facing the default way; turn_and_arrive follows. */
 void finish_child_and_move(struct ActorObj *obj)
 {
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_ANIM_DONE)
     {
         obj_release(obj->child);
         set_slot_value(0x6C, -1);
@@ -244,16 +264,23 @@ void finish_child_and_move(struct ActorObj *obj)
         start_motion(obj);
         sprite_set_action(obj, 2, 0, 0);
         ((struct PoseFlagBits *)&obj->pose->flags)->mode = 0;
-        ((struct Flags77Bits *)&obj->pose->unk11)->bit6 = 0;
+        ((struct PoseFacingBits *)&obj->pose->unk11)->mirrored = 0;
         obj->state = turn_and_arrive;
     }
 }
 
+/*
+ * State: once the pose signals its event (flag 8), switch to action 6, play
+ * sound 0x85 (set_slot_value plays a sound) and launch a projectile (sprite
+ * 0x4059) from 12 px left / 50 px above this actor. The projectile flies at
+ * 3 px per frame to the owner's part target; remove_if_no_index makes it hit
+ * and vanish when it arrives.
+ */
 void spawn_child_4059(struct ActorObj *obj)
 {
     struct ActorObj *owner;
-    struct ActorObj *child;
-    struct ActorPart *rec;
+    struct ActorObj *shot;
+    struct ActorPart *part;
 
     if (obj->pose->flags & 8)
     {
@@ -261,34 +288,41 @@ void spawn_child_4059(struct ActorObj *obj)
         set_slot_value(0x85, -1);
         obj->state = pose_update_if_visible_g;
         owner = obj->owner;
-        rec = obj->part;
-        child = obj_spawn(rec, 0x4059, obj->posX / 0x100 - 0xC, obj->posY / 0x100,
-                          obj->posH / 0x100 + 0x32, 1, 1);
-        obj->child = child;
-        child->tag = 0xFF;
-        ((struct Flags78Bits *)&child->flags78)->top3 = 1;
-        child->param9C = obj->param9C;
-        child->paramA0 = obj->paramA0;
-        child->paramA4 = obj->paramA4;
-        child->paramA8 = obj->paramA8;
-        child->targetX = owner->part->targetX;
-        child->targetY = owner->part->targetY;
-        child->targetH = owner->part->targetH;
-        ((struct Flags79Bits *)&child->flags79)->bit5 = 1;
-        child->motionSpeed = 0x300;
-        child->motionStart = 0;
-        start_motion(child);
-        child->unk6C = obj->unk6C;
-        obj_list_push_arg(child, 0);
-        child->state = remove_if_no_index;
+        part = obj->part;
+        shot = obj_spawn(part, 0x4059, obj->posX / 0x100 - 12, obj->posY / 0x100,
+                         obj->posH / 0x100 + 50, 1, 1);
+        obj->child = shot;
+        shot->tag = 0xFF;
+        ((struct Flags78Bits *)&shot->flags78)->top3 = 1;
+        shot->param9C = obj->param9C;
+        shot->paramA0 = obj->paramA0;
+        shot->paramA4 = obj->paramA4;
+        shot->paramA8 = obj->paramA8;
+        /* fly to the owner part's target (absolute target, speed 3.0) */
+        shot->targetX = owner->part->targetX;
+        shot->targetY = owner->part->targetY;
+        shot->targetH = owner->part->targetH;
+        ((struct Flags79Bits *)&shot->flags79)->bit5 = 1;
+        shot->motionSpeed = 0x300;
+        shot->motionStart = 0;
+        start_motion(shot);
+        shot->unk6C = obj->unk6C;
+        obj_list_push_arg(shot, 0);
+        shot->state = remove_if_no_index;
     }
 }
 
+/*
+ * State: once the actor's pose sets flag 8, switches it to action 0xA, plays
+ * sound slot 0x85 and spawns a type-0x4059 child 12 px left of and 50 px above
+ * it. The child copies the actor's params, moves (speed 0x300) to the owner's
+ * part target and removes itself once its index is clear.
+ */
 void spawn_child_4059_b(struct ActorObj *obj)
 {
     struct ActorObj *owner;
     struct ActorObj *child;
-    struct ActorPart *rec;
+    struct ActorPart *part;
 
     if (obj->pose->flags & 8)
     {
@@ -296,8 +330,8 @@ void spawn_child_4059_b(struct ActorObj *obj)
         obj->state = pose_update_if_visible_f;
         set_slot_value(0x85, -1);
         owner = obj->owner;
-        rec = obj->part;
-        child = obj_spawn(rec, 0x4059, obj->posX / 0x100 - 0xC, obj->posY / 0x100,
+        part = obj->part;
+        child = obj_spawn(part, 0x4059, obj->posX / 0x100 - 0xC, obj->posY / 0x100,
                           obj->posH / 0x100 + 0x32, 1, 1);
         obj->child = child;
         child->tag = 0xFF;

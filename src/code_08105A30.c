@@ -13,8 +13,8 @@ struct MsBits
 struct PoseTail
 {
     u8 filler0[0xC4];
-    s8 unkC4;
-    s8 unkC5;
+    s8 unkC4; /* aim point offset Y (pixels), as Obj.unkCC */
+    s8 unkC5; /* aim point offset height, as Obj.unkCD */
 };
 
 struct Sprite
@@ -39,42 +39,70 @@ struct Obj
     u8 filler0[0x10];
     struct Sprite *link;
     u8 filler14[0x18 - 0x14];
-    s32 pos18;
-    s32 pos1C;
-    s32 pos20;
+    s32 posX;   /* position, 1/0x100 pixels */
+    s32 posY;
+    s32 posH;
     u8 filler24[0x7E - 0x24];
     u8 unk7E;
     u8 filler7F[0xCC - 0x7F];
     s8 unkCC;
     s8 unkCD;
     u8 filler0CE[0xD8 - 0xCE];
-    s32 unkD8;
-    s32 unkDC;
-    s32 unkE0;
+    s32 destX;  /* where state_move_to_target takes it */
+    s32 destY;
+    s32 destH;
     u8 filler0E4[0xF5 - 0xE4];
-    u8 unkF5;
-    u16 unkF6;
-    u16 unkF8;
+    u8 level;   // battle copies of the hero's PartyMember stats
+    u16 hp;
+    u16 maxHp;
     u8 filler0FA[0xFC - 0xFA];
-    u16 unkFC;
-    u16 unkFE;
+    u16 bp;
+    u16 maxBp;
     u8 filler100[0x102 - 0x100];
-    u16 unk102;
-    u16 unk104;
-    u16 unk106;
-    u16 unk108;
+    u16 unk102; // PartyMember stat1C
+    u16 unk104; // PartyMember stat24
+    u16 unk106; // PartyMember stat20
+    u16 unk108; // PartyMember stat28
     u8 filler10A[0x111 - 0x10A];
     u8 unk111;
     u8 filler112[0x12B - 0x112];
-    u8 unk12B;
-    u8 unk12C;
-    u8 unk12D;
+    u8 unk12B; // PartyMember unk35 + 1
+    u8 unk12C; // PartyMember unk37 + 1
+    u8 unk12D; // PartyMember unk38 + 1
 };
 
 struct CurObj
 {
     u8 filler0[0xEC];
-    s16 unkEC;
+    s16 notPartyIndex; // ~index of the hero's record in gParty
+};
+
+// A hero's record in gParty (0x3C bytes each).
+struct PartyMember
+{
+    u8 filler0[0xE];
+    u16 hp;
+    u16 unk10;
+    u16 maxHp;
+    u16 bp;
+    u16 unk16;
+    u16 maxBp;
+    u8 filler1A[0x1C - 0x1A];
+    u16 stat1C; // POW, DEF, SPEED and STACHE are presumably these four
+    u8 filler1E[0x20 - 0x1E];
+    u16 stat20;
+    u8 filler22[0x24 - 0x22];
+    u16 stat24;
+    u8 filler26[0x28 - 0x26];
+    u16 stat28;
+    u8 filler2A[0x30 - 0x2A];
+    u8 level;
+    u8 filler31[0x35 - 0x31];
+    u8 unk35;
+    u8 filler36;
+    u8 unk37;
+    u8 unk38;
+    u8 filler39[0x3C - 0x39];
 };
 
 struct SysKeys3E
@@ -99,10 +127,11 @@ struct Menu
     u16 unk4A;
 };
 
+/* A task list_add_task adds; it runs its state with itself as the Owner */
 struct Entry
 {
     u8 filler0[0xC];
-    void *unkC;
+    void *target; /* Owner.target of the task */
 };
 
 struct Owner
@@ -180,19 +209,23 @@ struct World
 extern struct World *gWorld;
 extern u8 *gParty;
 extern u8 gSys[];
+#define SYS_LANGUAGE 0x8C0 /* gSys[SYS_LANGUAGE]: language index 0-4 */
 extern u16 gGlyphIndexTable[];
 extern u32 gMapTable[];
 
 extern const u8 gClaimKindTable[];
 extern const u32 gLangTextA[];
 extern const u32 gLangTextB[];
-extern const u32 gHeroEntryTextTable[];
+extern const u32 *gHeroEntryTextTable[][3];
 
 void obj_load_record(void *obj, u32 a, s32 b, u32 c, u32 d);
 void obj_setup_load(void *obj, u32 a);
 void *heap_alloc2(u32 size, u32 a, void *table, u32 c);
-void *spawn_kind_sprite(void *buf, u32 kind, void *table, u32 a, u32 b, void *c, s32 d, u32 e,
-                        void (*f)(void));
+/* starts a screen wipe task of shape `shape` lasting `duration` frames (see code_08079F40.c) */
+void *spawn_kind_sprite(void *task, u32 taskKind, void *taskData, u32 shape, u32 duration,
+                        void *releaseArg, s32 window, u32 windowArg, void (*release)(void));
+/* gWorkBuf + WORK_WIPE_POINT: three s16 (x, y, size) a wipe is centred on */
+#define WORK_WIPE_POINT 0x8E10
 void menu_init_clear(void);
 void state_menu_clear_vram(struct Owner *owner);
 extern u8 gSceneTable0820218c[];
@@ -211,7 +244,7 @@ void serial_link_disable(void);
 struct Sprite *spawn_obj_by_id(s32 id, u32 a, u32 b, u32 c);
 void state_marker_reset(struct Owner *owner);
 void state_marker_reset_then_anim(struct Owner *owner);
-s32 move_step(s16 *outH, s16 *outX, s16 *outY, s32 dx, s32 dy, s32 dz, s32 speed);
+s32 move_step(s16 *outX, s16 *outY, s16 *outH, s32 dx, s32 dy, s32 dh, s32 speed);
 void sprite_entry_update(void *obj);
 void state_hero_anim_notify(struct Owner *owner);
 void recalc_char_stats(u8 idx);
@@ -228,7 +261,7 @@ void obj_detach_active(struct Sprite *sprite);
 void obj_release_node(void *node);
 void sprite_set_action(void *obj, u32 action, u32 a2, u32 a3);
 void set_slot_value(u32 slot, s32 value);
-void copy_map_rect_add(void *src, u32 a, u32 b, u32 c, u32 d, u32 e, void *f, u32 g);
+void copy_map_rect_add(void *win, u32 map, u32 x, u32 y, u32 w, u32 h, void *src, u32 add);
 void state_check_slots(struct Owner *owner);
 void state_hero_sprite_check(struct Owner *owner);
 void state_marker_reset_then_text(struct Owner *owner);
@@ -237,29 +270,33 @@ void state_toggle_map_tiles(struct Owner *owner);
 void state_menu_alloc_scene(struct Owner *owner);
 void state_hero_anim_when_active(struct Owner *owner);
 
+/* Level-up screen, once A is pressed: recalculates the shown hero's stats and gives its figure the new
+ * level, then state_assign_figure looks for a hero with another level up. If it's the other hero, a
+ * task moves this figure back (state_move_to_target) and the screen goes on to state_spawn_list_entry;
+ * the same hero again goes to state_figure_jump_start. No more level ups: state_apply_hero_stats. */
 void state_hero_select_confirm(struct Owner *owner)
 {
-    u8 *hero;
-    struct Obj *obj;
+    struct PartyMember *member;
+    struct Obj *figure;
     struct Entry *task;
-    s32 idx;
+    s32 partyIndex;
 
-    if ((((struct SysKeys3E *)gSys)->keys ^ 1) & 1)
+    if ((((struct SysKeys3E *)gSys)->keys ^ A_BUTTON) & A_BUTTON)
     {
         return;
     }
-    idx = owner->posX;
-    hero = gParty + idx * 0x3C;
-    recalc_char_stats(idx);
-    obj = owner->target;
-    obj->unkF5 = hero[0x30];
+    partyIndex = owner->posX;
+    member = (struct PartyMember *)(gParty + partyIndex * 0x3C);
+    recalc_char_stats(partyIndex);
+    figure = owner->target;
+    figure->level = member->level;
     state_assign_figure(owner);
     if (owner->state != state_apply_hero_stats)
     {
-        if (owner->target != obj)
+        if (owner->target != figure)
         {
             task = list_add_task(&gWorld->listHead, state_move_to_target);
-            task->unkC = obj;
+            task->target = figure;
             display_finish(1, -1);
             gWorld->menu248->unk34 = 0x20;
             gWorld->menu248->unk4A = 0xC;
@@ -272,13 +309,16 @@ void state_hero_select_confirm(struct Owner *owner)
     }
 }
 
+/* Draws frame 0 of the animated border strip (gMapTable entry gGlyphIndexTable[0x27], an offset
+ * from gMapTable) as the 30x2-cell top (row 0) and bottom (row 18) of tilemap 1 with palette 8
+ * (+0x8000), then lets state_toggle_map_tiles flip between its two frames (posX), timer from 0. */
 void state_init_map_tiles(struct Owner *owner)
 {
     copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0, 0x1E, 2,
                       (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
     copy_map_rect_add(gWorld->mapSrc250, 1, 0, 0x12, 0x1E, 2,
                       (u8 *)(*(u32 *)(((u32)gGlyphIndexTable[0x27] << 2) + (u32)gMapTable) + (u32)gMapTable), 0x8000);
-    owner->posX = 0;
+    owner->posX = 0; /* border frame */
     owner->timer = 0;
     owner->state = state_toggle_map_tiles;
 }
@@ -301,35 +341,38 @@ NONMATCH("asm/code_08105A30/state_toggle_map_tiles.s", void state_toggle_map_til
 }
 END_NONMATCH
 
+/* Task state: moves the owner's figure toward its destination at 4 pixels a frame (move_step). Once
+ * it is within 18 pixels it snaps onto the destination, sets all four 2-bit fields of its sprite's
+ * byte 0x1F to 2 and ends the task. */
 void state_move_to_target(struct Owner *owner)
 {
     struct Obj *obj;
     s8 *flags;
     u8 *ufl;
-    s16 h;
-    s16 x;
-    s16 y;
+    s16 stepX;
+    s16 stepY;
+    s16 stepH;
 
     obj = owner->target;
-    if (move_step(&h, &x, &y, obj->unkD8 - obj->pos18, obj->unkDC - obj->pos1C, obj->unkE0 - obj->pos20, 0x400) > 0x480)
+    if (move_step(&stepX, &stepY, &stepH, obj->destX - obj->posX, obj->destY - obj->posY, obj->destH - obj->posH, 0x400) > 0x480)
     {
-        obj->pos18 += h;
-        obj->pos1C += x;
-        obj->pos20 += y;
+        obj->posX += stepX;
+        obj->posY += stepY;
+        obj->posH += stepH;
     }
     else
     {
         flags = (s8 *)&obj->link->unk1F;
-        *flags = (*flags & -4) | 2;
+        *flags = (*flags & ~0x03) | 0x02;
         flags = (s8 *)&obj->link->unk1F;
-        *flags = (*flags & -0xD) | 8;
+        *flags = (*flags & ~0x0C) | 0x08;
         flags = (s8 *)&obj->link->unk1F;
-        *flags = (*flags & -0x31) | 0x20;
+        *flags = (*flags & ~0x30) | 0x20;
         ufl = &obj->link->unk1F;
         *ufl = (*ufl & 0x3F) | 0x80;
-        obj->pos18 = obj->unkD8;
-        obj->pos1C = obj->unkDC;
-        obj->pos20 = obj->unkE0;
+        obj->posX = obj->destX;
+        obj->posY = obj->destY;
+        obj->posH = obj->destH;
         owner->state = 0;
     }
 }
@@ -413,72 +456,78 @@ END_NONMATCH
 
 void set_cur_flags_pending(u32 flags);
 void state_menu_open_wait(struct Owner *owner);
+// Copies each hero's level, HP, BP and stats from its gParty record into its battle figure
+// (an HP of 0 becomes 1), raises the pending flag 0x10 and moves on to state_menu_open_wait.
 void state_apply_hero_stats(struct Owner *owner)
 {
-    u8 *rec;
-    u8 *tbl;
-    struct Obj *obj;
-    u16 sVar2;
-    u16 v;
+    u8 *recordEnd;
+    struct PartyMember *member;
+    struct Obj *fig;
+    u16 hp;
+    u16 partyHp;
 
-    obj = gWorld->fig80[0];
-    rec = gParty - ((struct CurObj *)obj)->unkEC * 0x3C;
-    tbl = rec - 0x3C;
-    ((struct MsBits *)&obj->unk7E)->mode = 1;
-    obj->unkF5 = rec[-0xC];
-    v = *(u16 *)(tbl + 0xE);
-    sVar2 = 1;
-    if (v != 0)
+    // The figure keeps ~index, so -notPartyIndex records in is the end of the hero's record.
+    fig = gWorld->fig80[0];
+    recordEnd = gParty - ((struct CurObj *)fig)->notPartyIndex * 0x3C;
+    member = (struct PartyMember *)(recordEnd - 0x3C);
+    ((struct MsBits *)&fig->unk7E)->mode = 1;
+    fig->level = ((struct PartyMember *)recordEnd)[-1].level;
+    partyHp = member->hp;
+    hp = 1;
+    if (partyHp != 0)
     {
-        sVar2 = v;
+        hp = partyHp;
     }
-    obj->unkF6 = sVar2;
-    obj->unkF8 = *(u16 *)(tbl + 0x12);
-    obj->unk106 = *(u16 *)(tbl + 0x20);
-    obj->unk102 = *(u16 *)(tbl + 0x1C);
-    obj->unk104 = *(u16 *)(tbl + 0x24);
-    obj->unk108 = *(u16 *)(tbl + 0x28);
-    obj->unkFC = *(u16 *)(tbl + 0x14);
-    obj->unkFE = *(u16 *)(tbl + 0x18);
-    obj->unk12B = rec[-7] + 1;
-    obj->unk12C = rec[-5] + 1;
-    obj->unk12D = rec[-4] + 1;
+    fig->hp = hp;
+    fig->maxHp = member->maxHp;
+    fig->unk106 = member->stat20;
+    fig->unk102 = member->stat1C;
+    fig->unk104 = member->stat24;
+    fig->unk108 = member->stat28;
+    fig->bp = member->bp;
+    fig->maxBp = member->maxBp;
+    fig->unk12B = ((struct PartyMember *)recordEnd)[-1].unk35 + 1;
+    fig->unk12C = ((struct PartyMember *)recordEnd)[-1].unk37 + 1;
+    fig->unk12D = ((struct PartyMember *)recordEnd)[-1].unk38 + 1;
 
-    obj = gWorld->fig80[1];
-    if (obj != 0)
+    fig = gWorld->fig80[1];
+    if (fig != 0)
     {
-        rec = gParty - ((struct CurObj *)obj)->unkEC * 0x3C;
-        tbl = rec - 0x3C;
-        ((struct MsBits *)&obj->unk7E)->mode = 1;
-        obj->unkF5 = rec[-0xC];
-        v = *(u16 *)(tbl + 0xE);
-        sVar2 = 1;
-        if (v != 0)
+        recordEnd = gParty - ((struct CurObj *)fig)->notPartyIndex * 0x3C;
+        member = (struct PartyMember *)(recordEnd - 0x3C);
+        ((struct MsBits *)&fig->unk7E)->mode = 1;
+        fig->level = ((struct PartyMember *)recordEnd)[-1].level;
+        partyHp = member->hp;
+        hp = 1;
+        if (partyHp != 0)
         {
-            sVar2 = v;
+            hp = partyHp;
         }
-        obj->unkF6 = sVar2;
-        obj->unkF8 = *(u16 *)(tbl + 0x12);
-        obj->unk106 = *(u16 *)(tbl + 0x20);
-        obj->unk102 = *(u16 *)(tbl + 0x1C);
-        obj->unk104 = *(u16 *)(tbl + 0x24);
-        obj->unk108 = *(u16 *)(tbl + 0x28);
-        obj->unkFC = *(u16 *)(tbl + 0x14);
-        obj->unkFE = *(u16 *)(tbl + 0x18);
-        obj->unk12B = rec[-7] + 1;
-        obj->unk12C = rec[-5] + 1;
-        obj->unk12D = rec[-4] + 1;
+        fig->hp = hp;
+        fig->maxHp = member->maxHp;
+        fig->unk106 = member->stat20;
+        fig->unk102 = member->stat1C;
+        fig->unk104 = member->stat24;
+        fig->unk108 = member->stat28;
+        fig->bp = member->bp;
+        fig->maxBp = member->maxBp;
+        fig->unk12B = ((struct PartyMember *)recordEnd)[-1].unk35 + 1;
+        fig->unk12C = ((struct PartyMember *)recordEnd)[-1].unk37 + 1;
+        fig->unk12D = ((struct PartyMember *)recordEnd)[-1].unk38 + 1;
     }
     set_cur_flags_pending(0x10);
     owner->timer = 1;
     owner->state = state_menu_open_wait;
 }
 
+// Waits out owner->timer, then for flag 2 of gWorld->flags2BF with the menu no longer running. Then
+// it either opens the menu (gWorld->unk4 is 0 and figMode2C0 bit 0x20 is clear) or, unless flag 0x20
+// is set, copies each hero figure's HP and BP back into its gParty record (an HP of 0 becomes 1),
+// turns the serial link off and ends the task. The counterpart of state_apply_hero_stats.
 void state_menu_open_wait(struct Owner *owner)
 {
-    s32 idx;
-    struct Sprite *entry;
-    u16 v;
+    s32 partyIndex;
+    struct PartyMember *member;
 
     if (owner->timer != 0)
     {
@@ -494,23 +543,23 @@ void state_menu_open_wait(struct Owner *owner)
         if ((gWorld->flags2BF & 0x20) == 0)
         {
             slot_reset(1);
-            idx = ~((struct CurObj *)gWorld->fig80[0])->unkEC;
-            entry = (struct Sprite *)(gParty + idx * 0x3C);
-            entry->unk0E = gWorld->list58[idx + 6]->unkF6;
-            entry->unk14 = gWorld->list58[idx + 6]->unkFC;
-            if (entry->unk0E == 0)
+            partyIndex = ~((struct CurObj *)gWorld->fig80[0])->notPartyIndex;
+            member = (struct PartyMember *)(gParty + partyIndex * 0x3C);
+            member->hp = gWorld->list58[partyIndex + 6]->hp;
+            member->bp = gWorld->list58[partyIndex + 6]->bp;
+            if (member->hp == 0)
             {
-                entry->unk0E = 1;
+                member->hp = 1;
             }
             if (gWorld->fig80[1] != 0)
             {
-                idx = ~((struct CurObj *)gWorld->fig80[1])->unkEC;
-                entry = (struct Sprite *)(gParty + idx * 0x3C);
-                entry->unk0E = gWorld->list58[idx + 6]->unkF6;
-                entry->unk14 = gWorld->list58[idx + 6]->unkFC;
-                if (entry->unk0E == 0)
+                partyIndex = ~((struct CurObj *)gWorld->fig80[1])->notPartyIndex;
+                member = (struct PartyMember *)(gParty + partyIndex * 0x3C);
+                member->hp = gWorld->list58[partyIndex + 6]->hp;
+                member->bp = gWorld->list58[partyIndex + 6]->bp;
+                if (member->hp == 0)
                 {
-                    entry->unk0E = 1;
+                    member->hp = 1;
                 }
             }
             serial_link_disable();
@@ -519,37 +568,54 @@ void state_menu_open_wait(struct Owner *owner)
     }
 }
 
-ASM_FUNC("asm/code_08105A30/set_text_ptrs.s", void set_text_ptrs(void))
+/* Loads the three texts next_text_id cycles through (unk398) from entry `entry` of
+ * gHeroEntryTextTable in the current language (0 where the entry has none), restarting the
+ * cycle (state3A4) first when unk290 is set. */
+void set_text_ptrs(u32 entry)
+{
+    if (gWorld->unk290 != 0)
+    {
+        gWorld->state3A4 = 0;
+    }
+    gWorld->unk398[0] = gHeroEntryTextTable[entry][0] != NULL ? gHeroEntryTextTable[entry][0][gSys[SYS_LANGUAGE]] : 0;
+    gWorld->unk398[1] = gHeroEntryTextTable[entry][1] != NULL ? gHeroEntryTextTable[entry][1][gSys[SYS_LANGUAGE]] : 0;
+    gWorld->unk398[2] = gHeroEntryTextTable[entry][2] != NULL ? gHeroEntryTextTable[entry][2][gSys[SYS_LANGUAGE]] : 0;
+}
 
+/* Returns the next non-zero text of the three set_text_ptrs loaded, cycling state3A4 through
+ * 0, 1, 2. The second text is a table of 8 texts per hero: it is resolved with unk3A5, taking
+ * hero 1's half when the current object is party member 1 (notPartyIndex ~1), and is first swapped
+ * for gLangTextB when it is gLangTextA and unk33E is at most 1. */
 u32 next_text_id(void)
 {
     u32 text;
-    u8 step;
+    u8 index;
 
     do
     {
-        step = gWorld->state3A4;
-        text = gWorld->unk398[step];
-        if (step == 2)
+        index = gWorld->state3A4;
+        text = gWorld->unk398[index];
+        if (index == 2)
         {
             gWorld->state3A4 = 0;
         }
         else
         {
-            gWorld->state3A4 = step + 1;
+            gWorld->state3A4 = index + 1;
         }
     } while (text == 0);
 
+    /* the text just taken was the second one */
     if (gWorld->state3A4 == 2)
     {
         if (gWorld->unk33E <= 1)
         {
-            if (text == gLangTextA[gSys[0x8C0]])
+            if (text == gLangTextA[gSys[SYS_LANGUAGE]])
             {
-                text = gLangTextB[gSys[0x8C0]];
+                text = gLangTextB[gSys[SYS_LANGUAGE]];
             }
         }
-        if (gWorld->curObj->unkEC == -2)
+        if (gWorld->curObj->notPartyIndex == ~1)
         {
             text = ((u32 *)text)[gWorld->unk3A5 + 8];
         }
@@ -561,9 +627,12 @@ u32 next_text_id(void)
     return text;
 }
 
+/* Returns 1 when the battle is idle, so a state may go on: gWorld->unk40 and unk44 are clear and
+   none of the 8 slot objects has unk111 bit 0 or any of unk7E bits 3-5 set. If flags0B bit 1 is
+   set, it clears it and returns 0, so the caller waits one more frame. Returns 0 otherwise. */
 u8 world_list_idle(void)
 {
-    struct Obj **list;
+    struct Obj **slot;
     s32 flags;
     s32 mask;
     s32 i;
@@ -584,43 +653,44 @@ u8 world_list_idle(void)
         gWorld->flags0B = mask;
         return 0;
     }
+    /* the slot table, four slots per pass */
     i = 0;
-    list = &gWorld->list58[0];
+    slot = &gWorld->list58[0];
     for (; i < 8; i += 4)
     {
-        if (list[0]->unk111 & 1)
+        if (slot[0]->unk111 & 1)
         {
             return 0;
         }
-        if (list[0]->unk7E & 0x38)
+        if (slot[0]->unk7E & 0x38)
         {
             return 0;
         }
-        if (list[1]->unk111 & 1)
+        if (slot[1]->unk111 & 1)
         {
             return 0;
         }
-        if (list[1]->unk7E & 0x38)
+        if (slot[1]->unk7E & 0x38)
         {
             return 0;
         }
-        if (list[2]->unk111 & 1)
+        if (slot[2]->unk111 & 1)
         {
             return 0;
         }
-        if (list[2]->unk7E & 0x38)
+        if (slot[2]->unk7E & 0x38)
         {
             return 0;
         }
-        if (list[3]->unk111 & 1)
+        if (slot[3]->unk111 & 1)
         {
             return 0;
         }
-        if (list[3]->unk7E & 0x38)
+        if (slot[3]->unk7E & 0x38)
         {
             return 0;
         }
-        list += 4;
+        slot += 4;
     }
     return 1;
 }
@@ -629,6 +699,10 @@ ASM_FUNC("asm/code_08105A30/symbol_add.s", void symbol_add(void))
 
 ASM_FUNC("asm/code_08105A30/oam_add_status_icons.s", void oam_add_status_icons(void))
 
+/* Marker sequence, first step: once the timer runs out and no state is busy, hero hero33F takes
+ * action 0 (sprite 0x2067 or 0x2038), a new marker sprite 0x8004 appears at that hero's aim point
+ * (animation mode 1), and its sound (0xFD or 0xEF) plays. After gClaimKindTable[3] frames
+ * state_marker_reset follows. */
 void state_marker_show(struct Owner *owner)
 {
     u16 timer = owner->timer;
@@ -641,11 +715,12 @@ void state_marker_show(struct Owner *owner)
     else if (!is_state_busy())
     {
         struct Obj *hero = gWorld->list58[gWorld->hero33F + 6];
+        /* the hero's body, at Obj + 8 */
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker;
-        s32 vx;
-        s32 vy;
-        s32 t;
+        s32 x;
+        s32 y;
+        s32 groundY;
         s32 flags;
         s32 mask;
 
@@ -653,19 +728,21 @@ void state_marker_show(struct Owner *owner)
         marker = spawn_obj_by_id(0x8004, 3, 2, 0);
         owner->sprite = marker;
         sprite_entry_update(marker);
-        vx = pose->x;
-        if (vx < 0)
+        /* positions are in 1/256 pixels; the screen y is y - z */
+        x = pose->x;
+        if (x < 0)
         {
-            vx += 0xFF;
+            x += 0xFF;
         }
-        marker->x = vx >> 8;
-        t = pose->y - pose->z;
-        if (t < 0)
+        marker->x = x >> 8;
+        groundY = pose->y - pose->z;
+        if (groundY < 0)
         {
-            t += 0xFF;
+            groundY += 0xFF;
         }
-        vy = t >> 8;
-        marker->y = hero->unkCC + vy - hero->unkCD;
+        y = groundY >> 8;
+        marker->y = hero->unkCC + y - hero->unkCD;
+        /* MsBits mode (bits 1-2) = 1 */
         flags = marker->flags;
         mask = ~6;
         mask &= flags;
@@ -696,6 +773,9 @@ void state_marker_reset(struct Owner *owner)
     }
 }
 
+/* Marker sequence: once the timer runs out, restarts the marker sprite on animation 1 and places it
+ * at hero hero340's aim point (animation mode 1). Plays sound 0x29, then
+ * state_marker_reset_then_text follows after gClaimKindTable[1] frames. */
 void state_marker_place_hero(struct Owner *owner)
 {
     u16 timer = owner->timer;
@@ -708,28 +788,32 @@ void state_marker_place_hero(struct Owner *owner)
     else
     {
         struct Obj *hero = gWorld->list58[gWorld->hero340 + 6];
+        /* the hero's body, at Obj + 8 */
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker = owner->sprite;
-        s32 vx;
-        s32 vy;
+        s32 x;
+        s32 y;
         s32 flags;
         s32 mask;
 
+        /* signedTimer is 0 here */
         obj_load_record(marker, 1, -1, 0, signedTimer);
         sprite_entry_update(marker);
-        vx = pose->x;
-        if (vx < 0)
+        /* positions are in 1/256 pixels; the screen y is y - z */
+        x = pose->x;
+        if (x < 0)
         {
-            vx += 0xFF;
+            x += 0xFF;
         }
-        marker->x = vx >> 8;
-        vy = pose->y - pose->z;
-        if (vy < 0)
+        marker->x = x >> 8;
+        y = pose->y - pose->z;
+        if (y < 0)
         {
-            vy += 0xFF;
+            y += 0xFF;
         }
-        vy >>= 8;
-        marker->y = hero->unkCC + vy - hero->unkCD;
+        y >>= 8;
+        marker->y = hero->unkCC + y - hero->unkCD;
+        /* MsBits mode (bits 1-2) = 1 */
         flags = marker->flags;
         mask = ~6;
         mask &= flags;
@@ -741,6 +825,10 @@ void state_marker_place_hero(struct Owner *owner)
     }
 }
 
+/* Marker sequence: once the timer runs out, plays action 1 on hero hero33F's body and turns the
+   marker sprite into the text graphic for the current language (anim 6), placed at the hero's
+   aim point. Plays sound 0x155 and goes straight on to state_marker_reset_then_anim with a
+   0x40-frame timer. */
 void state_marker_text_place(struct Owner *owner)
 {
     u16 timer = owner->timer;
@@ -752,15 +840,16 @@ void state_marker_text_place(struct Owner *owner)
     }
     else
     {
-        struct Owner *pose = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
+        /* the hero's body, at Obj + 8 */
+        struct Owner *body = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
         struct Sprite *marker = owner->sprite;
-        s32 noValue;
-        s32 vx;
-        s32 vy;
+        s32 keep;
+        s32 x;
+        s32 y;
 
-        sprite_set_action(pose, 1, 0, 0);
-        ((struct MsBits *)&pose->sprite->flags)->mode = 1;
-        switch (gSys[0x8C0])
+        sprite_set_action(body, 1, 0, 0);
+        ((struct MsBits *)&body->sprite->flags)->mode = 1;
+        switch (gSys[SYS_LANGUAGE])
         {
         case 0:
             obj_setup_load(marker, 0x2088);
@@ -778,30 +867,33 @@ void state_marker_text_place(struct Owner *owner)
             obj_setup_load(marker, 0x20A6);
             break;
         }
-        noValue = -1;
-        obj_load_record(marker, 6, noValue, 0, 0);
+        keep = -1;
+        obj_load_record(marker, 6, keep, 0, 0);
         sprite_entry_update(marker);
-        vx = ((struct Pos38 *)pose)->x;
-        if (vx < 0)
+        x = ((struct Pos38 *)body)->x;
+        if (x < 0)
         {
-            vx += 0xFF;
+            x += 0xFF;
         }
-        marker->x = vx >> 8;
-        vy = ((struct Pos38 *)pose)->y - ((struct Pos38 *)pose)->z;
-        if (vy < 0)
+        marker->x = x >> 8;
+        y = ((struct Pos38 *)body)->y - ((struct Pos38 *)body)->z;
+        if (y < 0)
         {
-            vy += 0xFF;
+            y += 0xFF;
         }
-        vy >>= 8;
-        marker->y = ((struct PoseTail *)pose)->unkC4 + vy - ((struct PoseTail *)pose)->unkC5;
+        y >>= 8;
+        marker->y = ((struct PoseTail *)body)->unkC4 + y - ((struct PoseTail *)body)->unkC5;
         ((struct MsBits *)&marker->flags)->mode = 1;
-        set_slot_value(0x155, noValue);
+        set_slot_value(0x155, keep);
         owner->timer = 0x40;
         owner->state = state_marker_reset_then_anim;
         owner->state(owner);
     }
 }
 
+/* Marker sequence: once the timer runs out, turns the marker sprite back into graphic 0x8004
+ * (animation 0) and places it at hero hero340's aim point (animation mode 1). Plays sound 0x28,
+ * then state_hero_anim_notify follows after gClaimKindTable[0] frames. */
 void state_marker_gfx_place(struct Owner *owner)
 {
     u16 timer = owner->timer;
@@ -814,29 +906,33 @@ void state_marker_gfx_place(struct Owner *owner)
     else
     {
         struct Obj *hero = gWorld->list58[gWorld->hero340 + 6];
+        /* the hero's body, at Obj + 8 */
         struct Pos38 *pose = (struct Pos38 *)((u8 *)hero + 8);
         struct Sprite *marker = owner->sprite;
-        s32 vx;
-        s32 vy;
+        s32 x;
+        s32 y;
         s32 flags;
         s32 mask;
 
         obj_setup_load(marker, 0x8004);
+        /* signedTimer is 0 here */
         obj_load_record(marker, 0, -1, 0, signedTimer);
         sprite_entry_update(marker);
-        vx = pose->x;
-        if (vx < 0)
+        /* positions are in 1/256 pixels; the screen y is y - z */
+        x = pose->x;
+        if (x < 0)
         {
-            vx += 0xFF;
+            x += 0xFF;
         }
-        marker->x = vx >> 8;
-        vy = pose->y - pose->z;
-        if (vy < 0)
+        marker->x = x >> 8;
+        y = pose->y - pose->z;
+        if (y < 0)
         {
-            vy += 0xFF;
+            y += 0xFF;
         }
-        vy >>= 8;
-        marker->y = hero->unkCC + vy - hero->unkCD;
+        y >>= 8;
+        marker->y = hero->unkCC + y - hero->unkCD;
+        /* MsBits mode (bits 1-2) = 1 */
         flags = marker->flags;
         mask = ~6;
         mask &= flags;
@@ -875,19 +971,23 @@ void state_hero_anim_notify(struct Owner *owner)
     }
 }
 
+/* Marker sequence, after state_hero_anim_notify: once hero hero340's action 3 has finished (sprite flag 8),
+ * that hero goes back to its standing action (action 4, sprite 0x2001 for hero A; action 1, 0x204E for
+ * hero B) and hero hero33F's body takes action 3 in animation mode 1. Sound 0x53 plays and
+ * state_hero_sprite_check follows. */
 void state_hero_anim_when_active(struct Owner *owner)
 {
-    u8 idx;
-    struct Owner *pose;
+    u8 heroIndex;
+    struct Owner *body;
 
-    idx = gWorld->hero340;
-    pose = (struct Owner *)((u8 *)gWorld->list58[idx + 6] + 8);
-    if ((pose->sprite->flags & 8) != 0)
+    heroIndex = gWorld->hero340;
+    body = (struct Owner *)((u8 *)gWorld->list58[heroIndex + 6] + 8);
+    if ((body->sprite->flags & 8) != 0)
     {
-        sprite_set_action(pose, gWorld->hero340 ? 1 : 4, gWorld->hero340 ? 0x204E : 0x2001, 0);
-        pose = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
-        sprite_set_action(pose, 3, 0, 0);
-        ((struct MsBits *)&pose->sprite->flags)->mode = 1;
+        sprite_set_action(body, gWorld->hero340 ? 1 : 4, gWorld->hero340 ? 0x204E : 0x2001, 0);
+        body = (struct Owner *)((u8 *)gWorld->list58[gWorld->hero33F + 6] + 8);
+        sprite_set_action(body, 3, 0, 0);
+        ((struct MsBits *)&body->sprite->flags)->mode = 1;
         owner->state = state_hero_sprite_check;
         set_slot_value(0x53, -1);
     }
@@ -921,16 +1021,22 @@ static inline struct Menu *menu_root(void)
     return gWorld->menu248;
 }
 
-NONMATCH("asm/code_08105A30/state_menu_build.s", void state_menu_build(struct Owner *owner))
+/* Owner state: after owner->timer runs out and nothing else is busy, refreshes the 8 entries of
+ * the menu (menu248), spawns the menu sprite 0x7009 (in the current language) above the screen at
+ * x 0x78, starts display effect 4 (level 0x40) on every palette except the ones the heroes'
+ * figures and the menu sprite use (their unk14 masks), sets the mark callbacks and waits 16
+ * frames in state_wait_menu_clear. */
+void state_menu_build(struct Owner *owner)
 {
     u16 timer = owner->timer;
     s32 signedTimer = owner->timer;
+    s32 i;
     s32 entry;
-    s32 idx;
-    struct Sprite *obj;
-    u32 a;
-    u32 b;
-    s32 value;
+    struct Sprite *menu;
+    u32 heroMask;
+    u32 menuMask;
+    s32 objMask;
+    u32 bgMask;
 
     if (signedTimer != 0)
     {
@@ -938,47 +1044,47 @@ NONMATCH("asm/code_08105A30/state_menu_build.s", void state_menu_build(struct Ow
     }
     else if (!is_state_busy())
     {
-        entry = 0;
+        i = 0;
         do
         {
+            menu_entry_refresh(menu_root(), (u8)i, 0);
+            entry = i + 1;
             menu_entry_refresh(menu_root(), (u8)entry, 0);
-            idx = entry + 1;
-            menu_entry_refresh(menu_root(), (u8)idx, 0);
-            idx = entry + 2;
-            menu_entry_refresh(menu_root(), (u8)idx, 0);
-            idx = entry + 3;
-            menu_entry_refresh(menu_root(), (u8)idx, 0);
-            entry += 4;
-            if (entry > 7)
+            entry = i + 2;
+            menu_entry_refresh(menu_root(), (u8)entry, 0);
+            entry = i + 3;
+            menu_entry_refresh(menu_root(), (u8)entry, 0);
+            i += 4;
+            if (i > 7)
             {
                 break;
             }
         } while (1);
 
-        obj = spawn_obj_by_id(0x7009, gSys[0x8C0], 0, 1);
-        gWorld->menu368 = obj;
-        sprite_entry_update(obj);
-        obj->x = 0x78;
-        obj->y = 0xFFF0;
-        obj->unk0E = 0;
-        ((struct MsBits *)&obj->flags)->b4 = 1;
-        a = gWorld->fig80[0]->link->unk14;
-        b = obj->unk14;
+        menu = spawn_obj_by_id(0x7009, gSys[SYS_LANGUAGE], 0, 1);
+        gWorld->menu368 = menu;
+        sprite_entry_update(menu);
+        menu->x = 0x78;
+        menu->y = 0xFFF0; /* -16: just above the screen, state_menu_slide_in brings it down */
+        menu->unk0E = 0;
+        ((struct MsBits *)&menu->flags)->b4 = 1;
+        bgMask = 0xFFFF;
+        heroMask = gWorld->fig80[0]->link->unk14;
+        menuMask = menu->unk14;
         if (gWorld->fig80[1] != 0)
         {
-            value = ~(gWorld->fig80[1]->link->unk14 | a | b);
+            objMask = ~(gWorld->fig80[1]->link->unk14 | heroMask | menuMask);
         }
         else
         {
-            value = ~(a | b);
+            objMask = ~(heroMask | menuMask);
         }
-        draw_sprite_block(4, 0, 0x40, 0xFFFF, (u16)value);
+        draw_sprite_block(4, 0, 0x40, bgMask, (u16)objMask);
         set_mark_callbacks();
         owner->timer = 0x10;
         owner->state = state_wait_menu_clear;
     }
 }
-END_NONMATCH
 
 void state_menu_slide_in(struct Owner *owner)
 {
@@ -1010,6 +1116,9 @@ void state_menu_slide_in(struct Owner *owner)
     }
 }
 
+/* Owner state: once owner->timer runs out, starts a 360-frame screen wipe (shape 15) centred
+ * 8 pixels above the leading hero's figure (the second one when it exists and figMode2C0 bit 2
+ * is set) that calls menu_init_clear when it ends, then moves on to state_menu_clear_vram. */
 void state_menu_alloc_scene(struct Owner *owner)
 {
     u16 timer = owner->timer;
@@ -1022,44 +1131,44 @@ void state_menu_alloc_scene(struct Owner *owner)
     else
     {
         struct World *world = gWorld;
-        u32 figIdx;
-        struct Obj *fig;
+        u32 heroIdx;
+        struct Obj *hero;
         struct Pos38 *pose;
         u8 *work;
-        void *buf;
-        s32 vx;
-        s32 vy;
-        s32 t;
-        u8 bit;
+        void *task;
+        s32 screenX;
+        s32 screenY;
+        s32 height;
+        u8 second;
 
-        figIdx = 0;
+        heroIdx = 0;
         if (world->fig80[1] != 0)
         {
-            bit = world->figMode2C0 & 4;
-            figIdx = bit != 0;
+            second = world->figMode2C0 & 4;
+            heroIdx = second != 0;
         }
-        fig = world->fig80[figIdx];
-        pose = (struct Pos38 *)((u8 *)fig + 8);
+        hero = world->fig80[heroIdx];
+        pose = (struct Pos38 *)((u8 *)hero + 8);
         work = gWorkBuf;
-        vx = pose->x;
-        if (vx < 0)
+        screenX = pose->x;
+        if (screenX < 0)
         {
-            vx += 0xFF;
+            screenX += 0xFF;
         }
-        vx >>= 8;
-        *(s16 *)(work + 0x8E10) = vx;
-        t = pose->y - pose->z;
-        if (t < 0)
+        screenX >>= 8;
+        *(s16 *)(work + WORK_WIPE_POINT) = screenX;
+        height = pose->y - pose->z;
+        if (height < 0)
         {
-            t += 0xFF;
+            height += 0xFF;
         }
-        vy = t >> 8;
-        vy -= 8;
-        *(s16 *)(work + 0x8E12) = vy;
-        *(s16 *)(work + 0x8E14) = 0xF0;
-        buf = heap_alloc2(0x44, 0, gSceneTable0820218c, 0);
-        world->scene = spawn_kind_sprite(buf, 7, gSceneTable0820218c, 0xF, 0x168,
-                                         gWorkBuf + 0x8E10, signedTimer, 0x37, menu_init_clear);
+        screenY = height >> 8;
+        screenY -= 8;
+        *(s16 *)(work + WORK_WIPE_POINT + 2) = screenY;
+        *(s16 *)(work + WORK_WIPE_POINT + 4) = 0xF0;
+        task = heap_alloc2(0x44, 0, gSceneTable0820218c, 0);
+        world->scene = spawn_kind_sprite(task, 7, gSceneTable0820218c, 15, 360,
+                                         gWorkBuf + WORK_WIPE_POINT, signedTimer, 0x37, menu_init_clear);
         owner->state = state_menu_clear_vram;
     }
 }

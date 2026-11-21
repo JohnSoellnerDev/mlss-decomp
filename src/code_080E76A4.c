@@ -49,23 +49,6 @@ struct ObjWithState
     struct ObjState *state;
 };
 
-struct ObjFields
-{
-    u8 filler0[0x42];
-    u8 unk42;
-    u8 unk43;
-    s32 unk44;
-    s32 unk48;
-};
-
-struct Bits43
-{
-    u8 b0 : 1;
-    u8 b1 : 1;
-    u8 b2 : 1;
-    u8 hi5 : 5;
-};
-
 struct SlotRectU
 {
     u16 x;
@@ -109,7 +92,44 @@ struct SpriteRec
     s32 ofsY;
 };
 
+// SpriteRec.b43: the OAM bits emit_oam_entry takes from it (b42 bit 7 is attr1's vertical flip).
+struct SpriteRecOamBits
+{
+    u8 hflip : 1; // attr1 bit 12
+    u8 size1 : 1; // attr1 bit 14: 16x16 for a square sprite
+    u8 tall : 1;  // attr0 bit 15: vertical shape, 8x16 at size 0
+    u8 tile : 5;  // attr2 tile number (palette 15)
+};
+
+// SpriteRec.flags: bits 3-6 the sprite's style (set_obj_fields; none when bits 3-5 are clear),
+// bit 7 horizontal flip, bits 8-10 how it is placed (0: flipped vertically, 1: at a tile row).
+#define SPRITE_REC_STYLE(flags) (((flags) & 0x78) >> 3)
+#define SPRITE_REC_STYLE_SHOWN 0x38 // any of bits 3-5: the sprite is drawn
+#define SPRITE_REC_HFLIP 0x80
+
+// One animated box sprite: position, which box kind, its frame and a frame timer.
+struct BoxEnt
+{
+    u16 x;
+    u16 y;
+    u16 unk0 : 1;
+    u16 kind : 2;
+    u32 frame : 3;
+    u16 timer : 8;
+    u16 hi : 2;
+};
+
 extern u8 gSys[];
+
+// The OAM write pointer in the system area.
+struct SysOamCursor
+{
+    u8 filler0[0x880];
+    u16 *oam;
+};
+
+#define OAM_ATTR1_SIZE_1  0x4000 // 16x16 for a square sprite
+#define OAM_ATTR2_PALETTE(n) ((n) << 12)
 
 void free_list_move(void *head, void *block);
 
@@ -205,50 +225,203 @@ ASM_FUNC("asm/code_080E76A4/set_box_and_flags.s", void set_box_and_flags(void))
 
 ASM_FUNC("asm/code_080E76A4/update_box_and_scroll.s", void update_box_and_scroll(void))
 
-ASM_FUNC("asm/code_080E76A4/emit_box_oam.s", void emit_box_oam(void))
-
-NONMATCH("asm/code_080E76A4/emit_oam_entry.s", void emit_oam_entry(struct ObjWithState *obj, struct SpriteRec *ent))
+/*
+ * Writes the OAM entry of one animated box sprite (palette 15) at its position in the scrolled
+ * box, skipping it when it is off screen, and steps its animation: kind 0 bobs up and down
+ * (tile 4), kind 1 blinks between tiles 0x11 and 0x12, kind 2 is a 16x16 sprite that sways
+ * left and right (tile 0).
+ */
+void emit_box_oam(struct ObjWithState *obj, struct BoxEnt *box)
 {
     struct ObjState *st;
-    u8 *base;
-    u16 **oamPtr;
+    u16 *oam;
+    s16 x;
+    u16 y;
+    s16 screenY;
+
+    oam = ((struct SysOamCursor *)gSys)->oam;
+    st = obj->state;
+    x = box->x + st->prevX;
+    y = box->y + st->prevY;
+    if (x >= -12 && x <= 252)
+    {
+        screenY = y;
+        if (screenY >= -12)
+        {
+            if (screenY <= 172)
+            {
+                switch ((u32)box->kind)
+                {
+                case 0:
+                    /* attr0: bob 3 pixels every 20 frames */
+                    switch (box->frame)
+                    {
+                    case 0:
+                        *oam++ = (screenY + 3) & 0xFF;
+                        break;
+                    case 1:
+                        *oam++ = (screenY + 6) & 0xFF;
+                        break;
+                    }
+                    *oam++ = (x + 1) & 0x1FF;
+                    if (box->timer > 20)
+                    {
+                        box->frame ^= 1;
+                        box->timer = 0;
+                    }
+                    *oam++ = OAM_ATTR2_PALETTE(15) | 4;
+                    break;
+                case 1:
+                    /* the original masks y with 0x1FF and x with 0xFF here */
+                    *oam++ = (screenY + 3) & 0x1FF;
+                    *oam++ = (box->x + st->prevX + 1) & 0xFF;
+                    /* tile 0x11 for 40 frames, then 0x12 for 20 */
+                    switch (box->frame)
+                    {
+                    case 0:
+                        if (box->timer > 40)
+                        {
+                            box->frame = 1;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 1:
+                        if (box->timer > 20)
+                        {
+                            box->frame = 0;
+                            box->timer = 0;
+                        }
+                        break;
+                    }
+                    *oam++ = (box->frame + 0x11) | 0xF000U;
+                    break;
+                case 2:
+                    *oam++ = (screenY - 8) & 0xFF;
+                    /* attr1: sway from x-16 to x-12 and back, slower at the far end */
+                    switch (box->frame)
+                    {
+                    case 0:
+                        *oam++ = ((x - 16) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer != 0)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 1:
+                        *oam++ = ((x - 15) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer != 0)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 2:
+                        *oam++ = ((x - 14) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer > 2)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 3:
+                        *oam++ = ((x - 13) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer > 4)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 4:
+                        *oam++ = ((x - 12) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer > 6)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 5:
+                        *oam++ = ((x - 13) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer > 4)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 6:
+                        *oam++ = ((x - 14) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer > 2)
+                        {
+                            box->frame++;
+                            box->timer = 0;
+                        }
+                        break;
+                    case 7:
+                        *oam++ = ((x - 15) & 0x1FF) | OAM_ATTR1_SIZE_1;
+                        if (box->timer != 0)
+                        {
+                            box->frame = 0;
+                            box->timer = 0;
+                        }
+                        break;
+                    }
+                    *oam++ = OAM_ATTR2_PALETTE(15);
+                    break;
+                }
+                box->timer++;
+                oam++; /* attr3 is left alone */
+                ((struct SysOamCursor *)gSys)->oam = oam;
+            }
+        }
+    }
+}
+
+/* Writes one OAM entry (palette 15, attr3 left alone) for the object's sprite record at its
+ * position plus offsets and the object's scroll, unless it has no style or is off screen. */
+void emit_oam_entry(struct ObjWithState *obj, struct SpriteRec *ent)
+{
+    struct ObjState *st;
+    u8 *sys;
+    u16 **oamCursor;
     u16 *oam;
     s32 xSum;
-    s32 t;
-    s32 x;
+    s16 x;
     u16 y;
+    s16 screenY;
 
-    if ((ent->flags & 0x38) != 0)
+    if ((ent->flags & SPRITE_REC_STYLE_SHOWN) != 0)
     {
-        s32 w44 = ent->ofsX;
-        xSum = ent->x + w44;
+        s32 ofsX = ent->ofsX;
+        xSum = ent->x + ofsX;
         st = obj->state;
         xSum += st->prevX;
         y = ent->y + ent->ofsY + st->prevY;
-        t = xSum << 16;
-        x = t >> 16;
-        if ((u32)(t + 0xC0000) <= 0x1080000)
+        x = xSum;
+        if (x >= -12 && x <= 252)
         {
-            if ((s16)y >= -12)
+            screenY = y;
+            if (screenY >= -12)
             {
-                if ((s16)y <= 0xAC)
+                if (screenY <= 172)
                 {
-                    base = gSys;
-                    oamPtr = (u16 **)(base + 0x880);
-                    oam = *oamPtr;
-                    *oam = (((u32)ent->b43 << 29) >> 31 << 15) | ((s16)y & 0xFF);
+                    sys = gSys;
+                    oamCursor = &((struct SysOamCursor *)sys)->oam;
+                    oam = *oamCursor;
+                    /* attr0: y, tall shape */
+                    *oam = (((u32)ent->b43 << 29) >> 31 << 15) | (screenY & 0xFF);
                     oam++;
+                    /* attr1: x, 16x16 size, vertical and horizontal flip */
                     *oam = ((((u32)ent->b43 << 30) >> 31) << 14) | (x & 0x1FF) | ((ent->b42 >> 7) << 13) | (((u32)ent->b43 << 31) >> 31 << 12);
                     oam++;
-                    *oam = (ent->b43 >> 3) | 0xF000;
+                    /* attr2: tile, palette 15 */
+                    *oam = (ent->b43 >> 3) | OAM_ATTR2_PALETTE(15);
                     oam += 2;
-                    *oamPtr = oam;
+                    *oamCursor = oam;
                 }
             }
         }
     }
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E76A4/draw_obj_dma_tiles.s", void draw_obj_dma_tiles(void))
 
@@ -381,12 +554,18 @@ END_NONMATCH
 
 ASM_FUNC("asm/code_080E76A4/dma_tile_upload.s", void dma_tile_upload(void))
 
-void set_obj_fields(u32 unused0, struct ObjFields *obj, u32 unused2, u32 unused3, u8 val48, u16 val44, u16 flags)
+/*
+ * Sets up a sprite record's OAM bits and offsets from its flags word (SpriteRec.flags): placing
+ * mode 0 flips it vertically, mode 1 puts it at tile row `row`; bit 7 flips it horizontally, and
+ * the style picks the tile and size: 1 and 3 tile 5, 2 tile 7 (8x16, centred 4 pixels left of `x`),
+ * 9 and 11 tile 9, 10 tile 13 (16x16, centred 8 pixels left). Other modes are left alone.
+ */
+void set_obj_fields(u32 unused0, struct SpriteRec *rec, u32 unused2, u32 unused3, u8 row, u16 x, u16 flags)
 {
     s32 mode;
-    s32 idx;
+    s32 style;
     u8 b42;
-    u32 bit7;
+    u32 hflip;
 
     if ((flags & 0x38) != 0)
     {
@@ -395,44 +574,44 @@ void set_obj_fields(u32 unused0, struct ObjFields *obj, u32 unused2, u32 unused3
         {
             if (mode >= 0)
             {
-                obj->unk44 = val44;
-                bit7 = (flags & 0x80) >> 7;
-                ((struct Bits43 *)&obj->unk43)->b0 = bit7;
+                rec->ofsX = x;
+                hflip = (flags & SPRITE_REC_HFLIP) >> 7;
+                ((struct SpriteRecOamBits *)&rec->b43)->hflip = hflip;
                 if (mode == 0)
                 {
-                    b42 = obj->unk42;
-                    b42 |= 0x80;
-                    obj->unk42 = b42;
+                    b42 = rec->b42;
+                    b42 |= 0x80; /* attr1 vertical flip */
+                    rec->b42 = b42;
                 }
                 else
                 {
-                    obj->unk48 = (u32)val48 << 3;
+                    rec->ofsY = (u32)row << 3;
                 }
-                obj->unk48 -= 8;
-                idx = ((flags & 0x78) >> 3) - 1;
-                switch (idx)
+                rec->ofsY -= 8;
+                style = SPRITE_REC_STYLE(flags);
+                switch (style)
                 {
-                case 0:
-                case 2:
-                    ((struct Bits43 *)&obj->unk43)->hi5 = 5;
-                    ((struct Bits43 *)&obj->unk43)->b2 = 1;
-                    obj->unk44 -= 4;
-                    break;
-                case 8:
-                case 10:
-                    ((struct Bits43 *)&obj->unk43)->hi5 = 9;
-                    ((struct Bits43 *)&obj->unk43)->b1 = 1;
-                    obj->unk44 -= 8;
-                    break;
                 case 1:
-                    ((struct Bits43 *)&obj->unk43)->hi5 = 7;
-                    ((struct Bits43 *)&obj->unk43)->b2 = 1;
-                    obj->unk44 -= 4;
+                case 3:
+                    ((struct SpriteRecOamBits *)&rec->b43)->tile = 5;
+                    ((struct SpriteRecOamBits *)&rec->b43)->tall = 1;
+                    rec->ofsX -= 4;
                     break;
                 case 9:
-                    ((struct Bits43 *)&obj->unk43)->hi5 = 13;
-                    ((struct Bits43 *)&obj->unk43)->b1 = 1;
-                    obj->unk44 -= 8;
+                case 11:
+                    ((struct SpriteRecOamBits *)&rec->b43)->tile = 9;
+                    ((struct SpriteRecOamBits *)&rec->b43)->size1 = 1;
+                    rec->ofsX -= 8;
+                    break;
+                case 2:
+                    ((struct SpriteRecOamBits *)&rec->b43)->tile = 7;
+                    ((struct SpriteRecOamBits *)&rec->b43)->tall = 1;
+                    rec->ofsX -= 4;
+                    break;
+                case 10:
+                    ((struct SpriteRecOamBits *)&rec->b43)->tile = 13;
+                    ((struct SpriteRecOamBits *)&rec->b43)->size1 = 1;
+                    rec->ofsX -= 8;
                     break;
                 default:
                     break;

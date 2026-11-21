@@ -12,9 +12,9 @@ u8 *set_text_buffer(u8 *buf);
 extern const u8 gTagYwav[];
 extern u8 *gUnk_03000F90;
 extern u8 *gUnk_03000FA4;
-extern void *gUnk_03000F9C;
-extern void *gUnk_03000F94;
-extern s32 gUnk_03000FA0;
+extern void *gUnk_03000F9C;     /* the VBlank callback start_dma_window replaced (and calls first) */
+extern void *gUnk_03000F94;     /* window line table: 2 banks of 160 lines x WIN0H/WIN1H (0x280 bytes each) */
+extern s32 gUnk_03000FA0;       /* DMA channel (0-3) that streams the line table to the window registers */
 extern u8 *gUnk_03000FB4;
 extern u8 *gUnk_03000FB8;
 extern u8 *gUnk_03000FBC;
@@ -37,9 +37,9 @@ extern const u8 gRomPaletteStatus[];
 void cpu_fast_set(const void *src, void *dst, u32 control);
 extern u8 gUnk_02000280[];
 extern const u8 gWindowBufTag[];
-extern u16 gUnk_02000048;
-extern u8 gUnk_02000044[];
-extern u32 gUnk_03000F98;
+extern u16 gUnk_02000048;       /* shadow WININ, then WINOUT (copied to 0x04000048) */
+extern u8 gUnk_02000044[];      /* shadow WIN0V, then WIN1V (copied to 0x04000044) */
+extern u32 gUnk_03000F98;       /* bank of gUnk_03000F94 being drawn into (0 or 1); the other one is shown */
 extern u8 menu_obj_routine[];
 extern u8 tile_shift_copy[];
 extern u8 iwram_overlay[];
@@ -189,33 +189,37 @@ static inline void dma_window_start(u8 *base)
     *(vu32 *)(base + 8);
 }
 
-NONMATCH("asm/code_080E5590/start_dma_window.s", void start_dma_window(void))
+/* VBlank callback of the scanline window effect: runs the callback it replaced, restarts the
+   HBlank DMA on the chosen channel to stream the finished bank of the line table into
+   WIN0H/WIN1H, writes line 0's entry itself, and flips to the other bank for the next frame. */
+void start_dma_window(void)
 {
-    u32 buf;
+    vu32 *winRegs;
     u32 bank;
+    u32 lineTable;
 
     ((void (*)(void))gUnk_03000F9C)();
     switch (gUnk_03000FA0)
     {
         case 0:
-            dma_window_start((u8 *)0x040000B0);
+            dma_window_start((u8 *)REG_ADDR_DMA0SAD);
             break;
         case 1:
-            dma_window_start((u8 *)0x040000BC);
+            dma_window_start((u8 *)REG_ADDR_DMA1SAD);
             break;
         case 2:
-            dma_window_start((u8 *)0x040000C8);
+            dma_window_start((u8 *)REG_ADDR_DMA2SAD);
             break;
         case 3:
-            dma_window_start((u8 *)0x040000D4);
+            dma_window_start((u8 *)REG_ADDR_DMA3SAD);
             break;
     }
-    buf = (u32)gUnk_03000F94;
+    winRegs = (vu32 *)REG_ADDR_WIN0H;
     bank = gUnk_03000F98;
-    *(vu32 *)0x04000040 = *(u32 *)(buf + ((bank * 5) << 7));
+    lineTable = (u32)gUnk_03000F94;
+    *winRegs = *(u32 *)(((bank * 5) << 7) + lineTable);
     gUnk_03000F98 = bank ^ 1;
 }
-END_NONMATCH
 
 ASM_FUNC("asm/code_080E5590/clip_edges_to_lines.s", void clip_edges_to_lines(void))
 
@@ -285,47 +289,52 @@ NONMATCH("asm/code_080E5590/fill_iris_spans.s", void fill_iris_spans(s32 cx, s32
 }
 END_NONMATCH
 
-u32 start_window_buffer(s32 mode, u32 fill)
+/* Starts the scanline window effect unless it already runs (returns 0 then, 1 when started):
+   turns on windows 0 and 1 in the shadow DISPCNT, shows `layers` inside both windows and the other
+   layers outside, makes both windows full height, allocates the two-bank line table and hooks
+   start_dma_window in as the VBlank callback (saving the old one). dmaChannel (clamped to 0-3) is
+   the DMA channel that streams the table into WIN0H/WIN1H. */
+u32 start_window_buffer(s32 dmaChannel, u32 layers)
 {
-    vu16 *win;
-    vu16 *win2;
-    u32 result;
-    void *buffer;
-    u32 off;
+    vu16 *winIn;
+    vu16 *winV;
+    u32 started;
+    void *lineTable;
+    u32 vblankCbOffset;
 
-    buffer = gUnk_03000F94;
-    if (buffer != 0)
+    lineTable = gUnk_03000F94;
+    if (lineTable != 0)
     {
-        result = 0;
+        started = 0;
     }
     else
     {
-        *(vu16 *)0x02000000 |= 0x6000;
-        win = (vu16 *)&gUnk_02000048;
-        *win = (fill << 8) | fill;
-        win++;
-        *win = fill ^ 0x3F;
-        win2 = (vu16 *)gUnk_02000044;
-        *win2 = 0xA0;
-        win2++;
-        *win2 = 0xA0;
+        *(vu16 *)0x02000000 |= DISPCNT_WIN0_ON | DISPCNT_WIN1_ON;
+        winIn = (vu16 *)&gUnk_02000048;
+        *winIn = (layers << 8) | layers;
+        winIn++;
+        *winIn = layers ^ 0x3F;
+        winV = (vu16 *)gUnk_02000044;
+        *winV = 0xA0;
+        winV++;
+        *winV = 0xA0;
         gUnk_03000F94 = heap_alloc_raw(1, 0xA0 << 3, gWindowBufTag);
-        gUnk_03000F98 = (u32)buffer;
-        off = 0x8C4;
-        gUnk_03000F9C = *(void **)(gSys + off);
+        gUnk_03000F98 = (u32)lineTable;
+        vblankCbOffset = 0x8C4;
+        gUnk_03000F9C = *(void **)(gSys + vblankCbOffset);
         set_irq_callback(2, start_dma_window);
-        if (mode > 3)
+        if (dmaChannel > 3)
         {
-            mode = 3;
+            dmaChannel = 3;
         }
-        if (mode < 0)
+        if (dmaChannel < 0)
         {
-            mode = 0;
+            dmaChannel = 0;
         }
-        gUnk_03000FA0 = mode;
-        result = 1;
+        gUnk_03000FA0 = dmaChannel;
+        started = 1;
     }
-    return result;
+    return started;
 }
 
 ASM_FUNC("asm/code_080E5590/unknown_thumb_080e5cc8.s", void unknown_thumb_080e5cc8(void))
@@ -435,7 +444,7 @@ struct TextObj
     u8 *textBlock;
     void *frameTiles;
     u8 filler184[0x194 - 0x184];
-    u32 unk194;
+    u32 bufferOffset;   /* added to an address in the record region to get its copy in textBlock */
     u8 filler198[0x1B2 - 0x198];
     u8 flags1B2;
     u8 filler1B3[0x1BC - 0x1B3];
@@ -447,29 +456,33 @@ struct TextHolder
     struct TextObj *obj;
 };
 
-struct TextHolder *init_text_obj(struct TextHolder *holder, u32 arg1, u32 size, u32 arg3)
+/* Sets up a text object: clears both 0x34-byte text states (gUnk_03000FB8 gets its defaults),
+   allocates and clears the TextObj, builds a chain of recordCount records over the region
+   [regionBase, regionBase + regionSize), and allocates textBlock, a 32-byte aligned buffer of
+   regionSize bytes that mirrors the region (bufferOffset converts region addresses to it). */
+struct TextHolder *init_text_obj(struct TextHolder *holder, u32 regionBase, u32 regionSize, u32 recordCount)
 {
-    struct TextScratch *first;
+    struct TextScratch *state;
     void *table;
-    u32 textBlock;
+    u32 block;
     u32 aligned;
 
     ((void (*)(u32, void *, u32))gMemRoutines)(0, gUnk_03000FB8, 0x34);
     ((void (*)(u32, void *, u32))gMemRoutines)(0, gUnk_03000FBC, 0x34);
-    first = (struct TextScratch *)gUnk_03000FB8;
-    first->unk28 = 1;
-    first->unk2A = 1;
-    first->unk2C = 2;
-    first->unk2E = 1;
-    first->unk32 = 1;
+    state = (struct TextScratch *)gUnk_03000FB8;
+    state->unk28 = 1;
+    state->unk2A = 1;
+    state->unk2C = 2;
+    state->unk2E = 1;
+    state->unk32 = 1;
     holder->obj = heap_alloc_raw(1, 0x1BC, gTextObjTag);
     ((void (*)(u32, void *, u32))gMemRoutines)(0, holder->obj, 0x1BC);
     table = heap_alloc2(0x10, 1, gTextTableTag, 0);
-    holder->records = build_record_chain(table, arg1, size, arg3);
-    textBlock = (u32)heap_alloc_raw(1, size + 0x20, gTextBlockTag);
-    holder->obj->textBlock = (u8 *)textBlock;
-    aligned = (textBlock + 0x1F) & 0xFFFFFFE0;
-    holder->obj->unk194 = aligned - arg1;
+    holder->records = build_record_chain(table, regionBase, regionSize, recordCount);
+    block = (u32)heap_alloc_raw(1, regionSize + 0x20, gTextBlockTag);
+    holder->obj->textBlock = (u8 *)block;
+    aligned = (block + 0x1F) & 0xFFFFFFE0;
+    holder->obj->bufferOffset = aligned - regionBase;
     holder->obj->frameTiles = gTextFrameTiles;
     return holder;
 }

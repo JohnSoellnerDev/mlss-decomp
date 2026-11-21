@@ -17,7 +17,7 @@ struct Slot
     s32 xFix;
     s32 yFix;
     u8 filler1C[0x3A - 0x1C];
-    u16 scale;
+    u16 moveSpeed; /* tween_move_to's speed (8.8 pixels per frame) when a move gives none */
     u8 flags;
     u8 unk3D;
     u8 filler3E[0x40 - 0x3E];
@@ -45,6 +45,12 @@ struct CmdRec
     u8 filler0[0xA0];
     u16 flagsA0;
 };
+
+/* Size of one script slot (CmdRec / ScriptObj); OwnerState holds them back to back. */
+#define SCRIPT_SLOT_SIZE 0xA8
+
+/* CmdRec.flagsA0 bit: the script is waiting for a slot it started; its command returns 0. */
+#define CMD_FLAG_WAITING 4
 
 extern u8 *gUnk_03000FC0;
 extern u8 gOwnerTypeCreateDestroy[];
@@ -126,46 +132,54 @@ void draw_text_prim(void *a, u32 b, s32 c, s32 d, u32 e, u32 f, u32 g, u32 h, u3
 u32 lang_table_pair(u8 *entry, u32 lo);
 extern u8 gTextWidthTable[];
 
-u32 cmd_set_value(struct Owner *owner, struct CmdRec *rec, u32 *data, u8 cur)
+/*
+ * Script command: starts script slot args[1] + 1 of the owner at address args[2]
+ * (reset_obj_params_b sets the slot's main pair, reset_obj_params_a its alternate one).
+ * Ops 0-1 and 4-5 also hand the running script's position to the slot and continue the
+ * running script at args[2]; ops 4-7 use the alternate pair when the slot's flags bit 0
+ * is set. Odd ops make the running script wait for the slot (CMD_FLAG_WAITING, slot mode 9
+ * instead of 1). Returns 1 to go on with the next command, 0 while waiting.
+ */
+u32 cmd_set_value(struct Owner *owner, struct CmdRec *rec, u32 *args, u8 cur)
 {
-    u8 *target = (u8 *)owner->state + data[1] * 0xA8 + 0xA8;
+    u8 *slot = (u8 *)owner->state + args[1] * SCRIPT_SLOT_SIZE + SCRIPT_SLOT_SIZE;
     u32 mode = 1;
 
-    if (data[0] & 1)
+    if (args[0] & 1)
     {
-        rec->flagsA0 = rec->flagsA0 | 4;
+        rec->flagsA0 = rec->flagsA0 | CMD_FLAG_WAITING;
         mode = 9;
     }
-    switch (data[0])
+    switch (args[0])
     {
     case 0:
     case 1:
-        reset_obj_params_b((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
-        *(u32 *)rec = data[2];
+        reset_obj_params_b((u8 *)owner + 0x1C, slot, *(u32 *)rec, args[2], mode, cur);
+        *(u32 *)rec = args[2];
         break;
     case 2:
     case 3:
-        reset_obj_params_b((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+        reset_obj_params_b((u8 *)owner + 0x1C, slot, args[2], 0, mode, cur);
         break;
     case 4:
     case 5:
-        if ((((target[0xA0] ^ 1) & 1)))
-            reset_obj_params_b((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
+        if ((((slot[0xA0] ^ 1) & 1)))
+            reset_obj_params_b((u8 *)owner + 0x1C, slot, *(u32 *)rec, args[2], mode, cur);
         else
-            reset_obj_params_a((u8 *)owner + 0x1C, target, *(u32 *)rec, data[2], mode, cur);
-        *(u32 *)rec = data[2];
+            reset_obj_params_a((u8 *)owner + 0x1C, slot, *(u32 *)rec, args[2], mode, cur);
+        *(u32 *)rec = args[2];
         break;
     case 6:
     case 7:
-        if ((((target[0xA0] ^ 1) & 1)))
-            reset_obj_params_b((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+        if ((((slot[0xA0] ^ 1) & 1)))
+            reset_obj_params_b((u8 *)owner + 0x1C, slot, args[2], 0, mode, cur);
         else
-            reset_obj_params_a((u8 *)owner + 0x1C, target, data[2], 0, mode, cur);
+            reset_obj_params_a((u8 *)owner + 0x1C, slot, args[2], 0, mode, cur);
         break;
     default:
         break;
     }
-    return !(rec->flagsA0 & 4);
+    return !(rec->flagsA0 & CMD_FLAG_WAITING);
 }
 
 
@@ -217,9 +231,9 @@ NONMATCH("asm/code_080FA598/cmd_slot_op.s", u32 cmd_slot_op(struct Owner *owner,
         u32 value = *data;
 
         if (value & 0x40)
-            owner->list->slots[index].scale = (value & 0xF) << 4;
+            owner->list->slots[index].moveSpeed = (value & 0xF) << 4;
         else
-            owner->list->slots[index].scale = value << 8;
+            owner->list->slots[index].moveSpeed = value << 8;
         break;
     }
     case 1:
@@ -293,9 +307,9 @@ u32 cmd_slot_field(struct Owner *owner, u32 unused, u32 *data)
         u32 value = *data;
 
         if (value & 0x40)
-            owner->list->slots[index].scale = (value & 0xF) << 4;
+            owner->list->slots[index].moveSpeed = (value & 0xF) << 4;
         else
-            owner->list->slots[index].scale = value << 8;
+            owner->list->slots[index].moveSpeed = value << 8;
         break;
     }
     case 1:
@@ -336,10 +350,16 @@ u8 cmd_place_object(struct Owner *owner, u32 a2, u32 *args)
     return flags_vars_set_obj_state((u8 *)owner + 0x1C, a2, spr, (u8)args[4], 0);
 }
 
+/* Script command: moves the current slot's object (cur9A0 - 1) to (data[2], data[3]) pixels, in units
+ * of 16 pixels when data[0] is nonzero, relative to where it is when data[1] bit 0 is set
+ * (tween_move_to). data[1] bits 1-2 are the move mode: in mode 1, data[4] is the speed in whole
+ * pixels per frame, or with bit 0x40 set its low 4 bits in sixteenths of a pixel, and a nonzero speed
+ * becomes the slot's moveSpeed; in the other modes data[4] goes to tween_move_to as it is. Sets the
+ * script record's flag 2 and returns 0. */
 u32 cmd_start_move_list(struct Owner *owner, struct CmdRec *rec, s32 *data)
 {
     s32 mode = (data[1] >> 1) & 3;
-    s32 one = data[1] & 1;
+    s32 relative = data[1] & 1;
     u8 index = owner->state->cur9A0 - 1;
 
     if (data[0] != 0)
@@ -354,9 +374,9 @@ u32 cmd_start_move_list(struct Owner *owner, struct CmdRec *rec, s32 *data)
         else
             data[4] = data[4] << 8;
         if (data[4] != 0)
-            owner->list->slots[index].scale = data[4];
+            owner->list->slots[index].moveSpeed = data[4];
     }
-    tween_move_to(owner->list, index, mode, one, data[2], data[3], (s16)data[4]);
+    tween_move_to(owner->list, index, mode, relative, data[2], data[3], (s16)data[4]);
     rec->flagsA0 = rec->flagsA0 | 2;
     return 0;
 }

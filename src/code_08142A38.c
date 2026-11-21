@@ -47,7 +47,8 @@ struct Home
 {
     u8 filler0[0x178];
     u16 index;
-    u8 filler17A[0x184 - 0x17A];
+    u16 timerB; /* the actor's timerB: frames left to wait (e.g. before a charge) */
+    u8 filler17C[0x184 - 0x17C];
     s32 homeX;
     s32 homeY;
 };
@@ -73,7 +74,9 @@ struct Owner
 
 struct Rec
 {
-    u8 filler0[0x23];
+    u8 filler0[0x1A];
+    s8 detectBox[6]; /* box (x0, y0, z0, x1, y1, z1, in 16s) that sets the enemy on a hero */
+    u8 filler20[0x23 - 0x20];
     u8 unk23;
     s16 unk24;
     u8 unk26;
@@ -146,7 +149,10 @@ struct Actor
     u8 filler2F0[0x2F4 - 0x2F0];
     u32 phase;
     s16 hopStep;
-    u8 filler2FA[0x33E - 0x2FA];
+    s16 swayPhase; /* 8.8: the sprite frame while swaying */
+    u8 filler2FC[0x30A - 0x2FC];
+    u16 swayStep; /* added to swayPhase each frame */
+    u8 filler30C[0x33E - 0x30C];
     u8 flags33E;
 };
 
@@ -269,9 +275,12 @@ static inline s32 facing_towards(struct Actor *ent, struct Actor *target)
     return -1;
 }
 
+/* Sends the enemy back to its home point (where enemy_engage_setup saved it): mode 4, sprite
+ * frame rec[index + 0x42], angle02 and its cell turned towards home, and a move there at speed
+ * rec u16[0x46 + index * 2]; enemy_wait_after_step_b takes over when it arrives. */
 void enemy_start_return_home(void *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Home *home = (struct Home *)((u8 *)ent + 0x58);
     u8 *rec = (u8 *)ent->rec;
     s32 dx;
     s32 dy;
@@ -294,8 +303,9 @@ void enemy_start_return_home(void *owner, struct Actor *ent, void **out)
         ent->angle02 = 0xFF;
     }
     div = (s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt));
-    dx = *(s32 *)(ai + 0x184) - ent->posX;
-    dy = *(s32 *)(ai + 0x188) - ent->posY;
+    /* eight-way facing towards home, -1 when already there */
+    dx = home->homeX - ent->posX;
+    dy = home->homeY - ent->posY;
     if ((dx | dy) != 0)
     {
         facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
@@ -306,25 +316,29 @@ void enemy_start_return_home(void *owner, struct Actor *ent, void **out)
     }
     cell = div(facing, 2);
     obj_set_cell_coord(ent, cell, 0);
-    speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x46);
-    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
+    speed = *(u16 *)(rec + home->index * 2 + 0x46);
+    start_move_to(ent, home->homeX, home->homeY, speed, zero);
     *out = enemy_wait_after_step_b;
 }
 
 
 void enemy_idle_handler(void);
 void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out);
+/* Picks one of four random collide reactions (frame, speed, one of two kicks, push offsets),
+ * from the ROM record when flags1D6 bit 4 is set (mode 2, cells +4) or from the actor's own
+ * table otherwise (mode 4), knocks the actor back off the active partner (or the default one
+ * flags208 bit 1 picks), turns its cell to its facing and goes on to enemy_idle_handler. */
 void enemy_collide_then_idle(struct Owner *owner, struct Actor *ent, void **out)
 {
     u16 *table = ent->table;
     u8 *rec = (u8 *)ent->rec;
-    u8 idx;
-    u32 index;
+    u8 activeIdx;
+    u32 partnerIdx;
     u32 speed;
     u32 kick;
     u8 offX;
     u8 offY;
-    s32 flag;
+    s32 cellOffset;
     struct Actor *partner;
     s32 cell;
 
@@ -337,7 +351,7 @@ void enemy_collide_then_idle(struct Owner *owner, struct Actor *ent, void **out)
         kick = rec[rand_below(2, mt19937_next()) + 0x34];
         offX = rec[0x36];
         offY = rec[0x37];
-        flag = 4;
+        cellOffset = 4;
     }
     else
     {
@@ -347,20 +361,21 @@ void enemy_collide_then_idle(struct Owner *owner, struct Actor *ent, void **out)
         kick = table[rand_below(2, mt19937_next()) + 0x18];
         offX = ent->filler140[0];
         offY = ent->filler140[1];
-        flag = 0;
+        cellOffset = 0;
     }
-    if (find_active_entry(owner, &idx))
+    if (find_active_entry(owner, &activeIdx))
     {
-        index = idx;
+        partnerIdx = activeIdx;
     }
     else
     {
-        index = (u32)(owner->flags208 << 30) >> 31;
+        partnerIdx = (u32)(owner->flags208 << 30) >> 31; // flags208 bit 1
     }
-    partner = ((struct Actor **)owner)[index + 10];
+    partner = ((struct Actor **)owner)[partnerIdx + 10]; // owner->entries[partnerIdx]
     collide_react(owner, ent, partner, kick, speed, (s8)offX, (s8)offY, 0x22, 0);
+    // facing (Facing3.dir at 0x24) / 2
     cell = ((s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(ent->filler1C[0x24 - 0x1C] << 29) >> 29, 2);
-    obj_set_cell_coord(ent, cell + (s8)flag, 0);
+    obj_set_cell_coord(ent, cell + (s8)cellOffset, 0);
     *out = enemy_idle_handler;
 }
 
@@ -368,50 +383,59 @@ ASM_FUNC("asm/code_08142A38/enemy_idle_handler.s", void enemy_idle_handler(void)
 
 void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out);
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out);
+/*
+ * Starts an enemy's charge: picks the active partner (or the default one flags208 bit 1 picks),
+ * sets mode 1 and byte239 to rec[index + 0x40], turns towards the partner, waits rec[index + 0x3C]
+ * frames (timerB) and saves where it stands as its home point. enemy_charge_handler takes over.
+ */
 void enemy_engage_setup(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Home *home = (struct Home *)((u8 *)ent + 0x58);
     u8 *rec = (u8 *)ent->rec;
-    u8 idx;
-    u32 index;
+    u8 activeIdx;
+    u32 partnerIdx;
     struct Actor *partner;
     s32 facing;
     struct Facing3 *face;
     u32 cell;
 
-    if (find_active_entry(owner, &idx))
+    if (find_active_entry(owner, &activeIdx))
     {
-        index = idx;
+        partnerIdx = activeIdx;
     }
     else
     {
-        index = (u32)(owner->flags208 << 30) >> 31;
+        partnerIdx = (u32)(owner->flags208 << 30) >> 31; /* flags208 bit 1 */
     }
-    partner = ((struct Actor **)owner)[index + 10];
+    partner = ((struct Actor **)owner)[partnerIdx + 10]; /* owner->entries[partnerIdx] */
     ((struct Bits3 *)&ent->mode)->field0 = 1;
-    ent->byte239 = rec[*(u16 *)(ai + 0x178) + 0x40];
+    ent->byte239 = rec[home->index + 0x40];
     facing = facing_towards(ent, partner);
     face = (struct Facing3 *)&ent->filler1C[0x24 - 0x1C];
     face->dir = facing;
     cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(face->dir, 2);
     obj_set_cell_coord(ent, cell, 0);
     {
-        u8 tv = rec[*(u16 *)(ai + 0x178) + 0x3C];
+        u8 wait = rec[home->index + 0x3C];
 
-        *(u16 *)(ai + 0x17A) = tv;
+        home->timerB = wait;
     }
-    *(s32 *)(ai + 0x184) = ent->posX;
-    *(s32 *)(ai + 0x188) = ent->posY;
+    home->homeX = ent->posX;
+    home->homeY = ent->posY;
     *out = enemy_charge_handler;
 }
 
+/* Enemy charge state. While timerB counts down the enemy waits; when it runs out it faces the
+ * active partner and charges at where the partner will be in 20 frames (or sways, with no
+ * partner). Once the move ends, an enemy still inside its own 0x12 box waits rec[index + 0x58]
+ * frames and collides, otherwise it returns home. */
 void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out)
 {
     u8 zero = 0;
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Home *home = (struct Home *)((u8 *)ent + 0x58);
     u8 *rec = (u8 *)ent->rec;
     s16 box[8];
-    u8 idx;
+    u8 partnerIdx;
     struct Actor *partner;
     s32 facing;
     struct Facing3 *face;
@@ -420,26 +444,26 @@ void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out)
 
     if (ent->timerB != 0)
     {
-        s32 t = ent->timerB - 1;
+        s32 left = ent->timerB - 1;
 
-        ent->timerB = t;
-        if ((t << 16) != 0)
+        ent->timerB = left;
+        if ((left << 16) != 0)
         {
             return;
         }
-        if (!find_active_entry(owner, &idx))
+        if (!find_active_entry(owner, &partnerIdx))
         {
             out[0] = enemy_sway_then_check;
             return;
         }
-        partner = ((struct Actor **)owner)[idx + 10];
+        partner = ((struct Actor **)owner)[partnerIdx + 10];
         ((struct Bits3 *)&ent->mode)->field0 = 1;
         facing = facing_towards(ent, partner);
         face = (struct Facing3 *)&ent->filler1C[0x24 - 0x1C];
         face->dir = facing;
         cell = MATH_ROUTINE(s32 (*)(s32, s32), iwram_div)(face->dir, 2);
         obj_set_cell_coord(ent, cell, 0);
-        speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x44);
+        speed = *(u16 *)(rec + home->index * 2 + 0x44);
         start_move_to(ent, partner->posX + partner->vx * 20, partner->posY + partner->vy * 20, speed, zero);
         return;
     }
@@ -448,7 +472,7 @@ void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out)
         obj_box_to_stack(box, ent, 0x12, 0);
         if (point_in_box(box, ent, 0x7FFF, 0))
         {
-            ent->timerB = rec[*(u16 *)(ai + 0x178) + 0x58];
+            ent->timerB = rec[home->index + 0x58];
             out[0] = tick_store;
             out[3] = start_wander_b;
             out[1] = enemy_collide_then_idle;
@@ -460,17 +484,22 @@ void enemy_charge_handler(struct Owner *owner, struct Actor *ent, void **out)
     }
 }
 
+/* Enemy sway state (a charge with no partner): the sprite frame follows swayPhase, which advances
+ * by swayStep each frame. When timerB runs out it sets mode 1 and turns its cell to its facing;
+ * an enemy still inside its own 0x22 box then wanders and collides, otherwise it returns home. */
 void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
 {
     u8 **routines = &gMathRoutines;
     s16 box[8];
 
-    ent->sprite->frame20 = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(*(s16 *)&ent->filler2FA, 0x100);
-    *(s16 *)&ent->filler2FA += *(u16 *)&ent->filler2FA[0x30A - 0x2FA];
+    ent->sprite->frame20 = ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))(ent->swayPhase, 0x100);
+    ent->swayPhase += ent->swayStep;
     if (--ent->timerB == 0)
     {
         s8 *mode = (s8 *)&ent->mode;
-        *mode = (*mode & -8) | 1;
+
+        *mode = (*mode & -8) | 1; /* mode = 1 */
+        /* facing (Facing3.dir at 0x24) / 2 */
         obj_set_cell_coord(ent, ((s32 (*)(s32, s32))(*routines + ((u32)iwram_div - (u32)iwram_sqrt)))((u32)(ent->filler1C[0x24 - 0x1C] << 29) >> 29, 2), 0);
         obj_box_to_stack(box, ent, 0x22, 0);
         if (point_in_box(box, ent, 0x7FFF, 0))
@@ -485,9 +514,12 @@ void enemy_sway_then_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
+/* Sends the enemy back to its home point after a charge or sway that left its box: like
+ * enemy_start_return_home, but with sprite frame rec[index + 0x4C], speed rec u16[0x50 + index * 2]
+ * and enemy_wait_after_step taking over when it arrives. */
 void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
+    struct Home *home = (struct Home *)((u8 *)ent + 0x58);
     u8 *rec = (u8 *)ent->rec;
     s32 dx;
     s32 dy;
@@ -510,8 +542,9 @@ void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out
         ent->angle02 = 0xFF;
     }
     div = (s32 (*)(s32, s32))(gMathRoutines + ((u32)iwram_div - (u32)iwram_sqrt));
-    dx = *(s32 *)(ai + 0x184) - ent->posX;
-    dy = *(s32 *)(ai + 0x188) - ent->posY;
+    /* eight-way facing towards home, -1 when already there */
+    dx = home->homeX - ent->posX;
+    dy = home->homeY - ent->posY;
     if ((dx | dy) != 0)
     {
         facing = (((s32)((u16)angle_of_vector16(dx, dy) + 0x1000)) >> 13) & 7;
@@ -522,8 +555,8 @@ void contact_states_enemy_return_home(void *owner, struct Actor *ent, void **out
     }
     cell = div(facing, 2);
     obj_set_cell_coord(ent, cell, 0);
-    speed = *(u16 *)(rec + *(u16 *)(ai + 0x178) * 2 + 0x50);
-    start_move_to(ent, *(s32 *)(ai + 0x184), *(s32 *)(ai + 0x188), speed, zero);
+    speed = *(u16 *)(rec + home->index * 2 + 0x50);
+    start_move_to(ent, home->homeX, home->homeY, speed, zero);
     *out = enemy_wait_after_step;
 }
 
@@ -863,20 +896,24 @@ void enemy_box_point_then_collide(void *owner, struct Actor *ent, void **out)
     out[0] = random_collide;
 }
 
-NONMATCH("asm/code_08142A38/enemy_dash_to_owner_target.s", void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out))
+void enemy_dash_to_owner_target(struct Owner *owner, struct Actor *ent, void **out)
 {
-    u8 zero;
-    struct Actor *target = owner->tgtA;
+    register struct Actor *self asm("r12") = ent;
+    register void **next asm("r4") = out;
+    ByteArg zero = {0};
+    struct Actor *target;
+    register struct Actor *pos asm("r3");
     u16 speed;
 
-    ent->homeX = ent->posX;
-    ent->homeY = ent->posY;
-    speed = *(u16 *)((u8 *)ent->rec + ent->index * 2 + 0x2A);
-    zero = 0;
-    start_move_to(ent, target->posX + (target->vx << 4), target->posY + (target->vy << 4), speed, zero);
-    *out = enemy_after_step_box_check;
+    if (owner == NULL)
+        speed = 0;
+    target = owner->tgtA;
+    self->homeX = (pos = self, pos->posX);
+    self->homeY = pos->posY;
+    speed = *(u16 *)((u8 *)self->rec + self->index * 2 + 0x2A);
+    start_move_to(self, target->posX + (target->vx << 4), target->posY + (target->vy << 4), speed, zero);
+    *next = enemy_after_step_box_check;
 }
-END_NONMATCH
 
 void enemy_wait_sprite_flag_then_load(void *owner, struct Actor *ent, void **out)
 {
@@ -998,30 +1035,33 @@ void enemy_sprite_scale_check(void *owner, struct Actor *ent, void **out)
     }
 }
 
+/* AI state: runs the current handler, then checks whether the owner's active hero is inside the
+ * enemy's detection box (rec->detectBox). If so, the enemy goes through enemy_enter_next_state on to
+ * enemy_contact_state_handler. */
 void enemy_contact_check_state(struct Owner *owner, struct Actor *ent)
 {
-    void **slot = &ent->handler;
-    u8 idx;
-    struct Actor *partner;
-    s8 *rec;
+    void **handler = &ent->handler;
+    u8 heroIdx;
+    struct Actor *hero;
+    struct Rec *rec;
 
-    ((void (*)(void *, struct Actor *, void **))*slot)(owner, ent, slot);
-    if (!find_active_entry(owner, &idx))
+    ((void (*)(void *, struct Actor *, void **))*handler)(owner, ent, handler);
+    if (!find_active_entry(owner, &heroIdx))
     {
         return;
     }
-    partner = ((struct Actor **)owner)[idx + 10];
-    rec = (s8 *)ent->rec;
+    hero = ((struct Actor **)owner)[heroIdx + 10]; /* owner->entries[heroIdx] */
+    rec = ent->rec;
     {
         s16 box[8];
 
-        box[0] = rec[0x1A] << 4;
-        box[2] = rec[0x1B] << 4;
-        box[4] = rec[0x1C] << 4;
-        box[1] = rec[0x1D] << 4;
-        box[3] = rec[0x1E] << 4;
-        box[5] = rec[0x1F] << 4;
-        if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]))
+        box[0] = rec->detectBox[0] << 4;
+        box[2] = rec->detectBox[1] << 4;
+        box[4] = rec->detectBox[2] << 4;
+        box[1] = rec->detectBox[3] << 4;
+        box[3] = rec->detectBox[4] << 4;
+        box[5] = rec->detectBox[5] << 4;
+        if (boxes_overlap_oriented(box, ent, hero, box[4], box[5]))
         {
             ent->state = enemy_enter_next_state;
             ent->stateNext = enemy_contact_state_handler;
@@ -1029,40 +1069,44 @@ void enemy_contact_check_state(struct Owner *owner, struct Actor *ent)
     }
 }
 
+/* AI state: runs the current handler, and once it reports done (flags1D6 bit 0) checks whether the
+ * owner's active hero touches the contact box in the enemy's record (bytes 0x36..0x3B, in 16ths).
+ * Touching: runs enemy_run_handler_advance with link_to_owner_entry as handler, then goes on to
+ * enemy_enter_contact_state; otherwise enters enemy_enter_contact_state on the next frame. */
 void enemy_contact_state_handler(void *owner, struct Actor *ent, void **out)
 {
-    u8 *ai = (u8 *)ent + 0x58;
-    void **slot = &ent->handler;
-    u8 idx;
-    struct Actor *partner;
+    u8 *ai = (u8 *)ent + 0x58;     /* ai + 0x140 is ent->state */
+    void **handler = &ent->handler;
+    u8 heroIdx;
+    struct Actor *hero;
 
-    ((void (*)(void *, struct Actor *, void **))*slot)(owner, ent, slot);
+    ((void (*)(void *, struct Actor *, void **))*handler)(owner, ent, handler);
     if (!(ent->flags1D6 & 1))
     {
         return;
     }
-    if (find_active_entry(owner, &idx))
+    if (find_active_entry(owner, &heroIdx))
     {
-        partner = ((struct Actor **)owner)[idx + 10];
+        hero = ((struct Actor **)owner)[heroIdx + 10];   /* owner->entries[heroIdx] */
         {
             s16 box[8];
             u8 *rec;
-            u8 *f36;
+            u8 *contactBox;
 
             rec = (u8 *)ent->rec;
 
-            f36 = rec + 0x36;
-            box[0] = (s8)*f36 << 4;
+            contactBox = rec + 0x36;
+            box[0] = (s8)*contactBox << 4;
             box[2] = (s8)rec[0x37] << 4;
             box[4] = (s8)rec[0x38] << 4;
             box[1] = (s8)rec[0x39] << 4;
             box[3] = (s8)rec[0x3A] << 4;
             box[5] = (s8)rec[0x3B] << 4;
-            if (boxes_overlap_oriented(box, ent, partner, box[4], box[5]))
+            if (boxes_overlap_oriented(box, ent, hero, box[4], box[5]))
             {
                 ent->state = enemy_run_handler_advance;
                 ent->stateNext = enemy_enter_contact_state;
-                *slot = link_to_owner_entry;
+                *handler = link_to_owner_entry;
                 ent->handlerNext = link_to_owner_entry;
                 return;
             }
@@ -1119,28 +1163,32 @@ void enemy_mark_and_enter_contact(void *owner, struct Actor *ent)
     enemy_enter_contact_state(owner, ent);
 }
 
+/* AI state: if the owner's active hero stands inside the enemy's sensor box (sensor words 4..7,
+ * in 16ths, plus 8), the enemy engages: it loads its scaled record fields, sets the 3-bit field
+ * at bits 15..17 of word 0x20C to 1 and flags 0x20D bit 6 and 0x20E bit 2, nudges dz up by one,
+ * marks the handler busy (flags1D6 bit 1 set, bit 0 cleared) and starts obj_state_run_advance
+ * with enemy_end_countdown as handler, going on to enemy_setup_wait. */
 void enemy_contact_engage(struct Owner *owner, struct Actor *ent)
 {
-    u8 idx;
-    struct Actor *partner;
-    void (*fn)(void *, struct Actor *);
+    u8 heroIdx;
+    struct Actor *hero;
+    void (*state)(void *, struct Actor *);
 
-    if (!find_active_entry(owner, &idx))
+    if (!find_active_entry(owner, &heroIdx))
     {
         return;
     }
-    partner = ((struct Actor **)owner)[idx + 10];
+    hero = ((struct Actor **)owner)[heroIdx + 10];   /* owner->entries[heroIdx] */
     {
         s16 box[8];
         s16 *sensor = ent->sensor;
+        s32 edge;
 
-        s32 k;
-
-        box[0] = ((k = *(s16 *)((u8 *)sensor + 8)) << 4) + 8;
-        box[3] = ((k = *(s16 *)((u8 *)sensor + 0xA)) << 4) + 8;
-        box[1] = ((k = *(s16 *)((u8 *)sensor + 0xC)) << 4) + 8;
-        box[2] = ((k = *(s16 *)((u8 *)sensor + 0xE)) << 4) + 8;
-        if (!point_in_box(box, partner, 0x7FFF, 0))
+        box[0] = ((edge = sensor[4]) << 4) + 8;
+        box[3] = ((edge = sensor[5]) << 4) + 8;
+        box[1] = ((edge = sensor[6]) << 4) + 8;
+        box[2] = ((edge = sensor[7]) << 4) + 8;
+        if (!point_in_box(box, hero, 0x7FFF, 0))
         {
             return;
         }
@@ -1148,21 +1196,21 @@ void enemy_contact_engage(struct Owner *owner, struct Actor *ent)
     load_record_fields_scaled(ent, 0);
     *(u32 *)((u8 *)ent + 0x20C) = (*(u32 *)((u8 *)ent + 0x20C) & 0xFFFC7FFF) | 0x8000;
     {
-        s32 t = ent->flags20D;
+        s32 flags = ent->flags20D;
 
-        ent->flags20D = t | 0x40;
+        ent->flags20D = flags | 0x40;
     }
     ent->dz += 1;
     {
-        s32 t = ent->flags20E;
+        s32 flags = ent->flags20E;
 
-        ent->flags20E = t | 4;
+        ent->flags20E = flags | 4;
     }
     ((struct Flags1D6 *)&ent->flags1D6)->bit1 = 1;
     ((struct Flags1D6 *)&ent->flags1D6)->bit0 = 0;
-    ent->state = fn = (void (*)(void *, struct Actor *))obj_state_run_advance;
+    ent->state = state = (void (*)(void *, struct Actor *))obj_state_run_advance;
     ent->stateNext = enemy_setup_wait;
     ent->handler = enemy_end_countdown;
     ent->handlerNext = enemy_end_countdown;
-    fn(owner, ent);
+    state(owner, ent);
 }

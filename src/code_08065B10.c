@@ -79,6 +79,13 @@ struct ActorObj
     s16 dh;
 };
 
+// ActorPose.flags: the current animation has finished.
+#define POSE_FLAG_ANIM_DONE 0x08
+
+// ActorObj.flags: targetX/targetY/phase are absolute, not relative to the position
+// (read and cleared by start_motion).
+#define ACTOR_FLAG_ABS_TARGET 0x20
+
 s32 is_state_busy(void);
 s32 query_contact(struct ActorObj *obj, s32 a, s32 b);
 s32 obj_query_contact(struct ActorObj *obj, s32 a, s32 b);
@@ -247,13 +254,17 @@ void obj_active_move_to_owner(struct ActorObj *obj)
     }
 }
 
+// First step of the actor's child sequence (after glide_obj_index_wait_action4). Once the
+// current animation ends it plays sound slot 0x116 and action 5, spawns a 0x40A5 child just below
+// it (facing like its pose, bit 6 of unk11), passes paramA4 on as the pose command, and joins the
+// object list with obj_link_lookup_action1 as its link handler before obj_respawn_child_6 runs.
 void obj_active_spawn_child_5(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    u8 *fp;
-    u8 flags;
+    u8 *childFlagsp;
+    u8 childFlags;
 
-    if ((obj->pose->flags & 8) != 0)
+    if ((obj->pose->flags & POSE_FLAG_ANIM_DONE) != 0)
     {
         set_slot_value(0x116, -1);
         obj->param9C = 0;
@@ -261,11 +272,11 @@ void obj_active_spawn_child_5(struct ActorObj *obj)
         child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
                           ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
-        fp = &child->flags;
-        flags = *fp;
-        flags |= 1;
-        flags |= 8;
-        *fp = flags;
+        childFlagsp = &child->flags;
+        childFlags = *childFlagsp;
+        childFlags |= 1;
+        childFlags |= 8;
+        *childFlagsp = childFlags;
         obj->pose->cmd20 = obj->paramA4;
         obj_list_push_default(obj);
         obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
@@ -273,11 +284,15 @@ void obj_active_spawn_child_5(struct ActorObj *obj)
     }
 }
 
+// Second step of the actor's child sequence. When param9C reaches 1 (set by obj_timer_next_action)
+// it re-joins the object list with obj_link_lookup_action1 as its link handler. Once the current
+// animation ends it releases its child, marks phase 0x10 in param9C, plays action 6, spawns a new
+// 0x40A5 child just below it (facing like its pose) and moves on to obj_respawn_child_7_move.
 void obj_respawn_child_6(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    u8 *fp;
-    u8 flags;
+    u8 *childFlagsp;
+    u8 childFlags;
 
     if (obj->param9C == 1)
     {
@@ -285,7 +300,7 @@ void obj_respawn_child_6(struct ActorObj *obj)
         obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
         obj->param9C++;
     }
-    if ((obj->pose->flags & 8) != 0)
+    if ((obj->pose->flags & POSE_FLAG_ANIM_DONE) != 0)
     {
         obj_release(obj->child);
         obj->param9C |= 0x10;
@@ -293,20 +308,25 @@ void obj_respawn_child_6(struct ActorObj *obj)
         child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
                           ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
-        fp = &child->flags;
-        flags = *fp;
-        flags |= 1;
-        flags |= 8;
-        *fp = flags;
+        childFlagsp = &child->flags;
+        childFlags = *childFlagsp;
+        childFlags |= 1;
+        childFlags |= 8;
+        *childFlagsp = childFlags;
         obj->state = obj_respawn_child_7_move;
     }
 }
 
+// Third step of the actor's child sequence. When param9C reaches 0x11 it re-joins the object
+// list with obj_link_lookup_action1 as its link handler. Once the current animation ends it
+// releases its child and leaves the list, plays action 7, spawns a new 0x40A5 child just below
+// it (facing like its pose), and glides to 0x30 px right of its owner's part target before
+// obj_index_wait_finish_child takes over.
 void obj_respawn_child_7_move(struct ActorObj *obj)
 {
     struct ActorObj *child;
-    u8 *fp;
-    u8 flags;
+    u8 *childFlagsp;
+    u8 childFlags;
     u8 *flagsp;
 
     if (obj->param9C == 0x11)
@@ -315,7 +335,7 @@ void obj_respawn_child_7_move(struct ActorObj *obj)
         obj->handler60 = (s32 (*)(struct ActorObj *))obj_link_lookup_action1;
         obj->param9C++;
     }
-    if ((obj->pose->flags & 8) != 0)
+    if ((obj->pose->flags & POSE_FLAG_ANIM_DONE) != 0)
     {
         obj_release(obj->child);
         obj_list_remove(obj);
@@ -324,16 +344,16 @@ void obj_respawn_child_7_move(struct ActorObj *obj)
         child = obj_spawn(obj->part, 0x40A5, obj->baseX / 0x100, obj->baseY / 0x100 + 2, obj->baseH / 0x100,
                           ((u32)obj->pose->unk11 << 25) >> 31, 1);
         obj->child = child;
-        fp = &child->flags;
-        flags = *fp;
-        flags |= 1;
-        flags |= 8;
-        *fp = flags;
+        childFlagsp = &child->flags;
+        childFlags = *childFlagsp;
+        childFlags |= 1;
+        childFlags |= 8;
+        *childFlagsp = childFlags;
         obj->targetX = obj->owner->part->targetX + 0x3000;
         obj->targetY = obj->owner->part->targetY;
         obj->targetH = obj->baseH;
         flagsp = &obj->flags;
-        *flagsp |= 0x20;
+        *flagsp |= ACTOR_FLAG_ABS_TARGET;
         obj->motionSpeed = 0x200;
         obj->motionStart = 0;
         start_motion(obj);

@@ -12,29 +12,34 @@ extern const u8 gStartObjZoomGrow23494[];
 extern const u8 gStartSpriteListDrawCopy[];
 extern const u8 gStartSpriteListDraw[];
 
+// The affine sprite an effect object draws.
 struct ObjRecord
 {
     u8 filler0[4];
-    u16 unk4;
-    u16 unk6;
+    u16 unk4;  // scale X (0x100 = 1.0)
+    u16 unk6;  // scale Y (0x100 = 1.0)
     u8 filler8[4];
-    u16 unkC;
+    u16 unkC;  // rotation angle
     u8 filler10[0x34 - 0x10];
-    u32 model;
+    u32 model; // the sprite's OAM row list
 };
 
+// An effect object that draws copies of its sprite at points of a model.
 struct Point1Obj
 {
     u8 filler0[8];
     struct ObjRecord *rec;
-    u32 *data;
+    u32 *data;  // state words, then the model's points (x, y, z each)
     u8 filler10[2];
     s16 posX;
     s16 posY;
     s16 posZ;
     u8 filler18[3];
-    u8 flags;
+    u8 flags;   // 0x80: mirrored horizontally
 };
+
+/* Point1Obj.flags: the object faces left, so x offsets and angles are mirrored. */
+#define POINT1_OBJ_MIRRORED 0x80
 
 struct Point1Local
 {
@@ -84,79 +89,82 @@ void spawn_sprite_list_draw(u32 x, u32 y, u32 z, u32 flag)
                  gStartSpriteListDraw, 2);
 }
 
-// Single-point object whose size word grows by 0x40 each frame; the size goes into both
-// record fields and the data block.
+// One-point effect that grows: draws its sprite at the model's one point (8.8 fixed point
+// offset from the object, mirrored when it faces left), and every frame the scale kept in
+// obj->data grows by 0x40 (1/4) and becomes the sprite's X and Y scale.
 void obj_point_grow_814c(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     u32 *words;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
+    u32 oamFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
+    s32 *pY;
+    s32 *pZ;
+    u32 *pModel;
+    s32 px;
     s32 pos;
     s32 t;
     u32 size;
 
+    // State: the size word in obj->data, followed by the point.
     words = obj->data;
     size = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    oamFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, oamFlags);
+    pY = &pt.y;
+    pZ = &pt.z;
+    pModel = &pt.model;
     for (i = 0; i < 1; i++) {
-        vx = *words++;
-        l.x = vx;
-        l.y = *words++;
-        l.z = *words++;
+        // The point's offset from the object.
+        px = *words++;
+        pt.x = px;
+        pt.y = *words++;
+        pt.z = *words++;
         if (obj->flags & 0x80) {
             pos = obj->posX;
-            t = vx;
+            t = px;
             if (t < 0) {
                 t += 0xFF;
             }
             t >>= 8;
-            l.x = pos - t;
+            pt.x = pos - t;
         } else {
             pos = obj->posX;
-            t = vx;
+            t = px;
             if (t < 0) {
                 t += 0xFF;
             }
             t >>= 8;
-            l.x = pos + t;
+            pt.x = pos + t;
         }
         pos = obj->posY;
-        t = l.y;
+        t = pt.y;
         if (t < 0) {
             t += 0xFF;
         }
         t >>= 8;
-        l.y = pos + t;
+        pt.y = pos + t;
         pos = obj->posZ;
-        t = l.z;
+        t = pt.z;
         if (t < 0) {
             t += 0xFF;
         }
         t >>= 8;
-        l.z = pos + t;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.z = pos + t;
+        offset_words_camera(&pt.x, pY, pZ, 0);
+        oam_place_points(pModel, oamFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
     size += 0x40;
     rec->unk4 = size;
@@ -925,544 +933,577 @@ NONMATCH("asm/code_08178064/obj_zoom_spin6_shrink_8ea0.s", void obj_zoom_spin6_s
 }
 END_NONMATCH
 
-// Six-point object at a fixed tilt angle (table entry 12) whose zoom grows by 2 and whose
-// offsets accelerate each frame; the record size shrinks as the counter grows.
+// Six-point object that grows and falls: each point is zoomed (8.8 fixed point), tilted by the
+// fixed table angle 12, shifted by the x offset and the fall height and drawn at the object
+// (mirrored when flags bit 7 is set). Every frame the zoom grows by 2.0, gravity speeds up the
+// fall, and the record's size (0xA0 - shrink) shrinks ever faster.
 void obj_zoom_fixed6_accel_910c(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     u32 *words;
     s32 zoom;
-    s32 base;
-    s32 counter;
-    s32 xOff;
-    s32 yOff;
-    s32 vel;
+    s32 shrink;
+    s32 shrinkSpeed;
+    s32 offsetX;
+    s32 fallY;
+    s32 fallVel;
     struct ObjRecord *rec;
-    u32 h;
-    u32 saved;
-    s32 left;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 vy;
-    s32 vz;
-    s32 x0;
-    s32 y0;
-    s32 z0;
-    s32 y1;
-    s32 z1;
-    s32 xs;
+    u32 oamFlags;
+    u32 modelSaved;
+    s32 pointsLeft;
+    s32 *pY;
+    s32 *pZ;
+    u32 *pModel;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s32 zx;
+    s32 zy;
+    s32 zz;
+    s32 tiltY;
+    s32 tiltZ;
+    s32 shiftedX;
     s32 pos;
     s32 t;
     s32 size;
 
+    // State: six words in obj->data, followed by the points.
     words = obj->data;
     zoom = *words++;
-    base = *words++;
-    counter = *words++;
-    xOff = *words++;
-    yOff = *words++;
-    vel = *words++;
+    shrink = *words++;
+    shrinkSpeed = *words++;
+    offsetX = *words++;
+    fallY = *words++;
+    fallVel = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    left = 5;
+    pt.model = rec->model;
+    oamFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, oamFlags);
+    pY = &pt.y;
+    pZ = &pt.z;
+    pModel = &pt.model;
+    pointsLeft = 5;
     for (;;) {
-        vx = *words++;
-        l.x = vx;
-        vy = *words++;
-        l.y = vy;
-        vz = *words++;
-        l.z = vz;
-        x0 = vx * zoom / 0x100;
-        l.x = x0;
-        y0 = vy * zoom / 0x100;
-        l.y = y0;
-        z0 = vz * zoom / 0x100;
-        l.z = z0;
-        t = y0;
+        // The point's offset from the object.
+        px = *words++;
+        pt.x = px;
+        py = *words++;
+        pt.y = py;
+        pz = *words++;
+        pt.z = pz;
+        // Zoom it.
+        zx = px * zoom / 0x100;
+        pt.x = zx;
+        zy = py * zoom / 0x100;
+        pt.y = zy;
+        zz = pz * zoom / 0x100;
+        pt.z = zz;
+        // Tilt it.
+        t = zy;
         t = t * (gCosineTable[12] / 0x40);
-        y1 = (t - (gSineTable[12] / 0x40) * z0) / 0x100;
-        l.y = y1;
-        z1 = (z0 * (gCosineTable[12] / 0x40) + y0 * (gSineTable[12] / 0x40)) / 0x100;
-        l.z = z1;
-        xs = x0 + xOff;
-        l.x = xs;
-        l.y = y1 + yOff;
+        tiltY = (t - (gSineTable[12] / 0x40) * zz) / 0x100;
+        pt.y = tiltY;
+        tiltZ = (zz * (gCosineTable[12] / 0x40) + zy * (gSineTable[12] / 0x40)) / 0x100;
+        pt.z = tiltZ;
+        // Shift it and let it fall.
+        shiftedX = zx + offsetX;
+        pt.x = shiftedX;
+        pt.y = tiltY + fallY;
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = xs;
+            pos = shiftedX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            pt.x = t - pos;
         } else {
             t = obj->posX;
-            pos = xs;
+            pos = shiftedX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            pt.x = t + pos;
         }
         t = obj->posY;
-        pos = l.y;
+        pos = pt.y;
         if (pos < 0) {
             pos += 0xFF;
         }
         pos >>= 8;
-        l.y = t + pos;
+        pt.y = t + pos;
         t = obj->posZ;
-        pos = l.z;
+        pos = pt.z;
         if (pos < 0) {
             pos += 0xFF;
         }
         pos >>= 8;
-        l.z = t + pos;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.z = t + pos;
+        offset_words_camera(&pt.x, pY, pZ, 0);
+        oam_place_points(pModel, oamFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
-        left--;
-        if (left < 0) {
+        pointsLeft--;
+        if (pointsLeft < 0) {
             break;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
     zoom += 0x200;
-    yOff += vel;
-    vel += 0x60;
-    base += counter;
-    counter++;
-    size = 0xA0 - base;
+    fallY += fallVel;
+    fallVel += 0x60; // gravity
+    shrink += shrinkSpeed;
+    shrinkSpeed++;
+    size = 0xA0 - shrink;
     rec->unk4 = size;
     rec->unk6 = size;
     words = obj->data;
     *words++ = zoom;
-    *words++ = base;
-    *words++ = counter;
-    *words++ = xOff;
-    *words++ = yOff;
-    *words = vel;
+    *words++ = shrink;
+    *words++ = shrinkSpeed;
+    *words++ = offsetX;
+    *words++ = fallY;
+    *words = fallVel;
 }
 
+// Ten-point object that grows and falls: each point is zoomed (8.8 fixed point), tilted by the
+// fixed table angle 12, lowered by the fall height and drawn at the object (mirrored when flags
+// bit 7 is set). Every frame the zoom grows by 4.0, gravity speeds up the fall, and the record's
+// size (0x140 - shrink) shrinks ever faster.
 void obj_zoom_fixed10_accel_9304(struct Point1Obj *obj)
 {
-    struct Point1Local l;
+    struct Point1Local pt;
     s32 zoom;
-    s32 base;
-    s32 counter;
-    s32 yOff;
-    s32 vel;
+    s32 shrink;
+    s32 shrinkSpeed;
+    s32 fallY;
+    s32 fallVel;
     struct ObjRecord *rec;
     u32 *words;
-    u32 h;
-    u32 saved;
+    u32 oamFlags;
+    u32 modelSaved;
     s32 i;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 vx;
-    s32 vy;
-    s32 vz;
-    s32 x0;
-    s32 y0;
-    s32 z0;
-    s32 y1;
-    s32 z1;
+    s32 *pY;
+    s32 *pZ;
+    u32 *pModel;
+    s32 px;
+    s32 py;
+    s32 pz;
+    s32 zx;
+    s32 zy;
+    s32 zz;
+    s32 tiltY;
+    s32 tiltZ;
     s32 t;
     s32 pos;
 
+    // State: five words in obj->data, followed by the points.
     words = obj->data;
     zoom = *words++;
-    base = *words++;
-    counter = *words++;
-    yOff = *words++;
-    vel = *words++;
+    shrink = *words++;
+    shrinkSpeed = *words++;
+    fallY = *words++;
+    fallVel = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
+    pt.model = rec->model;
+    oamFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, oamFlags);
+    pY = &pt.y;
+    pZ = &pt.z;
+    pModel = &pt.model;
     for (i = 0; i < 10; i++) {
-        vx = *words++;
-        l.x = vx;
-        vy = *words++;
-        l.y = vy;
-        vz = *words++;
-        l.z = vz;
-        x0 = (vx * zoom) / 0x100;
-        l.x = x0;
-        y0 = (vy * zoom) / 0x100;
-        l.y = y0;
-        z0 = (vz * zoom) / 0x100;
-        l.z = z0;
-        t = y0;
+        // The point's offset from the object.
+        px = *words++;
+        pt.x = px;
+        py = *words++;
+        pt.y = py;
+        pz = *words++;
+        pt.z = pz;
+        // Zoom it.
+        zx = (px * zoom) / 0x100;
+        pt.x = zx;
+        zy = (py * zoom) / 0x100;
+        pt.y = zy;
+        zz = (pz * zoom) / 0x100;
+        pt.z = zz;
+        // Tilt it.
+        t = zy;
         t = t * (gCosineTable[12] / 0x40);
-        y1 = (t - (gSineTable[12] / 0x40) * z0) / 0x100;
-        l.y = y1;
-        z1 = (z0 * (gCosineTable[12] / 0x40) + y0 * (gSineTable[12] / 0x40)) / 0x100;
-        l.z = z1;
-        l.y = y1 + yOff;
+        tiltY = (t - (gSineTable[12] / 0x40) * zz) / 0x100;
+        pt.y = tiltY;
+        tiltZ = (zz * (gCosineTable[12] / 0x40) + zy * (gSineTable[12] / 0x40)) / 0x100;
+        pt.z = tiltZ;
+        // Let it fall.
+        pt.y = tiltY + fallY;
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x0;
+            pos = zx;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            pt.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x0;
+            pos = zx;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            pt.x = t + pos;
         }
         t = obj->posY;
-        pos = l.y;
+        pos = pt.y;
         if (pos < 0) {
             pos += 0xFF;
         }
         pos >>= 8;
-        l.y = t + pos;
+        pt.y = t + pos;
         t = obj->posZ;
-        pos = l.z;
+        pos = pt.z;
         if (pos < 0) {
             pos += 0xFF;
         }
         pos >>= 8;
-        l.z = t + pos;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.z = t + pos;
+        offset_words_camera(&pt.x, pY, pZ, 0);
+        oam_place_points(pModel, oamFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
     zoom += 0x400;
-    yOff += vel;
-    vel += 0x60;
-    base += counter;
-    counter++;
-    rec->unk4 = 0x140 - base;
-    rec->unk6 = 0x140 - base;
+    fallY += fallVel;
+    fallVel += 0x60; // gravity
+    shrink += shrinkSpeed;
+    shrinkSpeed++;
+    rec->unk4 = 0x140 - shrink;
+    rec->unk6 = 0x140 - shrink;
     words = obj->data;
     *words++ = zoom;
-    *words++ = base;
-    *words++ = counter;
-    *words++ = yOff;
-    *words = vel;
+    *words++ = shrink;
+    *words++ = shrinkSpeed;
+    *words++ = fallY;
+    *words = fallVel;
 }
 
+// Four-point object that bounces like a ball: each point is zoomed (8.8 fixed point), turned by the
+// fixed table angles 40 (around the vertical axis) and 16 (tilt), lifted by the bounce height and
+// drawn at the object (mirrored when flags bit 7 is set). Every frame gravity pulls the bounce
+// down; each landing halves the zoom speed, weakens the rebound and slows the spin, whose angle
+// goes into rec->unkC.
 void zoom_bounce_94fc(struct Point1Obj *obj)
 {
-    s16 *cb;
-    s16 *sb;
-    s16 *cs;
-    s16 *sn;
-    struct Point1Local l;
+    s16 *cosTab;
+    s16 *sinTab;
+    s16 *cosYaw;
+    s16 *sinYaw;
+    struct Point1Local pt;
     s32 zoom;
-    s32 vel;
-    s32 yOff;
-    s32 vy;
-    s32 rot;
-    s32 height;
-    s32 hvel;
+    s32 zoomVel;
+    s32 bounceY;
+    s32 bounceVel;
+    s32 rebound;
+    s32 spin;
+    s32 spinSpeed;
     struct ObjRecord *rec;
     u32 *words;
-    u32 h;
-    u32 saved;
-    s32 left;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
+    u32 oamFlags;
+    u32 modelSaved;
+    s32 pointsLeft;
+    s32 *pY;
+    s32 *pZ;
+    u32 *pModel;
     s32 px;
     s32 py;
     s32 pz;
-    s32 x1;
-    s32 y1;
-    s32 z1;
-    s32 x2;
-    s32 y2;
-    s32 z2;
-    s32 z3;
+    s32 zx;
+    s32 zy;
+    s32 zz;
+    s32 yawX;
+    s32 tiltY;
+    s32 yawZ;
+    s32 tiltZ;
     s32 t;
     s32 pos;
 
     words = obj->data;
     zoom = *words++;
-    vel = *words++;
-    yOff = *words++;
-    vy = *words++;
-    rot = *words++;
-    height = *words++;
-    hvel = *words++;
+    zoomVel = *words++;
+    bounceY = *words++;
+    bounceVel = *words++;
+    rebound = *words++;
+    spin = *words++;
+    spinSpeed = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    left = 3;
+    pt.model = rec->model;
+    oamFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, oamFlags);
+    pY = &pt.y;
+    pZ = &pt.z;
+    pModel = &pt.model;
+    pointsLeft = 3;
     for (;;) {
+        // The point's offset from the object.
         px = *words++;
-        l.x = px;
+        pt.x = px;
         py = *words++;
-        l.y = py;
+        pt.y = py;
         pz = *words++;
-        l.z = pz;
-        x1 = (px * zoom) / 0x100;
-        l.x = x1;
-        y1 = (py * zoom) / 0x100;
-        l.y = y1;
-        z1 = (pz * zoom) / 0x100;
-        l.z = z1;
-        t = z1;
-        cb = gCosineTable;
-        cs = cb + 40;
-        t = t * (*cs / 0x40);
-        sb = gSineTable;
-        sn = &gSineTable[40];
-        z2 = (t - (*sn / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (cb[16] / 0x40);
-        y2 = (t - (sb[16] / 0x40) * z2) / 0x100;
-        l.y = y2;
-        z3 = ((z2 * (cb[16] / 0x40)) + (sb[16] / 0x40) * y1) / 0x100;
-        l.z = z3;
-        l.y = y2 + yOff;
+        pt.z = pz;
+        // Zoom it.
+        zx = (px * zoom) / 0x100;
+        pt.x = zx;
+        zy = (py * zoom) / 0x100;
+        pt.y = zy;
+        zz = (pz * zoom) / 0x100;
+        pt.z = zz;
+        // Turn it around the vertical axis...
+        t = zz;
+        cosTab = gCosineTable;
+        cosYaw = cosTab + 40;
+        t = t * (*cosYaw / 0x40);
+        sinTab = gSineTable;
+        sinYaw = &gSineTable[40];
+        yawZ = (t - (*sinYaw / 0x40) * zx) / 0x100;
+        pt.z = yawZ;
+        yawX = (zx * (*cosYaw / 0x40) + (*sinYaw / 0x40) * zz) / 0x100;
+        pt.x = yawX;
+        // ...and tilt it.
+        t = zy;
+        t = t * (cosTab[16] / 0x40);
+        tiltY = (t - (sinTab[16] / 0x40) * yawZ) / 0x100;
+        pt.y = tiltY;
+        tiltZ = ((yawZ * (cosTab[16] / 0x40)) + (sinTab[16] / 0x40) * zy) / 0x100;
+        pt.z = tiltZ;
+        pt.y = tiltY + bounceY;
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x2;
+            pos = yawX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            pt.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x2;
+            pos = yawX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            pt.x = t + pos;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, pY, pZ, 0);
+        oam_place_points(pModel, oamFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
-        left--;
-        if (left < 0) {
+        pointsLeft--;
+        if (pointsLeft < 0) {
             break;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += vel;
-    yOff += vy;
-    vy += 0x60;
-    if (yOff > 0) {
-        vel = vel / 2;
-        yOff = 0;
-        rot += 2;
-        if (rot > 0) {
-            rot = 0;
+    zoom += zoomVel;
+    bounceY += bounceVel;
+    bounceVel += 0x60; // gravity
+    if (bounceY > 0) {
+        // Landed: bounce back up, weaker each time.
+        zoomVel = zoomVel / 2;
+        bounceY = 0;
+        rebound += 2;
+        if (rebound > 0) {
+            rebound = 0;
         }
-        vy = rot << 8;
-        hvel -= 2;
-        if (hvel < 0) {
-            hvel = 0;
+        bounceVel = rebound << 8;
+        spinSpeed -= 2;
+        if (spinSpeed < 0) {
+            spinSpeed = 0;
         }
     }
-    height += hvel;
-    rec->unkC = ((obj->flags & 0x80) ? -height : height) << 8;
+    spin += spinSpeed;
+    rec->unkC = ((obj->flags & 0x80) ? -spin : spin) << 8;
     rec->unk4 = 0x172;
     rec->unk6 = 0x172;
     words = obj->data;
     *words++ = zoom;
-    *words++ = vel;
-    *words++ = yOff;
-    *words++ = vy;
-    *words++ = rot;
-    *words++ = height;
-    *words = hvel;
+    *words++ = zoomVel;
+    *words++ = bounceY;
+    *words++ = bounceVel;
+    *words++ = rebound;
+    *words++ = spin;
+    *words = spinSpeed;
 }
 
+/* A four-point model that grows, falls and bounces while spinning. Its state is seven words
+   in obj->data (scale, scale speed, bounce height and velocity, rebound, spin, spin speed),
+   followed by the points. Each point is scaled, turned by two fixed angles (table index 40
+   about the vertical axis, 16 about the horizontal one), dropped by the bounce, mirrored
+   when flags bit 7 is set, and placed. Each bounce halves the growth, takes 2 off the rebound
+   and the spin speed. */
 void zoom_bounce_97bc(struct Point1Obj *obj)
 {
-    s16 *cb;
-    s16 *sb;
-    s16 *cs;
-    s16 *sn;
-    struct Point1Local l;
-    s32 zoom;
-    s32 vel;
-    s32 yOff;
-    s32 vy;
-    s32 rot;
-    s32 height;
-    s32 hvel;
+    s16 *cosTab;
+    s16 *sinTab;
+    s16 *cosYaw;
+    s16 *sinYaw;
+    struct Point1Local pt;
+    s32 scale;
+    s32 scaleSpeed;
+    s32 bounceY;
+    s32 bounceVel;
+    s32 rebound;
+    s32 spin;
+    s32 spinSpeed;
     struct ObjRecord *rec;
     u32 *words;
-    u32 h;
-    u32 saved;
-    s32 left;
-    s32 *p1;
-    s32 *p2;
-    u32 *pslot;
-    s32 px;
-    s32 py;
-    s32 pz;
-    s32 x1;
-    s32 y1;
-    s32 z1;
-    s32 x2;
-    s32 y2;
-    s32 z2;
-    s32 z3;
+    u32 oamFlags;
+    u32 modelSaved;
+    s32 pointsLeft;
+    s32 *ptY;
+    s32 *ptZ;
+    u32 *ptModel;
+    s32 modelX;
+    s32 modelY;
+    s32 modelZ;
+    s32 scaledX;
+    s32 scaledY;
+    s32 scaledZ;
+    s32 yawX;
+    s32 pitchY;
+    s32 yawZ;
+    s32 pitchZ;
     s32 t;
     s32 pos;
 
     words = obj->data;
-    zoom = *words++;
-    vel = *words++;
-    yOff = *words++;
-    vy = *words++;
-    rot = *words++;
-    height = *words++;
-    hvel = *words++;
+    scale = *words++;
+    scaleSpeed = *words++;
+    bounceY = *words++;
+    bounceVel = *words++;
+    rebound = *words++;
+    spin = *words++;
+    spinSpeed = *words++;
     rec = obj->rec;
-    l.model = rec->model;
-    h = block_flag_byte(rec);
-    saved = 0;
-    oam_list_rows_b(l.model, h);
-    p1 = &l.y;
-    p2 = &l.z;
-    pslot = &l.model;
-    left = 3;
+    pt.model = rec->model;
+    oamFlags = block_flag_byte(rec);
+    modelSaved = 0;
+    oam_list_rows_b(pt.model, oamFlags);
+    ptY = &pt.y;
+    ptZ = &pt.z;
+    ptModel = &pt.model;
+    pointsLeft = 3;
     for (;;) {
-        px = *words++;
-        l.x = px;
-        py = *words++;
-        l.y = py;
-        pz = *words++;
-        l.z = pz;
-        x1 = (px * zoom) / 0x100;
-        l.x = x1;
-        y1 = (py * zoom) / 0x100;
-        l.y = y1;
-        z1 = (pz * zoom) / 0x100;
-        l.z = z1;
-        t = z1;
-        cb = gCosineTable;
-        cs = cb + 40;
-        t = t * (*cs / 0x40);
-        sb = gSineTable;
-        sn = &gSineTable[40];
-        z2 = (t - (*sn / 0x40) * x1) / 0x100;
-        l.z = z2;
-        x2 = (x1 * (*cs / 0x40) + (*sn / 0x40) * z1) / 0x100;
-        l.x = x2;
-        t = y1;
-        t = t * (cb[16] / 0x40);
-        y2 = (t - (sb[16] / 0x40) * z2) / 0x100;
-        l.y = y2;
-        z3 = ((z2 * (cb[16] / 0x40)) + (sb[16] / 0x40) * y1) / 0x100;
-        l.z = z3;
-        l.y = y2 + yOff;
+        modelX = *words++;
+        pt.x = modelX;
+        modelY = *words++;
+        pt.y = modelY;
+        modelZ = *words++;
+        pt.z = modelZ;
+        scaledX = (modelX * scale) / 0x100;
+        pt.x = scaledX;
+        scaledY = (modelY * scale) / 0x100;
+        pt.y = scaledY;
+        scaledZ = (modelZ * scale) / 0x100;
+        pt.z = scaledZ;
+        t = scaledZ;
+        cosTab = gCosineTable;
+        cosYaw = cosTab + 40;
+        t = t * (*cosYaw / 0x40);
+        sinTab = gSineTable;
+        sinYaw = &gSineTable[40];
+        yawZ = (t - (*sinYaw / 0x40) * scaledX) / 0x100;
+        pt.z = yawZ;
+        yawX = (scaledX * (*cosYaw / 0x40) + (*sinYaw / 0x40) * scaledZ) / 0x100;
+        pt.x = yawX;
+        t = scaledY;
+        t = t * (cosTab[16] / 0x40);
+        pitchY = (t - (sinTab[16] / 0x40) * yawZ) / 0x100;
+        pt.y = pitchY;
+        pitchZ = ((yawZ * (cosTab[16] / 0x40)) + (sinTab[16] / 0x40) * scaledY) / 0x100;
+        pt.z = pitchZ;
+        pt.y = pitchY + bounceY;
 
         if (obj->flags & 0x80) {
             t = obj->posX;
-            pos = x2;
+            pos = yawX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t - pos;
+            pt.x = t - pos;
         } else {
             t = obj->posX;
-            pos = x2;
+            pos = yawX;
             if (pos < 0) {
                 pos += 0xFF;
             }
             pos >>= 8;
-            l.x = t + pos;
+            pt.x = t + pos;
         }
-        l.y = obj->posY + l.y / 0x100;
-        l.z = obj->posZ + l.z / 0x100;
-        offset_words_camera(&l.x, p1, p2, 0);
-        oam_place_points(pslot, h, l.x, l.y, l.z << 14, 0, 0);
-        if (!saved) {
-            l.model = gModelCtx->model;
-            saved = 1;
+        pt.y = obj->posY + pt.y / 0x100;
+        pt.z = obj->posZ + pt.z / 0x100;
+        offset_words_camera(&pt.x, ptY, ptZ, 0);
+        oam_place_points(ptModel, oamFlags, pt.x, pt.y, pt.z << 14, 0, 0);
+        if (!modelSaved) {
+            pt.model = gModelCtx->model;
+            modelSaved = 1;
         }
-        left--;
-        if (left < 0) {
+        pointsLeft--;
+        if (pointsLeft < 0) {
             break;
         }
     }
-    if (saved) {
-        gModelCtx->model = l.model;
+    if (modelSaved) {
+        gModelCtx->model = pt.model;
     }
-    zoom += vel;
-    yOff += vy;
-    vy += 0x60;
-    if (yOff > 0) {
-        vel = vel / 2;
-        yOff = 0;
-        rot += 2;
-        if (rot > 0) {
-            rot = 0;
+    scale += scaleSpeed;
+    bounceY += bounceVel;
+    bounceVel += 0x60; /* gravity */
+    if (bounceY > 0) {
+        /* hit the ground */
+        scaleSpeed = scaleSpeed / 2;
+        bounceY = 0;
+        rebound += 2;
+        if (rebound > 0) {
+            rebound = 0;
         }
-        vy = rot << 8;
-        hvel -= 2;
-        if (hvel < 0) {
-            hvel = 0;
+        bounceVel = rebound << 8;
+        spinSpeed -= 2;
+        if (spinSpeed < 0) {
+            spinSpeed = 0;
         }
     }
-    height += hvel;
-    rec->unkC = ((obj->flags & 0x80) ? -height : height) << 8;
+    spin += spinSpeed;
+    rec->unkC = ((obj->flags & 0x80) ? -spin : spin) << 8; /* rotation */
     rec->unk4 = 0x172;
     rec->unk6 = 0x172;
     words = obj->data;
-    *words++ = zoom;
-    *words++ = vel;
-    *words++ = yOff;
-    *words++ = vy;
-    *words++ = rot;
-    *words++ = height;
-    *words = hvel;
+    *words++ = scale;
+    *words++ = scaleSpeed;
+    *words++ = bounceY;
+    *words++ = bounceVel;
+    *words++ = rebound;
+    *words++ = spin;
+    *words = spinSpeed;
 }

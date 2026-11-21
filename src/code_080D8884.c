@@ -75,15 +75,15 @@ struct PoseBits
 struct ActorInfo
 {
     u8 filler0[0x1C];
-    u8 flags1C;
-    u8 flags1D;
+    u8 flags1C; // 0x80: the root part of a linked actor
+    u8 flags1D; // 0x10: can't be knocked back
 };
 
 struct ActorPart
 {
-    struct ActorPart *link;
+    struct ActorPart *link; // next part of a multi-part actor
     u8 filler0[0x84 - 4];
-    u16 unk84;
+    u16 unk84;  // motion speed copied from the part that was hit
     u8 filler0B[0xB0 - 0x86];
     s32 unkB0;
     u8 filler1[0xD8 - 0xB4];
@@ -95,9 +95,9 @@ struct ActorPart
     u8 filler3[0xF0 - 0xEE];
     struct ActorInfo *info;
     u8 filler3b[0xF6 - 0xF4];
-    s16 unkF6;
+    s16 unkF6;  // 0 once the actor is finished (obj_stop_a stops it then)
     u8 filler4[0x111 - 0xF8];
-    u8 unk111;
+    u8 unk111;  // bit 1: being knocked back, bit 3: hit by hero B's first hit
 };
 
 struct ActorObj
@@ -166,8 +166,8 @@ struct Hero
     u8 filler0[0x08];
     struct ActorObj body;
     u8 filler0D0[0xD2 - 0xD0];
-    u16 unkD2;
-    u8 unkD4;
+    u16 unkD2;  // the current hit's value, for resolve_contact_action
+    u8 unkD4;   // low 7 bits: the current hit's kind
     u8 filler0D5[0x110 - 0xD5];
     u8 unk110;
 };
@@ -178,6 +178,19 @@ struct World
     struct Hero *heroA;
     struct Hero *heroB;
 };
+
+/* Actor mode bits 1-2: 2 or 4 means the actor is active on the field. */
+#define HERO_MODE_ACTIVE(mode) (((mode) & 6) == 2 || ((mode) & 6) == 4)
+
+/* ActorPose.flags12 bit set once the pose's current animation has played out. */
+#define HERO_SPRITE_ANIM_DONE 8
+
+/* ActorObj.flags79 bit set once the current motion (or state-stack progress) has finished. */
+#define HERO_FLAG_MOTION_DONE 0x20
+
+/* sprite_set_action arguments for a hero standing still, without and with a pose. */
+#define HERO_ACTION_STAND 0x2002
+#define HERO_ACTION_STAND_POSED 0x204F
 
 extern struct World *gWorld;
 extern u8 gRoom149Layer0[];
@@ -241,28 +254,35 @@ u32 obj_lookup_slot(struct ActorObj *obj, u32 a, u32 b);
 u32 obj_lookup_part(struct ActorObj *obj, u32 a, u32 b);
 void obj_handoff_b(struct ActorObj *obj);
 
+/*
+ * Hero B state: advances B's progress and, once obj's owner has a partner and B has risen above the
+ * owner's base height (progress * B's height offset), links the owner (hero_b_link_a). When B's
+ * motion is done, B jumps in an arc 0x20 high (speed 0x600) to the owner's base spot plus its
+ * offsets (24 pixels to the left), B and its child take action 0x13 (0x2066 and 0x2095) and obj
+ * moves on to hero_b_follow_child_pos_then_next.
+ */
 void hero_b_partner_place_height(struct ActorObj *obj)
 {
     struct ActorObj *body = &gWorld->heroB->body;
-    struct ActorObj *partner = obj->owner;
+    struct ActorObj *owner = obj->owner;
     u32 mode;
 
     state_stack_advance_progress(body);
-    if (partner->partner != 0 && (partner->baseH << 6) < body->offsetC5 * body->progress)
+    if (owner->partner != 0 && (owner->baseH << 6) < body->offsetC5 * body->progress)
     {
-        if ((partner->mode & 6) == 2 || (partner->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(owner->mode))
         {
-            partner->state = hero_b_link_a;
+            owner->state = hero_b_link_a;
         }
     }
-    if (body->flags79 & 0x20)
+    if (body->flags79 & HERO_FLAG_MOTION_DONE)
     {
         mode = body->mode & 6;
         if (mode == 2 || mode == 4)
         {
-            place_targets(body, partner->baseX / 0x100 + partner->offsetC3 - 0x18,
-                          partner->baseY / 0x100 + partner->offsetC4, 0, -1);
-            body->unk92 = 0x20;
+            place_targets(body, owner->baseX / 0x100 + owner->offsetC3 - 24,
+                          owner->baseY / 0x100 + owner->offsetC4, 0, -1);
+            body->unk92 = 0x20; /* arc height */
             set_motion_offsets(body, 0x600);
         }
         mode = body->mode & 6;
@@ -280,17 +300,23 @@ void hero_b_partner_place_height(struct ActorObj *obj)
     }
 }
 
+/*
+ * Hero B state: steps B's jump while carrying its child along (the child takes B's position).
+ * Once obj's owner has a partner and B is above the owner's base height, links the owner
+ * (hero_b_link_a). When the jump has landed, plays sound 0x65, B takes action 0 (0x2005) and
+ * obj moves on to hero_pair_active_finish_both.
+ */
 void hero_b_follow_child_pos_then_next(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gWorld->heroB->body;
+    struct ActorObj *heroB = &gWorld->heroB->body;
     struct ActorObj *owner = obj->owner;
     u32 mode;
 
-    step_motion(body);
-    body->child->posX = body->posX;
-    body->child->posY = body->posY;
-    body->child->posH = body->posH;
-    if (owner->partner != 0 && owner->baseH < body->posH + body->offsetC5)
+    step_motion(heroB);
+    heroB->child->posX = heroB->posX;
+    heroB->child->posY = heroB->posY;
+    heroB->child->posH = heroB->posH;
+    if (owner->partner != 0 && owner->baseH < heroB->posH + heroB->offsetC5)
     {
         mode = owner->mode & 6;
         if (mode == 2 || mode == 4)
@@ -298,30 +324,37 @@ void hero_b_follow_child_pos_then_next(struct ActorObj *obj)
             owner->state = hero_b_link_a;
         }
     }
-    if (body->flags79 & 0x20)
+    if (heroB->flags79 & HERO_FLAG_MOTION_DONE)
     {
         set_slot_value(0x65, -1);
-        mode = body->mode & 6;
+        mode = heroB->mode & 6;
         if (mode == 2 || mode == 4)
         {
-            sprite_set_action(body, 0, 0x2005, 0);
-            ((struct PoseBits *)&body->pose->flags12)->mode = 1;
+            sprite_set_action(heroB, 0, 0x2005, 0);
+            ((struct PoseBits *)&heroB->pose->flags12)->mode = 1;
         }
         obj->state = hero_pair_active_finish_both;
     }
 }
 
+/*
+ * Hero pair state: once hero B's pose has finished (pose flag 8), releases B's child, clears slot
+ * 0x53 and, for hero A and then hero B (each only in mode 2 or 4), sends the hero to its part's
+ * target position (8.8 fixed point, speed 0x400), sets the standing action (0x2002, or 0x204F
+ * when it has a slot), faces it along the two halves of its targetX word, clears its pose mode
+ * and hands it to enter_finish_rebuild.
+ */
 void hero_pair_active_finish_both(struct ActorObj *obj)
 {
     struct Hero *heroA;
     struct ActorObj *bodyA;
     struct ActorObj *bodyB;
     struct ActorPart *part;
-    s16 *span;
-    s32 t;
-    s32 px;
-    s32 py;
-    s32 pz;
+    s16 *facing;
+    s32 fixed;
+    s32 x;
+    s32 y;
+    s32 h;
 
     heroA = gWorld->heroA;
     bodyA = &heroA->body;
@@ -330,22 +363,24 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
     {
         obj_release(bodyB->child);
         set_slot_value(0x53, -1);
+
+        /* hero A */
         if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
         {
             part = bodyA->part;
-            t = part->targetX;
-            if (t < 0)
-                t += 0xff;
-            px = t >> 8;
-            t = part->targetY;
-            if (t < 0)
-                t += 0xff;
-            py = t >> 8;
-            t = part->targetH;
-            if (t < 0)
-                t += 0xff;
-            pz = t >> 8;
-            place_targets(bodyA, px, py, pz, -1);
+            fixed = part->targetX;
+            if (fixed < 0)
+                fixed += 0xff;
+            x = fixed >> 8;
+            fixed = part->targetY;
+            if (fixed < 0)
+                fixed += 0xff;
+            y = fixed >> 8;
+            fixed = part->targetH;
+            if (fixed < 0)
+                fixed += 0xff;
+            h = fixed >> 8;
+            place_targets(bodyA, x, y, h, -1);
             set_motion_start(bodyA, 0x400);
         }
         if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
@@ -358,7 +393,7 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
             {
                 sprite_set_action(bodyA, 0, 0x204F, 0);
             }
-            ((struct Unk11Bits *)&bodyA->pose->unk11)->b6 = (span = (s16 *)&bodyA->targetX)[0] >= span[1];
+            ((struct Unk11Bits *)&bodyA->pose->unk11)->b6 = (facing = (s16 *)&bodyA->targetX)[0] >= facing[1];
             ((struct PoseBits *)&bodyA->pose->flags12)->mode = 0;
         }
         if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
@@ -366,22 +401,24 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
             bodyA->state = 0;
             enter_finish_rebuild(bodyA);
         }
+
+        /* hero B */
         if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
         {
             part = bodyB->part;
-            t = part->targetX;
-            if (t < 0)
-                t += 0xff;
-            px = t >> 8;
-            t = part->targetY;
-            if (t < 0)
-                t += 0xff;
-            py = t >> 8;
-            t = part->targetH;
-            if (t < 0)
-                t += 0xff;
-            pz = t >> 8;
-            place_targets(bodyB, px, py, pz, -1);
+            fixed = part->targetX;
+            if (fixed < 0)
+                fixed += 0xff;
+            x = fixed >> 8;
+            fixed = part->targetY;
+            if (fixed < 0)
+                fixed += 0xff;
+            y = fixed >> 8;
+            fixed = part->targetH;
+            if (fixed < 0)
+                fixed += 0xff;
+            h = fixed >> 8;
+            place_targets(bodyB, x, y, h, -1);
             set_motion_start(bodyB, 0x400);
         }
         if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
@@ -394,7 +431,7 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
             {
                 sprite_set_action(bodyB, 0, 0x204F, 0);
             }
-            ((struct Unk11Bits *)&bodyB->pose->unk11)->b6 = (span = (s16 *)&bodyB->targetX)[0] >= span[1];
+            ((struct Unk11Bits *)&bodyB->pose->unk11)->b6 = (facing = (s16 *)&bodyB->targetX)[0] >= facing[1];
             ((struct PoseBits *)&bodyB->pose->flags12)->mode = 0;
         }
         if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
@@ -405,11 +442,16 @@ void hero_pair_active_finish_both(struct ActorObj *obj)
     }
 }
 
-NONMATCH("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj *obj))
+/* Hero B's hit lands on obj: unless obj's actor can't be knocked back, marks its part as hit by B
+ * and knocked back, resolves the hit (kind 0x46, value 0xCC), counts it on B and, while the actor
+ * is still alive or knocked back, spawns effect 0x6C4 at it. Then the actor's root part (obj, or
+ * for a multi-part actor the part flagged as root, which takes obj's motion speed) jumps back to
+ * its target position in an arc 0x30 above it and stops in obj_stop_b. */
+void hero_b_link_a(struct ActorObj *obj)
 {
     struct Hero *hero = gWorld->heroB;
     struct ActorObj *body = &hero->body;
-    struct ActorObj *owner = obj;
+    struct ActorObj *hitObj = obj;
     struct ActorPart *part;
     struct ActorPart *head;
 
@@ -435,17 +477,18 @@ NONMATCH("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj
     head = obj->part;
     if (head->link != 0)
     {
-        struct ActorPart *walk = head;
+        struct ActorPart *root;
         obj->state = 0;
-        while ((walk->info->flags1C & 0x80) == 0)
+        root = head;
+        while ((root->info->flags1C & 0x80) == 0)
         {
-            walk = walk->link;
+            root = root->link;
         }
-        obj = (struct ActorObj *)((u8 *)walk + 8);
-        walk->unk84 = owner->motionSpeed;
+        obj = (struct ActorObj *)((u8 *)root + 8);
+        root->unk84 = hitObj->motionSpeed;
     }
-    obj->owner = owner;
-    if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
+    obj->owner = hitObj;
+    if (HERO_MODE_ACTIVE(obj->mode))
     {
         part = obj->part;
         place_targets(obj, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, -1);
@@ -454,45 +497,53 @@ NONMATCH("asm/code_080D8884/hero_b_link_a.s", void hero_b_link_a(struct ActorObj
     }
     obj->state = obj_stop_b;
 }
-END_NONMATCH
 
+/* Ends hero B's link with the actor obj is attached to: plays sound 0x15E, releases B's child object,
+   switches the owner (while active) to hero_b_link_b, spawns effect 0x6AF at B, clears B's tag and
+   counter bytes, starts action 0x10 on B (0x2066) and its child (0x2095), and moves on to
+   hero_b_active_a. */
 void hero_b_unlink_a(struct ActorObj *obj)
 {
-    struct ActorObj *body = &gWorld->heroB->body;
+    struct ActorObj *heroB = &gWorld->heroB->body;
     struct ActorObj *owner = obj->owner;
     u32 mode;
 
     set_slot_value(0x15E, -1);
-    obj_release(body->child);
+    obj_release(heroB->child);
     mode = owner->mode & 6;
     if (mode == 2 || mode == 4)
     {
         owner->state = hero_b_link_b;
     }
-    effect_spawn_at(0x6AF, body->posX / 0x100, body->posY / 0x100, body->posH / 0x100, body);
-    body->tag = 0;
-    body->counter = 0;
-    mode = body->mode & 6;
+    effect_spawn_at(0x6AF, heroB->posX / 0x100, heroB->posY / 0x100, heroB->posH / 0x100, heroB);
+    heroB->tag = 0;
+    heroB->counter = 0;
+    mode = heroB->mode & 6;
     if (mode == 2 || mode == 4)
     {
-        sprite_set_action(body, 0x10, 0x2066, 0);
-        ((struct PoseBits *)&body->pose->flags12)->mode = 1;
+        sprite_set_action(heroB, 0x10, 0x2066, 0);
+        ((struct PoseBits *)&heroB->pose->flags12)->mode = 1;
     }
-    if (body->child != 0)
+    if (heroB->child != 0)
     {
-        sprite_set_action(body->child, 0x10, 0x2095, 0);
-        ((struct PoseBits *)&body->child->pose->flags12)->mode = 0;
+        sprite_set_action(heroB->child, 0x10, 0x2095, 0);
+        ((struct PoseBits *)&heroB->child->pose->flags12)->mode = 0;
     }
     obj->state = hero_b_active_a;
 }
 
+/*
+ * Hero B state: once B's pose animation has played out, B (while active) and its child take
+ * action 0x11 (0x2066 and 0x2095), B jumps in an arc 0x30 high (speed 0x600) to its own base
+ * spot plus its offsets (24 pixels to the left), and obj moves on to hero_b_flagged_a.
+ */
 void hero_b_active_a(struct ActorObj *obj)
 {
     struct ActorObj *body = &gWorld->heroB->body;
     u32 mode;
-    u16 v;
+    u16 arcHeight;
 
-    if (body->pose->flags12 & 8)
+    if (body->pose->flags12 & HERO_SPRITE_ANIM_DONE)
     {
         mode = body->mode & 6;
         if (mode == 2 || mode == 4)
@@ -508,23 +559,29 @@ void hero_b_active_a(struct ActorObj *obj)
         mode = body->mode & 6;
         if (mode == 2 || mode == 4)
         {
-            place_targets(body, body->baseX / 0x100 + body->offsetC3 - 0x18,
+            place_targets(body, body->baseX / 0x100 + body->offsetC3 - 24,
                           body->baseY / 0x100 + body->offsetC4, 0, -1);
-            v = 0x30;
-            body->unk92 = v;
+            arcHeight = 0x30;
+            body->unk92 = arcHeight;
             set_motion_offsets(body, 0x600);
         }
         obj->state = hero_b_flagged_a;
     }
 }
 
+/*
+ * Hero B state: moves B along its jump (from hero_b_active_a). Once it has landed, plays sound
+ * 0x2E and spawns effect 0x1E at B, gives B (while active) action 8 (0x2000, or 0x204D for the
+ * other hero's sprite set), turns it to face the other way (pose bit 6), and moves obj on to
+ * heroes_step.
+ */
 void hero_b_flagged_a(struct ActorObj *obj)
 {
     struct ActorObj *body = &gWorld->heroB->body;
     u32 mode;
 
     step_motion(body);
-    if (body->flags79 & 0x20)
+    if (body->flags79 & HERO_FLAG_MOTION_DONE)
     {
         set_slot_value(0x2E, -1);
         effect_spawn_at(0x1E, body->posX / 0x100, body->posY / 0x100, body->posH / 0x100, body);
@@ -546,6 +603,12 @@ void hero_b_flagged_a(struct ActorObj *obj)
     }
 }
 
+/*
+ * Hero pair state: once hero B's pose animation has played out, plays sound 0x53 and sends hero A
+ * and then hero B (each only while active) to the rest position in its part (8.8 fixed point, speed
+ * 0x400), gives it the standing action, faces it along its move, clears its pose mode and hands it
+ * to enter_finish_rebuild.
+ */
 void heroes_step(struct ActorObj *obj)
 {
     struct Hero *heroA;
@@ -553,85 +616,90 @@ void heroes_step(struct ActorObj *obj)
     struct ActorObj *bodyB;
     struct ActorPart *part;
     s16 *span;
-    s32 t;
-    s32 px;
-    s32 py;
-    s32 pz;
+    s32 fixed;
+    s32 x;
+    s32 y;
+    s32 h;
 
     heroA = gWorld->heroA;
     bodyA = &heroA->body;
     bodyB = &gWorld->heroB->body;
-    if (bodyB->pose->flags12 & 8)
+    if (bodyB->pose->flags12 & HERO_SPRITE_ANIM_DONE)
     {
         set_slot_value(0x53, -1);
-        if ((heroA->body.mode & 6) == 2 || (heroA->body.mode & 6) == 4)
+
+        /* hero A */
+        if (HERO_MODE_ACTIVE(heroA->body.mode))
         {
             part = bodyA->part;
-            t = part->targetX;
-            if (t < 0)
-                t += 0xff;
-            px = t >> 8;
-            t = part->targetY;
-            if (t < 0)
-                t += 0xff;
-            py = t >> 8;
-            t = part->targetH;
-            if (t < 0)
-                t += 0xff;
-            pz = t >> 8;
-            place_targets(bodyA, px, py, pz, -1);
+            fixed = part->targetX;
+            if (fixed < 0)
+                fixed += 0xff;
+            x = fixed >> 8;
+            fixed = part->targetY;
+            if (fixed < 0)
+                fixed += 0xff;
+            y = fixed >> 8;
+            fixed = part->targetH;
+            if (fixed < 0)
+                fixed += 0xff;
+            h = fixed >> 8;
+            place_targets(bodyA, x, y, h, -1);
             set_motion_start(bodyA, 0x400);
         }
-        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(bodyA->mode))
         {
             if (bodyA->part->slot == -1)
             {
-                sprite_set_action(bodyA, 0, 0x2002, 0);
+                sprite_set_action(bodyA, 0, HERO_ACTION_STAND, 0);
             }
             else
             {
-                sprite_set_action(bodyA, 0, 0x204F, 0);
+                sprite_set_action(bodyA, 0, HERO_ACTION_STAND_POSED, 0);
             }
+            /* mirror unless the move goes right (low half of targetX = start x, high half = target x) */
             ((struct Unk11Bits *)&bodyA->pose->unk11)->b6 = (span = (s16 *)&bodyA->targetX)[0] >= span[1];
             ((struct PoseBits *)&bodyA->pose->flags12)->mode = 0;
         }
-        if ((bodyA->mode & 6) == 2 || (bodyA->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(bodyA->mode))
         {
             bodyA->state = 0;
             enter_finish_rebuild(bodyA);
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+
+        /* hero B */
+        if (HERO_MODE_ACTIVE(bodyB->mode))
         {
             part = bodyB->part;
-            t = part->targetX;
-            if (t < 0)
-                t += 0xff;
-            px = t >> 8;
-            t = part->targetY;
-            if (t < 0)
-                t += 0xff;
-            py = t >> 8;
-            t = part->targetH;
-            if (t < 0)
-                t += 0xff;
-            pz = t >> 8;
-            place_targets(bodyB, px, py, pz, -1);
+            fixed = part->targetX;
+            if (fixed < 0)
+                fixed += 0xff;
+            x = fixed >> 8;
+            fixed = part->targetY;
+            if (fixed < 0)
+                fixed += 0xff;
+            y = fixed >> 8;
+            fixed = part->targetH;
+            if (fixed < 0)
+                fixed += 0xff;
+            h = fixed >> 8;
+            place_targets(bodyB, x, y, h, -1);
             set_motion_start(bodyB, 0x400);
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(bodyB->mode))
         {
             if (bodyB->part->slot == -1)
             {
-                sprite_set_action(bodyB, 0, 0x2002, 0);
+                sprite_set_action(bodyB, 0, HERO_ACTION_STAND, 0);
             }
             else
             {
-                sprite_set_action(bodyB, 0, 0x204F, 0);
+                sprite_set_action(bodyB, 0, HERO_ACTION_STAND_POSED, 0);
             }
             ((struct Unk11Bits *)&bodyB->pose->unk11)->b6 = (span = (s16 *)&bodyB->targetX)[0] >= span[1];
             ((struct PoseBits *)&bodyB->pose->flags12)->mode = 0;
         }
-        if ((bodyB->mode & 6) == 2 || (bodyB->mode & 6) == 4)
+        if (HERO_MODE_ACTIVE(bodyB->mode))
         {
             bodyB->state = 0;
             enter_finish_rebuild(bodyB);
@@ -639,63 +707,68 @@ void heroes_step(struct ActorObj *obj)
     }
 }
 
-void hero_b_link_b(struct ActorObj *obj)
+// Hero B's second hit on target: resolves the hit (kind 0x48, value 0xF3), counts it and
+// spawns the hit effect. Unless the target can't be knocked back, its root part is then
+// knocked back home in an arc, and obj_stop_a waits for it to land.
+void hero_b_link_b(struct ActorObj *target)
 {
     struct Hero *hero = gWorld->heroB;
     struct ActorObj *body = &hero->body;
-    struct ActorObj *owner = obj;
+    struct ActorObj *hitObj = target;
     struct ActorPart *part;
     struct ActorPart *head;
 
-    if (obj->part->info->flags1D & 0x10)
+    if (target->part->info->flags1D & 0x10)
     {
         ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
         hero->unkD2 = 0xF3;
-        resolve_contact_action(body, obj, 0, 0, (u32)(gText + 0x5F065));
+        resolve_contact_action(body, target, 0, 0, (u32)(gText + 0x5F065));
         body->unk24++;
-        head = obj->part;
+        head = target->part;
         if (head->unkF6 > 0 || (head->unk111 & 2) != 0)
         {
-            s32 x = obj->baseX / 0x100 + obj->offsetC3;
-            s32 y = obj->baseY / 0x100 + obj->offsetC4;
-            effect_spawn_at(0x6C4, x, y, 0, obj);
+            s32 x = target->baseX / 0x100 + target->offsetC3;
+            s32 y = target->baseY / 0x100 + target->offsetC4;
+            effect_spawn_at(0x6C4, x, y, 0, target);
         }
-        obj->state = 0;
+        target->state = 0;
         return;
     }
-    ((struct PartBits *)&obj->part->unk111)->b1 = 1;
+    ((struct PartBits *)&target->part->unk111)->b1 = 1;
     ((struct HighBitByte *)&hero->unkD4)->low7 = 0x48;
     hero->unkD2 = 0xF3;
-    resolve_contact_action(body, obj, 0, 0, (u32)(gText + 0x5F065));
+    resolve_contact_action(body, target, 0, 0, (u32)(gText + 0x5F065));
     body->unk24++;
-    head = obj->part;
+    head = target->part;
     if (head->unkF6 > 0 || (head->unk111 & 2) != 0)
     {
-        s32 x = obj->baseX / 0x100 + obj->offsetC3;
-        s32 y = obj->baseY / 0x100 + obj->offsetC4;
-        effect_spawn_at(0x6C4, x, y, 0, obj);
+        s32 x = target->baseX / 0x100 + target->offsetC3;
+        s32 y = target->baseY / 0x100 + target->offsetC4;
+        effect_spawn_at(0x6C4, x, y, 0, target);
     }
-    if (obj->part->link != 0)
+
+    /* A multi-part actor moves as a whole: knock back its root part instead. */
+    if (target->part->link != 0)
     {
         struct ActorPart *walk;
-        obj->state = 0;
-        walk = obj->part;
+        target->state = 0;
+        walk = target->part;
         while ((walk->info->flags1C & 0x80) == 0)
         {
             walk = walk->link;
         }
-        obj = (struct ActorObj *)((u8 *)walk + 8);
-        walk->unk84 = owner->motionSpeed;
+        target = (struct ActorObj *)((u8 *)walk + 8);
+        walk->unk84 = hitObj->motionSpeed;
     }
-    obj->owner = owner;
-    if ((obj->mode & 6) == 2 || (obj->mode & 6) == 4)
+    target->owner = hitObj;
+    if ((target->mode & 6) == 2 || (target->mode & 6) == 4)
     {
-        part = obj->part;
-        place_targets(obj, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, -1);
-        obj->unk92 = obj->part->targetH / 0x100 + 0x40;
-        set_motion_offsets(obj, 0x580);
+        part = target->part;
+        place_targets(target, part->targetX / 0x100, part->targetY / 0x100, part->targetH / 0x100, -1);
+        target->unk92 = target->part->targetH / 0x100 + 0x40;
+        set_motion_offsets(target, 0x580);
     }
-    obj->state = obj_stop_a;
+    target->state = obj_stop_a;
 }
 
 void obj_stop_a(struct ActorObj *obj)
@@ -773,6 +846,10 @@ void hero_b_end_a(struct ActorObj *obj)
     }
 }
 
+/* Moves the object one frame along the jump obj_spawn_part started: the horizontal offsets from
+   its base grow by 1/64 a frame and dh by the jump's per-frame change (partHandle). Once it comes
+   down to its part's target height it lands there, waits param9C frames (motion_timed) and then
+   goes on with obj_start_move_a. */
 void obj_move_clamp_a(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0x104 / 0x100;
@@ -890,6 +967,10 @@ u32 obj_lookup_part(struct ActorObj *obj, u32 a, u32 b)
     return partner_link_update(obj, a, b);
 }
 
+/* Once the current animation is done (pose flag 8), spawns a 0x4070 child 12 pixels above this object,
+   wired like this one (owner, partner, params), and sends it on a jump a third of the way toward the
+   owner's part target; obj_retarget_a takes it from there. This object then plays its follow-up action
+   and waits in obj_pose_update_if_active. */
 void obj_spawn_child_a(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -898,8 +979,8 @@ void obj_spawn_child_a(struct ActorObj *obj)
     s16 *dyp;
     s16 *dhp;
     s32 *limitp;
-    s32 halfX;
-    s32 halfY;
+    s32 thirdX;
+    s32 thirdY;
 
     if ((obj->pose->flags12 & 8) != 0)
     {
@@ -921,15 +1002,16 @@ void obj_spawn_child_a(struct ActorObj *obj)
         child->partner = obj->partner;
         child->tag = 0xFF;
         sprite_set_action(child, 2, 0, 0);
+        /* the child lands at the owner's part height; jump a third of the way there */
         limitp = &child->limitH;
         ownerPart = obj->owner->part;
         *limitp = ownerPart->targetH;
         dxp = &child->dx;
         dyp = &child->dy;
         dhp = &child->dh;
-        halfX = (ownerPart->targetX - child->baseX) / 3;
-        halfY = (ownerPart->targetY - child->baseY) / 3;
-        child->partHandle = jump_velocity(dxp, dyp, dhp, halfX, halfY,
+        thirdX = (ownerPart->targetX - child->baseX) / 3;
+        thirdY = (ownerPart->targetY - child->baseY) / 3;
+        child->partHandle = jump_velocity(dxp, dyp, dhp, thirdX, thirdY,
                                           *limitp - child->baseH, 0x3C00, 0x4CC, 0xFD, 0);
         obj->unk6C = 0;
         sprite_set_action(obj, (obj->owner->part->slot == -1) ? 5 : 9, 0, 0);
@@ -939,10 +1021,14 @@ void obj_spawn_child_a(struct ActorObj *obj)
 }
 
 
+/* Moves the jumping child of obj_spawn_child_a one frame (partHandle is the per-frame change of dh
+ * that jump_velocity gave). When it comes down to limitH it bounces with sound 0x65 (set_slot_value):
+ * a second jump (0x1400) half way toward the owner's part target, landing at that target's height,
+ * and hands over to obj_handoff_b. Like obj_retarget_b, with a lower jump. */
 void obj_retarget_a(struct ActorObj *obj)
 {
-    struct ActorPart *part;
-    s32 targetH;
+    struct ActorPart *ownerPart;
+    s32 landH;
     s32 halfX;
     s32 halfY;
 
@@ -954,20 +1040,24 @@ void obj_retarget_a(struct ActorObj *obj)
     {
         obj->posH = obj->limitH;
         set_slot_value(0x65, -1);
-        part = obj->owner->part;
-        targetH = part->targetH;
-        obj->limitH = targetH;
-        halfX = (part->targetX - obj->baseX) / 2;
-        halfY = (part->targetY - obj->baseY) / 2;
-        obj->partHandle = jump_velocity(&obj->dx, &obj->dy, &obj->dh, halfX, halfY, targetH - obj->baseH,
+        ownerPart = obj->owner->part;
+        landH = ownerPart->targetH;
+        obj->limitH = landH;
+        halfX = (ownerPart->targetX - obj->baseX) / 2;
+        halfY = (ownerPart->targetY - obj->baseY) / 2;
+        obj->partHandle = jump_velocity(&obj->dx, &obj->dy, &obj->dh, halfX, halfY, landH - obj->baseH,
                                         0x1400, 0x4CC, 0xFD, 0);
         obj->state = obj_handoff_b;
     }
 }
 
+/* Moves the jumping child one frame on the second jump obj_retarget_a started. When it comes down to
+ * limitH it hands over to a real actor: places entry paramA4 of table 0x16, attaches it to the owner,
+ * puts it in its default action at the landing spot with owner_moves_obj_prepare_b as its state,
+ * marks the part (unkB0) and releases itself. */
 void obj_handoff_b(struct ActorObj *obj)
 {
-    struct Hero *hero;
+    struct Hero *spawned;
 
     obj->dh += obj->partHandle;
     obj->posX = obj->baseX + obj->dx;
@@ -976,19 +1066,23 @@ void obj_handoff_b(struct ActorObj *obj)
     if (obj->posH <= obj->limitH)
     {
         obj->posH = obj->limitH;
-        hero = place_from_table(obj->paramA4, 0x16, 1);
-        obj_attach(&hero->body, obj->owner, 0);
-        ((struct HighBitByte *)&hero->unk110)->high = 1;
-        sprite_set_action(&hero->body, 0, -1, 0);
-        hero->body.posX = obj->posX;
-        hero->body.posY = obj->posY;
-        hero->body.posH = obj->posH;
-        hero->body.state = owner_moves_obj_prepare_b;
+        spawned = place_from_table(obj->paramA4, 0x16, 1);
+        obj_attach(&spawned->body, obj->owner, 0);
+        ((struct HighBitByte *)&spawned->unk110)->high = 1;
+        sprite_set_action(&spawned->body, 0, -1, 0);
+        spawned->body.posX = obj->posX;
+        spawned->body.posY = obj->posY;
+        spawned->body.posH = obj->posH;
+        spawned->body.state = owner_moves_obj_prepare_b;
         obj->part->unkB0 = 1;
         obj_release(obj);
     }
 }
 
+/* Moves the object one frame along the jump obj_create_part_then_action3 started: the horizontal
+   offsets from its base grow by 1/64 a frame and dh by the jump's per-frame change (partHandle).
+   Once it comes down to limitH (its data's target height) it lands there, waits param9C frames
+   (motion_timed) and then goes on with obj_start_move_c. Like obj_move_clamp_a. */
 void obj_move_clamp_b(struct ActorObj *obj)
 {
     obj->dx = obj->dx * 0x104 / 0x100;
@@ -1044,6 +1138,11 @@ void obj_timed_move_b(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation is done (pose flag 8), spawns a 0x4070 child 12 pixels above this object,
+   wired like this one (owner, partner, params), and sends it on a jump a third of the way toward the
+   owner's part target; obj_retarget_b takes it from there. This object then plays its follow-up action
+   and waits in obj_pose_update_b. Unlike obj_spawn_child_a, the jump height is measured from this
+   object's limitH, not the child's. */
 void owner_moves_obj_spawn_child_b(struct ActorObj *obj)
 {
     struct ActorObj *child;
@@ -1052,8 +1151,8 @@ void owner_moves_obj_spawn_child_b(struct ActorObj *obj)
     s16 *dyp;
     s16 *dhp;
     s32 *limitp;
-    s32 halfX;
-    s32 halfY;
+    s32 thirdX;
+    s32 thirdY;
 
     if ((obj->pose->flags12 & 8) != 0)
     {
@@ -1075,15 +1174,16 @@ void owner_moves_obj_spawn_child_b(struct ActorObj *obj)
         child->partner = obj->partner;
         child->tag = 0xFF;
         sprite_set_action(child, 2, 0, 0);
+        /* the child lands at the owner's part height; jump a third of the way there */
         limitp = &child->limitH;
         ownerPart = obj->owner->part;
         *limitp = ownerPart->targetH;
         dxp = &child->dx;
         dyp = &child->dy;
         dhp = &child->dh;
-        halfX = (ownerPart->targetX - child->baseX) / 3;
-        halfY = (ownerPart->targetY - child->baseY) / 3;
-        child->partHandle = jump_velocity(dxp, dyp, dhp, halfX, halfY,
+        thirdX = (ownerPart->targetX - child->baseX) / 3;
+        thirdY = (ownerPart->targetY - child->baseY) / 3;
+        child->partHandle = jump_velocity(dxp, dyp, dhp, thirdX, thirdY,
                                           obj->limitH - child->baseH, 0x3C00, 0x4CC, 0xFD, 0);
         obj->unk6C = 0;
         sprite_set_action(obj, (obj->owner->part->slot == -1) ? 5 : 9, 0, 0);
@@ -1092,10 +1192,14 @@ void owner_moves_obj_spawn_child_b(struct ActorObj *obj)
     }
 }
 
+/* Moves the jumping child one frame (partHandle is the per-frame change of dh that jump_velocity gave).
+   When it comes down to limitH it bounces with sound 0x65: a second, higher jump half way toward the
+   owner's part target, landing at that target's height, then marks the part (unkB0) and hands over to
+   obj_retarget_c. Like obj_retarget_a, with a 0x2800 jump instead of 0x1400. */
 void obj_retarget_b(struct ActorObj *obj)
 {
-    struct ActorPart *part;
-    s32 targetH;
+    struct ActorPart *ownerPart;
+    s32 landH;
     s32 halfX;
     s32 halfY;
 
@@ -1107,12 +1211,12 @@ void obj_retarget_b(struct ActorObj *obj)
     {
         obj->posH = obj->limitH;
         set_slot_value(0x65, -1);
-        part = obj->owner->part;
-        targetH = part->targetH;
-        obj->limitH = targetH;
-        halfX = (part->targetX - obj->baseX) / 2;
-        halfY = (part->targetY - obj->baseY) / 2;
-        obj->partHandle = jump_velocity(&obj->dx, &obj->dy, &obj->dh, halfX, halfY, targetH - obj->baseH,
+        ownerPart = obj->owner->part;
+        landH = ownerPart->targetH;
+        obj->limitH = landH;
+        halfX = (ownerPart->targetX - obj->baseX) / 2;
+        halfY = (ownerPart->targetY - obj->baseY) / 2;
+        obj->partHandle = jump_velocity(&obj->dx, &obj->dy, &obj->dh, halfX, halfY, landH - obj->baseH,
                                         0x2800, 0x4CC, 0xFD, 0);
         obj->part->unkB0 = 1;
         obj->state = obj_retarget_c;

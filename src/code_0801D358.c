@@ -20,12 +20,15 @@ void dma_cancel_request(void *dst);
 void heap_free_a(void *p);
 void heap_free_b(void *p);
 
+/* DmaObj.buf4 is uploaded to VRAM + vramOff in 4 chunks of this many bytes (0x5000 in all). */
+#define DMA_OBJ_CHUNK_SIZE 0x1400
+
 struct DmaObj
 {
     u8 *buf0;
-    u8 *buf4;
+    u8 *buf4;    /* tile graphics, 4 * DMA_OBJ_CHUNK_SIZE bytes (see anim_dma_upload) */
     u8 *buf8;
-    u16 vramOff;
+    u16 vramOff; /* where in VRAM buf4 goes */
     u8 filler0E[6];
     u8 *buf14;
     u8 *buf18;
@@ -40,19 +43,21 @@ struct GradObj
     u16 vramOff;
 };
 
+/* Copies the object's 0x5000-byte tile buffer to VRAM + vramOff, in 4 chunks of
+   DMA_OBJ_CHUNK_SIZE bytes, each copied (or queued) with interrupts off. */
 void anim_dma_upload(struct DmaObj *obj)
 {
     REG_IME = 0;
-    dma_copy_or_queue(obj->buf4, (void *)(0x06000000 + obj->vramOff), 0x1400, 0x20, 0);
+    dma_copy_or_queue(obj->buf4, (void *)(VRAM + obj->vramOff), DMA_OBJ_CHUNK_SIZE, 0x20, 0);
     REG_IME = 1;
     REG_IME = 0;
-    dma_copy_or_queue(obj->buf4 + 0x1400, (void *)(0x06001400 + obj->vramOff), 0x1400, 0x20, 0);
+    dma_copy_or_queue(obj->buf4 + DMA_OBJ_CHUNK_SIZE, (void *)(VRAM + DMA_OBJ_CHUNK_SIZE + obj->vramOff), DMA_OBJ_CHUNK_SIZE, 0x20, 0);
     REG_IME = 1;
     REG_IME = 0;
-    dma_copy_or_queue(obj->buf4 + 0x2800, (void *)(0x06002800 + obj->vramOff), 0x1400, 0x20, 0);
+    dma_copy_or_queue(obj->buf4 + 2 * DMA_OBJ_CHUNK_SIZE, (void *)(VRAM + 2 * DMA_OBJ_CHUNK_SIZE + obj->vramOff), DMA_OBJ_CHUNK_SIZE, 0x20, 0);
     REG_IME = 1;
     REG_IME = 0;
-    dma_copy_or_queue(obj->buf4 + 0x3C00, (void *)(0x06003C00 + obj->vramOff), 0x1400, 0x20, 0);
+    dma_copy_or_queue(obj->buf4 + 3 * DMA_OBJ_CHUNK_SIZE, (void *)(VRAM + 3 * DMA_OBJ_CHUNK_SIZE + obj->vramOff), DMA_OBJ_CHUNK_SIZE, 0x20, 0);
     REG_IME = 1;
 }
 
@@ -111,33 +116,36 @@ void build_gradient_table(struct GradObj *obj)
     dma_copy_or_queue(g->buf4, (void *)(0x06000000 + g->vramOff), 0x500, 0x20, 0);
 }
 
+/* Destructor of a DmaObj: cancels the four queued VRAM uploads of its tile buffer (each with
+   interrupts off, see anim_dma_upload), frees buf18, buf14, buf8 and buf0 (not buf4) and,
+   when bit 0 of `flags` is set, the object itself. */
 void obj_dma_cancel_and_free(struct DmaObj *obj, u32 flags)
 {
     REG_IME = 0;
-    dma_cancel_request((void *)(0x06000000 + obj->vramOff));
+    dma_cancel_request((void *)(VRAM + obj->vramOff));
     REG_IME = 1;
     REG_IME = 0;
-    dma_cancel_request((void *)(0x06001400 + obj->vramOff));
+    dma_cancel_request((void *)(VRAM + DMA_OBJ_CHUNK_SIZE + obj->vramOff));
     REG_IME = 1;
     REG_IME = 0;
-    dma_cancel_request((void *)(0x06002800 + obj->vramOff));
+    dma_cancel_request((void *)(VRAM + 2 * DMA_OBJ_CHUNK_SIZE + obj->vramOff));
     REG_IME = 1;
     REG_IME = 0;
-    dma_cancel_request((void *)(0x06003C00 + obj->vramOff));
+    dma_cancel_request((void *)(VRAM + 3 * DMA_OBJ_CHUNK_SIZE + obj->vramOff));
     REG_IME = 1;
-    if (obj->buf18 != 0)
+    if (obj->buf18 != NULL)
     {
         heap_free_a(obj->buf18);
     }
-    if (obj->buf14 != 0)
+    if (obj->buf14 != NULL)
     {
         heap_free_a(obj->buf14);
     }
-    if (obj->buf8 != 0)
+    if (obj->buf8 != NULL)
     {
         heap_free_a(obj->buf8);
     }
-    if (obj->buf0 != 0)
+    if (obj->buf0 != NULL)
     {
         heap_free_a(obj->buf0);
     }

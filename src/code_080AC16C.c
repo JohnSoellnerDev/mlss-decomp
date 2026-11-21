@@ -495,6 +495,10 @@ after_zero:
     body->state = hero_a_sprite_set_targets;
 }
 
+/* State: once hero A's animation ends, plays sound 0x2B (set_slot_value queues a song) and, while A
+   is on the field, starts an arcing jump to 60 pixels left of where it stands plus its own offset
+   (ofsX, ofsY), at height 0, peaking 40 pixels above its current height (speed 0x500), with
+   action 0xA (art 0x2030) in sprite mode 0. The jump goes on in hero_a_step_stage_fx. */
 void hero_a_sprite_set_targets(struct HeroBody *body)
 {
     struct Hero *hero_a = gWorld->heroA;
@@ -506,9 +510,9 @@ void hero_a_sprite_set_targets(struct HeroBody *body)
         if ((hero_a->body.mode & 6) == 2 || (hero_a->body.mode & 6) == 4)
         {
             place_targets(body_a,
-                          (body_a->targetX / 0x100) + body_a->ofsX - 0x3C,
+                          (body_a->targetX / 0x100) + body_a->ofsX - 60,
                           (body_a->targetY / 0x100) + body_a->ofsY, 0, -1);
-            body_a->height = (body_a->targetZ / 0x100) + 0x28;
+            body_a->height = (body_a->targetZ / 0x100) + 40; /* the arc's peak */
             set_motion_offsets(body_a, 0x500);
         }
         if ((body_a->mode & 6) == 2 || (body_a->mode & 6) == 4)
@@ -520,38 +524,41 @@ void hero_a_sprite_set_targets(struct HeroBody *body)
     }
 }
 
-/* Hero A sprite actions at a third and two thirds of the step, then the effect and the next state
-   once the body is active. */
+/* One frame of hero A's arcing move that hero_a_sprite_set_targets starts: moves the hero, switches
+   its sprite to action 9 a third of the way and to action 3 two thirds of the way, and once it has
+   arrived (flags bit 5) clears slot 0x2E, spawns effect 0x1E at the hero, sets action 8 and hands
+   over to active_targets_hero_pair_place_finish_b. The sprite actions only apply while the hero's
+   mode is 2 or 4 (bits 1-2). */
 void hero_a_step_stage_fx(struct HeroBody *body)
 {
-    struct HeroBody *a;
+    struct HeroBody *heroA;
 
-    a = &gWorld->heroA->body;
-    step_motion(a);
-    if (step_reached(a, 0x1555))
+    heroA = &gWorld->heroA->body;
+    step_motion(heroA);
+    if (step_reached(heroA, 0x1555)) /* a third of 0x4000 */
     {
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(a, 9, 0x2030, 0);
-            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+            sprite_set_action(heroA, 9, 0x2030, 0);
+            ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 0;
         }
     }
-    if (step_reached(a, 0x2AAA))
+    if (step_reached(heroA, 0x2AAA)) /* two thirds */
     {
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(a, 3, 0x2030, 0);
-            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 0;
+            sprite_set_action(heroA, 3, 0x2030, 0);
+            ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 0;
         }
     }
-    if (a->flags & 0x20)
+    if (heroA->flags & 0x20)
     {
         set_slot_value(0x2E, -1);
-        effect_spawn_at(0x1E, a->posX / 0x100, a->posY / 0x100, a->posZ / 0x100, a);
-        if ((a->mode & 6) == 2 || (a->mode & 6) == 4)
+        effect_spawn_at(0x1E, heroA->posX / 0x100, heroA->posY / 0x100, heroA->posZ / 0x100, heroA);
+        if ((heroA->mode & 6) == 2 || (heroA->mode & 6) == 4)
         {
-            sprite_set_action(a, 8, 0x2034, 0);
-            ((struct HeroSpriteBits *)&a->sprite->flags)->mode = 1;
+            sprite_set_action(heroA, 8, 0x2034, 0);
+            ((struct HeroSpriteBits *)&heroA->sprite->flags)->mode = 1;
         }
         body->state = active_targets_hero_pair_place_finish_b;
     }

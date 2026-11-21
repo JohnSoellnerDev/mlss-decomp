@@ -12,9 +12,12 @@ struct ActorPose
     u8 filler0[0x0C];
     u16 counter0C;
     u8 filler0E[0x11 - 0x0E];
-    u8 flip;
+    u8 flip;  /* bit 6: mirrored */
     u8 flags;
 };
+
+/* ActorPose.flags bit: the current animation has finished. */
+#define POSE_FLAG_ANIM_DONE 0x08
 
 struct ActorObj
 {
@@ -400,16 +403,20 @@ void obj_timer_action6(struct ActorObj *obj)
     }
 }
 
+/* Once the current animation ends: action 7, effect 0x12AB at the base point, and spawns child
+   object 0x40F4 12 px left of, 2 px below and 16 px above it, facing the same way. The child
+   inherits the owner, tag, flags and paramA8, gets its contact handlers and starts in
+   obj_alloc_anim; sound 0x11C plays and obj idles in obj_idle_action8. */
 void obj_spawn_child_11c(struct ActorObj *obj)
 {
     struct ActorObj *child;
 
-    if (obj->pose->flags & 8)
+    if (obj->pose->flags & POSE_FLAG_ANIM_DONE)
     {
         sprite_set_action(obj, 7, 0, 0);
         effect_spawn_at(0x12AB, obj->baseX / 0x100, obj->baseY / 0x100, obj->baseH / 0x100, obj);
-        child = obj_spawn(obj->part, 0x40F4, obj->baseX / 0x100 - 0xC, obj->baseY / 0x100 + 2,
-                          obj->baseH / 0x100 + 0x10, ((struct PoseBits6 *)&obj->pose->flip)->bit6, 1);
+        child = obj_spawn(obj->part, 0x40F4, obj->baseX / 0x100 - 12, obj->baseY / 0x100 + 2,
+                          obj->baseH / 0x100 + 16, ((struct PoseBits6 *)&obj->pose->flip)->bit6, 1);
         obj->child = child;
         obj_child_flags(obj, child, 0x20);
         child->handler68 = on_arrive;

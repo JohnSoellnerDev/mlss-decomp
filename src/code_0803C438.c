@@ -659,31 +659,37 @@ static inline u32 is_member_step_state(s32 s)
     }
 }
 
-void step_sub_pair(struct PairObj *obj)
+/*
+ * Steps both members of the pair for one frame. While bit 3 of subA's ringFlags358 is set the pair
+ * moves together (update_sub_pair_d6ec). Otherwise each member in one of the "member step" states is
+ * stepped by step_pair_member; any other member gets sprite flag bit 4 set and just applies its own
+ * speed and motion (child_forward_obj_step_motion).
+ */
+void step_sub_pair(struct PairObj *pair)
 {
-    if ((obj->subA->ringFlags358 & 8) != 0)
+    if ((pair->subA->ringFlags358 & 8) != 0)
     {
-        update_sub_pair_d6ec(obj);
+        update_sub_pair_d6ec(pair);
     }
     else
     {
-        if (is_member_step_state((s16)obj->subA->state))
+        if (is_member_step_state((s16)pair->subA->state))
         {
-            step_pair_member(obj, obj->subA);
+            step_pair_member(pair, pair->subA);
         }
         else
         {
-            ((struct SpriteBit4 *)&obj->subA->sprite->flags12)->bit4 = 1;
-            child_forward_obj_step_motion(obj->subA, obj->entries);
+            ((struct SpriteBit4 *)&pair->subA->sprite->flags12)->bit4 = 1;
+            child_forward_obj_step_motion(pair->subA, pair->entries);
         }
-        if (is_member_step_state((s16)obj->subB->state))
+        if (is_member_step_state((s16)pair->subB->state))
         {
-            step_pair_member(obj, obj->subB);
+            step_pair_member(pair, pair->subB);
         }
         else
         {
-            ((struct SpriteBit4 *)&obj->subB->sprite->flags12)->bit4 = 1;
-            child_forward_obj_step_motion(obj->subB, obj->entries);
+            ((struct SpriteBit4 *)&pair->subB->sprite->flags12)->bit4 = 1;
+            child_forward_obj_step_motion(pair->subB, pair->entries);
         }
     }
 }
@@ -692,18 +698,23 @@ ASM_FUNC("asm/code_0803C438/step_pair_member.s", void step_pair_member(struct Pa
 
 ASM_FUNC("asm/code_0803C438/update_sub_pair_d6ec.s", void update_sub_pair_d6ec(struct PairObj *obj))
 
+/* One frame of a scripted pose on `unit`: field355 / 4 picks a step of the byte script
+ * gUnk_083A1538. The step's low 7 bits index the (object id, sprite half6) pairs of gUnk_083A1544,
+ * moved on one pair for each step of field359's top 3 bits (the variant); the unit takes that id,
+ * its sprite reloads its record and gets the half6 value. A step with bit 7 set is the last one:
+ * it clears owner->byte290 and sets owner->byte246 bit 0; otherwise field355 counts on. */
 void pair_sub_load_record(struct PairObj *owner, struct PairSub *unit)
 {
-    u8 t1 = gUnk_083A1538[unit->field355 / 4];
-    u32 flag = t1 & 0x80;
-    u8 b21 = unit->sprite->byte21;
-    u8 b23 = unit->sprite->byte23;
-    u32 lo = t1 & 0x7F;
-    u16 hw1 = gUnk_083A1544[lo + ((unit->field359 >> 5) << 1)];
-    obj_set_id(unit, hw1);
-    obj_load_record(unit->sprite, b21, b23, 0, 0);
-    unit->sprite->half6 = gUnk_083A1544[(lo + ((unit->field359 >> 5) << 1)) + 1];
-    if (flag != 0)
+    u8 step = gUnk_083A1538[unit->field355 / 4];
+    u32 last = step & 0x80;
+    u8 recA = unit->sprite->byte21;
+    u8 recB = unit->sprite->byte23;
+    u32 entry = step & 0x7F;
+    u16 id = gUnk_083A1544[entry + ((unit->field359 >> 5) << 1)];
+    obj_set_id(unit, id);
+    obj_load_record(unit->sprite, recA, recB, 0, 0);
+    unit->sprite->half6 = gUnk_083A1544[(entry + ((unit->field359 >> 5) << 1)) + 1];
+    if (last != 0)
     {
         owner->byte290 = 0;
         ((struct Bit0Only *)&owner->byte246)->b0 = 1;
@@ -714,18 +725,22 @@ void pair_sub_load_record(struct PairObj *owner, struct PairSub *unit)
     }
 }
 
-void setup_sub_unit(struct PairObj *obj, struct PairSub *unit)
+/* Makes one brother of the pair jump (state 0x3E, like sub_08033BAC without the block check):
+   stops the pair's movement, sets flags210 bits 1-2 and flags351 bit 6, clears field23B and
+   mode352 bit 6, puts stateWord214 in mode 4, takes object id 0x1044 (the jump) with sprite mode 1
+   and plays sound 0x38. */
+void setup_sub_unit(struct PairObj *obj, struct PairSub *brother)
 {
     update_pair_facing(obj, 1, 1);
-    ((struct Bits35B *)&unit->flags35B)->bit4 = 0;
-    unit->flags210 |= 2;
-    unit->flags210 |= 4;
-    unit->state = 0x3E;
-    ((struct Bits352 *)&unit->flags351)->bit6 = 1;
-    unit->field23B = 0;
-    ((struct Bits352 *)&unit->mode352)->bit6 = 0;
-    ((struct StateLo3 *)&unit->stateWord214)->lo3 = 4;
-    obj_set_id(unit, 0x1044);
-    ((struct ModeBits12 *)&unit->sprite->flags12)->mode = 1;
+    ((struct Bits35B *)&brother->flags35B)->bit4 = 0;
+    brother->flags210 |= 2;
+    brother->flags210 |= 4;
+    brother->state = 0x3E;
+    ((struct Bits352 *)&brother->flags351)->bit6 = 1;
+    brother->field23B = 0;
+    ((struct Bits352 *)&brother->mode352)->bit6 = 0;
+    ((struct StateLo3 *)&brother->stateWord214)->lo3 = 4;
+    obj_set_id(brother, 0x1044);
+    ((struct ModeBits12 *)&brother->sprite->flags12)->mode = 1;
     set_slot_value(0x38, -1);
 }
